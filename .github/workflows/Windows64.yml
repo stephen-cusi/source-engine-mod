@@ -17,7 +17,7 @@ jobs:
     - name: Create output dir
       run: mkdir ./out
     - name: Configure build
-      run: ./waf configure -T release -8 --build-game=cstrike --prefix=./out
+      run: ./waf configure -T debug -8 --build-game=cstrike --prefix=./out
     - name: Build
       run: ./waf install
     - name: Upload artifact
@@ -35,7 +35,7 @@ jobs:
     - name: Create output dir
       run: mkdir ./out
     - name: Configure build
-      run: ./waf configure -T release -8 --build-game=hl2 --prefix=./out
+      run: ./waf configure -T debug -8 --build-game=hl2 --prefix=./out
     - name: Build
       run: ./waf install --target=client,server
     - name: Upload artifact
@@ -53,7 +53,7 @@ jobs:
     - name: Create output dir
       run: mkdir ./out
     - name: Configure build
-      run: ./waf configure -T release -8 --build-game=dod --prefix=./out
+      run: ./waf configure -T debug -8 --build-game=dod --prefix=./out
     - name: Build
       run: ./waf install --target=client,server
     - name: Upload artifact
@@ -71,7 +71,7 @@ jobs:
     - name: Create output dir
       run: mkdir ./out
     - name: Configure build
-      run: ./waf configure -T release -8 -d --build-game=dod --prefix=./out
+      run: ./waf configure -T debug -8 -d --build-game=dod --prefix=./out
     - name: Build
       run: ./waf install
     - name: Upload artifact
