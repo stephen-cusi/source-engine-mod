@@ -1,0 +1,75 @@
+name: Build cl_dll server
+on: [push, pull_request]
+jobs:
+  windows_engine_amd64:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - name: Create output dir
+      run: mkdir ./out
+    - name: Configure build
+      run: ./waf configure -T release -8 --build-game=cstrike --prefix=./out
+    - name: Build
+      run: ./waf install
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: engine_amd64_cstrike
+        path: ./out
+  windows_hl2_cldl_amd64:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - name: Create output dir
+      run: mkdir ./out
+    - name: Configure build
+      run: ./waf configure -T release -8 --build-game=hl2 --prefix=./out
+    - name: Build
+      run: ./waf install --target=client,server
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows_hl2_cl_dll_amd64
+        path: ./out
+  windows_dods_cl_dll_amd64:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - name: Create output dir
+      run: mkdir ./out
+    - name: Configure build
+      run: ./waf configure -T release -8 --build-game=dod --prefix=./out
+    - name: Build
+      run: ./waf install --target=client,server
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows_dod_cl_dll_amd64
+        path: ./out
+  windows_only_dedicated_amd64:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - name: Create output dir
+      run: mkdir ./out
+    - name: Configure build
+      run: ./waf configure -T release -8 -d --build-game=dod --prefix=./out
+    - name: Build
+      run: ./waf install
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: windows_hl2_dedicated_amd64
+        path: ./out
