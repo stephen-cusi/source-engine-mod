@@ -2,10 +2,10 @@ name: Build cl_dll server
 on:
   push:
     branches:
-      - "*"
+      - "win64"
   pull_request:
     branches:
-      - "*"
+      - "win64"
 jobs:
   windows_engine_amd64:
     runs-on: windows-latest
