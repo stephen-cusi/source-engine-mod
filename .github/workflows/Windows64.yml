@@ -1,5 +1,5 @@
 name: Build cl_dll server
-on: [push, pull_request]
+on: [push:branches: "*", pull_request:branches: "*"]
 jobs:
   windows_engine_amd64:
     runs-on: windows-latest
