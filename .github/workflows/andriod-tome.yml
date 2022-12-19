@@ -16,14 +16,14 @@ jobs:
     - uses: actions/checkout@v3
     - name: Build-srccds
       run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 11
-        export PATH="/usr/lib/llvm-11/bin:$PATH"
         wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        unzip android-ndk-r10e-linux-x86_64.zip
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-        export NDK_HOME=$PWD/android-ndk-r10e/
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
+        tar xvf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz > /dev/null
+        mv clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04 clang/
+        export PATH=$(pwd)/clang/bin:$PATH
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
         mkdir ./andriod
         git submodule init;git submodule update
         ./waf configure -T release -d --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns
