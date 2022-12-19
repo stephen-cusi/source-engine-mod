@@ -17,6 +17,7 @@ jobs:
     - name: Build-srccds
       run: |
         wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
         unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
         wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
         tar xvf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz > /dev/null
@@ -26,8 +27,9 @@ jobs:
         export ANDROID_NDK_HOME=$(pwd)/ndk
         mkdir ./andriod
         git submodule init;git submodule update
-        ./waf configure -T release -d --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns
-        ./waf install
+        ./waf configure -T release -d --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns --build-game=cstrike --use-ccache
+        ./waf install --target=client,server
+        
         cat build/config.log >./andriod/iffo.txt
         
     - uses: actions/upload-artifact@v3
@@ -53,7 +55,7 @@ jobs:
         export NDK_HOME=$PWD/android-ndk-r10e/
         mkdir ./andriod
         git submodule init;git submodule update
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns --use-ccache
         ./waf install
         cat build/config.log > ./andriod/info.txt
     - uses: actions/upload-artifact@v3
