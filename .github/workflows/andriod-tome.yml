@@ -27,7 +27,8 @@ jobs:
         mkdir ./andriod
         git submodule init;git submodule update
         ./waf configure -T release -d --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns
-        cat build/config.log;exit
+        cat build/config.log >./andriod/iffo.txt
+        
     - uses: actions/upload-artifact@v3
       with:
         name: srccds
@@ -52,7 +53,7 @@ jobs:
         mkdir ./andriod
         git submodule init;git submodule update
         ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns
-        cat build/config.log;exit
+        cat build/config.log > ./andriod/info.txt
     - uses: actions/upload-artifact@v3
       with:
         name: aarch64-srceng
