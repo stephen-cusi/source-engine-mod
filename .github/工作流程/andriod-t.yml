@@ -32,7 +32,6 @@ jobs:
         path: ./andriod
         if-no-files-found: error
 
-  jobs:
   build-arm:
     runs-on: ubuntu-20.04
 
@@ -52,6 +51,6 @@ jobs:
         ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns
     - uses: actions/upload-artifact@v3
       with:
-        name: srccds
+        name: srceng-aarch64
         path: ./andriod
         if-no-files-found: error
