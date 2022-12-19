@@ -27,7 +27,7 @@ jobs:
         export ANDROID_NDK_HOME=$(pwd)/ndk
         mkdir ./andriod
         git submodule init;git submodule update
-        ./waf configure -T release -d --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns --build-game=cstrike 
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns --build-game=cstrike 
         ./waf install --target=client,server
         
         cat build/config.log >./andriod/iffo.txt
