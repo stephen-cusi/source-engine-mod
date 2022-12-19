@@ -26,6 +26,7 @@ jobs:
         export NDK_HOME=$PWD/android-ndk-r10e/
         mkdir ./andriod
         ./waf configure -T release -d --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns
+        cat config.log
     - uses: actions/upload-artifact@v3
       with:
         name: srccds
@@ -49,6 +50,7 @@ jobs:
         export NDK_HOME=$PWD/android-ndk-r10e/
         mkdir ./andriod
         ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns
+        cat build/config.log
     - uses: actions/upload-artifact@v3
       with:
         name: aarch64-srceng
