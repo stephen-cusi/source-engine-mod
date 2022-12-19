@@ -9,7 +9,7 @@ on:
       - "*"
 
 jobs:
-  build-arm64:
+  build-andriod-srccds:
     runs-on: ubuntu-20.04
 
     steps:
@@ -25,15 +25,16 @@ jobs:
         export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
         export NDK_HOME=$PWD/android-ndk-r10e/
         mkdir ./andriod
+        git submodule init;git submodule update
         ./waf configure -T release -d --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns
-        cat build/config.log
+        cat build/config.log;exit
     - uses: actions/upload-artifact@v3
       with:
         name: srccds
         path: ./andriod
         if-no-files-found: error
 
-  build-arm:
+  build-arm64:
     runs-on: ubuntu-20.04
 
     steps:
@@ -49,8 +50,9 @@ jobs:
         export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
         export NDK_HOME=$PWD/android-ndk-r10e/
         mkdir ./andriod
+        git submodule init;git submodule update
         ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns
-        cat build/config.log
+        cat build/config.log;exit
     - uses: actions/upload-artifact@v3
       with:
         name: aarch64-srceng
