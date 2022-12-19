@@ -1,0 +1,38 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - "*"
+  pull_request:
+    branches:
+      - "*"
+
+jobs:
+  build-linux-i386:
+    runs-on: ubuntu-18.04
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build linux-i386
+      run: |
+        scripts/build-ubuntu-i386.sh
+        ls -la
+        mkdir ./build1
+        mkdir ./build1/bin
+        mkdir ./build1/game
+        mkdir ./build1/game/bin
+        find ./build -name "*.so" -exec mv -t ./build1/bin {} +
+        find ./build1 -name "libclient.so" -exec mv -t ./build1/game/bin {} +
+        find ./build1 -name "libserver.so" -exec mv -t ./build1/game/bin {} +
+        find ./build -name "*_launcher" -exec mv -t ./build1 {} +
+        rm -rf build
+        mv ./build1 ./build
+    - uses: actions/upload-artifact@v2
+      with:
+        name: Source Engine - Linux 32-bit
+        path: ./build
+        if-no-files-found: error
+
+  build-linux-amd64:
+    runs-on: ubuntu-18.04
