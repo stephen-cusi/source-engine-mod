@@ -27,6 +27,7 @@ jobs:
         mkdir ./andriod
         git submodule init;git submodule update
         ./waf configure -T release -d --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns
+        ./waf install
         cat build/config.log >./andriod/iffo.txt
         
     - uses: actions/upload-artifact@v3
@@ -53,6 +54,7 @@ jobs:
         mkdir ./andriod
         git submodule init;git submodule update
         ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns
+        ./waf install
         cat build/config.log > ./andriod/info.txt
     - uses: actions/upload-artifact@v3
       with:
