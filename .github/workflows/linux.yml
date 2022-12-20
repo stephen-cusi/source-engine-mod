@@ -17,10 +17,10 @@ jobs:
     - uses: actions/checkout@v3
     - name: Build-cstrike
       run: |
-        mkdir ./linux
+        
         git submodule init;git submodule update
         sudo apt update;sudo apt upgrade;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
-        ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=hl2
+        ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=hl2 && sudo mkdir ./linux
         ./waf install
         
         cat build/config.log >./linux/info.txt
@@ -39,9 +39,9 @@ jobs:
     - uses: actions/checkout@v3
     - name: Build
       run: |
-        sudo apt update;apt update;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
+        sudo apt update;apt upgrade;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
         git submodule init;git submodule update
-        ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=cstrike
+        ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=cstrike && sudo mkdir ./linux
         
         ./waf install --target=client,server
         cat build/config.log > ./linux/info.txt
@@ -63,7 +63,7 @@ jobs:
         sudo ./llvm.sh 11
         export PATH="/usr/lib/llvm-11/bin:$PATH"
         sudo dpkg --add-architecture i386
-        sudo apt update
+        sudo apt update;sudo apt upgrade
         sudo apt-get install -f -y libopenal-dev:i386 g++-multilib gcc-multilib libpng-dev:i386 libjpeg-dev:i386 libfreetype6-dev:i386 libfontconfig1-dev:i386 libcurl4-gnutls-dev:i386 libsdl2-dev:i386 zlib1g-dev:i386 libbz2-dev:i386 libedit-dev:i386
         export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
         git submodule init;git submodule update
