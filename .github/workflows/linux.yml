@@ -11,7 +11,7 @@ on:
 
 jobs:
   build-srceng-linux-64:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
@@ -54,18 +54,15 @@ jobs:
         if-no-files-found: error
 
   build-srceng-linux-32:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
     - name: Build
       run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 11
-        export PATH="/usr/lib/llvm-11/bin:$PATH"
         sudo dpkg --add-architecture i386
-        sudo apt update;sudo apt upgrade
+        sudo apt update
+        sudo apt upgrade
         sudo apt-get install -f -y libopenal-dev:i386 g++-multilib gcc-multilib libpng-dev:i386 libjpeg-dev:i386 libfreetype6-dev:i386 libfontconfig1-dev:i386 libcurl4-gnutls-dev:i386 libsdl2-dev:i386 zlib1g-dev:i386 libbz2-dev:i386 libedit-dev:i386
         export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
         git submodule init;git submodule update
