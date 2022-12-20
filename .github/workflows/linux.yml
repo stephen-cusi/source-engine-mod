@@ -1,0 +1,98 @@
+#一个引擎,一个模组
+name: linux-build
+
+on:
+  push:
+    branches:
+      - "*"
+  pull_request:
+    branches:
+      - "*"
+
+jobs:
+  build-srceng-linux-64:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build-cstrike
+      run: |
+        mkdir ./linux
+        git submodule init;git submodule update
+        sudo apt update;sudo apt upgrade;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
+        ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=hl2
+        ./waf install
+        
+        cat build/config.log >./linux/info.txt
+        
+    - uses: actions/upload-artifact@v3
+      with:
+        name: linux-source-engine-64
+        path: ./linux
+        if-no-files-found: error
+
+
+  build-srceng-linux-css64:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: |
+        sudo apt update;apt update;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
+        git submodule init;git submodule update
+        ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=cstrike
+        
+        ./waf install --target=client,server
+        cat build/config.log > ./linux/info.txt
+    - uses: actions/upload-artifact@v3
+      with:
+        name: cstrike-linux-64
+        path: ./linux
+        if-no-files-found: error
+
+  build-srceng-linux-32:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 11
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+        sudo dpkg --add-architecture i386
+        sudo apt update
+        sudo apt-get install -f -y libopenal-dev:i386 g++-multilib gcc-multilib libpng-dev:i386 libjpeg-dev:i386 libfreetype6-dev:i386 libfontconfig1-dev:i386 libcurl4-gnutls-dev:i386 libsdl2-dev:i386 zlib1g-dev:i386 libbz2-dev:i386 libedit-dev:i386
+        export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
+        git submodule init;git submodule update
+        ./waf configure -T release --prefix=./linux --disable-warns --build-game=hl2
+        ./waf install
+        cat build/config.log > ./linux/info.txt
+    - uses: actions/upload-artifact@v3
+      with:
+        name: linux-source-engine-32
+        path: ./linux
+        if-no-files-found: error
+
+  build-srceng-linux-css32:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt update
+        sudo apt-get install -f -y libopenal-dev:i386 g++-multilib gcc-multilib libpng-dev:i386 libjpeg-dev:i386 libfreetype6-dev:i386 libfontconfig1-dev:i386 libcurl4-gnutls-dev:i386 libsdl2-dev:i386 zlib1g-dev:i386 libbz2-dev:i386 libedit-dev:i386
+        export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
+        git submodule init;git submodule update
+        ./waf configure -T release --prefix=./linux --disable-warns --build-game=hl2
+        ./waf install
+        cat build/config.log > ./linux/info.txt
+    - uses: actions/upload-artifact@v3
+      with:
+        name: linux-css-32
+        path: ./linux
+        if-no-files-found: error
