@@ -46,7 +46,7 @@ jobs:
         ./waf.bat install --target=client,server
         cat build/config.log > ./win/info.txt
     - uses: actions/upload-artifact@v3
-      with
+      with:
         name: cstrike-win32
         path: ./win
         if-no-files-found: error
