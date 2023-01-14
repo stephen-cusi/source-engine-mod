@@ -21,7 +21,7 @@ jobs:
         git submodule init;git submodule update
         sudo apt update;sudo apt upgrade;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
         ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=hl2 
-        sudo ./waf install
+        sudo ./waf install -j4
         
         cat build/config.log >./linux/info.txt
         
@@ -45,7 +45,7 @@ jobs:
         git submodule init;git submodule update
         ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=cstrike 
         
-        sudo ./waf install --target=client,server
+        sudo ./waf install --target=client,server -j4
         cat build/config.log > ./linux/info.txt
     - uses: actions/upload-artifact@v3
       with:
@@ -67,7 +67,7 @@ jobs:
         export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
         git submodule init;git submodule update
         ./waf configure -T release --prefix=./linux --disable-warns --build-game=hl2
-        ./waf install
+        ./waf install -j4
         cat build/config.log > ./linux/info.txt
     - uses: actions/upload-artifact@v3
       with:
@@ -88,10 +88,31 @@ jobs:
         export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
         git submodule init;git submodule update
         ./waf configure -T release --prefix=./linux --disable-warns --build-game=cstrike
-        sudo ./waf install --target=client,server
+        sudo ./waf install --target=client,server -j4
         cat build/config.log > ./linux/info.txt
     - uses: actions/upload-artifact@v3
       with:
         name: linux-css-32
+        path: ./linux
+        if-no-files-found: error
+
+  build-srceng-linux-togles:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: |
+        sudo apt update
+        sudo apt upgrade
+        sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
+        git submodule init;git submodule update
+        ./waf configure -T release -8 --prefix=./linux --disable-warns 
+        
+        sudo ./waf install --target=togl -j4
+        cat build/config.log > ./linux/info.txt
+    - uses: actions/upload-artifact@v3
+      with:
+        name: source-linux-64-togles
         path: ./linux
         if-no-files-found: error
