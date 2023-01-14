@@ -40,6 +40,7 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - [Windows](https://github.com/nillerusr/source-engine/wiki/How-to-build#on-windows)
 - [Linux](https://github.com/nillerusr/source-engine/wiki/How-to-build#on-linux)
 - [For Android under Linux](https://github.com/nillerusr/source-engine/wiki/How-to-build#on-linux-for-android)
+- [A more complete compilation tutorial](https://github.com/SanyaSho/junk-engine/wiki/J.U.N.K.-Engine-(EN))
 
 # Support me
 BTC: `bc1qnjq92jj9uqjtafcx2zvnwd48q89hgtd6w8a6na`
