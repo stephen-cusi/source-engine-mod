@@ -1661,6 +1661,11 @@ public:
 	bool							m_bEnableRenderingClipPlane; //true to use the custom clip plane when drawing
 	float *							GetRenderClipPlane( void ); // Rendering clip plane, should be 4 floats, return value of NULL indicates a disabled render clip plane
 
+#ifdef LUA_SDK
+	int								m_nTableReference;
+	virtual bool					IsWeapon( void ) const { return false; }
+#endif
+
 protected:
 
 	void AddToInterpolationList();

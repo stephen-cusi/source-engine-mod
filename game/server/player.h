@@ -1187,11 +1187,6 @@ public:
 	virtual bool HasHaptics(){return m_bhasHaptics;}
 	// NVNT sets weather a user should receive haptic device messages.
 	virtual void SetHaptics(bool has) { m_bhasHaptics = has;}
-private:
-	// NVNT member variable holding if this user is using a haptic device.
-	bool m_bhasHaptics;
-
-	bool m_autoKickDisabled;
 
 	struct StepSoundCache_t
 	{
@@ -1201,6 +1196,12 @@ private:
 	};
 	// One for left and one for right side of step
 	StepSoundCache_t		m_StepSoundCache[ 2 ];
+private:
+	// NVNT member variable holding if this user is using a haptic device.
+	bool m_bhasHaptics;
+
+	bool m_autoKickDisabled;
+
 
 	CUtlLinkedList< CPlayerSimInfo >  m_vecPlayerSimInfo;
 	CUtlLinkedList< CPlayerCmdInfo >  m_vecPlayerCmdInfo;

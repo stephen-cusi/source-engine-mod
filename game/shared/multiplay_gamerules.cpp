@@ -1284,8 +1284,8 @@ ConVarRef suitcharger( "sk_suitcharger" );
 			bool bIgnore = false;
 
 			// Strip out the spaces in the name
-			StripChar( mapList[i] , '\r');
-			StripChar( mapList[i] , ' ');
+			//StripChar( mapList[i] , '\r');
+			//StripChar( mapList[i] , ' ');
 
 			if ( !Q_strncmp( mapList[i], "//", 2 ) || mapList[i][0] == '\0' )
 			{

@@ -78,6 +78,8 @@ projects={
 		'utils/vtex',
 		'unicode',
 		'video',
+		'lua',
+		'lua/src/LuaBitOp-1.0.2',
 	],
 	'tests': [
 		'appframework',

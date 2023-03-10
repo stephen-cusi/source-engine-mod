@@ -376,6 +376,10 @@ public:
 	Vector	GetStepOrigin( void ) const;
 	QAngle	GetStepAngles( void ) const;
 
+	// Client-side animation (useful for looping animation objects)
+	CNetworkVar( bool, m_bClientSideAnimation );
+	CNetworkVar( bool, m_bClientSideFrameReset );
+
 private:
 	bool				m_bSequenceFinished;// flag set when StudioAdvanceFrame moves across a frame boundry
 	bool				m_bSequenceLoops;	// true if the sequence loops
@@ -388,9 +392,6 @@ private:
 	CNetworkArray( float, m_flPoseParameter, NUM_POSEPAREMETERS );	// must be private so manual mode works!
 	CNetworkArray( float, m_flEncodedController, NUM_BONECTRLS );		// bone controller setting (0..1)
 
-	// Client-side animation (useful for looping animation objects)
-	CNetworkVar( bool, m_bClientSideAnimation );
-	CNetworkVar( bool, m_bClientSideFrameReset );
 
 	CNetworkVar( int, m_nNewSequenceParity );
 	CNetworkVar( int, m_nResetEventsParity );
