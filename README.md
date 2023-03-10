@@ -10,7 +10,7 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 # Features:
 - Lua support
 - Android, Linux Support
-- Cringe commits
+- Cringe commits by me
 
 # Current tasks
 - Complete the Lua API 
