@@ -37,6 +37,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Build android-aarch64
       run: |
+        chmod +x scripts/build-android-aarch64.sh
         scripts/build-android-aarch64.sh        
 
   build-windows-i386:
