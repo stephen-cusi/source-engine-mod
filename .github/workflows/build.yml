@@ -21,24 +21,45 @@ jobs:
       run: |
         scripts/build-ubuntu-amd64.sh
 
-  build-android-armv7a:
+  Build-apk-for-android:
     runs-on: ubuntu-18.04
 
     steps:
     - uses: actions/checkout@v2
+    - name: Cloning apk repo and preparing for building
+      run: |
+        git clone https://github.com/klaymen1n/srceng-androidwaf
+        sudo apt-get update
+        sudo apt-get install -f -y openjdk-8-jre zip apksigner
     - name: Build android-armv7a
       run: |
         scripts/build-android-armv7a.sh
-        
-  build-android-aarch64:
-    runs-on: ubuntu-18.04
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build android-aarch64
+    - name: Build-android-aarch64
       run: |
-        chmod +x scripts/build-android-aarch64.sh
-        scripts/build-android-aarch64.sh        
+        scripts/build-android-aarch64.sh    
+    - name: Finally build apk
+      run: |
+        scripts/build-apk.sh    
+        
+    - name: Rename apk
+      run: |
+         mv srceng-androidwaf/build/android/mod-signed.apk hl2sb-release.apk
+
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: my-artifact
+        path: hl2sb-release.apk
+        retention-days: 0
+  # build-android-aarch64:
+  #   runs-on: ubuntu-18.04
+  # 
+  #   steps:
+  #   - uses: actions/checkout@v2
+  #   - name: Build android-aarch64
+  #     run: |
+  #       chmod +x scripts/build-android-aarch64.sh
+  #       scripts/build-android-aarch64.sh        
 
   # build-windows-i386:
   #   runs-on: windows-2019
