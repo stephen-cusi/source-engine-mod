@@ -48,7 +48,7 @@ jobs:
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v3
       with:
-        name: my-artifact
+        name: hl2sb-apk
         path: hl2sb-release.apk
         retention-days: 0
   # build-android-aarch64:
