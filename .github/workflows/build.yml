@@ -72,28 +72,6 @@ jobs:
         ./waf.bat configure -T release --build-game=hl2sb -8
         ./waf.bat build
 
-  build-dedicated-windows-i386:
-    runs-on: windows-2019
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build dedicated windows-i386
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T release --build-game=hl2sb -d
-        ./waf.bat build
-
-  build-dedicated-windows-amd64:
-    runs-on: windows-2019
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build dedicated windows-amd64
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T release --build-game=hl2sb -d -8
-        ./waf.bat build
-
   build-dedicated-linux-i386:
     runs-on: ubuntu-18.04
 
