@@ -26,6 +26,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Installing clang11
+      run: |
+        curl -LO https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+        tar -xvf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
     - name: Build android-armv7a
       run: |
         scripts/build-android-armv7a.sh
@@ -35,6 +40,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Installing clang11
+      run: |
+        curl -LO https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+        tar -xvf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH    
     - name: Build android-aarch64
       run: |
         chmod +x scripts/build-android-aarch64.sh
