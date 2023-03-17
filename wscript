@@ -129,7 +129,9 @@ projects={
 		'vpklib',
 		'vstdlib',
 		'vtf',
-		'thirdparty/StubSteamAPI'
+		'thirdparty/StubSteamAPI',
+        	'lua',
+        	'lua/src/LuaBitOp-1.0.2'
 	]
 }
 
