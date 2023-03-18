@@ -1,4 +1,4 @@
-name: build_hl2sb_win32
+name: Build Windows
 
 on: [push, pull_request]
 
