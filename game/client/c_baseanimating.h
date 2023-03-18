@@ -566,10 +566,12 @@ private:
 	CInterpolatedVarArray< float, MAXSTUDIOBONECTRLS >		m_iv_flEncodedController;
 	float							m_flOldEncodedController[MAXSTUDIOBONECTRLS];
 
+public:
 	// Clientside animation
 	bool							m_bClientSideAnimation;
 	bool							m_bLastClientSideFrameReset;
 
+private:
 	int								m_nNewSequenceParity;
 	int								m_nResetEventsParity;
 

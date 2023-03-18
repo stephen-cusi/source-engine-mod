@@ -122,12 +122,14 @@ public:
 	void RestartGame();
 	
 #ifndef CLIENT_DLL
+
 	virtual Vector VecItemRespawnSpot( CItem *pItem );
 	virtual QAngle VecItemRespawnAngles( CItem *pItem );
 	virtual float	FlItemRespawnTime( CItem *pItem );
 	virtual bool	CanHavePlayerItem( CBasePlayer *pPlayer, CBaseCombatWeapon *pItem );
 	virtual bool FShouldSwitchWeapon( CBasePlayer *pPlayer, CBaseCombatWeapon *pWeapon );
 
+	void 	InitDefaultAIRelationships( void );
 	void	AddLevelDesignerPlacedObject( CBaseEntity *pEntity );
 	void	RemoveLevelDesignerPlacedObject( CBaseEntity *pEntity );
 	void	ManageObjectRelocation( void );
