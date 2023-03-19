@@ -37,9 +37,6 @@ CToolMenu::CToolMenu(vgui::VPANEL parent)
 	SetSize(800, 600);
 	SetPos(50, 34);
 	SetTitle("SMenu", this);
-
-	//SetProportional(true);
-
 	SetTitleBarVisible(true);
 	SetMinimizeButtonVisible(false);
 	SetMaximizeButtonVisible(false);
