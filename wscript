@@ -78,8 +78,7 @@ projects={
 		'utils/vtex',
 		'unicode',
 		'video',
-		'lua',
-		'lua/src/LuaBitOp-1.0.2',
+		'lua'
 	],
 	'tests': [
 		'appframework',
@@ -130,8 +129,7 @@ projects={
 		'vstdlib',
 		'vtf',
 		'thirdparty/StubSteamAPI',
-        	'lua',
-        	'lua/src/LuaBitOp-1.0.2'
+        	'lua'
 	]
 }
 
