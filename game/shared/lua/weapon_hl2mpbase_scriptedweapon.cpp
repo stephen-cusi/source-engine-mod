@@ -159,7 +159,7 @@ acttable_t *CHL2MPScriptedWeapon::ActivityList( void ) {
 				lua_pushinteger( L, 3 );
 				lua_gettable( L, -2 );
 				if ( lua_isboolean( L, -1 ) )
-					m_acttable[i].required = (bool)lua_checkboolean( L, -1 );
+					m_acttable[i].required = (bool)lua_toboolean( L, -1 );
 				lua_pop( L, 1 );
 			}
 			lua_pop( L, 1 );
