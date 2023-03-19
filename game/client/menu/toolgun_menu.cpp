@@ -1,6 +1,5 @@
 #include "cbase.h"
 #include "toolgun_menu.h"
-//#include "sandbox.h"
 using namespace vgui;
 #include <vgui/IVGui.h>
 #include <vgui_controls/Frame.h>
@@ -9,6 +8,7 @@ using namespace vgui;
 
 char szColorCommand[64];
 char szDurationCommand[64];
+char szEntCreate[64];
 
 class CToolMenu : public vgui::Frame
 {
@@ -24,6 +24,7 @@ private:
 	vgui::TextEntry* m_Green;
 	vgui::TextEntry* m_Blue;
 	vgui::TextEntry* m_Modelscale;
+	vgui::TextEntry* m_EntCreate;
 };
 
 CToolMenu::CToolMenu(vgui::VPANEL parent)
@@ -54,20 +55,24 @@ CToolMenu::CToolMenu(vgui::VPANEL parent)
 	vgui::ivgui()->AddTickSignal(GetVPanel(), 100);
 
 	m_Modelscale = new vgui::TextEntry(this, "Duration");
-	m_Modelscale->SetPos(680, 18);
+	m_Modelscale->SetPos( 680, 20) ;
 	m_Modelscale->SetSize( 100, 50 );
 	
 	m_Red = new vgui::TextEntry(this, "Red");
-	m_Red->SetPos(680, 98 );
+	m_Red->SetPos( 680, 100 );
 	m_Red->SetSize( 100, 50 );
 		
 	m_Green = new vgui::TextEntry(this, "Green");
-	m_Green->SetPos(680, 178 );
+	m_Green->SetPos( 680, 180 );
 	m_Green->SetSize(100, 50 );
 		
 	m_Blue = new vgui::TextEntry(this, "Blue");
-	m_Blue->SetPos(680, 268 );
+	m_Blue->SetPos( 680, 260 );
 	m_Blue->SetSize(100, 50 );
+
+	m_EntCreate = new vgui::TextEntry(this, "EntityCreate");
+	m_EntCreate->SetPos( 680, 340 );
+	m_EntCreate->SetSize( 100, 50 );
 }
 
 class CToolMenuInterface : public ToolMenu
@@ -134,6 +139,18 @@ void CToolMenu::OnCommand(const char* pcCommand)
 	{
 		engine->ClientCmd("toolmode 3");
 	}
+	else if(!Q_stricmp(pcCommand, "dynamite"))
+	{
+		engine->ClientCmd("toolmode 4");
+	}
+	else if(!Q_stricmp(pcCommand, "spawner"))
+	{
+		engine->ClientCmd("toolmode 5");
+	}
+	else if(!Q_stricmp(pcCommand, "emitter"))
+	{
+		engine->ClientCmd("toolmode 6");
+	}
 	else if(!Q_stricmp(pcCommand, "apply"))
 	{
 		char red[256];
@@ -147,11 +164,17 @@ void CToolMenu::OnCommand(const char* pcCommand)
 		
 		char duration[256];
 		m_Modelscale->GetText(duration, sizeof(duration));
+
+		char entname[256];
+		m_EntCreate->GetText(entname, sizeof(entname));
 		
 		Q_snprintf(szColorCommand, sizeof( szColorCommand ), "red %s\n;green %s\n;blue %s\n", red, green, blue );
 		engine->ClientCmd(szColorCommand);
 
 		Q_snprintf(szDurationCommand, sizeof( szDurationCommand ), "duration %s\n", duration );
 		engine->ClientCmd( szDurationCommand );
+
+		Q_snprintf(szEntCreate, sizeof( szEntCreate ), "tool_create %s\n", entname );
+		engine->ClientCmd( szEntCreate );
 	}
 }
