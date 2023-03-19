@@ -1,4 +1,4 @@
-//========= Copyright © 1996-2005, Valve Corporation, All rights reserved. ============//
+//========= Copyright Â© 1996-2005, Valve Corporation, All rights reserved. ============//
 //
 // Purpose: 
 //
@@ -145,21 +145,21 @@ acttable_t *CHL2MPScriptedWeapon::ActivityList( void ) {
 				lua_pushinteger( L, 1 );
 				lua_gettable( L, -2 );
 				if ( lua_isnumber( L, -1 ) )
-					m_acttable[i].baseAct = luaL_checkint( L, -1 );
+					m_acttable[i].baseAct = lua_tointeger( L, -1 );
 				lua_pop( L, 1 );
 
 				m_acttable[i].weaponAct = ACT_INVALID;
 				lua_pushinteger( L, 2 );
 				lua_gettable( L, -2 );
 				if ( lua_isnumber( L, -1 ) )
-					m_acttable[i].weaponAct = luaL_checkint( L, -1 );
+					m_acttable[i].weaponAct = lua_tointeger( L, -1 );
 				lua_pop( L, 1 );
 
 				m_acttable[i].required = false;
 				lua_pushinteger( L, 3 );
 				lua_gettable( L, -2 );
 				if ( lua_isboolean( L, -1 ) )
-					m_acttable[i].required = (bool)luaL_checkboolean( L, -1 );
+					m_acttable[i].required = (bool)lua_checkboolean( L, -1 );
 				lua_pop( L, 1 );
 			}
 			lua_pop( L, 1 );
