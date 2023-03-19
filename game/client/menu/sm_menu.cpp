@@ -25,6 +25,9 @@
 #include "tier0/memdbgon.h"
 
 using namespace vgui;
+
+ConVar sm_wide("sm_wide", "0");
+ConVar sm_height("sm_height", "0");
 //-----------------------------------------------------------------------------
 // Purpose: A menu button that knows how to parse cvar/command menu data from gamedir/addons/menu/spawnmenu.ctx
 //-----------------------------------------------------------------------------
@@ -87,19 +90,13 @@ public:
 		}
 	}
 
-	virtual void OnCommand( const char *command )
-	{
-		engine->ClientCmd( (char *)command );
-	}
-
-
 	virtual void PerformLayout()
 	{
 		BaseClass::PerformLayout();	
 		int x = 5;
 		int y = 5;
-		int w = 127;
-		int h = 128;
+		int w = sm_wide.GetInt();
+		int h = sm_height.GetInt();
 		int gap = 2;
 
 		int c = m_LayoutItems.Count();

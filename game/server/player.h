@@ -1345,7 +1345,9 @@ inline bool CBasePlayer::IsFiringWeapon( void ) const
 	return m_weaponFiredTimer.HasStarted() && m_weaponFiredTimer.IsLessThen( 1.0f );
 }
 
-
+#ifdef HL2SB
+extern CBaseEntity *FindPlayerStart(const char *pszClassName);
+#endif
 
 //-----------------------------------------------------------------------------
 // Converts an entity to a player

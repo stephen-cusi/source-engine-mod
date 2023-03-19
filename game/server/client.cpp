@@ -1100,9 +1100,11 @@ void EnableNoClip( CBasePlayer *pPlayer )
 	pPlayer->AddEFlags( EFL_NOCLIP_ACTIVE );
 }
 
+ConVar sv_allow_noclip("sv_allow_noclip", "1");
+
 void CC_Player_NoClip( void )
 {
-	if ( !sv_cheats->GetBool() )
+	if ( !sv_allow_noclip.GetBool() )
 		return;
 
 	CBasePlayer *pPlayer = ToBasePlayer( UTIL_GetCommandClient() ); 
@@ -1154,7 +1156,7 @@ void CC_Player_NoClip( void )
 	}
 }
 
-static ConCommand noclip("noclip", CC_Player_NoClip, "Toggle. Player becomes non-solid and flies.", FCVAR_CHEAT);
+static ConCommand noclip("noclip", CC_Player_NoClip, "Toggle. Player becomes non-solid and flies.");
 
 
 //------------------------------------------------------------------------------

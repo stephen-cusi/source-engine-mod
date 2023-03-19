@@ -166,7 +166,7 @@ extern vgui::IInputInternal *g_InputInternal;
 #ifdef LUA_SDK
 #include "luamanager.h"
 #include "luacachefile.h"
-//#include "mountaddons.h"
+#include "mountaddons.h"
 #endif
 
 #ifdef PORTAL
@@ -956,6 +956,9 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 	InitFbx();
 #endif
 
+#ifdef LUA_SDK
+	MountAddons();
+#endif
 	// it's ok if this is NULL. That just means the sourcevr.dll wasn't found
 	g_pSourceVR = (ISourceVirtualReality *)appSystemFactory(SOURCE_VIRTUAL_REALITY_INTERFACE_VERSION, NULL);
 
@@ -969,6 +972,7 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 	{
 		return false;
 	}
+
 
 	if ( CommandLine()->FindParm( "-textmode" ) )
 		g_bTextMode = true;

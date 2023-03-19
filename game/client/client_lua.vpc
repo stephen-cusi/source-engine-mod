@@ -56,6 +56,7 @@ $Project "Client (HL2SB)"
 		$File "$SRCDIR/game/shared/lua/lipredictionsystem.cpp"
 		$File "$SRCDIR/game/shared/lua/lin_buttons.cpp"
 		$File "$SRCDIR/game/shared/lua/weapon_hl2mpbase_scriptedweapon.cpp"
+		$File "$SRCDIR/game/shared/lua/mountaddons.cpp"
 		
 		$File "$SRCDIR/public/zip_utils.cpp"
 		$File "$SRCDIR/public/XUnzip.cpp"
@@ -102,5 +103,10 @@ $Project "Client (HL2SB)"
 		$File "menu/sm_menu.cpp"
 		$File "menu/toolgun_menu.cpp"
 		$File "menu/vgui_imagebutton.cpp"
+	}
+
+	$Folder "Gunmod"
+	{
+		$File "gunmod/c_grenade_stickybomb.cpp"
 	}
 }

@@ -30,6 +30,7 @@
 
 #include "tier0/memdbgon.h"
 
+#ifndef CLIENT_DLL
 ConVar toolmode("toolmode", "0");
 ConVar red("red", "0");
 ConVar green("green", "0");
@@ -38,6 +39,7 @@ ConVar duration("duration", "0");
 ConVar exp_magnitude("exp_magnitude", "0");
 ConVar exp_radius("exp_radius", "0");
 ConVar tool_create("tool_create", "");
+#endif
 
 #define BEAM_SPRITE "sprites/bluelaser1.vmt"
 
@@ -183,14 +185,10 @@ void CWeaponToolGun::PrimaryAttack()
 	{
 		case 0:
 			{
-				CBaseEntity *pEntity = gEntList.FindEntityByClassname( pEntity, "grenade_stickybomb" );
+//				CBaseEntity *pEntity = gEntList.FindEntityByClassname( pEntity, "grenade_stickybomb" );
 				if (tr.m_pEnt->IsNPC() || tr.m_pEnt->VPhysicsGetObject() )
 				{
 					UTIL_Remove( tr.m_pEnt );
-				}
-				else if( pEntity )
-				{
-					UTIL_Remove( pEntity );
 				}
 			}
 			break; 

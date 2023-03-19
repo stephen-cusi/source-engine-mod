@@ -7,6 +7,7 @@
 #include "cbase.h"
 #include "weapon_hl2mpbasehlmpcombatweapon.h"
 #include "hl2mp_player.h"
+#include "player.h"
 #include "globalstate.h"
 #include "game.h"
 #include "gamerules.h"
@@ -48,6 +49,14 @@ LINK_ENTITY_TO_CLASS( player, CHL2MP_Player );
 LINK_ENTITY_TO_CLASS( info_player_combine, CPointEntity );
 LINK_ENTITY_TO_CLASS( info_player_rebel, CPointEntity );
 
+// Andrew; we may end up using other game content - these allow us to use other
+// maps besides deathmatch ones.
+#ifdef HL2SB
+LINK_ENTITY_TO_CLASS( info_player_counterterrorist, CPointEntity );
+LINK_ENTITY_TO_CLASS( info_player_terrorist, CPointEntity );
+LINK_ENTITY_TO_CLASS( info_player_allies, CPointEntity );
+LINK_ENTITY_TO_CLASS( info_player_axis, CPointEntity );
+#endif
 IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 	SendPropAngle( SENDINFO_VECTORELEM(m_angEyeAngles, 0), 11, SPROP_CHANGES_OFTEN ),
 	SendPropAngle( SENDINFO_VECTORELEM(m_angEyeAngles, 1), 11, SPROP_CHANGES_OFTEN ),
@@ -68,64 +77,34 @@ END_DATADESC()
 
 const char *g_ppszRandomCitizenModels[] = 
 {
-	"models/humans/group03/male_01.mdl",
-	"models/humans/group03/male_02.mdl",
-	"models/humans/group03/female_01.mdl",
-	"models/humans/group03/male_03.mdl",
-	"models/humans/group03/female_02.mdl",
-	"models/humans/group03/male_04.mdl",
-	"models/humans/group03/female_03.mdl",
-	"models/humans/group03/male_05.mdl",
-	"models/humans/group03/female_04.mdl",
-	"models/humans/group03/male_06.mdl",
-	"models/humans/group03/female_06.mdl",
-	"models/humans/group03/male_07.mdl",
-	"models/humans/group03/female_07.mdl",
-	"models/humans/group03/male_08.mdl",
-	"models/humans/group03/male_09.mdl",
-	"models/player/alyx.mdl",
-	"models/player/barney.mdl",
-	"models/player/breen.mdl",
-	"models/player/swat.mdl",
-	"models/romsn/gordon_player.mdl",
-	"models/combine_soldier.mdl",
-	"models/combine_soldier_prisonguard.mdl",
-	"models/combine_super_soldier.mdl",
-	"models/police.mdl",
+	"models/player/humans/group03/male_01.mdl",
+	"models/player/humans/group03/male_02.mdl",
+	"models/player/humans/group03/female_01.mdl",
+	"models/player/humans/group03/male_03.mdl",
+	"models/player/humans/group03/female_02.mdl",
+	"models/player/humans/group03/male_04.mdl",
+	"models/player/humans/group03/female_03.mdl",
+	"models/player/humans/group03/male_05.mdl",
+	"models/player/humans/group03/female_04.mdl",
+	"models/player/humans/group03/male_06.mdl",
+	"models/player/humans/group03/female_06.mdl",
+	"models/player/humans/group03/male_07.mdl",
+	"models/player/humans/group03/female_07.mdl",
+	"models/player/humans/group03/male_08.mdl",
+	"models/player/humans/group03/male_09.mdl",
 };
 
 const char *g_ppszRandomCombineModels[] =
 {
-	"models/humans/group03/male_01.mdl",
-	"models/humans/group03/male_02.mdl",
-	"models/humans/group03/female_01.mdl",
-	"models/humans/group03/male_03.mdl",
-	"models/humans/group03/female_02.mdl",
-	"models/humans/group03/male_04.mdl",
-	"models/humans/group03/female_03.mdl",
-	"models/humans/group03/male_05.mdl",
-	"models/humans/group03/female_04.mdl",
-	"models/humans/group03/male_06.mdl",
-	"models/humans/group03/female_06.mdl",
-	"models/humans/group03/male_07.mdl",
-	"models/humans/group03/female_07.mdl",
-	"models/humans/group03/male_08.mdl",
-	"models/humans/group03/male_09.mdl",
-	"models/player/alyx.mdl",
-	"models/player/barney.mdl",
-	"models/player/breen.mdl",
-	"models/player/swat.mdl",
-	"models/romsn/gordon_player.mdl",
-	"models/combine_soldier.mdl",
-	"models/combine_soldier_prisonguard.mdl",
-	"models/combine_super_soldier.mdl",
-	"models/police.mdl",
+	"models/player/combine_soldier.mdl",
+	"models/player/combine_soldier_prisonguard.mdl",
+	"models/player/combine_super_soldier.mdl",
+	"models/player/police.mdl",
 };
 
-
 #define MAX_COMBINE_MODELS 4
-#define MODEL_CHANGE_INTERVAL 5.0f
-#define TEAM_CHANGE_INTERVAL 5.0f
+#define MODEL_CHANGE_INTERVAL 0.1f
+#define TEAM_CHANGE_INTERVAL 0.1f
 
 #define HL2MPPLAYER_PHYSDAMAGE_SCALE 4.0f
 
@@ -200,13 +179,12 @@ void CHL2MP_Player::GiveAllItems( void )
 	CBasePlayer::GiveAmmo( 255,	"AR2" );
 	CBasePlayer::GiveAmmo( 5,	"AR2AltFire" );
 	CBasePlayer::GiveAmmo( 255,	"SMG1");
-	CBasePlayer::GiveAmmo( 1,	"smg1_grenade");
+	CBasePlayer::GiveAmmo( 5,	"smg1_grenade");
 	CBasePlayer::GiveAmmo( 255,	"Buckshot");
 	CBasePlayer::GiveAmmo( 32,	"357" );
 	CBasePlayer::GiveAmmo( 3,	"rpg_round");
-	CBasePlayer::GiveAmmo( 1,	"grenade" );
-	CBasePlayer::GiveAmmo( 2,	"slam" );
-
+	CBasePlayer::GiveAmmo( 5,	"grenade" );
+	CBasePlayer::GiveAmmo( 5,	"slam" );
 	GiveNamedItem( "weapon_crowbar" );
 	GiveNamedItem( "weapon_stunstick" );
 	GiveNamedItem( "weapon_pistol" );
@@ -225,39 +203,7 @@ void CHL2MP_Player::GiveAllItems( void )
 
 void CHL2MP_Player::GiveDefaultItems( void )
 {
-#if defined ( LUA_SDK )
-	BEGIN_LUA_CALL_HOOK( "GiveAllItems" );
-		lua_pushhl2mpplayer( L, this );
-	END_LUA_CALL_HOOK( 1, 0 );
-#else
-	EquipSuit();
-
-	CBasePlayer::GiveAmmo( 255,	"Pistol");
-	CBasePlayer::GiveAmmo( 45,	"SMG1");
-	CBasePlayer::GiveAmmo( 1,	"grenade" );
-	CBasePlayer::GiveAmmo( 6,	"Buckshot");
-	CBasePlayer::GiveAmmo( 6,	"357" );
-
-	GiveNamedItem( "weapon_stunstick" );
-	GiveNamedItem( "weapon_crowbar" );
-	GiveNamedItem( "weapon_pistol" );
-	GiveNamedItem( "weapon_smg1" );
-	GiveNamedItem( "weapon_frag" );
-	GiveNamedItem( "weapon_physcannon" );
-
-	const char *szDefaultWeaponName = engine->GetClientConVarValue( engine->IndexOfEdict( edict() ), "cl_defaultweapon" );
-
-	CBaseCombatWeapon *pDefaultWeapon = Weapon_OwnsThisType( szDefaultWeaponName );
-
-	if ( pDefaultWeapon )
-	{
-		Weapon_Switch( pDefaultWeapon );
-	}
-	else
-	{
-		Weapon_Switch( Weapon_OwnsThisType( "weapon_physcannon" ) );
-	}
-#endif
+	GiveAllItems();
 }
 
 void CHL2MP_Player::PickDefaultSpawnTeam( void )
@@ -274,8 +220,7 @@ void CHL2MP_Player::PickDefaultSpawnTeam( void )
 				if ( ValidatePlayerModel( szModelName ) == false )
 				{
 					char szReturnString[512];
-
-					Q_snprintf( szReturnString, sizeof (szReturnString ), "cl_playermodel models/combine_soldier.mdl\n" );
+					Q_snprintf( szReturnString, sizeof (szReturnString ), "cl_playermodel models/player/combine_soldier.mdl\n" );
 					engine->ClientCommand ( edict(), szReturnString );
 				}
 
@@ -372,6 +317,26 @@ void CHL2MP_Player::PickupObject( CBaseEntity *pObject, bool bLimitMassAndSize )
 
 	RETURN_LUA_NONE();
 #endif
+
+#ifdef HL2SB
+	// can't pick up what you're standing on
+	if ( GetGroundEntity() == pObject )
+		return;
+	
+	if ( bLimitMassAndSize == true )
+	{
+		if ( CBasePlayer::CanPickupObject( pObject, 35, 128 ) == false )
+			 return;
+	}
+
+	// Can't be picked up if NPCs are on me
+	if ( pObject->HasNPCsOnIt() )
+		return;
+
+	PlayerPickupObject( this, pObject );
+#else
+	
+#endif
 }
 
 bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )
@@ -409,7 +374,7 @@ void CHL2MP_Player::SetPlayerTeamModel( void )
 
 	if ( modelIndex == -1 || ValidatePlayerModel( szModelName ) == false )
 	{
-		szModelName = "models/Combine_Soldier.mdl";
+		szModelName = "models/player/combine_soldier.mdl";
 		m_iModelType = TEAM_COMBINE;
 
 		char szReturnString[512];
@@ -420,7 +385,7 @@ void CHL2MP_Player::SetPlayerTeamModel( void )
 
 	if ( GetTeamNumber() == TEAM_COMBINE )
 	{
-		if ( Q_stristr( szModelName, "models/human") )
+		if ( Q_stristr( szModelName, "models/player/human") )
 		{
 			int nHeads = ARRAYSIZE( g_ppszRandomCombineModels );
 		
@@ -432,7 +397,7 @@ void CHL2MP_Player::SetPlayerTeamModel( void )
 	}
 	else if ( GetTeamNumber() == TEAM_REBELS )
 	{
-		if ( !Q_stristr( szModelName, "models/human") )
+		if ( !Q_stristr( szModelName, "models/player/human") )
 		{
 			int nHeads = ARRAYSIZE( g_ppszRandomCitizenModels );
 
@@ -456,13 +421,33 @@ void CHL2MP_Player::SetPlayerModel( void )
 
 	szModelName = engine->GetClientConVarValue( engine->IndexOfEdict( edict() ), "cl_playermodel" );
 
+#ifdef HL2SB
+	//Andrew; Map our requested player model to the new model/player path.
+	char file[_MAX_PATH];
+	Q_strncpy( file, szModelName, sizeof(file) );
+	if ( Q_strnicmp( file, "models/player/", 14 ) )
+	{
+		char *substring = strstr( file, "models/" );
+		if ( substring )
+		{
+			// replace with new directory
+			const char *dirname = substring + strlen("models/");
+			*substring = 0;
+			char destpath[_MAX_PATH];
+			// player
+			Q_snprintf( destpath, sizeof(destpath), "models/player/%s", dirname);
+			szModelName = destpath;
+		}
+	}
+#endif
+
 	if ( ValidatePlayerModel( szModelName ) == false )
 	{
 		char szReturnString[512];
 
 		if ( ValidatePlayerModel( pszCurrentModelName ) == false )
 		{
-			pszCurrentModelName = "models/Combine_Soldier.mdl";
+			pszCurrentModelName = "models/player/combine_soldier.mdl";
 		}
 
 		Q_snprintf( szReturnString, sizeof (szReturnString ), "cl_playermodel %s\n", pszCurrentModelName );
@@ -495,8 +480,7 @@ void CHL2MP_Player::SetPlayerModel( void )
 		{
 			szModelName = g_ppszRandomCitizenModels[0];
 		}
-
-		if ( Q_stristr( szModelName, "models/human") )
+		if ( Q_stristr( szModelName, "models/player/human") )
 		{
 			m_iModelType = TEAM_REBELS;
 		}
@@ -510,7 +494,7 @@ void CHL2MP_Player::SetPlayerModel( void )
 
 	if ( modelIndex == -1 )
 	{
-		szModelName = "models/Combine_Soldier.mdl";
+		szModelName = "models/player/combine_soldier.mdl";
 		m_iModelType = TEAM_COMBINE;
 
 		char szReturnString[512];
@@ -527,7 +511,7 @@ void CHL2MP_Player::SetPlayerModel( void )
 
 void CHL2MP_Player::SetupPlayerSoundsByModel( const char *pModelName )
 {
-	if ( Q_stristr( pModelName, "models/human") )
+	if ( Q_stristr( pModelName, "models/player/human") )
 	{
 		m_iPlayerSoundType = (int)PLAYER_SOUNDS_CITIZEN;
 	}
@@ -572,6 +556,8 @@ bool CHL2MP_Player::Weapon_Switch( CBaseCombatWeapon *pWeapon, int viewmodelinde
 
 void CHL2MP_Player::PreThink( void )
 {
+#ifdef HL2SB
+	//Andrew; See http://forums.steampowered.com/forums/showthread.php?t=1372727
 	QAngle vOldAngles = GetLocalAngles();
 	QAngle vTempAngles = GetLocalAngles();
 
@@ -583,13 +569,15 @@ void CHL2MP_Player::PreThink( void )
 	}
 
 	SetLocalAngles( vTempAngles );
-
+#endif
 	BaseClass::PreThink();
 	State_PreThink();
 
 	//Reset bullet force accumulator, only lasts one frame
 	m_vecTotalBulletForce = vec3_origin;
+#ifdef HL2SB
 	SetLocalAngles( vOldAngles );
+#endif
 }
 
 void CHL2MP_Player::PostThink( void )
@@ -1067,7 +1055,7 @@ void CHL2MP_Player::CheatImpulseCommands( int iImpulse )
 	END_LUA_CALL_HOOK( 2, 1 );
 
 	RETURN_LUA_NONE();
-#endif	
+#endif
 	switch ( iImpulse )
 	{
 		case 101:
@@ -1338,8 +1326,7 @@ void CHL2MP_Player::DeathSound( const CTakeDamageInfo &info )
 	END_LUA_CALL_HOOK( 2, 1 );
 
 	RETURN_LUA_NONE();
-#endif	
-
+#endif
 	if ( m_hRagdoll && m_hRagdoll->GetBaseAnimating()->IsDissolving() )
 		 return;
 
@@ -1399,10 +1386,86 @@ CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )
 
 		if ( gEntList.FindEntityByClassname( NULL, pSpawnpointName ) == NULL )
 		{
+			// Andrew; this could be neater, or the entire function could be
+			// rewritten to pool together our various point classes and select
+			// one randomly. For now, we'll prefer spawnpoints by appid if we
+			// can't find anything from deathmatch.
+#ifdef HL2SB
+			if ( GetTeamNumber() == TEAM_COMBINE )
+			{
+				pSpawnpointName = "info_player_terrorist";
+				pLastSpawnPoint = g_pLastCombineSpawn;
+			}
+			else if ( GetTeamNumber() == TEAM_REBELS )
+			{
+				pSpawnpointName = "info_player_counterterrorist";
+				pLastSpawnPoint = g_pLastRebelSpawn;
+			}
+
+			// try once more for dod
+			if ( gEntList.FindEntityByClassname( NULL, pSpawnpointName ) == NULL )
+			{
+				if ( GetTeamNumber() == TEAM_COMBINE )
+				{
+					pSpawnpointName = "info_player_axis";
+					pLastSpawnPoint = g_pLastCombineSpawn;
+				}
+				else if ( GetTeamNumber() == TEAM_REBELS )
+				{
+					pSpawnpointName = "info_player_allies";
+					pLastSpawnPoint = g_pLastRebelSpawn;
+				}
+
+				// three strikes, you're out!
+				if ( gEntList.FindEntityByClassname( NULL, pSpawnpointName ) == NULL )
+				{
+					pSpawnpointName = "info_player_deathmatch";
+					pLastSpawnPoint = g_pLastSpawn;
+				}
+			}
+#else
 			pSpawnpointName = "info_player_deathmatch";
 			pLastSpawnPoint = g_pLastSpawn;
+#endif
 		}
 	}
+#ifdef HL2SB
+	else
+	{
+		if ( random->RandomInt(0,1) )
+		{
+			pSpawnpointName = "info_player_terrorist";
+			pLastSpawnPoint = g_pLastCombineSpawn;
+		}
+		else
+		{
+			pSpawnpointName = "info_player_counterterrorist";
+			pLastSpawnPoint = g_pLastRebelSpawn;
+		}
+
+		// try once more for dod
+		if ( gEntList.FindEntityByClassname( NULL, pSpawnpointName ) == NULL )
+		{
+			if ( random->RandomInt(0,1) )
+			{
+				pSpawnpointName = "info_player_axis";
+				pLastSpawnPoint = g_pLastCombineSpawn;
+			}
+			else
+			{
+				pSpawnpointName = "info_player_allies";
+				pLastSpawnPoint = g_pLastRebelSpawn;
+			}
+
+			// three strikes, you're out!
+			if ( gEntList.FindEntityByClassname( NULL, pSpawnpointName ) == NULL )
+			{
+				pSpawnpointName = "info_player_deathmatch";
+				pLastSpawnPoint = g_pLastSpawn;
+			}
+		}
+	}
+#endif
 
 	pSpot = pLastSpawnPoint;
 	// Randomize the start spot
@@ -1447,6 +1510,22 @@ CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )
 		goto ReturnSpot;
 	}
 
+#ifdef HL2SB
+	// If startspot is set, (re)spawn there.
+	if ( !gpGlobals->startspot || !strlen(STRING(gpGlobals->startspot)))
+	{
+		pSpot = FindPlayerStart( "info_player_start" );
+		if ( pSpot )
+			goto ReturnSpot;
+	}
+	else
+	{
+		pSpot = gEntList.FindEntityByName( NULL, gpGlobals->startspot );
+		if ( pSpot )
+			goto ReturnSpot;
+	}
+
+#else
 	if ( !pSpot  )
 	{
 		pSpot = gEntList.FindEntityByClassname( pSpot, "info_player_start" );
@@ -1454,6 +1533,7 @@ CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )
 		if ( pSpot )
 			goto ReturnSpot;
 	}
+#endif
 
 ReturnSpot:
 

@@ -119,7 +119,7 @@ extern ConVar tf_mm_servermode;
 #ifdef LUA_SDK
 #include "luamanager.h"
 #include "luacachefile.h"
-//#include "mountaddons.h"
+#include "mountaddons.h"
 #endif
 
 #ifdef CSTRIKE_DLL // BOTPORT: TODO: move these ifdefs out
@@ -639,6 +639,9 @@ bool CServerGameDLL::DLLInit( CreateInterfaceFn appSystemFactory,
 #endif
 	}
 
+#ifdef LUA_SDK
+	MountAddons();
+#endif
 	// Yes, both the client and game .dlls will try to Connect, the soundemittersystem.dll will handle this gracefully
 	if ( !soundemitterbase->Connect( appSystemFactory ) )
 		return false;
