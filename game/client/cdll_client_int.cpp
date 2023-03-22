@@ -487,6 +487,24 @@ public:
 	virtual void GetPlayerTextColor(int entindex, int color[3])
 	{
 		color[0] = color[1] = color[2] = 128;
+
+#if defined ( LUA_SDK )
+		BEGIN_LUA_CALL_HOOK( "GetPlayerTextColor" );
+			lua_pushinteger( L, entindex );
+			lua_pushinteger( L, color[0] );
+			lua_pushinteger( L, color[1] );
+			lua_pushinteger( L, color[2] );
+		END_LUA_CALL_HOOK( 4, 3 );
+
+		if ( lua_isnumber( L, -3 ) )
+			color[2] = (int)lua_tointeger( L, -3 );
+		if ( lua_isnumber( L, -2 ) )
+			color[1] = (int)lua_tointeger( L, -2 );
+		if ( lua_isnumber( L, -1 ) )
+			color[0] = (int)lua_tointeger( L, -1 );
+
+		lua_pop( L, 3 );
+#endif
 	}
 
 	virtual void UpdateCursorState()
@@ -495,6 +513,13 @@ public:
 
 	virtual bool			CanShowSpeakerLabels()
 	{
+#if defined ( LUA_SDK )
+		BEGIN_LUA_CALL_HOOK( "CanShowSpeakerLabels" );
+		END_LUA_CALL_HOOK( 0, 1 );
+
+		RETURN_LUA_BOOLEAN();
+#endif
+
 		return true;
 	}
 };

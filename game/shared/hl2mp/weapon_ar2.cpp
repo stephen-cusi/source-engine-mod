@@ -20,6 +20,14 @@
 #include "weapon_ar2.h"
 #include "effect_dispatch_data.h"
 
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+#include "npc_combine.h"
+#include "rumble_shared.h"
+#include "gamestats.h"
+#endif
+#endif
+
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -74,6 +82,10 @@ CWeaponAR2::CWeaponAR2( )
 
 	m_nShotsFired	= 0;
 	m_nVentPose		= -1;
+
+#ifdef HL2SB
+	m_bAltFiresUnderwater = false;
+#endif
 }
 
 void CWeaponAR2::Precache( void )
@@ -174,8 +186,19 @@ void CWeaponAR2::DelayedAttack( void )
 
 	// Register a muzzleflash for the AI
 	pOwner->DoMuzzleFlash();
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+	pOwner->SetMuzzleFlashTime( gpGlobals->curtime + 0.5 );
+#endif
+#endif
 	
 	WeaponSound( WPN_DOUBLE );
+
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+	pOwner->RumbleEffect(RUMBLE_SHOTGUN_DOUBLE, 0, RUMBLE_FLAG_RESTART );
+#endif
+#endif
 
 	// Fire the bullets
 	Vector vecSrc	 = pOwner->Weapon_ShootPosition( );
@@ -240,8 +263,24 @@ void CWeaponAR2::SecondaryAttack( void )
 	m_bShotDelayed = true;
 	m_flNextPrimaryAttack = m_flNextSecondaryAttack = m_flDelayedFire = gpGlobals->curtime + 0.5f;
 
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
+	if( pPlayer )
+	{
+		pPlayer->RumbleEffect(RUMBLE_AR2_ALT_FIRE, 0, RUMBLE_FLAG_RESTART );
+	}
+#endif
+#endif
+
 	SendWeaponAnim( ACT_VM_FIDGET );
 	WeaponSound( SPECIAL1 );
+
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+	gamestats->Event_WeaponFired( pPlayer, false, GetClassname() );
+#endif
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -276,6 +315,158 @@ bool CWeaponAR2::Reload( void )
 	return BaseClass::Reload();
 }
 
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// Purpose: 
+// Input  : *pOperator - 
+//-----------------------------------------------------------------------------
+void CWeaponAR2::FireNPCPrimaryAttack( CBaseCombatCharacter *pOperator, bool bUseWeaponAngles )
+{
+	Vector vecShootOrigin, vecShootDir;
+
+	CAI_BaseNPC *npc = pOperator->MyNPCPointer();
+	ASSERT( npc != NULL );
+
+	if ( bUseWeaponAngles )
+	{
+		QAngle	angShootDir;
+		GetAttachment( LookupAttachment( "muzzle" ), vecShootOrigin, angShootDir );
+		AngleVectors( angShootDir, &vecShootDir );
+	}
+	else 
+	{
+		vecShootOrigin = pOperator->Weapon_ShootPosition();
+		vecShootDir = npc->GetActualShootTrajectory( vecShootOrigin );
+	}
+
+	WeaponSoundRealtime( SINGLE_NPC );
+
+	CSoundEnt::InsertSound( SOUND_COMBAT|SOUND_CONTEXT_GUNFIRE, pOperator->GetAbsOrigin(), SOUNDENT_VOLUME_MACHINEGUN, 0.2, pOperator, SOUNDENT_CHANNEL_WEAPON, pOperator->GetEnemy() );
+
+	pOperator->FireBullets( 1, vecShootOrigin, vecShootDir, VECTOR_CONE_PRECALCULATED, MAX_TRACE_LENGTH, m_iPrimaryAmmoType, 2 );
+
+	// NOTENOTE: This is overriden on the client-side
+	// pOperator->DoMuzzleFlash();
+
+	m_iClip1 = m_iClip1 - 1;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+void CWeaponAR2::FireNPCSecondaryAttack( CBaseCombatCharacter *pOperator, bool bUseWeaponAngles )
+{
+	WeaponSound( WPN_DOUBLE );
+
+	if ( !GetOwner() )
+		return;
+		
+	CAI_BaseNPC *pNPC = GetOwner()->MyNPCPointer();
+	if ( !pNPC )
+		return;
+	
+	// Fire!
+	Vector vecSrc;
+	Vector vecAiming;
+
+	if ( bUseWeaponAngles )
+	{
+		QAngle	angShootDir;
+		GetAttachment( LookupAttachment( "muzzle" ), vecSrc, angShootDir );
+		AngleVectors( angShootDir, &vecAiming );
+	}
+	else 
+	{
+		vecSrc = pNPC->Weapon_ShootPosition( );
+		
+		Vector vecTarget;
+
+		CNPC_Combine *pSoldier = dynamic_cast<CNPC_Combine *>( pNPC );
+		if ( pSoldier )
+		{
+			// In the distant misty past, elite soldiers tried to use bank shots.
+			// Therefore, we must ask them specifically what direction they are shooting.
+			vecTarget = pSoldier->GetAltFireTarget();
+		}
+		else
+		{
+			// All other users of the AR2 alt-fire shoot directly at their enemy.
+			if ( !pNPC->GetEnemy() )
+				return;
+				
+			vecTarget = pNPC->GetEnemy()->BodyTarget( vecSrc );
+		}
+
+		vecAiming = vecTarget - vecSrc;
+		VectorNormalize( vecAiming );
+	}
+
+	Vector impactPoint = vecSrc + ( vecAiming * MAX_TRACE_LENGTH );
+
+	float flAmmoRatio = 1.0f;
+	float flDuration = RemapValClamped( flAmmoRatio, 0.0f, 1.0f, 0.5f, sk_weapon_ar2_alt_fire_duration.GetFloat() );
+	float flRadius = RemapValClamped( flAmmoRatio, 0.0f, 1.0f, 4.0f, sk_weapon_ar2_alt_fire_radius.GetFloat() );
+
+	// Fire the bullets
+	Vector vecVelocity = vecAiming * 1000.0f;
+
+	// Fire the combine ball
+	CreateCombineBall(	vecSrc, 
+		vecVelocity, 
+		flRadius, 
+		sk_weapon_ar2_alt_fire_mass.GetFloat(),
+		flDuration,
+		pNPC );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+void CWeaponAR2::Operator_ForceNPCFire( CBaseCombatCharacter *pOperator, bool bSecondary )
+{
+	if ( bSecondary )
+	{
+		FireNPCSecondaryAttack( pOperator, true );
+	}
+	else
+	{
+		// Ensure we have enough rounds in the clip
+		m_iClip1++;
+
+		FireNPCPrimaryAttack( pOperator, true );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+// Input  : *pEvent - 
+//			*pOperator - 
+//-----------------------------------------------------------------------------
+void CWeaponAR2::Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator )
+{
+	switch( pEvent->event )
+	{ 
+		case EVENT_WEAPON_AR2:
+			{
+				FireNPCPrimaryAttack( pOperator, false );
+			}
+			break;
+
+		case EVENT_WEAPON_AR2_ALTFIRE:
+			{
+				FireNPCSecondaryAttack( pOperator, false );
+			}
+			break;
+
+		default:
+			CBaseCombatWeapon::Operator_HandleAnimEvent( pEvent, pOperator );
+			break;
+	}
+}
+#endif
+#endif
+
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
@@ -291,7 +482,24 @@ void CWeaponAR2::AddViewKick( void )
 	if (!pPlayer)
 		return;
 
+#ifndef HL2SB
 	DoMachineGunKick( pPlayer, EASY_DAMPEN, MAX_VERTICAL_KICK, m_fFireDuration, SLIDE_LIMIT );
+#else
+	float flDuration = m_fFireDuration;
+
+#ifndef CLIENT_DLL
+	if( g_pGameRules->GetAutoAimMode() == AUTOAIM_ON_CONSOLE )
+	{
+		// On the 360 (or in any configuration using the 360 aiming scheme), don't let the
+		// AR2 progressive into the late, highly inaccurate stages of its kick. Just
+		// spoof the time to make it look (to the kicking code) like we haven't been
+		// firing for very long.
+		flDuration = min( flDuration, 0.75f );
+	}
+#endif
+
+	DoMachineGunKick( pPlayer, EASY_DAMPEN, MAX_VERTICAL_KICK, flDuration, SLIDE_LIMIT );
+#endif
 }
 
 //-----------------------------------------------------------------------------

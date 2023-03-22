@@ -54,6 +54,10 @@
 	#include "portal_shareddefs.h"
 #endif
 
+#ifdef HL2SB
+#include "hl2mp_gamerules.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -731,10 +735,7 @@ CBaseCombatCharacter::CBaseCombatCharacter( void )
 	}
 
 	// not standing on a nav area yet
-#ifdef MEXT_BOT
 	m_lastNavArea = NULL;
-#endif
-
 	m_registeredNavTeam = TEAM_INVALID;
 
 	for (int i = 0; i < MAX_WEAPONS; i++)
@@ -1534,7 +1535,11 @@ bool CBaseCombatCharacter::BecomeRagdoll( const CTakeDamageInfo &info, const Vec
 
 #ifdef HL2_EPISODIC
 	// Burning corpses are server-side in episodic, if we're in darkness mode
+#ifndef HL2SB
 	if ( IsOnFire() && HL2GameRules()->IsAlyxInDarknessMode() )
+#else
+	if ( IsOnFire() && HL2MPRules()->IsAlyxInDarknessMode() )
+#endif
 	{
 		CBaseEntity *pRagdoll = CreateServerRagdoll( this, m_nForceBone, newinfo, COLLISION_GROUP_DEBRIS );
 		FixupBurningServerRagdoll( pRagdoll );
@@ -1547,7 +1552,11 @@ bool CBaseCombatCharacter::BecomeRagdoll( const CTakeDamageInfo &info, const Vec
 
 	bool bMegaPhyscannonActive = false;
 #if !defined( HL2MP )
+#ifndef HL2SB
 	bMegaPhyscannonActive = HL2GameRules()->MegaPhyscannonActive();
+#else
+	bMegaPhyscannonActive = HL2MPRules()->MegaPhyscannonActive();
+#endif
 #endif // !HL2MP
 
 	// Mega physgun requires everything to be a server-side ragdoll
@@ -3106,7 +3115,11 @@ void CBaseCombatCharacter::VPhysicsShadowCollision( int index, gamevcollisioneve
 	float flOtherAttackerTime = 0.0f;
 
 #if defined( HL2_DLL ) && !defined( HL2MP )
+#ifndef HL2SB
 	if ( HL2GameRules()->MegaPhyscannonActive() == true )
+#else
+	if ( HL2MPRules()->MegaPhyscannonActive() == true )
+#endif
 	{
 		flOtherAttackerTime = 1.0f;
 	}
@@ -3277,7 +3290,11 @@ CBaseEntity *CBaseCombatCharacter::FindMissTarget( void )
 	CBaseEntity *pMissCandidates[ MAX_MISS_CANDIDATES ];
 	int numMissCandidates = 0;
 
+#ifdef HL2SB
+	CBasePlayer *pPlayer = UTIL_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = UTIL_GetLocalPlayer();
+#endif
 	CBaseEntity *pEnts[256];
 	Vector		radius( 100, 100, 100);
 	Vector		vecSource = GetAbsOrigin();
@@ -3484,20 +3501,17 @@ void CBaseCombatCharacter::UpdateLastKnownArea( void )
 //-----------------------------------------------------------------------------
 bool CBaseCombatCharacter::IsAreaTraversable( const CNavArea *area ) const
 {
-#ifdef NEXT_BOT
 	return area ? !area->IsBlocked( GetTeamNumber() ) : false;
-#endif
-	return false;
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: Leaving the nav mesh
 //-----------------------------------------------------------------------------
 void CBaseCombatCharacter::ClearLastKnownArea( void )
 {
-#ifdef NEXT_BOT
 	OnNavAreaChanged( NULL, m_lastNavArea );
-
+	
 	if ( m_lastNavArea )
 	{
 		m_lastNavArea->DecrementPlayerCount( m_registeredNavTeam, entindex() );
@@ -3505,21 +3519,20 @@ void CBaseCombatCharacter::ClearLastKnownArea( void )
 		m_lastNavArea = NULL;
 		m_registeredNavTeam = TEAM_INVALID;
 	}
-#endif
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: Handling editor removing the area we're standing upon
 //-----------------------------------------------------------------------------
 void CBaseCombatCharacter::OnNavAreaRemoved( CNavArea *removedArea )
 {
-#ifdef NEXT_BOT
 	if ( m_lastNavArea == removedArea )
 	{
 		ClearLastKnownArea();
 	}
-#endif
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: Changing team, maintain associated data

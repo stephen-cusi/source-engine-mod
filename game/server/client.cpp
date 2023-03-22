@@ -997,7 +997,9 @@ void CC_Player_PhysSwap( void )
 
 			if ( !Q_stricmp( strWeaponName, "weapon_physcannon" ) )
 			{
+#ifndef HL2SB
 				PhysCannonForceDrop( pWeapon, NULL );
+#endif
 				pPlayer->SelectLastItem();
 			}
 			else

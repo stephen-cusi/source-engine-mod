@@ -97,6 +97,7 @@
 #include "steamworks_gamestats.h"
 #include "tf/tf_gc_server.h"
 #include "tf_gamerules.h"
+#include "tf_lobby.h"
 #include "player_vs_environment/tf_population_manager.h"
 #include "workshop/maps_workshop.h"
 
@@ -1386,7 +1387,11 @@ void CServerGameDLL::Think( bool finalTick )
 	if ( m_fAutoSaveDangerousTime != 0.0f && m_fAutoSaveDangerousTime < gpGlobals->curtime )
 	{
 		// The safety timer for a dangerous auto save has expired
+#ifdef HL2SB
+		CBasePlayer *pPlayer = UTIL_GetLocalPlayer();
+#else
 		CBasePlayer *pPlayer = UTIL_PlayerByIndex( 1 );
+#endif
 
 		if ( pPlayer && ( pPlayer->GetDeathTime() == 0.0f || pPlayer->GetDeathTime() > gpGlobals->curtime )
 			&& !pPlayer->IsSinglePlayerGameEnding()
@@ -1419,6 +1424,7 @@ void CServerGameDLL::LevelShutdown( void )
 		END_LUA_CALL_HOOK( 0, 0 );
 	}
 #endif
+
 #ifndef NO_STEAM
 	IGameSystem::LevelShutdownPreClearSteamAPIContextAllSystems();
 
@@ -1883,7 +1889,6 @@ void CServerGameDLL::PreSaveGameLoaded( char const *pSaveName, bool bInGame )
 //-----------------------------------------------------------------------------
 bool CServerGameDLL::ShouldHideServer( void )
 {
-
 #if defined ( LUA_SDK )
 	if ( g_bLuaInitialized )
 	{
@@ -1892,7 +1897,7 @@ bool CServerGameDLL::ShouldHideServer( void )
 
 		RETURN_LUA_BOOLEAN();
 	}
-#endif	
+#endif
 
 	if ( g_pcv_commentary && g_pcv_commentary->GetBool() )
 		return true;
@@ -1975,19 +1980,18 @@ const char *CServerGameDLL::GetServerBrowserGameData()
 #ifdef TF_DLL
 	sResult.Format( "tf_mm_trusted:%d,tf_mm_servermode:%d", tf_mm_trusted.GetInt(), tf_mm_servermode.GetInt() );
 
-	CMatchInfo *pMatch = GTFGCClientSystem()->GetMatch();
-	if ( !pMatch )
+	CTFLobby *pLobby = GTFGCClientSystem()->GetLobby();
+	if ( pLobby == NULL )
 	{
 		sResult.Append( ",lobby:0" );
 	}
 	else
 	{
-		sResult.Append( CFmtStr( ",lobby:%016llx", pMatch->m_nLobbyID ) );
+		sResult.Append( CFmtStr( ",lobby:%016llx", pLobby->GetGroupID() ) );
 	}
 	if ( TFGameRules() && TFGameRules()->IsMannVsMachineMode() )
 	{
-		bool bMannup = pMatch && pMatch->m_eMatchGroup == k_nMatchGroup_MvM_MannUp;
-		sResult.Append( CFmtStr( ",mannup:%d", (int)bMannup ) );
+		sResult.Append( CFmtStr( ",mannup:%d", ( pLobby && pLobby->GetPlayingForBraggingRights() ) ? 1 : 0  ) );
 	}
 #endif
 
@@ -2759,8 +2763,16 @@ void CServerGameClients::ClientActive( edict_t *pEdict, bool bLoadGame )
 
 	// Tell the sound controller to check looping sounds
 	CBasePlayer *pPlayer = ( CBasePlayer * )CBaseEntity::Instance( pEdict );
-	CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
-	SceneManager_ClientActive( pPlayer );
+	#ifdef HL2SB
+		if( pPlayer )
+		{
+			CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
+			SceneManager_ClientActive( pPlayer );
+		}
+	#else
+		CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
+		SceneManager_ClientActive( pPlayer );
+	#endif
 
 	#if defined( TF_DLL )
 		Assert( pPlayer );

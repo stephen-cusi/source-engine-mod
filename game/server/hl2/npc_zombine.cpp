@@ -27,7 +27,11 @@
 #include "props.h"
 #include "physics_npc_solver.h"
 #include "hl2_player.h"
+#ifndef HL2SB
 #include "hl2_gamerules.h"
+#else
+#include "hl2mp_gamerules.h"
+#endif
 
 #include "basecombatweapon.h"
 #include "basegrenade_shared.h"
@@ -411,7 +415,11 @@ void CNPC_Zombine::GatherGrenadeConditions( void )
 	if ( m_ActBusyBehavior.IsActive() )
 		return;
 
+#ifdef HL2SB
+	CBasePlayer *pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = AI_GetSinglePlayer();
+#endif
 
 	if ( pPlayer && pPlayer->FVisible( this ) )
 	{
@@ -610,11 +618,19 @@ bool CNPC_Zombine::AllowedToSprint( void )
 
 	int iChance = SPRINT_CHANCE_VALUE;
 
+#ifdef HL2SB
+	CHL2MP_Player *pPlayer = dynamic_cast <CHL2MP_Player*> ( AI_GetNearestPlayer( GetAbsOrigin() ) );
+#else
 	CHL2_Player *pPlayer = dynamic_cast <CHL2_Player*> ( AI_GetSinglePlayer() );
+#endif
 
 	if ( pPlayer )
 	{
+#ifndef HL2SB
 		if ( HL2GameRules()->IsAlyxInDarknessMode() && pPlayer->FlashlightIsOn() == false )
+#else
+		if ( HL2MPRules()->IsAlyxInDarknessMode() && pPlayer->FlashlightIsOn() == false )
+#endif
 		{
 			iChance = SPRINT_CHANCE_VALUE_DARKNESS;
 		}

@@ -7,6 +7,11 @@
 #include "cbase.h"
 #include "npcevent.h"
 #include "in_buttons.h"
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+#include "soundent.h"
+#endif
+#endif
 
 #ifdef CLIENT_DLL
 	#include "c_hl2mp_player.h"
@@ -16,6 +21,12 @@
 
 #include "weapon_hl2mpbasehlmpcombatweapon.h"
 
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+#include "gamestats.h"
+#endif
+#endif
+
 #define	PISTOL_FASTEST_REFIRE_TIME		0.1f
 #define	PISTOL_FASTEST_DRY_REFIRE_TIME	0.2f
 
@@ -24,6 +35,9 @@
 
 #ifdef CLIENT_DLL
 #define CWeaponPistol C_WeaponPistol
+#endif
+#ifdef HL2SB
+ConVar	pistol_use_new_accuracy( "pistol_use_new_accuracy", "1", FCVAR_REPLICATED );
 #endif
 
 //-----------------------------------------------------------------------------
@@ -47,17 +61,35 @@ public:
 	void	PrimaryAttack( void );
 	void	AddViewKick( void );
 	void	DryFire( void );
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+	void	Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator );
+#endif
+#endif
 
 	void	UpdatePenaltyTime( void );
 
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+	int		CapabilitiesGet( void ) { return bits_CAP_WEAPON_RANGE_ATTACK1; }
+#endif
+#endif
 	Activity	GetPrimaryAttackActivity( void );
 
 	virtual bool Reload( void );
 
 	virtual const Vector& GetBulletSpread( void )
 	{		
+#ifdef HL2SB
+		// Handle NPCs first
+		static Vector npcCone = VECTOR_CONE_5DEGREES;
+		if ( GetOwner() && GetOwner()->IsNPC() )
+			return npcCone;
+#endif
+			
 		static Vector cone;
 
+#ifndef HL2SB
 		float ramp = RemapValClamped(	m_flAccuracyPenalty, 
 											0.0f, 
 											PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME, 
@@ -66,6 +98,24 @@ public:
 
 			// We lerp from very accurate to inaccurate over time
 		VectorLerp( VECTOR_CONE_1DEGREES, VECTOR_CONE_6DEGREES, ramp, cone );
+#else
+		if ( pistol_use_new_accuracy.GetBool() )
+		{
+			float ramp = RemapValClamped(	m_flAccuracyPenalty, 
+											0.0f, 
+											PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME, 
+											0.0f, 
+											1.0f ); 
+
+			// We lerp from very accurate to inaccurate over time
+			VectorLerp( VECTOR_CONE_1DEGREES, VECTOR_CONE_6DEGREES, ramp, cone );
+		}
+		else
+		{
+			// Old value
+			cone = VECTOR_CONE_4DEGREES;
+		}
+#endif
 
 		return cone;
 	}
@@ -169,6 +219,42 @@ void CWeaponPistol::Precache( void )
 	BaseClass::Precache();
 }
 
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// Purpose:
+// Input  :
+// Output :
+//-----------------------------------------------------------------------------
+void CWeaponPistol::Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator )
+{
+	switch( pEvent->event )
+	{
+		case EVENT_WEAPON_PISTOL_FIRE:
+		{
+			Vector vecShootOrigin, vecShootDir;
+			vecShootOrigin = pOperator->Weapon_ShootPosition();
+
+			CAI_BaseNPC *npc = pOperator->MyNPCPointer();
+			ASSERT( npc != NULL );
+
+			vecShootDir = npc->GetActualShootTrajectory( vecShootOrigin );
+
+			CSoundEnt::InsertSound( SOUND_COMBAT|SOUND_CONTEXT_GUNFIRE, pOperator->GetAbsOrigin(), SOUNDENT_VOLUME_PISTOL, 0.2, pOperator, SOUNDENT_CHANNEL_WEAPON, pOperator->GetEnemy() );
+
+			WeaponSound( SINGLE_NPC );
+			pOperator->FireBullets( 1, vecShootOrigin, vecShootDir, VECTOR_CONE_PRECALCULATED, MAX_TRACE_LENGTH, m_iPrimaryAmmoType, 2 );
+			pOperator->DoMuzzleFlash();
+			m_iClip1 = m_iClip1 - 1;
+		}
+		break;
+		default:
+			BaseClass::Operator_HandleAnimEvent( pEvent, pOperator );
+			break;
+	}
+}
+#endif
+#endif
 
 //-----------------------------------------------------------------------------
 // Purpose:
@@ -198,6 +284,11 @@ void CWeaponPistol::PrimaryAttack( void )
 
 	m_flLastAttackTime = gpGlobals->curtime;
 	m_flSoonestPrimaryAttack = gpGlobals->curtime + PISTOL_FASTEST_REFIRE_TIME;
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+	CSoundEnt::InsertSound( SOUND_COMBAT, GetAbsOrigin(), SOUNDENT_VOLUME_PISTOL, 0.2, GetOwner() );
+#endif
+#endif
 
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 
@@ -214,6 +305,12 @@ void CWeaponPistol::PrimaryAttack( void )
 
 	// Add an accuracy penalty which can move past our maximum penalty time if we're really spastic
 	m_flAccuracyPenalty += PISTOL_ACCURACY_SHOT_PENALTY_TIME;
+
+#ifdef HL2SB
+#ifndef CLIENT_DLL
+	gamestats->Event_WeaponFired( pOwner, true, GetClassname() );
+#endif
+#endif
 }
 
 //-----------------------------------------------------------------------------

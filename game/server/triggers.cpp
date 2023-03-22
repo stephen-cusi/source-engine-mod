@@ -1499,6 +1499,14 @@ void CChangeLevel::InputChangeLevel( inputdata_t &inputdata )
 		if ( pPlayer && ( !pPlayer->IsAlive() || pPlayer->GetBonusChallenge() > 0 ) )
 			return;
 	}
+#ifdef HL2SB
+	else
+	{
+		CBasePlayer *pPlayer = inputdata.pActivator->IsPlayer() ? (CBasePlayer *)inputdata.pActivator : NULL;
+		if ( pPlayer && ( !pPlayer->IsAlive() || pPlayer->GetBonusChallenge() > 0 ) )
+			return;
+	}
+#endif
 
 	ChangeLevelNow( inputdata.pActivator );
 }
@@ -1586,9 +1594,11 @@ void CChangeLevel::ChangeLevelNow( CBaseEntity *pActivator )
 
 	Assert(!FStrEq(m_szMapName, ""));
 
+// #ifndef HL2SB
 	// Don't work in deathmatch
 	if ( g_pGameRules->IsDeathmatch() )
 		return;
+// #endif
 
 	// Some people are firing these multiple times in a frame, disable
 	if ( m_bTouched )
@@ -1596,7 +1606,13 @@ void CChangeLevel::ChangeLevelNow( CBaseEntity *pActivator )
 
 	m_bTouched = true;
 
+#ifdef HL2SB
+	CBasePlayer *pPlayer = (pActivator && pActivator->IsPlayer()) ? ToBasePlayer( pActivator ) : UTIL_GetLocalPlayer();
+	if( !pPlayer )
+		return;
+#else
 	CBaseEntity *pPlayer = (pActivator && pActivator->IsPlayer()) ? pActivator : UTIL_GetLocalPlayer();
+#endif
 
 	int transitionState = InTransitionVolume(pPlayer, m_szLandmarkName);
 	if ( transitionState == TRANSITION_VOLUME_SCREENED_OUT )
@@ -2295,7 +2311,7 @@ void CTriggerPush::Touch( CBaseEntity *pOther )
 #endif
 
 			Vector vecPush = (m_flPushSpeed * vecAbsDir);
-			if ( pOther->GetFlags() & FL_BASEVELOCITY )
+			if ( ( pOther->GetFlags() & FL_BASEVELOCITY ) )
 			{
 				vecPush = vecPush + pOther->GetBaseVelocity();
 			}
@@ -2914,6 +2930,10 @@ void CTriggerCamera::Spawn( void )
 	SetRenderColorA( 0 );								// The engine won't draw this model if this is set to 0 and blending is on
 	m_nRenderMode = kRenderTransTexture;
 
+#ifdef HL2SB
+	m_nOldTakeDamage = -1;
+#endif
+
 	m_state = USE_OFF;
 	
 	m_initialSpeed = m_flSpeed;
@@ -2995,7 +3015,11 @@ void CTriggerCamera::Enable( void )
 
 	if ( !m_hPlayer || !m_hPlayer->IsPlayer() )
 	{
+#ifdef HL2SB
+		m_hPlayer = UTIL_GetNearestPlayer( GetAbsOrigin() );
+#else
 		m_hPlayer = UTIL_GetLocalPlayer();
+#endif
 	}
 
 	if ( !m_hPlayer )
@@ -3186,9 +3210,15 @@ void CTriggerCamera::Disable( void )
 		{
 			((CBasePlayer*)m_hPlayer.Get())->GetActiveWeapon()->RemoveEffects( EF_NODRAW );
 		}
-		//return the player to previous takedamage state
-		m_hPlayer->m_takedamage = m_nOldTakeDamage;
 	}
+
+	//return the player to previous takedamage state
+#ifndef HL2SB
+	m_hPlayer->m_takedamage = m_nOldTakeDamage;
+#else
+	if ( m_nOldTakeDamage != -1 )
+		m_hPlayer->m_takedamage = m_nOldTakeDamage;
+#endif
 
 	m_state = USE_OFF;
 	m_flReturnTime = gpGlobals->curtime;
