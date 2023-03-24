@@ -962,7 +962,7 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 #endif // USES_ECON_ITEMS
 
 #ifdef LUA_SDK
-	lcf_recursivedeletefile( LUA_PATH_CACHE );
+	//lcf_recursivedeletefile( LUA_PATH_CACHE );
 
 	// Add Lua environment
 	luasrc_init();
@@ -974,7 +974,7 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 
 	luasrc_LoadWeapons();
 	luasrc_LoadEntities();
-	// luasrc_LoadEffects();
+	//luasrc_LoadEffects();
 
 	//Andrew; loadup base gamemode.
 	luasrc_LoadGamemode( LUA_BASE_GAMEMODE );
@@ -985,7 +985,7 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	if ( gpGlobals->maxClients > 1 )
 	{
 		// load LCF into stringtable
-		lcf_preparecachefile();
+		//lcf_preparecachefile();
 	}
 #endif
 

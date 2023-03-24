@@ -25,7 +25,7 @@
 #include "explode.h"
 #include "entitylist.h"
 #include "player.h"
-#include "basegrenade_shared.h"2
+#include "basegrenade_shared.h"
 #endif
 
 #include "tier0/memdbgon.h"
@@ -185,7 +185,6 @@ void CWeaponToolGun::PrimaryAttack()
 	{
 		case 0:
 			{
-//				CBaseEntity *pEntity = gEntList.FindEntityByClassname( pEntity, "grenade_stickybomb" );
 				if (tr.m_pEnt->IsNPC() || tr.m_pEnt->VPhysicsGetObject() )
 				{
 					UTIL_Remove( tr.m_pEnt );
@@ -220,7 +219,7 @@ void CWeaponToolGun::PrimaryAttack()
 			break;
 		case 4:
 			{
-				//LaunchStickyBomb( pOwner, tr.endpos, tr.endpos );
+//				LaunchStickyBomb( pOwner, tr.endpos, tr.endpos );
 			}
 			break;
 		case 5:
@@ -273,7 +272,7 @@ void CWeaponToolGun::SecondaryAttack()
 		break;
 	case 4:
 		{
-			//CStickyBomb::DetonateByOperator( GetOwner() );
+//			CStickyBomb::DetonateByOperator( GetOwner() );
 		}
 	case 6:
 		{

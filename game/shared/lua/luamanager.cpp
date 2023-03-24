@@ -217,7 +217,8 @@ void luasrc_init (void) {
 
   luaL_openlibs(L);
   base_open(L);
-  lcf_open(L);
+//  not now
+//  lcf_open(L);
 
   // Andrew; Someone set us up the path for great justice
   luasrc_setmodulepaths(L);
@@ -246,7 +247,7 @@ void luasrc_shutdown (void) {
   ResetEntityFactoryDatabase();
   ResetWeaponFactoryDatabase();
 
-  lcf_close(L);
+//  lcf_close(L);
   lua_close(L);
 }
 

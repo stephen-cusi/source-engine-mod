@@ -1623,15 +1623,16 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 		return;
 	g_bLevelInitialized = true;
 
-#if defined ( LUA_SDK )
-	lcf_recursivedeletefile( LUA_PATH_CACHE );
+#if defined ( LUA_SDK )	
+//	Not now
+//	lcf_recursivedeletefile( LUA_PATH_CACHE );
 
 	// Add the Lua environment.
 	// Andrew; unarchive the Lua Cache File
-	if ( gpGlobals->maxClients > 1 )
-	{
-		luasrc_ExtractLcf();
-	}
+//	if ( gpGlobals->maxClients > 1 )
+//	{
+//		luasrc_ExtractLcf();
+//	}
 
 	luasrc_init();
 
@@ -1650,7 +1651,7 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 
 	luasrc_LoadWeapons();
 	luasrc_LoadEntities();
-	// luasrc_LoadEffects();
+	//luasrc_LoadEffects();
 
 	//Andrew; loadup base gamemode.
 	luasrc_LoadGamemode( LUA_BASE_GAMEMODE );
