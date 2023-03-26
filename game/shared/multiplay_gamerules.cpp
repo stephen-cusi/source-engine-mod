@@ -1151,7 +1151,6 @@ ConVarRef suitcharger( "sk_suitcharger" );
 
 	void StripChar(char *szBuffer, const char cWhiteSpace )
 	{
-
 		while ( char *pSpace = strchr( szBuffer, cWhiteSpace ) )
 		{
 			char *pNextChar = pSpace + sizeof(char);

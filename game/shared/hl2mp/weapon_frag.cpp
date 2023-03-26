@@ -59,8 +59,14 @@ public:
 
 	bool	Deploy( void );
 	bool	Holster( CBaseCombatWeapon *pSwitchingTo = NULL );
+
+#ifndef CLIENT_DLL
+	int		CapabilitiesGet(void) { return bits_CAP_WEAPON_RANGE_ATTACK1; }
+#endif
 	
 	bool	Reload( void );
+
+	bool	ShouldDisplayHUDHint() { return true; } 
 
 #ifndef CLIENT_DLL
 	void Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator );
@@ -90,15 +96,17 @@ private:
 
 #ifndef CLIENT_DLL
 
-acttable_t	CWeaponFrag::m_acttable[] = 
+acttable_t	CWeaponFrag::m_acttable[] =
 {
-	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_GRENADE,					false },
-	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_GRENADE,					false },
-	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_GRENADE,			false },
-	{ ACT_HL2MP_WALK_CROUCH,			ACT_HL2MP_WALK_CROUCH_GRENADE,			false },
-	{ ACT_HL2MP_GESTURE_RANGE_ATTACK,	ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE,	false },
-	{ ACT_HL2MP_GESTURE_RELOAD,			ACT_HL2MP_GESTURE_RELOAD_GRENADE,		false },
-	{ ACT_HL2MP_JUMP,					ACT_HL2MP_JUMP_GRENADE,					false },
+	{ ACT_RANGE_ATTACK1, ACT_RANGE_ATTACK_SLAM, true },
+
+	{ ACT_HL2MP_IDLE, ACT_HL2MP_IDLE_GRENADE, false },
+	{ ACT_HL2MP_RUN, ACT_HL2MP_RUN_GRENADE, false },
+	{ ACT_HL2MP_IDLE_CROUCH, ACT_HL2MP_IDLE_CROUCH_GRENADE, false },
+	{ ACT_HL2MP_WALK_CROUCH, ACT_HL2MP_WALK_CROUCH_GRENADE, false },
+	{ ACT_HL2MP_GESTURE_RANGE_ATTACK, ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE, false },
+	{ ACT_HL2MP_GESTURE_RELOAD, ACT_HL2MP_GESTURE_RELOAD_GRENADE, false },
+	{ ACT_HL2MP_JUMP, ACT_HL2MP_JUMP_GRENADE, false },
 };
 
 IMPLEMENT_ACTTABLE(CWeaponFrag);
@@ -199,6 +207,23 @@ void CWeaponFrag::Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatChar
 		m_flNextPrimaryAttack	= gpGlobals->curtime + RETHROW_DELAY;
 		m_flNextSecondaryAttack	= gpGlobals->curtime + RETHROW_DELAY;
 		m_flTimeWeaponIdle = FLT_MAX; //NOTE: This is set once the animation has finished up!
+
+		// Make a sound designed to scare snipers back into their holes!
+		CBaseCombatCharacter *pOwner = GetOwner();
+
+		if (pOwner)
+		{
+			Vector vecSrc = pOwner->Weapon_ShootPosition();
+			Vector	vecDir;
+
+			AngleVectors(pOwner->EyeAngles(), &vecDir);
+
+			trace_t tr;
+
+			UTIL_TraceLine(vecSrc, vecSrc + vecDir * 1024, MASK_SOLID_BRUSHONLY, pOwner, COLLISION_GROUP_NONE, &tr);
+
+			CSoundEnt::InsertSound(SOUND_DANGER_SNIPERONLY, tr.endpos, 384, 0.2, pOwner);
+		}
 	}
 }
 

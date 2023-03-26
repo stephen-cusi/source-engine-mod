@@ -97,7 +97,8 @@ $Project "Client (HL2SB)"
 
 	$Folder "SMenu"
 	{
-		$File "menu/sm_menu.cpp"
+		$File "menu/sm_menu_list.cpp"
+		$File "menu/sm_menu_legacy.cpp"
 		$File "menu/toolgun_menu.cpp"
 		$File "menu/vgui_imagebutton.cpp"
 	}

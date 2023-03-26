@@ -36,6 +36,7 @@
 #include "datacache/imdlcache.h"
 #include "util.h"
 #include "cdll_int.h"
+#include "stdio.h"
 
 #ifdef PORTAL
 #include "PortalSimulation.h"
@@ -111,8 +112,37 @@ void DumpEntityFactories_f()
 	}
 }
 
-static ConCommand dumpentityfactories( "dumpentityfactories", DumpEntityFactories_f, "Lists all entity factory names.", FCVAR_GAMEDLL );
+void DumpEntityToFile()
+{
+	FILE *fp;
+	fp = fopen("hl2sb/addons/menu/entitylist.txt", "w+");
+	
+	if ( !UTIL_IsCommandIssuedByServerAdmin() )
+		return;
 
+	fprintf( fp, "\"EntityList\"\n");
+	fprintf( fp, "{\n"); //for keyvalues, kek
+	
+	CEntityFactoryDictionary *dict = ( CEntityFactoryDictionary * )EntityFactoryDictionary();
+	if ( dict )
+	{
+		for ( int i = dict->m_Factories.First(); i != dict->m_Factories.InvalidIndex(); i = dict->m_Factories.Next( i ) )
+		{
+			if (fp)
+			{
+				fprintf( fp, "\"entity\"");
+				fprintf( fp, "          ");
+				fprintf( fp, "\"%s\"\n", dict->m_Factories.GetElementName( i ) );
+			}
+		}
+	}
+	
+	fprintf( fp, "}");
+	fflush( fp );
+}
+
+static ConCommand dumpentityfactories( "dumpentityfactories", DumpEntityFactories_f, "Lists all entity factory names.", FCVAR_GAMEDLL );
+static ConCommand dumpentitytofile( "dumpentitytofile", DumpEntityToFile, "Lists all entity factory names.", FCVAR_GAMEDLL );
 
 //-----------------------------------------------------------------------------
 // 

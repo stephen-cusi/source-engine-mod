@@ -1,6 +1,7 @@
 //========= Copyright Valve Corporation, All rights reserved. ============//
 //
 // Purpose: Combine Zombie... Zombie Combine... its like a... Zombine... get it?
+// Yes, time to overfunny jokes :P
 //
 // $NoKeywords: $
 //=============================================================================//

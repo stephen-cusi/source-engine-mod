@@ -7510,3 +7510,18 @@ void CC_Ent_Orient( const CCommand& args )
 }
 
 static ConCommand ent_orient("ent_orient", CC_Ent_Orient, "Orient the specified entity to match the player's angles. By default, only orients target entity's YAW. Use the 'allangles' option to orient on all axis.\n\tFormat: ent_orient <entity name> <optional: allangles>", FCVAR_CHEAT);
+
+void CC_Ent_List()
+{
+	for ( CBaseEntity *pEntity = gEntList.FirstEnt(); pEntity != NULL; pEntity = gEntList.NextEnt(pEntity) )
+	{
+		const char *entname;
+		entname = pEntity->GetClassname();	
+		//Q_snprintf( entspawn, sizeof(entname), "ent_create %s", entname );
+		if (entname == NULL)
+			return;
+		Msg("%s\n", entname );
+	}	
+}
+
+static ConCommand ent_list("ent_list", CC_Ent_List, "Show entities on server");

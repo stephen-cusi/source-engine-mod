@@ -335,7 +335,8 @@ void CNPC_Alyx::Spawn()
 		CreateEmpTool( );
 	}
 
-	AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL | EFL_NO_PHYSCANNON_INTERACTION );
+	// why we can't dissolve and kill her? :megarofl:
+	//AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL | EFL_NO_PHYSCANNON_INTERACTION );
 
 	m_iHealth			= 80;
 	m_bloodColor		= DONT_BLEED;
@@ -468,7 +469,8 @@ void CNPC_Alyx::SetupAlyxWithoutParent( void )
 	CapabilitiesAdd( bits_CAP_MOVE_GROUND | bits_CAP_DOORS_GROUP | bits_CAP_TURN_HEAD | bits_CAP_DUCK | bits_CAP_SQUAD );
 	CapabilitiesAdd( bits_CAP_USE_WEAPONS );
 	CapabilitiesAdd( bits_CAP_ANIMATEDFACE );
-	CapabilitiesAdd( bits_CAP_FRIENDLY_DMG_IMMUNE );
+	// FF - Friendly Fire
+	//CapabilitiesAdd( bits_CAP_FRIENDLY_DMG_IMMUNE );
 	CapabilitiesAdd( bits_CAP_AIM_GUN );
 	CapabilitiesAdd( bits_CAP_MOVE_SHOOT );
 	CapabilitiesAdd( bits_CAP_USE_SHOT_REGULATOR );

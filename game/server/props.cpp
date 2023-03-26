@@ -835,9 +835,9 @@ void CBreakableProp::Spawn()
 	
 	//jmd: I am guessing that the call to Spawn will set any flags that should be set anyway; this
 	//clears flags we don't want (specifically the FL_ONFIRE for explosive barrels in HL2MP)]
-#ifdef HL2MP
-	ClearFlags();
-#endif 
+//#ifdef HL2MP
+//	ClearFlags();
+//#endif 
 
 	BaseClass::Spawn();
 	

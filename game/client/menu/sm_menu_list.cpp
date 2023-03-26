@@ -5,7 +5,7 @@
 // $NoKeywords: $
 //===========================================================================//
 #include "cbase.h"
-#include "sm_menu.h"
+#include "sm_menu_list.h"
 #include <vgui/ISurface.h>
 #include <vgui_controls/Label.h>
 #include <vgui_controls/Controls.h>
@@ -116,42 +116,30 @@ public:
 		}	
 	}
 
-	void Init( KeyValues *kv )
+	void InitNPCs( KeyValues *kv )
 	{
-		for (KeyValues *control = kv->GetFirstSubKey(); control != NULL; control = control->GetNextKey())
+		for ( KeyValues *control = kv->GetFirstSubKey(); control != NULL; control = control->GetNextKey() )
 		{
-			int iType = control->GetInt("imagebutton", 0);
-			
-			if ( iType == 1 )
-			{
-				const char *a, *b, *c, *t;
-				//command
-				t = control->GetString( "command", "" );
-				a = control->GetString( "normal", "" );
-				b = control->GetString( "overimage", "");
-				c = control->GetString( "mouseclick", "");
-				
-				if ( t, a, b, c && t[0], a[0], b[0], c[0] )
-				{
-					ImageButton *img = new ImageButton( this, "ImageButton", a, b, c, t );
-					m_LayoutItems.AddToTail( img );
-					continue;
-				}
-			}
-			else
-			{
-				const char *m;
+			const char *entname;
 
-				//command
-				m = control->GetString("command", "");
-				if ( m && m[0] )
+			if ( !Q_strcasecmp( control->GetName(), "entity" ) )
+			{
+				entname = control->GetString();
+			}
+
+			if( Q_strncmp( entname, "npc_", Q_strlen("npc_") ) == 0 )
+			{
+				if ( entname && entname[0] )
 				{
-					CSMCommandButton *btn = new CSMCommandButton( this, "CommandButton", control->GetName(), m );
+					const char entspawn[256];
+					Q_snprintf( entspawn, 256, "ent_create %s", entname );
+						
+					CSMCommandButton *btn = new CSMCommandButton( this, "CommandButton", entname, entspawn );
 					m_LayoutItems.AddToTail( btn );
 					continue;
 				}
 			}
-		}
+		}		
 	}
 private:
 	CUtlVector< vgui::Panel * >		m_LayoutItems; 
@@ -169,33 +157,25 @@ public:
 	{
 		SetTitle( "SMenu", true );
 
+		SetWide( 800 );
+		SetTall( 640 );
+
 		KeyValues *kv = new KeyValues( "SMenu" );
 		if ( kv )
 		{
-			if ( kv->LoadFromFile(g_pFullFileSystem, "addons/menu/spawnmenu.txt") )
+			if ( kv->LoadFromFile(g_pFullFileSystem, "addons/menu/entitylist.txt") )
 			{
-				for (KeyValues *dat = kv->GetFirstSubKey(); dat != NULL; dat = dat->GetNextKey())
-				{
-					if ( !Q_strcasecmp( dat->GetName(), "width" ) )
-					{
-						SetWide( dat->GetInt() );
-						continue;
-					}
-					else if ( !Q_strcasecmp( dat->GetName(), "height" ) )
-					{
-						SetTall( dat->GetInt() );
-						continue;
-					}
-
-					CSMPage *page = new CSMPage( this, dat->GetName() );
-					page->Init( dat );
-	
-					AddPage( page, dat->GetName() );
-				}
+				CSMPage *npces = new CSMPage( this, "NPCs" );
+				CSMPage *weapons = new CSMPage( this, "Weapons" );
+		
+				npces->InitNPCs( kv );
+				//weapons->InitWeapons();
+				AddPage( npces, "NPCs" );
+				AddPage( weapons, "Weapons");
 			}
 			kv->deleteThis();
 		}
-
+		
 		vgui::ivgui()->AddTickSignal(GetVPanel(), 100);
 	
 		GetPropertySheet()->SetTabWidth(72);
@@ -205,15 +185,15 @@ public:
 		SetProportional(false);
 	}
 
-	void	Init( KeyValues *kv );
+	void Init();
 
-	void 	OnTick()
+	void OnTick()
 	{
 		BaseClass::OnTick();
 		SetVisible(sm_menu.GetBool());
 	}
 
-	void 	OnCommand( const char *command )
+	void OnCommand( const char *command )
 	{
 		BaseClass::OnCommand( command );
 		
@@ -225,7 +205,7 @@ public:
 
 };
 
-void CSMenu::Init( KeyValues *kv )
+void CSMenu::Init()
 {
 }
 

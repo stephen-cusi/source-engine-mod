@@ -279,7 +279,8 @@ void CNPC_Monk::Spawn()
 	CapabilitiesAdd( bits_CAP_TURN_HEAD | bits_CAP_DOORS_GROUP | bits_CAP_MOVE_GROUND );
 	CapabilitiesAdd( bits_CAP_USE_WEAPONS );
 	CapabilitiesAdd( bits_CAP_ANIMATEDFACE );
-	CapabilitiesAdd( bits_CAP_FRIENDLY_DMG_IMMUNE );
+	// FF
+	//CapabilitiesAdd( bits_CAP_FRIENDLY_DMG_IMMUNE );
 	CapabilitiesAdd( bits_CAP_AIM_GUN );
 	CapabilitiesAdd( bits_CAP_MOVE_SHOOT );
 

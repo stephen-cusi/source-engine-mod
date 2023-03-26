@@ -125,8 +125,7 @@ CHL2MP_Player::CHL2MP_Player() : m_PlayerAnimState( this )
 	m_bReady = false;
 
 	BaseClass::ChangeTeam( 0 );
-	
-//	UseClientSideAnimation();
+	UseClientSideAnimation();
 }
 
 CHL2MP_Player::~CHL2MP_Player( void )
@@ -264,6 +263,8 @@ void CHL2MP_Player::Spawn(void)
 	m_flNextTeamChangeTime = 0.0f;
 
 	PickDefaultSpawnTeam();
+
+	engine->ClientCommand( edict(), "dumpentitytofile" );
 
 	BaseClass::Spawn();
 	

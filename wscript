@@ -129,7 +129,7 @@ projects={
 		'vstdlib',
 		'vtf',
 		'thirdparty/StubSteamAPI',
-        	'lua'
+       	'lua'
 	]
 }
 
