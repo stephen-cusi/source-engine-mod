@@ -202,8 +202,13 @@ void CHL2MP_Player::GiveAllItems( void )
 
 void CHL2MP_Player::GiveDefaultItems( void )
 {
+	// If we in d1_ maps, we must spawn without weapons
+	if ( !Q_strnicmp( gpGlobals->mapname.ToCStr(), "d1_", 4 ) )
+		return;
+
 	GiveAllItems();
 }
+
 
 void CHL2MP_Player::PickDefaultSpawnTeam( void )
 {
@@ -336,7 +341,6 @@ void CHL2MP_Player::PickupObject( CBaseEntity *pObject, bool bLimitMassAndSize )
 
 	PlayerPickupObject( this, pObject );
 #else
-	
 #endif
 }
 

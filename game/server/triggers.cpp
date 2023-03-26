@@ -1594,12 +1594,6 @@ void CChangeLevel::ChangeLevelNow( CBaseEntity *pActivator )
 
 	Assert(!FStrEq(m_szMapName, ""));
 
-// #ifndef HL2SB
-	// Don't work in deathmatch
-	if ( g_pGameRules->IsDeathmatch() )
-		return;
-// #endif
-
 	// Some people are firing these multiple times in a frame, disable
 	if ( m_bTouched )
 		return;
@@ -1701,6 +1695,7 @@ void CChangeLevel::TouchChangeLevel( CBaseEntity *pOther )
 	if ( !pPlayer )
 		return;
 
+#if 0
 	if( pPlayer->IsSinglePlayerGameEnding() )
 	{
 		// Some semblance of deceleration, but allow player to fall normally.
@@ -1712,13 +1707,14 @@ void CChangeLevel::TouchChangeLevel( CBaseEntity *pOther )
 		pPlayer->AddFlag( FL_FROZEN );
 		return;
 	}
-
+#endif
+	
 	if ( !pPlayer->IsInAVehicle() && pPlayer->GetMoveType() == MOVETYPE_NOCLIP )
 	{
 		DevMsg("In level transition: %s %s\n", st_szNextMap, st_szNextSpot );
 		return;
 	}
-
+	
 	ChangeLevelNow( pOther );
 }
 

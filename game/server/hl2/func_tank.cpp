@@ -2530,7 +2530,7 @@ void CFuncTankGun::Fire( int bulletCount, const Vector &barrelEnd, const Vector 
 	info.m_pAttacker = pAttacker;
 	info.m_pAdditionalIgnoreEnt = GetParent();
 
-#if !defined( HL2SB ) && defined( HL2_EPISODIC )
+#if defined( HL2SB ) && defined( HL2_EPISODIC )
 	if ( m_iAmmoType != -1 )
 	{
 		for ( i = 0; i < bulletCount; i++ )

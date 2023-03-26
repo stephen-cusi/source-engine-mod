@@ -290,5 +290,4 @@ void CHalfLife2Survival::CreateStandardEntities( void )
 }
 
 #endif
-
 #endif
