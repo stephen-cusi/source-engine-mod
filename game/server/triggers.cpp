@@ -1604,6 +1604,10 @@ void CChangeLevel::ChangeLevelNow( CBaseEntity *pActivator )
 	CBasePlayer *pPlayer = (pActivator && pActivator->IsPlayer()) ? ToBasePlayer( pActivator ) : UTIL_GetLocalPlayer();
 	if( !pPlayer )
 		return;
+
+	// This object will get removed in the call to engine->ChangeLevel, copy the params into "safe" memory
+	Q_strncpy(st_szNextMap, m_szMapName, sizeof(st_szNextMap));
+	engine->ChangeLevel( st_szNextMap, NULL );	
 #else
 	CBaseEntity *pPlayer = (pActivator && pActivator->IsPlayer()) ? pActivator : UTIL_GetLocalPlayer();
 #endif
@@ -1652,7 +1656,7 @@ void CChangeLevel::ChangeLevelNow( CBaseEntity *pActivator )
 	Q_strncpy(st_szNextSpot, m_szLandmarkName,sizeof(st_szNextSpot));
 	// This object will get removed in the call to engine->ChangeLevel, copy the params into "safe" memory
 	Q_strncpy(st_szNextMap, m_szMapName, sizeof(st_szNextMap));
-
+	
 	m_hActivator = pActivator;
 
 	m_OnChangeLevel.FireOutput(pActivator, this);
@@ -1695,7 +1699,6 @@ void CChangeLevel::TouchChangeLevel( CBaseEntity *pOther )
 	if ( !pPlayer )
 		return;
 
-#if 0
 	if( pPlayer->IsSinglePlayerGameEnding() )
 	{
 		// Some semblance of deceleration, but allow player to fall normally.
@@ -1707,7 +1710,6 @@ void CChangeLevel::TouchChangeLevel( CBaseEntity *pOther )
 		pPlayer->AddFlag( FL_FROZEN );
 		return;
 	}
-#endif
 	
 	if ( !pPlayer->IsInAVehicle() && pPlayer->GetMoveType() == MOVETYPE_NOCLIP )
 	{

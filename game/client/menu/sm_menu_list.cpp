@@ -90,6 +90,11 @@ public:
 		}
 	}
 
+	virtual void OnCommand( const char *command )
+	{
+		engine->ClientCmd( (char *)command );
+	}
+
 	virtual void PerformLayout()
 	{
 		BaseClass::PerformLayout();	
@@ -133,10 +138,18 @@ public:
 				{
 					const char entspawn[256];
 					Q_snprintf( entspawn, 256, "ent_create %s", entname );
-						
+
+					const char normalImage[256];					
+					Q_snprintf( normalImage, 256, "pic/%s.vmt", entname );
+
+					ImageButton *btn = new ImageButton( this, "ImageButton", normalImage, normalImage, normalImage, entspawn );
+					m_LayoutItems.AddToTail( btn );
+					continue;
+				/*
 					CSMCommandButton *btn = new CSMCommandButton( this, "CommandButton", entname, entspawn );
 					m_LayoutItems.AddToTail( btn );
 					continue;
+				*/
 				}
 			}
 		}		

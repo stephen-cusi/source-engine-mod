@@ -39,6 +39,9 @@ int g_iLastCombineModel = 0;
 CBaseEntity	 *g_pLastCombineSpawn = NULL;
 CBaseEntity	 *g_pLastRebelSpawn = NULL;
 extern CBaseEntity				*g_pLastSpawn;
+ConVar spawnpoint("spawnpoint", "ct");
+
+extern ConVar game_mode;
 
 #define HL2MP_COMMAND_MAX_RATE 0.3
 
@@ -202,9 +205,12 @@ void CHL2MP_Player::GiveAllItems( void )
 
 void CHL2MP_Player::GiveDefaultItems( void )
 {
-	// If we in d1_ maps, we must spawn without weapons
-	if ( !Q_strnicmp( gpGlobals->mapname.ToCStr(), "d1_", 4 ) )
+	// If we in coop mode, we must spawn without weapons in first maps of HL2 
+	if ( FStrEq(game_mode.GetString(), "coop") )
+	{
+		if ( Q_strnicmp( gpGlobals->mapname.ToCStr(), "d1_", 4 ) )
 		return;
+	}
 
 	GiveAllItems();
 }
@@ -1364,13 +1370,6 @@ void CHL2MP_Player::DeathSound( const CTakeDamageInfo &info )
 
 CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )
 {
-#ifdef LUA_SDK
-	BEGIN_LUA_CALL_HOOK( "PlayerEntSelectSpawnPoint" );
-		lua_pushhl2mpplayer( L, this );
-	END_LUA_CALL_HOOK( 1, 1 );
-
-	RETURN_LUA_ENTITY();
-#endif
 	CBaseEntity *pSpot = NULL;
 	CBaseEntity *pLastSpawnPoint = g_pLastSpawn;
 	edict_t		*player = edict();
@@ -1396,12 +1395,12 @@ CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )
 			// one randomly. For now, we'll prefer spawnpoints by appid if we
 			// can't find anything from deathmatch.
 #ifdef HL2SB
-			if ( GetTeamNumber() == TEAM_COMBINE )
+			if ( GetTeamNumber() == TEAM_COMBINE || FStrEq( spawnpoint.GetString(), "terrorist" ) )
 			{
 				pSpawnpointName = "info_player_terrorist";
 				pLastSpawnPoint = g_pLastCombineSpawn;
 			}
-			else if ( GetTeamNumber() == TEAM_REBELS )
+			else if ( GetTeamNumber() == TEAM_REBELS || FStrEq( spawnpoint.GetString(), "ct") )
 			{
 				pSpawnpointName = "info_player_counterterrorist";
 				pLastSpawnPoint = g_pLastRebelSpawn;
