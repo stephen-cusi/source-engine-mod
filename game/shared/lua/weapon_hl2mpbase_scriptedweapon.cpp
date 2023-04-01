@@ -39,9 +39,9 @@ END_PREDICTION_DATA()
 //=========================================================
 BEGIN_DATADESC( CHL2MPScriptedWeapon )
 END_DATADESC()
-
-
-
+#ifdef CLIENT_DLL
+extern ConVar v_viewmodel_fov;
+#endif
 // LINK_ENTITY_TO_CLASS( weapon_hl2mpbase_scriptedweapon, CHL2MPScriptedWeapon );
 // PRECACHE_WEAPON_REGISTER( weapon_hl2mpbase_scriptedweapon );
 
@@ -247,7 +247,6 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 #ifndef CLIENT_DLL
 	m_pLuaWeaponInfo->bParsedScript = true;
 #endif
-
 	// Printable name
 	lua_getref( L, m_nTableReference );
 	lua_getfield( L, -1, "printname" );
@@ -600,7 +599,6 @@ void CHL2MPScriptedWeapon::Precache( void )
 		{
 			Msg("ERROR: Weapon (%s) using undefined secondary ammo type (%s)\n",GetClassname(),GetWpnData().szAmmo2);
 		}
-
 	}
 
 	// Precache models (preload to avoid hitch)
@@ -644,7 +642,7 @@ const char *CHL2MPScriptedWeapon::GetViewModel( int ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "viewmodel" );
+	lua_getfield( L, -1, "ViewModel" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_STRING();
@@ -657,7 +655,7 @@ const char *CHL2MPScriptedWeapon::GetWorldModel( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "playermodel" );
+	lua_getfield( L, -1, "WorldModel" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_STRING();
@@ -683,7 +681,7 @@ const char *CHL2MPScriptedWeapon::GetPrintName( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "printname" );
+	lua_getfield( L, -1, "PrintName" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_STRING();
@@ -696,7 +694,7 @@ int CHL2MPScriptedWeapon::GetMaxClip1( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "clip_size" );
+	lua_getfield( L, -1, "Primary.ClipSize" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_INTEGER();
@@ -709,7 +707,7 @@ int CHL2MPScriptedWeapon::GetMaxClip2( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "clip2_size" );
+	lua_getfield( L, -1, "Secondary.ClipSize" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_INTEGER();
@@ -722,7 +720,7 @@ int CHL2MPScriptedWeapon::GetDefaultClip1( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "default_clip" );
+	lua_getfield( L, -1, "Primary.DefaultClip" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_INTEGER();
@@ -735,7 +733,7 @@ int CHL2MPScriptedWeapon::GetDefaultClip2( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "default_clip2" );
+	lua_getfield( L, -1, "Secondary.DefaultClip" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_INTEGER();
@@ -766,6 +764,17 @@ bool CHL2MPScriptedWeapon::IsMeleeWeapon() const
 #endif
 
 	return BaseClass::IsMeleeWeapon();
+}
+
+bool CHL2MPScriptedWeapon::DrawAmmo() const
+{
+#if defined (LUA_SDK)
+	lua_getref(L, m_nTableReference );
+	lua_getfield( L, -1, "DrawAmmo");
+	lua_remove(L, -2);
+
+	RETURN_LUA_BOOLEAN();
+#endif
 }
 
 int CHL2MPScriptedWeapon::GetWeight( void ) const
@@ -804,6 +813,20 @@ bool CHL2MPScriptedWeapon::AllowsAutoSwitchTo( void ) const
 	return BaseClass::AllowsAutoSwitchTo();
 }
 
+#ifdef CLIENT_DLL
+int CHL2MPScriptedWeapon::GetFOV( void ) const
+{
+#if defined (LUA_SDK)
+	lua_getref( L, m_nTableReference );
+	lua_getfield( L, -1, "ViewModelFOV");
+	lua_remove(L, -2 );
+
+	RETURN_LUA_INTEGER();
+#endif
+	//return BaseClass:GetFOV();
+}
+#endif
+
 bool CHL2MPScriptedWeapon::AllowsAutoSwitchFrom( void ) const
 {
 #if defined ( LUA_SDK )
@@ -827,13 +850,23 @@ bool CHL2MPScriptedWeapon::AllowsAutoSwitchFrom( void ) const
 	return BaseClass::AllowsAutoSwitchFrom();
 }
 
+bool CHL2MPScriptedWeapon::IsSpawnable( void ) const
+{
+#ifdef LUA_SDK
+	lua_getref( L, m_nTableReference );
+	lua_getfield( L, -1, "Spawnable");
+	lua_remove( L, -2 );
+
+	RETURN_LUA_BOOLEAN();
+#endif
+}
+
 int CHL2MPScriptedWeapon::GetWeaponFlags( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
 	lua_getfield( L, -1, "item_flags" );
 	lua_remove( L, -2 );
-
 	RETURN_LUA_INTEGER();
 #endif
 
@@ -844,7 +877,7 @@ int CHL2MPScriptedWeapon::GetSlot( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "bucket" );
+	lua_getfield( L, -1, "Slot" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_INTEGER();
@@ -853,11 +886,12 @@ int CHL2MPScriptedWeapon::GetSlot( void ) const
 	return BaseClass::GetSlot();
 }
 
+
 int CHL2MPScriptedWeapon::GetPosition( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "bucket_position" );
+	lua_getfield( L, -1, "SlotPos" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_INTEGER();
@@ -973,7 +1007,6 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 
 	RETURN_LUA_NONE();
 #endif
-
 	BaseClass::ItemPostFrame();
 }
 

@@ -41,7 +41,7 @@ CBaseEntity	 *g_pLastRebelSpawn = NULL;
 extern CBaseEntity				*g_pLastSpawn;
 ConVar spawnpoint("spawnpoint", "ct");
 
-extern ConVar game_mode;
+extern ConVar mode;
 
 #define HL2MP_COMMAND_MAX_RATE 0.3
 
@@ -206,9 +206,10 @@ void CHL2MP_Player::GiveAllItems( void )
 void CHL2MP_Player::GiveDefaultItems( void )
 {
 	// If we in coop mode, we must spawn without weapons in first maps of HL2 
-	if ( FStrEq(game_mode.GetString(), "coop") )
+	if ( FStrEq(mode.GetString(), "coop") )
 	{
-		if ( Q_strnicmp( gpGlobals->mapname.ToCStr(), "d1_", 4 ) )
+		// Зачем я вообще это сделал? Ведь на картах уже разбросали оружие :P
+		//if ( Q_strnicmp( gpGlobals->mapname.ToCStr(), "d1_", 4 ) )
 		return;
 	}
 

@@ -81,6 +81,11 @@ public:
 	virtual bool			AllowsAutoSwitchFrom( void ) const;
 	virtual int				GetWeaponFlags( void ) const;
 	virtual int				GetSlot( void ) const;
+	virtual bool 			IsSpawnable( void ) const;
+	virtual bool  			DrawAmmo() const;
+#ifdef CLIENT_DLL
+	virtual int 			GetFOV( void ) const;
+#endif
 	virtual int				GetPosition( void ) const;
 	virtual char const		*GetPrintName( void ) const;
 	bool					IsMeleeWeapon() const;

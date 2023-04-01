@@ -478,6 +478,9 @@ static int CBaseCombatWeapon_GetWpnData (lua_State *L) {
   lua_pushstring(L, "szWorldModel");
   lua_pushstring(L, weaponInfo.szWorldModel);
   lua_settable(L, -3);
+  lua_pushstring(L, "iViewModelFOV");
+  lua_pushinteger(L, weaponInfo.iViewModelFOV);
+  lua_settable(L, -3);
   return 1;
 }
 

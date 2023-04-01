@@ -2408,9 +2408,6 @@ bool CGameMovement::CheckJumpButton( void )
 
 	if ( mv->m_nOldButtons & IN_JUMP )
 	{
-		if ( player->GetGroundEntity() == NULL )
-			return false;
-
 		if ( !autojump.GetBool() )
 			return false;
 	}

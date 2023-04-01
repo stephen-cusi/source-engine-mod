@@ -145,14 +145,38 @@ public:
 					ImageButton *btn = new ImageButton( this, "ImageButton", normalImage, normalImage, normalImage, entspawn );
 					m_LayoutItems.AddToTail( btn );
 					continue;
-				/*
-					CSMCommandButton *btn = new CSMCommandButton( this, "CommandButton", entname, entspawn );
-					m_LayoutItems.AddToTail( btn );
-					continue;
-				*/
 				}
 			}
 		}		
+	}
+
+	void InitWeapons( KeyValues *kv )
+	{
+		for ( KeyValues *control = kv->GetFirstSubKey(); control != NULL; control = control->GetNextKey() )
+		{
+			const char *weaponName;
+
+			if ( !Q_strcasecmp( control->GetName(), "entity" ) )
+			{
+				weaponName = control->GetString();
+			}
+
+			if( Q_strncmp( weaponName, "weapon_", Q_strlen("weapon_") ) == 0 )
+			{
+				if ( weaponName && weaponName[0] )
+				{
+					const char weaponspawn[1024];
+					Q_snprintf( weaponspawn, 1024, "ent_create %s", weaponName );
+
+					const char normalImage[1024];					
+					Q_snprintf( normalImage, 1024, "pic/%s.vmt", weaponName );
+
+					ImageButton *btn = new ImageButton( this, "ImageButton", normalImage, normalImage, normalImage, weaponspawn );
+					m_LayoutItems.AddToTail( btn );
+					continue;
+				}
+			}
+		}
 	}
 private:
 	CUtlVector< vgui::Panel * >		m_LayoutItems; 
@@ -182,7 +206,7 @@ public:
 				CSMPage *weapons = new CSMPage( this, "Weapons" );
 		
 				npces->InitNPCs( kv );
-				//weapons->InitWeapons();
+				weapons->InitWeapons( kv );
 				AddPage( npces, "NPCs" );
 				AddPage( weapons, "Weapons");
 			}

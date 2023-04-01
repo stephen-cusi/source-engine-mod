@@ -49,7 +49,6 @@ extern ConVar sk_auto_reload_time;
 
 CBaseHL2MPCombatWeapon::CBaseHL2MPCombatWeapon( void )
 {
-
 }
 
 //-----------------------------------------------------------------------------
