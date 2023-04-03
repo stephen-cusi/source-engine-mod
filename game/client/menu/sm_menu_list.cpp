@@ -136,10 +136,10 @@ public:
 			{
 				if ( entname && entname[0] )
 				{
-					const char entspawn[256];
+					char entspawn[256];
 					Q_snprintf( entspawn, 256, "ent_create %s", entname );
 
-					const char normalImage[256];					
+					char normalImage[256];					
 					Q_snprintf( normalImage, 256, "pic/%s.vmt", entname );
 
 					ImageButton *btn = new ImageButton( this, "ImageButton", normalImage, normalImage, normalImage, entspawn );
@@ -165,10 +165,10 @@ public:
 			{
 				if ( weaponName && weaponName[0] )
 				{
-					const char weaponspawn[1024];
+					 char weaponspawn[1024];
 					Q_snprintf( weaponspawn, 1024, "ent_create %s", weaponName );
 
-					const char normalImage[1024];					
+					char normalImage[1024];					
 					Q_snprintf( normalImage, 1024, "pic/%s.vmt", weaponName );
 
 					ImageButton *btn = new ImageButton( this, "ImageButton", normalImage, normalImage, normalImage, weaponspawn );
