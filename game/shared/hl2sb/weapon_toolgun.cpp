@@ -166,7 +166,8 @@ void CWeaponToolGun::PrimaryAttack()
 
 	trace_t tr;
 	UTIL_TraceLine(muzzlePoint, muzzlePoint + vForward * MAX_TRACE_LENGTH, MASK_SHOT, this, COLLISION_GROUP_NONE, &tr);
-
+	if(tr.fraction == 1.0)
+		return;
 	Vector vecShootOrigin, vecShootDir;
 	vecShootOrigin = pOwner->Weapon_ShootPosition();
 	DrawBeam( vecShootOrigin, tr.endpos, 4 );
