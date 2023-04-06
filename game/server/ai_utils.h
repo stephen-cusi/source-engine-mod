@@ -25,10 +25,12 @@
 inline CBasePlayer *AI_GetSinglePlayer()
 {
 #ifdef HL2SB
-	CBasePlayer *pHostPlayer = UTIL_GetListenServerHost();
-	if ( pHostPlayer != NULL )
-		return pHostPlayer;
-
+	if (!engine->IsDedicatedServer())
+	{
+		CBasePlayer *pHostPlayer = UTIL_GetListenServerHost();
+		if ( pHostPlayer != NULL )
+			return pHostPlayer;
+	}
 	for( int iClient = 1; iClient <= gpGlobals->maxClients; ++iClient )
 	{
 		CBasePlayer *pEnt = UTIL_PlayerByIndex( iClient );

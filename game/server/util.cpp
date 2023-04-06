@@ -673,9 +673,12 @@ CBasePlayer *UTIL_GetLocalPlayer( void )
 #ifdef HL2SB
 	// HACKHACK: We change the behavior of UTIL_GetLocalPlayer() here to be
 	// compatible with multiplayer games for the sake of not crashing.
-	CBasePlayer *pHostPlayer = UTIL_GetListenServerHost();
-	if ( pHostPlayer != NULL )
-		return pHostPlayer;
+	if (!engine->IsDedicatedServer())
+	{
+		CBasePlayer *pHostPlayer = UTIL_GetListenServerHost();
+		if ( pHostPlayer != NULL )
+			return pHostPlayer;
+	}//NOTE WHAT THE FUCK??
 #endif
 
 	if ( gpGlobals->maxClients > 1 )

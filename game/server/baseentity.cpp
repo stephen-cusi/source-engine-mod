@@ -1281,7 +1281,7 @@ void CBaseEntity::ValidateEntityConnections()
 			typedescription_t *dataDesc = &dmap->dataDesc[i];
 			if ( ( dataDesc->fieldType == FIELD_CUSTOM ) && ( dataDesc->flags & FTYPEDESC_OUTPUT ) )
 			{
-				CBaseEntityOutput *pOutput = (CBaseEntityOutput *)((int)this + (int)dataDesc->fieldOffset[0]);
+				CBaseEntityOutput *pOutput = (CBaseEntityOutput *)((intp)this + (int)dataDesc->fieldOffset[0]);
 				if ( pOutput->NumberOfElements() )
 					return;
 			}
@@ -1314,7 +1314,7 @@ void CBaseEntity::FireNamedOutput( const char *pszOutput, variant_t variant, CBa
 			typedescription_t *dataDesc = &dmap->dataDesc[i];
 			if ( ( dataDesc->fieldType == FIELD_CUSTOM ) && ( dataDesc->flags & FTYPEDESC_OUTPUT ) )
 			{
-				CBaseEntityOutput *pOutput = ( CBaseEntityOutput * )( ( int )this + ( int )dataDesc->fieldOffset[0] );
+				CBaseEntityOutput *pOutput = ( CBaseEntityOutput * )( ( intp )this + ( int )dataDesc->fieldOffset[0] );
 				if ( !Q_stricmp( dataDesc->externalName, pszOutput ) )
 				{
 					pOutput->FireOutput( variant, pActivator, pCaller, flDelay );

@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   build-linux-i386:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
@@ -18,7 +18,7 @@ jobs:
         if-no-files-found: error
 
   build-linux-amd64:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
@@ -32,7 +32,7 @@ jobs:
         if-no-files-found: error
 
   Build-apk-for-android:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
@@ -101,7 +101,7 @@ jobs:
         
 
   build-dedicated-linux-i386:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
@@ -116,7 +116,7 @@ jobs:
 
         
   build-dedicated-linux-amd64:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
