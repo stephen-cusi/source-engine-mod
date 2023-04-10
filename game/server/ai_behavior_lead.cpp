@@ -148,10 +148,17 @@ void CAI_LeadBehavior::LeadPlayer( const AI_LeadArgs_t &leadArgs, CAI_LeadBehavi
 {
 #ifndef CSTRIKE_DLL
 	CAI_PlayerAlly *pOuter = dynamic_cast<CAI_PlayerAlly*>(GetOuter());
+#ifdef HL2SB
+	if ( pOuter )
+	{
+		pOuter->SetSpeechTarget( UTIL_GetNearestPlayer( pOuter->GetAbsOrigin() ) );
+	}
+#else
 	if ( pOuter && AI_IsSinglePlayer() )
 	{
 		pOuter->SetSpeechTarget( UTIL_GetLocalPlayer() );
 	}
+#endif
 #endif
 
 	if( SetGoal( leadArgs ) )
@@ -179,8 +186,10 @@ void CAI_LeadBehavior::StopLeading( void )
 
 bool CAI_LeadBehavior::CanSelectSchedule()
 {
+#ifndef HL2SB
  	if ( !AI_GetSinglePlayer() || AI_GetSinglePlayer()->IsDead() )
 		return false;
+#endif
 
 	bool fAttacked = ( HasCondition( COND_LIGHT_DAMAGE ) || HasCondition( COND_HEAVY_DAMAGE ) );
 	bool fNonCombat = ( GetNpcState() == NPC_STATE_IDLE || GetNpcState() == NPC_STATE_ALERT );
@@ -192,7 +201,14 @@ bool CAI_LeadBehavior::CanSelectSchedule()
 
 void CAI_LeadBehavior::BeginScheduleSelection()
 {
+#ifdef HL2SB
+	CBasePlayer *pPlayer = AI_GetNearestVisiblePlayer( GetOuter() );
+	if( !pPlayer )
+		pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+	SetTarget( pPlayer );
+#else
 	SetTarget( AI_GetSinglePlayer() );
+#endif
 	CAI_Expresser *pExpresser = GetOuter()->GetExpresser();
 	if ( pExpresser )
 		pExpresser->ClearSpokeConcept( TLK_LEAD_ARRIVAL );
@@ -269,7 +285,7 @@ bool CAI_LeadBehavior::GetClosestPointOnRoute( const Vector &targetPos, Vector *
 	float		flNearestDist	= 999999999;
 	float		flPathDist, flPathDist2D;
 
-	Vector vecNearestPoint;
+	Vector vecNearestPoint(0, 0, 0);
 	Vector vecPrevPos = GetOuter()->GetAbsOrigin();
 	for ( ; (waypoint != NULL) ; waypoint = waypoint->GetNext() )
 	{
@@ -326,7 +342,15 @@ bool CAI_LeadBehavior::PlayerIsAheadOfMe( bool bForce )
 	m_bInitialAheadTest = false;
 
 	Vector vecClosestPoint;
+#ifdef HL2SB
+	CBasePlayer *pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+	if( !pPlayer )
+		return false;
+
+	if ( GetClosestPointOnRoute( pPlayer->GetAbsOrigin(), &vecClosestPoint ) )
+#else
 	if ( GetClosestPointOnRoute( AI_GetSinglePlayer()->GetAbsOrigin(), &vecClosestPoint ) )
+#endif
 	{
 		// If the closest point is not right next to me, then 
 		// the player is somewhere ahead of me on the route.
@@ -353,7 +377,11 @@ void CAI_LeadBehavior::GatherConditions( void )
 		}
 
 		// We have to collect data about the person we're leading around.
+#ifdef HL2SB
+		CBaseEntity *pFollower = AI_GetNearestPlayer( GetAbsOrigin() );
+#else
 		CBaseEntity *pFollower = AI_GetSinglePlayer();
+#endif
 
 		if( pFollower )
 		{
@@ -536,7 +564,11 @@ int CAI_LeadBehavior::SelectSchedule()
 		// Player's here, but does he have the weapon we want him to have?
 		if ( m_weaponname != NULL_STRING )
 		{
+#ifdef HL2SB
+			CBasePlayer *pFollower = AI_GetNearestPlayer( GetOuter()->GetAbsOrigin() );
+#else
 			CBasePlayer *pFollower = AI_GetSinglePlayer();
+#endif
 			if ( pFollower && !pFollower->Weapon_OwnsThisType( STRING(m_weaponname) ) )
 			{
 				// If the safety timeout has run out, just give the player the weapon
@@ -565,7 +597,11 @@ int CAI_LeadBehavior::SelectSchedule()
 			else
 			{
 				// We have to collect data about the person we're leading around.
+#ifdef HL2SB
+				CBaseEntity *pFollower = AI_GetNearestPlayer( GetOuter()->GetAbsOrigin() );
+#else
 				CBaseEntity *pFollower = AI_GetSinglePlayer();
+#endif
 				if( pFollower )
 				{
 					float flFollowerDist = ( WorldSpaceCenter() - pFollower->WorldSpaceCenter() ).Length();
@@ -829,7 +865,11 @@ void CAI_LeadBehavior::StartTask( const Task_t *pTask )
 
 		case TASK_LEAD_RETRIEVE_WAIT:
 		{
+#ifdef HL2SB
+			m_MoveMonitor.SetMark( AI_GetNearestPlayer( GetOuter()->GetAbsOrigin() ), 24 );
+#else
 			m_MoveMonitor.SetMark( AI_GetSinglePlayer(), 24 );
+#endif
 			ChainStartTask( TASK_WAIT_INDEFINITE );
 			break;
 		}

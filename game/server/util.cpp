@@ -36,6 +36,7 @@
 #include "datacache/imdlcache.h"
 #include "util.h"
 #include "cdll_int.h"
+#include "stdio.h"
 
 #ifdef PORTAL
 #include "PortalSimulation.h"
@@ -73,6 +74,9 @@ public:
 	CEntityFactoryDictionary();
 
 	virtual void InstallFactory( IEntityFactory *pFactory, const char *pClassName );
+#ifdef LUA_SDK
+	virtual void RemoveFactory( IEntityFactory *pFactory, const char *pClassName );
+#endif
 	virtual IServerNetworkable *Create( const char *pClassName );
 	virtual void Destroy( const char *pClassName, IServerNetworkable *pNetworkable );
 	virtual const char *GetCannonicalName( const char *pClassName );
@@ -108,8 +112,37 @@ void DumpEntityFactories_f()
 	}
 }
 
-static ConCommand dumpentityfactories( "dumpentityfactories", DumpEntityFactories_f, "Lists all entity factory names.", FCVAR_GAMEDLL );
+void DumpEntityToFile()
+{
+	FILE *fp;
+	fp = fopen("hl2sb/addons/menu/entitylist.txt", "w+");
+	
+	if ( !UTIL_IsCommandIssuedByServerAdmin() )
+		return;
 
+	fprintf( fp, "\"EntityList\"\n");
+	fprintf( fp, "{\n"); //for keyvalues, kek
+	
+	CEntityFactoryDictionary *dict = ( CEntityFactoryDictionary * )EntityFactoryDictionary();
+	if ( dict )
+	{
+		for ( int i = dict->m_Factories.First(); i != dict->m_Factories.InvalidIndex(); i = dict->m_Factories.Next( i ) )
+		{
+			if (fp)
+			{
+				fprintf( fp, "\"entity\"");
+				fprintf( fp, "          ");
+				fprintf( fp, "\"%s\"\n", dict->m_Factories.GetElementName( i ) );
+			}
+		}
+	}
+	
+	fprintf( fp, "}");
+	fflush( fp );
+}
+
+static ConCommand dumpentityfactories( "dumpentityfactories", DumpEntityFactories_f, "Lists all entity factory names.", FCVAR_GAMEDLL );
+static ConCommand dumpentitytofile( "dumpentitytofile", DumpEntityToFile, "Lists all entity factory names.", FCVAR_GAMEDLL );
 
 //-----------------------------------------------------------------------------
 // 
@@ -148,9 +181,22 @@ IEntityFactory *CEntityFactoryDictionary::FindFactory( const char *pClassName )
 //-----------------------------------------------------------------------------
 void CEntityFactoryDictionary::InstallFactory( IEntityFactory *pFactory, const char *pClassName )
 {
+#ifndef HL2SB
 	Assert( FindFactory( pClassName ) == NULL );
+#endif
 	m_Factories.Insert( pClassName, pFactory );
 }
+
+
+#ifdef LUA_SDK
+//-----------------------------------------------------------------------------
+// Remove an existing factory
+//-----------------------------------------------------------------------------
+void CEntityFactoryDictionary::RemoveFactory( IEntityFactory *pFactory, const char *pClassName )
+{
+	m_Factories.Remove( pClassName );
+}
+#endif
 
 
 //-----------------------------------------------------------------------------
@@ -345,7 +391,7 @@ int UTIL_DropToFloor( CBaseEntity *pEntity, unsigned int mask, CBaseEntity *pIgn
 
 	trace_t	trace;
 
-#if !defined(HL2MP) && !defined(HL1_DLL)
+#ifndef HL2MP
 	// HACK: is this really the only sure way to detect crossing a terrain boundry?
 	UTIL_TraceEntity( pEntity, pEntity->GetAbsOrigin(), pEntity->GetAbsOrigin(), mask, pIgnore, pEntity->GetCollisionGroup(), &trace );
 	if (trace.fraction == 0.0)
@@ -624,8 +670,30 @@ CBasePlayer* UTIL_PlayerByUserId( int userID )
 // 
 CBasePlayer *UTIL_GetLocalPlayer( void )
 {
+#ifdef HL2SB
+	// HACKHACK: We change the behavior of UTIL_GetLocalPlayer() here to be
+	// compatible with multiplayer games for the sake of not crashing.
+	if (!engine->IsDedicatedServer())
+	{
+		CBasePlayer *pHostPlayer = UTIL_GetListenServerHost();
+		if ( pHostPlayer != NULL )
+			return pHostPlayer;
+	}//NOTE WHAT THE FUCK??
+#endif
+
 	if ( gpGlobals->maxClients > 1 )
 	{
+#ifdef HL2SB
+		for( int iClient = 1; iClient <= gpGlobals->maxClients; ++iClient )
+		{
+			CBasePlayer *pEnt = UTIL_PlayerByIndex( iClient );
+			if(!pEnt || !pEnt->IsPlayer())
+				continue;
+
+			// Return the first player we can get a hold of.
+			return pEnt;
+		}
+#else
 		if ( developer.GetBool() )
 		{
 			Assert( !"UTIL_GetLocalPlayer" );
@@ -636,10 +704,65 @@ CBasePlayer *UTIL_GetLocalPlayer( void )
 		}
 
 		return NULL;
+#endif
 	}
 
 	return UTIL_PlayerByIndex( 1 );
 }
+
+#ifdef HL2SB
+CBasePlayer *UTIL_GetNearestPlayer( const Vector& pos )
+{
+	CBasePlayer *pPlayer = NULL;
+	float	flNearestDistSqr = FLT_MAX;
+	float	flDistSqr;
+	for( int iClient = 1; iClient <= gpGlobals->maxClients; ++iClient )
+	{
+		CBasePlayer *pEnt = UTIL_PlayerByIndex( iClient );
+		if(!pEnt || !pEnt->IsPlayer())
+			continue;
+
+		// Distance is the deciding factor
+		flDistSqr = ( pos - pEnt->GetAbsOrigin() ).LengthSqr();
+
+		// Closer, take it
+		if ( flDistSqr < flNearestDistSqr )
+		{
+			flNearestDistSqr = flDistSqr;
+			pPlayer = pEnt;
+		}
+	}
+	
+	return pPlayer;
+}
+
+CBasePlayer *UTIL_GetNearestVisiblePlayer( CBaseEntity *pEntity, int mask )
+{
+	const Vector& pos = pEntity->GetAbsOrigin();
+
+	CBasePlayer *pPlayer = NULL;
+	float	flNearestDistSqr = FLT_MAX;
+	float	flDistSqr;
+	for( int iClient = 1; iClient <= gpGlobals->maxClients; ++iClient )
+	{
+		CBasePlayer *pEnt = UTIL_PlayerByIndex( iClient );
+		if(!pEnt || !pEnt->IsPlayer())
+			continue;
+
+		// Distance is the deciding factor
+		flDistSqr = ( pos - pEnt->GetAbsOrigin() ).LengthSqr();
+
+		// Closer, take it
+		if ( flDistSqr < flNearestDistSqr && pEntity->FVisible( pEnt, mask ) )
+		{
+			flNearestDistSqr = flDistSqr;
+			pPlayer = pEnt;
+		}
+	}
+
+	return pPlayer;
+}
+#endif
 
 //
 // Get the local player on a listen server - this is for multiplayer use only
@@ -1353,7 +1476,7 @@ void UTIL_SnapDirectionToAxis( Vector &direction, float epsilon )
 	}
 }
 
-char *UTIL_VarArgs( const char *format, ... )
+const char *UTIL_VarArgs( const char *format, ... )
 {
 	va_list		argptr;
 	static char		string[1024];

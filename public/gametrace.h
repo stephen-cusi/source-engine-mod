@@ -74,9 +74,11 @@ public:
 
 	CGameTrace() = default;
 
+#if !defined ( LUA_SDK )
+	// Зачем мне солнце, в Монако.....
 private:
-	// No copy constructors allowed
 	CGameTrace(const CGameTrace& vOther);
+#endif
 };
 
 

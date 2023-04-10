@@ -62,7 +62,9 @@ ConVar debug_latch_reset_onduck( "debug_latch_reset_onduck", "1", FCVAR_CHEAT );
 #endif
 
 // [MD] I'll remove this eventually. For now, I want the ability to A/B the optimizations.
-bool g_bMovementOptimizations = true;
+bool g_bMovementOptimizations = false;
+
+ConVar autojump("autojump", "1");
 
 // Roughly how often we want to update the info about the ground surface we're on.
 // We don't need to do this very often.
@@ -2405,7 +2407,10 @@ bool CGameMovement::CheckJumpButton( void )
 #endif
 
 	if ( mv->m_nOldButtons & IN_JUMP )
-		return false;		// don't pogo stick
+	{
+		if ( !autojump.GetBool() )
+			return false;
+	}
 
 	// Cannot jump will in the unduck transition.
 	if ( player->m_Local.m_bDucking && (  player->GetFlags() & FL_DUCKING ) )

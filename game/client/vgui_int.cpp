@@ -29,6 +29,12 @@
 #include "sixense/in_sixense.h"
 #endif
 
+#ifdef HL2SB
+#include "menu/sm_menu_legacy.h"
+#include "menu/toolgun_menu.h"
+#include "menu/sm_menu_list.h"
+#endif
+
 #if defined( TF_CLIENT_DLL )
 #include "tf_gamerules.h"
 #endif
@@ -200,6 +206,7 @@ void VGui_CreateGlobalPanels( void )
 {
 	VPANEL gameToolParent = enginevgui->GetPanel( PANEL_CLIENTDLL_TOOLS );
 	VPANEL toolParent = enginevgui->GetPanel( PANEL_TOOLS );
+	VPANEL gameParent = enginevgui->GetPanel( PANEL_CLIENTDLL );
 #if defined( TRACK_BLOCKING_IO )
 	VPANEL gameDLLPanel = enginevgui->GetPanel( PANEL_GAMEDLL );
 #endif
@@ -211,6 +218,13 @@ void VGui_CreateGlobalPanels( void )
 	// Debugging or related tool
 	fps->Create( toolParent );
 	touch_panel->Create( toolParent );
+
+#ifdef HL2SB
+	//toolgun menu
+	toolmenu->Create( gameParent );
+	smenu->Create(gameParent);
+	smlmenu->Create(gameParent);
+#endif
 
 #if defined( TRACK_BLOCKING_IO )
 	iopanel->Create( gameDLLPanel );
@@ -242,6 +256,12 @@ void VGui_Shutdown()
 #endif
 	fps->Destroy();
 	touch_panel->Destroy();
+
+#ifdef HL2SB
+	smenu->Destroy();
+	toolmenu->Destroy();
+	smlmenu->Destroy();
+#endif
 
 	messagechars->Destroy();
 	loadingdisc->Destroy();

@@ -1,0 +1,110 @@
+//-----------------------------------------------------------------------------
+//	CLIENT_GUNMOD.VPC
+//
+//	Project Script
+//-----------------------------------------------------------------------------
+
+$Macro SRCDIR		"..\.."
+$Macro GAMENAME 	"hl2sb" [!$SOURCESDK]
+$Macro GAMENAME 	"mod_hl2sb" [$SOURCESDK]
+
+$Include "$SRCDIR\game\client\client_base.vpc"
+
+$Configuration
+{
+	$Compiler
+	{
+		$AdditionalIncludeDirectories	".\hl2;.\hl2\elements;$SRCDIR\game\shared\hl2;$SRCDIR\game\shared\episodic;..\..\public\;.\lua;.\lua\scripted_controls;$BASE"
+		$PreprocessorDefinitions		"$BASE;HL2_CLIENT_DLL;LUA_SDK;HL2SB;ARGG"
+	}
+}
+
+$Project "Client (HL2SB)"
+{
+	$Folder "Client Lua"
+	{
+		$File "$SRCDIR/game/shared/lua/luamanager.cpp"
+
+		$File "lua/lc_baseanimating.cpp"
+		$File "lua/lc_baseentity.cpp"
+		$File "lua/lc_baseplayer.cpp"
+		$File "lua/lcdll_util.cpp"
+		$File "lua/liclientshadowmgr.cpp"
+		$File "lua/lprediction.cpp"
+		$File "lua/lc_recipientfilter.cpp"
+		$File "lua/scripted_controls/lButton.cpp"
+		$File "lua/scripted_controls/lCheckButton.cpp"
+		$File "lua/scripted_controls/lFrame.cpp"
+		$File "lua/scripted_controls/lPropertyDialog.cpp"
+		$File "lua/scripted_controls/lPropertyPage.cpp"
+		$File "lua/scripted_controls/scriptedclientluapanel.cpp"
+		$File "lua/scripted_controls/scriptedhudviewport.cpp"
+		$File "lua/scripted_controls/lPanel.cpp"
+		
+		$File "$SRCDIR/game/shared/lua/lsrcinit.cpp"
+		$File "$SRCDIR/game/shared/lua/ltakedamageinfo.cpp"
+		$File "$SRCDIR/game/shared/lua/lbaseplayer_shared.cpp"
+		$File "$SRCDIR/game/shared/lua/lbaseentity_shared.cpp"
+		$File "$SRCDIR/game/shared/lua/lbasecombatweapon_shared.cpp"
+		$File "$SRCDIR/game/shared/lua/lshareddefs.cpp"
+		$File "$SRCDIR/game/shared/lua/lutil_shared.cpp"
+		$File "$SRCDIR/game/shared/lua/basescripted.cpp"
+		$File "$SRCDIR/game/shared/lua/leffect_dispatch_data.cpp"
+		$File "$SRCDIR/game/shared/lua/lhl2mp_player_shared.cpp"
+		$File "$SRCDIR/game/shared/lua/limovehelper.cpp"
+		$File "$SRCDIR/game/shared/lua/lipredictionsystem.cpp"
+		$File "$SRCDIR/game/shared/lua/lin_buttons.cpp"
+		$File "$SRCDIR/game/shared/lua/weapon_hl2mpbase_scriptedweapon.cpp"
+		$File "$SRCDIR/game/shared/lua/mountaddons.cpp"
+		
+		$File "$SRCDIR/public/lua/vgui/LISurface.cpp"
+		$File "$SRCDIR/public/lua/lColor.cpp"
+		$File "$SRCDIR/public/lua/tier0/ldbg.cpp"
+		$File "$SRCDIR/public/lua/tier1/lconvar.cpp"
+		$File "$SRCDIR/public/lua/lnetworkstringtabledefs.cpp"
+		$File "$SRCDIR/public/lua/mathlib/lmathlib.cpp"
+		$File "$SRCDIR/public/lua/mathlib/lvector.cpp"
+		$File "$SRCDIR/public/lua/mathlib/lvmatrix.cpp"
+		$File "$SRCDIR/public/lua/vgui_controls/lvgui_controls.cpp"
+		$File "$SRCDIR/public/lua/lgametrace.cpp"
+		$File "$SRCDIR/public/lua/SoundEmitterSystem/lisoundemittersystembase.cpp"
+		$File "$SRCDIR/public/lua/lvphysics_interface.cpp"
+		$File "$SRCDIR/public/lua/engine/livdebugoverlay.cpp"
+		$File "$SRCDIR/public/lua/lcdll_int.cpp"
+		$File "$SRCDIR/public/lua/leiface.cpp"
+		$File "$SRCDIR/public/lua/lienginevgui.cpp"
+		$File "$SRCDIR/public/lua/lfilesystem.cpp"
+		$File "$SRCDIR/public/lua/lglobalvars_base.cpp"
+		$File "$SRCDIR/public/lua/lbspflags.cpp"
+		$File "$SRCDIR/public/lua/vphysics/lperformance.cpp"
+		$File "$SRCDIR/public/lua/tier1/LKeyValues.cpp"
+		$File "$SRCDIR/public/lua/tier1/liconvar.cpp"
+		$File "$SRCDIR/public/lua/vgui_controls/lPanel.cpp"
+		$File "$SRCDIR/public/lua/vgui_controls/lEditablePanel.cpp"
+		$File "$SRCDIR/public/lua/vgui/LVGUI.cpp"
+		$File "$SRCDIR/public/lua/vgui/LIScheme.cpp"
+		$File "$SRCDIR/public/lua/vgui/LIInput.cpp"
+		$File "$SRCDIR/public/lua/materialsystem/limaterial.cpp"
+		$File "$SRCDIR/public/lua/licvar.cpp"
+		$File "$SRCDIR/public/lua/vstdlib/lrandom.cpp"
+	}
+
+	$Folder "Half-Life 2 Sanbox"
+	{
+		$File "$SRCDIR/game/shared/hl2sb/weapon_physgun.cpp"
+	}
+
+	$Folder "SMenu"
+	{
+		$File "menu/sm_menu_list.cpp"
+		$File "menu/sm_menu_legacy.cpp"
+		$File "menu/toolgun_menu.cpp"
+		$File "menu/vgui_imagebutton.cpp"
+	}
+
+	$Folder "Gunmod"
+	{
+		$File "$SRCDIR/game/shared/hl2sb/weapon_toolgun.cpp"
+		$File "gunmod/c_grenade_stickybomb.cpp"
+	}
+}
