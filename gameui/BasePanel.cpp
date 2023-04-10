@@ -1607,6 +1607,21 @@ CGameMenu *CBasePanel::RecursiveLoadGameMenu(KeyValues *datafile)
 	else
 		menu->AddMenuItem("Console", "CONSOLE", "OpenConsole", this);
 
+	bool bFoundServerBrowser = false;
+
+	for (KeyValues *dat = datafile->GetFirstSubKey(); dat != NULL; dat = dat->GetNextKey())
+	{
+		const char *label = dat->GetString("label", "<unknown>");
+		const char *cmd = dat->GetString("command", NULL);
+		const char *name = dat->GetString("name", label);
+
+		if( cmd && Q_strcmp(cmd, "OpenServerBrowser") == 0 )
+			bFoundServerBrowser = true;
+	}
+
+	if( !bFoundServerBrowser && !ModInfo().IsSinglePlayerOnly() )
+		menu->AddMenuItem("AntiM*dG*yButton", "#GameUI_GameMenu_FindServers", "OpenServerBrowser", this);
+
 	// loop through all the data adding items to the menu
 	for (KeyValues *dat = datafile->GetFirstSubKey(); dat != NULL; dat = dat->GetNextKey())
 	{
@@ -1614,7 +1629,8 @@ CGameMenu *CBasePanel::RecursiveLoadGameMenu(KeyValues *datafile)
 		const char *cmd = dat->GetString("command", NULL);
 		const char *name = dat->GetString("name", label);
 
-		if ( cmd && !Q_stricmp( cmd, "OpenFriendsDialog" ) && bSteamCommunityFriendsVersion )
+		if ( cmd && (!Q_stricmp( cmd, "OpenFriendsDialog" )
+			|| !Q_stricmp( cmd, "engine bug" )) )
 			continue;
 
 		menu->AddMenuItem(name, label, cmd, this, dat);
