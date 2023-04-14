@@ -8,7 +8,7 @@ wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang
 tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
 export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
 ./waf configure -T release --build-game=hl2sb --android=armeabi-v7a-hard,host,21 --target=../armeabi-v7a --disable-warns &&
-./waf install --destdir=./HL2SB
+./waf install --destdir=./HL2SB --target=engine,server,client
 ls HL2SB/*
 cp HL2SB/armeabi-v7a/*.so srceng-androidwaf/android/lib/armeabi-v7a
 # /game/client/libclient.so srceng-androidwaf/android/lib/armeabi-v7a
