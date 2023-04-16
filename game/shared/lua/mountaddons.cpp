@@ -36,7 +36,7 @@ void MountAddons()
 	char relativepath[ MAX_PATH ] = { 0 };
 	char addonName[ 255 ] = { 0 };
 
-	char const *fn = g_pFullFileSystem->FindFirstEx( LUA_PATH_ADDONS "\\*", "MOD", &fh );
+	char const *fn = g_pFullFileSystem->FindFirstEx( LUA_PATH_ADDONS "/*", "MOD", &fh );
 	while ( fn )
 	{
 		Q_strcpy( addonName, fn );
@@ -48,7 +48,7 @@ void MountAddons()
 				Msg( "Mounting addon \"%s\"...\n", addonName );
 #endif
 
-				Q_snprintf( relativepath, sizeof( relativepath ), LUA_PATH_ADDONS "\\%s", addonName );
+				Q_snprintf( relativepath, sizeof( relativepath ), LUA_PATH_ADDONS "/%s", addonName );
 				char fullpath[ 512 ] = { 0 };
 				bool bGetCurrentDirectory = V_GetCurrentDirectory( fullpath, sizeof( fullpath ) );
 				if ( bGetCurrentDirectory )

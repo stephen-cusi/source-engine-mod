@@ -23,7 +23,7 @@ void MakeVMT( const char *vmt, const char *vtf_without_ex )
 	fp = fopen( vmt, "w+" );
 	fprintf( fp, "UnlitGeneric\n");
 	fprintf( fp, "{\n" );
-	fprintf( fp, "		$basetexture %s\n", vtf_without_ex );
+	fprintf( fp, "	$basetexture %s\n", vtf_without_ex );
 	fprintf( fp, "}");
 	fflush( fp );
 }

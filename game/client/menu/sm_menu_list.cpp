@@ -124,7 +124,7 @@ public:
 					Q_snprintf( normalImage, sizeof(normalImage), "smenu/%s", entname );
 					Q_snprintf( vtf, sizeof( vtf ), "materials/vgui/smenu/%s.vtf", entname );
 					Q_snprintf( vtf_without_ex, sizeof(vtf_without_ex), "vgui/smenu/%s", entname );
-					Q_snprintf( vmt, sizeof( vmt ), "hl2sb/materials/vgui/smenu/%s.vmt", entname );
+					Q_snprintf( vmt, sizeof( vmt ), "materials/vgui/smenu/%s.vmt", entname );
 
 					if ( filesystem->FileExists( vtf ) && filesystem->FileExists( vmt ) )
 					{

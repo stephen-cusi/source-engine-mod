@@ -289,8 +289,6 @@ void CHL2MP_Player::Spawn(void)
 
 	PickDefaultSpawnTeam();
 
-	engine->ClientCommand( edict(), "dumpentitytofile" );
-
 	BaseClass::Spawn();
 	
 	if ( !IsObserver() )
