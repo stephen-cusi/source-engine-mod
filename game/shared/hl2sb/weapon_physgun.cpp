@@ -693,7 +693,7 @@ void CWeaponGravityGun::EffectUpdate( void )
 	{
 		if ( m_useDown ) // if already been pressed
 		{
-			if ( pOwner->m_afButtonPressed & IN_USE ) // then if use pressed
+			if ( pOwner->m_afButtonPressed & IN_ATTACK2 ) // then if use pressed
 	        {
 				m_useDown = false;
 				IPhysicsObject *pPhys = pObject->VPhysicsGetObject();
@@ -706,47 +706,28 @@ void CWeaponGravityGun::EffectUpdate( void )
 		}
         else
 	    {
-			if ( pOwner->m_afButtonPressed & IN_USE )
+			if ( pOwner->m_afButtonPressed & IN_ATTACK2 )
 	        {
 				m_useDown = true;
 				IPhysicsObject *pPhys = pObject->VPhysicsGetObject();
 				pPhys->EnableMotion(false);
 	        }
 		}
-/*		if ( m_useDown )
+
+		if ( ( pOwner->m_nButtons & IN_USE ) && ( pOwner->m_nButtons & IN_FORWARD ) )
 		{
 #ifndef CLIENT_DLL
 			pOwner->SetPhysicsFlag( PFLAG_DIROVERRIDE, true );
 #endif
-			if ( pOwner->m_nButtons & IN_FORWARD )
-			{
-				m_distance = Approach( 1024, m_distance, gpGlobals->frametime * 100 );
-			}
-			if ( pOwner->m_nButtons & IN_BACK )
-			{
-				m_distance = Approach( 40, m_distance, gpGlobals->frametime * 100 );
-			}
-		}
-*/
-		if ( pOwner->m_nButtons & IN_WEAPON1 )
-		{
 			m_distance = Approach( 1024, m_distance, m_distance * 0.1 );
-#ifdef CLIENT_DLL
-			if ( gpGlobals->maxClients > 1 )
-			{
-			//	gHUD.m_bSkipClear = false;
-			}
-#endif
 		}
-		if ( pOwner->m_nButtons & IN_WEAPON2 )
+
+		if ( ( pOwner->m_nButtons & IN_USE ) && ( pOwner->m_nButtons & IN_BACK ) )
 		{
-			m_distance = Approach( 40, m_distance, m_distance * 0.1 );
-#ifdef CLIENT_DLL
-			if ( gpGlobals->maxClients > 1 )
-			{
-			//	gHUD.m_bSkipClear = false;
-			}
+#ifndef CLIENT_DLL
+			pOwner->SetPhysicsFlag( PFLAG_DIROVERRIDE, true );
 #endif
+			m_distance = Approach( 40, m_distance, m_distance * 0.1 );
 		}
 
 		IPhysicsObject *pPhys = GetPhysObjFromPhysicsBone( pObject, m_physicsBone );
@@ -1270,20 +1251,6 @@ void CWeaponGravityGun::ItemPostFrame( void )
 
 	if ( pOwner->m_nButtons & IN_ATTACK )
 	{
-		if ( pOwner->m_afButtonPressed & IN_ATTACK2 )
-		{
-			SecondaryAttack();
-		}
-		else if ( pOwner->m_nButtons & IN_ATTACK2 )
-		{
-			if ( m_active )
-			{
-				EffectDestroy();
-				SoundDestroy();
-			}
-			WeaponIdle( );
-			return;
-		}
 		PrimaryAttack();
 	}
 	else

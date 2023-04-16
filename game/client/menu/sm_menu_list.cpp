@@ -5,6 +5,7 @@
 // $NoKeywords: $
 //===========================================================================//
 #include "cbase.h"
+#include <stdio.h>
 #include "sm_menu_list.h"
 #include <vgui/ISurface.h>
 #include <vgui_controls/Label.h>
@@ -13,6 +14,7 @@
 #include <vgui_controls/Menu.h>
 #include <vgui_controls/MenuItem.h>
 #include <vgui_controls/ImageList.h>
+#include <vgui_controls/PanelListPanel.h>
 #include <vgui/IScheme.h>
 #include <vgui/IVGui.h>
 #include <vgui_controls/Frame.h>
@@ -28,51 +30,23 @@ using namespace vgui;
 
 ConVar sm_wide("sm_wide", "0");
 ConVar sm_height("sm_height", "0");
-//-----------------------------------------------------------------------------
-// Purpose: A menu button that knows how to parse cvar/command menu data from gamedir/addons/menu/spawnmenu.ctx
-//-----------------------------------------------------------------------------
-class CSMButton : public MenuButton
+
+const char *ignore[] =
 {
-	typedef MenuButton BaseClass;
-
-public:
-	// Construction
-	CSMButton( Panel *parent, const char *panelName, const char *text );
-
-private:
-	// Menu associated with this button
-	Menu	*m_pMenu;
+	"characters",
+	"hostage",
+	"player",
+	"humans",
 };
 
-class CSMCommandButton : public vgui::Button
+class CSMList : public vgui::PanelListPanel
 {
-typedef vgui::Button BaseClass;
 public:
-	CSMCommandButton( vgui::Panel *parent, const char *panelName, const char *labelText, const char *command )
-		: BaseClass( parent, panelName, labelText )
+	typedef vgui::PanelListPanel BaseClass;
+	
+	CSMList( vgui::Panel *parent, const char *pName ) : BaseClass( parent, pName )
 	{
-		AddActionSignalTarget( this );
-		SetCommand( command );
-	}
-
-	virtual void OnCommand( const char *command )
-	{
-		engine->ClientCmd((char *)command);
-	}
-
-	virtual void OnTick( void )
-	{
-	}
-};
-
-class CSMPage : public vgui::PropertyPage
-{
-	typedef vgui::PropertyPage BaseClass;
-public:
-	CSMPage ( vgui::Panel *parent, const char *panelName )
-		: BaseClass( parent, panelName )
-	{
-		vgui::ivgui()->AddTickSignal( GetVPanel(), 250 );
+		SetBounds( 0, 0, 800, 640 );
 	}
 
 	virtual void OnTick( void )
@@ -97,89 +71,98 @@ public:
 
 	virtual void PerformLayout()
 	{
-		BaseClass::PerformLayout();	
+		BaseClass::PerformLayout();
+
+		int w = 64;
+		int h = 64;
 		int x = 5;
 		int y = 5;
-		int w = sm_wide.GetInt();
-		int h = sm_height.GetInt();
 		int gap = 2;
 
 		int c = m_LayoutItems.Count();
-		int tall = GetTall();
+		int wide = GetWide();
 
 		for ( int i = 0; i < c; i++ )
 		{
 			vgui::Panel *p = m_LayoutItems[ i ];
 			p->SetBounds( x, y, w, h );
 
-			y += ( h + gap );
-			if ( y >= tall - h )
+			x += ( w + gap );
+			if ( x >= wide - w )
 			{
-				x += ( w + gap );
-				y = 5;
+				y += ( h + gap );
+				x = 5;
 			}	
 		}	
 	}
 
-	void InitNPCs( KeyValues *kv )
+	virtual void AddImageButton( CSMList *panel, const char *image, const char *command )
+	{
+		ImageButton *btn = new ImageButton( panel, image, image, NULL, NULL, command );
+		m_LayoutItems.AddToTail( btn );
+		panel->AddItem( NULL, btn );
+	}
+	
+	virtual void InitEntities( KeyValues *kv, CSMList *panel, const char *enttype )
 	{
 		for ( KeyValues *control = kv->GetFirstSubKey(); control != NULL; control = control->GetNextKey() )
 		{
-			const char *entname;
+			const char *entname; 
 
 			if ( !Q_strcasecmp( control->GetName(), "entity" ) )
 			{
 				entname = control->GetString();
 			}
 
-			if( Q_strncmp( entname, "npc_", Q_strlen("npc_") ) == 0 )
+			if( Q_strncmp( entname, enttype, Q_strlen(enttype) ) == 0 )
 			{
 				if ( entname && entname[0] )
 				{
-					char entspawn[256];
-					Q_snprintf( entspawn, 256, "ent_create %s", entname );
+					char entspawn[MAX_PATH], normalImage[MAX_PATH], vtf[MAX_PATH], vtf_without_ex[MAX_PATH], vmt[MAX_PATH];
+					
+					Q_snprintf( entspawn, sizeof(entspawn), "ent_create %s", entname );
+					Q_snprintf( normalImage, sizeof(normalImage), "smenu/%s", entname );
+					Q_snprintf( vtf, sizeof( vtf ), "materials/vgui/smenu/%s.vtf", entname );
+					Q_snprintf( vtf_without_ex, sizeof(vtf_without_ex), "vgui/smenu/%s", entname );
+					Q_snprintf( vmt, sizeof( vmt ), "hl2sb/materials/vgui/smenu/%s.vmt", entname );
 
-					char normalImage[256];					
-					Q_snprintf( normalImage, 256, "pic/%s.vmt", entname );
-
-					ImageButton *btn = new ImageButton( this, "ImageButton", normalImage, normalImage, normalImage, entspawn );
-					m_LayoutItems.AddToTail( btn );
-					continue;
+					if ( filesystem->FileExists( vtf ) && filesystem->FileExists( vmt ) )
+					{
+						AddImageButton( panel, normalImage, entspawn );
+						continue;
+					}
 				}
 			}
 		}		
 	}
 
-	void InitWeapons( KeyValues *kv )
+	virtual void InitModels( CSMList *panel, const char *modeltype, const char *modelfolder, const char *mdlPath )
 	{
-		for ( KeyValues *control = kv->GetFirstSubKey(); control != NULL; control = control->GetNextKey() )
+		FileFindHandle_t fh;
+		for ( const char *pModel = filesystem->FindFirst( mdlPath, &fh ); pModel && *pModel; pModel = filesystem->FindNext( fh ) )
 		{
-			const char *weaponName;
-
-			if ( !Q_strcasecmp( control->GetName(), "entity" ) )
+			char file[MAX_PATH];
+			Q_FileBase( pModel, file, sizeof( file ) );
+			
+			if ( pModel && pModel[0] )
 			{
-				weaponName = control->GetString();
-			}
-
-			if( Q_strncmp( weaponName, "weapon_", Q_strlen("weapon_") ) == 0 )
-			{
-				if ( weaponName && weaponName[0] )
+				char normalImage[MAX_PATH], vtf[MAX_PATH], modelfile[MAX_PATH], entspawn[MAX_PATH], normalMaterial[MAX_PATH];
+				Q_snprintf( modelfile, sizeof(modelfile), "%s/%s", modelfolder, file );
+				Q_snprintf( normalImage, sizeof(normalImage), "smenu/models/%s", modelfile );
+				Q_snprintf( vtf,  sizeof(vtf),  "materials/vgui/%s.vtf", normalImage );
+				Q_snprintf( entspawn, sizeof(entspawn), "%s_create %s", modeltype, modelfile );
+				Q_snprintf( normalMaterial, sizeof(normalMaterial), "materials/vgui/%s.vmt", normalImage );
+					
+				if ( filesystem->FileExists( normalMaterial ) && filesystem->FileExists( vtf ) )
 				{
-					 char weaponspawn[1024];
-					Q_snprintf( weaponspawn, 1024, "ent_create %s", weaponName );
-
-					char normalImage[1024];					
-					Q_snprintf( normalImage, 1024, "pic/%s.vmt", weaponName );
-
-					ImageButton *btn = new ImageButton( this, "ImageButton", normalImage, normalImage, normalImage, weaponspawn );
-					m_LayoutItems.AddToTail( btn );
+					AddImageButton( panel, normalImage, entspawn );
 					continue;
-				}
+				}					
 			}
 		}
 	}
 private:
-	CUtlVector< vgui::Panel * >		m_LayoutItems; 
+	CUtlVector< vgui::Panel * >		m_LayoutItems;
 };
 
 ConVar sm_menu("sm_menu", "0", FCVAR_CLIENTDLL, "Spawn Menu");
@@ -202,16 +185,41 @@ public:
 		{
 			if ( kv->LoadFromFile(g_pFullFileSystem, "addons/menu/entitylist.txt") )
 			{
-				CSMPage *npces = new CSMPage( this, "NPCs" );
-				CSMPage *weapons = new CSMPage( this, "Weapons" );
-		
-				npces->InitNPCs( kv );
-				weapons->InitWeapons( kv );
+				CSMList *npces = new CSMList( this, "EntityPanel");
+				npces->InitEntities( kv, npces, "npc_" );
+				npces->InitEntities( kv, npces, "monster_"); // hl1 npces
+				CSMList *weapons = new CSMList( this, "EntityPanel");
+				weapons->InitEntities( kv, weapons, "weapon_" );
+				weapons->InitEntities( kv, weapons, "item_");
+				weapons->InitEntities( kv, weapons, "ammo_");
+
 				AddPage( npces, "NPCs" );
 				AddPage( weapons, "Weapons");
 			}
 			kv->deleteThis();
 		}
+
+		CSMList *models = new CSMList( this, "ModelPanel");
+
+		FileFindHandle_t fh;
+		for ( const char *pDir = filesystem->FindFirst( "models/*", &fh ); pDir && *pDir; pDir = filesystem->FindNext( fh ) )
+		{			
+			if ( filesystem->FindIsDirectory( fh ) )
+			{
+				char dir[MAX_PATH];
+				char file[MAX_PATH];
+				Q_FileBase( pDir, file, sizeof( file ) );
+				Q_snprintf( dir, sizeof( dir ), "models/%s/*.mdl", file ); 
+
+				if ( !FStrEq( file, ignore[0]) && !FStrEq(file, ignore[1]) && !FStrEq(file, ignore[2]) && !FStrEq(file, ignore[2]) && !FStrEq( file, ignore[3]) ) {
+					models->InitModels( models, "prop_physics", file, dir );
+				}
+				else
+					models->InitModels( models, "prop_ragdoll", file, dir );
+			}
+		}
+		
+		AddPage( models, "Props");
 		
 		vgui::ivgui()->AddTickSignal(GetVPanel(), 100);
 	
@@ -219,10 +227,8 @@ public:
 		SetMoveable( true );
 		SetVisible( true );
 		SetSizeable( true );
-		SetProportional(false);
+		SetProportional(true);
 	}
-
-	void Init();
 
 	void OnTick()
 	{
@@ -239,12 +245,7 @@ public:
 			sm_menu.SetValue(0);
 		}
 	}
-
 };
-
-void CSMenu::Init()
-{
-}
 
 class CSMPanelInterface : public SMPanel
 {

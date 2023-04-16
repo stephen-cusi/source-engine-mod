@@ -36,7 +36,10 @@ IMPLEMENT_CLIENTCLASS_DT(C_HL2MP_Player, DT_HL2MP_Player, CHL2MP_Player)
 	RecvPropEHandle( RECVINFO( m_hRagdoll ) ),
 	RecvPropInt( RECVINFO( m_iSpawnInterpCounter ) ),
 	RecvPropInt( RECVINFO( m_iPlayerSoundType) ),
-
+	RecvPropFloat( RECVINFO( m_flStartCharge ) ),
+	RecvPropFloat( RECVINFO( m_flAmmoStartCharge ) ),
+	RecvPropFloat( RECVINFO( m_flPlayAftershock ) ),
+	RecvPropFloat( RECVINFO( m_flNextAmmoBurn ) ),
 	RecvPropBool( RECVINFO( m_fIsWalking ) ),
 END_RECV_TABLE()
 

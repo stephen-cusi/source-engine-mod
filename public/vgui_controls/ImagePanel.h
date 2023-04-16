@@ -77,7 +77,6 @@ private:
 	char *m_pszDrawColorName;
 	bool m_bPositionImage;
 	bool m_bCenterImage;
-	bool m_bScaleImage;
 	bool m_bTileImage;
 	bool m_bTileHorizontally;
 	bool m_bTileVertically;
@@ -85,6 +84,8 @@ private:
 	Color m_FillColor;
 	Color m_DrawColor;
 	int m_iRotation;
+public:
+	bool m_bScaleImage;
 };
 
 } // namespace vgui

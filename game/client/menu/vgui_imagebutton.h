@@ -21,7 +21,6 @@ public:
 	virtual void OnCursorExited(); // When the mouse leaves this panel, change back
 
 	virtual void OnMouseReleased( vgui::MouseCode code );
-
 	virtual void OnMousePressed( vgui::MouseCode code );
 
 	void SetNormalImage( void );
@@ -29,14 +28,15 @@ public:
 	void SetMouseClickImage( void );
 
 private:
-
-	char command[32]; // The command when it is clicked on
 	vgui::IImage *i_normalImage; // The image when the mouse isn't over it, and its not being clicked
 	vgui::IImage *i_mouseOverImage; // The image that appears as when the mouse is hovering over it
 	vgui::IImage *i_mouseClickImage; // The image that appears while the mouse is clicking
-	char m_normalImage[32];
-	char m_mouseOverImage[32];
-	char m_mouseClickImage[32];
+	
+	char command[260]; // The command when it is clicked on
+	char m_normalImage[260];
+	char m_mouseOverImage[260];
+	char m_mouseClickImage[260];
+	
 	Panel* m_pParent;
 
 	bool hasCommand; // If this is to act as a button

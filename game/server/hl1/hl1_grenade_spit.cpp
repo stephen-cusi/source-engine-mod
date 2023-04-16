@@ -19,7 +19,7 @@
 
 ConVar sk_bullsquid_dmg_spit ( "sk_bullsquid_dmg_spit", "0" );
 
-BEGIN_DATADESC( CGrenadeSpit )
+BEGIN_DATADESC( CGrenadeSpit_HL1 )
 
 	// Function pointers
 	DEFINE_THINKFUNC( SpitThink ),
@@ -31,9 +31,9 @@ BEGIN_DATADESC( CGrenadeSpit )
 
 END_DATADESC()
 
-LINK_ENTITY_TO_CLASS( grenade_spit, CGrenadeSpit );
+LINK_ENTITY_TO_CLASS( grenade_spit, CGrenadeSpit_HL1 );
 
-void CGrenadeSpit::Spawn( void )
+void CGrenadeSpit_HL1::Spawn( void )
 {
 	Precache( );
 	SetSolid( SOLID_BBOX );
@@ -48,9 +48,9 @@ void CGrenadeSpit::Spawn( void )
 	SetRenderColor( 255, 255, 255, 255 );
 	m_nRenderFX		= kRenderFxNone;
 
-	SetThink( &CGrenadeSpit::SpitThink );
+	SetThink( &CGrenadeSpit_HL1::SpitThink );
 	SetUse( &CBaseGrenade::DetonateUse ); 
-	SetTouch( &CGrenadeSpit::GrenadeSpitTouch );
+	SetTouch( &CGrenadeSpit_HL1::GrenadeSpitTouch );
 	SetNextThink( gpGlobals->curtime + 0.1f );
 
 	m_flDamage		= sk_bullsquid_dmg_spit.GetFloat();
@@ -66,7 +66,7 @@ void CGrenadeSpit::Spawn( void )
 }
 
 
-void CGrenadeSpit::SetSpitSize(int nSize)
+void CGrenadeSpit_HL1::SetSpitSize(int nSize)
 {
 	switch (nSize)
 	{
@@ -88,12 +88,12 @@ void CGrenadeSpit::SetSpitSize(int nSize)
 	}
 }
 
-void CGrenadeSpit::Event_Killed( const CTakeDamageInfo &info )
+void CGrenadeSpit_HL1::Event_Killed( const CTakeDamageInfo &info )
 {
 	Detonate( );
 }
 
-void CGrenadeSpit::GrenadeSpitTouch( CBaseEntity *pOther )
+void CGrenadeSpit_HL1::GrenadeSpitTouch( CBaseEntity *pOther )
 {
 	if (m_fSpitDeathTime != 0)
 	{
@@ -124,7 +124,7 @@ void CGrenadeSpit::GrenadeSpitTouch( CBaseEntity *pOther )
 	Detonate();
 }
 
-void CGrenadeSpit::SpitThink( void )
+void CGrenadeSpit_HL1::SpitThink( void )
 {
 	if (m_fSpitDeathTime != 0 &&
 		m_fSpitDeathTime < gpGlobals->curtime)
@@ -134,7 +134,7 @@ void CGrenadeSpit::SpitThink( void )
 	SetNextThink( gpGlobals->curtime + 0.1f );
 }
 
-void CGrenadeSpit::Detonate(void)
+void CGrenadeSpit_HL1::Detonate(void)
 {
 	m_takedamage	= DAMAGE_NO;	
 
@@ -152,7 +152,7 @@ void CGrenadeSpit::Detonate(void)
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CGrenadeSpit::Precache( void )
+void CGrenadeSpit_HL1::Precache( void )
 {
 	m_nSquidSpitSprite = PrecacheModel("sprites/bigspit.vmt");// client side spittle.
 
@@ -166,6 +166,6 @@ void CGrenadeSpit::Precache( void )
 }
 
 
-CGrenadeSpit::CGrenadeSpit(void)
+CGrenadeSpit_HL1::CGrenadeSpit_HL1(void)
 {
 }
