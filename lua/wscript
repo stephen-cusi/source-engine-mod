@@ -47,6 +47,7 @@ def build(bld):
 		"src/lvm.c",
 		"src/lzio.c",
 		"src/print.c",
+		"src/bit.c",
 	]
 
 	includes = [
