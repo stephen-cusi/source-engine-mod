@@ -20,7 +20,7 @@ games = {
 	'hl1mp': ['client_base.vpc', 'client_hl1mp.vpc'],
 	'cstrike': ['client_base.vpc', 'client_cstrike.vpc'],
 	'dod': ['client_base.vpc', 'client_dod.vpc'],
-	'hl2sb': ['client_base.vpc', 'client_hl2mp.vpc', 'client_lua.vpc', 'client_episodic.vpc'],
+	'hl2sb': ['client_base.vpc', 'client_hl2mp.vpc', 'client_lua.vpc'],
 }
 
 def configure(conf):
