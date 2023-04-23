@@ -209,7 +209,6 @@ public:
 		}
 
 		CSMList *models = new CSMList( this, "ModelPanel");
-		CSMList *models2 = new CSMList(this, "ModelPanel");
 
 		FileFindHandle_t fh;
 		for ( const char *pDir = filesystem->FindFirstEx( "models/*", "GAME", &fh ); pDir && *pDir; pDir = filesystem->FindNext( fh ) )
