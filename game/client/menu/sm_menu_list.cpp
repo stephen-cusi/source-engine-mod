@@ -23,21 +23,11 @@
 #include <vgui_controls/PropertySheet.h>
 #include "vgui_imagebutton.h"
 #include "filesystem.h"
+#include "game_controls/basemodel_panel.h"
 
 #include "tier0/memdbgon.h"
 
 using namespace vgui;
-
-ConVar sm_wide("sm_wide", "0");
-ConVar sm_height("sm_height", "0");
-
-const char *ignore[] =
-{
-	"characters",
-	"hostage",
-	"player",
-	"humans",
-};
 
 class CSMList : public vgui::PanelListPanel
 {
@@ -78,11 +68,9 @@ public:
 		int x = 5;
 		int y = 5;
 		int gap = 2;
-
-		int c = m_LayoutItems.Count();
 		int wide = GetWide();
 
-		for ( int i = 0; i < c; i++ )
+		for ( int i = 0; i < m_LayoutItems.Count(); i++ )
 		{
 			vgui::Panel *p = m_LayoutItems[ i ];
 			p->SetBounds( x, y, w, h );
@@ -102,6 +90,14 @@ public:
 		m_LayoutItems.AddToTail( btn );
 		panel->AddItem( NULL, btn );
 	}
+
+	virtual void AddModelPanel( CSMList *panel, const char *mdlname )
+	{
+		CBaseModelPanel *mdl = new CBaseModelPanel( panel, "MDLPanel" );
+		mdl->SetMDL( mdlname );
+		m_LayoutItems.AddToTail( mdl );
+		panel->AddItem( NULL, mdl );
+	}
 	
 	virtual void InitEntities( KeyValues *kv, CSMList *panel, const char *enttype )
 	{
@@ -118,13 +114,14 @@ public:
 			{
 				if ( entname && entname[0] )
 				{
-					char entspawn[MAX_PATH], normalImage[MAX_PATH], vtf[MAX_PATH], vtf_without_ex[MAX_PATH], vmt[MAX_PATH];
+					char entspawn[MAX_PATH], normalImage[MAX_PATH], vtf[MAX_PATH], vtf_without_ex[MAX_PATH], vmt[MAX_PATH], file[MAX_PATH];
 					
 					Q_snprintf( entspawn, sizeof(entspawn), "ent_create %s", entname );
 					Q_snprintf( normalImage, sizeof(normalImage), "smenu/%s", entname );
 					Q_snprintf( vtf, sizeof( vtf ), "materials/vgui/smenu/%s.vtf", entname );
 					Q_snprintf( vtf_without_ex, sizeof(vtf_without_ex), "vgui/smenu/%s", entname );
 					Q_snprintf( vmt, sizeof( vmt ), "materials/vgui/smenu/%s.vmt", entname );
+					Q_snprintf( file, sizeof( file ), "hl2sb/%s", vmt );
 
 					if ( filesystem->FileExists( vtf ) && filesystem->FileExists( vmt ) )
 					{
@@ -139,27 +136,39 @@ public:
 	virtual void InitModels( CSMList *panel, const char *modeltype, const char *modelfolder, const char *mdlPath )
 	{
 		FileFindHandle_t fh;
-		for ( const char *pModel = filesystem->FindFirst( mdlPath, &fh ); pModel && *pModel; pModel = filesystem->FindNext( fh ) )
+		char const *pModel = g_pFullFileSystem->FindFirst( mdlPath, &fh );
+		while ( pModel )
 		{
-			char file[MAX_PATH];
-			Q_FileBase( pModel, file, sizeof( file ) );
-			
-			if ( pModel && pModel[0] )
+			if ( pModel[0] != '.' )
 			{
-				char normalImage[MAX_PATH], vtf[MAX_PATH], modelfile[MAX_PATH], entspawn[MAX_PATH], normalMaterial[MAX_PATH];
-				Q_snprintf( modelfile, sizeof(modelfile), "%s/%s", modelfolder, file );
-				Q_snprintf( normalImage, sizeof(normalImage), "smenu/models/%s", modelfile );
-				Q_snprintf( vtf,  sizeof(vtf),  "materials/vgui/%s.vtf", normalImage );
-				Q_snprintf( entspawn, sizeof(entspawn), "%s_create %s", modeltype, modelfile );
-				Q_snprintf( normalMaterial, sizeof(normalMaterial), "materials/vgui/%s.vmt", normalImage );
-					
-				if ( filesystem->FileExists( normalMaterial ) && filesystem->FileExists( vtf ) )
+				char ext[ 10 ];
+				Q_ExtractFileExtension( pModel, ext, sizeof( ext ) );
+
+				if ( !Q_stricmp( ext, "mdl" ) )
 				{
-					AddImageButton( panel, normalImage, entspawn );
-					continue;
-				}					
+					char file[MAX_PATH];
+					Q_FileBase( pModel, file, sizeof( file ) );
+				
+					if ( pModel && pModel[0] )
+					{
+						char normalImage[MAX_PATH], vtf[MAX_PATH], modelfile[MAX_PATH], entspawn[MAX_PATH], vmt[MAX_PATH], file1[MAX_PATH], vtf_without_ex[MAX_PATH];
+						Q_snprintf( modelfile, sizeof(modelfile), "%s/%s", modelfolder, file );
+						Q_snprintf( normalImage, sizeof(normalImage), "smenu/models/%s", modelfile );
+						Q_snprintf( vtf,  sizeof(vtf),  "materials/vgui/%s.vtf", normalImage );
+						Q_snprintf( entspawn, sizeof(entspawn), "%s_create %s", modeltype, modelfile );
+						Q_snprintf( vmt, sizeof(vmt), "materials/vgui/%s.vmt", normalImage );
+						Q_snprintf( vtf_without_ex, sizeof( vtf_without_ex ), "vgui/%s", normalImage );
+						
+						if ( filesystem->FileExists( vtf ) && filesystem->FileExists( vmt ) )
+						{
+							AddImageButton( panel, normalImage, entspawn );
+						}
+					}
+				}
 			}
+			pModel = g_pFullFileSystem->FindNext( fh );
 		}
+		g_pFullFileSystem->FindClose( fh );
 	}
 private:
 	CUtlVector< vgui::Panel * >		m_LayoutItems;
@@ -200,34 +209,61 @@ public:
 		}
 
 		CSMList *models = new CSMList( this, "ModelPanel");
+		CSMList *models2 = new CSMList(this, "ModelPanel");
 
 		FileFindHandle_t fh;
-		for ( const char *pDir = filesystem->FindFirst( "models/*", &fh ); pDir && *pDir; pDir = filesystem->FindNext( fh ) )
+		for ( const char *pDir = filesystem->FindFirstEx( "models/*", "GAME", &fh ); pDir && *pDir; pDir = filesystem->FindNext( fh ) )
 		{			
-			if ( filesystem->FindIsDirectory( fh ) )
-			{
-				char dir[MAX_PATH];
-				char file[MAX_PATH];
-				Q_FileBase( pDir, file, sizeof( file ) );
-				Q_snprintf( dir, sizeof( dir ), "models/%s/*.mdl", file ); 
-
-				if ( !FStrEq( file, ignore[0]) && !FStrEq(file, ignore[1]) && !FStrEq(file, ignore[2]) && !FStrEq(file, ignore[2]) && !FStrEq( file, ignore[3]) ) {
+			if ( Q_strncmp( pDir, "props_", Q_strlen("props_") ) == 0 ) {
+				if ( filesystem->FindIsDirectory( fh ) )
+				{
+					char dir[MAX_PATH];
+					char file[MAX_PATH];
+					Q_FileBase( pDir, file, sizeof( file ) );
+					Q_snprintf( dir, sizeof( dir ), "models/%s/*.mdl", file );
+					printf("%s\n", pDir );
+					list.AddToTail( pDir );
 					models->InitModels( models, "prop_physics", file, dir );
 				}
-				else
-					models->InitModels( models, "prop_ragdoll", file, dir );
 			}
 		}
-		
 		AddPage( models, "Props");
-		
+
+/*		for ( const char *pD = filesystem->FindFirstEx( "models/*", "MOD", &fh ); pD && *pD; pD = filesystem->FindNext( fh ) )
+		{			
+			if ( Q_strncmp( pD, "props_", Q_strlen("props_") ) == 0 ) {
+				
+				if ( filesystem->FindIsDirectory( fh ) )
+				{	
+					for ( int index = 0; index < list.Count(); index++ )
+					{
+						const char *i = list [ index ];
+
+						if ( !FStrEq( pD, i ) ) {
+							char dir[MAX_PATH];
+							char file[MAX_PATH];
+							Q_FileBase( pD, file, sizeof( file ) );
+							Q_snprintf( dir, sizeof( dir ), "models/%s/*.mdl", file );
+							printf("ALSO: %s\n", pD );
+							models2->InitModels( models2, "prop_physics", file, dir );
+						}
+					}
+				}
+			}
+		}
+		AddPage( models2, "Props_MOD");
+*/		
 		vgui::ivgui()->AddTickSignal(GetVPanel(), 100);
 	
 		GetPropertySheet()->SetTabWidth(72);
 		SetMoveable( true );
 		SetVisible( true );
 		SetSizeable( true );
-		SetProportional(true);
+	}
+
+	~CSMenu()
+	{
+		list.RemoveAll();
 	}
 
 	void OnTick()
@@ -245,6 +281,8 @@ public:
 			sm_menu.SetValue(0);
 		}
 	}
+private: 
+	CUtlVector<const char* > list;
 };
 
 class CSMPanelInterface : public SMPanel

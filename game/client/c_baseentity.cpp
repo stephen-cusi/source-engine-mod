@@ -987,7 +987,10 @@ C_BaseEntity::~C_BaseEntity()
 	RemoveFromInterpolationList();
 	RemoveFromTeleportList();
 #if defined( LUA_SDK )
-	lua_unref( L, m_nTableReference );
+	if ( L != NULL )
+	{
+		lua_unref( L, m_nTableReference );
+	}
 #endif
 }
 
