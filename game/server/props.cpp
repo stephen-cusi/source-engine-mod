@@ -204,9 +204,27 @@ void CBaseProp::Spawn( void )
 			// If we don't have data, but we're a prop_physics, fail
 			if ( FClassnameIs( this, "prop_physics" ) )
 			{
+				
+#if HL2SB
+				CBaseEntity *pEntity = CreateEntityByName( "prop_physics_override" );
+				if ( pEntity )
+				{
+					pEntity->SetAbsOrigin( GetAbsOrigin() );
+					pEntity->PrecacheModel( szModel );
+					pEntity->SetModel( szModel );
+					DispatchSpawn( pEntity );
+					pEntity->Activate();
+				}
+
+				DevWarning( "%s at %.0f %.0f %0.f uses model %s, which has no propdata which means it must be used on a prop_static. I make prop_physics_override variant for you :').\n", GetClassname(), GetAbsOrigin().x, GetAbsOrigin().y, GetAbsOrigin().z, szModel );
+				Msg( "Removed prop_physics and spawned prop_physics_override" );
+				UTIL_Remove( this );
+				return;
+#else					
 				DevWarning( "%s at %.0f %.0f %0.f uses model %s, which has no propdata which means it must be used on a prop_static. DELETED.\n", GetClassname(), GetAbsOrigin().x, GetAbsOrigin().y, GetAbsOrigin().z, szModel );
 				UTIL_Remove( this );
 				return;
+#endif
 			}
 		}
 		else if ( iResult == PARSE_SUCCEEDED )
@@ -835,9 +853,9 @@ void CBreakableProp::Spawn()
 	
 	//jmd: I am guessing that the call to Spawn will set any flags that should be set anyway; this
 	//clears flags we don't want (specifically the FL_ONFIRE for explosive barrels in HL2MP)]
-#ifdef HL2MP
-	ClearFlags();
-#endif 
+//#ifdef HL2MP
+//	ClearFlags();
+//#endif 
 
 	BaseClass::Spawn();
 	
@@ -5866,8 +5884,6 @@ void CC_Prop_Dynamic_Create( const CCommand &args )
 
 static ConCommand prop_dynamic_create("prop_dynamic_create", CC_Prop_Dynamic_Create, "Creates a dynamic prop with a specific .mdl aimed away from where the player is looking.\n\tArguments: {.mdl name}", FCVAR_CHEAT);
 
-
-
 //------------------------------------------------------------------------------
 // Purpose: Create a prop of the given type
 //------------------------------------------------------------------------------
@@ -5885,11 +5901,79 @@ void CC_Prop_Physics_Create( const CCommand &args )
 	Vector forward;
 	pPlayer->EyeVectors( &forward );
 
-	CreatePhysicsProp( pModelName, pPlayer->EyePosition(), pPlayer->EyePosition() + forward * MAX_TRACE_LENGTH, pPlayer, true );
+	CreatePhysicsProp( pModelName, pPlayer->EyePosition(), pPlayer->EyePosition() + forward * MAX_TRACE_LENGTH, pPlayer, true, "physics_prop" );
 }
 
-static ConCommand prop_physics_create("prop_physics_create", CC_Prop_Physics_Create, "Creates a physics prop with a specific .mdl aimed away from where the player is looking.\n\tArguments: {.mdl name}", FCVAR_CHEAT);
 
+static ConCommand prop_physics_create("prop_physics_create", CC_Prop_Physics_Create, "Creates a physics prop with a specific .mdl aimed away from where the player is looking.\n\tArguments: {.mdl name}");
+
+void CreateRagdoll( const char *pModelName, const Vector &vTraceStart, const Vector &vTraceEnd, const IHandleEntity *pTraceIgnore, bool bRequireVCollide )
+{
+	MDLCACHE_CRITICAL_SECTION();
+
+	MDLHandle_t h = mdlcache->FindMDL( pModelName );
+	if ( h == MDLHANDLE_INVALID )
+		return;
+
+	// Must have vphysics to place as a physics prop
+	studiohdr_t *pStudioHdr = mdlcache->GetStudioHdr( h );
+	if ( !pStudioHdr )
+		return;
+
+	// Must have vphysics to place as a physics prop
+	if ( bRequireVCollide && !mdlcache->GetVCollide( h ) )
+		return;
+
+	QAngle angles( 0.0f, 0.0f, 0.0f );
+	Vector vecSweepMins = pStudioHdr->hull_min;
+	Vector vecSweepMaxs = pStudioHdr->hull_max;
+
+	trace_t tr;
+	UTIL_TraceHull( vTraceStart, vTraceEnd,
+		vecSweepMins, vecSweepMaxs, MASK_NPCSOLID, pTraceIgnore, COLLISION_GROUP_NONE, &tr );
+		    
+	// No hit? We're done.
+	if ( (tr.fraction == 1.0 && (vTraceEnd-vTraceStart).Length() > 0.01) || tr.allsolid )
+		return;
+		    
+	VectorMA( tr.endpos, 1.0f, tr.plane.normal, tr.endpos );
+
+	bool bAllowPrecache = CBaseEntity::IsPrecacheAllowed();
+	CBaseEntity::SetAllowPrecache( true );
+				  
+	// Try to create entity
+	CBaseEntity *pEntity = CreateEntityByName( "prop_ragdoll" );
+	if ( pEntity )
+	{
+		pEntity->SetLocalAngles(angles);
+		pEntity->SetLocalOrigin( tr.endpos );
+		pEntity->PrecacheModel( pModelName );
+		pEntity->SetModel( pModelName );
+		DispatchSpawn( pEntity );
+		pEntity->Activate();
+	}
+	
+	CBaseEntity::SetAllowPrecache( bAllowPrecache );
+}
+
+void CC_Prop_Ragdoll_Create( const CCommand &args )
+{
+	if ( args.ArgC() != 2 )
+		return;
+
+	char pModelName[512];
+	Q_snprintf( pModelName, sizeof(pModelName), "models/%s", args[1] );
+	Q_DefaultExtension( pModelName, ".mdl", sizeof(pModelName) );
+
+	// Figure out where to place it
+	CBasePlayer* pPlayer = UTIL_GetCommandClient();
+	Vector forward;
+	pPlayer->EyeVectors( &forward );
+	
+	CreateRagdoll( pModelName, pPlayer->EyePosition(), pPlayer->EyePosition() + forward * MAX_TRACE_LENGTH, pPlayer, true );
+}
+
+static ConCommand prop_ragdoll_create("prop_ragdoll_create", CC_Prop_Ragdoll_Create, "Creates a ragdoll prop with a specific .mdl aimed away from where the player is looking.\n\tArguments: {.mdl name}");
 
 CPhysicsProp* CreatePhysicsProp( const char *pModelName, const Vector &vTraceStart, const Vector &vTraceEnd, const IHandleEntity *pTraceIgnore, bool bRequireVCollide, const char *pClassName )
 {

@@ -170,6 +170,11 @@ public:
 	//  apply the proper filter
 	virtual bool			IsPredicted( void ) const { return false; }
 
+#if defined( LUA_SDK )
+	virtual bool			IsScripted( void ) const { return false; }
+	virtual bool			IsWeapon( void ) const { return true; }
+#endif
+
 	virtual void			Spawn( void );
 	virtual void			Precache( void );
 
@@ -337,7 +342,11 @@ public:
 public:
 
 	// Weapon info accessors for data in the weapon's data file
+#ifndef LUA_SDK
 	const FileWeaponInfo_t	&GetWpnData( void ) const;
+#else
+	virtual const FileWeaponInfo_t	&GetWpnData( void ) const;
+#endif
 	virtual const char		*GetViewModel( int viewmodelindex = 0 ) const;
 	virtual const char		*GetWorldModel( void ) const;
 	virtual const char		*GetAnimPrefix( void ) const;
@@ -488,6 +497,12 @@ public:
 	virtual bool			ShouldDraw( void );
 	virtual bool			ShouldDrawPickup( void );
 	virtual void			HandleInput( void ) { return; };
+#ifdef ARGG
+	// adnan
+	// does this weapon need to override the setting of view angles?
+	virtual bool			OverrideViewAngles( void ) { return false; };
+	// end adnan
+#endif
 	virtual void			OverrideMouseInput( float *x, float *y ) { return; };
 	virtual int				KeyInput( int down, ButtonCode_t keynum, const char *pszCurrentBinding ) { return 1; }
 	virtual bool			AddLookShift( void ) { return true; };

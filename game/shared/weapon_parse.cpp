@@ -347,6 +347,7 @@ FileWeaponInfo_t::FileWeaponInfo_t()
 	bShowUsageHint = false;
 	m_bAllowFlipping = true;
 	m_bBuiltRightHanded = true;
+	iViewModelFOV = 0;
 }
 
 #ifdef CLIENT_DLL
@@ -367,6 +368,7 @@ void FileWeaponInfo_t::Parse( KeyValues *pKeyValuesData, const char *szWeaponNam
 	Q_strncpy( szWorldModel, pKeyValuesData->GetString( "playermodel" ), MAX_WEAPON_STRING );
 	Q_strncpy( szAnimationPrefix, pKeyValuesData->GetString( "anim_prefix" ), MAX_WEAPON_PREFIX );
 	iSlot = pKeyValuesData->GetInt( "bucket", 0 );
+	iViewModelFOV = pKeyValuesData->GetInt( "viewmodel_fov", 0 );
 	iPosition = pKeyValuesData->GetInt( "bucket_position", 0 );
 	
 	// Use the console (X360) buckets if hud_fastswitch is set to 2.

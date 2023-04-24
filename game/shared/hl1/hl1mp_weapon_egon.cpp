@@ -16,10 +16,10 @@
 
 #ifdef CLIENT_DLL
 #include "c_baseplayer.h"
-#include "hl1/hl1_c_player.h"
+#include "c_hl2mp_player.h"
 #else
 #include "player.h"
-#include "hl1_player.h"
+#include "hl2mp_player.h"
 #endif
 
 //#include "player.h"
@@ -85,6 +85,9 @@ public:
 
     //	DECLARE_SERVERCLASS();
     //	DECLARE_DATADESC();
+#ifndef CLIENT_DLL
+	DECLARE_ACTTABLE();
+#endif
 
 private:
 	bool	HasAmmo( void );
@@ -116,6 +119,20 @@ END_PREDICTION_DATA()
 
 LINK_ENTITY_TO_CLASS( weapon_egon, CWeaponEgon );
 PRECACHE_WEAPON_REGISTER( weapon_egon );
+
+#ifndef CLIENT_DLL
+acttable_t	CWeaponEgon::m_acttable[] = 
+{
+	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_PHYSGUN,					false },
+	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_PHYSGUN,					false },
+	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_PHYSGUN,			false },
+	{ ACT_HL2MP_WALK_CROUCH,			ACT_HL2MP_WALK_CROUCH_PHYSGUN,			false },
+	{ ACT_HL2MP_GESTURE_RANGE_ATTACK,	ACT_HL2MP_GESTURE_RANGE_ATTACK_PHYSGUN,	false },
+	{ ACT_HL2MP_GESTURE_RELOAD,			ACT_HL2MP_GESTURE_RELOAD_PHYSGUN,		false },
+	{ ACT_HL2MP_JUMP,					ACT_HL2MP_JUMP_PHYSGUN,					false },
+};
+IMPLEMENT_ACTTABLE(CWeaponEgon);
+#endif
 
 /*
 IMPLEMENT_SERVERCLASS_ST( CWeaponEgon, DT_WeaponEgon )
@@ -168,7 +185,7 @@ bool CWeaponEgon::Deploy( void )
 
 bool CWeaponEgon::HasAmmo( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return false;
@@ -182,7 +199,7 @@ bool CWeaponEgon::HasAmmo( void )
 
 void CWeaponEgon::UseAmmo( int count )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -199,7 +216,7 @@ void CWeaponEgon::UseAmmo( int count )
 //-----------------------------------------------------------------------------
 void CWeaponEgon::PrimaryAttack( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -222,7 +239,8 @@ void CWeaponEgon::PrimaryAttack( void )
 		return;
 	}
 
-	Vector vecAiming	= pPlayer->GetAutoaimVector( 0 );
+	CBasePlayer *player = ToBasePlayer( GetOwner() );
+	Vector vecAiming	= player->GetAutoaimVector( 0 );
 	Vector vecSrc		= pPlayer->Weapon_ShootPosition( );
 
 	switch( m_fireState )
@@ -288,7 +306,7 @@ void CWeaponEgon::PrimaryAttack( void )
 
 void CWeaponEgon::Fire( const Vector &vecOrigSrc, const Vector &vecDir )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -416,7 +434,7 @@ void CWeaponEgon::UpdateEffect( const Vector &startPoint, const Vector &endPoint
 void CWeaponEgon::CreateEffect( void )
 {
 #ifndef CLIENT_DLL    
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;

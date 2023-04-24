@@ -40,6 +40,10 @@
 #include "cdll_bounded_cvars.h"
 #include "inetchannelinfo.h"
 #include "proto_version.h"
+#ifdef LUA_SDK
+#include "luamanager.h"
+#include "mathlib/lvector.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -74,7 +78,7 @@ void cc_cl_interp_all_changed( IConVar *pConVar, const char *pOldString, float f
 
 
 static ConVar  cl_extrapolate( "cl_extrapolate", "1", FCVAR_CHEAT, "Enable/disable extrapolation if interpolation history runs out." );
-static ConVar  cl_interp_npcs( "cl_interp_npcs", "0.0", FCVAR_USERINFO, "Interpolate NPC positions starting this many seconds in past (or cl_interp, if greater)" );  
+static ConVar  cl_interp_npcs( "cl_interp_npcs", "0.25", FCVAR_USERINFO, "Interpolate NPC positions starting this many seconds in past (or cl_interp, if greater)" );  
 static ConVar  cl_interp_all( "cl_interp_all", "0", 0, "Disable interpolation list optimizations.", 0, 0, 0, 0, cc_cl_interp_all_changed );
 ConVar  r_drawmodeldecals( "r_drawmodeldecals", "1" );
 extern ConVar	cl_showerror;
@@ -982,6 +986,12 @@ C_BaseEntity::~C_BaseEntity()
 #endif
 	RemoveFromInterpolationList();
 	RemoveFromTeleportList();
+#if defined( LUA_SDK )
+	if ( L != NULL )
+	{
+		lua_unref( L, m_nTableReference );
+	}
+#endif
 }
 
 void C_BaseEntity::Clear( void )
@@ -1631,11 +1641,41 @@ int C_BaseEntity::GetSoundSourceIndex() const
 //-----------------------------------------------------------------------------
 const Vector& C_BaseEntity::GetRenderOrigin( void )
 {
+#if 0
+	if ( m_nTableReference != LUA_NOREF )
+	{
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "m_vecRenderOrigin" );
+		lua_remove( L, -2 );
+		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "Vector" ) != NULL )
+		{
+			const Vector& res = luaL_checkvector( L, -1 );
+			lua_pop( L, 1 );
+			return res;
+		}
+		lua_pop( L, 1 );
+	}
+#endif	
 	return GetAbsOrigin();
 }
 
 const QAngle& C_BaseEntity::GetRenderAngles( void )
 {
+#if 0
+	if ( m_nTableReference != LUA_NOREF )
+	{
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "m_angRenderAngles" );
+		lua_remove( L, -2 );
+		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) != NULL )
+		{
+			const QAngle& res = luaL_checkangle( L, -1 );
+			lua_pop( L, 1 );
+			return res;
+		}
+		lua_pop( L, 1 );
+	}
+#endif	
 	return GetAbsAngles();
 }
 
@@ -4758,6 +4798,13 @@ const char *C_BaseEntity::GetClassname( void )
 	static char outstr[ 256 ];
 	outstr[ 0 ] = 0;
 	bool gotname = false;
+#if defined ( LUA_SDK )
+	if ( m_iClassname && m_iClassname[ 0 ] )
+	{
+		Q_snprintf( outstr, sizeof( outstr ), "%s", m_iClassname );
+		gotname = true;
+	}
+#endif
 #ifndef NO_ENTITY_PREDICTION
 	if ( GetPredDescMap() )
 	{

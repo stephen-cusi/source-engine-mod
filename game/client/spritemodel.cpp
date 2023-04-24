@@ -415,7 +415,6 @@ IMaterial *CEngineSprite::GetMaterial( RenderMode_t nRenderMode, int nFrame )
 		m_VideoMaterial->SetFrame( nFrame );
 	}
 	
-	
 	IMaterial *pMaterial = m_material[nRenderMode];
 	if( !pMaterial )
 		return NULL;
@@ -423,11 +422,15 @@ IMaterial *CEngineSprite::GetMaterial( RenderMode_t nRenderMode, int nFrame )
 	IMaterialVar* pFrameVar = pMaterial->FindVarFast( "$frame", &frameCache );
 	if ( pFrameVar )
 	{
-		pFrameVar->SetIntValue( nFrame );
+		IMaterialVar* pFrameVar = pMaterial->FindVarFast( "$frame", &frameCache );
+		if ( pFrameVar )
+		{
+			pFrameVar->SetIntValue( nFrame );
+		}
 	}
 
 	return pMaterial;
-} 
+}
 
 void CEngineSprite::SetFrame( RenderMode_t nRenderMode, int nFrame )
 {

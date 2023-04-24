@@ -86,6 +86,10 @@ public:
 
 	virtual void PostThink( void );
 
+	CNetworkVar( float, m_flStartCharge );
+	CNetworkVar( float, m_flAmmoStartCharge );
+	CNetworkVar( float, m_flPlayAftershock );
+	CNetworkVar( float, m_flNextAmmoBurn );
 private:
 	
 	C_HL2MP_Player( const C_HL2MP_Player & );

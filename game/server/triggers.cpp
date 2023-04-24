@@ -38,6 +38,10 @@
 #include "hl2_player.h"
 #endif
 
+#ifdef LUA_SDK
+#include "luamanager.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -1357,6 +1361,17 @@ bool CChangeLevel::KeyValue( const char *szKeyName, const char *szValue )
 			Assert(0);
 		}
 		Q_strncpy(m_szMapName, szValue, sizeof(m_szMapName));
+#ifdef LUA_SDK
+		if (m_nTableReference == LUA_NOREF)
+		{
+			lua_newtable(L);
+			m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
+		}
+		lua_getref(L, m_nTableReference);
+		lua_pushstring(L, m_szMapName);
+		lua_setfield(L, -2, "m_szMapName");
+		lua_pop(L, 1);
+#endif
 	}
 	else if (FStrEq(szKeyName, "landmark"))
 	{
@@ -1367,6 +1382,17 @@ bool CChangeLevel::KeyValue( const char *szKeyName, const char *szValue )
 		}
 		
 		Q_strncpy(m_szLandmarkName, szValue, sizeof( m_szLandmarkName ));
+#ifdef LUA_SDK
+		if (m_nTableReference == LUA_NOREF)
+		{
+			lua_newtable(L);
+			m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
+		}
+		lua_getref(L, m_nTableReference);
+		lua_pushstring(L, m_szLandmarkName);
+		lua_setfield(L, -2, "m_szLandmarkName");
+		lua_pop(L, 1);
+#endif
 	}
 	else
 		return BaseClass::KeyValue( szKeyName, szValue );
@@ -1473,6 +1499,14 @@ void CChangeLevel::InputChangeLevel( inputdata_t &inputdata )
 		if ( pPlayer && ( !pPlayer->IsAlive() || pPlayer->GetBonusChallenge() > 0 ) )
 			return;
 	}
+#ifdef HL2SB
+	else
+	{
+		CBasePlayer *pPlayer = inputdata.pActivator->IsPlayer() ? (CBasePlayer *)inputdata.pActivator : NULL;
+		if ( pPlayer && ( !pPlayer->IsAlive() || pPlayer->GetBonusChallenge() > 0 ) )
+			return;
+	}
+#endif
 
 	ChangeLevelNow( inputdata.pActivator );
 }
@@ -1560,17 +1594,23 @@ void CChangeLevel::ChangeLevelNow( CBaseEntity *pActivator )
 
 	Assert(!FStrEq(m_szMapName, ""));
 
-	// Don't work in deathmatch
-	if ( g_pGameRules->IsDeathmatch() )
-		return;
-
 	// Some people are firing these multiple times in a frame, disable
 	if ( m_bTouched )
 		return;
 
 	m_bTouched = true;
 
+#ifdef HL2SB
+	CBasePlayer *pPlayer = (pActivator && pActivator->IsPlayer()) ? ToBasePlayer( pActivator ) : UTIL_GetLocalPlayer();
+	if( !pPlayer )
+		return;
+
+	// This object will get removed in the call to engine->ChangeLevel, copy the params into "safe" memory
+	Q_strncpy(st_szNextMap, m_szMapName, sizeof(st_szNextMap));
+	engine->ChangeLevel( st_szNextMap, NULL );	
+#else
 	CBaseEntity *pPlayer = (pActivator && pActivator->IsPlayer()) ? pActivator : UTIL_GetLocalPlayer();
+#endif
 
 	int transitionState = InTransitionVolume(pPlayer, m_szLandmarkName);
 	if ( transitionState == TRANSITION_VOLUME_SCREENED_OUT )
@@ -1616,7 +1656,7 @@ void CChangeLevel::ChangeLevelNow( CBaseEntity *pActivator )
 	Q_strncpy(st_szNextSpot, m_szLandmarkName,sizeof(st_szNextSpot));
 	// This object will get removed in the call to engine->ChangeLevel, copy the params into "safe" memory
 	Q_strncpy(st_szNextMap, m_szMapName, sizeof(st_szNextMap));
-
+	
 	m_hActivator = pActivator;
 
 	m_OnChangeLevel.FireOutput(pActivator, this);
@@ -1670,13 +1710,13 @@ void CChangeLevel::TouchChangeLevel( CBaseEntity *pOther )
 		pPlayer->AddFlag( FL_FROZEN );
 		return;
 	}
-
+	
 	if ( !pPlayer->IsInAVehicle() && pPlayer->GetMoveType() == MOVETYPE_NOCLIP )
 	{
 		DevMsg("In level transition: %s %s\n", st_szNextMap, st_szNextSpot );
 		return;
 	}
-
+	
 	ChangeLevelNow( pOther );
 }
 
@@ -2269,7 +2309,7 @@ void CTriggerPush::Touch( CBaseEntity *pOther )
 #endif
 
 			Vector vecPush = (m_flPushSpeed * vecAbsDir);
-			if ( pOther->GetFlags() & FL_BASEVELOCITY )
+			if ( ( pOther->GetFlags() & FL_BASEVELOCITY ) )
 			{
 				vecPush = vecPush + pOther->GetBaseVelocity();
 			}
@@ -2888,6 +2928,10 @@ void CTriggerCamera::Spawn( void )
 	SetRenderColorA( 0 );								// The engine won't draw this model if this is set to 0 and blending is on
 	m_nRenderMode = kRenderTransTexture;
 
+#ifdef HL2SB
+	m_nOldTakeDamage = -1;
+#endif
+
 	m_state = USE_OFF;
 	
 	m_initialSpeed = m_flSpeed;
@@ -2969,7 +3013,11 @@ void CTriggerCamera::Enable( void )
 
 	if ( !m_hPlayer || !m_hPlayer->IsPlayer() )
 	{
+#ifdef HL2SB
+		m_hPlayer = UTIL_GetNearestPlayer( GetAbsOrigin() );
+#else
 		m_hPlayer = UTIL_GetLocalPlayer();
+#endif
 	}
 
 	if ( !m_hPlayer )
@@ -3160,9 +3208,15 @@ void CTriggerCamera::Disable( void )
 		{
 			((CBasePlayer*)m_hPlayer.Get())->GetActiveWeapon()->RemoveEffects( EF_NODRAW );
 		}
-		//return the player to previous takedamage state
-		m_hPlayer->m_takedamage = m_nOldTakeDamage;
 	}
+
+	//return the player to previous takedamage state
+#ifndef HL2SB
+	m_hPlayer->m_takedamage = m_nOldTakeDamage;
+#else
+	if ( m_nOldTakeDamage != -1 )
+		m_hPlayer->m_takedamage = m_nOldTakeDamage;
+#endif
 
 	m_state = USE_OFF;
 	m_flReturnTime = gpGlobals->curtime;

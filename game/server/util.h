@@ -96,6 +96,9 @@ abstract_class IEntityFactoryDictionary
 {
 public:
 	virtual void InstallFactory( IEntityFactory *pFactory, const char *pClassName ) = 0;
+#ifdef LUA_SDK
+	virtual void RemoveFactory( IEntityFactory *pFactory, const char *pClassName ) = 0;
+#endif
 	virtual IServerNetworkable *Create( const char *pClassName ) = 0;
 	virtual void Destroy( const char *pClassName, IServerNetworkable *pNetworkable ) = 0;
 	virtual IEntityFactory *FindFactory( const char *pClassName ) = 0;
@@ -124,7 +127,17 @@ public:
 	CEntityFactory( const char *pClassName )
 	{
 		EntityFactoryDictionary()->InstallFactory( this, pClassName );
+#ifdef LUA_SDK
+		strcpy( classname, pClassName );
+#endif
 	}
+
+#ifdef LUA_SDK
+	~CEntityFactory()
+	{
+		EntityFactoryDictionary()->RemoveFactory( this, classname );
+	}
+#endif
 
 	IServerNetworkable *Create( const char *pClassName )
 	{
@@ -144,6 +157,10 @@ public:
 	{
 		return sizeof(T);
 	}
+#ifdef LUA_SDK
+private:
+	char classname[255];
+#endif
 };
 
 #define LINK_ENTITY_TO_CLASS(mapClassName,DLLClassName) \
@@ -227,6 +244,11 @@ CBasePlayer	*UTIL_PlayerByIndex( int playerIndex );
 // and you want the player.
 // not useable in multiplayer - see UTIL_GetListenServerHost()
 CBasePlayer* UTIL_GetLocalPlayer( void );
+
+#ifdef HL2SB
+CBasePlayer *UTIL_GetNearestPlayer( const Vector& pos );
+CBasePlayer *UTIL_GetNearestVisiblePlayer( CBaseEntity *pEntity, int mask = MASK_BLOCKLOS );
+#endif
 
 // get the local player on a listen server
 CBasePlayer *UTIL_GetListenServerHost( void );
@@ -365,7 +387,7 @@ void		UTIL_Beam( Vector &Start, Vector &End, int nModelIndex, int nHaloIndex, un
 				float Life, unsigned char Width, unsigned char EndWidth, unsigned char FadeLength, unsigned char Noise, unsigned char Red, unsigned char Green,
 				unsigned char Blue, unsigned char Brightness, unsigned char Speed);
 
-char		*UTIL_VarArgs( PRINTF_FORMAT_STRING const char *format, ... );
+const char	*UTIL_VarArgs( PRINTF_FORMAT_STRING const char *format, ... ) FMTFUNCTION( 1, 2 );
 bool		UTIL_IsValidEntity( CBaseEntity *pEnt );
 bool		UTIL_TeamsMatch( const char *pTeamName1, const char *pTeamName2 );
 
@@ -475,7 +497,7 @@ void			UTIL_HudMessage( CBasePlayer *pToPlayer, const hudtextparms_t &textparms,
 void			UTIL_HudHintText( CBaseEntity *pEntity, const char *pMessage );
 
 // Writes message to console with timestamp and FragLog header.
-void			UTIL_LogPrintf( PRINTF_FORMAT_STRING const char *fmt, ... );
+void			UTIL_LogPrintf( PRINTF_FORMAT_STRING const char *fmt, ... ) FMTFUNCTION( 1, 2 );
 
 // Sorta like FInViewCone, but for nonNPCs. 
 float UTIL_DotPoints ( const Vector &vecSrc, const Vector &vecCheck, const Vector &vecDir );
