@@ -93,8 +93,8 @@ void CBaseHL1CombatWeapon::Spawn( void )
 #define	HL1_BOB			0.002f
 #define	HL1_BOB_UP		0.5f
 
-float	g_lateralBob;
-float	g_verticalBob;
+extern float g_lateralBob;
+extern float g_verticalBob;
 
 static ConVar	cl_bobcycle( "cl_bobcycle","0.8" );
 static ConVar	cl_bob( "cl_bob","0.002" );

@@ -13,9 +13,9 @@
 #include "gamerules.h"
 #include "in_buttons.h"
 #ifdef CLIENT_DLL
-#include "hl1/c_hl1mp_player.h"
+#include "c_hl2mp_player.h"
 #else
-#include "hl1mp_player.h"
+#include "hl2mp_player.h"
 #include "soundent.h"
 #include "game.h"
 #endif
@@ -55,6 +55,9 @@ public:
 
 //	DECLARE_SERVERCLASS();
 	DECLARE_DATADESC();
+#ifndef CLIENT_DLL
+	DECLARE_ACTTABLE();
+#endif
 
 private:
 
@@ -76,6 +79,20 @@ BEGIN_NETWORK_TABLE( CWeaponHgun, DT_WeaponHgun )
 	SendPropInt( SENDINFO( m_iFirePhase ) ),
 #endif
 END_NETWORK_TABLE()
+
+#ifndef CLIENT_DLL
+acttable_t	CWeaponHgun::m_acttable[] = 
+{
+	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_PHYSGUN,					false },
+	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_PHYSGUN,					false },
+	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_PHYSGUN,			false },
+	{ ACT_HL2MP_WALK_CROUCH,			ACT_HL2MP_WALK_CROUCH_PHYSGUN,			false },
+	{ ACT_HL2MP_GESTURE_RANGE_ATTACK,	ACT_HL2MP_GESTURE_RANGE_ATTACK_PHYSGUN,	false },
+	{ ACT_HL2MP_GESTURE_RELOAD,			ACT_HL2MP_GESTURE_RELOAD_PHYSGUN,		false },
+	{ ACT_HL2MP_JUMP,					ACT_HL2MP_JUMP_PHYSGUN,					false },
+};
+IMPLEMENT_ACTTABLE(CWeaponHgun);
+#endif
 
 BEGIN_PREDICTION_DATA( CWeaponHgun )
 #ifdef CLIENT_DLL
@@ -125,7 +142,7 @@ void CWeaponHgun::Precache( void )
 //-----------------------------------------------------------------------------
 void CWeaponHgun::PrimaryAttack( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -177,7 +194,7 @@ void CWeaponHgun::PrimaryAttack( void )
 //-----------------------------------------------------------------------------
 void CWeaponHgun::SecondaryAttack( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -286,7 +303,7 @@ bool CWeaponHgun::Holster( CBaseCombatWeapon *pSwitchingTo )
 
 	if ( bRet )
 	{
-		CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+		CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 		if ( pPlayer )
 		{
 #if !defined(CLIENT_DLL)            
@@ -310,7 +327,7 @@ bool CWeaponHgun::Reload( void )
 		return true;
 	}
 
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return true;

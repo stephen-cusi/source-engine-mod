@@ -67,6 +67,10 @@
 #include "tf_gamerules.h"
 #endif
 
+#ifdef LUA_SDK
+#include "luamanager.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -344,6 +348,8 @@ void CBaseEntityModelLoadProxy::Handler::OnModelLoadComplete( const model_t *pMo
 
 CBaseEntity::CBaseEntity( bool bServerOnly )
 {
+	//m_pAttributes = NULL;
+
 	COMPILE_TIME_ASSERT( MOVETYPE_LAST < (1 << MOVETYPE_MAX_BITS) );
 	COMPILE_TIME_ASSERT( MOVECOLLIDE_COUNT < (1 << MOVECOLLIDE_MAX_BITS) );
 
@@ -412,6 +418,10 @@ CBaseEntity::CBaseEntity( bool bServerOnly )
 #ifndef _XBOX
 	AddEFlags( EFL_USE_PARTITION_WHEN_NOT_SOLID );
 #endif
+
+#if defined( LUA_SDK )
+	m_nTableReference = LUA_NOREF;
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -466,6 +476,10 @@ CBaseEntity::~CBaseEntity( )
 		// Remove this entity from the ent list (NOTE:  This Makes EHANDLES go NULL)
 		gEntList.RemoveEntity( GetRefEHandle() );
 	}
+
+#if defined( LUA_SDK )
+	lua_unref( L, m_nTableReference );
+#endif
 }
 
 void CBaseEntity::PostConstructor( const char *szClassname )
@@ -937,12 +951,20 @@ void CBaseEntity::DrawDebugGeometryOverlays(void)
 			NDebugOverlay::EntityBounds(this, 255, 255, 255, 0, 0 );
 		}
 	}
+#ifdef HL2SB
+	if ( m_debugOverlays & OVERLAY_AUTOAIM_BIT && (GetFlags()&FL_AIMTARGET) && AI_GetNearestPlayer( GetAbsOrigin() ) != NULL )
+#else
 	if ( m_debugOverlays & OVERLAY_AUTOAIM_BIT && (GetFlags()&FL_AIMTARGET) && AI_GetSinglePlayer() != NULL )
+#endif
 	{
 		// Crude, but it gets the point across.
 		Vector vecCenter = GetAutoAimCenter();
 		Vector vecRight, vecUp, vecDiag;
+#ifdef HL2SB
+		CBasePlayer *pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+#else
 		CBasePlayer *pPlayer = AI_GetSinglePlayer();
+#endif
 		float radius = GetAutoAimRadius();
 
 		QAngle angles = pPlayer->EyeAngles();
@@ -1259,7 +1281,7 @@ void CBaseEntity::ValidateEntityConnections()
 			typedescription_t *dataDesc = &dmap->dataDesc[i];
 			if ( ( dataDesc->fieldType == FIELD_CUSTOM ) && ( dataDesc->flags & FTYPEDESC_OUTPUT ) )
 			{
-				CBaseEntityOutput *pOutput = (CBaseEntityOutput *)((intp)this + (intp)dataDesc->fieldOffset[0]);
+				CBaseEntityOutput *pOutput = (CBaseEntityOutput *)((intp)this + (int)dataDesc->fieldOffset[0]);
 				if ( pOutput->NumberOfElements() )
 					return;
 			}
@@ -1292,7 +1314,7 @@ void CBaseEntity::FireNamedOutput( const char *pszOutput, variant_t variant, CBa
 			typedescription_t *dataDesc = &dmap->dataDesc[i];
 			if ( ( dataDesc->fieldType == FIELD_CUSTOM ) && ( dataDesc->flags & FTYPEDESC_OUTPUT ) )
 			{
-				CBaseEntityOutput *pOutput = ( CBaseEntityOutput * )( ( intp )this + ( intp )dataDesc->fieldOffset[0] );
+				CBaseEntityOutput *pOutput = ( CBaseEntityOutput * )( ( intp )this + ( int )dataDesc->fieldOffset[0] );
 				if ( !Q_stricmp( dataDesc->externalName, pszOutput ) )
 				{
 					pOutput->FireOutput( variant, pActivator, pCaller, flDelay );
@@ -3365,7 +3387,7 @@ void CBaseEntity::FunctionCheck( void *pFunction, const char *name )
 	// Note, if you crash here and your class is using multiple inheritance, it is
 	// probably the case that CBaseEntity (or a descendant) is not the first
 	// class in your list of ancestors, which it must be.
-	if (pFunction && !UTIL_FunctionToName( GetDataDescMap(), *(inputfunc_t*)pFunction ) )
+	if (pFunction && !UTIL_FunctionToName( GetDataDescMap(), (inputfunc_t *)pFunction ) )
 	{
 		Warning( "FUNCTION NOT IN TABLE!: %s:%s (%08lx)\n", STRING(m_iClassname), name, (unsigned long)pFunction );
 		Assert(0);
@@ -6643,7 +6665,11 @@ void CBaseEntity::DispatchResponse( const char *conceptName )
 	ModifyOrAppendCriteria( set );
 
 	// Append local player criteria to set,too
+#ifdef HL2SB
+	CBasePlayer *pPlayer = UTIL_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = UTIL_GetLocalPlayer();
+#endif
 	if( pPlayer )
 		pPlayer->ModifyOrAppendPlayerCriteria( set );
 
@@ -6651,9 +6677,7 @@ void CBaseEntity::DispatchResponse( const char *conceptName )
 	AI_Response result;
 	bool found = rs->FindBestResponse( set, result );
 	if ( !found )
-	{
 		return;
-	}
 
 	// Handle the response here...
 	char response[ 256 ];
@@ -6709,7 +6733,11 @@ void CBaseEntity::DumpResponseCriteria( void )
 	ModifyOrAppendCriteria( set );
 
 	// Append local player criteria to set,too
+#ifdef HL2SB
+	CBasePlayer *pPlayer = UTIL_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = UTIL_GetLocalPlayer();
+#endif
 	if ( pPlayer )
 	{
 		pPlayer->ModifyOrAppendPlayerCriteria( set );
@@ -7046,7 +7074,7 @@ void CBaseEntity::SetRefEHandle( const CBaseHandle &handle )
 	if ( edict() )
 	{
 		COMPILE_TIME_ASSERT( NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS <= 8*sizeof( edict()->m_NetworkSerialNumber ) );
-		edict()->m_NetworkSerialNumber = (m_RefEHandle.GetSerialNumber() & (1 << NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS) - 1);
+		edict()->m_NetworkSerialNumber = m_RefEHandle.GetSerialNumber() & ( (1 << NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS) - 1 );
 	}
 }
 
@@ -7194,7 +7222,11 @@ bool CBaseEntity::SUB_AllowedToFade( void )
 
 	// on Xbox, allow these to fade out
 #ifndef _XBOX
+#ifdef HL2SB
+	CBasePlayer *pPlayer = UTIL_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = ( AI_IsSinglePlayer() ) ? UTIL_GetLocalPlayer() : NULL;
+#endif
 
 	if ( pPlayer && pPlayer->FInViewCone( this ) )
 		return false;
@@ -7370,7 +7402,7 @@ void CC_Ent_Create( const CCommand& args )
 	}
 	CBaseEntity::SetAllowPrecache( allowPrecache );
 }
-static ConCommand ent_create("ent_create", CC_Ent_Create, "Creates an entity of the given type where the player is looking.  Additional parameters can be passed in in the form: ent_create <entity name> <param 1 name> <param 1> <param 2 name> <param 2>...<param N name> <param N>", FCVAR_GAMEDLL | FCVAR_CHEAT);
+static ConCommand ent_create("ent_create", CC_Ent_Create, "Creates an entity of the given type where the player is looking.  Additional parameters can be passed in in the form: ent_create <entity name> <param 1 name> <param 1> <param 2 name> <param 2>...<param N name> <param N>", FCVAR_GAMEDLL );
 
 //------------------------------------------------------------------------------
 // Purpose: Teleport a specified entity to where the player is looking
@@ -7478,3 +7510,18 @@ void CC_Ent_Orient( const CCommand& args )
 }
 
 static ConCommand ent_orient("ent_orient", CC_Ent_Orient, "Orient the specified entity to match the player's angles. By default, only orients target entity's YAW. Use the 'allangles' option to orient on all axis.\n\tFormat: ent_orient <entity name> <optional: allangles>", FCVAR_CHEAT);
+
+void CC_Ent_List()
+{
+	for ( CBaseEntity *pEntity = gEntList.FirstEnt(); pEntity != NULL; pEntity = gEntList.NextEnt(pEntity) )
+	{
+		const char *entname;
+		entname = pEntity->GetClassname();	
+		//Q_snprintf( entspawn, sizeof(entname), "ent_create %s", entname );
+		if (entname == NULL)
+			return;
+		Msg("%s\n", entname );
+	}	
+}
+
+static ConCommand ent_list("ent_list", CC_Ent_List, "Show entities on server");

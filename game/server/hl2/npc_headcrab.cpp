@@ -30,7 +30,11 @@
 #include "world.h"
 #include "npc_bullseye.h"
 #include "physics_npc_solver.h"
+#ifndef HL2SB
 #include "hl2_gamerules.h"
+#else
+#include "hl2mp_gamerules.h"
+#endif
 #include "decals.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -1305,7 +1309,11 @@ void CBaseHeadcrab::JumpFromCanister()
 void CBaseHeadcrab::DropFromCeiling( void )
 {
 #ifdef HL2_EPISODIC
+#ifndef HL2SB
 	if ( HL2GameRules()->IsAlyxInDarknessMode() )
+#else
+	if ( HL2MPRules()->IsAlyxInDarknessMode() )
+#endif
 	{
 		if ( IsHangingFromCeiling() )
 		{
@@ -1321,7 +1329,11 @@ void CBaseHeadcrab::DropFromCeiling( void )
 				{
 					SetSchedule( SCHED_HEADCRAB_CEILING_DROP );
 
-					CBaseEntity *pPlayer = AI_GetSinglePlayer();
+#ifdef HL2SB
+					CBasePlayer *pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+#else
+					CBasePlayer *pPlayer = AI_GetSinglePlayer();
+#endif
 
 					if ( pPlayer )
 					{
@@ -1883,7 +1895,11 @@ int CBaseHeadcrab::SelectSchedule( void )
 	{
 		bool bIsAlyxInDarknessMode = false;
 #ifdef HL2_EPISODIC
+#ifndef HL2SB
 		bIsAlyxInDarknessMode = HL2GameRules()->IsAlyxInDarknessMode();
+#else
+		bIsAlyxInDarknessMode = HL2MPRules()->IsAlyxInDarknessMode();
+#endif
 #endif // HL2_EPISODIC
 
 		if ( bIsAlyxInDarknessMode == false && ( HasCondition( COND_CAN_RANGE_ATTACK1 ) || HasCondition( COND_NEW_ENEMY ) ) )
@@ -2065,7 +2081,11 @@ void CBaseHeadcrab::Ignite( float flFlameLifetime, bool bNPCOnly, float flSize, 
 	if( !bWasOnFire )
 	{
 #ifdef HL2_EPISODIC
+#ifndef HL2SB
 		if ( HL2GameRules()->IsAlyxInDarknessMode() == true )
+#else
+		if ( HL2MPRules()->IsAlyxInDarknessMode() == true )
+#endif
 		{
 			GetEffectEntity()->AddEffects( EF_DIMLIGHT );
 		}

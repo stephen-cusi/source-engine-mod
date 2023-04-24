@@ -18,23 +18,23 @@
 
 
 #ifdef CLIENT_DLL
-#define CWeaponSatchel C_WeaponSatchel
+#define CWeaponSatchel_HL1 C_WeaponSatchel_HL1
 #endif
 
 
 //-----------------------------------------------------------------------------
-// CWeaponSatchel
+// CWeaponSatchel_HL1
 //-----------------------------------------------------------------------------
 
-class CWeaponSatchel : public CBaseHL1CombatWeapon
+class CWeaponSatchel_HL1 : public CBaseHL1CombatWeapon
 {
-	DECLARE_CLASS( CWeaponSatchel, CBaseHL1CombatWeapon );
+	DECLARE_CLASS( CWeaponSatchel_HL1, CBaseHL1CombatWeapon );
 
 	DECLARE_NETWORKCLASS();
 	DECLARE_PREDICTABLE();
 public:
 
-	CWeaponSatchel( void );
+	CWeaponSatchel_HL1( void );
 
 	void	Equip( CBaseCombatCharacter *pOwner );
 	bool	HasAnyAmmo( void );
@@ -57,6 +57,10 @@ public:
 //	DECLARE_SERVERCLASS();
 	DECLARE_DATADESC();
 
+#ifndef CLIENT_DLL
+	DECLARE_ACTTABLE();
+#endif
+
 private:
 	void	Throw( void );
 	void	ActivateSatchelModel( void );
@@ -73,15 +77,16 @@ private:
 
 #ifndef CLIENT_DLL
 //-----------------------------------------------------------------------------
-// CSatchelCharge
+// CSatchelCharge_HL1
 //-----------------------------------------------------------------------------
 
-class CSatchelCharge : public CHL1BaseGrenade
+class CSatchelCharge_HL1 : public CHL1BaseGrenade
 {
 public:
-	DECLARE_CLASS( CSatchelCharge, CHL1BaseGrenade );
+	DECLARE_CLASS( CSatchelCharge_HL1, CHL1BaseGrenade );
 
-	CSatchelCharge();
+	CSatchelCharge_HL1();
+
 
 	void	Spawn( void );
 	void	Precache( void );

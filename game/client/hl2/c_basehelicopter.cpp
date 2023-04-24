@@ -18,11 +18,17 @@ IMPLEMENT_CLIENTCLASS_DT( C_BaseHelicopter, DT_BaseHelicopter, CBaseHelicopter )
 	RecvPropTime( RECVINFO( m_flStartupTime ) ),
 END_RECV_TABLE()
 
+IMPLEMENT_CLIENTCLASS_DT( C_BaseHelicopter_HL1, DT_BaseHelicopter_HL1, CBaseHelicopter_HL1 )
+	RecvPropTime( RECVINFO( m_flStartupTime ) ),
+END_RECV_TABLE()
 
 C_BaseHelicopter::C_BaseHelicopter()
 {
 }
 
+C_BaseHelicopter_HL1::C_BaseHelicopter_HL1()
+{
+}
 
 //-----------------------------------------------------------------------------
 // Chopper blade fade-in time

@@ -4015,7 +4015,7 @@ bool CNPC_Antlion::CorpseGib( const CTakeDamageInfo &info )
 	}
 
 	Vector velocity = vec3_origin;
-	AngularImpulse angVelocity = RandomAngularImpulse( -150, 150 );
+	AngularImpulse	angVelocity = RandomAngularImpulse( -150, 150 );
 	static breakablepropparams_t params( EyePosition(), GetAbsAngles(), velocity, angVelocity );
 	params.impactEnergyScale = 1.0f;
 	params.defBurstScale = 150.0f;
@@ -4032,7 +4032,11 @@ bool CNPC_Antlion::CorpseGib( const CTakeDamageInfo &info )
 void CNPC_Antlion::Touch( CBaseEntity *pOther )
 {
 	//See if the touching entity is a vehicle
+#ifdef HL2SB
+	CBasePlayer *pPlayer = ToBasePlayer( AI_GetNearestPlayer( GetAbsOrigin() ) );
+#else
 	CBasePlayer *pPlayer = ToBasePlayer( AI_GetSinglePlayer() );
+#endif
 	
 	// FIXME: Technically we'll want to check to see if a vehicle has touched us with the player OR NPC driver
 

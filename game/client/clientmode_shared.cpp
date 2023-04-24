@@ -52,10 +52,13 @@
 #include "replay/vgui/replaymessagepanel.h"
 #include "econ/econ_controls.h"
 #include "econ/confirm_dialog.h"
-
 extern IClientReplayContext *g_pClientReplayContext;
 extern ConVar replay_rendersetting_renderglow;
 #endif
+
+#include "luamanager.h"
+#include "lbaseentity_shared.h"
+#include "lbaseplayer_shared.h"
 
 #if defined USES_ECON_ITEMS
 #include "econ_item_view.h"
@@ -143,18 +146,6 @@ CON_COMMAND( hud_reloadscheme, "Reloads hud layout and animation scripts." )
 		return;
 
 	mode->ReloadScheme();
-}
-
-CON_COMMAND( messagemode, "Opens chat dialog" )
-{
-	ClientModeShared *mode = ( ClientModeShared * )GetClientModeNormal();
-	mode->StartMessageMode( MM_SAY );
-}
-
-CON_COMMAND( messagemode2, "Opens chat dialog" )
-{
-	ClientModeShared *mode = ( ClientModeShared * )GetClientModeNormal();
-	mode->StartMessageMode( MM_SAY_TEAM );
 }
 
 #ifdef _DEBUG
@@ -285,7 +276,13 @@ static void __MsgFunc_VGUIMenu( bf_read &msg )
 //-----------------------------------------------------------------------------
 ClientModeShared::ClientModeShared()
 {
+#ifdef LUA_SDK
+	m_pScriptedViewport = NULL;
+#endif
 	m_pViewport = NULL;
+#ifdef LUA_SDK
+	m_pClientLuaPanel = NULL;
+#endif
 	m_pChatElement = NULL;
 	m_pWeaponSelection = NULL;
 	m_nRootSize[ 0 ] = m_nRootSize[ 1 ] = -1;
@@ -302,7 +299,15 @@ ClientModeShared::ClientModeShared()
 //-----------------------------------------------------------------------------
 ClientModeShared::~ClientModeShared()
 {
+#ifdef LUA_SDK
+	// NOTE: Due to the behavior of many crashes, if you end up here from a
+	// .mdmp or debug attach, you might as well ignore this call stack.
+	delete m_pScriptedViewport; 
+#endif
 	delete m_pViewport; 
+#ifdef LUA_SDK
+	delete m_pClientLuaPanel; 
+#endif
 }
 
 void ClientModeShared::ReloadScheme( void )
@@ -389,8 +394,16 @@ void ClientModeShared::InitViewport()
 
 void ClientModeShared::VGui_Shutdown()
 {
+#ifdef LUA_SDK
+	delete m_pScriptedViewport;
+	m_pScriptedViewport = NULL;
+#endif
 	delete m_pViewport;
 	m_pViewport = NULL;
+#ifdef LUA_SDK
+	delete m_pClientLuaPanel;
+	m_pClientLuaPanel = NULL;
+#endif
 }
 
 
@@ -480,11 +493,35 @@ void ClientModeShared::OverrideView( CViewSetup *pSetup )
 //-----------------------------------------------------------------------------
 bool ClientModeShared::ShouldDrawEntity(C_BaseEntity *pEnt)
 {
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_HOOK( "ShouldDrawEntity" );
+		lua_pushentity( L, pEnt );
+	END_LUA_CALL_HOOK( 1, 1 );
+
+	RETURN_LUA_BOOLEAN();
+#endif
+
 	return true;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
 bool ClientModeShared::ShouldDrawParticles( )
 {
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_HOOK( "ShouldDrawParticles" );
+	END_LUA_CALL_HOOK( 0, 1 );
+
+	RETURN_LUA_BOOLEAN();
+#endif
+
+#ifdef TF_CLIENT_DLL
+	C_TFPlayer *pTFPlayer = C_TFPlayer::GetLocalTFPlayer();
+	if ( pTFPlayer && !pTFPlayer->ShouldPlayerDrawParticles() )
+		return false;
+#endif // TF_CLIENT_DLL
+
 	return true;
 }
 
@@ -500,16 +537,50 @@ void ClientModeShared::OverrideMouseInput( float *x, float *y )
 	}
 }
 
+#ifdef ARGG
+//-----------------------------------------------------------------------------
+// Purpose: Allow weapons to override mouse input to view angles (for orbiting)
+//-----------------------------------------------------------------------------
+// adnan
+// control the mouse input in the grav gun through this
+bool ClientModeShared::OverrideViewAngles( void )
+{
+	C_BaseCombatWeapon *pWeapon = GetActiveWeapon();
+	if ( pWeapon )
+	{
+		// adnan
+		return pWeapon->OverrideViewAngles();
+	}
+
+	return false;
+}
+// end adnan
+#endif
+
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
 bool ClientModeShared::ShouldDrawViewModel()
 {
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_HOOK( "ShouldDrawViewModel" );
+	END_LUA_CALL_HOOK( 0, 1 );
+
+	RETURN_LUA_BOOLEAN();
+#endif
+
 	return true;
 }
 
 bool ClientModeShared::ShouldDrawDetailObjects( )
 {
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_HOOK( "ShouldDrawDetailObjects" );
+	END_LUA_CALL_HOOK( 0, 1 );
+
+	RETURN_LUA_BOOLEAN();
+#endif
+
 	return true;
 }
 
@@ -547,6 +618,14 @@ bool ClientModeShared::ShouldDrawCrosshair( void )
 //-----------------------------------------------------------------------------
 bool ClientModeShared::ShouldDrawLocalPlayer( C_BasePlayer *pPlayer )
 {
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_HOOK( "ShouldDrawLocalPlayer" );
+		lua_pushplayer( L, pPlayer );
+	END_LUA_CALL_HOOK( 1, 1 );
+
+	RETURN_LUA_BOOLEAN();
+#endif
+
 	if ( ( pPlayer->index == render->GetViewEntity() ) && !C_BasePlayer::ShouldDrawLocalPlayer() )
 		return false;
 
@@ -559,6 +638,13 @@ bool ClientModeShared::ShouldDrawLocalPlayer( C_BasePlayer *pPlayer )
 //-----------------------------------------------------------------------------
 bool ClientModeShared::ShouldDrawFog( void )
 {
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_HOOK( "ShouldDrawFog" );
+	END_LUA_CALL_HOOK( 0, 1 );
+
+	RETURN_LUA_BOOLEAN();
+#endif
+
 	return true;
 }
 
@@ -567,6 +653,25 @@ bool ClientModeShared::ShouldDrawFog( void )
 //-----------------------------------------------------------------------------
 void ClientModeShared::AdjustEngineViewport( int& x, int& y, int& width, int& height )
 {
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_HOOK( "AdjustEngineViewport" );
+		lua_pushinteger( L, x );
+		lua_pushinteger( L, y );
+		lua_pushinteger( L, width );
+		lua_pushinteger( L, height );
+	END_LUA_CALL_HOOK( 4, 4 );
+
+	if ( lua_isnumber( L, -4 ) )
+		x = luaL_checkint( L, -4 );
+	if ( lua_isnumber( L, -3 ) )
+		y = luaL_checkint( L, -3 );
+	if ( lua_isnumber( L, -2 ) )
+		width = luaL_checkint( L, -2 );
+	if ( lua_isnumber( L, -1 ) )
+		height = luaL_checkint( L, -1 );
+
+	lua_pop( L, 4 );
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -642,8 +747,43 @@ void ClientModeShared::ProcessInput(bool bActive)
 //-----------------------------------------------------------------------------
 int	ClientModeShared::KeyInput( int down, ButtonCode_t keynum, const char *pszCurrentBinding )
 {
+#ifdef LUA_SDK
+	if ( g_bLuaInitialized )
+	{
+		BEGIN_LUA_CALL_HOOK( "KeyInput" );
+			lua_pushinteger( L, down );
+			lua_pushinteger( L, keynum );
+			lua_pushstring( L, pszCurrentBinding );
+		END_LUA_CALL_HOOK( 3, 1 );
+
+		RETURN_LUA_INTEGER();
+	}
+#endif
+
 	if ( engine->Con_IsVisible() )
 		return 1;
+	
+	// Should we start typing a message?
+	if ( pszCurrentBinding &&
+		( Q_strcmp( pszCurrentBinding, "messagemode" ) == 0 ||
+		  Q_strcmp( pszCurrentBinding, "say" ) == 0 ) )
+	{
+		if ( down )
+		{
+			StartMessageMode( MM_SAY );
+		}
+		return 0;
+	}
+	else if ( pszCurrentBinding &&
+				( Q_strcmp( pszCurrentBinding, "messagemode2" ) == 0 ||
+				  Q_strcmp( pszCurrentBinding, "say_team" ) == 0 ) )
+	{
+		if ( down )
+		{
+			StartMessageMode( MM_SAY_TEAM );
+		}
+		return 0;
+	}
 	
 	// If we're voting...
 #ifdef VOTING_ENABLED
@@ -859,12 +999,15 @@ void ClientModeShared::Enable()
 
 	// All hud elements should be proportional
 	// This sets that flag on the viewport and all child panels
+
 	m_pViewport->SetProportional( true );
 
 	m_pViewport->SetCursor( m_CursorNone );
+
 	vgui::surface()->SetCursor( m_CursorNone );
 
 	m_pViewport->SetVisible( true );
+
 	if ( m_pViewport->IsKeyBoardInputEnabled() )
 	{
 		m_pViewport->RequestFocus();
@@ -881,10 +1024,22 @@ void ClientModeShared::Disable()
 	// Remove our viewport from the root panel.
 	if( pRoot != 0 )
 	{
+#ifdef LUA_SDK
+		m_pScriptedViewport->SetParent( (vgui::VPANEL)NULL );
+#endif
 		m_pViewport->SetParent( (vgui::VPANEL)NULL );
+#ifdef LUA_SDK
+		m_pClientLuaPanel->SetParent( (vgui::VPANEL)NULL );
+#endif
 	}
 
+#ifdef LUA_SDK
+	m_pScriptedViewport->SetVisible( false );
+#endif
 	m_pViewport->SetVisible( false );
+#ifdef LUA_SDK
+	m_pClientLuaPanel->SetVisible( false );
+#endif
 }
 
 
@@ -902,7 +1057,13 @@ void ClientModeShared::Layout()
 		m_nRootSize[ 0 ] = wide;
 		m_nRootSize[ 1 ] = tall;
 
+#ifdef LUA_SDK
+		//m_pScriptedViewport->SetBounds(0, 0, wide, tall);
+#endif
 		m_pViewport->SetBounds(0, 0, wide, tall);
+#ifdef LUA_SDK
+		//m_pClientLuaPanel->SetBounds(0, 0, wide, tall);
+#endif
 		if ( changed )
 		{
 			ReloadScheme();
@@ -1107,10 +1268,14 @@ void ClientModeShared::FireGameEvent( IGameEvent *event )
 		}
 
 		if ( team == 0 && GetLocalTeam() )
+		{
 			bValidTeam = false;
+		}
 
 		if ( team == 255 )
+		{
 			bValidTeam = true;
+		}
 
 		if ( bValidTeam == true )
 		{

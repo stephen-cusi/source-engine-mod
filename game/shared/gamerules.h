@@ -225,7 +225,7 @@ public:
 	// Called each frame. This just forwards the call to Think().
 	virtual void FrameUpdatePostEntityThink();
 
-	virtual void Think( void ) = 0;// GR_Think - runs every server frame, should handle any timer tasks, periodic events, etc.
+	virtual void Think( void ) = 0;
 	virtual bool IsAllowedToSpawn( CBaseEntity *pEntity ) = 0;  // Can this item spawn (eg NPCs don't spawn in deathmatch).
 
 	// Called at the end of GameFrame (i.e. after all game logic has run this frame)

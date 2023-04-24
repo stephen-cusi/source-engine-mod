@@ -79,6 +79,7 @@ projects={
 		'utils/vtex',
 		'unicode',
 		'video',
+		'lua'
 	],
 	'tests': [
 		'appframework',
@@ -129,7 +130,8 @@ projects={
 		'vpklib',
 		'vstdlib',
 		'vtf',
-		'thirdparty/StubSteamAPI'
+		'thirdparty/StubSteamAPI',
+       	'lua'
 	]
 }
 

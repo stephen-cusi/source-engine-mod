@@ -1071,8 +1071,10 @@ void CNPC_Advisor::RunTask( const Task_t *pTask )
 #endif
 
 // helper function for testing whether or not an avisor is allowed to grab an object
+// TODO: Fix It in multiplayer
 static bool AdvisorCanPickObject(CBasePlayer *pPlayer, CBaseEntity *pEnt)
 {
+	/*
 	Assert( pPlayer != NULL );
 
 	// Is the player carrying something?
@@ -1094,6 +1096,7 @@ static bool AdvisorCanPickObject(CBasePlayer *pPlayer, CBaseEntity *pEnt)
 	}
 
 	return true;
+*/
 }
 
 

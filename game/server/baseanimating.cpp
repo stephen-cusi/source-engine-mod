@@ -1209,7 +1209,9 @@ void CBaseAnimating::HandleAnimEvent( animevent_t *pEvent )
 float CBaseAnimating::SetPoseParameter( CStudioHdr *pStudioHdr, const char *szName, float flValue )
 {
 	int poseParam = LookupPoseParameter( pStudioHdr, szName );
+#ifndef HL2SB
 	AssertMsg2(poseParam >= 0, "SetPoseParameter called with invalid argument %s by %s", szName, GetDebugName());
+#endif
 	return SetPoseParameter( pStudioHdr, poseParam, flValue );
 }
 
@@ -2743,9 +2745,8 @@ float CBaseAnimating::SetBoneController ( int iController, float flValue )
 
 	float newValue;
 	float retVal = Studio_SetController( pmodel, iController, flValue, newValue );
+	m_flEncodedController.Set( iController, newValue );
 
-	float &val = m_flEncodedController.GetForModify( iController );
-	val = newValue;
 	return retVal;
 }
 

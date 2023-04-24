@@ -5,12 +5,16 @@ on: [push, pull_request]
 jobs:
   build-linux-i386:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
     - name: Build linux-i386
       run: |
         scripts/build-ubuntu-i386.sh
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb_linux32
+        path: ./to_upload
+        if-no-files-found: error
 
   build-linux-amd64:
     runs-on: ubuntu-20.04
@@ -20,59 +24,80 @@ jobs:
     - name: Build linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb_linux64
+        path: ./to_upload
+        if-no-files-found: error
 
-  build-android-armv7a:
+  Build-apk-for-android:
     runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
+    - name: Cloning apk repo and preparing for building
+      run: |
+        git clone https://github.com/klaymen1n/srceng-androidwaf
+        sudo apt-get update
+        sudo apt-get install -f -y openjdk-8-jre zip apksigner
     - name: Build android-armv7a
       run: |
         scripts/build-android-armv7a.sh
+    - name: Build-android-aarch64
+      run: |
+        scripts/build-android-aarch64.sh    
+    - name: Finally build apk
+      run: |
+        scripts/build-apk.sh    
+        
+    - name: Rename apk
+      run: |
+         mv srceng-androidwaf/build/android/mod-signed.apk hl2sb-release.apk
 
-  build-windows-i386:
-    runs-on: windows-2019
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb-apk
+        path: hl2sb-release.apk
+
+  build-windows-win32:
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Build windows-i386
+    - uses: actions/checkout@v3
+    - name: Build
       run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T debug
-        ./waf.bat build
-
-  build-windows-amd64:
-    runs-on: windows-2019
+        #
+        git submodule init;git submodule update
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb
+        
+        ./waf.bat install
+#        cat build/config.log > ./win/info.txt I dont' think that it is useful
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb-win32
+        path: ./win
+        if-no-files-found: error
+        
+  build-windows-win64:
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Build windows-amd64
+    - uses: actions/checkout@v3
+    - name: Build
       run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T debug -8
-        ./waf.bat build
-
-  build-dedicated-windows-i386:
-    runs-on: windows-2019
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build dedicated windows-i386
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T debug -d
-        ./waf.bat build
-
-  build-dedicated-windows-amd64:
-    runs-on: windows-2019
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build dedicated windows-amd64
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T debug -d -8
-        ./waf.bat build
+        #
+        git submodule init;git submodule update
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8
+        
+        ./waf.bat install
+#        cat build/config.log > ./win/info.txt I dont' think that it is useful
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb-win64
+        path: ./win
+        if-no-files-found: error
+        
 
   build-dedicated-linux-i386:
     runs-on: ubuntu-20.04
@@ -82,7 +107,13 @@ jobs:
     - name: Build dedicated linux-i386
       run: |
         scripts/build-ubuntu-i386.sh -d
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb_linux32_dedicated
+        path: ./to_upload
+        if-no-files-found: error
 
+        
   build-dedicated-linux-amd64:
     runs-on: ubuntu-20.04
 
@@ -91,6 +122,11 @@ jobs:
     - name: Build dedicated linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh -d
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb_linux64_dedicated
+        path: ./to_upload
+        if-no-files-found: error
 
   build-macos-amd64:
     runs-on: macos-latest

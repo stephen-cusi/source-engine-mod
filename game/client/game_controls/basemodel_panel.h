@@ -213,7 +213,7 @@ public:
 	QAngle			m_angPlayer;
 	Vector			m_vecPlayerPos;
 
-protected:
+//protected:
 	bool			m_bForcePos;
 	bool			m_bMousePressed;
 	bool			m_bAllowRotation;

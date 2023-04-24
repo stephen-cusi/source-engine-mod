@@ -21,8 +21,6 @@
 void ClientPutInServer( edict_t *pEdict, const char *playername );
 void Bot_Think( CHL2MP_Player *pBot );
 
-#ifdef DEBUG
-
 ConVar bot_forcefireweapon( "bot_forcefireweapon", "", 0, "Force bots with the specified weapon to fire." );
 ConVar bot_forceattack2( "bot_forceattack2", "0", 0, "When firing, use attack2." );
 ConVar bot_forceattackon( "bot_forceattackon", "0", 0, "When firing, don't tap fire, hold it down." );
@@ -32,9 +30,7 @@ ConVar bot_changeclass( "bot_changeclass", "0", 0, "Force all bots to change to 
 ConVar bot_zombie( "bot_zombie", "0", 0, "Brraaaaaiiiins." );
 static ConVar bot_mimic_yaw_offset( "bot_mimic_yaw_offset", "0", 0, "Offsets the bot yaw." );
 ConVar bot_attack( "bot_attack", "1", 0, "Shoot!" );
-
 ConVar bot_sendcmd( "bot_sendcmd", "", 0, "Forces bots to send the specified command." );
-
 ConVar bot_crouch( "bot_crouch", "0", 0, "Bot crouches" );
 
 #ifdef NEXT_BOT
@@ -46,6 +42,17 @@ ConVar bot_mimic( "bot_mimic", "0", 0, "Bot uses usercmd of player by index." );
 static int BotNumber = 1;
 static int g_iNextBotTeam = -1;
 static int g_iNextBotClass = -1;
+
+const char *BotName[] =
+{
+	"James",
+	"Bluka",
+	"SanyaSho",
+	"Nillerusr",
+	"Modea",
+	"Sexsoft",
+	"Arcureid",
+};
 
 typedef struct
 {
@@ -67,7 +74,6 @@ typedef struct
 
 static botdata_t g_BotData[ MAX_PLAYERS ];
 
-
 //-----------------------------------------------------------------------------
 // Purpose: Create a new Bot and put it in the game.
 // Output : Pointer to the new Bot, or NULL if there's no free clients.
@@ -77,7 +83,7 @@ CBasePlayer *BotPutInServer( bool bFrozen, int iTeam )
 	g_iNextBotTeam = iTeam;
 
 	char botname[ 64 ];
-	Q_snprintf( botname, sizeof( botname ), "Bot%02i", BotNumber );
+	Q_snprintf( botname, sizeof( botname ), "[Bot] %s", BotName[RandomInt(0, 5)] );
 
 	// This is an evil hack, but we use it to prevent sv_autojointeam from kicking in.
 
@@ -427,9 +433,3 @@ void Bot_Think( CHL2MP_Player *pBot )
 
 	RunPlayerMove( pBot, pBot->GetLocalAngles(), forwardmove, sidemove, upmove, buttons, impulse, frametime );
 }
-
-
-
-
-#endif
-

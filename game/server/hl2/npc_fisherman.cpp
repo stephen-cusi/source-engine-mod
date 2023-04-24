@@ -151,8 +151,8 @@ void CNPC_Fisherman::Spawn( void )
 //	m_iszCombatExpression = MAKE_STRING("scenes/Expressions/FishermanCombat.vcd");
 
 	BaseClass::Spawn();
-
-	AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL | EFL_NO_PHYSCANNON_INTERACTION );
+	// FF
+	//AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL | EFL_NO_PHYSCANNON_INTERACTION );
 
 	NPCInit();
 }
