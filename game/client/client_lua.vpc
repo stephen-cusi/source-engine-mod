@@ -14,7 +14,7 @@ $Configuration
 {
 	$Compiler
 	{
-		$AdditionalIncludeDirectories	".\hl2;.\hl2\elements;$SRCDIR\game\shared\hl2;$SRCDIR\game\shared\episodic;..\..\public\;.\lua;.\lua\scripted_controls;$BASE"
+		$AdditionalIncludeDirectories	".\hl2;.\hl2\elements;$SRCDIR\game\shared\hl2;$SRCDIR\game\shared\episodic;..\..\public\;.\lua;.\lua\scripted_controls;$BASE;.\hl1;$SRCDIR\game\shared\hl1"
 		$PreprocessorDefinitions		"$BASE;HL2_CLIENT_DLL;LUA_SDK;HL2SB;ARGG"
 	}
 }
@@ -100,11 +100,35 @@ $Project "Client (HL2SB)"
 		$File "menu/sm_menu_legacy.cpp"
 		$File "menu/toolgun_menu.cpp"
 		$File "menu/vgui_imagebutton.cpp"
+		$File "menu/creatempdialog.cpp"
 	}
 
 	$Folder "Gunmod"
 	{
 		$File "$SRCDIR/game/shared/hl2sb/weapon_toolgun.cpp"
 		$File "gunmod/c_grenade_stickybomb.cpp"
+		$File "menu/neofetch.cpp"
+	}
+
+	$Folder "Half-Life: Source"
+	{
+		$File	"hl1\hl1_c_rpg_rocket.cpp"
+		$File   "hl1\hl1_c_weapon__stubs.cpp"
+		$File   "hl1/hl1_fx_gauss.cpp"
+		$File   "hl1/hl1_fx_shelleject.cpp"
+		$File   "$SRCDIR\game\shared\hl1\hl1mp_basecombatweapon_shared.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1_basecombatweapon_shared.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_357.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_crossbow.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_egon.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_gauss.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_glock.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_handgrenade.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_hornetgun.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_mp5.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_rpg.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_sachel.cpp"
+		$File	"$SRCDIR\game\shared\hl1\hl1mp_weapon_shotgun.cpp"
+		$File	"$SRCDIR\game\server\hl1\hl1_weapon_crowbar.cpp"
 	}
 }

@@ -25,11 +25,6 @@
 #include "hl1_shareddefs.h"
 #include "eventqueue.h"
 
-
-// 
-//	TRIGGERS: trigger_auto, trigger_relay, multimanager: replaced in src by logic_auto and logic_relay
-// 
-
 // This trigger will fire when the level spawns (or respawns if not fire once)
 // It will check a global state before firing.  
 #define SF_AUTO_FIREONCE		0x0001
@@ -209,7 +204,6 @@ void CTriggerRelay::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE
 		SetNextThink( gpGlobals->curtime + m_flRefireInterval );
 	}
 }
-
 
 // The Multimanager Entity - when fired, will fire up to 16 targets 
 // at specified times.
@@ -402,11 +396,6 @@ void CMultiManager::ManagerReport ( void )
 	}
 }
 #endif
-
-
-//
-//	    Pendulum
-//
 
 #define SF_PENDULUM_SWING 2
 
@@ -612,11 +601,6 @@ void CPendulum::RopeTouch ( CBaseEntity *pOther )
 	pOther->SetMoveType( MOVETYPE_NONE );
 }
 
-
-//
-//	    MORTARS
-//
-
 class CFuncMortarField : public CBaseToggle
 {
 	DECLARE_CLASS( CFuncMortarField, CBaseToggle );
@@ -762,7 +746,6 @@ void CFuncMortarField::InputTrigger( inputdata_t &inputdata )
 	}
 }
 
-#ifdef HL1_DLL
 
 class CMortar : public CHL1BaseGrenade
 {
@@ -822,7 +805,6 @@ void CMortar::MortarExplode( void )
 	UTIL_ScreenShake( tr.endpos, 25.0, 150.0, 1.0, 750, SHAKE_START );
 }
 
-#endif
 
 //=========================================================
 // Dead HEV suit prop
@@ -1476,7 +1458,7 @@ void CHL1Gib::WaitTillLand ( void )
 		AddSolidFlags( FSOLID_NOT_SOLID );*/
 		
 		SetNextThink( gpGlobals->curtime + m_lifeTime );
-		SetThink ( &CBaseEntity::SUB_FadeOut );
+		//SetThink ( &CBaseEntity::SUB_FadeOut );
 
 		// If you bleed, you stink!
 	/*	if ( m_bloodColor != DONT_BLEED )
@@ -1524,7 +1506,7 @@ void CHL1Gib::BounceGibTouch ( CBaseEntity *pOther )
 			float volume;
 			float zvel = fabs( GetAbsVelocity().z );
 		
-			volume = 0.8 * MIN(1.0, ((float)zvel) / 450.0);
+			volume = 0.8 * min(1.0, ((float)zvel) / 450.0);
 
 			CBreakable::MaterialSoundRandom( entindex(), (Materials)m_material, volume );
 		}
@@ -1587,7 +1569,7 @@ void CHL1Gib::Spawn( const char *szGibModel )
 
 	SetNextThink( gpGlobals->curtime + 4 );
 
-	m_lifeTime = 250;
+	m_lifeTime = 25;
 
 	SetThink ( &CHL1Gib::WaitTillLand );
 	SetTouch ( &CHL1Gib::BounceGibTouch );

@@ -34,8 +34,8 @@ VALID_BUILD_TYPES = ['fastnative', 'fast', 'release', 'debug', 'nooptimize', 'sa
 
 LINKFLAGS = {
 	'common': {
-		'msvc':  ['/DEBUG'], # always create PDB, doesn't affect result binaries
-		'clang': ['-fvisibility=hidden'],
+		#'msvc':  ['/DEBUG'], # always create PDB, doesn't affect result binaries
+		'clang': ['-fvisibility=hidden', '--no-undefined'],
 		'gcc':   ['-Wl,--no-undefined'],
 		'owcc':  ['-Wl,option stack=512k', '-fvisibility=hidden']
 	},
@@ -77,7 +77,7 @@ CFLAGS = {
 	},
 	'sanitize': {
 		'msvc':    ['/Od', '/RTC1', '/MT'],
-		'gcc':     ['-Og', '-fsanitize=undefined', '-fsanitize=address'],
+		'gcc':     ['-Og', '-fsanitize=undefined', '-fsanitize=address', '-fno-sanitize=vptr'],
 		'clang':   ['-O0', '-fsanitize=undefined', '-fsanitize=address'],
 		'default': ['-O0']
 	},

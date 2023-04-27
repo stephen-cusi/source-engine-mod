@@ -781,7 +781,7 @@ int CHL2MPScriptedWeapon::GetWeight( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "weight" );
+	lua_getfield( L, -1, "Weight" );
 	lua_remove( L, -2 );
 
 	RETURN_LUA_INTEGER();
@@ -794,7 +794,7 @@ bool CHL2MPScriptedWeapon::AllowsAutoSwitchTo( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "autoswitchto" );
+	lua_getfield( L, -1, "AutoSwitchTo" );
 	lua_remove( L, -2 );
 
 	if ( lua_gettop( L ) == 1 )
@@ -831,7 +831,7 @@ bool CHL2MPScriptedWeapon::AllowsAutoSwitchFrom( void ) const
 {
 #if defined ( LUA_SDK )
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "autoswitchfrom" );
+	lua_getfield( L, -1, "AutoSwitchFrom" );
 	lua_remove( L, -2 );
 
 	if ( lua_gettop( L ) == 1 )
@@ -885,7 +885,6 @@ int CHL2MPScriptedWeapon::GetSlot( void ) const
 
 	return BaseClass::GetSlot();
 }
-
 
 int CHL2MPScriptedWeapon::GetPosition( void ) const
 {

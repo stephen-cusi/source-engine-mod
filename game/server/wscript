@@ -17,7 +17,7 @@ games = {
 	'hl1mp': ['server_base.vpc', 'server_hl1mp.vpc'],
 	'cstrike': ['server_base.vpc', 'server_cstrike.vpc', 'nav_mesh.vpc'],
 	'dod': ['server_base.vpc', 'server_dod.vpc'],
-	'hl2sb': ['server_base.vpc', 'server_hl2mp.vpc', 'server_lua.vpc', 'server_episodic.vpc'],
+	'hl2sb': ['server_base.vpc', 'server_hl2mp.vpc', 'server_lua.vpc' ],
 	'tf': [
 		'server_base.vpc',
 		'server_econ_base.vpc',

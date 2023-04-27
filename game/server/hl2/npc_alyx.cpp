@@ -128,6 +128,7 @@ void CNPC_Alyx::Spawn()
 	// FF
 	//AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL | EFL_NO_PHYSCANNON_INTERACTION );
 
+	SetBloodColor( BLOOD_COLOR_RED );
 	m_iHealth			= 80;
 
 	NPCInit();

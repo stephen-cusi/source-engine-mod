@@ -66,6 +66,10 @@ IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 	SendPropEHandle( SENDINFO( m_hRagdoll ) ),
 	SendPropInt( SENDINFO( m_iSpawnInterpCounter), 4 ),
 	SendPropInt( SENDINFO( m_iPlayerSoundType), 3 ),
+	SendPropFloat( SENDINFO( m_flStartCharge ) ),
+	SendPropFloat( SENDINFO( m_flAmmoStartCharge ) ),
+	SendPropFloat( SENDINFO( m_flPlayAftershock ) ),
+	SendPropFloat( SENDINFO( m_flNextAmmoBurn ) ),
 	
 	SendPropExclude( "DT_BaseAnimating", "m_flPoseParameter" ),
 	SendPropExclude( "DT_BaseFlex", "m_viewtarget" ),
@@ -76,6 +80,10 @@ IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 END_SEND_TABLE()
 
 BEGIN_DATADESC( CHL2MP_Player )
+	DEFINE_FIELD( m_flStartCharge, FIELD_FLOAT ),
+	DEFINE_FIELD( m_flAmmoStartCharge, FIELD_FLOAT ),
+	DEFINE_FIELD( m_flPlayAftershock, FIELD_FLOAT ),
+	DEFINE_FIELD( m_flNextAmmoBurn, FIELD_FLOAT ),
 END_DATADESC()
 
 const char *g_ppszRandomCitizenModels[] = 
@@ -210,10 +218,15 @@ void CHL2MP_Player::GiveDefaultItems( void )
 	{
 		// Зачем я вообще это сделал? Ведь на картах уже разбросали оружие :P
 		//if ( Q_strnicmp( gpGlobals->mapname.ToCStr(), "d1_", 4 ) )
+		// тупой хак
+		RemoveSuit();
 		return;
 	}
+	else
+	{
+		GiveAllItems();
+	}
 
-	GiveAllItems();
 }
 
 
@@ -275,8 +288,6 @@ void CHL2MP_Player::Spawn(void)
 	m_flNextTeamChangeTime = 0.0f;
 
 	PickDefaultSpawnTeam();
-
-	engine->ClientCommand( edict(), "dumpentitytofile" );
 
 	BaseClass::Spawn();
 	

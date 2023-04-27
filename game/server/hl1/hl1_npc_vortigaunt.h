@@ -13,9 +13,9 @@
 #include "hl1_ai_basenpc.h"
 //=========================================================
 //=========================================================
-class CNPC_Vortigaunt : public CHL1BaseNPC
+class CNPC_Vortigaunt_HL1 : public CHL1BaseNPC
 {
-	DECLARE_CLASS( CNPC_Vortigaunt, CHL1BaseNPC );
+	DECLARE_CLASS( CNPC_Vortigaunt_HL1, CHL1BaseNPC );
 public:
 
 	void Spawn( void );

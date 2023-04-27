@@ -425,7 +425,7 @@ public:
 
 // Used by prop_physics_create and the server benchmark.
 // pModelName should not include the "models/" prefix.
-CPhysicsProp* CreatePhysicsProp( const char *pModelName, const Vector &vTraceStart, const Vector &vTraceEnd, const IHandleEntity *pTraceIgnore, bool bRequireVCollide, const char *pClassName="physics_prop" );
+CPhysicsProp* CreatePhysicsProp( const char *pModelName, const Vector &vTraceStart, const Vector &vTraceEnd, const IHandleEntity *pTraceIgnore, bool bRequireVCollide, const char *pClassName );
 
 bool UTIL_CreateScaledPhysObject( CBaseAnimating *pInstance, float flScale );
 

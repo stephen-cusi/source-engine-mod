@@ -339,7 +339,7 @@ void CNPC_Alyx::Spawn()
 	//AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL | EFL_NO_PHYSCANNON_INTERACTION );
 
 	m_iHealth			= 80;
-	m_bloodColor		= DONT_BLEED;
+	SetBloodColor( BLOOD_COLOR_RED );
 
 	NPCInit();
 

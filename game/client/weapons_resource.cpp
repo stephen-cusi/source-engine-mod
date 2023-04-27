@@ -106,6 +106,8 @@ void WeaponsResource::LoadWeaponSprites( WEAPON_FILE_INFO_HANDLE hWeaponFileInfo
 	char sz[128];
 	Q_snprintf(sz, sizeof( sz ), "scripts/%s", pWeaponInfo->szClassName);
 
+
+
 	CUtlDict< CHudTexture *, int > tempList;
 
 	LoadHudTextures( tempList, sz, g_pGameRules->GetEncryptionKey() );

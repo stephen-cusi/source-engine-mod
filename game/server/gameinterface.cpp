@@ -1080,7 +1080,7 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	PrecachePointTemplates();
 
 	// load MOTD from file into stringtable
-	LoadMessageOfTheDay();
+	//LoadMessageOfTheDay();
 
 	// Sometimes an ent will Remove() itself during its precache, so RemoveImmediate won't happen.
 	// This makes sure those ents get cleaned up.

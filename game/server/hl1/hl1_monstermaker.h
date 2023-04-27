@@ -23,12 +23,12 @@
 #define	SF_NPCMAKER_NO_DROP		64	// Do not adjust for the ground's position when checking for spawn
 
 
-class CNPCMaker : public CBaseEntity
+class CNPCMaker_HL1 : public CBaseEntity
 {
 public:
-	DECLARE_CLASS( CNPCMaker, CBaseEntity );
+	DECLARE_CLASS( CNPCMaker_HL1, CBaseEntity );
 
-	CNPCMaker(void) {}
+	CNPCMaker_HL1(void) {}
 
 	void Spawn( void );
 	void Precache( void );

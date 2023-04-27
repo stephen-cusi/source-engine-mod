@@ -101,6 +101,7 @@ void LoadHudTextures( CUtlDict< CHudTexture *, int >& list, const char *szFilena
 					// it's a font-based icon
 					tex->bRenderUsingFont = true;
 					tex->cCharacterInFont = *(pTemp->GetString("character", ""));
+
 					Q_strncpy( tex->szTextureFile, pTemp->GetString( "font" ), sizeof( tex->szTextureFile ) );
 
 					list.Insert( tex->szShortName, tex );
