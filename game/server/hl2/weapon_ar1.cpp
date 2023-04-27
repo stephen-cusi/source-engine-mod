@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 #include "basehlcombatweapon.h"
-#include "NPCevent.h"
+#include "npcevent.h"
 #include "basecombatcharacter.h"
 #include "ai_basenpc.h"
 #include "player.h"
@@ -44,59 +44,29 @@ class CWeaponAR1 : public CHLMachineGun
 {
 	DECLARE_DATADESC();
 public:
-	DECLARE_CLASS( CWeaponAR1, CHLMachineGun );
-
-	DECLARE_SERVERCLASS();
-
 	CWeaponAR1();
-
-	int m_ROF;
-
+	
+	DECLARE_CLASS( CWeaponAR1, CHLMachineGun );
+	DECLARE_SERVERCLASS();
 	void	Precache( void );
 	bool	Deploy( void );
-
-	float GetFireRate( void ) {return RateOfFire[ m_ROF ];}
-
-	int CapabilitiesGet( void ) { return bits_CAP_WEAPON_RANGE_ATTACK1; }
-
-	void SecondaryAttack( void );
-
+	float 	GetFireRate( void ) {return RateOfFire[ m_ROF ];}
+	int 	CapabilitiesGet( void ) { return bits_CAP_WEAPON_RANGE_ATTACK1; }
+//	void 	SecondaryAttack( void );
+	void 	Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator );
 	virtual void FireBullets( const FireBulletsInfo_t &info );
-
 	virtual const Vector& GetBulletSpread( void )
 	{
 		static const Vector cone = VECTOR_CONE_10DEGREES;
 		return cone;
 	}
 
-	void Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator )
-	{
-		switch( pEvent->event )
-		{
-			case EVENT_WEAPON_AR1:
-			{
-				Vector vecShootOrigin, vecShootDir;
-				vecShootOrigin = pOperator->Weapon_ShootPosition( );
-
-				CAI_BaseNPC *npc = pOperator->MyNPCPointer();
-				ASSERT( npc != NULL );
-				
-				vecShootDir = npc->GetActualShootTrajectory( vecShootOrigin );
-
-				WeaponSound(SINGLE_NPC);
-				pOperator->FireBullets( 1, vecShootOrigin, vecShootDir, VECTOR_CONE_PRECALCULATED, MAX_TRACE_LENGTH, m_iPrimaryAmmoType, 2 );
-				pOperator->DoMuzzleFlash();
-			}
-			break;
-			default:
-				CBaseCombatWeapon::Operator_HandleAnimEvent( pEvent, pOperator );
-				break;
-		}
-	}
 	DECLARE_ACTTABLE();
+	
+	int m_ROF;
 };
 
-IMPLEMENT_SERVERCLASS_ST(CWeaponAR1, DT_WeaponAR1)
+IMPLEMENT_SERVERCLASS_ST( CWeaponAR1, DT_WeaponAR1 )
 END_SEND_TABLE()
 
 LINK_ENTITY_TO_CLASS( weapon_ar1, CWeaponAR1 );
@@ -113,15 +83,36 @@ IMPLEMENT_ACTTABLE(CWeaponAR1);
 // Save/Restore
 //---------------------------------------------------------
 BEGIN_DATADESC( CWeaponAR1 )
-
-	DEFINE_FIELD( m_ROF,			FIELD_INTEGER ),
-
+	DEFINE_FIELD( m_ROF, FIELD_INTEGER ),
 END_DATADESC()
 
 
 CWeaponAR1::CWeaponAR1( )
 {
 	m_ROF = 0;
+}
+
+void CWeaponAR1::Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator )
+{
+	switch( pEvent->event )
+	{
+		case EVENT_WEAPON_AR1:
+		{
+			Vector vecShootOrigin, vecShootDir;
+			vecShootOrigin = pOperator->Weapon_ShootPosition( );
+			CAI_BaseNPC *npc = pOperator->MyNPCPointer();
+			ASSERT( npc != NULL );
+			
+			vecShootDir = npc->GetActualShootTrajectory( vecShootOrigin );
+			WeaponSound(SINGLE_NPC);
+			pOperator->FireBullets( 1, vecShootOrigin, vecShootDir, VECTOR_CONE_PRECALCULATED, MAX_TRACE_LENGTH, m_iPrimaryAmmoType, 2 );
+			pOperator->DoMuzzleFlash();
+		}
+		break;
+		default:
+			CBaseCombatWeapon::Operator_HandleAnimEvent( pEvent, pOperator );
+			break;
+	}
 }
 
 void CWeaponAR1::Precache( void )
@@ -146,7 +137,7 @@ void CWeaponAR1::FireBullets( const FireBulletsInfo_t &info )
 	}
 }
 
-
+#if 0
 void CWeaponAR1::SecondaryAttack( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -180,3 +171,4 @@ void CWeaponAR1::SecondaryAttack( void )
 	}
 	Msg( "\n" );
 }
+#endif

@@ -657,7 +657,7 @@ void CFlare::AddToActiveFlares( void )
 	}
 }
 
-#if 0
+#ifdef MI
 
 IMPLEMENT_SERVERCLASS_ST(CFlaregun, DT_Flaregun)
 END_SEND_TABLE()

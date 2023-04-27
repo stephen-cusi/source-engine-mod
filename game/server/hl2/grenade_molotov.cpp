@@ -28,18 +28,17 @@ extern short	g_sModelIndexFireball;
 
 extern ConVar    sk_plr_dmg_molotov;
 extern ConVar    sk_npc_dmg_molotov;
+
 ConVar    sk_molotov_radius			( "sk_molotov_radius","0");
 
 #define MOLOTOV_EXPLOSION_VOLUME	1024
 
 BEGIN_DATADESC( CGrenade_Molotov )
-
 	DEFINE_FIELD( m_pFireTrail, FIELD_CLASSPTR ),
 
 	// Function Pointers
 	DEFINE_FUNCTION( MolotovTouch ),
 	DEFINE_FUNCTION( MolotovThink ),
-
 END_DATADESC()
 
 LINK_ENTITY_TO_CLASS( grenade_molotov, CGrenade_Molotov );
@@ -50,12 +49,12 @@ void CGrenade_Molotov::Spawn( void )
 	SetSolid( SOLID_BBOX ); 
 	SetCollisionGroup( COLLISION_GROUP_PROJECTILE );
 
-	SetModel( "models/weapons/w_molotov.mdl");
+	SetModel( "models/weapons/w_molotov.mdl" );
 
 	UTIL_SetSize(this, Vector( -6, -6, -2), Vector(6, 6, 2));
 
-	SetTouch( MolotovTouch );
-	SetThink( MolotovThink );
+	SetTouch( &CGrenade_Molotov::MolotovTouch );
+	SetThink( &CGrenade_Molotov::MolotovThink );
 	SetNextThink( gpGlobals->curtime + 0.1f );
 
 	m_flDamage		= sk_plr_dmg_molotov.GetFloat();

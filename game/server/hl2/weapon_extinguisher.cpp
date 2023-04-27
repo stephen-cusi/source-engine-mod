@@ -97,7 +97,7 @@ void CWeaponExtinguisher::Spawn( void )
 	BaseClass::Spawn();
 
 	m_takedamage	= DAMAGE_YES;
-	m_iHealth		= 25;//FIXME: Define
+	m_iHealth		= 25; //FIXME: Define
 }
 
 //-----------------------------------------------------------------------------
@@ -141,7 +141,7 @@ void CWeaponExtinguisher::Event_Killed( const CTakeDamageInfo &info )
 	//Put out fire in a radius
 	FireSystem_ExtinguishInRadius( GetAbsOrigin(), fire_extinguisher_explode_radius.GetInt(), fire_extinguisher_explode_strength.GetFloat() );
 
-	SetThink( SUB_Remove );
+	SetThink( &CWeaponExtinguisher::SUB_Remove );
 	SetNextThink( gpGlobals->curtime + 0.1f );
 }
 
@@ -355,7 +355,7 @@ void CExtinguisherCharger::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 
 	SetNextThink( gpGlobals->curtime + 0.25 );
 	
-	SetThink( TurnOff );
+	SetThink( &CExtinguisherCharger::TurnOff );
 
 	CBasePlayer	*pPlayer = ToBasePlayer( pActivator );
 

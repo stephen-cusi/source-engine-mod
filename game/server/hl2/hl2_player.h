@@ -14,6 +14,7 @@
 #include "hl2_playerlocaldata.h"
 #include "simtimer.h"
 #include "soundenvelope.h"
+#include "weapon_oicw.h"
 
 class CAI_Squad;
 class CPropCombineBall;
@@ -91,6 +92,8 @@ public:
 
 	DECLARE_SERVERCLASS();
 	DECLARE_DATADESC();
+
+	friend class CWeaponOICW;
 
 	virtual void		CreateCorpse( void ) { CopyToBodyQue( this ); };
 

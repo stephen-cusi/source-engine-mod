@@ -8,17 +8,17 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include	"npcevent.h"
-#include	"basehlcombatweapon.h"
-#include	"basecombatcharacter.h"
-#include	"ai_basenpc.h"
-#include	"AI_Memory.h"
-#include	"player.h"
-#include	"gamerules.h"		// For g_pGameRules
-#include	"weapon_molotov.h"
-#include	"grenade_molotov.h"
-#include	"in_buttons.h"
-#include	"game.h"			
+#include "npcevent.h"
+#include "basehlcombatweapon.h"
+#include "basecombatcharacter.h"
+#include "ai_basenpc.h"
+#include "ai_memory.h"
+#include "player.h"
+#include "gamerules.h"		// For g_pGameRules
+#include "weapon_molotov.h"
+#include "grenade_molotov.h"
+#include "in_buttons.h"
+#include "game.h"			
 #include "vstdlib/random.h"
 #include "movevars_shared.h"
 
@@ -26,16 +26,13 @@
 #include "tier0/memdbgon.h"
 
 BEGIN_DATADESC( CWeaponMolotov )
-
 	DEFINE_FIELD( m_nNumAmmoTypes, FIELD_INTEGER ),
 	DEFINE_FIELD( m_bNeedDraw, FIELD_BOOLEAN ),
 	DEFINE_FIELD( m_iThrowBits, FIELD_INTEGER ),
 	DEFINE_FIELD( m_fNextThrowCheck, FIELD_TIME ),
 	DEFINE_FIELD( m_vecTossVelocity, FIELD_VECTOR ),
-
 	// Function Pointers
 	DEFINE_FUNCTION( MolotovTouch ),
-
 END_DATADESC()
 
 
@@ -54,7 +51,7 @@ IMPLEMENT_ACTTABLE(CWeaponMolotov);
 
 void CWeaponMolotov::Precache( void )
 {
-	PrecacheModel("models/props_junk/w_garb_beerbottle.mdl");	//<<TEMP>> need real model
+	PrecacheModel( MolotovModel );
 	BaseClass::Precache();
 }
 
@@ -76,7 +73,7 @@ void CWeaponMolotov::Spawn( void )
 //------------------------------------------------------------------------------
 void CWeaponMolotov::SetPickupTouch( void )
 {
-	SetTouch(MolotovTouch);
+	SetTouch( &CWeaponMolotov::MolotovTouch );
 }
 
 //-----------------------------------------------------------------------------
@@ -308,9 +305,10 @@ void CWeaponMolotov::ThrowMolotov( const Vector &vecSrc, const Vector &vecVeloci
 
 	if (!pMolotov)
 	{
-		Msg("Couldn't make molotov!\n");
+		DevMsg("I Cant make a Molotov, sorry...\n");
 		return;
 	}
+	
 	pMolotov->SetAbsVelocity( vecVelocity );
 
 	// Tumble through the air
@@ -374,6 +372,7 @@ void CWeaponMolotov::SecondaryAttack( void )
 {
 	//<<TEMP>>
 	// Hmmm... what should I do here?
+	// Can i make in hand exploding like a easter egg?
 }
 
 //-----------------------------------------------------------------------------

@@ -25,6 +25,12 @@ public:
 	C_BeamQuadratic();
 	void			Update( C_BaseEntity *pOwner );
 
+	matrix3x4_t z;
+	const matrix3x4_t& RenderableToWorldTransform()
+	{
+		return z;
+	}
+
 	// IClientRenderable
 	virtual const Vector&			GetRenderOrigin( void ) { return m_worldPosition; }
 	virtual const QAngle&			GetRenderAngles( void ) { return vec3_angle; }
@@ -105,6 +111,7 @@ END_RECV_TABLE()
 C_BeamQuadratic::C_BeamQuadratic()
 {
 	m_pOwner = NULL;
+	m_hRenderHandle = INVALID_CLIENT_RENDER_HANDLE;
 }
 
 void C_BeamQuadratic::Update( C_BaseEntity *pOwner )
@@ -124,9 +131,9 @@ void C_BeamQuadratic::Update( C_BaseEntity *pOwner )
 	else if ( !m_active && m_hRenderHandle != INVALID_CLIENT_RENDER_HANDLE )
 	{
 		ClientLeafSystem()->RemoveRenderable( m_hRenderHandle );
+		m_hRenderHandle = INVALID_CLIENT_RENDER_HANDLE;
 	}
 }
-
 
 int	C_BeamQuadratic::DrawModel( int )
 {
@@ -159,8 +166,9 @@ int	C_BeamQuadratic::DrawModel( int )
 	}
 
 	float scrollOffset = gpGlobals->curtime - (int)gpGlobals->curtime;
-	materials->Bind( pMat );
+
+	CMatRenderContextPtr pRenderContext( materials );
+	pRenderContext->Bind( pMat );
 	DrawBeamQuadratic( points[0], points[1], points[2], 13, color, scrollOffset );
 	return 1;
 }
-

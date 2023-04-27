@@ -6160,6 +6160,14 @@ void CBasePlayer::CheatImpulseCommands( int iImpulse )
 		GiveAmmo( 5,	"grenade");
 		GiveAmmo( 32,	"357" );
 		GiveAmmo( 16,	"XBowBolt" );
+		GiveAmmo( 5, 	"OICW_Grenade");
+		GiveAmmo( 100,  "Extinguisher");
+		GiveAmmo( 255,  "SmallRound");
+		GiveAmmo( 255,  "MediumRound");
+		GiveAmmo( 255, 	"LargeRound");
+		GiveAmmo( 100,  "FlareRound");
+		GiveAmmo( 10,   "Molotov");
+		GiveAmmo( 10,   "IRifleRound");
 #ifdef HL2_EPISODIC
 		GiveAmmo( 5,	"Hopwire" );
 #endif		
@@ -6174,6 +6182,22 @@ void CBasePlayer::CheatImpulseCommands( int iImpulse )
 		GiveNamedItem( "weapon_rpg" );
 		GiveNamedItem( "weapon_357" );
 		GiveNamedItem( "weapon_crossbow" );
+		GiveNamedItem( "weapon_physgun");
+		GiveNamedItem( "weapon_stunstick");
+		GiveNamedItem( "weapon_alyxgun");
+		GiveNamedItem( "weapon_oicw");
+		GiveNamedItem( "weapon_ar1");
+		GiveNamedItem( "weapon_binoculars");
+		GiveNamedItem( "weapon_cguard");
+		GiveNamedItem( "weapon_extinguisher");
+		GiveNamedItem( "weapon_flaregun");
+		GiveNamedItem( "weapon_gauss");
+		GiveNamedItem( "weapon_iceaxe");
+		GiveNamedItem( "weapon_hmg1");
+		GiveNamedItem( "weapon_irifle");
+		GiveNamedItem( "weapon_molotov");
+		GiveNamedItem( "weapon_smg2");
+		GiveNamedItem( "weapon_sniperrifle");
 #ifdef HL2_EPISODIC
 		// GiveNamedItem( "weapon_magnade" );
 #endif

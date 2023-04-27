@@ -24,6 +24,19 @@ STUB_WEAPON_CLASS( weapon_alyxgun, WeaponAlyxGun, C_HLSelectFireMachineGun );
 STUB_WEAPON_CLASS( weapon_citizenpackage, WeaponCitizenPackage, C_BaseHLCombatWeapon );
 STUB_WEAPON_CLASS( weapon_citizensuitcase, WeaponCitizenSuitcase, C_WeaponCitizenPackage );
 
+#ifdef MI_CLIENT_DLL
+STUB_WEAPON_CLASS( weapon_ar1, WeaponAR1, C_HLSelectFireMachineGun );
+STUB_WEAPON_CLASS( weapon_cguard, WeaponCGuard, C_BaseHLCombatWeapon );
+STUB_WEAPON_CLASS( weapon_extinguisher, WeaponExtinguisher, C_BaseHLCombatWeapon );
+STUB_WEAPON_CLASS( weapon_iceaxe, WeaponIceAxe, C_BaseHLCombatWeapon );
+STUB_WEAPON_CLASS( weapon_immolator, WeaponImmolator, C_BaseHLCombatWeapon );
+STUB_WEAPON_CLASS( weapon_irifle, WeaponIRifle, C_BaseHLCombatWeapon );
+STUB_WEAPON_CLASS( weapon_molotov, WeaponMolotov, C_BaseHLCombatWeapon );
+STUB_WEAPON_CLASS( weapon_oicw, WeaponOICW, C_BaseHLCombatWeapon );
+STUB_WEAPON_CLASS( weapon_smg2, WeaponSMG2, C_HLSelectFireMachineGun );
+STUB_WEAPON_CLASS( weapon_sniperrifle, WeaponSniperrifle, C_BaseHLCombatWeapon );
+#endif
+
 #ifndef HL2MP
 STUB_WEAPON_CLASS( weapon_ar2, WeaponAR2, C_HLMachineGun );
 STUB_WEAPON_CLASS( weapon_frag, WeaponFrag, C_BaseHLCombatWeapon );

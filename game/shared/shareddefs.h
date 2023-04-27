@@ -112,17 +112,28 @@ public:
 #define TIME_TO_UNDUCK		0.2
 #define TIME_TO_UNDUCK_MS	200.0f
 
+#ifdef MI
+#define MAX_WEAPON_SLOTS		8
+#define MAX_ITEM_TYPES			8
+#else
 #define MAX_WEAPON_SLOTS		6	// hud item selection slots
-#define MAX_WEAPON_POSITIONS	20	// max number of items within a slot
 #define MAX_ITEM_TYPES			6	// hud item selection slots
+#endif
+
+#define MAX_WEAPON_POSITIONS	20	// max number of items within a slot
 #define MAX_WEAPONS				48	// Max number of weapons available
 
 #define MAX_ITEMS				5	// hard coded item types
 
 #define WEAPON_NOCLIP			-1	// clip sizes set to this tell the weapon it doesn't use a clip
 
+#ifdef MI
+#define	MAX_AMMO_TYPES	64
+#define MAX_AMMO_SLOTS  64
+#else
 #define	MAX_AMMO_TYPES	32		// ???
 #define MAX_AMMO_SLOTS  32		// not really slots
+#endif
 
 #define HUD_PRINTNOTIFY		1
 #define HUD_PRINTCONSOLE	2

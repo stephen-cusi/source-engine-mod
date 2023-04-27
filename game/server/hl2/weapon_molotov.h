@@ -16,6 +16,8 @@
 #ifndef	WEAPON_MOLOTOV_H
 #define	WEAPON_MOLOTOV_H
 
+#define MolotovModel "models/props_junk/w_garb_beerbottle.mdl" //<<TEMP>> need real model 
+
 class CGrenade_Molotov;
 
 class CWeaponMolotov : public CBaseHLCombatWeapon

@@ -47,8 +47,10 @@ public:
 
 	virtual void SetPickupTouch( void )
 	{
+#ifndef MI		
 		// Alyx gun cannot be picked up
 		SetTouch(NULL);
+#endif
 	}
 
 	float m_flTooCloseTimer;

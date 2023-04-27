@@ -12,6 +12,7 @@ def options(opt):
 	return
 
 games = {
+	'missinginfo': ['client_base.vpc', 'client_episodic.vpc', 'client_mi.vpc'],
 	'hl2': ['client_base.vpc', 'client_hl2.vpc'],
 	'hl2mp': ['client_base.vpc', 'client_hl2mp.vpc'],
 	'hl1': ['client_base.vpc', 'client_hl1.vpc'],

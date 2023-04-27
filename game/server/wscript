@@ -9,6 +9,7 @@ top = '.'
 PROJECT_NAME = 'server'
 
 games = {
+	'missinginfo': ['server_base.vpc', 'server_episodic.vpc', 'server_mi.vpc'],
 	'hl2': ['server_base.vpc', 'server_hl2.vpc'],
 	'episodic':['server_base.vpc', 'server_episodic.vpc'],
 	'hl2mp': ['server_base.vpc', 'server_hl2mp.vpc'],

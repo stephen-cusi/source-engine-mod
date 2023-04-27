@@ -137,6 +137,7 @@ public:
 };
 LINK_ENTITY_TO_CLASS(item_box_mrounds, CItem_BoxMRounds);
 LINK_ENTITY_TO_CLASS(item_ammo_smg1, CItem_BoxMRounds);
+LINK_ENTITY_TO_CLASS(item_ammo_oicw, CItem_BoxMRounds);
 
 // ========================================================================
 //	>> LargeBoxMRounds
@@ -171,6 +172,7 @@ public:
 };
 LINK_ENTITY_TO_CLASS(item_large_box_mrounds, CItem_LargeBoxMRounds);
 LINK_ENTITY_TO_CLASS(item_ammo_smg1_large, CItem_LargeBoxMRounds);
+LINK_ENTITY_TO_CLASS(item_ammo_oicw_large, CItem_LargeBoxMRounds);
 
 // ========================================================================
 //	>> BoxLRounds
@@ -482,6 +484,7 @@ public:
 };
 LINK_ENTITY_TO_CLASS(item_ar2_grenade, CItem_AR2_Grenade);
 LINK_ENTITY_TO_CLASS(item_ammo_smg1_grenade, CItem_AR2_Grenade);
+LINK_ENTITY_TO_CLASS(item_ammo_oicw_grenade, CItem_AR2_Grenade);
 
 // ========================================================================
 //	>> BoxSniperRounds

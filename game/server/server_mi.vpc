@@ -1,0 +1,40 @@
+//-----------------------------------------------------------------------------
+//	SERVER_MI.VPC
+//
+//	Project Script
+//-----------------------------------------------------------------------------
+
+$Macro SRCDIR		"..\.."
+$Macro GAMENAME 	"missinginfo" [!$SOURCESDK]
+$Macro GAMENAME 	"missinginfo" [$SOURCESDK]
+
+$Include "$SRCDIR\game\server\server_base.vpc"
+
+$Configuration
+{
+	$Compiler
+	{
+		$AdditionalIncludeDirectories	"$BASE;$SRCDIR\game\shared\hl2;$SRCDIR\game\shared\episodic;.\hl2;.\episodic;.\mi;$SRCDIR\game\shared\mi"
+		$PreprocessorDefinitions		"$BASE;HL2_DLL;HL2_EPISODIC;USES_SAVERESTORE;MI"
+	}
+}
+
+$Project "Server (MI)"
+{
+	$Folder	"Source Files"
+	{
+		$File "physgun.cpp"
+		$File "hl2/weapon_sniperrifle.cpp"
+		$File "hl2/weapon_smg2.cpp"
+		$File "hl2/weapon_molotov.cpp"
+		$File "hl2/weapon_irifle.cpp"
+		$File "hl2/weapon_immolator.cpp"
+		$File "hl2/weapon_extinguisher.cpp"
+		$File "hl2/weapon_ar1.cpp"
+		$File "hl2/extinguisherjet.cpp"
+		$File "mi/weapon_gauss.cpp"
+		$File "mi/weapon_oicw.cpp"
+		$File "mi/weapon_iceaxe.cpp"
+		$File "mi/npc_odell.cpp"
+	}
+}

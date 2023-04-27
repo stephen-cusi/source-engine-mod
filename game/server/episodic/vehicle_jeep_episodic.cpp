@@ -314,7 +314,10 @@ LINK_ENTITY_TO_CLASS( info_target_vehicle_transition, CInfoTargetVehicleTransiti
 //	CPropJeepEpisodic
 //
 
+// we dont use episodic jeep in MI
+#ifndef MI
 LINK_ENTITY_TO_CLASS( prop_vehicle_jeep, CPropJeepEpisodic );
+#endif
 
 BEGIN_DATADESC( CPropJeepEpisodic )
 
