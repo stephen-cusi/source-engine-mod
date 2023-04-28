@@ -1,59 +1,266 @@
-name: Tests
+name: andriod-test
 
-on: [push, pull_request]
+on:
+
+  push:
+
+    branches:
+
+      - "*"
+
+  pull_request:
+
+    branches:
+
+      - "*"
 
 jobs:
-  tests-linux-i386:
+
+  build-mod-64bit:
+
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Run tests linux-i386
-      run: |
-        scripts/tests-ubuntu-i386.sh
 
-  tests-linux-amd64:
+    - uses: actions/checkout@v3
+
+    - name: Build-hl2mp_cstrike_hl1
+
+      run: |
+
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+
+        wget https://apt.llvm.org/llvm.sh
+
+        chmod +x llvm.sh
+
+        sudo ./llvm.sh 11
+
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+
+        mv android-ndk-r10e ndk/
+
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+
+        mkdir ./andriod
+
+        mkdir ./andriod/hl2mp
+
+        mkdir ./andriod/hl1
+
+        mkdir ./andriod/hl1mp
+
+        mkdir ./andriod/cstrike
+
+        git submodule init;git submodule update
+
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
+
+        ./waf install --target=client,server -j4
+
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
+
+        ./waf install --target=client,server -j4
+
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
+
+        ./waf install --target=client,server -j4
+
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
+
+        #test hldms
+
+        ./waf install --target=client,server -j4
+
+        #mv ./andriod/lib ./andriod/cstrike
+
+        cat build/config.log >./andriod/info.txt
+
+        
+
+    - uses: actions/upload-artifact@v3
+
+      with:
+
+        name: 64bit-mod_x4
+
+        path: ./andriod
+
+        if-no-files-found: error
+
+  build-srceng-arm64:
+
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Run tests linux-amd64
-      run: |
-        scripts/tests-ubuntu-amd64.sh
 
-  tests-macos-amd64:
-    runs-on: macos-latest
+    - uses: actions/checkout@v3
+
+    - name: build
+
+      run: |
+
+        wget https://apt.llvm.org/llvm.sh
+
+        chmod +x llvm.sh
+
+        sudo ./llvm.sh 11
+
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+
+        unzip android-ndk-r10e-linux-x86_64.zip
+
+        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
+
+        export NDK_HOME=$PWD/android-ndk-r10e/
+
+        mkdir ./andriod
+
+        git submodule init;git submodule update
+
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns 
+
+        ./waf install -j4
+
+        cat build/config.log > ./andriod/info.txt
+
+    - uses: actions/upload-artifact@v3
+
+      with:
+
+        name: 64bit-srceng
+
+        path: ./andriod
+
+        if-no-files-found: error
+
+  build-mod-32bit:
+
+    runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Run tests macos-amd64
-      run: |
-        scripts/tests-macos-amd64.sh
 
-  tests-windows-i386:
-    runs-on: windows-2019
+    - uses: actions/checkout@v3
+
+    - name: Build-hl2mp_cstrike_hl1
+
+      run: |
+
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+
+        wget https://apt.llvm.org/llvm.sh
+
+        chmod +x llvm.sh
+
+        sudo ./llvm.sh 11
+
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+
+        mv android-ndk-r10e ndk/
+
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+
+        mkdir ./andriod
+
+        mkdir ./andriod/hl2mp
+
+        mkdir ./andriod/hl1
+
+        mkdir ./andriod/hl1mp
+
+        mkdir ./andriod/cstrike
+
+        git submodule init;git submodule update
+
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
+
+        ./waf install --target=client,server -j4
+
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
+
+        ./waf install --target=client,server -j4
+
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
+
+        ./waf install --target=client,server -j4
+
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
+
+        #test hldms
+
+        ./waf install --target=client,server -j4
+
+        #mv ./andriod/lib ./andriod/cstrike
+
+        cat build/config.log >./andriod/info.txt
+
+        
+
+    - uses: actions/upload-artifact@v3
+
+      with:
+
+        name: 32bit-mod_x4
+
+        path: ./andriod
+
+        if-no-files-found: error
+
+  build-srceng-arm32:
+
+    runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Run tests windows-i386
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T release --tests --prefix=out/
-        ./waf.bat install
-        cd out
-        $env:Path = "bin";
-        ./unittest.exe
 
-  tests-windows-amd64:
-    runs-on: windows-2019
+    - uses: actions/checkout@v3
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: Run tests windows-amd64
+    - name: build
+
       run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T release --tests --prefix=out/ -8
-        ./waf.bat install
-        cd out
-        $env:Path = "bin";
-        ./unittest.exe
+
+        wget https://apt.llvm.org/llvm.sh
+
+        chmod +x llvm.sh
+
+        sudo ./llvm.sh 11
+
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+
+        unzip android-ndk-r10e-linux-x86_64.zip
+
+        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
+
+        export NDK_HOME=$PWD/android-ndk-r10e/
+
+        mkdir ./andriod
+
+        git submodule init;git submodule update
+
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns 
+
+        ./waf install -j4
+
+        cat build/config.log > ./andriod/info.txt
+
+    - uses: actions/upload-artifact@v3
+
+      with:
+
+        name: 32bit-srceng
+
+        path: ./andriod
+
+        if-no-files-found: error
+
