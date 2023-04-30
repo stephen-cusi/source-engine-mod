@@ -12,7 +12,7 @@ jobs:
         scripts/build-ubuntu-i386.sh
     - uses: actions/upload-artifact@v3
       with:
-        name: i386-build
+        name: missinginfo-linux32
         path: ./to_upload
         if-no-files-found: error
 
@@ -26,7 +26,7 @@ jobs:
         scripts/build-ubuntu-amd64.sh
     - uses: actions/upload-artifact@v3
       with:
-        name: x86_64-build
+        name: missinginfo-linux64
         path: ./to_upload
         if-no-files-found: error
 
@@ -74,7 +74,7 @@ jobs:
 #        cat build/config.log > ./win/info.txt I dont' think that it is useful
     - uses: actions/upload-artifact@v3
       with:
-        name: win32
+        name: missinginfo-win32
         path: ./win
         if-no-files-found: error
         
