@@ -154,11 +154,13 @@ int	CNPC_Stalker::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 
 	int ret = BaseClass::OnTakeDamage_Alive( info );
 
+#ifndef MI
 	// If player shot me make sure I'm mad at him even if I wasn't earlier
 	if ( (info.GetAttacker()->GetFlags() & FL_CLIENT) )
 	{
 		AddClassRelationship( CLASS_PLAYER, D_HT, 0 );
 	}
+#endif
 	return ret;
 }
 
@@ -167,7 +169,7 @@ int	CNPC_Stalker::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 //-----------------------------------------------------------------------------
 float CNPC_Stalker::MaxYawSpeed( void )
 {
-#ifdef HL2_EPISODIC
+#ifndef HL2_EPISODIC
 	return 10.0f;
 #else
 	switch( GetActivity() )
@@ -271,9 +273,14 @@ void CNPC_Stalker::Spawn( void )
 {
 	Precache( );
 
+#ifdef MI
+	SetModel( "models/stalker_old.mdl" );
+#else
 	SetModel( "models/stalker.mdl" );
+#endif
 	SetHullType(HULL_HUMAN);
 	SetHullSizeNormal();
+
 
 	SetSolid( SOLID_BBOX );
 	AddSolidFlags( FSOLID_NOT_STANDABLE );
@@ -296,12 +303,19 @@ void CNPC_Stalker::Spawn( void )
 	m_fBeamRechargeTime			= 0;
 	m_fNextDamageTime			= 0;
 
+#ifdef MI
+	m_flGroundSpeed = 320;
+#endif
+	
 	NPCInit();
 
 	m_flDistTooFar	= MAX_STALKER_FIRE_RANGE;
-
+#ifdef MI
+	m_iPlayerAggression = STALKER_PLAYER_AGGRESSION;
+#else	
 	m_iPlayerAggression = 0;
-
+#endif
+	
 	GetSenses()->SetDistLook(MAX_STALKER_FIRE_RANGE - 1);
 }
 
@@ -312,7 +326,11 @@ void CNPC_Stalker::Spawn( void )
 //-----------------------------------------------------------------------------
 void CNPC_Stalker::Precache( void )
 {
-	PrecacheModel("models/stalker.mdl");
+#ifdef MI
+	PrecacheModel( "models/stalker_old.mdl" );
+#else
+	PrecacheModel( "models/stalker.mdl" );
+#endif
 	PrecacheModel("sprites/laser.vmt");	
 
 	PrecacheModel("sprites/redglow1.vmt");
@@ -762,7 +780,6 @@ int CNPC_Stalker::SelectSchedule( void )
 	// no special cases here, call the base class
 	return BaseClass::SelectSchedule();
 }
-
 
 //-----------------------------------------------------------------------------
 // Purpose:

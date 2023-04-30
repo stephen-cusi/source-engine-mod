@@ -183,7 +183,9 @@ void CNPC_Odell::HandleAnimEvent( animevent_t *pEvent )
 	{
 		int iAttachment = LookupAttachment( pEvent->options );
 		welder->SetParent(this, iAttachment);
-		welder->SetLocalAngles( QAngle( 0, 90, 0 ) );
+		// потом
+		welder->SetLocalAngles( vec3_angle );
+		welder->SetLocalOrigin( vec3_origin );
 	}
 
 	if( !stricmp( pEvent->options, "Welder_Holster" ) )
