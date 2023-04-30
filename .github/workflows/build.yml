@@ -37,7 +37,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Cloning apk repo and preparing for building
       run: |
-        git clone https://github.com/ItzVladik/modlauncher-waf/
+        git clone https://github.com/ItzVladik/modlauncher-waf
         sudo apt-get update
         sudo apt-get install -f -y openjdk-8-jre zip apksigner
     - name: Build android-armv7a
@@ -51,7 +51,7 @@ jobs:
         scripts/build-apk.sh 
     - name: Rename apk
       run: |
-         mv srceng-androidwaf/build/android/mod-signed.apk missinginfo-release.apk
+         mv modlauncher-waf/build/android/mod-signed.apk missinginfo-release.apk
 
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v3

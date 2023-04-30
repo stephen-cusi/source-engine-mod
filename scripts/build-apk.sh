@@ -1,4 +1,4 @@
-cd srceng-androidwaf
+cd modlauncher-waf
 git clone https://gitlab.com/LostGamer/android-sdk
 export ANDROID_SDK_HOME=$PWD/android-sdk
 export MODNAME=missinginfo

@@ -5,4 +5,5 @@ export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
 ./waf build --target=client,server
 cp build/game/server/libserver.so modlauncher-waf/android/lib/arm64-v8a
 cp build/game/client/libclient.so modlauncher-waf/android/lib/arm64-v8a
+rm modlauncher-waf/android/arm64-v8a/.deleteme
 

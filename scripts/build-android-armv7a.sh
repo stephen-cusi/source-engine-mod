@@ -11,4 +11,4 @@ export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
 ./waf build --target=client,server
 cp build/game/server/libserver.so modlauncher-waf/android/lib/armeabi-v7a
 cp build/game/client/libclient.so modlauncher-waf/android/lib/armeabi-v7a
-
+rm modlauncher-waf/android/armeabi-v7a/.deleteme
