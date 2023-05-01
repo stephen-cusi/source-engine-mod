@@ -58,7 +58,7 @@ jobs:
 
         export NDK_HOME=$PWD/android-ndk-r10e/
 
-        mkdir ./andriod
+        mkdir ./android
 
         ./waf  configure -T release --build-game=missinginfo --android=aarch64,host,21 --target=../aarch64 -8 --disable-warns --prefix=./android/arm64
 
@@ -74,7 +74,7 @@ jobs:
 
         name: missinginfo-android
 
-        path: ./andriod
+        path: ./android
 
         if-no-files-found: error
 
