@@ -30,7 +30,7 @@ jobs:
         path: ./to_upload
         if-no-files-found: error
 
-  setup:
+  Android-build:
     runs-on: ubuntu-20.04
 
     steps:
