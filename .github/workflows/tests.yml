@@ -53,11 +53,13 @@ jobs:
     - name: Build android-armv7a
       run: |
         #scripts/build-android-armv7a.sh
-         ./waf configure -T release --build-game=missinginfo --android=armeabi-v7a-hard,host,21 --target=../aemeabi-v7a --disable-warns --prefix=./android/arm32
+         ./waf configure -T release --build-game=hl2 --android=armeabi-v7a-hard,host,21 --disable-warns --prefix=./android/arm32
+         ./waf install -j2 --strip
     - name: Build-android-aarch64
       run: |
         #scripts/build-android-aarch64.sh
-        ./waf  configure -T release --build-game=missinginfo --android=aarch64,host,21 --target=../aarch64 -8 --disable-warns --prefix=./android/arm64
+        ./waf  configure -T release --build-game=hl2 --android=aarch64,host,21 -8 --disable-warns --prefix=./android/arm64
+        ./waf install -j2 --strip
     - name: Finally build apk
       run: |
         #scripts/build-apk.sh
@@ -69,7 +71,7 @@ jobs:
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v3
       with:
-        name: missinginfo-android
+        name: hl2-android
         path: ./android
 
   build-windows-win32:
