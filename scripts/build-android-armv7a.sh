@@ -7,12 +7,12 @@ export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
 wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
 tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
 export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-./waf configure -T release --build-game=missinginfo --android=armeabi-v7a-hard,host,21 --target=../armeabi-v7a --disable-warns &&
+./waf configure -T release --build-game=missinginfo --android=armeabi-v7a-hard,host,21 --target=../armeabi-v7a --disable-warns --prefix=./android/armeabi-v7a-hard &&
 mkdir android
 mkdir android/armeabi-v7a
 mkdir android/arm64-v8a
 ls
-./waf build --target=client,server --destdir=./android/armeabi-v7a
+./waf install --target=client,server --destdir=./android/armeabi-v7a -4
 #sudo cp build/game/server/libserver.so ./android/lib/armeabi-v7a
 #sudo cp build/game/client/libclient.so ./android/lib/armeabi-v7a
 #rm modlauncher-waf/android/armeabi-v7a/.deleteme
