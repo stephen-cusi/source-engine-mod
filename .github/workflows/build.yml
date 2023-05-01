@@ -41,7 +41,7 @@ jobs:
         #sudo apt-get update
         #sudo apt-get install -f -y openjdk-8-jre zip apksigner
         wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        #sudo apt update;sudo apt upgrade;sudo apt install ccache
         unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
