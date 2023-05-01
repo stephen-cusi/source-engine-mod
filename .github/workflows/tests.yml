@@ -43,24 +43,24 @@ jobs:
         wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
         sudo apt update;sudo apt upgrade;sudo apt install ccache
         unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 11
-        export PATH="/usr/lib/llvm-11/bin:$PATH"
+        #wget https://apt.llvm.org/llvm.sh
+        #chmod +x llvm.sh
+        #sudo ./llvm.sh 11
+        #export PATH="/usr/lib/llvm-11/bin:$PATH"
         mv android-ndk-r10e ndk/
         mkdir ./andriod
     - name: Build android-armv7a
       run: |
         export ANDROID_NDK_HOME=$(pwd)/ndk
         #scripts/build-android-armv7a.sh
-         ./waf configure -T release --build-game=hl2 --android=armeabi-v7a-hard,host,21 --disable-warns --prefix=./android/arm32
+         ./waf configure -T release --build-game=hl2 --android=armeabi-v7a-hard,4.9,21 --disable-warns --prefix=./android/arm32
          ./waf install -j2 --strip
     - name: Build-android-aarch64
       run: |
         export ANDROID_NDK_HOME=$(pwd)/ndk
         #scripts/build-android-aarch64.sh
-        ./waf  configure -T release --build-game=hl2 --android=aarch64,host,21 -8 --disable-warns --prefix=./android/arm64
-        ./waf install -j2 --strip
+        #./waf  configure -T release --build-game=hl2 --android=aarch64,host,21 -8 --disable-warns --prefix=./android/arm64
+        #./waf install -j2 --strip
     - name: Finally build apk
       run: |
         #scripts/build-apk.sh
