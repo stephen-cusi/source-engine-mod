@@ -6,7 +6,7 @@ jobs:
   build-linux-i386:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Build linux-i386
       run: |
         scripts/build-ubuntu-i386.sh
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Build linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh
@@ -30,34 +30,47 @@ jobs:
         path: ./to_upload
         if-no-files-found: error
 
-  Build-apk-for-android:
+  setup:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Cloning apk repo and preparing for building
       run: |
-        git clone https://github.com/ItzVladik/modlauncher-waf
-        sudo apt-get update
-        sudo apt-get install -f -y openjdk-8-jre zip apksigner
+        #git clone https://github.com/ItzVladik/modlauncher-waf
+        #sudo apt-get update
+        #sudo apt-get install -f -y openjdk-8-jre zip apksigner
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 11
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+        mkdir ./andriod
     - name: Build android-armv7a
       run: |
-        scripts/build-android-armv7a.sh
+        #scripts/build-android-armv7a.sh
+         ./waf configure -T release --build-game=missinginfo --android=armeabi-v7a-hard,host,21 --target=../aemeabi-v7a --disable-warns --prefix=./android/arm32
     - name: Build-android-aarch64
       run: |
-        scripts/build-android-aarch64.sh    
+        #scripts/build-android-aarch64.sh
+        ./waf  configure -T release --build-game=missinginfo --android=aarch64,host,21 --target=../aarch64 -8 --disable-warns --prefix=./android/arm64
     - name: Finally build apk
       run: |
-        scripts/build-apk.sh 
+        #scripts/build-apk.sh
+        ls build/*
     - name: Rename apk
       run: |
-         mv modlauncher-waf/build/android/mod-signed.apk missinginfo-release.apk
+         #mv modlauncher-waf/build/android/mod-signed.apk missinginfo-release.apk
 
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v3
       with:
-        name: missinginfo-apk
-        path: missinginfo-release.apk
+        name: missinginfo-android
+        path: ./android
 
   build-windows-win32:
     runs-on: windows-latest
