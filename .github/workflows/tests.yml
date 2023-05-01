@@ -1,116 +1,111 @@
-name: andriod-test
+name: Build
 
-on:
-
-  push:
-
-    branches:
-
-      - "*"
-
-  pull_request:
-
-    branches:
-
-      - "*"
+on: [push, pull_request]
 
 jobs:
+  build-linux-i386:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build linux-i386
+      run: |
+        scripts/build-ubuntu-i386.sh
+    - uses: actions/upload-artifact@v3
+      with:
+        name: missinginfo-linux32
+        path: ./to_upload
+        if-no-files-found: error
 
-
-  build-srceng-arm64:
-
+  build-linux-amd64:
     runs-on: ubuntu-20.04
 
     steps:
-
     - uses: actions/checkout@v3
-
-    - name: build
-
+    - name: Build linux-amd64
       run: |
-
-        wget https://apt.llvm.org/llvm.sh
-
-        chmod +x llvm.sh
-
-        sudo ./llvm.sh 11
-
-        export PATH="/usr/lib/llvm-11/bin:$PATH"
-
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-
-        unzip android-ndk-r10e-linux-x86_64.zip
-
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-
-        export NDK_HOME=$PWD/android-ndk-r10e/
-
-        mkdir ./andriod
-
-        git submodule init;git submodule update
-
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns 
-
-        ./waf install -j4
-
-        cat build/config.log > ./andriod/info.txt
-
+        scripts/build-ubuntu-amd64.sh
     - uses: actions/upload-artifact@v3
-
       with:
-
-        name: 64bit-srceng
-
-        path: ./andriod
-
+        name: missinginfo-linux64
+        path: ./to_upload
         if-no-files-found: error
 
-
-  build-srceng-arm32:
-
+  setup:
     runs-on: ubuntu-20.04
 
     steps:
-
     - uses: actions/checkout@v3
-
-    - name: build
-
+    - name: Cloning apk repo and preparing for building
       run: |
-
-        wget https://apt.llvm.org/llvm.sh
-
-        chmod +x llvm.sh
-
-        sudo ./llvm.sh 11
-
-        export PATH="/usr/lib/llvm-11/bin:$PATH"
-
+        #git clone https://github.com/ItzVladik/modlauncher-waf
+        #sudo apt-get update
+        #sudo apt-get install -f -y openjdk-8-jre zip apksigner
         wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-
-        unzip android-ndk-r10e-linux-x86_64.zip
-
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-
-        export NDK_HOME=$PWD/android-ndk-r10e/
-
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 11
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
         mkdir ./andriod
+    - name: Build android-armv7a
+      run: |
+        #scripts/build-android-armv7a.sh
+         ./waf configure -T release --build-game=missinginfo --android=armeabi-v7a-hard,host,21 --target=../aemeabi-v7a --disable-warns --prefix=./android/arm32
+    - name: Build-android-aarch64
+      run: |
+        #scripts/build-android-aarch64.sh
+        ./waf  configure -T release --build-game=missinginfo --android=aarch64,host,21 --target=../aarch64 -8 --disable-warns --prefix=./android/arm64
+    - name: Finally build apk
+      run: |
+        #scripts/build-apk.sh
+        ls build/*
+    - name: Rename apk
+      run: |
+         #mv modlauncher-waf/build/android/mod-signed.apk missinginfo-release.apk
 
-        git submodule init;git submodule update
-
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns 
-
-        ./waf install -j4
-
-        cat build/config.log > ./andriod/info.txt
-
-    - uses: actions/upload-artifact@v3
-
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
       with:
+        name: missinginfo-android
+        path: ./android
 
-        name: 32bit-srceng
+  build-windows-win32:
+    runs-on: windows-latest
 
-        path: ./andriod
-
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: |
+        #
+        git submodule init;git submodule update
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=missinginfo
+        
+        ./waf.bat install
+#        cat build/config.log > ./win/info.txt I dont' think that it is useful
+    - uses: actions/upload-artifact@v3
+      with:
+        name: missinginfo-win32
+        path: ./win
         if-no-files-found: error
+        
+  build-windows-win64:
+    runs-on: windows-latest
 
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: |
+        #
+        git submodule init;git submodule update
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=missinginfo -8
+        
+        ./waf.bat install
+#        cat build/config.log > ./win/info.txt I dont' think that it is useful
+    - uses: actions/upload-artifact@v3
+      with:
+        name: missinginfo-win64
+        path: ./win
+        if-no-files-found: error
