@@ -12,7 +12,7 @@ mkdir android
 mkdir android/armeabi-v7a
 mkdir android/arm64-v8a
 ls
-./waf build --target=client,server
-sudo cp build/game/server/libserver.so ./android/lib/armeabi-v7a
-sudo cp build/game/client/libclient.so ./android/lib/armeabi-v7a
+./waf build --target=client,server --destdir=./android/armeabi-v7a
+#sudo cp build/game/server/libserver.so ./android/lib/armeabi-v7a
+#sudo cp build/game/client/libclient.so ./android/lib/armeabi-v7a
 #rm modlauncher-waf/android/armeabi-v7a/.deleteme
