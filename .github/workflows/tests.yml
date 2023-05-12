@@ -60,8 +60,8 @@ jobs:
       run: |
         export ANDROID_NDK_HOME=$(pwd)/ndk
         #scripts/build-android-aarch64.sh
-        #./waf  configure -T release --build-game=hl2 --android=aarch64,host,21 -8 --disable-warns --prefix=./android/arm64
-        #./waf install -j2 --strip
+        ./waf configure -T release --build-game=hl2 --android=aarch64,host,21 -8 --disable-warns --prefix=./android/arm64
+        ./waf install -j8 --strip
     - name: Finally build apk
       run: |
         #scripts/build-apk.sh
