@@ -51,6 +51,7 @@ projects={
 		'launcher',
 		'launcher_main',
 		'materialsystem',
+#		'materialsystem/shaderapiempty',
 		'materialsystem/shaderapidx9',
 		'materialsystem/shaderlib',
 		'materialsystem/stdshaders',
@@ -60,7 +61,7 @@ projects={
 		'serverbrowser',
 		'soundemittersystem',
 		'studiorender',
-		'thirdparty/StubSteamAPI',
+		'stub_steam',
 		'tier0',
 		'tier1',
 		'tier2',
@@ -78,7 +79,7 @@ projects={
 		'utils/vtex',
 		'unicode',
 		'video',
-		'lua'
+		'lua',
 	],
 	'tests': [
 		'appframework',
@@ -95,6 +96,7 @@ projects={
 		'unittests/tier1test',
 		'unittests/tier2test',
 		'unittests/tier3test',
+		'unittests/mathlibtest',
 		'utils/unittest'
 	],
 	'dedicated': [
@@ -128,8 +130,8 @@ projects={
 		'vpklib',
 		'vstdlib',
 		'vtf',
-		'thirdparty/StubSteamAPI',
-       	'lua'
+		'stub_steam',
+		'lua'
 	]
 }
 
@@ -159,15 +161,17 @@ def define_platform(conf):
 	conf.env.DEDICATED = conf.options.DEDICATED
 	conf.env.TESTS = conf.options.TESTS
 	conf.env.TOGLES = conf.options.TOGLES
-	conf.env.GL = conf.options.GL
+	conf.env.GL = conf.options.GL and not conf.options.TESTS and not conf.options.DEDICATED
 	conf.env.OPUS = conf.options.OPUS
 
 	if conf.options.DEDICATED:
 		conf.options.SDL = False
-#		conf.options.GL = False
 		conf.define('DEDICATED', 1)
 
-	if conf.options.GL and not conf.options.TESTS:
+	if conf.options.TESTS:
+		conf.define('UNITTESTS', 1)
+
+	if conf.env.GL:
 		conf.env.append_unique('DEFINES', [
 			'DX_TO_GL_ABSTRACTION',
 			'GL_GLEXT_PROTOTYPES',
@@ -176,6 +180,9 @@ def define_platform(conf):
 
 	if conf.options.TOGLES:
 		conf.env.append_unique('DEFINES', ['TOGLES'])
+
+	if conf.options.TESTS:
+		conf.define('UNITTESTS', 1)
 
 	if conf.options.SDL and not conf.options.TESTS:
 		conf.env.SDL = 1
@@ -193,6 +200,8 @@ def define_platform(conf):
 			'NO_HOOK_MALLOC',
 			'_DLL_EXT=.so'
 		])
+		conf.env.append_unique('CFLAGS', '-U_FORTIFY_SOURCE')
+		conf.env.append_unique('CXXFLAGS', '-U_FORTIFY_SOURCE')
 	elif conf.env.DEST_OS == 'android':
 		conf.env.append_unique('DEFINES', [
 			'ANDROID=1', '_ANDROID=1',
@@ -202,6 +211,7 @@ def define_platform(conf):
 			'NO_HOOK_MALLOC',
 			'_DLL_EXT=.so'
 		])
+		
 	elif conf.env.DEST_OS == 'win32':
 		conf.env.append_unique('DEFINES', [
 			'WIN32=1', '_WIN32=1',
@@ -323,6 +333,20 @@ def check_deps(conf):
 			for i in a:
 				conf.check_cc(lib = i)
 
+	if conf.env.DEST_OS == "darwin":
+		conf.check(lib='iconv', uselib_store='ICONV')
+		conf.env.FRAMEWORK_APPKIT = "AppKit"
+		conf.env.FRAMEWORK_IOKIT = "IOKit"
+		conf.env.FRAMEWORK_FOUNDATION = "Foundation"
+		conf.env.FRAMEWORK_COREFOUNDATION = "CoreFoundation"
+		conf.env.FRAMEWORK_COREGRAPHICS = "CoreGraphics"
+		conf.env.FRAMEWORK_OPENGL = "OpenGL"
+		conf.env.FRAMEWORK_CARBON = "Carbon"
+		conf.env.FRAMEWORK_APPLICATIONSERVICES = "ApplicationServices"
+		conf.env.FRAMEWORK_CORESERVICES = "CoreServices"
+		conf.env.FRAMEWORK_COREAUDIO = "CoreAudio"
+		conf.env.FRAMEWORK_AUDIOTOOLBOX = "AudioToolbox"
+		conf.env.FRAMEWORK_SYSTEMCONFIGURATION = "SystemConfiguration"
 
 	if conf.options.TESTS:
 		return
@@ -360,21 +384,6 @@ def check_deps(conf):
 			conf.check(lib='ssl', uselib_store='SSL')
 		conf.check(lib='android_support', uselib_store='ANDROID_SUPPORT')
 		conf.check(lib='opus', uselib_store='OPUS')
-
-	if conf.env.DEST_OS == "darwin":
-		conf.check(lib='iconv', uselib_store='ICONV')
-		conf.env.FRAMEWORK_APPKIT = "AppKit"
-		conf.env.FRAMEWORK_IOKIT = "IOKit"
-		conf.env.FRAMEWORK_FOUNDATION = "Foundation"
-		conf.env.FRAMEWORK_COREFOUNDATION = "CoreFoundation"
-		conf.env.FRAMEWORK_COREGRAPHICS = "CoreGraphics"
-		conf.env.FRAMEWORK_OPENGL = "OpenGL"
-		conf.env.FRAMEWORK_CARBON = "Carbon"
-		conf.env.FRAMEWORK_APPLICATIONSERVICES = "ApplicationServices"
-		conf.env.FRAMEWORK_CORESERVICES = "CoreServices"
-		conf.env.FRAMEWORK_COREAUDIO = "CoreAudio"
-		conf.env.FRAMEWORK_AUDIOTOOLBOX = "AudioToolbox"
-		conf.env.FRAMEWORK_SYSTEMCONFIGURATION = "SystemConfiguration"
 
 	if conf.env.DEST_OS == 'win32':
 		conf.check(lib='libz', uselib_store='ZLIB', define_name='USE_ZLIB')
@@ -507,30 +516,32 @@ def configure(conf):
 			'/TP',
 			'/EHsc'
 		]
-		
+
 		if conf.options.BUILD_TYPE == 'debug':
 			linkflags += [
 				'/INCREMENTAL:NO',
 				'/NODEFAULTLIB:libc',
 				'/NODEFAULTLIB:libcd',
 				'/NODEFAULTLIB:libcmt',
-				'/FORCE'
+				'/FORCE',
+				'/LARGEADDRESSAWARE'
 			]
 		else:
 			linkflags += [
 				'/INCREMENTAL',
 				'/NODEFAULTLIB:libc',
 				'/NODEFAULTLIB:libcd',
-				'/NODEFAULTLIB:libcmtd'
+				'/NODEFAULTLIB:libcmtd',
+				'/LARGEADDRESSAWARE'
 			]
 
 		linkflags += [
 			'/LIBPATH:'+os.path.abspath('.')+'/lib/win32/'+conf.env.DEST_CPU+'/',
 			'/LIBPATH:'+os.path.abspath('.')+'/dx9sdk/lib/'+conf.env.DEST_CPU+'/'
 		]
-		
+
 	# And here C++ flags starts to be treated separately
-	cxxflags = list(cflags) 
+	cxxflags = list(cflags)
 	if conf.env.DEST_OS != 'win32':
 		cxxflags += ['-std=c++11','-fpermissive']
 
@@ -583,6 +594,11 @@ def configure(conf):
 
 def build(bld):
 	os.environ["CCACHE_DIR"] = os.path.abspath('.ccache/'+bld.env.COMPILER_CC+'/'+bld.env.DEST_OS+'/'+bld.env.DEST_CPU)
+
+	if bld.env.DEST_OS in ['win32', 'android']:
+		sdl_name = 'SDL2.dll' if bld.env.DEST_OS == 'win32' else 'libSDL2.so'
+		sdl_path = os.path.join('lib', bld.env.DEST_OS, bld.env.DEST_CPU, sdl_name)
+		bld.install_files(bld.env.LIBDIR, [sdl_path])
 
 	if bld.env.DEST_OS == 'win32':
 		projects['game'] += ['utils/bzip2']
