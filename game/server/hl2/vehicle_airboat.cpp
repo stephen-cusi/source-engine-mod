@@ -1572,6 +1572,10 @@ void CPropAirboat::FireGun( )
 	Vector	vecGunPosition;
 	Vector vecForward;
 	GetAttachment( m_nGunBarrelAttachment, vecGunPosition, &vecForward );
+
+#ifdef HL2SB
+	CDisablePredictionFiltering disabler;
+#endif
 	
 	// NOTE: For the airboat, unable to fire really means the aim is clamped
 	Vector vecAimPoint;

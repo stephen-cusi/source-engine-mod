@@ -617,8 +617,8 @@ protected:
 	CUtlVector<CHandle<C_EconWearable > >	m_hMyWearables;
 #endif
 
-private:
-
+public:
+	//Так делать нельзя, но я разрешаю
 	struct StepSoundCache_t
 	{
 		StepSoundCache_t() : m_usSoundNameIndex( 0 ) {}
@@ -628,7 +628,6 @@ private:
 	// One for left and one for right side of step
 	StepSoundCache_t		m_StepSoundCache[ 2 ];
 
-public:
 
 	const char *GetLastKnownPlaceName( void ) const	{ return m_szLastPlaceName; }	// return the last nav place name the player occupied
 

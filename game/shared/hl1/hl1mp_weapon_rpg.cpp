@@ -12,7 +12,7 @@
 #include "hl1mp_weapon_rpg.h"
 
 #ifdef CLIENT_DLL
-#include "hl1/c_hl1mp_player.h"
+#include "c_hl2mp_player.h"
 #include "model_types.h"
 #include "beamdraw.h"
 #include "fx_line.h"
@@ -20,7 +20,7 @@
 #else
 #include "basecombatcharacter.h"
 #include "movie_explosion.h"
-#include "hl1mp_player.h"
+#include "hl2_player.h"
 #include "rope.h"
 #include "soundent.h"
 #include "vstdlib/random.h"
@@ -43,15 +43,15 @@ void TE_BeamFollow( IRecipientFilter& filter, float delay,
 
 #define	RPG_LASER_SPRITE	"sprites/redglow_mp1"
 
-class CLaserDot : public CBaseEntity
+class CLaserDot_HL1 : public CBaseEntity
 {
-	DECLARE_CLASS( CLaserDot, CBaseEntity );
+	DECLARE_CLASS( CLaserDot_HL1, CBaseEntity );
 public:
 
-	CLaserDot( void );
-	~CLaserDot( void );
+	CLaserDot_HL1( void );
+	~CLaserDot_HL1( void );
 
-	static CLaserDot *Create( const Vector &origin, CBaseEntity *pOwner = NULL, bool bVisibleDot = true );
+	static CLaserDot_HL1 *Create( const Vector &origin, CBaseEntity *pOwner = NULL, bool bVisibleDot = true );
 
 	void	SetTargetEntity( CBaseEntity *pTarget ) { m_hTargetEnt = pTarget; }
 	CBaseEntity *GetTargetEntity( void ) { return m_hTargetEnt; }
@@ -89,7 +89,7 @@ protected:
 	DECLARE_NETWORKCLASS();
 	DECLARE_DATADESC();
 public:
-	CLaserDot			*m_pNext;
+	CLaserDot_HL1			*m_pNext;
 };
 
 
@@ -243,7 +243,7 @@ void CRpgRocket::SeekThink( void )
 	// Examine all entities within a reasonable radius
 	while ( (pOther = gEntList.FindEntityByClassname( pOther, "laser_spot" ) ) != NULL)
 	{
-		CLaserDot *pDot = dynamic_cast<CLaserDot*>(pOther);
+		CLaserDot_HL1 *pDot = dynamic_cast<CLaserDot_HL1*>(pOther);
 
 //		if ( pDot->IsActive() )
 		if ( pDot->IsOn() )
@@ -346,9 +346,9 @@ CRpgRocket *CRpgRocket::Create( const Vector &vecOrigin, const QAngle &angAngles
 // Laser Dot
 //=============================================================================
 
-IMPLEMENT_NETWORKCLASS_ALIASED( LaserDot, DT_LaserDot )
+IMPLEMENT_NETWORKCLASS_ALIASED( LaserDot_HL1, DT_LaserDot_HL1 )
 
-BEGIN_NETWORK_TABLE( CLaserDot, DT_LaserDot )
+BEGIN_NETWORK_TABLE( CLaserDot_HL1, DT_LaserDot_HL1 )
 #ifdef CLIENT_DLL
 	RecvPropBool( RECVINFO( m_bIsOn ) ),
 #else
@@ -358,18 +358,18 @@ END_NETWORK_TABLE()
 
 #ifndef CLIENT_DLL
 // a list of laser dots to search quickly
-CEntityClassList<CLaserDot> g_LaserDotList;
-template <> CLaserDot *CEntityClassList<CLaserDot>::m_pClassList = NULL;
-CLaserDot *GetLaserDotList()
+CEntityClassList<CLaserDot_HL1> g_LaserDotList_HL1;
+template <> CLaserDot_HL1 *CEntityClassList<CLaserDot_HL1>::m_pClassList = NULL;
+CLaserDot_HL1 *GetLaserDotList_HL1()
 {
-	return g_LaserDotList.m_pClassList;
+	return g_LaserDotList_HL1.m_pClassList;
 }
 
 #endif
 
-LINK_ENTITY_TO_CLASS( laser_spot, CLaserDot );
+LINK_ENTITY_TO_CLASS( laser_spot, CLaserDot_HL1 );
 
-BEGIN_DATADESC( CLaserDot )
+BEGIN_DATADESC( CLaserDot_HL1 )
 	DEFINE_FIELD( m_vecSurfaceNormal,	FIELD_VECTOR ),
 	DEFINE_FIELD( m_hTargetEnt,			FIELD_EHANDLE ),
 	DEFINE_FIELD( m_bVisibleLaserDot,	FIELD_BOOLEAN ),
@@ -382,20 +382,20 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 // Finds missiles in cone
 //-----------------------------------------------------------------------------
-CBaseEntity *CreateLaserDot( const Vector &origin, CBaseEntity *pOwner, bool bVisibleDot )
+CBaseEntity *CreateLaserDot_HL1( const Vector &origin, CBaseEntity *pOwner, bool bVisibleDot )
 {
-	return CLaserDot::Create( origin, pOwner, bVisibleDot );
+	return CLaserDot_HL1::Create( origin, pOwner, bVisibleDot );
 }
 
-void SetLaserDotTarget( CBaseEntity *pLaserDot, CBaseEntity *pTarget )
+void SetLaserDotTarget_HL1( CBaseEntity *pLaserDot, CBaseEntity *pTarget )
 {
-	CLaserDot *pDot = assert_cast< CLaserDot* >(pLaserDot );
+	CLaserDot_HL1 *pDot = assert_cast< CLaserDot_HL1* >(pLaserDot );
 	pDot->SetTargetEntity( pTarget );
 }
 
-void EnableLaserDot( CBaseEntity *pLaserDot, bool bEnable )
+void EnableLaserDot_HL1( CBaseEntity *pLaserDot, bool bEnable )
 {
-	CLaserDot *pDot = assert_cast< CLaserDot* >(pLaserDot );
+	CLaserDot_HL1 *pDot = assert_cast< CLaserDot_HL1* >(pLaserDot );
 	if ( bEnable )
 	{
 		pDot->TurnOn();
@@ -406,19 +406,19 @@ void EnableLaserDot( CBaseEntity *pLaserDot, bool bEnable )
 	}
 }
 
-CLaserDot::CLaserDot( void )
+CLaserDot_HL1::CLaserDot_HL1( void )
 {
 	m_hTargetEnt = NULL;
 	m_bIsOn = true;
 #ifndef CLIENT_DLL
-	g_LaserDotList.Insert( this );
+	g_LaserDotList_HL1.Insert( this );
 #endif
 }
 
-CLaserDot::~CLaserDot( void )
+CLaserDot_HL1::~CLaserDot_HL1( void )
 {
 #ifndef CLIENT_DLL
-	g_LaserDotList.Remove( this );
+	g_LaserDotList_HL1.Remove( this );
 #endif
 }
 
@@ -426,12 +426,12 @@ CLaserDot::~CLaserDot( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Input  : &origin - 
-// Output : CLaserDot
+// Output : CLaserDot_HL1
 //-----------------------------------------------------------------------------
-CLaserDot *CLaserDot::Create( const Vector &origin, CBaseEntity *pOwner, bool bVisibleDot )
+CLaserDot_HL1 *CLaserDot_HL1::Create( const Vector &origin, CBaseEntity *pOwner, bool bVisibleDot )
 {
 #ifndef CLIENT_DLL
-	CLaserDot *pLaserDot = (CLaserDot *) CBaseEntity::Create( "laser_spot", origin, QAngle(0,0,0) );
+	CLaserDot_HL1 *pLaserDot = (CLaserDot_HL1 *) CBaseEntity::Create( "laser_spot", origin, QAngle(0,0,0) );
 
 	if ( pLaserDot == NULL )
 		return NULL;
@@ -457,13 +457,13 @@ CLaserDot *CLaserDot::Create( const Vector &origin, CBaseEntity *pOwner, bool bV
 #endif
 }
 
-void CLaserDot::SetLaserPosition( const Vector &origin, const Vector &normal )
+void CLaserDot_HL1::SetLaserPosition( const Vector &origin, const Vector &normal )
 {
 	SetAbsOrigin( origin );
 	m_vecSurfaceNormal = normal;
 }
 
-Vector CLaserDot::GetChasePosition()
+Vector CLaserDot_HL1::GetChasePosition()
 {
 	return GetAbsOrigin() - m_vecSurfaceNormal * 10;
 }
@@ -471,7 +471,7 @@ Vector CLaserDot::GetChasePosition()
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CLaserDot::TurnOn( void )
+void CLaserDot_HL1::TurnOn( void )
 {
 	m_bIsOn = true;
 	RemoveEffects(EF_NODRAW);
@@ -486,7 +486,7 @@ void CLaserDot::TurnOn( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CLaserDot::TurnOff( void )
+void CLaserDot_HL1::TurnOff( void )
 {
 	m_bIsOn = false;
 	AddEffects(EF_NODRAW);
@@ -500,7 +500,7 @@ void CLaserDot::TurnOff( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CLaserDot::MakeInvisible( void )
+void CLaserDot_HL1::MakeInvisible( void )
 {
 }
 
@@ -509,7 +509,7 @@ void CLaserDot::MakeInvisible( void )
 //-----------------------------------------------------------------------------
 // Purpose: Draw our sprite
 //-----------------------------------------------------------------------------
-int CLaserDot::DrawModel( int flags )
+int CLaserDot_HL1::DrawModel( int flags )
 {
 	color32 color={255,255,255,255};
 	Vector	vecAttachment, vecDir;
@@ -518,7 +518,7 @@ int CLaserDot::DrawModel( int flags )
 	float	scale;
 	Vector	endPos;
 
-	C_HL1MP_Player *pOwner = ToHL1MPPlayer( GetOwnerEntity() );
+	C_HL2MP_Player *pOwner = ToHL2MPPlayer(GetOwnerEntity());
 
 	if ( pOwner != NULL && pOwner->IsDormant() == false )
 	{
@@ -564,7 +564,7 @@ int CLaserDot::DrawModel( int flags )
 //-----------------------------------------------------------------------------
 // Purpose: Setup our sprite reference
 //-----------------------------------------------------------------------------
-void CLaserDot::OnDataChanged( DataUpdateType_t updateType )
+void CLaserDot_HL1::OnDataChanged( DataUpdateType_t updateType )
 {
 	if ( updateType == DATA_UPDATE_CREATED )
 	{
@@ -578,16 +578,16 @@ void CLaserDot::OnDataChanged( DataUpdateType_t updateType )
 // RPG Weapon
 //=============================================================================
 
-LINK_ENTITY_TO_CLASS( weapon_rpg, CWeaponRPG );
+LINK_ENTITY_TO_CLASS( weapon_rpg_hl1, CWeaponRPG_HL1 );
 
-PRECACHE_WEAPON_REGISTER( weapon_rpg );
+PRECACHE_WEAPON_REGISTER( weapon_rpg_hl1 );
 
-//IMPLEMENT_SERVERCLASS_ST( CWeaponRPG, DT_WeaponRPG )
+//IMPLEMENT_SERVERCLASS_ST( CWeaponRPG_HL1, DT_WeaponRPG_HL1 )
 //END_SEND_TABLE()
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponRPG, DT_WeaponRPG )
+IMPLEMENT_NETWORKCLASS_ALIASED( WeaponRPG_HL1, DT_WeaponRPG_HL1 )
 
-BEGIN_DATADESC( CWeaponRPG )
+BEGIN_DATADESC( CWeaponRPG_HL1 )
 DEFINE_FIELD( m_bIntialStateUpdate,		FIELD_BOOLEAN ),
 	DEFINE_FIELD( m_bGuiding,					FIELD_BOOLEAN ),
 #ifndef CLIENT_DLL
@@ -598,8 +598,33 @@ DEFINE_FIELD( m_bIntialStateUpdate,		FIELD_BOOLEAN ),
 	DEFINE_FIELD( m_flLaserDotReviveTime,		FIELD_TIME ),
 END_DATADESC()
 
+#ifndef CLIENT_DLL
+acttable_t	CWeaponRPG_HL1::m_acttable[] =
+{
+	{ ACT_HL2MP_IDLE, ACT_HL2MP_IDLE_RPG, false },
+	{ ACT_HL2MP_RUN, ACT_HL2MP_RUN_RPG, false },
+	{ ACT_HL2MP_IDLE_CROUCH, ACT_HL2MP_IDLE_CROUCH_RPG, false },
+	{ ACT_HL2MP_WALK_CROUCH, ACT_HL2MP_WALK_CROUCH_RPG, false },
+	{ ACT_HL2MP_GESTURE_RANGE_ATTACK, ACT_HL2MP_GESTURE_RANGE_ATTACK_RPG, false },
+	{ ACT_HL2MP_GESTURE_RELOAD, ACT_HL2MP_GESTURE_RELOAD_RPG, false },
+	{ ACT_HL2MP_JUMP, ACT_HL2MP_JUMP_RPG, false },
+	{ ACT_RANGE_ATTACK1, ACT_RANGE_ATTACK_RPG, false },
+	{ ACT_IDLE_RELAXED, ACT_IDLE_RPG_RELAXED, true }, //
+	{ ACT_IDLE_STIMULATED, ACT_IDLE_ANGRY_RPG, true }, //
+	{ ACT_IDLE_AGITATED, ACT_IDLE_ANGRY_RPG, true }, //
+	{ ACT_IDLE, ACT_IDLE_RPG, true }, //
+	{ ACT_IDLE_ANGRY, ACT_IDLE_ANGRY_RPG, true }, //
+	{ ACT_WALK, ACT_WALK_RPG, true }, //
+	{ ACT_WALK_CROUCH, ACT_WALK_CROUCH_RPG, true }, //
+	{ ACT_RUN, ACT_RUN_RPG, true }, //
+	{ ACT_RUN_CROUCH, ACT_RUN_CROUCH_RPG, true }, //
+	{ ACT_COVER_LOW, ACT_COVER_LOW_RPG, true }, //
+};
 
-BEGIN_NETWORK_TABLE( CWeaponRPG, DT_WeaponRPG )
+IMPLEMENT_ACTTABLE(CWeaponRPG_HL1);
+#endif
+
+BEGIN_NETWORK_TABLE( CWeaponRPG_HL1, DT_WeaponRPG_HL1 )
 #ifdef CLIENT_DLL
 	RecvPropBool( RECVINFO( m_bIntialStateUpdate ) ),
 	RecvPropBool( RECVINFO( m_bGuiding ) ),
@@ -616,7 +641,7 @@ BEGIN_NETWORK_TABLE( CWeaponRPG, DT_WeaponRPG )
 END_NETWORK_TABLE()
 
 
-BEGIN_PREDICTION_DATA( CWeaponRPG )
+BEGIN_PREDICTION_DATA( CWeaponRPG_HL1 )
 #ifdef CLIENT_DLL
 	DEFINE_PRED_FIELD( m_bIntialStateUpdate,	FIELD_BOOLEAN, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_bGuiding,				FIELD_BOOLEAN, FTYPEDESC_INSENDTABLE ),
@@ -629,7 +654,7 @@ END_PREDICTION_DATA()
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponRPG::CWeaponRPG( void )
+CWeaponRPG_HL1::CWeaponRPG_HL1( void )
 {
 	m_bReloadsSingly		= false;
 	m_bFiresUnderwater		= true;
@@ -639,7 +664,7 @@ CWeaponRPG::CWeaponRPG( void )
 }
 
 
-CWeaponRPG::~CWeaponRPG()
+CWeaponRPG_HL1::~CWeaponRPG_HL1()
 {
 #ifndef CLIENT_DLL
 	if ( m_hLaserDot != NULL )
@@ -654,7 +679,7 @@ CWeaponRPG::~CWeaponRPG()
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponRPG::ItemPostFrame( void )
+void CWeaponRPG_HL1::ItemPostFrame( void )
 {
 	BaseClass::ItemPostFrame();
 
@@ -704,7 +729,7 @@ void CWeaponRPG::ItemPostFrame( void )
 }
 
 
-void CWeaponRPG::Drop( const Vector &vecVelocity )
+void CWeaponRPG_HL1::Drop( const Vector &vecVelocity )
 {
 	StopGuiding();
 
@@ -720,7 +745,7 @@ void CWeaponRPG::Drop( const Vector &vecVelocity )
 }
 
 
-int CWeaponRPG::GetDefaultClip1( void ) const
+int CWeaponRPG_HL1::GetDefaultClip1( void ) const
 {
 	if ( g_pGameRules->IsMultiplayer() )
 	{
@@ -737,7 +762,7 @@ int CWeaponRPG::GetDefaultClip1( void ) const
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponRPG::Precache( void )
+void CWeaponRPG_HL1::Precache( void )
 {
 #ifndef CLIENT_DLL
 	UTIL_PrecacheOther( "laser_spot" );
@@ -751,7 +776,7 @@ void CWeaponRPG::Precache( void )
 }
 
 
-bool CWeaponRPG::Deploy( void )
+bool CWeaponRPG_HL1::Deploy( void )
 {
 	m_bIntialStateUpdate = true;
 	m_bLaserDotSuspended = false;
@@ -775,7 +800,7 @@ bool CWeaponRPG::Deploy( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponRPG::PrimaryAttack( void )
+void CWeaponRPG_HL1::PrimaryAttack( void )
 {
 	// Can't have an active missile out
 	if ( m_hMissile != NULL )
@@ -846,7 +871,7 @@ void CWeaponRPG::PrimaryAttack( void )
 }
 
 
-void CWeaponRPG::WeaponIdle( void )
+void CWeaponRPG_HL1::WeaponIdle( void )
 {
 	CBaseCombatCharacter *pOwner = GetOwner();
 	
@@ -877,7 +902,7 @@ void CWeaponRPG::WeaponIdle( void )
 }
 
 
-void CWeaponRPG::NotifyRocketDied( void )
+void CWeaponRPG_HL1::NotifyRocketDied( void )
 {
 	m_hMissile = NULL;
 
@@ -889,7 +914,7 @@ void CWeaponRPG::NotifyRocketDied( void )
 }
 
 
-bool CWeaponRPG::Reload( void )
+bool CWeaponRPG_HL1::Reload( void )
 {
 	CBaseCombatCharacter *pOwner = GetOwner();
 
@@ -964,7 +989,7 @@ bool CWeaponRPG::Reload( void )
 }
 
 
-bool CWeaponRPG::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CWeaponRPG_HL1::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
 	// can't put away while guiding a missile.
 	if ( IsGuiding() && ( m_hMissile != NULL ) )
@@ -987,7 +1012,7 @@ bool CWeaponRPG::Holster( CBaseCombatWeapon *pSwitchingTo )
 }
 
 
-void CWeaponRPG::UpdateSpot( void )
+void CWeaponRPG_HL1::UpdateSpot( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	
@@ -1029,13 +1054,13 @@ void CWeaponRPG::UpdateSpot( void )
 }
 
 
-void CWeaponRPG::CreateLaserPointer( void )
+void CWeaponRPG_HL1::CreateLaserPointer( void )
 {
 #ifndef CLIENT_DLL
 	if ( m_hLaserDot != NULL )
 		return;
 
-	m_hLaserDot = CLaserDot::Create( GetAbsOrigin(), GetOwner() );
+	m_hLaserDot = CLaserDot_HL1::Create( GetAbsOrigin(), GetOwner() );
 	if ( !IsGuiding() )
 	{
 		if ( m_hLaserDot )
@@ -1047,13 +1072,13 @@ void CWeaponRPG::CreateLaserPointer( void )
 }
 
 
-bool CWeaponRPG::IsGuiding( void )
+bool CWeaponRPG_HL1::IsGuiding( void )
 {
 	return m_bGuiding;
 }
 
 
-void CWeaponRPG::StartGuiding( void )
+void CWeaponRPG_HL1::StartGuiding( void )
 {
 	m_bGuiding = true;
 
@@ -1067,7 +1092,7 @@ void CWeaponRPG::StartGuiding( void )
 	UpdateSpot();
 }
 
-void CWeaponRPG::StopGuiding( void )
+void CWeaponRPG_HL1::StopGuiding( void )
 {
 	m_bGuiding = false;
 

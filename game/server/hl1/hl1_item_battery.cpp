@@ -16,7 +16,7 @@
 
 #define BATTERY_MODEL "models/w_battery.mdl"
 
-ConVar	sk_battery( "sk_battery","0" );			
+extern ConVar sk_battery;
 
 class CItemBattery : public CHL1Item
 {

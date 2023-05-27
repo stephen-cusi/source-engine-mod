@@ -135,6 +135,11 @@ public:
 	// Tracks our ragdoll entity.
 	CNetworkHandle( CBaseEntity, m_hRagdoll );	// networked entity handle 
 
+	CNetworkVar( float, m_flStartCharge );
+	CNetworkVar( float, m_flAmmoStartCharge );
+	CNetworkVar( float, m_flPlayAftershock );
+	CNetworkVar( float, m_flNextAmmoBurn );
+
 	virtual bool	CanHearAndReadChatFrom( CBasePlayer *pPlayer );
 
 		

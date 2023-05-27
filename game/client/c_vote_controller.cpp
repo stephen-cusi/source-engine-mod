@@ -151,39 +151,4 @@ void C_VoteController::ClientThink()
 //-----------------------------------------------------------------------------
 void C_VoteController::FireGameEvent( IGameEvent *event )
 {
-	CHudVote *pHudVote = GET_HUDELEMENT( CHudVote );
-	if ( pHudVote && pHudVote->IsVisible() )
-	{
-		const char *eventName = event->GetName();
-		if ( !eventName )
-			return;
-
-		C_BasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
-		if ( !pLocalPlayer )
-			return;
-
-		int team = event->GetInt( "team", TEAM_UNASSIGNED );
-		if ( team > TEAM_UNASSIGNED && team != pLocalPlayer->GetTeamNumber() )
-			return;
-
-		if ( FStrEq( eventName, "vote_cast" ) )
-		{
-			if ( m_bIsYesNoVote )
-			{
-				int vote_option = event->GetInt( "vote_option", TEAM_UNASSIGNED );
-				if( vote_option == VOTE_OPTION2 )
-				{
-					pLocalPlayer->EmitSound( "Vote.Cast.No" );
-				}
-				else if( vote_option == VOTE_OPTION1 )
-				{
-					pLocalPlayer->EmitSound( "Vote.Cast.Yes" );
-				}
-			}
-			else
-			{
-				pLocalPlayer->EmitSound( "Vote.Cast.Yes" );
-			}
-		}
-	}
 }

@@ -22,11 +22,9 @@
 #include "vstdlib/random.h"
 #include "engine/IEngineSound.h"
 
-ConVar	sk_zombie_health( "sk_zombie_health","50");
-ConVar  sk_zombie_dmg_one_slash( "sk_zombie_dmg_one_slash", "20" );
-ConVar  sk_zombie_dmg_both_slash( "sk_zombie_dmg_both_slash", "40" );
-
-
+extern ConVar	sk_zombie_health;
+extern ConVar  	sk_zombie_dmg_one_slash;
+extern ConVar  	sk_zombie_dmg_both_slash;
 
 LINK_ENTITY_TO_CLASS( monster_zombie, CNPC_Zombie );
 
