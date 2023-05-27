@@ -13,7 +13,7 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: hl2sb-linux-i386
-        path: ./to_upload
+        path: ./to-upload
         if-no-files-found: error
 
   build-linux-amd64:
@@ -27,7 +27,7 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: hl2sb-linux-amd64
-        path: ./to_upload
+        path: ./to-upload
         if-no-files-found: error
 
   Build-apk-for-android:
