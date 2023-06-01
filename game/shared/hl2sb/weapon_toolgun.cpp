@@ -186,8 +186,13 @@ void CWeaponToolGun::PrimaryAttack()
 	{
 		case 0:
 			{
-				if (tr.m_pEnt->IsNPC() || tr.m_pEnt->VPhysicsGetObject() )
+				if (tr.m_pEnt->IsNPC() || tr.m_pEnt->VPhysicsGetObject())
 				{
+					if (tr.m_pEnt->IsPlayer())
+					{
+						DevMsg("Someone tried to remove player!\n");
+						break;
+					}
 					UTIL_Remove( tr.m_pEnt );
 				}
 			}
