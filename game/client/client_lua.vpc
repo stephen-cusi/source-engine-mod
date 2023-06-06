@@ -100,7 +100,6 @@ $Project "Client (HL2SB)"
 		$File "menu/sm_menu_legacy.cpp"
 		$File "menu/toolgun_menu.cpp"
 		$File "menu/vgui_imagebutton.cpp"
-		$File "menu/creatempdialog.cpp"
 	}
 
 	$Folder "Gunmod"
