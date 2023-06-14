@@ -16,7 +16,7 @@
 #include <vgui/IScheme.h>
 #include "hud.h"
 #include "hudelement.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "vgui_avatarimage.h"
 
 #include "cs_shareddefs.h"
@@ -48,7 +48,7 @@ public:
 	void Hide();
 
 protected:
-	void SetMVP( C_CSPlayer* pPlayer, CSMvpReason_t reason );
+	void SetMVP( C_HL2MP_Player* pPlayer, CSMvpReason_t reason );
 	void SetFunFactLabel( const wchar *szFunFact );
 
 private:

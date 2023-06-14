@@ -14,7 +14,7 @@
 #include "cstrike/bot/shared_util.h"
 #include <vgui/ILocalize.h>
 #include <vgui_controls/Controls.h>
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -203,7 +203,7 @@ bool CanBuyWeapon( CSWeaponID currentPrimaryID, CSWeaponID currentSecondaryID, C
 		 return false;
 	}
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !pPlayer )
 		return false;
 
@@ -295,7 +295,7 @@ void FillClientAmmo( int ammo[MAX_AMMO_TYPES] )
 		ammo[i] = 0;
 	}
 
-	C_CSPlayer *localPlayer = CCSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *localPlayer = CHL2MP_Player::GetLocalCSPlayer();
 	if ( !localPlayer )
 		return;
 
@@ -324,7 +324,7 @@ void FillClientAmmo( int ammo[MAX_AMMO_TYPES] )
 //-----------------------------------------------------------------------------
 CWeaponCSBase *GetWeaponInSlot( int iSlot, int iSlotPos )
 {
-	C_CSPlayer *player = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *player = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !player )
 		return NULL;
 
@@ -349,7 +349,7 @@ CWeaponCSBase *GetWeaponInSlot( int iSlot, int iSlotPos )
  */
 CSWeaponID GetClientWeaponID( bool primary )
 {
-	C_CSPlayer *localPlayer = CCSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *localPlayer = CHL2MP_Player::GetLocalCSPlayer();
 	if ( !localPlayer )
 		return WEAPON_NONE;
 

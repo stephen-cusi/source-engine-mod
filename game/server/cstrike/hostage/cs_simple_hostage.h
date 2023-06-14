@@ -18,7 +18,7 @@
 #include "improv_locomotor.h"
 #include "cs_playeranimstate.h"
 
-class CCSPlayer;
+class CHL2MP_Player;
 
 
 //----------------------------------------------------------------------------------------------------------------
@@ -53,8 +53,8 @@ public:
 
 	void HostageThink( void );								// periodic update to initiate behaviors
 
-	void GiveCTUseBonus( CCSPlayer *rescuer );				// give bonus to CT's for talking to a hostage
-	void CheckForHostageAbuse( CCSPlayer *player );			// check for hostage-killer abuse
+	void GiveCTUseBonus( CHL2MP_Player *rescuer );				// give bonus to CT's for talking to a hostage
+	void CheckForHostageAbuse( CHL2MP_Player *player );			// check for hostage-killer abuse
 
 	// queries
 	bool IsFollowingSomeone( void );
@@ -68,8 +68,8 @@ public:
 
 	// hostage states
 	void Idle( void );										// stand idle
-	void Follow( CCSPlayer *leader );						// begin following "leader"
-	CCSPlayer *GetLeader( void ) const;						// return our leader, or NULL
+	void Follow( CHL2MP_Player *leader );						// begin following "leader"
+	CHL2MP_Player *GetLeader( void ) const;						// return our leader, or NULL
 
 	void FaceTowards( const Vector &target, float deltaT );	// rotate body to face towards "target"
 	void ApplyForce( const Vector &force )		{ m_accel += force; }	// apply a force to the hostage

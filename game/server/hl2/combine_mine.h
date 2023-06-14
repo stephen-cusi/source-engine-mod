@@ -60,7 +60,7 @@ public:
 	void OnPhysGunDrop( CBasePlayer *pPhysGunUser, PhysGunDrop_t reason );
 	bool ForcePhysgunOpen( CBasePlayer *pPlayer ) { return true; }
 	bool HasPreferredCarryAnglesForPlayer( CBasePlayer *pPlayer ) { return true; }
-	virtual QAngle	PreferredCarryAngles( void ) { return vec3_angle; }
+	virtual QAngle	PreferredCarryAngles( CBasePlayer *pPlayer ) { return vec3_angle; }
 	CBasePlayer *HasPhysicsAttacker( float dt );
 
 	bool IsPlayerPlaced() { return m_bPlacedByPlayer; }

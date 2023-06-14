@@ -217,9 +217,9 @@ public:
 	// a full 32-bit serial number field should still work. henryg 8/17/2011
 #if VALVE_LITTLE_ENDIAN
 	short m_NetworkSerialNumber;
-	short m_EdictIndex;
+	int m_EdictIndex;
 #else
-	short m_EdictIndex;
+	int m_EdictIndex;
 	short m_NetworkSerialNumber;
 #endif
 

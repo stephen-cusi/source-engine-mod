@@ -1730,7 +1730,7 @@ void CGameMovement::AirAccelerate( Vector& wishdir, float wishspeed, float accel
 
 	// If not adding any, done.
 	if (addspeed <= 0)
-		return;
+		addspeed = 0;
 
 	// Determine acceleration speed after acceleration
 	accelspeed = accel * wishspeed * gpGlobals->frametime * player->m_surfaceFriction;
@@ -1764,7 +1764,6 @@ void CGameMovement::AirMove( void )
 	// Copy movement amounts
 	fmove = mv->m_flForwardMove;
 	smove = mv->m_flSideMove;
-	
 	// Zero out z components of movement vectors
 	forward[2] = 0;
 	right[2]   = 0;
@@ -2403,8 +2402,9 @@ bool CGameMovement::CheckJumpButton( void )
 	if ( player->m_Local.m_bSlowMovement )
 		return false;
 #endif
+	static const ConVar* sv_autojump = g_pCVar->FindVar("sv_autojump");
 
-	if ( mv->m_nOldButtons & IN_JUMP )
+	if ( mv->m_nOldButtons & IN_JUMP && sv_autojump->GetFloat() == 0)
 		return false;		// don't pogo stick
 
 	// Cannot jump will in the unduck transition.
@@ -2465,7 +2465,7 @@ bool CGameMovement::CheckJumpButton( void )
 	}
 
 	// Add a little forward velocity based on your current forward velocity - if you are not sprinting.
-#if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
+/*#if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
 	if ( gpGlobals->maxClients == 1 )
 	{
 		CHLMoveData *pMoveData = ( CHLMoveData* )mv;
@@ -2493,7 +2493,7 @@ bool CGameMovement::CheckJumpButton( void )
 		// Add it on
 		VectorAdd( (vecForward*flSpeedAddition), mv->m_vecVelocity, mv->m_vecVelocity );
 	}
-#endif
+#endif*/
 
 	FinishGravity();
 

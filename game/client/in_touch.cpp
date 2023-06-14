@@ -80,8 +80,8 @@ void CInput::ApplyTouch( QAngle &viewangles, CUserCmd *cmd, float dx, float dy )
 {
 	viewangles[YAW] -= dx;
 	viewangles[PITCH] += dy;
-	cmd->mousedx = dx;
-	cmd->mousedy = dy;
+	cmd->mousedx += dx;
+	cmd->mousedy += dy;
 }
 
 void CInput::TouchMove( CUserCmd *cmd )

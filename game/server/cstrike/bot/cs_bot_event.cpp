@@ -90,7 +90,7 @@ void CCSBot::OnAudibleEvent( IGameEvent *event, CBasePlayer *player, float range
 
 		// randomize noise position in the area a bit - hearing isn't very accurate
 		// the closer the noise is, the more accurate our placement
-		/// @todo Make sure not to pick a position on the opposite side of ourselves.
+		/// @todo Make sure not to pick a position on the opposite CHL2MP_Player of ourselves.
 		const float maxErrorRadius = 400.0f;
 		const float maxHearingRange = 2000.0f;
 		float errorRadius = maxErrorRadius * newNoiseDist/maxHearingRange;
@@ -99,7 +99,7 @@ void CCSBot::OnAudibleEvent( IGameEvent *event, CBasePlayer *player, float range
 		m_noisePosition.y = newNoisePosition->y + RandomFloat( -errorRadius, errorRadius );
 
 		// note the *travel distance* to the noise
-		m_noiseTravelDistance = GetTravelDistanceToPlayer( (CCSPlayer *)player );
+		m_noiseTravelDistance = GetTravelDistanceToPlayer( (CHL2MP_Player *)player );
 
 		// make sure noise position remains in the same area
 		m_noiseArea->GetClosestPointOnArea( m_noisePosition, &m_noisePosition );

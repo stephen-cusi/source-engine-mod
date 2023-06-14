@@ -33,7 +33,7 @@ extern const char *COM_GetModDirectory();
 #endif
 
 #if defined( CSTRIKE15 ) || defined (CSTRIKE_DLL)
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #endif
 
 #include <isixense.h>
@@ -80,7 +80,7 @@ using sixenseMath::Line;
 #include "portal2/vsixensevideohint.h"
 #include "portal2/basemodframe.h"
 #include "portal2/c_prop_weightedcube.h"
-#include "portal/c_portal_player.h"
+#include "hl2mp/c_hl2mp_player.h"
 #include "c_weapon_portalgun.h"
 #include "radialmenu.h"
 #endif
@@ -1639,7 +1639,7 @@ bool SixenseInput::SixenseFrame( float flFrametime, CUserCmd *pCmd )
 	}
 
 #ifdef PORTAL2
-	C_Portal_Player *pPlayer = GetPortalPlayer();
+	C_HL2MP_Player *pPlayer = GetPortalPlayer();
 #endif
 
 	// If the controller manager is up or the game is paused, don't do anything.
@@ -1839,7 +1839,7 @@ void SixenseInput::CheckWeaponForScope()
 #endif
 
 #if defined( CSTRIKE15 ) || defined (CSTRIKE_DLL)
-		C_CSPlayer *csPlayer = dynamic_cast<C_CSPlayer *>(C_BasePlayer::GetLocalPlayer());
+		C_HL2MP_Player *csPlayer = dynamic_cast<C_HL2MP_Player *>(C_BasePlayer::GetLocalPlayer());
 
 		if( csPlayer && csPlayer->m_bResumeZoom )
 		{
@@ -1914,7 +1914,7 @@ void SixenseInput::SwitchViewModes( CUserCmd *pCmd )
 		lock_button = 0;
 	}
 
-	C_Portal_Player *pPortalPlayer = C_Portal_Player::GetLocalPortalPlayer();
+	C_HL2MP_Player *pPortalPlayer = C_HL2MP_Player::GetLocalPortalPlayer();
 
 
 	// Whenever we scale, lock into one to one mode until the next drop (block dist one to one from exiting)
@@ -2238,7 +2238,7 @@ void SixenseInput::SetPlayerHandPositions( CUserCmd *pCmd, float flFrametime )
 			float hold_spin_fade_min_dist = sixense_hold_spin_fade_min_dist.GetFloat();
 			float hold_spin_fade_max_dist = sixense_hold_spin_fade_max_dist.GetFloat();
 			float hold_spin_max_angle = sixense_hold_spin_max_angle.GetFloat();
-			C_Portal_Player *pPlayer = GetPortalPlayer();
+			C_HL2MP_Player *pPlayer = GetPortalPlayer();
 
 			// where is the held object in world coordinates
 			Vector objectLocation = pHeldObject->GetAbsOrigin();
@@ -2935,9 +2935,9 @@ void SixenseInput::SixenseUpdateKeys( float flFrametime, CUserCmd *pCmd )
 		if ( !sixense_dist_one_to_one_enabled.GetInt() && sixense_auto_one_to_one_enabled.GetInt() &&
 			IsHoldingObject() &&
 			!m_bIs1to1ModeScaling &&
-			( C_Portal_Player::GetLocalPortalPlayer() &&
-			!C_Portal_Player::GetLocalPortalPlayer()->IsScalingUseItem() &&
-			!C_Portal_Player::GetLocalPortalPlayer()->IsScalingUseItemTurret() ) )
+			( C_HL2MP_Player::GetLocalPortalPlayer() &&
+			!C_HL2MP_Player::GetLocalPortalPlayer()->IsScalingUseItem() &&
+			!C_HL2MP_Player::GetLocalPortalPlayer()->IsScalingUseItemTurret() ) )
 		{
 			// one to one
 			if ( m_pFPSEvents->eventStarted( sixenseUtils::IFPSEvents::ONE_TO_ONE_CARRY ) )
@@ -2956,9 +2956,9 @@ void SixenseInput::SixenseUpdateKeys( float flFrametime, CUserCmd *pCmd )
 			IsHoldingObject() &&
 			!m_bIs1to1ModeScaling &&
 			!m_bScalingLockedOneToOne &&
-			( C_Portal_Player::GetLocalPortalPlayer() &&
-			!C_Portal_Player::GetLocalPortalPlayer()->IsScalingUseItem() &&
-			!C_Portal_Player::GetLocalPortalPlayer()->IsScalingUseItemTurret() ) )
+			( C_HL2MP_Player::GetLocalPortalPlayer() &&
+			!C_HL2MP_Player::GetLocalPortalPlayer()->IsScalingUseItem() &&
+			!C_HL2MP_Player::GetLocalPortalPlayer()->IsScalingUseItemTurret() ) )
 		{
 
 			Vector3 cur_pos = Vector3( m_pACD->controllers[m_nRightIndex].pos );
@@ -2967,7 +2967,7 @@ void SixenseInput::SixenseUpdateKeys( float flFrametime, CUserCmd *pCmd )
 
 			static float fEndOneToOneRatchetDelayTime = 0.0f;
 			if ( !IsInOneToOneMode() &&
-				( C_Portal_Player::GetLocalPortalPlayer() && C_Portal_Player::GetLocalPortalPlayer()->GetActiveWeapon() ) &&
+				( C_HL2MP_Player::GetLocalPortalPlayer() && C_HL2MP_Player::GetLocalPortalPlayer()->GetActiveWeapon() ) &&
 				( ( delta_vec[2] < -sixense_dist_one_to_one_dist.GetFloat() ) || // start one to one if you reach forwards
 				( delta_vec[1] > 1.5f * sixense_dist_one_to_one_dist.GetFloat() ) ) ) // start one to one if you raise up 1.5 times the dist too...
 			{

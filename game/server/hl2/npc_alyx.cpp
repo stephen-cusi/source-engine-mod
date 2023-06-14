@@ -18,6 +18,7 @@
 #include "ai_senses.h"
 #include "soundent.h"
 #include "props.h"
+#include "entitylist.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -32,6 +33,8 @@ END_DATADESC()
 
 int AE_ALYX_EMPTOOL_ATTACHMENT;
 int AE_ALYX_EMPTOOL_SEQUENCE;
+CEntityClassList<CNPC_Alyx> g_AlyxList;
+template <> CNPC_Alyx* CEntityClassList<CNPC_Alyx>::m_pClassList = NULL;
 
 //=========================================================
 // Classify - indicates this NPC's place in the 
@@ -42,6 +45,15 @@ Class_T	CNPC_Alyx::Classify ( void )
 	return	CLASS_PLAYER_ALLY_VITAL;
 }
 
+CNPC_Alyx::CNPC_Alyx()
+{
+	g_AlyxList.Insert(this);
+}
+
+CNPC_Alyx::~CNPC_Alyx()
+{
+	g_AlyxList.Remove(this);
+}
 
 //=========================================================
 // HandleAnimEvent - catches the NPC-specific messages
@@ -257,6 +269,35 @@ void CNPC_Alyx::DeathSound( const CTakeDamageInfo &info )
 	SentenceStop();
 
 	EmitSound( "npc_alyx.die" );
+}
+
+
+CNPC_Alyx* CNPC_Alyx::GetAlyx(void)
+{
+	return g_AlyxList.m_pClassList;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Called by enemy NPC's when they are ignited
+// Input  : pVictim - entity that was ignited
+//-----------------------------------------------------------------------------
+void CNPC_Alyx::EnemyIgnited(CAI_BaseNPC* pVictim)
+{
+	/*if (FVisible(pVictim))
+	{
+		SpeakIfAllowed(TLK_ENEMY_BURNING);
+	}*/
+	return;
+}
+
+PassengerState_e CNPC_Alyx::GetPassengerState(void)
+{
+	//return m_PassengerBehavior.GetPassengerState();
+	return PASSENGER_STATE_OUTSIDE;
+}
+void CNPC_Alyx::CombineBallSocketed(int iNumBounces)
+{
+	return;
 }
 
 //=========================================================

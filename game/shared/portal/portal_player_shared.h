@@ -31,7 +31,7 @@ extern const char *g_pszChellConcepts[];
 int GetChellConceptIndexFromString( const char *pszConcept );
 
 #if defined( CLIENT_DLL )
-#define CPortal_Player C_Portal_Player
+#define CHL2MP_Player C_HL2MP_Player
 #endif
 
 

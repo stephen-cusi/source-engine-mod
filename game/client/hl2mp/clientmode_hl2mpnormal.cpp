@@ -26,6 +26,12 @@
 //-----------------------------------------------------------------------------
 vgui::HScheme g_hVGuiCombineScheme = 0;
 
+//-----------------------------------------------------------------------------
+ConVar cl_rebuy(
+	"cl_rebuy",
+	"",
+	FCVAR_USERINFO,
+	"The order in which rebuy will attempt to repurchase items");
 
 // Instance the singleton and expose the interface to it.
 IClientMode *GetClientModeNormal()

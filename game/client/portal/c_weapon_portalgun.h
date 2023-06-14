@@ -59,7 +59,7 @@ public:
 	CInterpolatedValue &GetAlpha( void ) { return m_Alpha; }
 	CInterpolatedValue &GetScale( void ) { return m_Scale; }
 
-	virtual PortalWeaponID GetWeaponID( void ) const { return WEAPON_PORTALGUN; }
+	virtual CSWeaponID GetWeaponID( void ) const { return WEAPON_PORTALGUN; }
 
 private:
 	CInterpolatedValue	m_Alpha;

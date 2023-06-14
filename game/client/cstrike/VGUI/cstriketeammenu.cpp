@@ -10,7 +10,7 @@
 #include "backgroundpanel.h"
 #include <convar.h>
 #include "hud.h" // for gEngfuncs
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_gamerules.h"
 
 using namespace vgui;
@@ -50,7 +50,7 @@ void CCSTeamMenu::Update( void )
 
 	const ConVar *allowspecs =  cvar->FindVar( "mp_allowspectators" );
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	
 	if ( !pPlayer || !CSGameRules() )
 		return;

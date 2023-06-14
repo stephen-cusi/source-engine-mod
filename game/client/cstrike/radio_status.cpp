@@ -17,7 +17,7 @@
 #include "materialsystem/imaterial.h"
 #include "tier0/dbg.h"
 #include "cdll_int.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "menu.h" // for CHudMenu defs
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -59,7 +59,7 @@ static int g_whichMenu = 0;
 void OpenRadioMenu( int index )
 {
 	// do not show the menu if the player is dead or is an observer
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !pPlayer )
 		return;
 
@@ -398,7 +398,7 @@ void CRadioStatus::ExpireBotVoice( bool force )
 		{
 			bool expire = force;
 
-			C_CSPlayer *player = static_cast<C_CSPlayer*>( cl_entitylist->GetEnt(i+1) );
+			C_HL2MP_Player *player = static_cast<C_HL2MP_Player*>( cl_entitylist->GetEnt(i+1) );
 			if ( !player )
 			{
 				// player left the game

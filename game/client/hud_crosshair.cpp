@@ -23,7 +23,7 @@
 #endif
 
 #ifdef PORTAL
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #endif // PORTAL
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -94,7 +94,7 @@ bool CHudCrosshair::ShouldDraw( void )
 		return false;
 
 #ifdef PORTAL
-	C_Portal_Player *portalPlayer = ToPortalPlayer(pPlayer);
+	C_HL2MP_Player *portalPlayer = ToPortalPlayer(pPlayer);
 	if ( portalPlayer && portalPlayer->IsSuppressingCrosshair() )
 		return false;
 #endif // PORTAL

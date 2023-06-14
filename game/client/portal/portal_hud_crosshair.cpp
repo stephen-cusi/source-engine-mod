@@ -9,7 +9,7 @@
 #include "hud.h"
 #include "portal_hud_crosshair.h"
 #include "iclientmode.h"
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #include "view.h"
 #include "weapon_portalbase.h"
 #include "vgui_controls/Controls.h"
@@ -60,7 +60,7 @@ bool CHudPortalCrosshair::ShouldDraw()
 {
 	// NOTE: Portal crosshair should no longer be in use, but I'm leaving the code here until X360 lock down... we don't want to draw this ever. -Jeep
 	return false;
-	C_Portal_Player *pPlayer = C_Portal_Player::GetLocalPortalPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalHL2MPPlayer();
 
 	if ( !pPlayer )
 		return false;

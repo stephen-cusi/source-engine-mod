@@ -37,7 +37,7 @@ blackmarket_items_t blackmarket_items[] =
 
 CUtlVector<CBlackMarketElement> g_BlackMarket_WeaponsBought;
 
-void TrackAutoBuyPurchases( const char *pWeaponName, CCSPlayer *pBuyer )
+void TrackAutoBuyPurchases( const char *pWeaponName, CHL2MP_Player *pBuyer )
 {
 	if ( pBuyer->IsInAutoBuy() == false )
 		return;
@@ -71,7 +71,7 @@ void TrackAutoBuyPurchases( const char *pWeaponName, CCSPlayer *pBuyer )
 	}
 }
 
-void BlackMarketAddWeapon( const char *pWeaponName, CCSPlayer *pBuyer )
+void BlackMarketAddWeapon( const char *pWeaponName, CHL2MP_Player *pBuyer )
 {
 	//Ignore bot purchases.
 	if ( pBuyer && pBuyer->IsBot() )

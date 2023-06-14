@@ -1,7 +1,7 @@
 //========= Copyright Valve Corporation, All rights reserved. ============//
 #include "cbase.h"
 #include "hud_baseachievement_tracker.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "iachievementmgr.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -60,7 +60,7 @@ bool CHudAchievementTracker::ShouldShowAchievement( IAchievement *pAchievement )
     if ( !BaseClass::ShouldShowAchievement(pAchievement) )
         return false;
 
-    C_CSPlayer *pPlayer = CCSPlayer::GetLocalCSPlayer();
+    C_HL2MP_Player *pPlayer = CHL2MP_Player::GetLocalCSPlayer();
     if ( !pPlayer )
         return false;
 

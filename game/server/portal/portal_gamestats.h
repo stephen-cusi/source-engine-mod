@@ -92,7 +92,7 @@ struct Portal_Gamestats_LevelStats_t //most of this is only tracked in verbose m
 };
 
 
-class CPortal_Player;
+class CHL2MP_Player;
 
 class CPortalGameStats : CBaseGameStats
 {
@@ -110,7 +110,7 @@ public:
 	void Event_PortalPlacement( const Vector &ptPlayerFiredFrom, const Vector &ptAttemptedPosition, char iSuccessCode );
 	void Event_PlayerJump( const Vector &ptStartPosition, const Vector &vStartVelocity );
 	void Event_PlayerUsed( const Vector &ptTraceStart, const Vector &vTraceDelta, CBaseEntity *pUsedEntity );
-	void Event_PlayerStuck( CPortal_Player *pPlayer );
+	void Event_PlayerStuck(CHL2MP_Player *pPlayer );
 
 	virtual bool StatTrackingEnabledForMod( void ) { return true; }
 	virtual bool UserPlayedAllTheMaps( void );

@@ -66,7 +66,7 @@ void CHudC4::Init()
 
 bool CHudC4::ShouldDraw()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	// if we are spectating another player first person, check this player
 	if ( pPlayer && (pPlayer->GetObserverMode() == OBS_MODE_IN_EYE) )
@@ -92,7 +92,7 @@ void CHudC4::Paint()
 		m_pIcon = gHUD.GetIcon( "c4" );
 	}
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( !pPlayer )
 		return;

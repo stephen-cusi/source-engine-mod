@@ -13,7 +13,7 @@
 #include "baseachievement.h"
 #include "cs_achievement_constants.h"
 #include "c_cs_team.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "c_cs_playerresource.h"
 #include "cs_gamerules.h"
 #include "achievements_cs.h"
@@ -601,7 +601,7 @@ class CAchievementCS_FriendsSameUniform : public CCSBaseAchievement
         if ( Q_strcmp( event->GetName(), "round_start" ) == 0 )
         {
             int localPlayerIndex = GetLocalPlayerIndex();
-            C_CSPlayer* pLocalPlayer = ToCSPlayer(UTIL_PlayerByIndex(localPlayerIndex));
+            C_HL2MP_Player* pLocalPlayer = ToCSPlayer(UTIL_PlayerByIndex(localPlayerIndex));
 
             // Initialize all to 1, since the local player doesn't get counted as we loop.
             int numPlayersOnTeam = 1;
@@ -616,7 +616,7 @@ class CAchievementCS_FriendsSameUniform : public CCSBaseAchievement
                 {
                     if ( i != localPlayerIndex)
                     {
-                        CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+                        CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 
                         if (pPlayer)
                         {
@@ -664,7 +664,7 @@ class CAchievementCS_AvengeFriend : public CCSBaseAchievement
         if ( Q_strcmp( event->GetName(), "player_avenged_teammate" ) == 0 )
         {
             int localPlayerIndex = GetLocalPlayerIndex();
-            C_CSPlayer* pLocalPlayer = ToCSPlayer(UTIL_PlayerByIndex(localPlayerIndex));
+            C_HL2MP_Player* pLocalPlayer = ToCSPlayer(UTIL_PlayerByIndex(localPlayerIndex));
 
             //for debugging
             //int eventId = event->GetInt( "avenger_id" );
@@ -676,7 +676,7 @@ class CAchievementCS_AvengeFriend : public CCSBaseAchievement
 
                 if ( avengedPlayerIndex > 0 )
                 {
-                    C_CSPlayer* pAvengedPlayer = ToCSPlayer(UTIL_PlayerByIndex(avengedPlayerIndex));                        
+                    C_HL2MP_Player* pAvengedPlayer = ToCSPlayer(UTIL_PlayerByIndex(avengedPlayerIndex));                        
                     if (pAvengedPlayer && pLocalPlayer->HasPlayerAsFriend(pAvengedPlayer))
                     {
                         AwardAchievement();
@@ -714,7 +714,7 @@ class CAchievementCS_CollectHolidayGifts : public CCSBaseAchievement
 			int iPlayer = engine->GetPlayerForUserID( event->GetInt( "userid" ) );
 			CBaseEntity *pPlayer = UTIL_PlayerByIndex( iPlayer );
 
-			if ( pPlayer && pPlayer == C_CSPlayer::GetLocalCSPlayer() )
+			if ( pPlayer && pPlayer == C_HL2MP_Player::GetLocalCSPlayer() )
 			{
 				IncrementCount();
 			}

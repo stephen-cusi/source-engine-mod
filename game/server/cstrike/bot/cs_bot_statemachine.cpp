@@ -72,7 +72,7 @@ void CCSBot::EscapeFromBomb( void )
 
 
 //--------------------------------------------------------------------------------------------------------------
-void CCSBot::Follow( CCSPlayer *player )
+void CCSBot::Follow( CHL2MP_Player *player )
 {
 	if (player == NULL)
 		return;
@@ -345,7 +345,7 @@ void CCSBot::Hunt( void )
  * Attack our the given victim
  * NOTE: Attacking does not change our task.
  */
-void CCSBot::Attack( CCSPlayer *victim )
+void CCSBot::Attack( CHL2MP_Player *victim )
 {
 	if (victim == NULL)
 		return;

@@ -6,7 +6,7 @@
 //=============================================================================//
 #include "cbase.h"
 #include "npc_turret_floor.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "weapon_physcannon.h"
 #include "basehlcombatweapon_shared.h"
 #include "ammodef.h"

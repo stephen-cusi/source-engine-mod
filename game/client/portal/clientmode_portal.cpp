@@ -10,7 +10,7 @@
 #include "clientmode_hlnormal.h"
 #include "panelmetaclassmgr.h"
 #include "c_playerresource.h"
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #include "clientmode_portal.h"
 #include "usermessages.h"
 #include "prediction.h"

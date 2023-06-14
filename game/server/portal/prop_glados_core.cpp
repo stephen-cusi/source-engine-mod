@@ -46,7 +46,7 @@ public:
 	virtual void Spawn( void );
 	virtual void Precache( void );
 
-	virtual QAngle	PreferredCarryAngles( void ) { return QAngle( 180, -90, 180 ); }
+	virtual QAngle	PreferredCarryAngles( CBasePlayer *pPlayer ) { return QAngle( 180, -90, 180 ); }
 	virtual bool	HasPreferredCarryAnglesForPlayer( CBasePlayer *pPlayer ) { return true; }
 
 	void	InputPanic( inputdata_t &inputdata );

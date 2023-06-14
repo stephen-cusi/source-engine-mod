@@ -17,7 +17,7 @@
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "items.h"
 	#include "flashbang_projectile.h"
 

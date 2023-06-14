@@ -1,3 +1,4 @@
+/*
 //========= Copyright Valve Corporation, All rights reserved. ============//
 //
 // Purpose:		Player for HL1.
@@ -49,10 +50,10 @@ public:
 	CSPlayerState m_iPlayerState;
 	const char *m_pStateName;
 	
-	void (CCSPlayer::*pfnEnterState)();	// Init and deinit the state.
-	void (CCSPlayer::*pfnLeaveState)();
+	void (CHL2MP_Player::*pfnEnterState)();	// Init and deinit the state.
+	void (CHL2MP_Player::*pfnLeaveState)();
 
-	void (CCSPlayer::*pfnPreThink)();	// Do a PreThink() in this state.
+	void (CHL2MP_Player::*pfnPreThink)();	// Do a PreThink() in this state.
 };
 
 
@@ -93,7 +94,7 @@ private:
 	int	m_iLastBulletUpdate; // update counter
 };
 
-// Message display history (CCSPlayer::m_iDisplayHistoryBits)
+// Message display history (CHL2MP_Player::m_iDisplayHistoryBits)
 // These bits are set when hint messages are displayed, and cleared at
 // different times, according to the DHM_xxx bitmasks that follow
 
@@ -231,19 +232,19 @@ enum DefuseDefenseAchivementStep
 //=============================================================================
 // >> CounterStrike player
 //=============================================================================
-class CCSPlayer : public CBaseMultiplayerPlayer, public ICSPlayerAnimStateHelpers
+class CHL2MP_Player : public CBaseMultiplayerPlayer, public ICSPlayerAnimStateHelpers
 {
 public:
-	DECLARE_CLASS( CCSPlayer, CBaseMultiplayerPlayer );
+	DECLARE_CLASS( CHL2MP_Player, CBaseMultiplayerPlayer );
 	DECLARE_SERVERCLASS();
 	DECLARE_PREDICTABLE();
 	DECLARE_DATADESC();
 
-	CCSPlayer();
-	~CCSPlayer();
+	CHL2MP_Player();
+	~CHL2MP_Player();
 
-	static CCSPlayer *CreatePlayer( const char *className, edict_t *ed );
-	static CCSPlayer* Instance( int iEnt );
+	static CHL2MP_Player *CreatePlayer( const char *className, edict_t *ed );
+	static CHL2MP_Player* Instance( int iEnt );
 
 	virtual void		Precache();
 	virtual void		Spawn();
@@ -930,7 +931,7 @@ public:
 	CUtlVector<float>			m_killTimes; 
 
     //List of all players killed this round
-    CUtlVector<CHandle<CCSPlayer> >      m_enemyPlayersKilledThisRound;
+    CUtlVector<CHandle<CHL2MP_Player> >      m_enemyPlayersKilledThisRound;
 
 	//List of weapons we have used to kill players with this round
 	CUtlVector<int>				m_killWeapons; 
@@ -956,17 +957,17 @@ public:
     bool InjuredAHostage() { return m_bInjuredAHostage; }
     float GetBombPickuptime() { return m_bombPickupTime; }
     void SetBombPickupTime(float time) { m_bombPickupTime = time; }
-    CCSPlayer* GetLastFlashbangAttacker() { return m_lastFlashBangAttacker; }
-    void SetLastFlashbangAttacker(CCSPlayer* attacker) { m_lastFlashBangAttacker = attacker; }
+    CHL2MP_Player* GetLastFlashbangAttacker() { return m_lastFlashBangAttacker; }
+    void SetLastFlashbangAttacker(CHL2MP_Player* attacker) { m_lastFlashBangAttacker = attacker; }
 
 	static CSWeaponID GetWeaponIdCausingDamange( const CTakeDamageInfo &info );
-	static void ProcessPlayerDeathAchievements( CCSPlayer *pAttacker, CCSPlayer *pVictim, const CTakeDamageInfo &info );
+	static void ProcessPlayerDeathAchievements( CHL2MP_Player *pAttacker, CHL2MP_Player *pVictim, const CTakeDamageInfo &info );
 
     void                        OnCanceledDefuse();
     void                        OnStartedDefuse();
     GooseChaseAchievementStep   m_gooseChaseStep;
     DefuseDefenseAchivementStep m_defuseDefenseStep;
-    CHandle<CCSPlayer>          m_pGooseChaseDistractingPlayer;
+    CHandle<CHL2MP_Player>          m_pGooseChaseDistractingPlayer;
 
     int                         m_lastRoundResult; //save the reason for the last round ending.
 
@@ -990,10 +991,10 @@ public:
 
 	void						CheckMaxGrenadeKills(int grenadeKills);
 
-    CHandle<CCSPlayer>                  m_lastFlashBangAttacker;
+    CHandle<CHL2MP_Player>                  m_lastFlashBangAttacker;
 
-    void	SetPlayerDominated( CCSPlayer *pPlayer, bool bDominated );    
-    void	SetPlayerDominatingMe( CCSPlayer *pPlayer, bool bDominated );
+    void	SetPlayerDominated( CHL2MP_Player *pPlayer, bool bDominated );    
+    void	SetPlayerDominatingMe( CHL2MP_Player *pPlayer, bool bDominated );
     bool	IsPlayerDominated( int iPlayerIndex );
     bool	IsPlayerDominatingMe( int iPlayerIndex );
 
@@ -1044,20 +1045,20 @@ private:
 };
 
 
-inline CSPlayerState CCSPlayer::State_Get() const
+inline CSPlayerState CHL2MP_Player::State_Get() const
 {
 	return m_iPlayerState;
 }
 
-inline CCSPlayer *ToCSPlayer( CBaseEntity *pEntity )
+inline CHL2MP_Player *ToCSPlayer( CBaseEntity *pEntity )
 {
 	if ( !pEntity || !pEntity->IsPlayer() )
 		return NULL;
 
-	return dynamic_cast<CCSPlayer*>( pEntity );
+	return dynamic_cast<CHL2MP_Player*>( pEntity );
 }
 
-inline bool CCSPlayer::IsReloading( void ) const
+inline bool CHL2MP_Player::IsReloading( void ) const
 {
 	CBaseCombatWeapon *gun = GetActiveWeapon();
 	if (gun == NULL)
@@ -1066,12 +1067,12 @@ inline bool CCSPlayer::IsReloading( void ) const
 	return gun->m_bInReload;
 }
 
-inline bool CCSPlayer::IsProtectedByShield( void ) const
+inline bool CHL2MP_Player::IsProtectedByShield( void ) const
 { 
 	return HasShield() && IsShieldDrawn();
 }
 
-inline bool CCSPlayer::IsBlind( void ) const
+inline bool CHL2MP_Player::IsBlind( void ) const
 { 
 	return gpGlobals->curtime < m_blindUntilTime;
 }
@@ -1080,7 +1081,7 @@ inline bool CCSPlayer::IsBlind( void ) const
 // HPE_BEGIN
 // [sbodenbender] Need a different test for player blindness for the achievements
 //=============================================================================
-inline bool CCSPlayer::IsBlindForAchievement()
+inline bool CHL2MP_Player::IsBlindForAchievement()
 {
 	return (m_blindStartTime + m_flFlashDuration) > gpGlobals->curtime;
 }
@@ -1088,29 +1089,31 @@ inline bool CCSPlayer::IsBlindForAchievement()
 // HPE_END
 //=============================================================================
 
-inline bool CCSPlayer::IsAutoFollowAllowed( void ) const		
+inline bool CHL2MP_Player::IsAutoFollowAllowed( void ) const		
 { 
 	return (gpGlobals->curtime > m_allowAutoFollowTime); 
 }
 
-inline void CCSPlayer::InhibitAutoFollow( float duration )	
+inline void CHL2MP_Player::InhibitAutoFollow( float duration )	
 { 
 	m_allowAutoFollowTime = gpGlobals->curtime + duration; 
 }
 
-inline void CCSPlayer::AllowAutoFollow( void )	
+inline void CHL2MP_Player::AllowAutoFollow( void )	
 { 
 	m_allowAutoFollowTime = 0.0f; 
 }
 
-inline int CCSPlayer::GetClass( void ) const
+inline int CHL2MP_Player::GetClass( void ) const
 {
 	return m_iClass;
 }
 
-inline const char *CCSPlayer::GetClanTag( void ) const
+inline const char *CHL2MP_Player::GetClanTag( void ) const
 {
 	return m_szClanTag;
 }
 
 #endif	//CS_PLAYER_H
+
+*/

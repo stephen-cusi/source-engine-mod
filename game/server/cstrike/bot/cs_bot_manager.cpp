@@ -327,7 +327,7 @@ bool CCSBotManager::IsWeaponUseable( const CWeaponCSBase *weapon ) const
 /**
  * Return true if this player is on "defense"
  */
-bool CCSBotManager::IsOnDefense( const CCSPlayer *player ) const
+bool CCSBotManager::IsOnDefense( const CHL2MP_Player *player ) const
 {
 	switch (GetScenario())
 	{
@@ -348,7 +348,7 @@ bool CCSBotManager::IsOnDefense( const CCSPlayer *player ) const
 /**
  * Return true if this player is on "offense"
  */
-bool CCSBotManager::IsOnOffense( const CCSPlayer *player ) const
+bool CCSBotManager::IsOnOffense( const CHL2MP_Player *player ) const
 {
 	return !IsOnDefense( player );
 }
@@ -1730,7 +1730,7 @@ void CCSBotManager::OnBombBeep( IGameEvent *event )
 //--------------------------------------------------------------------------------------------------------------
 void CCSBotManager::OnBombDefuseBegin( IGameEvent *event )
 {
-	m_bombDefuser = static_cast<CCSPlayer *>( UTIL_PlayerByUserId( event->GetInt( "userid" ) ) );
+	m_bombDefuser = static_cast<CHL2MP_Player *>( UTIL_PlayerByUserId( event->GetInt( "userid" ) ) );
 
 	CCSBOTMANAGER_ITERATE_BOTS( OnBombDefuseBegin, event );
 }
@@ -2061,7 +2061,7 @@ void CCSBotManager::SetLooseBomb( CBaseEntity *bomb )
 /**
  * Return true if player is important to scenario (VIP, bomb carrier, etc)
  */
-bool CCSBotManager::IsImportantPlayer( CCSPlayer *player ) const
+bool CCSBotManager::IsImportantPlayer( CHL2MP_Player *player ) const
 {
 	switch (GetScenario())
 	{

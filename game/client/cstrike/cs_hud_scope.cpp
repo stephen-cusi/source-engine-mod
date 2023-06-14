@@ -10,7 +10,7 @@
 #include "hud_macros.h"
 #include "hud_numericdisplay.h"
 #include "iclientmode.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "VGuiMatSurface/IMatSystemSurface.h"
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imesh.h"
@@ -104,7 +104,7 @@ void CHudScope::ApplySchemeSettings( vgui::IScheme *scheme )
 //-----------------------------------------------------------------------------
 void CHudScope::Paint( void )
 {
-	C_CSPlayer *pPlayer = dynamic_cast<C_CSPlayer *>(C_BasePlayer::GetLocalPlayer());
+	C_HL2MP_Player *pPlayer = dynamic_cast<C_HL2MP_Player *>(C_BasePlayer::GetLocalPlayer());
 	
 	if ( pPlayer == NULL )
 		return;

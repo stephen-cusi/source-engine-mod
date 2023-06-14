@@ -79,7 +79,7 @@ void HideState::OnUpdate( CCSBot *me )
 		// if we are momentarily hiding while following someone, check to see if he has moved on
 		if (me->IsFollowing())
 		{
-			CCSPlayer *leader = static_cast<CCSPlayer *>( static_cast<CBaseEntity *>( me->GetFollowLeader() ) );
+			CHL2MP_Player *leader = static_cast<CHL2MP_Player *>( static_cast<CBaseEntity *>( me->GetFollowLeader() ) );
 			Vector leaderOrigin = GetCentroid( leader );
 
 			// BOTPORT: Determine walk/run velocity thresholds
@@ -403,7 +403,7 @@ void HideState::OnUpdate( CCSBot *me )
 
 		// if a Player is using this hiding spot, give up
 		float range;
-		CCSPlayer *camper = static_cast<CCSPlayer *>( UTIL_GetClosestPlayer( m_hidingSpot, &range ) );
+		CHL2MP_Player *camper = static_cast<CHL2MP_Player *>( UTIL_GetClosestPlayer( m_hidingSpot, &range ) );
 
 		const float closeRange = 75.0f;
 		if (camper && camper != me && range < closeRange && me->IsVisible( camper, CHECK_FOV ))

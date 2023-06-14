@@ -79,7 +79,7 @@ END_SEND_TABLE()
 
 
 IMPLEMENT_SERVERCLASS_ST( CBaseAnimatingOverlay, DT_BaseAnimatingOverlay )
-	// These are in their own separate data table so CCSPlayer can exclude all of these.
+	// These are in their own separate data table so CHL2MP_Player can exclude all of these.
 	SendPropDataTable( "overlay_vars", 0, &REFERENCE_SEND_TABLE( DT_OverlayVars ) )
 END_SEND_TABLE()
 

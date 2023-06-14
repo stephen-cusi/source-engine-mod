@@ -13,7 +13,7 @@
 #include "filesystem.h"
 #include <vgui/ILocalize.h>
 #include <vgui_controls/Controls.h>
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -121,7 +121,7 @@ CON_COMMAND_F( cl_buy_favorite_set, "Saves the current loadout as a favorite", F
 	TheBuyPresets->SetPreset( presetIndex, &newPreset );
 	TheBuyPresets->Save();
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer )
 	{
 		pPlayer->EmitSound( "BuyPreset.Updated" );
@@ -141,7 +141,7 @@ void __CmdFunc_BuyPresetsReset(void)
 	if ( !TheBuyPresets )
 		TheBuyPresets = new BuyPresetManager();
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !pPlayer || ( pPlayer->GetTeamNumber() != TEAM_CT && pPlayer->GetTeamNumber() != TEAM_TERRORIST ) )
 	{
 		return;
@@ -174,7 +174,7 @@ BuyPresetManager::BuyPresetManager()
 void BuyPresetManager::VerifyLoadedTeam( void )
 {
 #if USE_BUY_PRESETS
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !pPlayer )
 		return;
 
@@ -260,7 +260,7 @@ void BuyPresetManager::ResetEditToDefaults( void )
 #if USE_BUY_PRESETS
 	VerifyLoadedTeam();
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !pPlayer )
 		return;
 
@@ -304,7 +304,7 @@ void BuyPresetManager::ResetEditToDefaults( void )
 void BuyPresetManager::Save()
 {
 #if USE_BUY_PRESETS
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !pPlayer )
 		return;
 
@@ -410,7 +410,7 @@ void BuyPresetManager::PurchasePreset( int presetIndex )
 				}
 				else if ( currentCost == 0 )
 				{
-					C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+					C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 					if ( pPlayer )
 					{
 						pPlayer->EmitSound( "BuyPreset.AlreadyBought" );
@@ -430,7 +430,7 @@ void BuyPresetManager::PurchasePreset( int presetIndex )
 			}
 		}
 
-		C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+		C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 		if ( pPlayer )
 		{
 			pPlayer->EmitSound( "BuyPreset.CantBuy" );
@@ -441,7 +441,7 @@ void BuyPresetManager::PurchasePreset( int presetIndex )
 	}
 
 	// We failed to buy anything.  Let the player know.
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer )
 	{
 		pPlayer->EmitSound( "BuyPreset.CantBuy" );

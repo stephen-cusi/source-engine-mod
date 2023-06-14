@@ -18,7 +18,7 @@
 	#include "game.h"
 	#include "gamerules.h"
 	#include "teamplay_gamerules.h"
-	#include "portal_player.h"
+	#include "hl2mp_player.h"
 	#include "globalstate.h"
 	#include "ai_basenpc.h"
 	#include "portal/weapon_physcannon.h"
@@ -204,7 +204,7 @@ static ConCommand ent_create_portal_metal_sphere("ent_create_portal_metal_sphere
 		if( BaseClass::ClientCommand( pEdict, args ) )
 			return true;
 
-		CPortal_Player *pPlayer = (CPortal_Player *) pEdict;
+		CHL2MP_Player *pPlayer = (CHL2MP_Player *) pEdict;
 
 		if ( pPlayer->ClientCommand( args ) )
 			return true;
@@ -1240,7 +1240,7 @@ bool CPortalGameRules::IsBonusChallengeTimeBased( void )
 // convert a velocity in ft/sec and a mass in grains to an impulse in kg in/s
 #define BULLET_IMPULSE(grains, ftpersec)	((ftpersec)*12*BULLET_MASS_GRAINS_TO_KG(grains)*BULLET_IMPULSE_EXAGGERATION)
 
-
+/*
 CAmmoDef *GetAmmoDef()
 {
 	static CAmmoDef def;
@@ -1281,4 +1281,4 @@ CAmmoDef *GetAmmoDef()
 
 	return &def;
 }
-
+*/

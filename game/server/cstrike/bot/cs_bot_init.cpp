@@ -81,7 +81,7 @@ ConVar cv_bot_auto_follow( "bot_auto_follow", "0", FCVAR_REPLICATED, "If nonzero
 ConVar cv_bot_flipout( "bot_flipout", "0", FCVAR_REPLICATED | FCVAR_CHEAT, "If nonzero, bots use no CPU for AI. Instead, they run around randomly." );
 
 
-extern void FinishClientPutInServer( CCSPlayer *pPlayer );
+extern void FinishClientPutInServer( CHL2MP_Player *pPlayer );
 
 
 //--------------------------------------------------------------------------------------------------------------

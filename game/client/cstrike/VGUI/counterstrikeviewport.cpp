@@ -61,7 +61,7 @@ static void OpenPanelWithCheck( const char *panelToOpen, const char *panelToChec
 
 CON_COMMAND( buyequip, "Show equipment buy menu" )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if( pPlayer && pPlayer->m_lifeState == LIFE_ALIVE && pPlayer->State_Get() == STATE_ACTIVE )
 	{
@@ -96,7 +96,7 @@ CON_COMMAND( buyequip, "Show equipment buy menu" )
 
 CON_COMMAND( buymenu, "Show main buy menu" )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if( pPlayer )
 	{
@@ -134,7 +134,7 @@ CON_COMMAND( buymenu, "Show main buy menu" )
 
 CON_COMMAND( chooseteam, "Choose a new team" )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( pPlayer && pPlayer->CanShowTeamMenu() )
 	{
@@ -152,7 +152,7 @@ CON_COMMAND_F( spec_menu, "Activates spectator menu", FCVAR_CLIENTCMD_CAN_EXECUT
 {
 	bool bShowIt = true;
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( pPlayer && !pPlayer->IsObserver() )
 		return;

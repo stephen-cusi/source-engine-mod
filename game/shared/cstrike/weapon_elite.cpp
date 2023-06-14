@@ -12,12 +12,12 @@
 #if defined( CLIENT_DLL )
 
 	#define CWeaponElite C_WeaponElite
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 	#include "c_te_effect_dispatch.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 
 #endif
 
@@ -148,7 +148,7 @@ float CWeaponElite::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 
@@ -170,7 +170,7 @@ float CWeaponElite::GetInaccuracy() const
 
 void CWeaponElite::PrimaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -291,7 +291,7 @@ void CWeaponElite::WeaponIdle()
 	{
 		if( event == 5001 )
 		{
-			C_CSPlayer *pPlayer = ToCSPlayer( GetOwner() );
+			C_HL2MP_Player *pPlayer = ToCSPlayer( GetOwner() );
 			if( pPlayer && pPlayer->GetFOV() < pPlayer->GetDefaultFOV() && HideViewModelWhenZoomed() )
 				return true;
 			

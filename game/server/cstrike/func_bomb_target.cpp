@@ -5,7 +5,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "func_bomb_target.h"
 #include "cs_gamerules.h"
 
@@ -44,7 +44,7 @@ void CBombTarget::Spawn()
 
 void CBombTarget::BombTargetTouch( CBaseEntity* pOther )
 {
-	CCSPlayer *p = dynamic_cast< CCSPlayer* >( pOther );
+	CHL2MP_Player *p = dynamic_cast< CHL2MP_Player* >( pOther );
 	if ( p )
 	{
 		if ( p->HasC4() && CSGameRules()->m_bBombPlanted == false )

@@ -15,7 +15,7 @@
 #include <filesystem.h>
 #include "mouseoverpanelbutton.h"
 #include "hud.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_gamerules.h"
 #include "cstrike/bot/shared_util.h"
 #include <vgui/ISurface.h>
@@ -148,7 +148,7 @@ public:
 			m_bIsBargain = false;
 		}
 
-		C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+		C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 		if ( m_iPrice &&  ( pPlayer && m_iPrice > pPlayer->GetAccount() ) )
 		{

@@ -105,7 +105,7 @@ void CHudRadar::MsgFunc_UpdateRadar(bf_read &msg )
 
 	//Draw objects on the radar
 	//=============================
-	C_CSPlayer *pLocalPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pLocalPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( !pLocalPlayer )
 		return;
@@ -121,7 +121,7 @@ void CHudRadar::MsgFunc_UpdateRadar(bf_read &msg )
 		if( i == pLocalPlayer->entindex() )
 			continue;
 
-		C_CSPlayer *pPlayer =	ToCSPlayer( UTIL_PlayerByIndex(i) );
+		C_HL2MP_Player *pPlayer =	ToCSPlayer( UTIL_PlayerByIndex(i) );
 
 		if ( pPlayer )
 		{
@@ -137,7 +137,7 @@ void CHudRadar::MsgFunc_UpdateRadar(bf_read &msg )
 		int z = msg.ReadSBitLong( COORD_INTEGER_BITS-1 ) * 4;
 		int a = msg.ReadSBitLong( 9 );
 
-		C_CSPlayer *pPlayer =	ToCSPlayer( UTIL_PlayerByIndex(iPlayerEntity) );
+		C_HL2MP_Player *pPlayer =	ToCSPlayer( UTIL_PlayerByIndex(iPlayerEntity) );
 
 		Vector origin( x, y, z );
 		QAngle angles( 0, a, 0 );
@@ -190,7 +190,7 @@ void CHudRadar::MsgFunc_UpdateRadar(bf_read &msg )
 
 bool CHudRadar::ShouldDraw()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	
 	//=============================================================================
 	// HPE_BEGIN:
@@ -268,7 +268,7 @@ void CHudRadar::WorldToRadar( const Vector location, const Vector origin, const 
 	z_delta = location.z - origin.z;
 }
 
-void CHudRadar::DrawPlayerOnRadar( int iPlayer, C_CSPlayer *pLocalPlayer )
+void CHudRadar::DrawPlayerOnRadar( int iPlayer, C_HL2MP_Player *pLocalPlayer )
 {
 	float x, y, z_delta;
 	int iBaseDotSize = ScreenWidth() / 256;	
@@ -279,7 +279,7 @@ void CHudRadar::DrawPlayerOnRadar( int iPlayer, C_CSPlayer *pLocalPlayer )
 	if ( !pCSPR )
 		return;
 
-	C_CSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( iPlayer ) );
+	C_HL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( iPlayer ) );
 
 	if ( !pPlayer )
 		return;
@@ -324,7 +324,7 @@ void CHudRadar::DrawPlayerOnRadar( int iPlayer, C_CSPlayer *pLocalPlayer )
 }
 
 
-void CHudRadar::DrawEntityOnRadar( CBaseEntity *pEnt, C_CSPlayer *pLocalPlayer, int flags, int r, int g, int b, int a )
+void CHudRadar::DrawEntityOnRadar( CBaseEntity *pEnt, C_HL2MP_Player *pLocalPlayer, int flags, int r, int g, int b, int a )
 {
 	float x, y, z_delta;
 	int iBaseDotSize = 4;
@@ -500,7 +500,7 @@ void CHudLocation::OnTick()
 	SetFgColor( m_fgColor );
 
 	const char *pszLocation = "";
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer )
 	{
 		pszLocation = pPlayer->GetLastKnownPlaceName();

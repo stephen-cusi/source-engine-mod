@@ -13,7 +13,7 @@
 
 void respawn( CBaseEntity *pEdict, bool fCopyCorpse );
 
-void FinishClientPutInServer( CCSPlayer *pPlayer );
+void FinishClientPutInServer( CHL2MP_Player *pPlayer );
 
 
 #endif // CS_CLIENT_H

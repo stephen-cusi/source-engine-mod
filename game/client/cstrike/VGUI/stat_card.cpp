@@ -15,7 +15,7 @@
 #include <vgui/ISurface.h>
 #include "fmtstr.h"
 #include "../../public/steam/steam_api.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_gamestats_shared.h"
 #include "cs_client_gamestats.h"
 

@@ -7,7 +7,7 @@
 
 #include "cbase.h"
 #include "prop_portal.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "portal/weapon_physcannon.h"
 #include "physics_npc_solver.h"
 #include "envmicrophone.h"
@@ -355,7 +355,7 @@ void CProp_Portal::DelayedPlacementThink( void )
 
 	if( pPortalGun )
 	{
-		CPortal_Player *pFiringPlayer = dynamic_cast<CPortal_Player *>( pPortalGun->GetOwner() );
+		CHL2MP_Player *pFiringPlayer = dynamic_cast<CHL2MP_Player *>( pPortalGun->GetOwner() );
 		if( pFiringPlayer )
 		{
 			pFiringPlayer->IncrementPortalsPlaced();
@@ -936,13 +936,13 @@ void CProp_Portal::TeleportTouchingEntity( CBaseEntity *pOther )
 
 	bool bPlayer = pOther->IsPlayer();
 	QAngle qPlayerEyeAngles;
-	CPortal_Player *pOtherAsPlayer;
+	CHL2MP_Player *pOtherAsPlayer;
 
 	
 	if( bPlayer )
 	{
 		//NDebugOverlay::EntityBounds( pOther, 255, 0, 0, 128, 60.0f );
-		pOtherAsPlayer = (CPortal_Player *)pOther;
+		pOtherAsPlayer = (CHL2MP_Player *)pOther;
 		qPlayerEyeAngles = pOtherAsPlayer->pl.v_angle;
 	}
 	else
@@ -1218,7 +1218,7 @@ void CProp_Portal::TeleportTouchingEntity( CBaseEntity *pOther )
 	IPhysicsObject *pPhys = pOther->VPhysicsGetObject();
 	if( (pPhys != NULL) && (pPhys->GetGameFlags() & FVPHYSICS_PLAYER_HELD) )
 	{
-		CPortal_Player *pHoldingPlayer = (CPortal_Player *)GetPlayerHoldingEntity( pOther );
+		CHL2MP_Player *pHoldingPlayer = (CHL2MP_Player*)GetPlayerHoldingEntity( pOther );
 		pHoldingPlayer->ToggleHeldObjectOnOppositeSideOfPortal();
 		if ( pHoldingPlayer->IsHeldObjectOnOppositeSideOfPortal() )
 			pHoldingPlayer->SetHeldObjectPortal( this );
@@ -1321,7 +1321,7 @@ void CProp_Portal::Touch( CBaseEntity *pOther )
 	if( !m_bActivated || (m_hLinkedPortal.Get() == NULL) )
 	{
 		Assert( !m_PortalSimulator.OwnsEntity( pOther ) );
-		Assert( !pOther->IsPlayer() || (((CPortal_Player *)pOther)->m_hPortalEnvironment.Get() != this) );
+		Assert( !pOther->IsPlayer() || (((CHL2MP_Player *)pOther)->m_hPortalEnvironment.Get() != this) );
 		
 		//I'd really like to fix the root cause, but this will keep the game going
 		m_PortalSimulator.ReleaseOwnershipOfEntity( pOther );
@@ -1496,7 +1496,7 @@ void CProp_Portal::EndTouch( CBaseEntity *pOther )
 	else if( pOther->IsPlayer() && //player
 			(m_PortalSimulator.m_DataAccess.Placement.vForward.z < -0.7071f) && //most likely falling out of the portal
 			(m_PortalSimulator.m_DataAccess.Placement.PortalPlane.m_Normal.Dot( pOther->WorldSpaceCenter() ) < m_PortalSimulator.m_DataAccess.Placement.PortalPlane.m_Dist) && //but behind the portal plane
-			(((CPortal_Player *)pOther)->m_Local.m_bInDuckJump) ) //while ducking
+			(((CHL2MP_Player *)pOther)->m_Local.m_bInDuckJump) ) //while ducking
 	{
 		//player has pulled their feet up (moving their center instantaneously) while falling downward out of the portal, send them back (probably only for a frame)
 		
@@ -1522,13 +1522,13 @@ void CProp_Portal::EndTouch( CBaseEntity *pOther )
 void CProp_Portal::PortalSimulator_TookOwnershipOfEntity( CBaseEntity *pEntity )
 {
 	if( pEntity->IsPlayer() )
-		((CPortal_Player *)pEntity)->m_hPortalEnvironment = this;
+		((CHL2MP_Player *)pEntity)->m_hPortalEnvironment = this;
 }
 
 void CProp_Portal::PortalSimulator_ReleasedOwnershipOfEntity( CBaseEntity *pEntity )
 {
-	if( pEntity->IsPlayer() && (((CPortal_Player *)pEntity)->m_hPortalEnvironment.Get() == this) )
-		((CPortal_Player *)pEntity)->m_hPortalEnvironment = NULL;
+	if( pEntity->IsPlayer() && (((CHL2MP_Player *)pEntity)->m_hPortalEnvironment.Get() == this) )
+		((CHL2MP_Player*) pEntity)->m_hPortalEnvironment = NULL;
 }
 
 bool CProp_Portal::SharedEnvironmentCheck( CBaseEntity *pEntity )
@@ -2022,7 +2022,7 @@ void CProp_Portal::PlacePortal( const Vector &vOrigin, const QAngle &qAngles, fl
 
 		if( pPortalGun )
 		{
-			CPortal_Player *pFiringPlayer = dynamic_cast<CPortal_Player *>( pPortalGun->GetOwner() );
+			CHL2MP_Player *pFiringPlayer = dynamic_cast<CHL2MP_Player *>( pPortalGun->GetOwner() );
 			if( pFiringPlayer )
 			{
 				g_PortalGameStats.Event_PortalPlacement( pFiringPlayer->GetAbsOrigin(), vOrigin, m_iDelayedFailure );
@@ -2051,7 +2051,7 @@ void CProp_Portal::PlacePortal( const Vector &vOrigin, const QAngle &qAngles, fl
 
 	if( pPortalGun )
 	{
-		CPortal_Player *pFiringPlayer = dynamic_cast<CPortal_Player *>( pPortalGun->GetOwner() );
+		CHL2MP_Player *pFiringPlayer = dynamic_cast<CHL2MP_Player *>( pPortalGun->GetOwner() );
 		if( pFiringPlayer )
 		{
 			g_PortalGameStats.Event_PortalPlacement( pFiringPlayer->GetAbsOrigin(), vOrigin, m_iDelayedFailure );

@@ -23,7 +23,7 @@
 	
 	#include "bot.h"
 	#include "utldict.h"
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "cs_team.h"
 	#include "cs_gamerules.h"
 	#include "voice_gamemgr.h"
@@ -231,12 +231,12 @@ ConVar sv_allowminmodels(
 
 #ifdef CLIENT_DLL
 
-ConVar cl_autowepswitch(
+/*ConVar cl_autowepswitch(
 	"cl_autowepswitch",
 	"1",
 	FCVAR_ARCHIVE | FCVAR_USERINFO,
 	"Automatically switch to picked up weapons (if more powerful)" );
-
+	*/
 ConVar cl_autohelp(
 	"cl_autohelp",
 	"1",
@@ -320,8 +320,8 @@ ConVar cl_autohelp(
 			return ( pListener->InSameTeam( pTalker ) );
 		}
 	};
-	CVoiceGameMgrHelper g_VoiceGameMgrHelper;
-	IVoiceGameMgrHelper *g_pVoiceGameMgrHelper = &g_VoiceGameMgrHelper;
+	//CVoiceGameMgrHelper g_VoiceGameMgrHelper;
+	//IVoiceGameMgrHelper *g_pVoiceGameMgrHelper = &g_VoiceGameMgrHelper;
 
 
 
@@ -421,10 +421,10 @@ ConVar cl_autohelp(
 	// Global helper functions.
 	// --------------------------------------------------------------------------------------------------- //
 
-	void InitBodyQue(void)
+	/*void InitBodyQue(void)
 	{
 		// FIXME: Make this work
-	}
+	}*/
 
 
 	Vector DropToGround( 
@@ -541,7 +541,7 @@ ConVar cl_autohelp(
 
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *entity = CCSPlayer::Instance( i );
+			CHL2MP_Player *entity = CHL2MP_Player::Instance( i );
 
 			if ( entity && !FNullEnt( entity->edict() ) )
 			{
@@ -744,7 +744,7 @@ ConVar cl_autohelp(
 	//-----------------------------------------------------------------------------
 	bool CCSGameRules::ClientCommand( CBaseEntity *pEdict, const CCommand &args )
 	{
-		CCSPlayer *pPlayer = ToCSPlayer( pEdict );
+		CHL2MP_Player *pPlayer = ToCSPlayer( pEdict );
 
 		if ( FStrEq( args[0], "changeteam" ) )
 		{
@@ -794,7 +794,7 @@ ConVar cl_autohelp(
 	//-----------------------------------------------------------------------------
 	void CCSGameRules::ClientCommandKeyValues( edict_t *pEntity, KeyValues *pKeyValues )
 	{
-		CCSPlayer *pPlayer = dynamic_cast< CCSPlayer * >( CBaseEntity::Instance( pEntity ) );
+		CHL2MP_Player *pPlayer = dynamic_cast< CHL2MP_Player * >( CBaseEntity::Instance( pEntity ) );
 		if ( pPlayer )
 		{
 			char const *pszCommand = pKeyValues->GetName();
@@ -827,7 +827,7 @@ ConVar cl_autohelp(
 	//-----------------------------------------------------------------------------
 	void CCSGameRules::PlayerSpawn( CBasePlayer *pBasePlayer )
 	{
-		CCSPlayer *pPlayer = ToCSPlayer( pBasePlayer );
+		CHL2MP_Player *pPlayer = ToCSPlayer( pBasePlayer );
 		if ( !pPlayer )
 			Error( "PlayerSpawn" );
 
@@ -956,7 +956,7 @@ ConVar cl_autohelp(
 			return GetExplosionDamageAdjustment(vecSrc, vecTarget, entity);
 		}
 
-		CCSPlayer *player = (CCSPlayer *)entity;
+		CHL2MP_Player *player = (CHL2MP_Player *)entity;
 
 		// check what parts of the player we can see from this point and modify the return value accordingly.
 		float chestHeightFromFeet;
@@ -1034,7 +1034,7 @@ ConVar cl_autohelp(
         int numberOfEnemyPlayersKilledByThisExplosion = 0;
 		
 		// [tj] who we award the achievement to if enough players are killed
-		CCSPlayer* pCSExplosionAttacker = ToCSPlayer(info.GetAttacker());
+		CHL2MP_Player* pCSExplosionAttacker = ToCSPlayer(info.GetAttacker());
 
 		// [tj] used to determine which achievement to award for sufficient kills
 		CBaseEntity* pInflictor = info.GetInflictor();
@@ -1070,7 +1070,7 @@ ConVar cl_autohelp(
 			//		for pre-dead players.
 			//=============================================================================
 			bool wasAliveBeforeExplosion = false;
-			CCSPlayer* pCSExplosionVictim = ToCSPlayer(pEntity);
+			CHL2MP_Player* pCSExplosionVictim = ToCSPlayer(pEntity);
 			if (pCSExplosionVictim)
 			{
 				wasAliveBeforeExplosion = pCSExplosionVictim->IsAlive();
@@ -1273,7 +1273,7 @@ ConVar cl_autohelp(
 		CBaseEntity *pInflictor = info.GetInflictor();
 		CBaseEntity *pKiller = info.GetAttacker();
 		CBasePlayer *pScorer = GetDeathScorer( pKiller, pInflictor );
-		CCSPlayer *pCSVictim = (CCSPlayer*)(pVictim);
+		CHL2MP_Player *pCSVictim = (CHL2MP_Player*)(pVictim);
 
 		bool bHeadshot = false;
 
@@ -1359,8 +1359,8 @@ ConVar cl_autohelp(
 		CBaseEntity *pInflictor = info.GetInflictor();
 		CBaseEntity *pKiller = info.GetAttacker();
 		CBasePlayer *pScorer = GetDeathScorer( pKiller, pInflictor );
-		CCSPlayer *pCSVictim = (CCSPlayer *)pVictim;
-		CCSPlayer *pCSScorer = (CCSPlayer *)pScorer;
+		CHL2MP_Player *pCSVictim = (CHL2MP_Player *)pVictim;
+		CHL2MP_Player *pCSScorer = (CHL2MP_Player *)pScorer;
 
 		CCS_GameStats.PlayerKilled( pVictim, info );
 		//=============================================================================
@@ -1524,7 +1524,7 @@ ConVar cl_autohelp(
 	bool CCSGameRules::FShouldSwitchWeapon( CBasePlayer *pPlayer, CBaseCombatWeapon *pWeapon )
 	{
 		bool bIsBeingGivenItem = false;
-		CCSPlayer *pCSPlayer = ToCSPlayer( pPlayer );
+		CHL2MP_Player *pCSPlayer = ToCSPlayer( pPlayer );
 		if ( pCSPlayer && pCSPlayer->IsBeingGivenItem() )
 			bIsBeingGivenItem = true;
 
@@ -1653,7 +1653,7 @@ ConVar cl_autohelp(
         // [tj] Clear domination data when a player disconnects
         //=============================================================================
          
-        CCSPlayer *pPlayer = ToCSPlayer( GetContainingEntity( pClient ) );
+        CHL2MP_Player *pPlayer = ToCSPlayer( GetContainingEntity( pClient ) );
         if ( pPlayer )
         {
             pPlayer->RemoveNemesisRelationships();
@@ -1795,7 +1795,7 @@ ConVar cl_autohelp(
 
 			for ( int iPlayer=0; iPlayer < pTeam->GetNumPlayers(); iPlayer++ )
 			{
-				CCSPlayer *pPlayer = ToCSPlayer( pTeam->GetPlayer( iPlayer ) );
+				CHL2MP_Player *pPlayer = ToCSPlayer( pTeam->GetPlayer( iPlayer ) );
 				Assert( pPlayer );
 				if ( !pPlayer )
 					continue;
@@ -2265,7 +2265,7 @@ ConVar cl_autohelp(
 		//=============================================================================
         for ( int clientIndex = 1; clientIndex <= gpGlobals->maxClients; clientIndex++ )
 		{
-			CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( clientIndex );
+			CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( clientIndex );
 			if(pPlayer)
 			{
 				pPlayer->OnPreResetRound();
@@ -2370,7 +2370,7 @@ ConVar cl_autohelp(
 			// Reset the player stats
 			for ( i = 1; i <= gpGlobals->maxClients; i++ )
 			{
-				CCSPlayer *pPlayer = CCSPlayer::Instance( i );
+				CHL2MP_Player *pPlayer = CHL2MP_Player::Instance( i );
 
 				if ( pPlayer && !FNullEnt( pPlayer->edict() ) )
 					pPlayer->Reset();
@@ -2575,7 +2575,7 @@ ConVar cl_autohelp(
 
 		for ( i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+			CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 
 			if ( !pPlayer )
 				continue;
@@ -2625,7 +2625,7 @@ ConVar cl_autohelp(
 		// know respawn all players
 		for ( i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+			CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 
 			if ( !pPlayer )
 				continue;
@@ -2695,7 +2695,7 @@ ConVar cl_autohelp(
         // [tj] Award same uniform achievement for qualifying teams
         for ( i = 1; i <= gpGlobals->maxClients; i++ )
         {
-            CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+            CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 
             if ( !pPlayer )
                 continue;
@@ -2714,7 +2714,7 @@ ConVar cl_autohelp(
 		// [menglish] reset per-round achievement variables for each player
 		for ( i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+			CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 			if( pPlayer )
 			{
 				pPlayer->ResetRoundBasedAchievementVariables();
@@ -2742,7 +2742,7 @@ ConVar cl_autohelp(
 		// now run a tkpunish check, after the map has been cleaned up
 		for ( i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+			CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 
 			if ( !pPlayer )
 				continue;
@@ -2865,7 +2865,7 @@ ConVar cl_autohelp(
 		//Create an array of the indeces of bomb carrier candidates
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i ) );
+			CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i ) );
 
 			if( pPlayer && pPlayer->IsAlive() && pPlayer->GetTeamNumber() == TEAM_TERRORIST && numAliveTs[ALL_TERRORISTS] < ABSOLUTE_PLAYER_LIMIT  )
 			{
@@ -2900,7 +2900,7 @@ ConVar cl_autohelp(
 				// give the C4 sequentially
 				index = (lastBombGuyIndex[which] + 1) % numAliveTs[which];
 			}
-			CCSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( iTerrorists[which][index] ) );
+			CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( iTerrorists[which][index] ) );
 
 			Assert( pPlayer && pPlayer->GetTeamNumber() == TEAM_TERRORIST && pPlayer->IsAlive() );
 
@@ -3187,7 +3187,7 @@ ConVar cl_autohelp(
 
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = CCSPlayer::Instance( i );
+			CHL2MP_Player *pPlayer = CHL2MP_Player::Instance( i );
 			if ( pPlayer && !FNullEnt( pPlayer->edict() ) )
 			{
 				if ( pPlayer->State_Get() == STATE_ACTIVE )
@@ -3372,7 +3372,7 @@ ConVar cl_autohelp(
 		IGameEvent *event2 = gameeventmanager->CreateEvent( "player_death" );
 		if ( event2 )
 		{
-			CCSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex(1) );
+			CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex(1) );
 			
 			// pCappingPlayers is a null terminated list of player indeces
 			event2->SetInt("userid", pPlayer->GetUserID() );
@@ -3554,7 +3554,7 @@ ConVar cl_autohelp(
 		int playerNum;
 		for (playerNum = 1; playerNum <= gpGlobals->maxClients; ++playerNum)
 		{
-			CCSPlayer *player = (CCSPlayer *)UTIL_PlayerByIndex(playerNum);
+			CHL2MP_Player *player = (CHL2MP_Player *)UTIL_PlayerByIndex(playerNum);
 			if (player == NULL)
 			{
 				continue;
@@ -3687,7 +3687,7 @@ ConVar cl_autohelp(
 
 		bool operator()( CBasePlayer *basePlayer )
 		{
-			CCSPlayer *player = ToCSPlayer( basePlayer );
+			CHL2MP_Player *player = ToCSPlayer( basePlayer );
 			if ( !player )
 				return true;
 
@@ -3821,7 +3821,7 @@ ConVar cl_autohelp(
 		{
 			// last person to join the server
 			int iHighestUserID = -1;
-			CCSPlayer *pPlayerToSwap = NULL;
+			CHL2MP_Player *pPlayerToSwap = NULL;
 
 			// check if target team is full, exit if so
 			if ( TeamFull(iTragetTeam) )
@@ -3830,7 +3830,7 @@ ConVar cl_autohelp(
 			// search for player with highest UserID = most recently joined to switch over
 			for ( int j = 1; j <= gpGlobals->maxClients; j++ )
 			{
-				CCSPlayer *pPlayer = (CCSPlayer *)UTIL_PlayerByIndex( j );
+				CHL2MP_Player *pPlayer = (CHL2MP_Player *)UTIL_PlayerByIndex( j );
 
 				if ( !pPlayer )
 					continue;
@@ -4023,7 +4023,7 @@ ConVar cl_autohelp(
 	//=========================================================
 	bool CCSGameRules::FPlayerCanRespawn( CBasePlayer *pBasePlayer )
 	{
-		CCSPlayer *pPlayer = ToCSPlayer( pBasePlayer );
+		CHL2MP_Player *pPlayer = ToCSPlayer( pBasePlayer );
 		if ( !pPlayer )
 			Error( "FPlayerCanRespawn: pPlayer=0" );
 
@@ -4246,7 +4246,7 @@ ConVar cl_autohelp(
 		// [tj] Inform players that the round is over
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+			CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 			if(pPlayer)
 			{
 				pPlayer->OnRoundEnd(iWinnerTeam, iReason);
@@ -4317,7 +4317,7 @@ ConVar cl_autohelp(
 			
 			for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 			{
-				CCSPlayer* pPlayer = (CCSPlayer*)UTIL_PlayerByIndex( i );
+				CHL2MP_Player* pPlayer = (CHL2MP_Player*)UTIL_PlayerByIndex( i );
 				if (pPlayer)
 				{
 					int teamNum = pPlayer->GetTeamNumber();
@@ -4340,7 +4340,7 @@ ConVar cl_autohelp(
 
 				for ( int iPlayer=0; iPlayer < pTeam->GetNumPlayers(); iPlayer++ )
 				{
-					CCSPlayer *pPlayer = ToCSPlayer( pTeam->GetPlayer( iPlayer ) );
+					CHL2MP_Player *pPlayer = ToCSPlayer( pTeam->GetPlayer( iPlayer ) );
 					Assert( pPlayer );
 					if ( !pPlayer )
 						continue;
@@ -4357,7 +4357,7 @@ ConVar cl_autohelp(
 
 				for ( int iPlayer=0; iPlayer < pTeam->GetNumPlayers(); iPlayer++ )
 				{
-					CCSPlayer *pPlayer = ToCSPlayer( pTeam->GetPlayer( iPlayer ) );
+					CHL2MP_Player *pPlayer = ToCSPlayer( pTeam->GetPlayer( iPlayer ) );
 					Assert( pPlayer );
 					if ( !pPlayer )
 						continue;
@@ -4374,7 +4374,7 @@ ConVar cl_autohelp(
 
 				for ( int iPlayer=0; iPlayer < pTeam->GetNumPlayers(); iPlayer++ )
 				{
-					CCSPlayer *pPlayer = ToCSPlayer( pTeam->GetPlayer( iPlayer ) );
+					CHL2MP_Player *pPlayer = ToCSPlayer( pTeam->GetPlayer( iPlayer ) );
 					Assert( pPlayer );
 					if ( !pPlayer )
 						continue;
@@ -4391,7 +4391,7 @@ ConVar cl_autohelp(
 			{
 				for ( int iPlayer=0; iPlayer < pWinningTeam->GetNumPlayers(); iPlayer++ )
 				{
-					CCSPlayer *pPlayer = ToCSPlayer( pWinningTeam->GetPlayer( iPlayer ) );
+					CHL2MP_Player *pPlayer = ToCSPlayer( pWinningTeam->GetPlayer( iPlayer ) );
 					if ( !pPlayer )
 						continue;
 
@@ -4408,7 +4408,7 @@ ConVar cl_autohelp(
 
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer* pPlayer = (CCSPlayer*)UTIL_PlayerByIndex( i );
+			CHL2MP_Player* pPlayer = (CHL2MP_Player*)UTIL_PlayerByIndex( i );
 			if (pPlayer)
 			{
 				int iTeam = pPlayer->GetTeamNumber();
@@ -4529,7 +4529,7 @@ ConVar cl_autohelp(
 		Assert ( 0 );
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			/* CCSPlayer *pPlayer = CCSPlayer::Instance( i );
+			/* CHL2MP_Player *pPlayer = CHL2MP_Player::Instance( i );
 			if ( pPlayer && !FNullEnt( pPlayer->edict() ) )
 				pPlayer->SwitchTeam(); */
 		}
@@ -4667,7 +4667,7 @@ ConVar cl_autohelp(
 	{
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = CCSPlayer::Instance( i );
+			CHL2MP_Player *pPlayer = CHL2MP_Player::Instance( i );
 
 			if ( pPlayer && !FNullEnt( pPlayer->edict() ) )
 			{
@@ -4888,7 +4888,7 @@ CBaseCombatWeapon *CCSGameRules::GetNextBestWeapon( CBaseCombatCharacter *pPlaye
 			continue;
 
 #ifndef CLIENT_DLL
-		CCSPlayer *csPlayer = ToCSPlayer(pPlayer);
+		CHL2MP_Player *csPlayer = ToCSPlayer(pPlayer);
 		CWeaponCSBase *csWeapon = static_cast< CWeaponCSBase * >(weapon);
 		if ( csPlayer && csPlayer->IsBot() && !TheCSBots()->IsWeaponUseable( csWeapon ) )
 			continue;
@@ -5064,7 +5064,7 @@ CCSAmmoDef* GetCSAmmoDef()
 	GetAmmoDef(); // to initialize the ammo info
 	return &ammoDef;
 }
-
+/*
 CAmmoDef* GetAmmoDef()
 {
 	static bool bInitted = false;
@@ -5102,7 +5102,7 @@ CAmmoDef* GetAmmoDef()
 	}
 
 	return &ammoDef;
-}
+}*/
 
 #ifndef CLIENT_DLL
 const char *CCSGameRules::GetChatPrefix( bool bTeamOnly, CBasePlayer *pPlayer )
@@ -5272,7 +5272,7 @@ void CCSGameRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 {
 	const char *pszNewName = engine->GetClientConVarValue( pPlayer->entindex(), "name" );
 	const char *pszOldName = pPlayer->GetPlayerName();
-	CCSPlayer *pCSPlayer = (CCSPlayer*)pPlayer;		
+	CHL2MP_Player *pCSPlayer = (CHL2MP_Player*)pPlayer;		
 	if ( pszOldName[0] != 0 && Q_strncmp( pszOldName, pszNewName, MAX_PLAYER_NAME_LENGTH-1 ) )		
 	{
 		pCSPlayer->ChangeName( pszNewName );		
@@ -5415,12 +5415,12 @@ int CCSGameRules::GetStartMoney( void )
 //-----------------------------------------------------------------------------
 // Purpose: Called when a player joins the game after it's started yet can still spawn in
 //-----------------------------------------------------------------------------
-void CCSGameRules::SpawningLatePlayer( CCSPlayer* pLatePlayer )
+void CCSGameRules::SpawningLatePlayer( CHL2MP_Player* pLatePlayer )
 {
 	//Reset the round kills number of enemies for the opposite team
 	for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 	{
-		CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+		CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 		if(pPlayer)
 		{
 			if(pPlayer->GetTeamNumber() == pLatePlayer->GetTeamNumber())
@@ -5457,11 +5457,11 @@ bool CCSGameRules::IsPistolRound()
 // [menglish]
 //=============================================================================
 
-void CCSGameRules::PlayerTookDamage(CCSPlayer* player, const CTakeDamageInfo &damageInfo)
+void CCSGameRules::PlayerTookDamage(CHL2MP_Player* player, const CTakeDamageInfo &damageInfo)
 {
 	CBaseEntity *pInflictor = damageInfo.GetInflictor();
 	CBaseEntity *pAttacker = damageInfo.GetAttacker();
-	CCSPlayer *pCSScorer = (CCSPlayer *)(GetDeathScorer( pAttacker, pInflictor ));
+	CHL2MP_Player *pCSScorer = (CHL2MP_Player *)(GetDeathScorer( pAttacker, pInflictor ));
 
 	if ( player && pCSScorer )
 	{

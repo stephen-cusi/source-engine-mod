@@ -17,7 +17,7 @@
 #include "shareddefs.h"
 #include "fx_blood.h"
 #include "view.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 
 CLIENTEFFECT_REGISTER_BEGIN( PrecacheEffectCSBloodSpray )
 CLIENTEFFECT_MATERIAL( "effects/blood_gore" )

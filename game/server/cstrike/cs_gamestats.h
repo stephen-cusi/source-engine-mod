@@ -17,7 +17,7 @@
 #include "GameEventListener.h"
 #include "steamworks_gamestats.h"
 #include "weapon_csbase.h"
-
+#include "hl2mp_player.h"
 // forward declares
 class CBreakableProp;
 
@@ -159,7 +159,7 @@ struct SCSSDeathData : public BaseStatData
 		m_DeathPos = info.GetDamagePosition();
 		m_iVictimTeam = pVictim->GetTeamNumber();
 		
-		CCSPlayer *pCSPlayer = ToCSPlayer( info.GetAttacker() );
+		CHL2MP_Player *pCSPlayer = ToCSPlayer( info.GetAttacker() );
 		if ( pCSPlayer )
 		{
 			m_iKillerTeam = pCSPlayer->GetTeamNumber();
@@ -246,22 +246,22 @@ public:
 			
 
 	// CSS specific events
-    void Event_BombPlanted( CCSPlayer *pPlayer );
-    void Event_BombDefused( CCSPlayer *pPlayer );
+    void Event_BombPlanted( CHL2MP_Player *pPlayer );
+    void Event_BombDefused( CHL2MP_Player *pPlayer );
 	void Event_PlayerDamage( CBasePlayer *pBasePlayer, const CTakeDamageInfo &info );
-	void Event_BombExploded( CCSPlayer *pPlayer );
-	void Event_MoneyEarned( CCSPlayer *pPlayer, int moneyEarned );
-	void Event_MoneySpent( CCSPlayer *pPlayer, int moneySpent, const char *pItemName );
-    void Event_HostageRescued( CCSPlayer *pPlayer );
-    void Event_PlayerSprayedDecal( CCSPlayer*pPlayer );
+	void Event_BombExploded( CHL2MP_Player *pPlayer );
+	void Event_MoneyEarned( CHL2MP_Player *pPlayer, int moneyEarned );
+	void Event_MoneySpent( CHL2MP_Player *pPlayer, int moneySpent, const char *pItemName );
+    void Event_HostageRescued( CHL2MP_Player *pPlayer );
+    void Event_PlayerSprayedDecal( CHL2MP_Player*pPlayer );
 	void Event_AllHostagesRescued();
-	void Event_BreakProp( CCSPlayer *pPlayer, CBreakableProp *pProp );
-    void Event_PlayerDonatedWeapon (CCSPlayer* pPlayer);
-    void Event_PlayerDominatedOther( CCSPlayer* pAttacker, CCSPlayer* pVictim);
-    void Event_PlayerRevenge( CCSPlayer* pAttacker );
-    void Event_PlayerAvengedTeammate( CCSPlayer* pAttacker, CCSPlayer* pAvengedPlayer );
-	void Event_MVPEarned( CCSPlayer* pPlayer );	
-	void Event_KnifeUse( CCSPlayer* pPlayer, bool bStab, int iDamage );
+	void Event_BreakProp( CHL2MP_Player *pPlayer, CBreakableProp *pProp );
+    void Event_PlayerDonatedWeapon (CHL2MP_Player* pPlayer);
+    void Event_PlayerDominatedOther( CHL2MP_Player* pAttacker, CHL2MP_Player* pVictim);
+    void Event_PlayerRevenge( CHL2MP_Player* pAttacker );
+    void Event_PlayerAvengedTeammate( CHL2MP_Player* pAttacker, CHL2MP_Player* pAvengedPlayer );
+	void Event_MVPEarned( CHL2MP_Player* pPlayer );	
+	void Event_KnifeUse( CHL2MP_Player* pPlayer, bool bStab, int iDamage );
 
 	virtual void FireGameEvent( IGameEvent *event );
 
@@ -278,11 +278,11 @@ public:
     void						ResetAllStats();
 	void						ResetWeaponStats();
  	void						IncrementTeamStat( int iTeamIndex, int iStatIndex, int iAmount );
-	void                        CalcDominationAndRevenge( CCSPlayer *pAttacker, CCSPlayer *pVictim, int *piDeathFlags );
-    void                        CalculateOverkill( CCSPlayer* pAttacker, CCSPlayer* pVictim );
+	void                        CalcDominationAndRevenge( CHL2MP_Player *pAttacker, CHL2MP_Player *pVictim, int *piDeathFlags );
+    void                        CalculateOverkill( CHL2MP_Player* pAttacker, CHL2MP_Player* pVictim );
 	void						PlayerKilled( CBasePlayer *pVictim, const CTakeDamageInfo &info );
 
-	void						IncrementStat( CCSPlayer* pPlayer, CSStatType_t statId, int iValue, bool bPlayerOnly = false );
+	void						IncrementStat( CHL2MP_Player* pPlayer, CSStatType_t statId, int iValue, bool bPlayerOnly = false );
 	// Steamworks Gamestats 
 	virtual void SubmitGameStats( KeyValues *pKV );
 
@@ -292,13 +292,13 @@ public:
 	}
 
 protected:	
-	void						SetStat( CCSPlayer *pPlayer, CSStatType_t statId, int iValue );
-    void						TrackKillStats( CCSPlayer *pAttacker, CCSPlayer *pVictim );
+	void						SetStat( CHL2MP_Player *pPlayer, CSStatType_t statId, int iValue );
+    void						TrackKillStats( CHL2MP_Player *pAttacker, CHL2MP_Player *pVictim );
     void                        ComputeRollingStatAverages();
 	void                        ComputeDirectStatAverages();
     void                        SendRollingStatsAveragesToAllPlayers();
 	void                        SendDirectStatsAveragesToAllPlayers();
-	void						SendStatsToPlayer( CCSPlayer * pPlayer, int iMinStatPriority );
+	void						SendStatsToPlayer( CHL2MP_Player * pPlayer, int iMinStatPriority );
 
 private:
 	PlayerStats_t				m_aPlayerStats[MAX_PLAYERS+1];	// List of stats for each player for current life - reset after each death    

@@ -88,7 +88,7 @@ void CHudRoundTimer::ApplySchemeSettings(vgui::IScheme *pScheme)
 bool CHudRoundTimer::ShouldDraw()
 {
 	//necessary?
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer )
 	{
 		return !pPlayer->IsObserver();

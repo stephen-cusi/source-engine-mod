@@ -304,7 +304,7 @@ void WinPanel_Round::FireGameEvent( IGameEvent* event )
 	}
 }
 
-void WinPanel_Round::SetMVP( C_CSPlayer* pPlayer, CSMvpReason_t reason )
+void WinPanel_Round::SetMVP( C_HL2MP_Player* pPlayer, CSMvpReason_t reason )
 {
 	CAvatarImagePanel* pMVP_Avatar = dynamic_cast<CAvatarImagePanel*>(FindChildByName("MVP_Avatar"));
 	

@@ -88,7 +88,7 @@ bool Pickup_GetPreferredCarryAngles( CBaseEntity *pObject, CBasePlayer *pPlayer,
 	{
 		if ( pPickup->HasPreferredCarryAnglesForPlayer( pPlayer ) )
 		{
-			outputAnglesWorldSpace = TransformAnglesToWorldSpace( pPickup->PreferredCarryAngles(), localToWorld );
+			outputAnglesWorldSpace = TransformAnglesToWorldSpace( pPickup->PreferredCarryAngles( pPlayer ), localToWorld );
 			return true;
 		}
 	}

@@ -12,11 +12,11 @@
 #if defined( CLIENT_DLL )
 
 	#define CWeaponXM1014 C_WeaponXM1014
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "te_shotgun_shot.h"
 
 #endif
@@ -101,7 +101,7 @@ float CWeaponXM1014::GetSpread() const
 
 void CWeaponXM1014::PrimaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -188,7 +188,7 @@ void CWeaponXM1014::PrimaryAttack()
 
 bool CWeaponXM1014::Reload()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -248,7 +248,7 @@ bool CWeaponXM1014::Reload()
 		SendReloadEvents();
 #endif
 		
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 		if ( pPlayer )
 			 pPlayer->RemoveAmmo( 1, m_iPrimaryAmmoType );
@@ -263,7 +263,7 @@ bool CWeaponXM1014::Reload()
 
 void CWeaponXM1014::WeaponIdle()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 

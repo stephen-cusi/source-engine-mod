@@ -16,7 +16,7 @@
 	
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "items.h"
 	#include "hegrenade_projectile.h"
 
@@ -51,7 +51,7 @@ PRECACHE_WEAPON_REGISTER( weapon_hegrenade );
 		// [Forrest] Start a new bullet group so that damage dealt by the grenade will be counted as a separate hit from damage previously dealt.
 		//=============================================================================
 #ifdef GAME_DLL
-		CCSPlayer *pCSPlayer = ToCSPlayer( pPlayer );
+		CHL2MP_Player *pCSPlayer = ToCSPlayer( pPlayer );
 		if ( pCSPlayer )
 		{
 			pCSPlayer->StartNewBulletGroup();

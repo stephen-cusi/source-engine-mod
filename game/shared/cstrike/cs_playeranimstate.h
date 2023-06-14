@@ -22,11 +22,11 @@
 	#undef CBaseAnimatingOverlay
 	#define CBaseAnimatingOverlay C_BaseAnimatingOverlay
 	#define CWeaponCSBase C_WeaponCSBase
-	#define CCSPlayer C_CSPlayer
+	#define CHL2MP_Player C_HL2MP_Player
 #else
 	class CBaseAnimatingOverlay;
 	class CWeaponCSBase; 
-	class CCSPlayer;
+	class CHL2MP_Player;
 #endif
 
 

@@ -3,7 +3,7 @@
 #define INCLUDED_funfact_cs
 #pragma once
 
-#include "cs_player.h"
+#include "hl2mp_player.h"
 
 struct FunFact
 {

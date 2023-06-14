@@ -153,7 +153,7 @@ bool PlayerQualifies( const CBasePlayer* pPlayer, int flags )
 }
 
 
-typedef int (*PlayerEvalFunction)(CCSPlayer* pPlayer);
+typedef int (*PlayerEvalFunction)(CHL2MP_Player* pPlayer);
 
 class CFunFact_PlayerEvalFunction : public FunFactEvaluator
 {
@@ -174,7 +174,7 @@ public:
 
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer* pPlayer = ToCSPlayer(UTIL_PlayerByIndex( i ) );
+			CHL2MP_Player* pPlayer = ToCSPlayer(UTIL_PlayerByIndex( i ) );
 			if ( pPlayer )
 			{
 				if (!PlayerQualifies(pPlayer, m_flags))
@@ -468,22 +468,22 @@ bool FFEVAL_CT_WIN_NO_CASUALTIES( int &iPlayer, int &data1, int &data2, int &dat
 	return ( CSGameRules()->m_iRoundWinStatus == WINNER_CT && CSGameRules()->m_bNoCTsKilled );
 }
 
-int FFEVAL_KILLED_DEFUSER( CCSPlayer* pPlayer )
+int FFEVAL_KILLED_DEFUSER( CHL2MP_Player* pPlayer )
 {
 	return pPlayer->GetKilledDefuser() ? 1 : 0;
 }
 
-int FFEVAL_KILLED_RESCUER( CCSPlayer* pPlayer )
+int FFEVAL_KILLED_RESCUER( CHL2MP_Player* pPlayer )
 {
 	return pPlayer->GetKilledRescuer() ? 1 : 0;
 }
 
-int FFEVAL_KILLS_WITH_GRENADE( CCSPlayer* pPlayer )
+int FFEVAL_KILLS_WITH_GRENADE( CHL2MP_Player* pPlayer )
 {
 	return pPlayer->GetMaxGrenadeKills();
 }
 
-int FFEVAL_DAMAGE_NO_KILLS( CCSPlayer* pPlayer )
+int FFEVAL_DAMAGE_NO_KILLS( CHL2MP_Player* pPlayer )
 {
 	if (CCS_GameStats.FindPlayerStats(pPlayer).statsCurrentRound[CSSTAT_KILLS] == 0)
 		return CCS_GameStats.FindPlayerStats(pPlayer).statsCurrentRound[CSSTAT_DAMAGE];
@@ -491,7 +491,7 @@ int FFEVAL_DAMAGE_NO_KILLS( CCSPlayer* pPlayer )
 		return 0;
 }
 
-int FFEVAL_FIRST_KILL( CCSPlayer* pPlayer )
+int FFEVAL_FIRST_KILL( CHL2MP_Player* pPlayer )
 {
 	if ( pPlayer == CSGameRules()->m_pFirstKill && CSGameRules()->m_firstKillTime < FIRST_KILL_TIME )
 		return CSGameRules()->m_firstKillTime;
@@ -499,7 +499,7 @@ int FFEVAL_FIRST_KILL( CCSPlayer* pPlayer )
 		return 0;
 }
 
-int FFEVAL_FIRST_BLOOD( CCSPlayer* pPlayer )
+int FFEVAL_FIRST_BLOOD( CHL2MP_Player* pPlayer )
 {
 	if ( pPlayer == CSGameRules()->m_pFirstBlood && CSGameRules()->m_firstBloodTime < FIRST_BLOOD_TIME )
 		return CSGameRules()->m_firstBloodTime;
@@ -517,7 +517,7 @@ bool FFEVAL_SHORT_ROUND( int &iPlayer, int &data1, int &data2, int &data3 )
 	return false;
 }
 
-int FFEVAL_ACCURACY( CCSPlayer* pPlayer )
+int FFEVAL_ACCURACY( CHL2MP_Player* pPlayer )
 {
 	float shots = CCS_GameStats.FindPlayerStats(pPlayer).statsCurrentRound[CSSTAT_SHOTS_FIRED];
 	float hits = CCS_GameStats.FindPlayerStats(pPlayer).statsCurrentRound[CSSTAT_SHOTS_HIT];
@@ -526,14 +526,14 @@ int FFEVAL_ACCURACY( CCSPlayer* pPlayer )
 	return 0;
 }
 
-int FFEVAL_KILLED_HALF_OF_ENEMIES( CCSPlayer* pPlayer )
+int FFEVAL_KILLED_HALF_OF_ENEMIES( CHL2MP_Player* pPlayer )
 {
     return pPlayer->GetPercentageOfEnemyTeamKilled();
 }
 
 bool FFEVAL_WON_AS_LAST_MEMBER( int &iPlayer, int &data1, int &data2, int &data3 )
 {
-	CCSPlayer *pCSPlayer = NULL;
+	CHL2MP_Player *pCSPlayer = NULL;
 	int winningTeam = CSGameRules()->m_iRoundWinStatus;
 
 	if (winningTeam != TEAM_TERRORIST && winningTeam != TEAM_CT)
@@ -570,17 +570,17 @@ bool FFEVAL_WON_AS_LAST_MEMBER( int &iPlayer, int &data1, int &data2, int &data3
 	return false;
 }
 
-int FFEVAL_KNIFE_IN_GUNFIGHT( CCSPlayer* pPlayer )
+int FFEVAL_KNIFE_IN_GUNFIGHT( CHL2MP_Player* pPlayer )
 {
 	return pPlayer->WasWieldingKnifeAndKilledByGun() ? 1 : 0;
 }
 
-int FFEVAL_MULTIPLE_ATTACKER_COUNT( CCSPlayer* pPlayer )
+int FFEVAL_MULTIPLE_ATTACKER_COUNT( CHL2MP_Player* pPlayer )
 {
 	return pPlayer->GetNumEnemyDamagers();
 }
 
-int FFEVAL_USED_ALL_AMMO( CCSPlayer* pPlayer )
+int FFEVAL_USED_ALL_AMMO( CHL2MP_Player* pPlayer )
 {
     CWeaponCSBase *pRifleWeapon = dynamic_cast< CWeaponCSBase * >(pPlayer->Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
     CWeaponCSBase *pHandgunWeapon = dynamic_cast< CWeaponCSBase * >(pPlayer->Weapon_GetSlot( WEAPON_SLOT_PISTOL ));
@@ -590,17 +590,17 @@ int FFEVAL_USED_ALL_AMMO( CCSPlayer* pPlayer )
 		return 0;
 }
 
-int FFEVAL_DAMAGE_MULTIPLE_ENEMIES( CCSPlayer* pPlayer )
+int FFEVAL_DAMAGE_MULTIPLE_ENEMIES( CHL2MP_Player* pPlayer )
 {
 	return pPlayer->GetNumEnemiesDamaged();
 }
 
-int FFEVAL_USED_MULTIPLE_WEAPONS( CCSPlayer* pPlayer )
+int FFEVAL_USED_MULTIPLE_WEAPONS( CHL2MP_Player* pPlayer )
 {
 	return pPlayer->GetNumFirearmsUsed();
 }
 
-int FFEVAL_DEFUSED_WITH_DROPPED_KIT( CCSPlayer* pPlayer )
+int FFEVAL_DEFUSED_WITH_DROPPED_KIT( CHL2MP_Player* pPlayer )
 {
     return pPlayer->GetDefusedWithPickedUpKit() ? 1 : 0;
 }
@@ -638,7 +638,7 @@ bool FFEVAL_SAME_UNIFORM( int iTeam, int &iData1, int &iData2, int &iData3 )
 
     for ( int i = 1; i <= gpGlobals->maxClients; i++ )
     {
-        CCSPlayer *pCSPlayer = ToCSPlayer(UTIL_PlayerByIndex( i ) );
+        CHL2MP_Player *pCSPlayer = ToCSPlayer(UTIL_PlayerByIndex( i ) );
 		if ( pCSPlayer && pCSPlayer->GetTeamNumber() == iTeam && pCSPlayer->State_Get() != STATE_PICKINGCLASS)
         {		
             if (iUniform == -1)

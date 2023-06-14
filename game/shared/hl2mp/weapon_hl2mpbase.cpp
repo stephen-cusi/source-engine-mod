@@ -296,16 +296,16 @@ void CWeaponHL2MPBase::FallThink( void )
 }
 #endif
 
-const CHL2MPSWeaponInfo &CWeaponHL2MPBase::GetHL2MPWpnData() const
+const CCSWeaponInfo &CWeaponHL2MPBase::GetHL2MPWpnData() const
 {
 	const FileWeaponInfo_t *pWeaponInfo = &GetWpnData();
-	const CHL2MPSWeaponInfo *pHL2MPInfo;
+	const CCSWeaponInfo *pHL2MPInfo;
 
 	#ifdef _DEBUG
-		pHL2MPInfo = dynamic_cast< const CHL2MPSWeaponInfo* >( pWeaponInfo );
+		pHL2MPInfo = dynamic_cast< const CCSWeaponInfo * >( pWeaponInfo );
 		Assert( pHL2MPInfo );
 	#else
-		pHL2MPInfo = static_cast< const CHL2MPSWeaponInfo* >( pWeaponInfo );
+		pHL2MPInfo = static_cast< const CCSWeaponInfo * >( pWeaponInfo );
 	#endif
 
 	return *pHL2MPInfo;
@@ -314,7 +314,7 @@ void CWeaponHL2MPBase::FireBullets( const FireBulletsInfo_t &info )
 {
 	FireBulletsInfo_t modinfo = info;
 
-	modinfo.m_iPlayerDamage = GetHL2MPWpnData().m_iPlayerDamage;
+	modinfo.m_iPlayerDamage = GetHL2MPWpnData().m_iDamage;
 
 	BaseClass::FireBullets( modinfo );
 }

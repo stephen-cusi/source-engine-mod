@@ -12,11 +12,11 @@
 #if defined( CLIENT_DLL )
 
 	#define CWeaponGlock C_WeaponGlock
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 
 #endif
 
@@ -114,7 +114,7 @@ bool CWeaponGlock::Deploy( )
 
 void CWeaponGlock::SecondaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -138,7 +138,7 @@ float CWeaponGlock::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 
@@ -178,7 +178,7 @@ float CWeaponGlock::GetInaccuracy() const
 
 void CWeaponGlock::PrimaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -267,7 +267,7 @@ void CWeaponGlock::PrimaryAttack()
 
 void CWeaponGlock::FireRemaining( float fSpread )
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		Error( "!pPlayer" );
 
@@ -343,7 +343,7 @@ bool CWeaponGlock::Reload()
 
 void CWeaponGlock::WeaponIdle()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 

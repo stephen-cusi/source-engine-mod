@@ -14,10 +14,10 @@
 #include "base_playeranimstate.h"
 
 #ifdef CLIENT_DLL
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #include "c_weapon_portalgun.h"
 #else
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "weapon_portalgun.h"
 #endif
 
@@ -29,7 +29,7 @@
 // Input  : *pPlayer - 
 // Output : CMultiPlayerAnimState*
 //-----------------------------------------------------------------------------
-CPortalPlayerAnimState* CreatePortalPlayerAnimState( CPortal_Player *pPlayer )
+CPortalPlayerAnimState* CreatePortalPlayerAnimState( CHL2MP_Player *pPlayer )
 {
 	// Setup the movement data.
 	MultiPlayerMovementData_t movementData;
@@ -83,7 +83,7 @@ CPortalPlayerAnimState::~CPortalPlayerAnimState()
 // Purpose: Initialize Portal specific animation state.
 // Input  : *pPlayer - 
 //-----------------------------------------------------------------------------
-void CPortalPlayerAnimState::InitPortal( CPortal_Player *pPlayer )
+void CPortalPlayerAnimState::InitPortal( CHL2MP_Player *pPlayer )
 {
 	m_pPortalPlayer = pPlayer;
 	m_bInAirWalk = false;
@@ -130,7 +130,7 @@ void CPortalPlayerAnimState::DoAnimationEvent( PlayerAnimEvent_t event, int nDat
 	case PLAYERANIMEVENT_ATTACK_PRIMARY:
 	case PLAYERANIMEVENT_ATTACK_SECONDARY:
 		{
-			CPortal_Player *pPlayer = GetPortalPlayer();
+			CHL2MP_Player *pPlayer = GetPortalPlayer();
 			if ( !pPlayer )
 				return;
 
@@ -181,7 +181,7 @@ void CPortalPlayerAnimState::DoAnimationEvent( PlayerAnimEvent_t event, int nDat
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CPortalPlayerAnimState::Teleport( const Vector *pNewOrigin, const QAngle *pNewAngles, CPortal_Player* pPlayer )
+void CPortalPlayerAnimState::Teleport( const Vector *pNewOrigin, const QAngle *pNewAngles, CHL2MP_Player* pPlayer )
 {
 	QAngle absangles = pPlayer->GetAbsAngles();
 	m_angRender = absangles;

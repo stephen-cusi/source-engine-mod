@@ -5,9 +5,9 @@
 //=============================================================================//
 
 #ifdef CLIENT_DLL
-	#include "c_portal_player.h"
+	#include "c_hl2mp_player.h"
 #else
-	#include "portal_player.h"
+	#include "hl2mp_player.h"
 #endif
 
 #include "weapon_portalbase.h"

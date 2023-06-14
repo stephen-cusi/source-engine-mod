@@ -14,10 +14,10 @@
 #include "rumble_shared.h"
 
 #if defined( CLIENT_DLL )
-	#include "c_portal_player.h"
+	#include "c_hl2mp_player.h"
 	#include "c_rumble.h"
 #else
-	#include "portal_player.h"
+	#include "hl2mp_player.h"
 	#include "env_player_surface_trigger.h"
 	#include "portal_gamestats.h"
 	#include "physicsshadowclone.h"
@@ -95,7 +95,7 @@ public:
 private:
 
 
-	CPortal_Player	*GetPortalPlayer();
+	CHL2MP_Player	*GetPortalPlayer();
 };
 
 //-----------------------------------------------------------------------------
@@ -108,9 +108,9 @@ CPortalGameMovement::CPortalGameMovement()
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-inline CPortal_Player	*CPortalGameMovement::GetPortalPlayer()
+inline CHL2MP_Player	*CPortalGameMovement::GetPortalPlayer()
 {
-	return static_cast< CPortal_Player * >( player );
+	return static_cast< CHL2MP_Player * >( player );
 }
 
 //-----------------------------------------------------------------------------
@@ -138,7 +138,7 @@ void CPortalGameMovement::ProcessMovement( CBasePlayer *pPlayer, CMoveData *pMov
 	mv = pMove;
 	mv->m_flMaxSpeed = sv_maxspeed.GetFloat();
 	
-	m_bInPortalEnv = (((CPortal_Player *)pPlayer)->m_hPortalEnvironment != NULL);
+	m_bInPortalEnv = (((CHL2MP_Player *)pPlayer)->m_hPortalEnvironment != NULL);
 
 	g_bAllowForcePortalTrace = m_bInPortalEnv;
 	g_bForcePortalTrace = m_bInPortalEnv;
@@ -169,7 +169,7 @@ bool CPortalGameMovement::CheckJumpButton()
 {
 	if ( BaseClass::CheckJumpButton() && GetPortalPlayer() )
 	{
-		GetPortalPlayer()->DoAnimationEvent( PLAYERANIMEVENT_JUMP, 0 );
+		//GetPortalPlayer()->DoAnimationEvent( PLAYERANIMEVENT_JUMP, 0 );
 		return true;
 	}
 
@@ -196,7 +196,7 @@ void CPortalGameMovement::FunnelIntoPortal( CProp_Portal *pPortal, Vector &wishd
 	VectorNormalize( vPortalUp );
 
 	// Make sure the player is looking downward
-	CPortal_Player *pPlayer = GetPortalPlayer();
+	CHL2MP_Player *pPlayer = GetPortalPlayer();
 
 	Vector vPlayerForward;
 	pPlayer->EyeVectors( &vPlayerForward );
@@ -259,7 +259,9 @@ void CPortalGameMovement::AirAccelerate( Vector& wishdir, float wishspeed, float
 
 	// Determine veer amount
 	currentspeed = mv->m_vecVelocity.Dot(wishdir);
-
+	//Msg("wishdir: %f %f %f\n", wishdir.x, wishdir.y, wishdir.z);
+	//Msg("currentspeed: %f\n", currentspeed);
+	//Msg("wishspd: %f\n", wishspd);
 	// See how much to add
 	addspeed = wishspd - currentspeed;
 
@@ -299,7 +301,6 @@ void CPortalGameMovement::AirMove( void )
 	// Copy movement amounts
 	fmove = mv->m_flForwardMove;
 	smove = mv->m_flSideMove;
-
 	// Zero out z components of movement vectors
 	forward[2] = 0;
 	right[2]   = 0;
@@ -315,7 +316,7 @@ void CPortalGameMovement::AirMove( void )
 	//
 	// Don't let the player screw their fling because of adjusting into a floor portal
 	//
-	if ( mv->m_vecVelocity[ 0 ] * mv->m_vecVelocity[ 0 ] + mv->m_vecVelocity[ 1 ] * mv->m_vecVelocity[ 1 ] > MIN_FLING_SPEED * MIN_FLING_SPEED )
+	/*if (mv->m_vecVelocity[0] * mv->m_vecVelocity[0] + mv->m_vecVelocity[1] * mv->m_vecVelocity[1] > MIN_FLING_SPEED * MIN_FLING_SPEED)
 	{
 		if ( mv->m_vecVelocity[ 0 ] > MIN_FLING_SPEED * 0.5f && wishdir[ 0 ] < 0.0f )
 			wishdir[ 0 ] = 0.0f;
@@ -326,12 +327,12 @@ void CPortalGameMovement::AirMove( void )
 			wishdir[ 1 ] = 0.0f;
 		else if ( mv->m_vecVelocity[ 1 ] < -MIN_FLING_SPEED * 0.5f && wishdir[ 1 ] > 0.0f )
 			wishdir[ 1 ] = 0.0f;
-	}
+	}*/
 
 	//
 	// Try to autocorrect the player to fall into the middle of the portal
 	//
-	else if ( sv_player_funnel_into_portals.GetBool() )
+	if ( sv_player_funnel_into_portals.GetBool() )
 	{
 		int iPortalCount = CProp_Portal_Shared::AllPortals.Count();
 		if( iPortalCount != 0 )
@@ -359,7 +360,7 @@ void CPortalGameMovement::AirMove( void )
 		wishspeed = mv->m_flMaxSpeed;
 	}
 
-	AirAccelerate( wishdir, wishspeed, 15.0f );
+	AirAccelerate( wishdir, wishspeed, sv_airaccelerate.GetFloat() );
 
 	// Add in any base velocity to the current velocity.
 	VectorAdd(mv->m_vecVelocity, player->GetBaseVelocity(), mv->m_vecVelocity );
@@ -401,7 +402,7 @@ void TracePlayerBBoxForGround2( const Vector& start, const Vector& end, const Ve
 
 	VPROF( "TracePlayerBBoxForGround" );
 
-	CPortal_Player *pPortalPlayer = dynamic_cast<CPortal_Player *>(player->GetRefEHandle().Get());
+	CHL2MP_Player *pPortalPlayer = dynamic_cast<CHL2MP_Player *>(player->GetRefEHandle().Get());
 	CProp_Portal *pPlayerPortal = pPortalPlayer->m_hPortalEnvironment;
 
 #ifndef CLIENT_DLL
@@ -614,7 +615,7 @@ int CPortalGameMovement::CheckStuck( void )
 {
 	if( BaseClass::CheckStuck() )
 	{
-		CPortal_Player *pPortalPlayer = GetPortalPlayer();
+		CHL2MP_Player *pPortalPlayer = GetPortalPlayer();
 
 #ifndef CLIENT_DLL
 		if( pPortalPlayer->IsAlive() )
@@ -683,7 +684,7 @@ void CPortalGameMovement::TracePlayerBBox( const Vector& start, const Vector& en
 {
 	VPROF( "CGameMovement::TracePlayerBBox" );
 	
-	CPortal_Player *pPortalPlayer = (CPortal_Player *)((CBaseEntity *)mv->m_nPlayerHandle.Get());
+	CHL2MP_Player *pPortalPlayer = (CHL2MP_Player *)((CBaseEntity *)mv->m_nPlayerHandle.Get());
 
 	Ray_t ray;
 	ray.Init( start, end, GetPlayerMins(), GetPlayerMaxs() );
@@ -731,7 +732,7 @@ CBaseHandle CPortalGameMovement::TestPlayerPosition( const Vector& pos, int coll
 	else if ( pm.startsolid && pm.m_pEnt && CPSCollisionEntity::IsPortalSimulatorCollisionEntity( pm.m_pEnt ) )
 	{
 		// Stuck in a portal environment object, so unstick them!
-		CPortal_Player *pPortalPlayer = (CPortal_Player *)((CBaseEntity *)mv->m_nPlayerHandle.Get());
+		CHL2MP_Player *pPortalPlayer = (CHL2MP_Player *)((CBaseEntity *)mv->m_nPlayerHandle.Get());
 		pPortalPlayer->SetStuckOnPortalCollisionObject();
 
 		return INVALID_EHANDLE_INDEX;

@@ -8,7 +8,7 @@
 #include "hudelement.h"
 #include <vgui_controls/Panel.h>
 #include <vgui/ISurface.h>
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "clientmode_csnormal.h"
 #include "weapon_c4.h"
 
@@ -46,7 +46,7 @@ CHudProgressBar::CHudProgressBar( const char *name ) :
 
 void CHudProgressBar::Paint()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if( pPlayer && pPlayer->GetObserverMode() == OBS_MODE_IN_EYE )
 	{
@@ -95,7 +95,7 @@ void CHudProgressBar::Paint()
 
 bool CHudProgressBar::ShouldDraw()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if( pPlayer && pPlayer->GetObserverMode() == OBS_MODE_IN_EYE )
 	{

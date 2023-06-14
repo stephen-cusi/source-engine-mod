@@ -75,6 +75,7 @@ public:
 //=============================================================================
 // >> HL2_PLAYER
 //=============================================================================
+//#pragma message("CHL2_Player")
 class CHL2_Player : public CBasePlayer
 {
 public:
@@ -360,6 +361,8 @@ private:
 	EHANDLE				m_hLocatorTargetEntity; // The entity that's being tracked by the suit locator.
 
 	float				m_flTimeNextLadderHint;	// Next time we're eligible to display a HUD hint about a ladder.
+
+
 	
 	friend class CHL2GameMovement;
 };

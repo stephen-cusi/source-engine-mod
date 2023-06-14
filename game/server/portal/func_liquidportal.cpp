@@ -7,7 +7,7 @@
 
 #include "cbase.h"
 #include "func_liquidportal.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "isaverestore.h"
 #include "saverestore_utlvector.h"
 
@@ -85,7 +85,7 @@ void CFunc_LiquidPortal::Activate( void )
 
 		if( pEnt && pEnt->IsPlayer() )
 		{
-			((CPortal_Player *)pEnt)->m_hSurroundingLiquidPortal = this;
+			((CHL2MP_Player *)pEnt)->m_hSurroundingLiquidPortal = this;
 		}
 	}
 }
@@ -194,7 +194,7 @@ void CFunc_LiquidPortal::InputAddActivatorToTeleportList( inputdata_t &inputdata
 		m_hLeftToTeleportThisFill.AddToTail( inputdata.pActivator );
 	
 	if( inputdata.pActivator->IsPlayer() )
-		((CPortal_Player *)inputdata.pActivator)->m_hSurroundingLiquidPortal = this;
+		((CHL2MP_Player *)inputdata.pActivator)->m_hSurroundingLiquidPortal = this;
 }
 
 void CFunc_LiquidPortal::InputRemoveActivatorFromTeleportList( inputdata_t &inputdata )
@@ -208,8 +208,8 @@ void CFunc_LiquidPortal::InputRemoveActivatorFromTeleportList( inputdata_t &inpu
 		{
 			m_hTeleportList.FastRemove( i );
 
-			if( inputdata.pActivator->IsPlayer() && (((CPortal_Player *)inputdata.pActivator)->m_hSurroundingLiquidPortal.Get() == this) )
-				((CPortal_Player *)inputdata.pActivator)->m_hSurroundingLiquidPortal = NULL;
+			if( inputdata.pActivator->IsPlayer() && (((CHL2MP_Player *)inputdata.pActivator)->m_hSurroundingLiquidPortal.Get() == this) )
+				((CHL2MP_Player *)inputdata.pActivator)->m_hSurroundingLiquidPortal = NULL;
 			
 			if( m_bFillInProgress )
 			{
@@ -276,7 +276,7 @@ void CFunc_LiquidPortal::TeleportImmersedEntity( CBaseEntity *pEntity )
 
 	if( pEntity->IsPlayer() )
 	{
-		CPortal_Player *pEntityAsPlayer = (CPortal_Player *)pEntity;
+		CHL2MP_Player*pEntityAsPlayer = (CHL2MP_Player*)pEntity;
 
 		Vector vNewOrigin = m_matrixThisToLinked * pEntity->GetAbsOrigin();
 		QAngle qNewAngles = TransformAnglesToWorldSpace( pEntityAsPlayer->EyeAngles(), m_matrixThisToLinked.As3x4() );

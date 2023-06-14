@@ -120,9 +120,9 @@ void FX_FireBullets(
 	bool bDoEffects = true;
 
 #ifdef CLIENT_DLL
-	C_CSPlayer *pPlayer = ToCSPlayer( ClientEntityList().GetBaseEntity( iPlayerIndex ) );
+	C_HL2MP_Player *pPlayer = ToCSPlayer( ClientEntityList().GetBaseEntity( iPlayerIndex ) );
 #else
-	CCSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( iPlayerIndex) );
+	CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( iPlayerIndex) );
 #endif
 
 	const char * weaponAlias =	WeaponIDToAlias( iWeaponID );
@@ -175,13 +175,13 @@ void FX_FireBullets(
 	CCSWeaponInfo *pWeaponInfo = static_cast< CCSWeaponInfo* >( GetFileWeaponInfoFromHandle( hWpnInfo ) );
 
 	// Do the firing animation event.
-	if ( pPlayer && !pPlayer->IsDormant() )
+	/*if (pPlayer && !pPlayer->IsDormant())
 	{
 		if ( iMode == Primary_Mode )
 			pPlayer->GetPlayerAnimState()->DoAnimationEvent( PLAYERANIMEVENT_FIRE_GUN_PRIMARY );
 		else
 			pPlayer->GetPlayerAnimState()->DoAnimationEvent( PLAYERANIMEVENT_FIRE_GUN_SECONDARY );
-	}
+	}*/
 
 #ifndef CLIENT_DLL
 	// if this is server code, send the effect over to client as temp entity
@@ -312,13 +312,13 @@ void FX_FireBullets(
 void FX_PlantBomb( int iPlayerIndex, const Vector &vOrigin, PlantBombOption_t option )
 {
 #ifdef CLIENT_DLL
-	C_CSPlayer *pPlayer = ToCSPlayer( ClientEntityList().GetBaseEntity( iPlayerIndex ) );
+	C_HL2MP_Player *pPlayer = ToCSPlayer( ClientEntityList().GetBaseEntity( iPlayerIndex ) );
 #else
-	CCSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( iPlayerIndex) );
+	CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( iPlayerIndex) );
 #endif
 
 	// Do the firing animation event.
-	if ( pPlayer && !pPlayer->IsDormant() )
+	/*if (pPlayer && !pPlayer->IsDormant())
 	{
 		switch ( option )
 		{
@@ -334,7 +334,7 @@ void FX_PlantBomb( int iPlayerIndex, const Vector &vOrigin, PlantBombOption_t op
 			}
 			break;
 		}
-	}
+	}*/
 
 #ifndef CLIENT_DLL
 	// if this is server code, send the effect over to client as temp entity

@@ -77,7 +77,7 @@ public:
 	virtual void	OnPhysGunPickup( CBasePlayer *pPhysGunUser, PhysGunPickup_t reason );
 	virtual void	OnPhysGunDrop( CBasePlayer *pPhysGunUser, PhysGunDrop_t Reason );
 	virtual bool	HasPreferredCarryAnglesForPlayer( CBasePlayer *pPlayer );
-	virtual QAngle	PreferredCarryAngles( void );
+	virtual QAngle	PreferredCarryAngles( CBasePlayer *pPlayer );
 	virtual bool	OnAttemptPhysGunPickup( CBasePlayer *pPhysGunUser, PhysGunPickup_t reason );
 
 	const char *GetTracerType( void ) { return "AR2Tracer"; }

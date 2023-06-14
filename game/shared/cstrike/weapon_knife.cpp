@@ -9,9 +9,9 @@
 #include "cs_gamerules.h"
 
 #if defined( CLIENT_DLL )
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 #else
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "ilagcompensationmanager.h"
 	#include "cs_gamestats.h"
 #endif
@@ -216,7 +216,7 @@ void FindHullIntersection( const Vector &vecSrc, trace_t &tr, const Vector &mins
 
 void CKnife::PrimaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( pPlayer )
 	{
 #if !defined (CLIENT_DLL)
@@ -232,7 +232,7 @@ void CKnife::PrimaryAttack()
 
 void CKnife::SecondaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( pPlayer && !pPlayer->m_bIsDefusing && !CSGameRules()->IsFreezePeriod() )
 	{
 #if !defined (CLIENT_DLL)
@@ -304,7 +304,7 @@ void CKnife::WeaponIdle()
 	if (m_flTimeWeaponIdle > gpGlobals->curtime)
 		return;
 
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -332,7 +332,7 @@ void CKnife::WeaponIdle()
 
 bool CKnife::SwingOrStab( bool bStab )
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 

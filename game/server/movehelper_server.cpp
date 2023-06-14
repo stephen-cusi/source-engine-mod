@@ -373,7 +373,7 @@ bool CMoveHelperServer::PlayerFallingDamage( void )
 #ifdef CSTRIKE_DLL
 
         // Increment the stat for fall damage
-        CCSPlayer*  pPlayer = ToCSPlayer(m_pHostPlayer);
+        CHL2MP_Player*  pPlayer = ToCSPlayer(m_pHostPlayer);
 
         if ( pPlayer )
         {

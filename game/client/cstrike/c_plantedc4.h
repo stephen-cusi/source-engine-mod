@@ -12,7 +12,7 @@
 #include "in_buttons.h"
 #include "decals.h"
 
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 
 #include "utlvector.h"
 

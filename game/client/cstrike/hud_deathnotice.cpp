@@ -19,7 +19,7 @@
 
 #include "cs_shareddefs.h"
 #include "clientmode_csnormal.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "c_cs_playerresource.h"
 
 
@@ -171,7 +171,7 @@ void CHudDeathNotice::VidInit( void )
 //-----------------------------------------------------------------------------
 bool CHudDeathNotice::ShouldDraw( void )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( !pPlayer )
 		return false;
@@ -426,7 +426,7 @@ void CHudDeathNotice::FireGameEvent( IGameEvent *event )
 	deathMsg.bHeadshot = headshot;
 	deathMsg.iDominationImageId = -1;
 
-	CCSPlayer* pKiller = ToCSPlayer(ClientEntityList().GetBaseEntity(iKiller));
+	CHL2MP_Player* pKiller = ToCSPlayer(ClientEntityList().GetBaseEntity(iKiller));
 
 	// the local player is dead, see if this is a new nemesis or a revenge
 	if ( event->GetInt( "dominated" ) > 0 || (pKiller != NULL && pKiller->IsPlayerDominated(iVictim)) )

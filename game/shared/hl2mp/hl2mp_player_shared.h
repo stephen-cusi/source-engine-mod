@@ -20,14 +20,14 @@ enum
 	PLAYER_SOUNDS_METROPOLICE,
 	PLAYER_SOUNDS_MAX,
 };
-
+/*
 enum HL2MPPlayerState
 {
 	// Happily running around in the game.
 	STATE_ACTIVE=0,
 	STATE_OBSERVER_MODE,		// Noclipping around, watching players, etc.
 	NUM_PLAYER_STATES
-};
+};*/
 
 
 #if defined( CLIENT_DLL )
@@ -92,6 +92,7 @@ private:
 	QAngle				m_angRender;
 
 	float				m_flTurnCorrectionTime;
+
 };
 
 #endif //HL2MP_PLAYER_SHARED_h

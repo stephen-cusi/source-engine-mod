@@ -279,6 +279,8 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 class CGrabController : public IMotionEvent
 {
+	DECLARE_SIMPLE_DATADESC();
+
 public:
 
 	CGrabController( void );
@@ -290,6 +292,7 @@ public:
 	bool UpdateObject( CBasePlayer *pPlayer, float flError );
 
 	void SetTargetPosition( const Vector &target, const QAngle &targetOrientation );
+	void GetTargetPosition(Vector* target, QAngle* targetOrientation);
 	float ComputeError();
 	float GetLoadWeight( void ) const { return m_flLoadWeight; }
 	void SetAngleAlignment( float alignAngleCosine ) { m_angleAlignment = alignAngleCosine; }
@@ -301,9 +304,13 @@ public:
 
 	IMotionEvent::simresult_e Simulate( IPhysicsMotionController *pController, IPhysicsObject *pObject, float deltaTime, Vector &linear, AngularImpulse &angular );
 	float GetSavedMass( IPhysicsObject *pObject );
+	void SetPortalPenetratingEntity(CBaseEntity* pPenetrated);
 
 	QAngle			m_attachedAnglesPlayerSpace;
 	Vector			m_attachedPositionObjectSpace;
+	float			m_savedRotDamping[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+	float			m_savedMass[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+	EHANDLE			m_attachedEntity;
 
 private:
 	// Compute the max speed for an attached object
@@ -319,17 +326,40 @@ private:
 	bool			m_bIgnoreRelativePitch;
 
 	float			m_flLoadWeight;
-	float			m_savedRotDamping[VPHYSICS_MAX_OBJECT_LIST_COUNT];
-	float			m_savedMass[VPHYSICS_MAX_OBJECT_LIST_COUNT];
-	EHANDLE			m_attachedEntity;
 	QAngle			m_vecPreferredCarryAngles;
 	bool			m_bHasPreferredCarryAngles;
 
+	EHANDLE			m_PenetratedEntity;
 
 	IPhysicsMotionController *m_controller;
 	int				m_frameCount;
 	friend class CWeaponPhysCannon;
 };
+
+BEGIN_SIMPLE_DATADESC( CGrabController )
+
+	DEFINE_EMBEDDED( m_shadow ),
+
+	DEFINE_FIELD( m_timeToArrive,		FIELD_FLOAT ),
+	DEFINE_FIELD( m_errorTime,			FIELD_FLOAT ),
+	DEFINE_FIELD( m_error,				FIELD_FLOAT ),
+	DEFINE_FIELD( m_contactAmount,		FIELD_FLOAT ),
+	DEFINE_AUTO_ARRAY( m_savedRotDamping,	FIELD_FLOAT ),
+	DEFINE_AUTO_ARRAY( m_savedMass,	FIELD_FLOAT ),
+	DEFINE_FIELD( m_flLoadWeight,		FIELD_FLOAT ),
+	DEFINE_FIELD( m_bCarriedEntityBlocksLOS, FIELD_BOOLEAN ),
+	DEFINE_FIELD( m_bIgnoreRelativePitch, FIELD_BOOLEAN ),
+	DEFINE_FIELD( m_attachedEntity,	FIELD_EHANDLE ),
+	DEFINE_FIELD( m_angleAlignment, FIELD_FLOAT ),
+	DEFINE_FIELD( m_vecPreferredCarryAngles, FIELD_VECTOR ),
+	DEFINE_FIELD( m_bHasPreferredCarryAngles, FIELD_BOOLEAN ),
+	DEFINE_FIELD( m_attachedAnglesPlayerSpace, FIELD_VECTOR ),
+	DEFINE_FIELD( m_attachedPositionObjectSpace, FIELD_VECTOR ),
+
+	// Physptrs can't be inside embedded classes
+	// DEFINE_PHYSPTR( m_controller ),
+
+END_DATADESC()
 
 const float DEFAULT_MAX_ANGULAR = 360.0f * 10.0f;
 const float REDUCED_CARRY_MASS = 1.0f;
@@ -710,6 +740,19 @@ float CGrabController::GetSavedMass( IPhysicsObject *pObject )
 		}
 	}
 	return 0.0f;
+}
+void CGrabController::GetTargetPosition(Vector* target, QAngle* targetOrientation)
+{
+	if (target)
+		*target = m_shadow.targetPosition;
+
+	if (targetOrientation)
+		*targetOrientation = m_shadow.targetRotation;
+}
+
+void CGrabController::SetPortalPenetratingEntity(CBaseEntity* pPenetrated)
+{
+	m_PenetratedEntity = pPenetrated;
 }
 
 //-----------------------------------------------------------------------------
@@ -3602,6 +3645,108 @@ float PlayerPickupGetHeldObjectMass( CBaseEntity *pPickupControllerEntity, IPhys
 		mass = grab.GetSavedMass( pHeldObject );
 	}
 	return mass;
+}
+
+CBaseEntity* GetPlayerHeldEntity(CBasePlayer* pPlayer)
+{
+	CBaseEntity* pObject = NULL;
+	CPlayerPickupController* pPlayerPickupController = (CPlayerPickupController*)(pPlayer->GetUseEntity());
+
+	if (pPlayerPickupController)
+	{
+		pObject = pPlayerPickupController->GetGrabController().GetAttached();
+	}
+
+	return pObject;
+}
+
+CBasePlayer* GetPlayerHoldingEntity(CBaseEntity* pEntity)
+{
+	for (int i = 1; i <= gpGlobals->maxClients; ++i)
+	{
+		CBasePlayer* pPlayer = UTIL_PlayerByIndex(i);
+		if (pPlayer)
+		{
+			if (GetPlayerHeldEntity(pPlayer) == pEntity || PhysCannonGetHeldEntity(pPlayer->GetActiveWeapon()) == pEntity)
+				return pPlayer;
+		}
+	}
+	return NULL;
+}
+
+CGrabController* GetGrabControllerForPlayer(CBasePlayer* pPlayer)
+{
+	CPlayerPickupController* pPlayerPickupController = (CPlayerPickupController*)(pPlayer->GetUseEntity());
+	if (pPlayerPickupController)
+		return &(pPlayerPickupController->GetGrabController());
+
+	return NULL;
+}
+
+CGrabController* GetGrabControllerForPhysCannon(CBaseCombatWeapon* pActiveWeapon)
+{
+	CWeaponPhysCannon* pCannon = dynamic_cast<CWeaponPhysCannon*>(pActiveWeapon);
+	if (pCannon)
+	{
+		return &(pCannon->GetGrabController());
+	}
+
+	return NULL;
+}
+
+void GetSavedParamsForCarriedPhysObject(CGrabController* pGrabController, IPhysicsObject* pObject, float* pSavedMassOut, float* pSavedRotationalDampingOut)
+{
+	CBaseEntity* pHeld = pGrabController->m_attachedEntity;
+	if (pHeld)
+	{
+		if (pObject->GetGameData() == (void*)pHeld)
+		{
+			IPhysicsObject* pList[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+			int count = pHeld->VPhysicsGetObjectList(pList, ARRAYSIZE(pList));
+			for (int i = 0; i < count; i++)
+			{
+				if (pList[i] == pObject)
+				{
+					if (pSavedMassOut)
+						*pSavedMassOut = pGrabController->m_savedMass[i];
+
+					if (pSavedRotationalDampingOut)
+						*pSavedRotationalDampingOut = pGrabController->m_savedRotDamping[i];
+
+					return;
+				}
+			}
+		}
+	}
+
+	if (pSavedMassOut)
+		*pSavedMassOut = 0.0f;
+
+	if (pSavedRotationalDampingOut)
+		*pSavedRotationalDampingOut = 0.0f;
+
+	return;
+}
+void ShutdownPickupController(CBaseEntity* pPickupControllerEntity)
+{
+	CPlayerPickupController* pController = dynamic_cast<CPlayerPickupController*>(pPickupControllerEntity);
+
+	pController->Shutdown(false);
+}
+
+void UpdateGrabControllerTargetPosition(CBasePlayer* pPlayer, Vector* vPosition, QAngle* qAngles)
+{
+	CGrabController* pGrabController = GetGrabControllerForPlayer(pPlayer);
+
+	if (!pGrabController)
+		return;
+
+	pGrabController->UpdateObject(pPlayer, 12);
+	pGrabController->GetTargetPosition(vPosition, qAngles);
+}
+void GrabController_SetPortalPenetratingEntity(CGrabController* pController, CBaseEntity* pPenetrated)
+{
+	pController->SetPortalPenetratingEntity(pPenetrated);
 }
 
 #ifdef CLIENT_DLL

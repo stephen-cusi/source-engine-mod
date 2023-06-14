@@ -15,6 +15,10 @@ class CNPC_Alyx : public CNPC_PlayerCompanion
 {
 public:
 	DECLARE_CLASS( CNPC_Alyx, CNPC_PlayerCompanion );
+	CNPC_Alyx* m_pNext;
+	CNPC_Alyx();
+	~CNPC_Alyx();
+	static CNPC_Alyx* GetAlyx(void);
 
 	bool	CreateBehaviors();
 	void	Spawn( void );
@@ -30,6 +34,9 @@ public:
 	bool	ShouldLookForBetterWeapon() { return false; }
 	bool	IsReadinessCapable() { return false; }
 	void	DeathSound( const CTakeDamageInfo &info );
+	void	EnemyIgnited(CAI_BaseNPC* pVictim);
+	void	CombineBallSocketed(int iNumBounces);
+	PassengerState_e	GetPassengerState(void);
 
 	EHANDLE	m_hEmpTool;
 

@@ -10,7 +10,7 @@
 #include <vgui/IVGui.h>
 #include "vgui_controls/AnimationController.h"
 #include "iclientmode.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "c_cs_playerresource.h"
 #include <vgui_controls/Label.h>
 #include <vgui/ILocalize.h>
@@ -34,14 +34,14 @@ DECLARE_HUDELEMENT_DEPTH( CCSFreezePanel, 1 );
 // DECLARE_HUD_MESSAGE( CCSFreezePanel, DroppedEquipment );
 
 #define CALLOUT_WIDE		(XRES(100))
-#define CALLOUT_TALL		(XRES(50))
+#define CALLOUT_tALL		(XRES(50))
 
 
 ConVar cl_disablefreezecam(
 	"cl_disablefreezecam",
 	"0",
 	FCVAR_ARCHIVE,
-	"Turn on/off freezecam on client"
+	"turn on/off freezecam on client"
 	);
 
 
@@ -193,7 +193,7 @@ void CCSFreezePanel::FireGameEvent( IGameEvent * event )
 		int iPlayerIndexVictim = engine->GetPlayerForUserID( event->GetInt( "userid" ) );
 		int iPlayerIndexKiller = engine->GetPlayerForUserID( event->GetInt( "attacker" ) );
 		C_BasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
-		CCSPlayer* pKiller =  ToCSPlayer(ClientEntityList().GetBaseEntity(iPlayerIndexKiller));
+		CHL2MP_Player* pKiller =  ToCSPlayer(ClientEntityList().GetBaseEntity(iPlayerIndexKiller));
 
 		if ( pLocalPlayer && iPlayerIndexVictim == pLocalPlayer->entindex() )
 		{
@@ -248,7 +248,7 @@ void CCSFreezePanel::FireGameEvent( IGameEvent * event )
 
 		// Get the entity who killed us
 		int iKillerIndex = event->GetInt( "killer" );
-		CCSPlayer* pKiller =  ToCSPlayer(ClientEntityList().GetBaseEntity(iKillerIndex));
+		CHL2MP_Player* pKiller =  ToCSPlayer(ClientEntityList().GetBaseEntity(iKillerIndex));
 		m_pAvatar->ClearAvatar();
 
 		if ( pKiller )
@@ -298,9 +298,9 @@ bool CCSFreezePanel::ShouldDraw( void )
 	//=============================================================================
 }
 
-void CCSFreezePanel::OnScreenSizeChanged( int nOldWide, int nOldTall )
+void CCSFreezePanel::OnScreenSizeChanged( int nOldWide, int nOldtall )
 {
-	BaseClass::OnScreenSizeChanged(nOldWide, nOldTall);
+	BaseClass::OnScreenSizeChanged(nOldWide, nOldtall);
 
 	InitLayout();
 }
@@ -315,7 +315,7 @@ void CCSFreezePanel::SetActive( bool bActive )
 		const char *pKey = engine->Key_LookupBinding( "save_replay" );
 		if ( pKey == NULL || FStrEq( pKey, "(null)" ) )
 		{
-			pKey = "<NOT BOUND>";
+			pKey = "<NOt BOUND>";
 		}
 
 		char szKey[16];

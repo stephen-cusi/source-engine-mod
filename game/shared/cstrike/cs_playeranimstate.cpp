@@ -17,12 +17,12 @@
 #include "datacache/imdlcache.h"
 
 #ifdef CLIENT_DLL
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 	#include "bone_setup.h"
 	#include "interpolatedvar.h"
 	#include "c_cs_hostage.h"
 #else
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "cs_simple_hostage.h"
 	#include "cs_gamestats.h"
 #endif
@@ -125,7 +125,7 @@ private:
 	int m_iGrenadeSequence;
 	int m_iLastThrowGrenadeCounter;	// used to detect when the guy threw the grenade.
 
-	CCSPlayer *m_pPlayer;
+	CHL2MP_Player *m_pPlayer;
 
 	ICSPlayerAnimStateHelpers *m_pHelpers;
 

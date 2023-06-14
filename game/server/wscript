@@ -11,7 +11,7 @@ PROJECT_NAME = 'server'
 games = {
 	'hl2': ['server_base.vpc', 'server_hl2.vpc'],
 	'episodic':['server_base.vpc', 'server_episodic.vpc'],
-	'hl2mp': ['server_base.vpc', 'server_hl2mp.vpc'],
+	'hl2mp': ['server_base.vpc', 'server_hl2mp.vpc', 'server_portal.vpc', 'server_cstrike.vpc', 'nav_mesh.vpc'],
 	'portal': ['server_base.vpc', 'server_portal.vpc'],
 	'hl1': ['server_base.vpc', 'server_hl1.vpc'],
 	'hl1mp': ['server_base.vpc', 'server_hl1mp.vpc'],

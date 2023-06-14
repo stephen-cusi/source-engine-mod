@@ -9,9 +9,9 @@
 #include "fx_cs_shared.h"
 
 #ifdef CLIENT_DLL
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 #else
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 #endif
 
 
@@ -43,7 +43,7 @@ void CWeaponCSBaseGun::Spawn()
 
 bool CWeaponCSBaseGun::Deploy()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -57,7 +57,7 @@ bool CWeaponCSBaseGun::Deploy()
 
 void CWeaponCSBaseGun::ItemPostFrame()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 	if ( !pPlayer )
 		return;
@@ -88,7 +88,7 @@ void CWeaponCSBaseGun::PrimaryAttack()
 
 bool CWeaponCSBaseGun::CSBaseGunFire( float flCycleTime, CSWeaponMode weaponMode )
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -167,7 +167,7 @@ bool CWeaponCSBaseGun::CSBaseGunFire( float flCycleTime, CSWeaponMode weaponMode
 
 void CWeaponCSBaseGun::DoFireEffects()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	
 	if ( pPlayer )
 		 pPlayer->DoMuzzleFlash();
@@ -176,7 +176,7 @@ void CWeaponCSBaseGun::DoFireEffects()
 
 bool CWeaponCSBaseGun::Reload()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 

@@ -5,7 +5,7 @@
 // $NoKeywords: $
 //=============================================================================//
 #include "cbase.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "player_resource.h"
 #include "cs_simple_hostage.h"
 #include "cs_player_resource.h"
@@ -70,7 +70,7 @@ public:
 		if ( !player->IsAlive() || player->GetTeamNumber() != m_team )
 			return true;
 
-		CCSPlayer *csPlayer = ToCSPlayer( player );
+		CHL2MP_Player *csPlayer = ToCSPlayer( player );
 		if ( !csPlayer )
 			return true;
 
@@ -132,7 +132,7 @@ void CCSPlayerResource::UpdatePlayerData( void )
 
 	for ( i = 1; i <= gpGlobals->maxClients; i++ )
 	{
-		CCSPlayer *pPlayer = (CCSPlayer*)UTIL_PlayerByIndex( i );
+		CHL2MP_Player *pPlayer = (CHL2MP_Player*)UTIL_PlayerByIndex( i );
 		
 		if ( pPlayer && pPlayer->IsConnected() )
 		{
@@ -271,7 +271,7 @@ void CCSPlayerResource::UpdatePlayerData( void )
 
 	for ( int i=0; i < MAX_PLAYERS+1; i++ )
 	{
-		CCSPlayer *target = ToCSPlayer( UTIL_PlayerByIndex( i ) );
+		CHL2MP_Player *target = ToCSPlayer( UTIL_PlayerByIndex( i ) );
 
 		if ( !target || !target->IsAlive() )
 		{

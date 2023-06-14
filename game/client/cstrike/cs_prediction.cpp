@@ -6,7 +6,7 @@
 //=============================================================================//
 #include "cbase.h"
 #include "prediction.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "igamemovement.h"
 
 

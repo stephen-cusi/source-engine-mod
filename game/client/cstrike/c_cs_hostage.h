@@ -15,7 +15,7 @@
 #include "utlvector.h"
 #include "util_shared.h"
 #include "cs_playeranimstate.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 
 
 // for shared code
@@ -55,7 +55,7 @@ public:
 
 	virtual void ClientThink( void );
 
-	C_CSPlayer *GetLeader( void ) const;			// return who we are following or NULL
+	C_HL2MP_Player *GetLeader( void ) const;			// return who we are following or NULL
 
 	virtual C_BaseAnimating * BecomeRagdollOnClient();
 	virtual bool ShouldDraw( void );
@@ -110,7 +110,7 @@ private:
 };
 
 
-inline C_CSPlayer *C_CHostage::GetLeader( void ) const
+inline C_HL2MP_Player *C_CHostage::GetLeader( void ) const
 {
 	return ToCSPlayer( m_leader.m_Value );
 }

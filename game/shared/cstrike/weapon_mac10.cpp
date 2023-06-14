@@ -11,11 +11,11 @@
 #if defined( CLIENT_DLL )
 
 	#define CWeaponMAC10 C_WeaponMAC10
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 
 #endif
 
@@ -92,7 +92,7 @@ float CWeaponMAC10::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 
@@ -107,7 +107,7 @@ float CWeaponMAC10::GetInaccuracy() const
 
 void CWeaponMAC10::PrimaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 

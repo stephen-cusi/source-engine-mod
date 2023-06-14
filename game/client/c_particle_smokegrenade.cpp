@@ -17,7 +17,7 @@
 #include "engine/ivdebugoverlay.h"
 
 #if CSTRIKE_DLL
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -381,7 +381,7 @@ void C_ParticleSmokeGrenade::Start(CParticleMgr *pParticleMgr, IPrototypeArgAcce
 	SetNextClientThink( CLIENT_THINK_ALWAYS );
 
 #if CSTRIKE_DLL
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( pPlayer )
 	{
@@ -775,7 +775,7 @@ void C_ParticleSmokeGrenade::NotifyRemove()
 	m_xCount = m_yCount = m_zCount = 0;
 
 #if CSTRIKE_DLL
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( pPlayer )
 	{

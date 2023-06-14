@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 #include "baseanimating.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "EnvMessage.h"
 #include "fmtstr.h"
 #include "vguiscreen.h"
@@ -291,7 +291,7 @@ void CPropPortalStatsDisplay::InputEnable( inputdata_t &inputdata )
 
 void CPropPortalStatsDisplay::InputUpdateStats( inputdata_t &inputdata )
 {
-	CPortal_Player *pPlayer = (CPortal_Player *)UTIL_GetCommandClient();
+	CHL2MP_Player *pPlayer = (CHL2MP_Player *)UTIL_GetCommandClient();
 	if( pPlayer == NULL )
 		pPlayer = GetPortalPlayer( 1 ); //last ditch effort
 
@@ -308,7 +308,7 @@ void CPropPortalStatsDisplay::InputUpdateStats( inputdata_t &inputdata )
 
 void CPropPortalStatsDisplay::InputResetPlayerStats( inputdata_t &inputdata )
 {
-	CPortal_Player *pPlayer = (CPortal_Player *)UTIL_GetCommandClient();
+	CHL2MP_Player *pPlayer = (CHL2MP_Player *)UTIL_GetCommandClient();
 	if( pPlayer == NULL )
 		pPlayer = GetPortalPlayer( 1 ); //last ditch effort
 

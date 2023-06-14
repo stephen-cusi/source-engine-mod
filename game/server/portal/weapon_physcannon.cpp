@@ -18,7 +18,7 @@
 #include "IEffects.h"
 #include "ndebugoverlay.h"
 #include "shake.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "hl2_player.h"
 #include "beam_shared.h"
 #include "Sprite.h"
@@ -492,7 +492,9 @@ public:
 
 	//set when a held entity is penetrating another through a portal. Needed for special fixes
 	void SetPortalPenetratingEntity( CBaseEntity *pPenetrated );
-
+	float			m_savedRotDamping[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+	float			m_savedMass[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+	EHANDLE			m_attachedEntity;
 private:
 	// Compute the max speed for an attached object
 	void ComputeMaxSpeed( CBaseEntity *pEntity, IPhysicsObject *pPhysics );
@@ -507,9 +509,6 @@ private:
 	bool			m_bIgnoreRelativePitch;
 
 	float			m_flLoadWeight;
-	float			m_savedRotDamping[VPHYSICS_MAX_OBJECT_LIST_COUNT];
-	float			m_savedMass[VPHYSICS_MAX_OBJECT_LIST_COUNT];
-	EHANDLE			m_attachedEntity;
 	QAngle			m_vecPreferredCarryAngles;
 	bool			m_bHasPreferredCarryAngles;
 	float			m_flDistanceOffset;
@@ -672,7 +671,7 @@ float CGrabController::ComputeError()
 	}
 
 	// If held across a portal but not looking at the portal multiply error
-	CPortal_Player *pPortalPlayer = (CPortal_Player *)GetPlayerHoldingEntity( pAttached );
+	CHL2MP_Player *pPortalPlayer = (CHL2MP_Player *)GetPlayerHoldingEntity( pAttached );
 	Assert( pPortalPlayer );
 	if ( pPortalPlayer->IsHeldObjectOnOppositeSideOfPortal() )
 	{
@@ -768,7 +767,7 @@ QAngle CGrabController::TransformAnglesFromPlayerSpace( const QAngle &anglesIn, 
 
 void CGrabController::AttachEntity( CBasePlayer *pPlayer, CBaseEntity *pEntity, IPhysicsObject *pPhys, bool bIsMegaPhysCannon, const Vector &vGrabPosition, bool bUseGrabPosition )
 {
-	CPortal_Player *pPortalPlayer = ToPortalPlayer( pPlayer );
+	CHL2MP_Player *pPortalPlayer = ToPortalPlayer( pPlayer );
 	// play the impact sound of the object hitting the player
 	// used as feedback to let the player know he picked up the object
 	if ( !pPortalPlayer->m_bSilentDropAndPickup )
@@ -1150,7 +1149,7 @@ void CPlayerPickupController::Init( CBasePlayer *pPlayer, CBaseEntity *pObject )
 		}
 	}
 
-	CPortal_Player *pOwner = ToPortalPlayer( pPlayer );
+	CHL2MP_Player *pOwner = ToPortalPlayer( pPlayer );
 	if ( pOwner )
 	{
 		pOwner->EnableSprint( false );
@@ -1215,7 +1214,7 @@ void CPlayerPickupController::Shutdown( bool bThrown )
 
 	if ( m_pPlayer )
 	{
-		CPortal_Player *pOwner = ToPortalPlayer( m_pPlayer );
+		CHL2MP_Player *pOwner = ToPortalPlayer( m_pPlayer );
 		if ( pOwner )
 		{
 			pOwner->EnableSprint( true );
@@ -1290,13 +1289,13 @@ void CPlayerPickupController::Use( CBaseEntity *pActivator, CBaseEntity *pCaller
 			Vector vecLaunch;
 			m_pPlayer->EyeVectors( &vecLaunch );
 			// If throwing from the opposite side of a portal, reorient the direction
-			if( ((CPortal_Player *)m_pPlayer)->IsHeldObjectOnOppositeSideOfPortal() )
+			if( ((CHL2MP_Player *)m_pPlayer)->IsHeldObjectOnOppositeSideOfPortal() )
 			{
-				CProp_Portal *pHeldPortal = ((CPortal_Player *)m_pPlayer)->GetHeldObjectPortal();
+				CProp_Portal *pHeldPortal = ((CHL2MP_Player *)m_pPlayer)->GetHeldObjectPortal();
 				UTIL_Portal_VectorTransform( pHeldPortal->MatrixThisToLinked(), vecLaunch, vecLaunch );
 			}
 
-			((CPortal_Player *)m_pPlayer)->SetHeldObjectOnOppositeSideOfPortal( false );
+			((CHL2MP_Player *)m_pPlayer)->SetHeldObjectOnOppositeSideOfPortal( false );
 			// JAY: Scale this with mass because some small objects really go flying
 			float massFactor = clamp( pPhys->GetMass(), 0.5, 15 );
 			massFactor = RemapVal( massFactor, 0.5, 15, 0.5, 4 );
@@ -2545,7 +2544,7 @@ bool CWeaponPhysCannon::AttachObject( CBaseEntity *pObject, const Vector &vPosit
 	if ( !pPhysics )
 		return false;
 
-	CPortal_Player *pOwner = ToPortalPlayer( GetOwner() );
+	CHL2MP_Player *pOwner = ToPortalPlayer( GetOwner() );
 
 	m_bActive = true;
 	if( pOwner )
@@ -2922,7 +2921,7 @@ bool CGrabController::UpdateObject( CBasePlayer *pPlayer, float flError )
 	if ( right.z < 0.0f )
 		start += pPlayer->GetViewOffset() * right.z;
 
-	CPortal_Player *pPortalPlayer = ToPortalPlayer( pPlayer );
+	CHL2MP_Player *pPortalPlayer = ToPortalPlayer( pPlayer );
 
 	// Find out if it's being held across a portal
 	bool bLookingAtHeldPortal = true;
@@ -3110,7 +3109,7 @@ bool CGrabController::UpdateObject( CBasePlayer *pPlayer, float flError )
 
 void CWeaponPhysCannon::UpdateObject( void )
 {
-	CPortal_Player *pPlayer = ToPortalPlayer( GetOwner() );
+	CHL2MP_Player *pPlayer = ToPortalPlayer( GetOwner() );
 	Assert( pPlayer );
 
 	float flError = IsMegaPhysCannon() ? 18 : 12;
@@ -3129,7 +3128,7 @@ void CWeaponPhysCannon::DetachObject( bool playSound, bool wasLaunched )
 	if ( m_bActive == false )
 		return;
 
-	CPortal_Player *pOwner = (CPortal_Player *)ToBasePlayer( GetOwner() );
+	CHL2MP_Player *pOwner = (CHL2MP_Player *)ToBasePlayer( GetOwner() );
 	if( pOwner != NULL )
 	{
 		pOwner->EnableSprint( true );

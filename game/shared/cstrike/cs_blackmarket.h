@@ -13,9 +13,9 @@
 #include "cs_weapon_parse.h"
 
 #ifdef CLIENT_DLL
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #else
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #endif
 
 
@@ -31,7 +31,7 @@ struct blackmarket_items_t
 
 extern blackmarket_items_t blackmarket_items[];
 
-void BlackMarketAddWeapon( const char *pWeaponName, CCSPlayer *pBuyer );
+void BlackMarketAddWeapon( const char *pWeaponName, CHL2MP_Player *pBuyer );
 
 
 enum

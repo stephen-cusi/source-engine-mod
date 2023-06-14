@@ -1,46 +1,23 @@
-# Source Engine
-[![GitHub Actions Status](https://github.com/nillerusr/source-engine/actions/workflows/build.yml/badge.svg)](https://github.com/nillerusr/source-engine/actions/workflows/build.yml) [![GitHub Actions Status](https://github.com/nillerusr/source-engine/actions/workflows/tests.yml/badge.svg)](https://github.com/nillerusr/source-engine/actions/workflows/tests.yml)
- Discord: [![Discord Server](https://img.shields.io/discord/672055862608658432.svg)](https://discord.gg/hZRB7WMgGw)
+# JBMOD: Community Edition
+- Discord: [![Discord Server](https://img.shields.io/discord/1093917978522812457.svg)](https://discord.gg/Rb7Aw5UXb3)
  
-
-Information from [wikipedia](https://wikipedia.org/wiki/Source_(game_engine)):
-
-Source is a 3D game engine developed by Valve.
-It debuted as the successor to GoldSrc with Half-Life: Source in June 2004,
-followed by Counter-Strike: Source and Half-Life 2 later that year.
-Source does not have a concise version numbering scheme; instead, it was released in incremental versions
-
-Source code is based on TF2 2018 leak. Don't use it for commercial purposes.
-
-This project is using waf buildsystem. If you have waf-related questions look https://waf.io/book
+JBMod: Community Edition is a free and open source Source Engine sandbox game which features content from other Source games.
+JB:CE is based on the nillerusr fork of the 2018 engine leak.
 
 # Features:
-- Android, OSX, FreeBSD, Windows, Linux( glibc, musl ) support
-- Arm support( except windows )
-- 64bit support
-- Modern toolchains support
-- Fixed many undefined behaviours
-- Touch support( even on windows/linux/osx )
-- VTF 7.5 support
-- PBR support
-- bsp v19-v21 support( bsp v21 support is partial, portal 2 and csgo maps works fine )
-- mdl v46-49 support
-- Removed useless/unnecessary dependencies
-- Achivement system working without steam
-- Fixed many bugs
-- Serverbrowser works without steam
+- Half-Life 2: Deathmatch
+- Portal 1
+- Counter-Strike: Source (WIP)
 
-# Current tasks
-- Rewrite materialsystem for OpenGL render
-- dxvk-native support
-- Elbrus port
-- Bink audio support( for video_bink )
+# Current tasks:
+- Implement most games
+- Add Lua
 
 # How to Build?
 - [Building instructions(EN)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
 - [Building instructions(RU)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(RU))
 
-# Support me
+# Support nillerusr
 BTC: `bc1qnjq92jj9uqjtafcx2zvnwd48q89hgtd6w8a6na`
 
 ETH: `0x5d0D561146Ed758D266E59B56e85Af0b03ABAF46`

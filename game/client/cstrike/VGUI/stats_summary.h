@@ -16,7 +16,7 @@
 #include "tier1/KeyValues.h"
 #include "vgui_controls/PropertyPage.h"
 #include "vgui_controls/Button.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_gamestats_shared.h"
 #include "achievements_page.h"
 #include "GameEventListener.h"

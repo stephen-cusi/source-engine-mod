@@ -29,7 +29,7 @@ extern int GetShellForAmmoType( const char *ammoname );
 #define SHIELD_VIEW_MODEL "models/weapons/v_shield.mdl"
 #define SHIELD_WORLD_MODEL "models/weapons/w_shield.mdl"
 
-class CCSPlayer;
+class CHL2MP_Player;
 
 // These are the names of the ammo types that go in the CAmmoDefs and that the 
 // weapon script files reference.
@@ -120,8 +120,8 @@ public:
 	#endif
 
 	virtual bool	Holster( CBaseCombatWeapon *pSwitchingTo );
-	virtual void	AddViewmodelBob( CBaseViewModel *viewmodel, Vector &origin, QAngle &angles );
-	virtual	float	CalcViewmodelBob( void );
+	//virtual void	AddViewmodelBob( CBaseViewModel *viewmodel, Vector &origin, QAngle &angles );
+	//virtual	float	CalcViewmodelBob( void );
 	// All predicted weapons need to implement and return true
 	virtual bool	IsPredicted() const;
 
@@ -130,7 +130,7 @@ public:
 
 	virtual bool IsFullAuto() const;
 
-	CCSPlayer* GetPlayerOwner() const;
+	CHL2MP_Player* GetPlayerOwner() const;
 
 	virtual float GetMaxSpeed() const;	// What's the player's max speed while holding this weapon.
 
@@ -234,18 +234,18 @@ public:
 	//=============================================================================
 
     // [tj] Accessors for the previous owner of the gun
-	void SetPreviousOwner(CCSPlayer* player) { m_prevOwner = player; }
-	CCSPlayer* GetPreviousOwner() { return m_prevOwner; }
+	void SetPreviousOwner(CHL2MP_Player* player) { m_prevOwner = player; }
+	CHL2MP_Player* GetPreviousOwner() { return m_prevOwner; }
 
     // [tj] Accessors for the donor system
-    void SetDonor(CCSPlayer* player) { m_donor = player; }
-    CCSPlayer* GetDonor() { return m_donor; }
+    void SetDonor(CHL2MP_Player* player) { m_donor = player; }
+    CHL2MP_Player* GetDonor() { return m_donor; }
     void SetDonated(bool donated) { m_donated = true;}
     bool GetDonated() { return m_donated; }
 
     //[dwenger] Accessors for the prior owner list
-    void AddToPriorOwnerList(CCSPlayer* pPlayer);
-    bool IsAPriorOwner(CCSPlayer* pPlayer);
+    void AddToPriorOwnerList(CHL2MP_Player* pPlayer);
+    bool IsAPriorOwner(CHL2MP_Player* pPlayer);
 
 	//=============================================================================
 	// HPE_END
@@ -264,7 +264,7 @@ private:
 	int		m_iExtraPrimaryAmmo;
 
 	float	m_nextPrevOwnerTouchTime;
-	CCSPlayer *m_prevOwner;
+	CHL2MP_Player *m_prevOwner;
 
 	int m_iDefaultExtraAmmo;
 
@@ -273,10 +273,10 @@ private:
     //=============================================================================
 
     // [dwenger] track all prior owners of this weapon
-    CUtlVector< CCSPlayer* >    m_PriorOwners;
+    CUtlVector< CHL2MP_Player* >    m_PriorOwners;
 
     // [tj] To keep track of people who drop weapons for teammates during the buy round
-    CHandle<CCSPlayer> m_donor;
+    CHandle<CHL2MP_Player> m_donor;
     bool m_donated;
 
     //=============================================================================

@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 #include "fx_cs_shared.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "c_basetempentity.h"
 #include <cliententitylist.h>
 

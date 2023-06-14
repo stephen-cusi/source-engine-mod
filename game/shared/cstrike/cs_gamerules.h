@@ -21,10 +21,10 @@
 #include "gamevars_shared.h"
 
 #ifdef CLIENT_DLL
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 	#include "networkstringtable_clientdll.h"
 #else
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "funfactmgr_cs.h"
 #endif
 
@@ -188,7 +188,7 @@ public:
 	//				Find and return fun fact data
 	// [pfreese] Tracking of "pistol" round
 	//=============================================================================
-	virtual void SpawningLatePlayer(CCSPlayer* pLatePlayer);
+	virtual void SpawningLatePlayer(CHL2MP_Player* pLatePlayer);
 
 	bool IsPistolRound();
 
@@ -207,7 +207,7 @@ public:
     // [tj] So game rules can react to damage taken
     //=============================================================================
 
-    void PlayerTookDamage(CCSPlayer* player, const CTakeDamageInfo &damageInfo);
+    void PlayerTookDamage(CHL2MP_Player* player, const CTakeDamageInfo &damageInfo);
 
     //=============================================================================
     // HPE_END
@@ -416,16 +416,16 @@ public:
     bool m_bCanDonateWeapons;
 
 	// [tj] Keep track of first kill
-	CHandle<CCSPlayer> m_pFirstKill;
+	CHandle<CHL2MP_Player> m_pFirstKill;
 	float m_firstKillTime;
 
 	// [menglish] Keep track of first blood
-	CHandle<CCSPlayer> m_pFirstBlood;
+	CHandle<CHL2MP_Player> m_pFirstBlood;
 	float m_firstBloodTime;
 
 
     // [dwenger] Rescue-related achievement values
-    CHandle<CCSPlayer> m_pLastRescuer;
+    CHandle<CHL2MP_Player> m_pLastRescuer;
     int     m_iNumRescuers;
 
 	bool m_hostageWasInjured;
@@ -462,7 +462,7 @@ public:
 
 	// VIP VARIABLES
 	int		m_iMapHasVIPSafetyZone;	// 0 = uninitialized;   1 = has VIP safety zone;   2 = DOES not have VIP safetyzone
-	CHandle<CCSPlayer> m_pVIP;
+	CHandle<CHL2MP_Player> m_pVIP;
 	int		m_iConsecutiveVIP;
 
 

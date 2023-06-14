@@ -184,7 +184,7 @@ void SetBuyData( const ConVar &buyVar, const char *filename )
 
 void MsgFunc_KillCam(bf_read &msg) 
 {
-	C_CSPlayer *pPlayer = ToCSPlayer( C_BasePlayer::GetLocalPlayer() );
+	C_HL2MP_Player *pPlayer = ToCSPlayer( C_BasePlayer::GetLocalPlayer() );
 
 	if ( !pPlayer )
 		return;
@@ -625,7 +625,7 @@ void ClientModeCSNormal::FireGameEvent( IGameEvent *event )
 	{
 		C_BasePlayer *pPlayer = USERID2PLAYER( event->GetInt("userid") );
 
-		C_CSPlayer* csPlayer = ToCSPlayer(pPlayer);
+		C_HL2MP_Player* csPlayer = ToCSPlayer(pPlayer);
 		if (csPlayer)
 		{
 			csPlayer->ClearSoundEvents();
@@ -1018,7 +1018,7 @@ void ClientModeCSNormal::PostRenderVGui()
 
 bool ClientModeCSNormal::ShouldDrawViewModel( void )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	
 	if( pPlayer && pPlayer->GetFOV() != CSGameRules()->DefaultFOV() )
 	{
@@ -1036,7 +1036,7 @@ bool ClientModeCSNormal::ShouldDrawViewModel( void )
 
 bool ClientModeCSNormal::CanRecordDemo( char *errorMsg, int length ) const
 {
-	C_CSPlayer *player = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *player = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !player )
 	{
 		return true;

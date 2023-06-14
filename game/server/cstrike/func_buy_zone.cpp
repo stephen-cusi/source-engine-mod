@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 #include "triggers.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 
 
 //======================================
@@ -64,7 +64,7 @@ void CBuyZone::Spawn()
 	
 void CBuyZone::BuyZoneTouch( CBaseEntity* pOther )
 {
-	CCSPlayer *p = dynamic_cast< CCSPlayer* >( pOther );
+	CHL2MP_Player *p = dynamic_cast< CHL2MP_Player* >( pOther );
 	if ( p )
 	{
 		// compare player team with buy zone team number

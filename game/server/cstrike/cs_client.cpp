@@ -25,7 +25,7 @@
 #include "shake.h"
 #include "player_resource.h"
 #include "engine/IEngineSound.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "cs_gamerules.h"
 #include "cs_bot.h"
 #include "tier0/vprof.h"
@@ -39,7 +39,7 @@ extern CBaseEntity *FindPickerEntity( CBasePlayer *pPlayer );
 extern bool			g_fGameOver;
 
 
-void FinishClientPutInServer( CCSPlayer *pPlayer )
+void FinishClientPutInServer( CHL2MP_Player *pPlayer )
 {
 	pPlayer->InitialSpawn();
 	pPlayer->Spawn();
@@ -87,7 +87,7 @@ called each time a player is spawned into the game
 void ClientPutInServer( edict_t *pEdict, const char *playername )
 {
 	// Allocate a CBaseTFPlayer for pev, and call spawn
-	CCSPlayer *pPlayer = CCSPlayer::CreatePlayer( "player", pEdict );
+	CHL2MP_Player *pPlayer = CHL2MP_Player::CreatePlayer( "player", pEdict );
 
 	pPlayer->SetPlayerName( playername );
 }
@@ -98,7 +98,7 @@ void ClientActive( edict_t *pEdict, bool bLoadGame )
 	// Can't load games in CS!
 	Assert( !bLoadGame );
 
-	CCSPlayer *pPlayer = ToCSPlayer( CBaseEntity::Instance( pEdict ) );
+	CHL2MP_Player *pPlayer = ToCSPlayer( CBaseEntity::Instance( pEdict ) );
 	FinishClientPutInServer( pPlayer );
 
 	CSingleUserRecipientFilter user( pPlayer );

@@ -14,7 +14,7 @@
 #include <vgui_controls/Panel.h>
 #include <vgui_controls/Label.h>
 
-class C_CSPlayer;
+class C_HL2MP_Player;
 void Radar_FlashPlayer( int iPlayer );
 
 class CPlayerRadarFlash
@@ -55,8 +55,8 @@ private:
 
 	void WorldToRadar( const Vector location, const Vector origin, const QAngle angles, float &x, float &y, float &z_delta );
 
-	void DrawPlayerOnRadar( int iPlayer, C_CSPlayer *pLocalPlayer );
-	void DrawEntityOnRadar( CBaseEntity *pEnt, C_CSPlayer *pLocalPlayer, int flags, int r, int g, int b, int a );
+	void DrawPlayerOnRadar( int iPlayer, C_HL2MP_Player *pLocalPlayer );
+	void DrawEntityOnRadar( CBaseEntity *pEnt, C_HL2MP_Player *pLocalPlayer, int flags, int r, int g, int b, int a );
 
 	void FillRect( int x, int y, int w, int h );
 	void DrawRadarDot( int x, int y, float z_diff, int iBaseDotSize, int flags, int r, int g, int b, int a );

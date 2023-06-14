@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 #include "hud_base_account.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "clientmode_csnormal.h"
 
 using namespace vgui;
@@ -34,7 +34,7 @@ CHudBaseAccount( "HudAccount" )
 
 bool CHudAccount::ShouldDraw()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer )
 	{
 		return !pPlayer->IsObserver();
@@ -48,7 +48,7 @@ bool CHudAccount::ShouldDraw()
 // How much money does the player have
 int	CHudAccount::GetPlayerAccount( void )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if( !pPlayer )
 		return 0;

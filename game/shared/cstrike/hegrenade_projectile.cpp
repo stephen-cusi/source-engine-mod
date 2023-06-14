@@ -7,7 +7,7 @@
 #include "cbase.h"
 #include "hegrenade_projectile.h"
 #include "soundent.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "KeyValues.h"
 #include "weapon_csbase.h"
 
@@ -78,7 +78,7 @@ void CHEGrenadeProjectile::Detonate()
 	BaseClass::Detonate();
 
 	// tell the bots an HE grenade has exploded
-	CCSPlayer *player = ToCSPlayer(GetThrower());
+	CHL2MP_Player *player = ToCSPlayer(GetThrower());
 	if ( player )
 	{
 		IGameEvent * event = gameeventmanager->CreateEvent( "hegrenade_detonate" );

@@ -44,7 +44,7 @@ void CCSBot::RespondToRadioCommands( void )
 	// bots use the chatter system to respond to each other
 	if (m_radioSubject != NULL && m_radioSubject->IsPlayer())
 	{
-		CCSPlayer *player = m_radioSubject;
+		CHL2MP_Player *player = m_radioSubject;
 		if (player->IsBot())
 		{
 			m_lastRadioCommand = RADIO_INVALID;
@@ -94,7 +94,7 @@ void CCSBot::RespondToRadioCommands( void )
 		return;
 	}
 
-	CCSPlayer *player = m_radioSubject;
+	CHL2MP_Player *player = m_radioSubject;
 	if (player == NULL)
 		return;
 
@@ -220,7 +220,7 @@ void CCSBot::RespondToRadioCommands( void )
 /**
  * Decide if we should move to help the player, return true if we will
  */
-bool CCSBot::RespondToHelpRequest( CCSPlayer *them, Place place, float maxRange )
+bool CCSBot::RespondToHelpRequest( CHL2MP_Player *them, Place place, float maxRange )
 {
 	if (IsRogue())
 		return false;

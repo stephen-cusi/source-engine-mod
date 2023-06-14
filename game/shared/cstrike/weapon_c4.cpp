@@ -15,16 +15,16 @@
 #include "obstacle_pushaway.h"
 
 #if defined( CLIENT_DLL )
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 #else
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "explode.h"
 	#include "mapinfo.h"
 	#include "team.h"
 	#include "func_bomb_target.h"
 	#include "vguiscreen.h"
 	#include "bot.h"
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include <KeyValues.h>
 
 //=============================================================================
@@ -243,7 +243,7 @@ END_PREDICTION_DATA()
 		}
 	}
 
-	CPlantedC4* CPlantedC4::ShootSatchelCharge( CCSPlayer *pevOwner, Vector vecStart, QAngle vecAngles )
+	CPlantedC4* CPlantedC4::ShootSatchelCharge( CHL2MP_Player *pevOwner, Vector vecStart, QAngle vecAngles )
 	{
 		CPlantedC4 *pGrenade = dynamic_cast< CPlantedC4* >( CreateEntityByName( "planted_c4" ) );
 		if ( pGrenade )
@@ -261,7 +261,7 @@ END_PREDICTION_DATA()
 	}
 
 
-	void CPlantedC4::Init( CCSPlayer *pevOwner, Vector vecStart, QAngle vecAngles )
+	void CPlantedC4::Init( CHL2MP_Player *pevOwner, Vector vecStart, QAngle vecAngles )
 	{
 		SetMoveType( MOVETYPE_NONE );
 		SetSolid( SOLID_NONE );
@@ -338,7 +338,7 @@ END_PREDICTION_DATA()
 		if (m_flC4Blow <= gpGlobals->curtime)
 		{
 			// give the defuser credit for defusing the bomb
-			CCSPlayer* pBombOwner = ToCSPlayer(GetOwnerEntity());
+			CHL2MP_Player* pBombOwner = ToCSPlayer(GetOwnerEntity());
 			if ( pBombOwner )
 			{
                 if (CSGameRules()->m_iRoundWinStatus == WINNER_NONE)
@@ -552,7 +552,7 @@ END_PREDICTION_DATA()
         // [dwenger] Server-side processing for winning round by planting a bomb
         if (bWin)
         {
-            CCSPlayer *pBombOwner = ToCSPlayer( GetOwnerEntity() );
+            CHL2MP_Player *pBombOwner = ToCSPlayer( GetOwnerEntity() );
             if ( pBombOwner )
             {
                 pBombOwner->AwardAchievement(CSWinBombPlant);
@@ -658,7 +658,7 @@ END_PREDICTION_DATA()
 			return;
 		}
 
-		CCSPlayer *player = dynamic_cast< CCSPlayer* >( pActivator );
+		CHL2MP_Player *player = dynamic_cast< CHL2MP_Player* >( pActivator );
 
 		if ( !player || player->GetTeamNumber() != TEAM_CT )
 		 	return;
@@ -804,7 +804,7 @@ void CC4::Spawn()
 
 void CC4::ItemPostFrame()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -874,7 +874,7 @@ void CC4::ItemPostFrame()
 
 	bool CC4::Holster( CBaseCombatWeapon *pSwitchingTo )
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( pPlayer )
 			pPlayer->SetProgressBarTime( 0 );
 
@@ -891,7 +891,7 @@ void CC4::ItemPostFrame()
 	{
 		// Doesn't matter if we have an owner or not.. always remove the C4 when the round restarts.
 		// The gamerules will give another C4 to some lucky player.
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( pPlayer && pPlayer->GetActiveWeapon() == this )
 			engine->ClientCommand( pPlayer->edict(), "lastinv reset\n" );
 		return true;
@@ -903,7 +903,7 @@ void CC4::ItemPostFrame()
 void CC4::PrimaryAttack()
 {
 	bool	bArmingTimeSatisfied = false;
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -1159,7 +1159,7 @@ void CC4::WeaponIdle()
 	{
 		AbortBombPlant();
 
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 		// TODO: make this use SendWeaponAnim and activities when the C4 has the activities hooked up.
 		if ( pPlayer )
@@ -1178,7 +1178,7 @@ void CC4::WeaponIdle()
 void CC4::UpdateShieldState( void )
 {
 	//ADRIANTODO
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 	
@@ -1221,7 +1221,7 @@ void CC4::PlayArmingBeeps( void )
 		{
 			m_bPlayedArmingBeeps[i] = true;
 
-			CCSPlayer *owner = GetPlayerOwner();
+			CHL2MP_Player *owner = GetPlayerOwner();
 			Vector soundPosition = owner->GetAbsOrigin() + Vector( 0, 0, 5 );
 			CPASAttenuationFilter filter( soundPosition );
 
@@ -1264,7 +1264,7 @@ void CC4::OnPickedUp( CBaseCombatCharacter *pNewOwner )
 	BaseClass::OnPickedUp( pNewOwner );
 
 #if !defined( CLIENT_DLL )
-	CCSPlayer *pPlayer = dynamic_cast<CCSPlayer *>( pNewOwner );
+	CHL2MP_Player *pPlayer = dynamic_cast<CHL2MP_Player *>( pNewOwner );
 
 	IGameEvent * event = gameeventmanager->CreateEvent( "bomb_pickup" );
 	if ( event )
@@ -1329,7 +1329,7 @@ void CC4::AbortBombPlant()
 {
 	m_bStartedArming = false; 
 
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 

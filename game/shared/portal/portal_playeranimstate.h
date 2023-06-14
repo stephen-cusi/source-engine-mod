@@ -16,10 +16,10 @@
 
 
 #if defined( CLIENT_DLL )
-	class C_Portal_Player;
-	#define CPortal_Player C_Portal_Player
+	class C_HL2MP_Player;
+	#define CHL2MP_Player C_HL2MP_Player
 #else
-	class CPortal_Player;
+	class CHL2MP_Player;
 #endif
 
 //enum PlayerAnimEvent_t
@@ -50,8 +50,8 @@ public:
 	CPortalPlayerAnimState( CBasePlayer *pPlayer, MultiPlayerMovementData_t &movementData );
 	~CPortalPlayerAnimState();
 
-	void InitPortal( CPortal_Player *pPlayer );
-	CPortal_Player *GetPortalPlayer( void )							{ return m_pPortalPlayer; }
+	void InitPortal( CHL2MP_Player *pPlayer );
+	CHL2MP_Player *GetPortalPlayer( void )							{ return m_pPortalPlayer; }
 
 	virtual void ClearAnimationState();
 
@@ -59,7 +59,7 @@ public:
 
 	void	DoAnimationEvent( PlayerAnimEvent_t event, int nData = 0 );
 
-	void    Teleport( const Vector *pNewOrigin, const QAngle *pNewAngles, CPortal_Player* pPlayer );
+	void    Teleport( const Vector *pNewOrigin, const QAngle *pNewAngles, CHL2MP_Player* pPlayer );
 
 	bool	HandleMoving( Activity &idealActivity );
 	bool	HandleJumping( Activity &idealActivity );
@@ -67,14 +67,14 @@ public:
 
 private:
 	
-	CPortal_Player   *m_pPortalPlayer;
+	CHL2MP_Player   *m_pPortalPlayer;
 	bool		m_bInAirWalk;
 
 	float		m_flHoldDeployedPoseUntilTime;
 };
 
 
-CPortalPlayerAnimState* CreatePortalPlayerAnimState( CPortal_Player *pPlayer );
+CPortalPlayerAnimState* CreatePortalPlayerAnimState( CHL2MP_Player *pPlayer );
 
 
 // If this is set, then the game code needs to make sure to send player animation events

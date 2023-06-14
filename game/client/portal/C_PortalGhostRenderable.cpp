@@ -8,7 +8,7 @@
 #include "cbase.h"
 #include "C_PortalGhostRenderable.h"
 #include "PortalRender.h"
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #include "model_types.h"
 
 C_PortalGhostRenderable::C_PortalGhostRenderable( C_Prop_Portal *pOwningPortal, C_BaseEntity *pGhostSource, RenderGroup_t sourceRenderGroup, const VMatrix &matGhostTransform, float *pSharedRenderClipPlane, bool bLocalPlayer )
@@ -241,7 +241,7 @@ int C_PortalGhostRenderable::DrawModel( int flags )
 	{
 		if( m_bLocalPlayer )
 		{
-			C_Portal_Player *pPlayer = C_Portal_Player::GetLocalPlayer();
+			C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalHL2MPPlayer();
 
 			if ( !pPlayer->IsAlive() )
 			{

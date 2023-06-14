@@ -3690,6 +3690,7 @@ void CBasePlayer::PlayerRunCommand(CUserCmd *ucmd, IMoveHelper *moveHelper)
 	}
 	
 	PlayerMove()->RunCommand(this, ucmd, moveHelper);
+	
 }
 
 //-----------------------------------------------------------------------------
@@ -9374,3 +9375,71 @@ uint64 CBasePlayer::GetSteamIDAsUInt64( void )
 	return 0;
 }
 #endif // NO_STEAM
+
+
+void CC_Give_Health(const CCommand& args)
+{
+	if (args.ArgC() < 1)
+	{
+		Msg("Format: give_health <health> [player_name]\n");
+		return;
+	}
+	if (args.ArgC() >= 2)
+	{
+		// Find the matching netname
+		for (int i = 1; i <= gpGlobals->maxClients; i++)
+		{
+			CBasePlayer* pPlayer = ToBasePlayer(UTIL_PlayerByIndex(i));
+			if (pPlayer)
+			{
+				if (Q_strstr(pPlayer->GetPlayerName(), args[2]))
+				{
+					pPlayer->SetHealth(pPlayer->GetHealth() + Q_atoi(args[1]));
+				}
+			}
+		}
+	}
+	else
+	{
+		CBasePlayer* pPlayer = UTIL_GetCommandClient();
+		if (pPlayer)
+		{
+			pPlayer->SetHealth(pPlayer->GetHealth() + Q_atoi(args[1]));
+		}
+	}
+}
+
+void CC_Set_Health(const CCommand& args)
+{
+	if (args.ArgC() < 2)
+	{
+		Msg("Format: set_health <health> [player_name]\n");
+		return;
+	}
+	if (args.ArgC() >= 2)
+	{
+		// Find the matching netname
+		for (int i = 1; i <= gpGlobals->maxClients; i++)
+		{
+			CBasePlayer* pPlayer = ToBasePlayer(UTIL_PlayerByIndex(i));
+			if (pPlayer)
+			{
+				if (Q_strstr(pPlayer->GetPlayerName(), args[2]))
+				{
+					pPlayer->SetHealth(Q_atoi(args[1]));
+				}
+			}
+		}
+	}
+	else
+	{
+		CBasePlayer* pPlayer = UTIL_GetCommandClient();
+		if (pPlayer)
+		{
+			pPlayer->SetHealth(Q_atoi(args[1]));
+		}
+	}
+}
+
+static ConCommand give_health("give_health", CC_Give_Health, "Give yourself or another player health\n\tFormat: give_health <health> [player_name]", FCVAR_CHEAT);
+static ConCommand set_health("set_health", CC_Set_Health, "Set the health of yourself or another player\n\tFormat: set_health <health> [player_name]", FCVAR_CHEAT);

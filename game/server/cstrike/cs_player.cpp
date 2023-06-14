@@ -6,7 +6,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "cs_gamerules.h"
 #include "trains.h"
 #include "vcollide_parse.h"
@@ -104,7 +104,7 @@ static void SvNoMVPChangeCallback( IConVar *pConVar, const char *pOldValue, floa
 		// Clear the MVPs of all players when MVP is turned off.
 		for ( int i = 1; i <= MAX_PLAYERS; i++ )
 		{
-			CCSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i ) );
+			CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i ) );
 
 			if ( pPlayer )
 			{
@@ -166,7 +166,7 @@ class CPhysicsPlayerCallback : public IPhysicsPlayerControllerEvent
 public:
 	int ShouldMoveTo( IPhysicsObject *pObject, const Vector &position )
 	{
-		CCSPlayer *pPlayer = (CCSPlayer *)pObject->GetGameData();
+		CHL2MP_Player *pPlayer = (CHL2MP_Player *)pObject->GetGameData();
 		if ( pPlayer )
 		{
 			if ( pPlayer->TouchedPhysics() )
@@ -300,10 +300,10 @@ REGISTER_SEND_PROXY_NON_MODIFIED_POINTER( SendProxy_SendNonLocalDataTable );
 // Tables.
 // -------------------------------------------------------------------------------- //
 
-LINK_ENTITY_TO_CLASS( player, CCSPlayer );
+LINK_ENTITY_TO_CLASS( player, CHL2MP_Player );
 PRECACHE_REGISTER(player);
 
-BEGIN_SEND_TABLE_NOBASE( CCSPlayer, DT_CSLocalPlayerExclusive )
+BEGIN_SEND_TABLE_NOBASE( CHL2MP_Player, DT_CSLocalPlayerExclusive )
 	SendPropFloat( SENDINFO( m_flStamina ), 14, 0, 0, 1400  ),
 	SendPropInt( SENDINFO( m_iDirection ), 1, SPROP_UNSIGNED ),
 	SendPropInt( SENDINFO( m_iShotsFired ), 8, SPROP_UNSIGNED ),
@@ -327,13 +327,13 @@ BEGIN_SEND_TABLE_NOBASE( CCSPlayer, DT_CSLocalPlayerExclusive )
 END_SEND_TABLE()
 
 
-BEGIN_SEND_TABLE_NOBASE( CCSPlayer, DT_CSNonLocalPlayerExclusive )
+BEGIN_SEND_TABLE_NOBASE( CHL2MP_Player, DT_CSNonLocalPlayerExclusive )
 	// send a lo-res origin to other players
 	SendPropVector	(SENDINFO(m_vecOrigin), -1,  SPROP_COORD|SPROP_CHANGES_OFTEN, 0.0f, HIGH_DEFAULT, SendProxy_Origin ),
 END_SEND_TABLE()
 
 
-IMPLEMENT_SERVERCLASS_ST( CCSPlayer, DT_CSPlayer )
+IMPLEMENT_SERVERCLASS_ST( CHL2MP_Player, DT_CSPlayer )
 	SendPropExclude( "DT_BaseAnimating", "m_flPoseParameter" ),
 	SendPropExclude( "DT_BaseAnimating", "m_flPlaybackRate" ),
 	SendPropExclude( "DT_BaseAnimating", "m_nSequence" ),
@@ -404,7 +404,7 @@ IMPLEMENT_SERVERCLASS_ST( CCSPlayer, DT_CSPlayer )
 END_SEND_TABLE()
 
 
-BEGIN_DATADESC( CCSPlayer )
+BEGIN_DATADESC( CHL2MP_Player )
 
 	DEFINE_INPUTFUNC( FIELD_VOID, "OnRescueZoneTouch", RescueZoneTouch ),
 	DEFINE_THINKFUNC( PushawayThink )
@@ -438,10 +438,10 @@ ConCommand cc_CreatePredictionError( "CreatePredictionError", cc_CreatePredictio
 
 
 // -------------------------------------------------------------------------------- //
-// CCSPlayer implementation.
+// CHL2MP_Player implementation.
 // -------------------------------------------------------------------------------- //
 
-CCSPlayer::CCSPlayer()
+CHL2MP_Player::CHL2MP_Player()
 {
 	m_PlayerAnimState = CreatePlayerAnimState( this, this, LEGANIM_9WAY, true );
 
@@ -547,7 +547,7 @@ CCSPlayer::CCSPlayer()
 }
 
 
-CCSPlayer::~CCSPlayer()
+CHL2MP_Player::~CHL2MP_Player()
 {
 	delete m_pHintMessageQueue;
 	m_pHintMessageQueue = NULL;
@@ -558,14 +558,14 @@ CCSPlayer::~CCSPlayer()
 }
 
 
-CCSPlayer *CCSPlayer::CreatePlayer( const char *className, edict_t *ed )
+CHL2MP_Player *CHL2MP_Player::CreatePlayer( const char *className, edict_t *ed )
 {
-	CCSPlayer::s_PlayerEdict = ed;
-	return (CCSPlayer*)CreateEntityByName( className );
+	CHL2MP_Player::s_PlayerEdict = ed;
+	return (CHL2MP_Player*)CreateEntityByName( className );
 }
 
 
-void CCSPlayer::Precache()
+void CHL2MP_Player::Precache()
 {
 	Vector mins( -13, -13, -10 );
 	Vector maxs( 13, 13, 75 );
@@ -633,9 +633,9 @@ void CCSPlayer::Precache()
 // Purpose: Allow pre-frame adjustments on the player
 //-----------------------------------------------------------------------------
 ConVar sv_runcmds( "sv_runcmds", "1" );
-void CCSPlayer::PlayerRunCommand( CUserCmd *ucmd, IMoveHelper *moveHelper )
+void CHL2MP_Player::PlayerRunCommand( CUserCmd *ucmd, IMoveHelper *moveHelper )
 {
-	VPROF( "CCSPlayer::PlayerRunCommand" );
+	VPROF( "CHL2MP_Player::PlayerRunCommand" );
 
 	if ( !sv_runcmds.GetInt() )
 		return;
@@ -668,7 +668,7 @@ void CCSPlayer::PlayerRunCommand( CUserCmd *ucmd, IMoveHelper *moveHelper )
 }
 
 
-bool CCSPlayer::RunMimicCommand( CUserCmd& cmd )
+bool CHL2MP_Player::RunMimicCommand( CUserCmd& cmd )
 {
 	if ( !IsBot() )
 		return false;
@@ -696,7 +696,7 @@ bool CCSPlayer::RunMimicCommand( CUserCmd& cmd )
 //-----------------------------------------------------------------------------
 // Purpose: Simulates a single frame of movement for a player
 //-----------------------------------------------------------------------------
-void CCSPlayer::RunPlayerMove( const QAngle& viewangles, float forwardmove, float sidemove, float upmove, unsigned short buttons, byte impulse, float frametime )
+void CHL2MP_Player::RunPlayerMove( const QAngle& viewangles, float forwardmove, float sidemove, float upmove, unsigned short buttons, byte impulse, float frametime )
 {
 	CUserCmd cmd;
 
@@ -749,7 +749,7 @@ void CCSPlayer::RunPlayerMove( const QAngle& viewangles, float forwardmove, floa
 }
 
 
-void CCSPlayer::InitialSpawn( void )
+void CHL2MP_Player::InitialSpawn( void )
 {
 	BaseClass::InitialSpawn();
 
@@ -781,7 +781,7 @@ void CCSPlayer::InitialSpawn( void )
 	
 }
 
-void CCSPlayer::SetModelFromClass( void )
+void CHL2MP_Player::SetModelFromClass( void )
 {
 	if ( GetTeamNumber() == TEAM_TERRORIST )
 	{
@@ -809,7 +809,7 @@ void CCSPlayer::SetModelFromClass( void )
 	}
 }
 
-void CCSPlayer::Spawn()
+void CHL2MP_Player::Spawn()
 {
 	m_RateLimitLastCommandTimes.Purge();
 
@@ -926,7 +926,7 @@ void CCSPlayer::Spawn()
 	m_bIsInRebuy = false;
 	m_bAutoReload = false;
 
-	SetContextThink( &CCSPlayer::PushawayThink, gpGlobals->curtime + PUSHAWAY_THINK_INTERVAL, CS_PUSHAWAY_THINK_CONTEXT );
+	SetContextThink( &CHL2MP_Player::PushawayThink, gpGlobals->curtime + PUSHAWAY_THINK_INTERVAL, CS_PUSHAWAY_THINK_CONTEXT );
 
 	if ( GetActiveWeapon() && !IsObserver() )
 	{
@@ -942,7 +942,7 @@ void CCSPlayer::Spawn()
 	StockPlayerAmmo();
 	}
 
-void CCSPlayer::ShowViewPortPanel( const char * name, bool bShow, KeyValues *data )
+void CHL2MP_Player::ShowViewPortPanel( const char * name, bool bShow, KeyValues *data )
 {
 	if ( CSGameRules()->IsLogoMap() )
 		return;
@@ -953,7 +953,7 @@ void CCSPlayer::ShowViewPortPanel( const char * name, bool bShow, KeyValues *dat
 	BaseClass::ShowViewPortPanel( name, bShow, data );
 }
 
-void CCSPlayer::ClearFlashbangScreenFade( void )
+void CHL2MP_Player::ClearFlashbangScreenFade( void )
 {
 	if( IsBlind() )
 	{
@@ -969,7 +969,7 @@ void CCSPlayer::ClearFlashbangScreenFade( void )
 	m_blindStartTime = 0.0f;
 }
 
-void CCSPlayer::GiveDefaultItems()
+void CHL2MP_Player::GiveDefaultItems()
 {
 	// Always give the player the knife.
 	CBaseCombatWeapon *pistol = Weapon_GetSlot( WEAPON_SLOT_PISTOL );
@@ -994,14 +994,14 @@ void CCSPlayer::GiveDefaultItems()
 	}
 }
 
-void CCSPlayer::SetClanTag( const char *pTag )
+void CHL2MP_Player::SetClanTag( const char *pTag )
 {
 	if ( pTag )
 	{
 		Q_strncpy( m_szClanTag, pTag, sizeof( m_szClanTag ) );
 	}
 }
-void CCSPlayer::CreateRagdollEntity()
+void CHL2MP_Player::CreateRagdollEntity()
 {
 	// If we already have a ragdoll, don't make another one.
 	CCSRagdoll *pRagdoll = dynamic_cast< CCSRagdoll* >( m_hRagdoll.Get() );
@@ -1029,7 +1029,7 @@ void CCSPlayer::CreateRagdollEntity()
 	m_hRagdoll = pRagdoll;
 }
 
-int CCSPlayer::OnTakeDamage_Alive( const CTakeDamageInfo &info )
+int CHL2MP_Player::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 {
 	// set damage type sustained
 	m_bitsDamageType |= info.GetDamageType();
@@ -1135,7 +1135,7 @@ int CCSPlayer::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 //=============================================================================
 
 // Returns the % of the enemies this player killed in the round
-int CCSPlayer::GetPercentageOfEnemyTeamKilled()
+int CHL2MP_Player::GetPercentageOfEnemyTeamKilled()
 {
 	if ( m_NumEnemiesAtRoundStart > 0 )
 	{
@@ -1149,7 +1149,7 @@ int CCSPlayer::GetPercentageOfEnemyTeamKilled()
 // HPE_END
 //=============================================================================
 
-void CCSPlayer::Event_Killed( const CTakeDamageInfo &info )
+void CHL2MP_Player::Event_Killed( const CTakeDamageInfo &info )
 {
 	//=============================================================================
 	// HPE_BEGIN:
@@ -1262,13 +1262,13 @@ void CCSPlayer::Event_Killed( const CTakeDamageInfo &info )
 
 	if ( !roundWasAlreadyWon && roundIsWonNow )
 	{
-		CCSPlayer* pMVP = NULL;
+		CHL2MP_Player* pMVP = NULL;
 		int maxKills = 0;
 		int maxDamage = 0;
 
 		for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer* pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i ) );
+			CHL2MP_Player* pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i ) );
 			if ( pPlayer )
 			{
 				// only consider players on the winning team
@@ -1320,7 +1320,7 @@ void CCSPlayer::Event_Killed( const CTakeDamageInfo &info )
 //=============================================================================
 
 // Notify that I've killed some other entity. (called from Victim's Event_Killed).
-void CCSPlayer::Event_KilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &info )
+void CHL2MP_Player::Event_KilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &info )
 {
 	BaseClass::Event_KilledOther(pVictim, info);
 }
@@ -1329,7 +1329,7 @@ void CCSPlayer::Event_KilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &
 // HPE_END
 //=============================================================================
 
-void CCSPlayer::DeathSound( const CTakeDamageInfo &info )
+void CHL2MP_Player::DeathSound( const CTakeDamageInfo &info )
 {
 	if( m_LastHitGroup == HITGROUP_HEAD )
 	{
@@ -1344,7 +1344,7 @@ void CCSPlayer::DeathSound( const CTakeDamageInfo &info )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CCSPlayer::InitVCollision( const Vector &vecAbsOrigin, const Vector &vecAbsVelocity )
+void CHL2MP_Player::InitVCollision( const Vector &vecAbsOrigin, const Vector &vecAbsVelocity )
 {
 	BaseClass::InitVCollision( vecAbsOrigin, vecAbsVelocity );
 
@@ -1355,7 +1355,7 @@ void CCSPlayer::InitVCollision( const Vector &vecAbsOrigin, const Vector &vecAbs
 	GetPhysicsController()->SetEventHandler( &playerCallback );
 }
 
-void CCSPlayer::VPhysicsShadowUpdate( IPhysicsObject *pPhysics )
+void CHL2MP_Player::VPhysicsShadowUpdate( IPhysicsObject *pPhysics )
 {
 	if ( !CanMove() )
 		return;
@@ -1363,7 +1363,7 @@ void CCSPlayer::VPhysicsShadowUpdate( IPhysicsObject *pPhysics )
 	BaseClass::VPhysicsShadowUpdate( pPhysics );
 }
 
-bool CCSPlayer::HasShield() const
+bool CHL2MP_Player::HasShield() const
 {
 #ifdef CS_SHIELD_ENABLED
 	return m_bHasShield;
@@ -1373,7 +1373,7 @@ bool CCSPlayer::HasShield() const
 }
 
 
-bool CCSPlayer::IsShieldDrawn() const
+bool CHL2MP_Player::IsShieldDrawn() const
 {
 #ifdef CS_SHIELD_ENABLED
 	return m_bShieldDrawn;
@@ -1383,7 +1383,7 @@ bool CCSPlayer::IsShieldDrawn() const
 }
 
 
-void CCSPlayer::CheatImpulseCommands( int iImpulse )
+void CHL2MP_Player::CheatImpulseCommands( int iImpulse )
 {
 	switch( iImpulse )
 	{
@@ -1419,7 +1419,7 @@ void CCSPlayer::CheatImpulseCommands( int iImpulse )
 	}
 }
 
-void CCSPlayer::SetupVisibility( CBaseEntity *pViewEntity, unsigned char *pvs, int pvssize )
+void CHL2MP_Player::SetupVisibility( CBaseEntity *pViewEntity, unsigned char *pvs, int pvssize )
 {
 	BaseClass::SetupVisibility( pViewEntity, pvs, pvssize );
 
@@ -1427,7 +1427,7 @@ void CCSPlayer::SetupVisibility( CBaseEntity *pViewEntity, unsigned char *pvs, i
 	PointCameraSetupVisibility( this, area, pvs, pvssize );
 }
 
-void CCSPlayer::UpdateAddonBits()
+void CHL2MP_Player::UpdateAddonBits()
 {
 	int iNewBits = 0;
 
@@ -1497,7 +1497,7 @@ void CCSPlayer::UpdateAddonBits()
 	m_iAddonBits = iNewBits;
 }
 
-void CCSPlayer::UpdateRadar()
+void CHL2MP_Player::UpdateRadar()
 {
 	// update once a second
 	if ( (m_flLastRadarUpdateTime + 1.0) > gpGlobals->curtime )
@@ -1514,7 +1514,7 @@ void CCSPlayer::UpdateRadar()
 
 	for ( int i=0; i < MAX_PLAYERS; i++ )
 	{
-		CCSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i+1 ) );
+		CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i+1 ) );
 
 		if ( !pPlayer )
 			continue; // nothing there
@@ -1542,7 +1542,7 @@ void CCSPlayer::UpdateRadar()
 	MessageEnd();
 }
 
-void CCSPlayer::UpdateMouseoverHints()
+void CHL2MP_Player::UpdateMouseoverHints()
 {
 	if ( IsBlind() || IsObserver() )
 		return;
@@ -1620,7 +1620,7 @@ void CCSPlayer::UpdateMouseoverHints()
 	}
 }
 
-void CCSPlayer::PostThink()
+void CHL2MP_Player::PostThink()
 {
 	BaseClass::PostThink();
 
@@ -1682,7 +1682,7 @@ void CCSPlayer::PostThink()
 }
 
 
-void CCSPlayer::PushawayThink()
+void CHL2MP_Player::PushawayThink()
 {
 	// Push physics props out of our way.
 	PerformObstaclePushaway( this );
@@ -1694,7 +1694,7 @@ void CCSPlayer::PushawayThink()
 // Purpose: Returns whether or not we can switch to the given weapon.
 // Input  : pWeapon -
 //-----------------------------------------------------------------------------
-bool CCSPlayer::Weapon_CanSwitchTo( CBaseCombatWeapon *pWeapon )
+bool CHL2MP_Player::Weapon_CanSwitchTo( CBaseCombatWeapon *pWeapon )
 {
 	if ( !pWeapon->CanDeploy() )
 		return false;
@@ -1708,7 +1708,7 @@ bool CCSPlayer::Weapon_CanSwitchTo( CBaseCombatWeapon *pWeapon )
 	return true;
 }
 
-bool CCSPlayer::ShouldDoLargeFlinch( int nHitGroup, CBaseEntity *pAttacker )
+bool CHL2MP_Player::ShouldDoLargeFlinch( int nHitGroup, CBaseEntity *pAttacker )
 {
 	if ( FBitSet( GetFlags(), FL_DUCKING ) )
 		return FALSE;
@@ -1719,7 +1719,7 @@ bool CCSPlayer::ShouldDoLargeFlinch( int nHitGroup, CBaseEntity *pAttacker )
 	if ( nHitGroup == HITGROUP_RIGHTLEG )
 		return FALSE;
 
-	CCSPlayer *pPlayer = ToCSPlayer( pAttacker );
+	CHL2MP_Player *pPlayer = ToCSPlayer( pAttacker );
 
 	if ( pPlayer == NULL || !pPlayer->IsPlayer() )
 		 pPlayer = NULL;
@@ -1742,7 +1742,7 @@ bool CCSPlayer::ShouldDoLargeFlinch( int nHitGroup, CBaseEntity *pAttacker )
 	return false;
 }
 
-bool CCSPlayer::IsArmored( int nHitGroup )
+bool CHL2MP_Player::IsArmored( int nHitGroup )
 {
 	bool bApplyArmor = false;
 
@@ -1771,7 +1771,7 @@ bool CCSPlayer::IsArmored( int nHitGroup )
 	return bApplyArmor;
 }
 
-void CCSPlayer::Pain( bool bHasArmour )
+void CHL2MP_Player::Pain( bool bHasArmour )
 {
 	switch (m_LastHitGroup)
 	{
@@ -1798,7 +1798,7 @@ void CCSPlayer::Pain( bool bHasArmour )
 	}
 }
 
-int CCSPlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
+int CHL2MP_Player::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 {
 	CTakeDamageInfo info = inputInfo;
 
@@ -1824,7 +1824,7 @@ int CCSPlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 	CSGameRules()->PlayerTookDamage(this, inputInfo);
 
 	//Check "Goose Chase" achievement
-	CCSPlayer *pAttacker = ToCSPlayer(info.GetAttacker());
+	CHL2MP_Player *pAttacker = ToCSPlayer(info.GetAttacker());
 	if (m_bIsDefusing && m_gooseChaseStep == GC_NONE && pAttacker && pAttacker->GetTeamNumber() != GetTeamNumber() )
 	{
 
@@ -1833,7 +1833,7 @@ int CCSPlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 		CTeam *pAttackerTeam = GetGlobalTeam( pAttacker->GetTeamNumber() );
 		for ( int iPlayer=0; iPlayer < pAttackerTeam->GetNumPlayers(); iPlayer++ )
 		{
-			CCSPlayer *pPlayer = ToCSPlayer( pAttackerTeam->GetPlayer( iPlayer ) );
+			CHL2MP_Player *pPlayer = ToCSPlayer( pAttackerTeam->GetPlayer( iPlayer ) );
 			Assert( pPlayer );
 			if ( !pPlayer )
 				continue;
@@ -1862,7 +1862,7 @@ int CCSPlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 	// warn about team attacks
 	if ( bFriendlyFire && pInflictor->GetTeamNumber() == GetTeamNumber() && pInflictor != this && info.GetAttacker() != this )
 	{
-		CCSPlayer *pCSAttacker = ToCSPlayer( pInflictor );
+		CHL2MP_Player *pCSAttacker = ToCSPlayer( pInflictor );
 		if ( !pCSAttacker )
 			pCSAttacker = ToCSPlayer( info.GetAttacker() );
 
@@ -1923,7 +1923,7 @@ int CCSPlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 		// [menglish] Store whether or not the knife did this damage as knives do bullet damage,
 		// so we need to specifically check the weapon here
 		bool bKnifeDamage = false;
-		CCSPlayer *pPlayer = ToCSPlayer( info.GetAttacker() );
+		CHL2MP_Player *pPlayer = ToCSPlayer( info.GetAttacker() );
 
 		if ( pPlayer )
 		{
@@ -2080,7 +2080,7 @@ int CCSPlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 		if(m_iHealth - info.GetDamage() <= 0 && m_iHealth <= AchievementConsts::KillLowDamage_MaxHealthLeft)
 		{
 			bool onlyDamage = true;
-			CCSPlayer *pAttacker = ToCSPlayer(info.GetAttacker());
+			CHL2MP_Player *pAttacker = ToCSPlayer(info.GetAttacker());
 			if(pAttacker && pAttacker->GetTeamNumber() != GetTeamNumber())
 			{
 				//Verify that the killer has not done damage to this player beforehand
@@ -2148,7 +2148,7 @@ int CCSPlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 
 
 //MIKETODO: this probably should let the shield model catch the trace attacks.
-bool CCSPlayer::IsHittingShield( const Vector &vecDirection, trace_t *ptr )
+bool CHL2MP_Player::IsHittingShield( const Vector &vecDirection, trace_t *ptr )
 {
 	if ( HasShield() == false )
 		 return false;
@@ -2173,7 +2173,7 @@ bool CCSPlayer::IsHittingShield( const Vector &vecDirection, trace_t *ptr )
 }
 
 
-void CCSPlayer::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
+void CHL2MP_Player::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
 {
 	bool bShouldBleed = true;
 	bool bShouldSpark = false;
@@ -2373,7 +2373,7 @@ void CCSPlayer::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, 
 }
 
 
-void CCSPlayer::Reset()
+void CHL2MP_Player::Reset()
 {
 	ResetFragCount();
 	ResetDeathCount();
@@ -2394,7 +2394,7 @@ void CCSPlayer::Reset()
 //			bDisplayIfDead -
 //			bOverrideClientSettings -
 //-----------------------------------------------------------------------------
-void CCSPlayer::HintMessage( const char *pMessage, bool bDisplayIfDead, bool bOverrideClientSettings )
+void CHL2MP_Player::HintMessage( const char *pMessage, bool bDisplayIfDead, bool bOverrideClientSettings )
 {
 	if ( ( !bDisplayIfDead && !IsAlive() ) || !IsNetClient() || !m_pHintMessageQueue )
 		return;
@@ -2403,7 +2403,7 @@ void CCSPlayer::HintMessage( const char *pMessage, bool bDisplayIfDead, bool bOv
 		m_pHintMessageQueue->AddMessage( pMessage );
 }
 
-void CCSPlayer::AddAccount( int amount, bool bTrackChange, bool bItemBought, const char *pItemName )
+void CHL2MP_Player::AddAccount( int amount, bool bTrackChange, bool bItemBought, const char *pItemName )
 {
 	m_iAccount += amount;
 
@@ -2431,38 +2431,38 @@ void CCSPlayer::AddAccount( int amount, bool bTrackChange, bool bItemBought, con
 		m_iAccount = 16000;
 }
 
-void CCSPlayer::MarkAsNotReceivingMoneyNextRound()
+void CHL2MP_Player::MarkAsNotReceivingMoneyNextRound()
 {
 	m_receivesMoneyNextRound = false;
 }
 
-bool CCSPlayer::DoesPlayerGetRoundStartMoney()
+bool CHL2MP_Player::DoesPlayerGetRoundStartMoney()
 {
 	return m_receivesMoneyNextRound;
 }
 
-CCSPlayer* CCSPlayer::Instance( int iEnt )
+CHL2MP_Player* CHL2MP_Player::Instance( int iEnt )
 {
-	return dynamic_cast< CCSPlayer* >( CBaseEntity::Instance( INDEXENT( iEnt ) ) );
+	return dynamic_cast< CHL2MP_Player* >( CBaseEntity::Instance( INDEXENT( iEnt ) ) );
 }
 
 
-void CCSPlayer::DropC4()
+void CHL2MP_Player::DropC4()
 {
 }
 
 
-bool CCSPlayer::HasDefuser()
+bool CHL2MP_Player::HasDefuser()
 {
 	return m_bHasDefuser;
 }
 
-void CCSPlayer::RemoveDefuser()
+void CHL2MP_Player::RemoveDefuser()
 {
 	m_bHasDefuser = false;
 }
 
-void CCSPlayer::GiveDefuser(bool bPickedUp /* = false */)
+void CHL2MP_Player::GiveDefuser(bool bPickedUp /* = false */)
 {
 	if ( !m_bHasDefuser )
 	{
@@ -2490,7 +2490,7 @@ void CCSPlayer::GiveDefuser(bool bPickedUp /* = false */)
 }
 
 // player blinded by a flashbang
-void CCSPlayer::Blind( float holdTime, float fadeTime, float startingAlpha )
+void CHL2MP_Player::Blind( float holdTime, float fadeTime, float startingAlpha )
 {
 	// Don't flash a spectator.
 	color32 clr = {255, 255, 255, 255};
@@ -2544,7 +2544,7 @@ void CCSPlayer::Blind( float holdTime, float fadeTime, float startingAlpha )
 	}
 }
 
-void CCSPlayer::Deafen( float flDistance )
+void CHL2MP_Player::Deafen( float flDistance )
 {
 	// Spectators don't get deafened
 	if ( (GetObserverMode() == OBS_MODE_NONE)  ||  (GetObserverMode() == OBS_MODE_IN_EYE) )
@@ -2578,7 +2578,7 @@ void CCSPlayer::Deafen( float flDistance )
 	}
 }
 
-void CCSPlayer::GiveShield( void )
+void CHL2MP_Player::GiveShield( void )
 {
 #ifdef CS_SHIELD_ENABLED
 	m_bHasShield = true;
@@ -2603,7 +2603,7 @@ void CCSPlayer::GiveShield( void )
 #endif
 }
 
-void CCSPlayer::RemoveShield( void )
+void CHL2MP_Player::RemoveShield( void )
 {
 #ifdef CS_SHIELD_ENABLED
 	m_bHasShield = false;
@@ -2617,7 +2617,7 @@ void CCSPlayer::RemoveShield( void )
 #endif
 }
 
-void CCSPlayer::RemoveAllItems( bool removeSuit )
+void CHL2MP_Player::RemoveAllItems( bool removeSuit )
 {
 	if( HasDefuser() )
 	{
@@ -2653,7 +2653,7 @@ void CCSPlayer::RemoveAllItems( bool removeSuit )
 	BaseClass::RemoveAllItems( removeSuit );
 }
 
-void CCSPlayer::ObserverRoundRespawn()
+void CHL2MP_Player::ObserverRoundRespawn()
 {
 	ClearFlashbangScreenFade();
 
@@ -2668,7 +2668,7 @@ void CCSPlayer::ObserverRoundRespawn()
 	}
 }
 
-void CCSPlayer::RoundRespawn()
+void CHL2MP_Player::RoundRespawn()
 {
 	//MIKETODO: menus
 	//if ( m_iMenu != Menu_ChooseAppearance )
@@ -2689,7 +2689,7 @@ void CCSPlayer::RoundRespawn()
 	ResetDamageCounters();
 }
 
-void CCSPlayer::CheckTKPunishment( void )
+void CHL2MP_Player::CheckTKPunishment( void )
 {
 	// teamkill punishment..
 	if ( (m_bJustKilledTeammate == true) && mp_tkpunish.GetInt() )
@@ -2700,12 +2700,12 @@ void CCSPlayer::CheckTKPunishment( void )
 	}
 }
 
-CWeaponCSBase* CCSPlayer::GetActiveCSWeapon() const
+CWeaponCSBase* CHL2MP_Player::GetActiveCSWeapon() const
 {
 	return dynamic_cast< CWeaponCSBase* >( GetActiveWeapon() );
 }
 
-void CCSPlayer::PreThink()
+void CHL2MP_Player::PreThink()
 {
 	BaseClass::PreThink();
 	if ( m_bAutoReload )
@@ -2756,7 +2756,7 @@ void CCSPlayer::PreThink()
 #endif
 }
 
-void CCSPlayer::MoveToNextIntroCamera()
+void CHL2MP_Player::MoveToNextIntroCamera()
 {
 	m_pIntroCamera = gEntList.FindEntityByClassname( m_pIntroCamera, "point_viewcontrol" );
 
@@ -2810,7 +2810,7 @@ class NotVIP
 public:
 	bool operator()( CBasePlayer *player )
 	{
-		CCSPlayer *csPlayer = static_cast< CCSPlayer * >(player);
+		CHL2MP_Player *csPlayer = static_cast< CHL2MP_Player * >(player);
 		csPlayer->MakeVIP( false );
 
 		return true;
@@ -2830,7 +2830,7 @@ CON_COMMAND( cs_make_vip, "Marks a player as the VIP" )
 		return;
 	}
 
-	CCSPlayer *player = static_cast< CCSPlayer * >(UTIL_PlayerByIndex( atoi( args[1] ) ));
+	CHL2MP_Player *player = static_cast< CHL2MP_Player * >(UTIL_PlayerByIndex( atoi( args[1] ) ));
 	if ( !player )
 	{
 		// Invalid value clears out VIP
@@ -2842,7 +2842,7 @@ CON_COMMAND( cs_make_vip, "Marks a player as the VIP" )
 	player->MakeVIP( true );
 }
 
-void CCSPlayer::MakeVIP( bool isVIP )
+void CHL2MP_Player::MakeVIP( bool isVIP )
 {
 	if ( isVIP )
 	{
@@ -2852,12 +2852,12 @@ void CCSPlayer::MakeVIP( bool isVIP )
 	m_isVIP = isVIP;
 }
 
-bool CCSPlayer::IsVIP() const
+bool CHL2MP_Player::IsVIP() const
 {
 	return m_isVIP;
 }
 
-void CCSPlayer::DropShield( void )
+void CHL2MP_Player::DropShield( void )
 {
 #ifdef CS_SHIELD_ENABLED
 	//Drop an item_defuser
@@ -2878,14 +2878,14 @@ void CCSPlayer::DropShield( void )
 #endif
 }
 
-void CCSPlayer::SetShieldDrawnState( bool bState )
+void CHL2MP_Player::SetShieldDrawnState( bool bState )
 {
 #ifdef CS_SHIELD_ENABLED
 	m_bShieldDrawn = bState;
 #endif
 }
 
-bool CCSPlayer::CSWeaponDrop( CBaseCombatWeapon *pWeapon, bool bDropShield, bool bThrowForward )
+bool CHL2MP_Player::CSWeaponDrop( CBaseCombatWeapon *pWeapon, bool bDropShield, bool bThrowForward )
 {
 	bool bSuccess = false;
 
@@ -3038,7 +3038,7 @@ bool CCSPlayer::CSWeaponDrop( CBaseCombatWeapon *pWeapon, bool bDropShield, bool
 }
 
 
-bool CCSPlayer::DropRifle( bool fromDeath )
+bool CHL2MP_Player::DropRifle( bool fromDeath )
 {
 	bool bSuccess = false;
 
@@ -3064,7 +3064,7 @@ bool CCSPlayer::DropRifle( bool fromDeath )
 }
 
 
-bool CCSPlayer::DropPistol( bool fromDeath )
+bool CHL2MP_Player::DropPistol( bool fromDeath )
 {
 	bool bSuccess = false;
 
@@ -3089,7 +3089,7 @@ bool CCSPlayer::DropPistol( bool fromDeath )
 	return bSuccess;
 }
 
-bool CCSPlayer::HasPrimaryWeapon( void )
+bool CHL2MP_Player::HasPrimaryWeapon( void )
 {
 	bool bSuccess = false;
 
@@ -3104,7 +3104,7 @@ bool CCSPlayer::HasPrimaryWeapon( void )
 }
 
 
-bool CCSPlayer::HasSecondaryWeapon( void )
+bool CHL2MP_Player::HasSecondaryWeapon( void )
 {
 	bool bSuccess = false;
 
@@ -3117,12 +3117,12 @@ bool CCSPlayer::HasSecondaryWeapon( void )
 	return bSuccess;
 }
 
-bool CCSPlayer::IsInBuyZone()
+bool CHL2MP_Player::IsInBuyZone()
 {
 	return m_bInBuyZone && !IsVIP();
 }
 
-bool CCSPlayer::CanPlayerBuy( bool display )
+bool CHL2MP_Player::CanPlayerBuy( bool display )
 {
 	// is the player in a buy zone?
 	if ( !IsInBuyZone() )
@@ -3180,7 +3180,7 @@ bool CCSPlayer::CanPlayerBuy( bool display )
 }
 
 
-BuyResult_e CCSPlayer::AttemptToBuyVest( void )
+BuyResult_e CHL2MP_Player::AttemptToBuyVest( void )
 {
 	int iKevlarPrice = KEVLAR_PRICE;
 
@@ -3225,9 +3225,9 @@ BuyResult_e CCSPlayer::AttemptToBuyVest( void )
 }
 
 
-BuyResult_e CCSPlayer::AttemptToBuyAssaultSuit( void )
+BuyResult_e CHL2MP_Player::AttemptToBuyAssaultSuit( void )
 {
-	// WARNING: This price logic also exists in C_CSPlayer::GetCurrentAssaultSuitPrice
+	// WARNING: This price logic also exists in C_HL2MP_Player::GetCurrentAssaultSuitPrice
 	// and must be kept in sync if changes are made.
 
 	int fullArmor = ArmorValue() >= 100 ? 1 : 0;
@@ -3296,7 +3296,7 @@ BuyResult_e CCSPlayer::AttemptToBuyAssaultSuit( void )
 	}
 }
 
-BuyResult_e CCSPlayer::AttemptToBuyShield( void )
+BuyResult_e CHL2MP_Player::AttemptToBuyShield( void )
 {
 #ifdef CS_SHIELD_ENABLED
 	if ( HasShield() )		// prevent this guy from buying more than 1 Defuse Kit
@@ -3340,7 +3340,7 @@ BuyResult_e CCSPlayer::AttemptToBuyShield( void )
 #endif
 }
 
-BuyResult_e CCSPlayer::AttemptToBuyDefuser( void )
+BuyResult_e CHL2MP_Player::AttemptToBuyDefuser( void )
 {
 	CCSGameRules *MPRules = CSGameRules();
 
@@ -3373,7 +3373,7 @@ BuyResult_e CCSPlayer::AttemptToBuyDefuser( void )
 	return BUY_NOT_ALLOWED;
 }
 
-BuyResult_e CCSPlayer::AttemptToBuyNightVision( void )
+BuyResult_e CHL2MP_Player::AttemptToBuyNightVision( void )
 {
 	int iNVGPrice = NVG_PRICE;
 
@@ -3426,7 +3426,7 @@ BuyResult_e CCSPlayer::AttemptToBuyNightVision( void )
 //      value without adding new code to all the return points.
 //=============================================================================
 
-BuyResult_e CCSPlayer::HandleCommand_Buy( const char *item )
+BuyResult_e CHL2MP_Player::HandleCommand_Buy( const char *item )
 {    
 	BuyResult_e result = HandleCommand_Buy_Internal(item);
 	if (result == BUY_BOUGHT)
@@ -3437,7 +3437,7 @@ BuyResult_e CCSPlayer::HandleCommand_Buy( const char *item )
 	return result;
 }
 
-BuyResult_e CCSPlayer::HandleCommand_Buy_Internal( const char* wpnName ) 
+BuyResult_e CHL2MP_Player::HandleCommand_Buy_Internal( const char* wpnName ) 
 //=============================================================================
 // HPE_END
 //=============================================================================
@@ -3627,7 +3627,7 @@ BuyResult_e CCSPlayer::HandleCommand_Buy_Internal( const char* wpnName )
 }
 
 
-BuyResult_e CCSPlayer::BuyGunAmmo( CBaseCombatWeapon *pWeapon, bool bBlinkMoney )
+BuyResult_e CHL2MP_Player::BuyGunAmmo( CBaseCombatWeapon *pWeapon, bool bBlinkMoney )
 {
 	if ( !CanPlayerBuy( false ) )
 	{
@@ -3666,7 +3666,7 @@ BuyResult_e CCSPlayer::BuyGunAmmo( CBaseCombatWeapon *pWeapon, bool bBlinkMoney 
 }
 
 
-BuyResult_e CCSPlayer::BuyAmmo( int nSlot, bool bBlinkMoney )
+BuyResult_e CHL2MP_Player::BuyAmmo( int nSlot, bool bBlinkMoney )
 {
 	if ( !CanPlayerBuy( false ) )
 	{
@@ -3695,7 +3695,7 @@ BuyResult_e CCSPlayer::BuyAmmo( int nSlot, bool bBlinkMoney )
 }
 
 
-BuyResult_e CCSPlayer::AttemptToBuyAmmo( int iAmmoType )
+BuyResult_e CHL2MP_Player::AttemptToBuyAmmo( int iAmmoType )
 {
 	Assert( iAmmoType == 0 || iAmmoType == 1 );
 
@@ -3714,7 +3714,7 @@ BuyResult_e CCSPlayer::AttemptToBuyAmmo( int iAmmoType )
 	return result;
 }
 
-BuyResult_e CCSPlayer::AttemptToBuyAmmoSingle( int iAmmoType )
+BuyResult_e CHL2MP_Player::AttemptToBuyAmmoSingle( int iAmmoType )
 {
 	Assert( iAmmoType == 0 || iAmmoType == 1 );
 
@@ -3781,7 +3781,7 @@ RadioType NameToRadioEvent( const char *name )
 }
 
 
-void CCSPlayer::HandleMenu_Radio1( int slot )
+void CHL2MP_Player::HandleMenu_Radio1( int slot )
 {
 	if( m_iRadioMessages < 0 )
 		return;
@@ -3829,7 +3829,7 @@ void CCSPlayer::HandleMenu_Radio1( int slot )
 	}
 }
 
-void CCSPlayer::HandleMenu_Radio2( int slot )
+void CHL2MP_Player::HandleMenu_Radio2( int slot )
 {
 	if( m_iRadioMessages < 0 )
 		return;
@@ -3877,7 +3877,7 @@ void CCSPlayer::HandleMenu_Radio2( int slot )
 	}
 }
 
-void CCSPlayer::HandleMenu_Radio3( int slot )
+void CHL2MP_Player::HandleMenu_Radio3( int slot )
 {
 	if( m_iRadioMessages < 0 )
 		return;
@@ -3971,7 +3971,7 @@ void UTIL_CSRadioMessage( IRecipientFilter& filter, int iClient, int msg_dest, c
 	MessageEnd();
 }
 
-void CCSPlayer::ConstructRadioFilter( CRecipientFilter& filter )
+void CHL2MP_Player::ConstructRadioFilter( CRecipientFilter& filter )
 {
 	filter.MakeReliable();
 
@@ -3980,7 +3980,7 @@ void CCSPlayer::ConstructRadioFilter( CRecipientFilter& filter )
 	int i;
 	for ( i = 1; i <= gpGlobals->maxClients; ++i )
 	{
-		CCSPlayer *player = static_cast<CCSPlayer *>( UTIL_PlayerByIndex( i ) );
+		CHL2MP_Player *player = static_cast<CHL2MP_Player *>( UTIL_PlayerByIndex( i ) );
 		if ( !player )
 			continue;
 
@@ -4004,7 +4004,7 @@ void CCSPlayer::ConstructRadioFilter( CRecipientFilter& filter )
 	}
 }
 
-void CCSPlayer::Radio( const char *pszRadioSound, const char *pszRadioText )
+void CHL2MP_Player::Radio( const char *pszRadioSound, const char *pszRadioText )
 {
 	if( !IsAlive() )
 		return;
@@ -4039,12 +4039,12 @@ void CCSPlayer::Radio( const char *pszRadioSound, const char *pszRadioText )
 //-----------------------------------------------------------------------------
 // Purpose: Outputs currently connected players to the console
 //-----------------------------------------------------------------------------
-void CCSPlayer::ListPlayers()
+void CHL2MP_Player::ListPlayers()
 {
 	char buf[64];
 	for ( int i=1; i <= gpGlobals->maxClients; i++ )
 	{
-		CCSPlayer *pPlayer = dynamic_cast< CCSPlayer* >( UTIL_PlayerByIndex( i ) );
+		CHL2MP_Player *pPlayer = dynamic_cast< CHL2MP_Player* >( UTIL_PlayerByIndex( i ) );
 		if ( pPlayer && !pPlayer->IsDormant() )
 		{
 			if ( pPlayer->IsBot() )
@@ -4065,7 +4065,7 @@ void CCSPlayer::ListPlayers()
 // Purpose:
 // Input  : &info -
 //-----------------------------------------------------------------------------
-void CCSPlayer::OnDamagedByExplosion( const CTakeDamageInfo &info )
+void CHL2MP_Player::OnDamagedByExplosion( const CTakeDamageInfo &info )
 {
 	float lastDamage = info.GetDamage();
 
@@ -4092,7 +4092,7 @@ void CCSPlayer::OnDamagedByExplosion( const CTakeDamageInfo &info )
 	m_currentDeafnessFilter = 0;
 }
 
-void CCSPlayer::ApplyDeafnessEffect()
+void CHL2MP_Player::ApplyDeafnessEffect()
 {
 	// what's happening here is that the low-pass filter and the oscillator frequency effects need
 	// to fade in and out slowly.  So we have several filters that we switch between to achieve this
@@ -4171,7 +4171,7 @@ void CCSPlayer::ApplyDeafnessEffect()
 }
 
 
-void CCSPlayer::NoteWeaponFired()
+void CHL2MP_Player::NoteWeaponFired()
 {
 	Assert( m_pCurrentCommand );
 	if( m_pCurrentCommand )
@@ -4181,7 +4181,7 @@ void CCSPlayer::NoteWeaponFired()
 }
 
 
-bool CCSPlayer::WantsLagCompensationOnEntity( const CBasePlayer *pPlayer, const CUserCmd *pCmd, const CBitVec<MAX_EDICTS> *pEntityTransmitBits ) const
+bool CHL2MP_Player::WantsLagCompensationOnEntity( const CBasePlayer *pPlayer, const CUserCmd *pCmd, const CBitVec<MAX_EDICTS> *pEntityTransmitBits ) const
 {
 	// No need to lag compensate at all if we're not attacking in this command and
 	// we haven't attacked recently.
@@ -4203,7 +4203,7 @@ bool CCSPlayer::WantsLagCompensationOnEntity( const CBasePlayer *pPlayer, const 
 
 // Handles the special "radio" alias commands we're creating to accommodate the scripts players use
 // ** Returns true if we've handled the command **
-bool HandleRadioAliasCommands( CCSPlayer *pPlayer, const char *pszCommand )
+bool HandleRadioAliasCommands( CHL2MP_Player *pPlayer, const char *pszCommand )
 {
 	bool bRetVal = false;
 
@@ -4323,7 +4323,7 @@ bool HandleRadioAliasCommands( CCSPlayer *pPlayer, const char *pszCommand )
 	return bRetVal;
 }
 
-bool CCSPlayer::ShouldRunRateLimitedCommand( const CCommand &args )
+bool CHL2MP_Player::ShouldRunRateLimitedCommand( const CCommand &args )
 {
 	const char *pcmd = args[0];
 
@@ -4345,7 +4345,7 @@ bool CCSPlayer::ShouldRunRateLimitedCommand( const CCommand &args )
 	}
 }
 
-bool CCSPlayer::ClientCommand( const CCommand &args )
+bool CHL2MP_Player::ClientCommand( const CCommand &args )
 {
 	const char *pcmd = args[0];
 
@@ -4355,7 +4355,7 @@ bool CCSPlayer::ClientCommand( const CCommand &args )
 	{
 		for ( int i=1; i <= gpGlobals->maxClients; i++ )
 		{
-			CCSPlayer *pPlayer = dynamic_cast< CCSPlayer* >( UTIL_PlayerByIndex( i ) );
+			CHL2MP_Player *pPlayer = dynamic_cast< CHL2MP_Player* >( UTIL_PlayerByIndex( i ) );
 			if ( pPlayer && pPlayer != this && ( pPlayer->GetFlags() & FL_FAKECLIENT ) )
 			{
 				pPlayer->ClientCommand( pcmd );
@@ -4368,7 +4368,7 @@ bool CCSPlayer::ClientCommand( const CCommand &args )
 
 	if ( FStrEq( pcmd, "bot_cmd" ) )
 	{
-		CCSPlayer *pPlayer = dynamic_cast< CCSPlayer* >( UTIL_PlayerByIndex( atoi( args[1] ) ) );
+		CHL2MP_Player *pPlayer = dynamic_cast< CHL2MP_Player* >( UTIL_PlayerByIndex( atoi( args[1] ) ) );
 		if ( pPlayer && pPlayer != this && ( pPlayer->GetFlags() & FL_FAKECLIENT ) )
 		{
 			CCommand botArgs( args.ArgC() - 2, &args.ArgV()[2] );
@@ -4657,7 +4657,7 @@ bool CCSPlayer::ClientCommand( const CCommand &args )
 
 // returns true if the selection has been handled and the player's menu
 // can be closed...false if the menu should be displayed again
-bool CCSPlayer::HandleCommand_JoinTeam( int team )
+bool CHL2MP_Player::HandleCommand_JoinTeam( int team )
 {
 	CCSGameRules *mp = CSGameRules();
 
@@ -4886,7 +4886,7 @@ bool CCSPlayer::HandleCommand_JoinTeam( int team )
 }
 
 
-bool CCSPlayer::HandleCommand_JoinClass( int iClass )
+bool CHL2MP_Player::HandleCommand_JoinClass( int iClass )
 {
 	if( iClass == CS_CLASS_NONE )
 	{
@@ -4957,7 +4957,7 @@ void CheckStartMoney( void )
 }
 */
 
-void CCSPlayer::GetIntoGame()
+void CHL2MP_Player::GetIntoGame()
 {
 	// Set their model and if they're allowed to spawn right now, put them into the world.
 	//SetPlayerModel( iClass );
@@ -5044,14 +5044,14 @@ void CCSPlayer::GetIntoGame()
 }
 
 
-int CCSPlayer::PlayerClass() const
+int CHL2MP_Player::PlayerClass() const
 {
 	return m_iClass;
 }
 
 
 
-bool CCSPlayer::SelectSpawnSpot( const char *pEntClassName, CBaseEntity* &pSpot )
+bool CHL2MP_Player::SelectSpawnSpot( const char *pEntClassName, CBaseEntity* &pSpot )
 {
 	// Find the next spawn spot.
 	pSpot = gEntList.FindEntityByClassname( pSpot, pEntClassName );
@@ -5081,13 +5081,13 @@ bool CCSPlayer::SelectSpawnSpot( const char *pEntClassName, CBaseEntity* &pSpot 
 		pSpot = gEntList.FindEntityByClassname( pSpot, pEntClassName );
 	} while ( pSpot != pFirstSpot ); // loop if we're not back to the start
 
-	DevMsg("CCSPlayer::SelectSpawnSpot: couldn't find valid spawn point.\n");
+	DevMsg("CHL2MP_Player::SelectSpawnSpot: couldn't find valid spawn point.\n");
 
 	return true;
 }
 
 
-CBaseEntity* CCSPlayer::EntSelectSpawnPoint()
+CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint()
 {
 	CBaseEntity *pSpot;
 
@@ -5133,7 +5133,7 @@ CBaseEntity* CCSPlayer::EntSelectSpawnPoint()
 
 		/*********************************************************/
 		// The terrorist spawn points
-		else if ( GetTeamNumber() == TEAM_TERRORIST )
+		else
 		{
 			pSpot = g_pLastTerroristSpawn;
 
@@ -5175,26 +5175,26 @@ ReturnSpot:
 }
 
 
-void CCSPlayer::SetProgressBarTime( int barTime )
+void CHL2MP_Player::SetProgressBarTime( int barTime )
 {
 	m_iProgressBarDuration = barTime;
 	m_flProgressBarStartTime = this->m_flSimulationTime;
 }
 
 
-void CCSPlayer::PlayerDeathThink()
+void CHL2MP_Player::PlayerDeathThink()
 {
 }
 
 
-void CCSPlayer::State_Transition( CSPlayerState newState )
+void CHL2MP_Player::State_Transition( CSPlayerState newState )
 {
 	State_Leave();
 	State_Enter( newState );
 }
 
 
-void CCSPlayer::State_Enter( CSPlayerState newState )
+void CHL2MP_Player::State_Enter( CSPlayerState newState )
 {
 	m_iPlayerState = newState;
 	m_pCurStateInfo = State_LookupInfo( newState );
@@ -5213,7 +5213,7 @@ void CCSPlayer::State_Enter( CSPlayerState newState )
 }
 
 
-void CCSPlayer::State_Leave()
+void CHL2MP_Player::State_Leave()
 {
 	if ( m_pCurStateInfo && m_pCurStateInfo->pfnLeaveState )
 	{
@@ -5222,7 +5222,7 @@ void CCSPlayer::State_Leave()
 }
 
 
-void CCSPlayer::State_PreThink()
+void CHL2MP_Player::State_PreThink()
 {
 	if ( m_pCurStateInfo && m_pCurStateInfo->pfnPreThink )
 	{
@@ -5231,18 +5231,18 @@ void CCSPlayer::State_PreThink()
 }
 
 
-CCSPlayerStateInfo* CCSPlayer::State_LookupInfo( CSPlayerState state )
+CCSPlayerStateInfo* CHL2MP_Player::State_LookupInfo( CSPlayerState state )
 {
 	// This table MUST match the
 	static CCSPlayerStateInfo playerStateInfos[] =
 	{
-		{ STATE_ACTIVE,			"STATE_ACTIVE",			&CCSPlayer::State_Enter_ACTIVE, NULL, &CCSPlayer::State_PreThink_ACTIVE },
-		{ STATE_WELCOME,		"STATE_WELCOME",		&CCSPlayer::State_Enter_WELCOME, NULL, &CCSPlayer::State_PreThink_WELCOME },
-		{ STATE_PICKINGTEAM,	"STATE_PICKINGTEAM",	&CCSPlayer::State_Enter_PICKINGTEAM, NULL,	&CCSPlayer::State_PreThink_OBSERVER_MODE },
-		{ STATE_PICKINGCLASS,	"STATE_PICKINGCLASS",	&CCSPlayer::State_Enter_PICKINGCLASS, NULL,	&CCSPlayer::State_PreThink_OBSERVER_MODE },
-		{ STATE_DEATH_ANIM,		"STATE_DEATH_ANIM",		&CCSPlayer::State_Enter_DEATH_ANIM,	NULL, &CCSPlayer::State_PreThink_DEATH_ANIM },
-		{ STATE_DEATH_WAIT_FOR_KEY,	"STATE_DEATH_WAIT_FOR_KEY",	&CCSPlayer::State_Enter_DEATH_WAIT_FOR_KEY,	NULL, &CCSPlayer::State_PreThink_DEATH_WAIT_FOR_KEY },
-		{ STATE_OBSERVER_MODE,	"STATE_OBSERVER_MODE",	&CCSPlayer::State_Enter_OBSERVER_MODE,	NULL, &CCSPlayer::State_PreThink_OBSERVER_MODE }
+		{ STATE_ACTIVE,			"STATE_ACTIVE",			&CHL2MP_Player::State_Enter_ACTIVE, NULL, &CHL2MP_Player::State_PreThink_ACTIVE },
+		{ STATE_WELCOME,		"STATE_WELCOME",		&CHL2MP_Player::State_Enter_WELCOME, NULL, &CHL2MP_Player::State_PreThink_WELCOME },
+		{ STATE_PICKINGTEAM,	"STATE_PICKINGTEAM",	&CHL2MP_Player::State_Enter_PICKINGTEAM, NULL,	&CHL2MP_Player::State_PreThink_OBSERVER_MODE },
+		{ STATE_PICKINGCLASS,	"STATE_PICKINGCLASS",	&CHL2MP_Player::State_Enter_PICKINGCLASS, NULL,	&CHL2MP_Player::State_PreThink_OBSERVER_MODE },
+		{ STATE_DEATH_ANIM,		"STATE_DEATH_ANIM",		&CHL2MP_Player::State_Enter_DEATH_ANIM,	NULL, &CHL2MP_Player::State_PreThink_DEATH_ANIM },
+		{ STATE_DEATH_WAIT_FOR_KEY,	"STATE_DEATH_WAIT_FOR_KEY",	&CHL2MP_Player::State_Enter_DEATH_WAIT_FOR_KEY,	NULL, &CHL2MP_Player::State_PreThink_DEATH_WAIT_FOR_KEY },
+		{ STATE_OBSERVER_MODE,	"STATE_OBSERVER_MODE",	&CHL2MP_Player::State_Enter_OBSERVER_MODE,	NULL, &CHL2MP_Player::State_PreThink_OBSERVER_MODE }
 	};
 
 	for ( int i=0; i < ARRAYSIZE( playerStateInfos ); i++ )
@@ -5255,7 +5255,7 @@ CCSPlayerStateInfo* CCSPlayer::State_LookupInfo( CSPlayerState state )
 }
 
 
-void CCSPlayer::PhysObjectSleep()
+void CHL2MP_Player::PhysObjectSleep()
 {
 	IPhysicsObject *pObj = VPhysicsGetObject();
 	if ( pObj )
@@ -5263,7 +5263,7 @@ void CCSPlayer::PhysObjectSleep()
 }
 
 
-void CCSPlayer::PhysObjectWake()
+void CHL2MP_Player::PhysObjectWake()
 {
 	IPhysicsObject *pObj = VPhysicsGetObject();
 	if ( pObj )
@@ -5271,7 +5271,7 @@ void CCSPlayer::PhysObjectWake()
 }
 
 
-void CCSPlayer::State_Enter_WELCOME()
+void CHL2MP_Player::State_Enter_WELCOME()
 {
 	StartObserverMode( OBS_MODE_ROAMING );
 
@@ -5308,7 +5308,7 @@ void CCSPlayer::State_Enter_WELCOME()
 }
 
 
-void CCSPlayer::State_PreThink_WELCOME()
+void CHL2MP_Player::State_PreThink_WELCOME()
 {
 	// Verify some state.
 	Assert( IsSolidFlagSet( FSOLID_NOT_SOLID ) );
@@ -5322,13 +5322,13 @@ void CCSPlayer::State_PreThink_WELCOME()
 }
 
 
-void CCSPlayer::State_Enter_PICKINGTEAM()
+void CHL2MP_Player::State_Enter_PICKINGTEAM()
 {
 	ShowViewPortPanel( "team" ); // show the team menu
 }
 
 
-void CCSPlayer::State_Enter_DEATH_ANIM()
+void CHL2MP_Player::State_Enter_DEATH_ANIM()
 {
 	if ( HasWeapons() )
 	{
@@ -5362,7 +5362,7 @@ void CCSPlayer::State_Enter_DEATH_ANIM()
 // [menglish, pfreese] Added freeze cam logic
 //=============================================================================
  
-void CCSPlayer::State_PreThink_DEATH_ANIM()
+void CHL2MP_Player::State_PreThink_DEATH_ANIM()
 {
 	// If the anim is done playing, go to the next state (waiting for a keypress to
 	// either respawn the guy or put him into observer mode).
@@ -5414,7 +5414,7 @@ void CCSPlayer::State_PreThink_DEATH_ANIM()
 //=============================================================================
 
 
-void CCSPlayer::State_Enter_DEATH_WAIT_FOR_KEY()
+void CHL2MP_Player::State_Enter_DEATH_WAIT_FOR_KEY()
 {
 	// Remember when we died, so we can automatically put them into observer mode
 	// if they don't hit a key soon enough.
@@ -5431,7 +5431,7 @@ void CCSPlayer::State_Enter_DEATH_WAIT_FOR_KEY()
 }
 
 
-void CCSPlayer::State_PreThink_DEATH_WAIT_FOR_KEY()
+void CHL2MP_Player::State_PreThink_DEATH_WAIT_FOR_KEY()
 {
 	// once we're done animating our death and we're on the ground, we want to set movetype to None so our dead body won't do collisions and stuff anymore
 	// this prevents a bug where the dead body would go to a player's head if he walked over it while the dead player was clicking their button to respawn
@@ -5463,7 +5463,7 @@ void CCSPlayer::State_PreThink_DEATH_WAIT_FOR_KEY()
 	}
 }
 
-void CCSPlayer::State_Enter_OBSERVER_MODE()
+void CHL2MP_Player::State_Enter_OBSERVER_MODE()
 {
 	// do we have fadetoblack on? (need to fade their screen back in)
 	if ( mp_fadetoblack.GetBool() && mp_forcecamera.GetInt() != OBS_ALLOW_NONE)
@@ -5498,7 +5498,7 @@ void CCSPlayer::State_Enter_OBSERVER_MODE()
 	PhysObjectSleep();
 }
 
-void CCSPlayer::State_PreThink_OBSERVER_MODE()
+void CHL2MP_Player::State_PreThink_OBSERVER_MODE()
 {
 	// Make sure nobody has changed any of our state.
 //	Assert( GetMoveType() == MOVETYPE_FLY );
@@ -5512,7 +5512,7 @@ void CCSPlayer::State_PreThink_OBSERVER_MODE()
 }
 
 
-void CCSPlayer::State_Enter_PICKINGCLASS()
+void CHL2MP_Player::State_Enter_PICKINGCLASS()
 {
 	if ( CommandLine()->FindParm( "-makereslists" ) ) // don't show the menu when making reslists
 	{
@@ -5549,7 +5549,7 @@ void CCSPlayer::State_Enter_PICKINGCLASS()
 	}
 }
 
-void CCSPlayer::State_Enter_ACTIVE()
+void CHL2MP_Player::State_Enter_ACTIVE()
 {
 	SetMoveType( MOVETYPE_WALK );
 	RemoveSolidFlags( FSOLID_NOT_SOLID );
@@ -5558,7 +5558,7 @@ void CCSPlayer::State_Enter_ACTIVE()
 }
 
 
-void CCSPlayer::State_PreThink_ACTIVE()
+void CHL2MP_Player::State_PreThink_ACTIVE()
 {
 	// We only allow noclip here only because noclip is useful for debugging.
 	// It would be nice if the noclip command set some flag so we could tell that they
@@ -5576,7 +5576,7 @@ void CCSPlayer::State_PreThink_ACTIVE()
 }
 
 
-void CCSPlayer::Weapon_Equip( CBaseCombatWeapon *pWeapon )
+void CHL2MP_Player::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 {
 	CWeaponCSBase *pCSWeapon = dynamic_cast< CWeaponCSBase* >( pWeapon );
 	if ( pCSWeapon )
@@ -5610,7 +5610,7 @@ void CCSPlayer::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 	BaseClass::Weapon_Equip( pWeapon );
 }
 
-bool CCSPlayer::Weapon_CanUse( CBaseCombatWeapon *pBaseWeapon )
+bool CHL2MP_Player::Weapon_CanUse( CBaseCombatWeapon *pBaseWeapon )
 {
 	CWeaponCSBase *pWeapon = dynamic_cast< CWeaponCSBase* >( pBaseWeapon );
 
@@ -5626,7 +5626,7 @@ bool CCSPlayer::Weapon_CanUse( CBaseCombatWeapon *pBaseWeapon )
 	return true;
 }
 
-bool CCSPlayer::BumpWeapon( CBaseCombatWeapon *pBaseWeapon )
+bool CHL2MP_Player::BumpWeapon( CBaseCombatWeapon *pBaseWeapon )
 {
 	CWeaponCSBase *pWeapon = dynamic_cast< CWeaponCSBase* >( pBaseWeapon );
 	if ( !pWeapon )
@@ -5707,7 +5707,7 @@ bool CCSPlayer::BumpWeapon( CBaseCombatWeapon *pBaseWeapon )
 		pWeapon->AddSolidFlags( FSOLID_NOT_SOLID );
 		pWeapon->AddEffects( EF_NODRAW );
 
-		CCSPlayer* pDonor = pWeapon->GetDonor();
+		CHL2MP_Player* pDonor = pWeapon->GetDonor();
 		if ( pDonor && pDonor != this && pWeapon->GetCSWpnData().GetWeaponPrice() > m_iAccount )
 		{
 			CCS_GameStats.Event_PlayerDonatedWeapon( pDonor );
@@ -5753,12 +5753,12 @@ bool CCSPlayer::BumpWeapon( CBaseCombatWeapon *pBaseWeapon )
 }
 
 
-void CCSPlayer::ResetStamina( void )
+void CHL2MP_Player::ResetStamina( void )
 {
 	m_flStamina = 0.0f;
 }
 
-void CCSPlayer::RescueZoneTouch( inputdata_t &inputdata )
+void CHL2MP_Player::RescueZoneTouch( inputdata_t &inputdata )
 {
 	m_bInHostageRescueZone = true;
 	if ( GetTeamNumber() == TEAM_CT && !(m_iDisplayHistoryBits & DHF_IN_RESCUE_ZONE) )
@@ -5771,7 +5771,7 @@ void CCSPlayer::RescueZoneTouch( inputdata_t &inputdata )
 //------------------------------------------------------------------------------------------
 CON_COMMAND( timeleft, "prints the time remaining in the match" )
 {
-	CCSPlayer *pPlayer = ToCSPlayer( UTIL_GetCommandClient() );
+	CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_GetCommandClient() );
 	if ( pPlayer && pPlayer->m_iNextTimeCheck >= gpGlobals->curtime )
 	{
 		return; // rate limiting
@@ -5833,7 +5833,7 @@ CON_COMMAND( timeleft, "prints the time remaining in the match" )
 /**
  * Emit given sound that only we can hear
  */
-void CCSPlayer::EmitPrivateSound( const char *soundName )
+void CHL2MP_Player::EmitPrivateSound( const char *soundName )
 {
 	CSoundParameters params;
 	if (!GetParametersForSound( soundName, params, NULL ))
@@ -5849,7 +5849,7 @@ void CCSPlayer::EmitPrivateSound( const char *soundName )
 //=====================
 static void AutoBuy( void )
 {
-	CCSPlayer *player = ToCSPlayer( UTIL_GetCommandClient() );
+	CHL2MP_Player *player = ToCSPlayer( UTIL_GetCommandClient() );
 
 	if ( player )
 		player->AutoBuy();
@@ -5859,7 +5859,7 @@ static ConCommand autobuy( "autobuy", AutoBuy, "Attempt to purchase items with t
 //==============================================
 //AutoBuy - do the work of deciding what to buy
 //==============================================
-void CCSPlayer::AutoBuy()
+void CHL2MP_Player::AutoBuy()
 {
 	if ( !IsInBuyZone() )
 	{
@@ -5886,7 +5886,7 @@ void CCSPlayer::AutoBuy()
 	// as we're not porting cs:cz, these were skipped
 }
 
-void CCSPlayer::ParseAutoBuyString(const char *string, bool &boughtPrimary, bool &boughtSecondary)
+void CHL2MP_Player::ParseAutoBuyString(const char *string, bool &boughtPrimary, bool &boughtSecondary)
 {
 	char command[32];
 	int nBuffSize = sizeof(command) - 1; // -1 to leave space for the NULL at the end of the string
@@ -5963,7 +5963,7 @@ void CCSPlayer::ParseAutoBuyString(const char *string, bool &boughtPrimary, bool
 	}
 }
 
-BuyResult_e CCSPlayer::CombineBuyResults( BuyResult_e prevResult, BuyResult_e newResult )
+BuyResult_e CHL2MP_Player::CombineBuyResults( BuyResult_e prevResult, BuyResult_e newResult )
 {
 	if ( newResult == BUY_BOUGHT )
 	{
@@ -5981,7 +5981,7 @@ BuyResult_e CCSPlayer::CombineBuyResults( BuyResult_e prevResult, BuyResult_e ne
 //==============================================
 //PostAutoBuyCommandProcessing
 //==============================================
-void CCSPlayer::PostAutoBuyCommandProcessing(const AutoBuyInfoStruct *commandInfo, bool &boughtPrimary, bool &boughtSecondary)
+void CHL2MP_Player::PostAutoBuyCommandProcessing(const AutoBuyInfoStruct *commandInfo, bool &boughtPrimary, bool &boughtSecondary)
 {
 	if (commandInfo == NULL)
 	{
@@ -6008,7 +6008,7 @@ void CCSPlayer::PostAutoBuyCommandProcessing(const AutoBuyInfoStruct *commandInf
 	}
 }
 
-bool CCSPlayer::ShouldExecuteAutoBuyCommand(const AutoBuyInfoStruct *commandInfo, bool boughtPrimary, bool boughtSecondary)
+bool CHL2MP_Player::ShouldExecuteAutoBuyCommand(const AutoBuyInfoStruct *commandInfo, bool boughtPrimary, bool boughtSecondary)
 {
 	if (commandInfo == NULL)
 	{
@@ -6035,7 +6035,7 @@ bool CCSPlayer::ShouldExecuteAutoBuyCommand(const AutoBuyInfoStruct *commandInfo
 	return true;
 }
 
-AutoBuyInfoStruct *CCSPlayer::GetAutoBuyCommandInfo(const char *command)
+AutoBuyInfoStruct *CHL2MP_Player::GetAutoBuyCommandInfo(const char *command)
 {
 	int i = 0;
 	AutoBuyInfoStruct *ret = NULL;
@@ -6060,7 +6060,7 @@ AutoBuyInfoStruct *CCSPlayer::GetAutoBuyCommandInfo(const char *command)
 //PostAutoBuyCommandProcessing
 //- reorders the tokens in autobuyString based on the order of tokens in the priorityString.
 //==============================================
-void CCSPlayer::PrioritizeAutoBuyString(char *autobuyString, const char *priorityString)
+void CHL2MP_Player::PrioritizeAutoBuyString(char *autobuyString, const char *priorityString)
 {
 	char newString[256];
 	int newStringPos = 0;
@@ -6150,14 +6150,14 @@ void CCSPlayer::PrioritizeAutoBuyString(char *autobuyString, const char *priorit
 //==============================================================
 static void Rebuy( void )
 {
-	CCSPlayer *player = ToCSPlayer( UTIL_GetCommandClient() );
+	CHL2MP_Player *player = ToCSPlayer( UTIL_GetCommandClient() );
 
 	if ( player )
 		player->Rebuy();
 }
 static ConCommand rebuy( "rebuy", Rebuy, "Attempt to repurchase items with the order listed in cl_rebuy" );
 
-void CCSPlayer::BuildRebuyStruct()
+void CHL2MP_Player::BuildRebuyStruct()
 {
 	if (m_bIsInRebuy)
 	{
@@ -6259,7 +6259,7 @@ void CCSPlayer::BuildRebuyStruct()
 	m_rebuyStruct.m_armor = ( m_bHasHelmet ? 2 : ( ArmorValue() > 0 ? 1 : 0 ) );
 }
 
-void CCSPlayer::Rebuy( void )
+void CHL2MP_Player::Rebuy( void )
 {
 	if ( !IsInBuyZone() )
 	{
@@ -6355,7 +6355,7 @@ void CCSPlayer::Rebuy( void )
 	}
 }
 
-BuyResult_e CCSPlayer::RebuyPrimaryWeapon()
+BuyResult_e CHL2MP_Player::RebuyPrimaryWeapon()
 {
 	CBaseCombatWeapon *primary = Weapon_GetSlot( WEAPON_SLOT_RIFLE );
 	if (primary != NULL)
@@ -6369,7 +6369,7 @@ BuyResult_e CCSPlayer::RebuyPrimaryWeapon()
 	return BUY_ALREADY_HAVE;
 }
 
-BuyResult_e CCSPlayer::RebuySecondaryWeapon()
+BuyResult_e CHL2MP_Player::RebuySecondaryWeapon()
 {
 	CBaseCombatWeapon *pistol = Weapon_GetSlot( WEAPON_SLOT_PISTOL );
 	if (pistol != NULL && !m_bUsingDefaultPistol)
@@ -6383,7 +6383,7 @@ BuyResult_e CCSPlayer::RebuySecondaryWeapon()
 	return BUY_ALREADY_HAVE;
 }
 
-BuyResult_e CCSPlayer::RebuyPrimaryAmmo()
+BuyResult_e CHL2MP_Player::RebuyPrimaryAmmo()
 {
 	CBaseCombatWeapon *primary = Weapon_GetSlot( WEAPON_SLOT_RIFLE );
 
@@ -6409,7 +6409,7 @@ BuyResult_e CCSPlayer::RebuyPrimaryAmmo()
 }
 
 
-BuyResult_e CCSPlayer::RebuySecondaryAmmo()
+BuyResult_e CHL2MP_Player::RebuySecondaryAmmo()
 {
 	CBaseCombatWeapon *secondary = Weapon_GetSlot( WEAPON_SLOT_PISTOL );
 
@@ -6433,7 +6433,7 @@ BuyResult_e CCSPlayer::RebuySecondaryAmmo()
 	return BUY_ALREADY_HAVE;
 }
 
-BuyResult_e CCSPlayer::RebuyHEGrenade()
+BuyResult_e CHL2MP_Player::RebuyHEGrenade()
 {
 	CBaseCombatWeapon *pGrenade = Weapon_OwnsThisType( "weapon_hegrenade" );
 
@@ -6461,7 +6461,7 @@ BuyResult_e CCSPlayer::RebuyHEGrenade()
 	return overallResult;
 }
 
-BuyResult_e CCSPlayer::RebuyFlashbang()
+BuyResult_e CHL2MP_Player::RebuyFlashbang()
 {
 	CBaseCombatWeapon *pGrenade = Weapon_OwnsThisType( "weapon_flashbang" );
 
@@ -6489,7 +6489,7 @@ BuyResult_e CCSPlayer::RebuyFlashbang()
 	return overallResult;
 }
 
-BuyResult_e CCSPlayer::RebuySmokeGrenade()
+BuyResult_e CHL2MP_Player::RebuySmokeGrenade()
 {
 	CBaseCombatWeapon *pGrenade = Weapon_OwnsThisType( "weapon_smokegrenade" );
 
@@ -6517,7 +6517,7 @@ BuyResult_e CCSPlayer::RebuySmokeGrenade()
 	return overallResult;
 }
 
-BuyResult_e CCSPlayer::RebuyDefuser()
+BuyResult_e CHL2MP_Player::RebuyDefuser()
 {
 	//If we don't have a defuser, and we want one, buy it!
 	if( !HasDefuser() && m_rebuyStruct.m_defuser )
@@ -6528,7 +6528,7 @@ BuyResult_e CCSPlayer::RebuyDefuser()
 	return BUY_ALREADY_HAVE;
 }
 
-BuyResult_e CCSPlayer::RebuyNightVision()
+BuyResult_e CHL2MP_Player::RebuyNightVision()
 {
 	//if we don't have night vision and we want one, buy it!
 	if( !m_bHasNightVision && m_rebuyStruct.m_nightVision )
@@ -6539,7 +6539,7 @@ BuyResult_e CCSPlayer::RebuyNightVision()
 	return BUY_ALREADY_HAVE;
 }
 
-BuyResult_e CCSPlayer::RebuyArmor()
+BuyResult_e CHL2MP_Player::RebuyArmor()
 {
 	if (m_rebuyStruct.m_armor > 0 )
 	{
@@ -6567,7 +6567,7 @@ BuyResult_e CCSPlayer::RebuyArmor()
 	return BUY_ALREADY_HAVE;
 }
 
-bool CCSPlayer::IsUseableEntity( CBaseEntity *pEntity, unsigned int requiredCaps )
+bool CHL2MP_Player::IsUseableEntity( CBaseEntity *pEntity, unsigned int requiredCaps )
 {
 	CWeaponCSBase *pCSWepaon = dynamic_cast<CWeaponCSBase*>(pEntity);
 
@@ -6586,7 +6586,7 @@ bool CCSPlayer::IsUseableEntity( CBaseEntity *pEntity, unsigned int requiredCaps
 	return BaseClass::IsUseableEntity( pEntity, requiredCaps );
 }
 
-CBaseEntity *CCSPlayer::FindUseEntity()
+CBaseEntity *CHL2MP_Player::FindUseEntity()
 {
 	CBaseEntity *entity = NULL;
 
@@ -6629,7 +6629,7 @@ CBaseEntity *CCSPlayer::FindUseEntity()
 	return entity;
 }
 
-void CCSPlayer::StockPlayerAmmo( CBaseCombatWeapon *pNewWeapon )
+void CHL2MP_Player::StockPlayerAmmo( CBaseCombatWeapon *pNewWeapon )
 {
 	CWeaponCSBase *pWeapon =  dynamic_cast< CWeaponCSBase * >( pNewWeapon );
 
@@ -6676,7 +6676,7 @@ void CCSPlayer::StockPlayerAmmo( CBaseCombatWeapon *pNewWeapon )
 	}
 }
 
-CBaseEntity	*CCSPlayer::GiveNamedItem( const char *pszName, int iSubType )
+CBaseEntity	*CHL2MP_Player::GiveNamedItem( const char *pszName, int iSubType )
 {
 	EHANDLE pent;
 
@@ -6721,7 +6721,7 @@ CBaseEntity	*CCSPlayer::GiveNamedItem( const char *pszName, int iSubType )
 }
 
 
-void CCSPlayer::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
+void CHL2MP_Player::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
 {
 	if ( event == PLAYERANIMEVENT_THROW_GRENADE )
 	{
@@ -6740,7 +6740,7 @@ void CCSPlayer::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-int CCSPlayer::FlashlightIsOn( void )
+int CHL2MP_Player::FlashlightIsOn( void )
 {
 	return IsEffectActive( EF_DIMLIGHT );
 }
@@ -6749,7 +6749,7 @@ extern ConVar flashlight;
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CCSPlayer::FlashlightTurnOn( void )
+void CHL2MP_Player::FlashlightTurnOn( void )
 {
 	if( flashlight.GetInt() > 0 && IsAlive() )
 	{
@@ -6761,7 +6761,7 @@ void CCSPlayer::FlashlightTurnOn( void )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CCSPlayer::FlashlightTurnOff( void )
+void CHL2MP_Player::FlashlightTurnOff( void )
 {
 	RemoveEffects( EF_DIMLIGHT );
 
@@ -6784,7 +6784,7 @@ void CCSPlayer::FlashlightTurnOff( void )
 // [menglish] Clear all previously dropped equipment and add the c4 to the dropped equipment
 //=============================================================================
  
-void CCSPlayer::DropWeapons( bool fromDeath, bool friendlyFire )
+void CHL2MP_Player::DropWeapons( bool fromDeath, bool friendlyFire )
 {
 	for ( int i = 0; i < DROPPED_COUNT; ++i )
 	{
@@ -6917,11 +6917,11 @@ void CCSPlayer::DropWeapons( bool fromDeath, bool friendlyFire )
 //-----------------------------------------------------------------------------
 // Purpose: Put the player in the specified team
 //-----------------------------------------------------------------------------
-void CCSPlayer::ChangeTeam( int iTeamNum )
+void CHL2MP_Player::ChangeTeam( int iTeamNum )
 {
 	if ( !GetGlobalTeam( iTeamNum ) )
 	{
-		Warning( "CCSPlayer::ChangeTeam( %d ) - invalid team index.\n", iTeamNum );
+		Warning( "CHL2MP_Player::ChangeTeam( %d ) - invalid team index.\n", iTeamNum );
 		return;
 	}
 
@@ -7026,11 +7026,11 @@ void CCSPlayer::ChangeTeam( int iTeamNum )
 //-----------------------------------------------------------------------------
 // Purpose: Put the player in the specified team without penalty
 //-----------------------------------------------------------------------------
-void CCSPlayer::SwitchTeam( int iTeamNum )
+void CHL2MP_Player::SwitchTeam( int iTeamNum )
 {
 	if ( !GetGlobalTeam( iTeamNum ) || (iTeamNum != TEAM_CT && iTeamNum != TEAM_TERRORIST) )
 	{
-		Warning( "CCSPlayer::SwitchTeam( %d ) - invalid team index.\n", iTeamNum );
+		Warning( "CHL2MP_Player::SwitchTeam( %d ) - invalid team index.\n", iTeamNum );
 		return;
 	}
 
@@ -7095,7 +7095,7 @@ void CCSPlayer::SwitchTeam( int iTeamNum )
 	CSGameRules()->InitializePlayerCounts( NumAliveTerrorist, NumAliveCT, NumDeadTerrorist, NumDeadCT );
 }
 
-void CCSPlayer::ModifyOrAppendPlayerCriteria( AI_CriteriaSet& set )
+void CHL2MP_Player::ModifyOrAppendPlayerCriteria( AI_CriteriaSet& set )
 {
 	// this is for giving player info to the hostage response system
 	// and is as yet unused.
@@ -7110,7 +7110,7 @@ void CCSPlayer::ModifyOrAppendPlayerCriteria( AI_CriteriaSet& set )
 
 static unsigned int s_BulletGroupCounter = 0;
 
-void CCSPlayer::StartNewBulletGroup()
+void CHL2MP_Player::StartNewBulletGroup()
 {
 	s_BulletGroupCounter++;
 }
@@ -7118,7 +7118,7 @@ void CCSPlayer::StartNewBulletGroup()
 //=======================================================
 // Remember this amount of damage that we dealt for stats
 //=======================================================
-void CCSPlayer::RecordDamageGiven( const char *szDamageTaker, int iDamageGiven )
+void CHL2MP_Player::RecordDamageGiven( const char *szDamageTaker, int iDamageGiven )
 {
 	FOR_EACH_LL( m_DamageGivenList, i )
 	{
@@ -7137,7 +7137,7 @@ void CCSPlayer::RecordDamageGiven( const char *szDamageTaker, int iDamageGiven )
 //=======================================================
 // Remember this amount of damage that we took for stats
 //=======================================================
-void CCSPlayer::RecordDamageTaken( const char *szDamageDealer, int iDamageTaken )
+void CHL2MP_Player::RecordDamageTaken( const char *szDamageDealer, int iDamageTaken )
 {
 	FOR_EACH_LL( m_DamageTakenList, i )
 	{
@@ -7156,7 +7156,7 @@ void CCSPlayer::RecordDamageTaken( const char *szDamageDealer, int iDamageTaken 
 //=======================================================
 // Reset our damage given and taken counters
 //=======================================================
-void CCSPlayer::ResetDamageCounters()
+void CHL2MP_Player::ResetDamageCounters()
 {
 	m_DamageGivenList.PurgeAndDeleteElements();
 	m_DamageTakenList.PurgeAndDeleteElements();
@@ -7165,7 +7165,7 @@ void CCSPlayer::ResetDamageCounters()
 //=======================================================
 // Output the damage that we dealt to other players
 //=======================================================
-void CCSPlayer::OutputDamageTaken( void )
+void CHL2MP_Player::OutputDamageTaken( void )
 {
 	bool bPrintHeader = true;
 	CDamageRecord *pRecord;
@@ -7200,7 +7200,7 @@ void CCSPlayer::OutputDamageTaken( void )
 //=======================================================
 // Output the damage that we took from other players
 //=======================================================
-void CCSPlayer::OutputDamageGiven( void )
+void CHL2MP_Player::OutputDamageGiven( void )
 {
 	bool bPrintHeader = true;
 	CDamageRecord *pRecord;
@@ -7233,7 +7233,7 @@ void CCSPlayer::OutputDamageGiven( void )
 	}
 }
 
-void CCSPlayer::CreateViewModel( int index /*=0*/ )
+void CHL2MP_Player::CreateViewModel( int index /*=0*/ )
 {
 	Assert( index >= 0 && index < MAX_VIEWMODELS );
 
@@ -7252,12 +7252,12 @@ void CCSPlayer::CreateViewModel( int index /*=0*/ )
 	}
 }
 
-bool CCSPlayer::HasC4() const
+bool CHL2MP_Player::HasC4() const
 {
 	return ( Weapon_OwnsThisType( "weapon_c4" ) != NULL );
 }
 
-int CCSPlayer::GetNextObserverSearchStartPoint( bool bReverse )
+int CHL2MP_Player::GetNextObserverSearchStartPoint( bool bReverse )
 {
 	// If we are currently watching someone who is dead, they must have died while we were watching (since
 	// a dead guy is not a valid pick to start watching).  He was given his killer as an observer target
@@ -7265,7 +7265,7 @@ int CCSPlayer::GetNextObserverSearchStartPoint( bool bReverse )
 	// And this is just the start point anyway, but we want to start the search here in case it is okay.
 	if( m_hObserverTarget && !m_hObserverTarget->IsAlive() )
 	{
-		CCSPlayer *targetPlayer = ToCSPlayer(m_hObserverTarget);
+		CHL2MP_Player *targetPlayer = ToCSPlayer(m_hObserverTarget);
 		if( targetPlayer && targetPlayer->GetObserverTarget() )
 			return targetPlayer->GetObserverTarget()->entindex();
 	}
@@ -7273,7 +7273,7 @@ int CCSPlayer::GetNextObserverSearchStartPoint( bool bReverse )
 	return BaseClass::GetNextObserverSearchStartPoint( bReverse );
 }
 
-void CCSPlayer::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force )
+void CHL2MP_Player::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force )
 {
 	BaseClass::PlayStepSound( vecOrigin, psurface, fvol, force );
 
@@ -7294,7 +7294,7 @@ void CCSPlayer::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float
 }
 
 
-void CCSPlayer::SelectDeathPose( const CTakeDamageInfo &info )
+void CHL2MP_Player::SelectDeathPose( const CTakeDamageInfo &info )
 {
 	MDLCACHE_CRITICAL_SECTION();
 	if ( !GetModelPtr() )
@@ -7316,7 +7316,7 @@ void CCSPlayer::SelectDeathPose( const CTakeDamageInfo &info )
 }
 
 
-void CCSPlayer::HandleAnimEvent( animevent_t *pEvent )
+void CHL2MP_Player::HandleAnimEvent( animevent_t *pEvent )
 {
 	if ( pEvent->event == 4001 || pEvent->event == 4002 )
 	{
@@ -7330,7 +7330,7 @@ void CCSPlayer::HandleAnimEvent( animevent_t *pEvent )
 }
 
 
-bool CCSPlayer::CanChangeName( void )
+bool CHL2MP_Player::CanChangeName( void )
 {
 	if ( IsBot() )
 		return true;
@@ -7351,7 +7351,7 @@ bool CCSPlayer::CanChangeName( void )
 	return true;
 }
 
-void CCSPlayer::ChangeName( const char *pszNewName )
+void CHL2MP_Player::ChangeName( const char *pszNewName )
 {
 	// make sure name is not too long
 	char trimmedName[MAX_PLAYER_NAME_LENGTH];
@@ -7388,7 +7388,7 @@ void CCSPlayer::ChangeName( const char *pszNewName )
 	m_flNameChangeHistory[0] = gpGlobals->curtime; // last change
 }
 
-bool CCSPlayer::StartReplayMode( float fDelay, float fDuration, int iEntity )
+bool CHL2MP_Player::StartReplayMode( float fDelay, float fDuration, int iEntity )
 {
 	if ( !BaseClass::StartReplayMode( fDelay, fDuration, iEntity ) )
 		return false;
@@ -7416,7 +7416,7 @@ bool CCSPlayer::StartReplayMode( float fDelay, float fDuration, int iEntity )
 	return true;
 }
 
-void CCSPlayer::StopReplayMode()
+void CHL2MP_Player::StopReplayMode()
 {
 	BaseClass::StopReplayMode();
 
@@ -7430,7 +7430,7 @@ void CCSPlayer::StopReplayMode()
 	MessageEnd();
 }
 
-void CCSPlayer::PlayUseDenySound()
+void CHL2MP_Player::PlayUseDenySound()
 {
 	// Don't do a sound here because it can mute your footsteps giving you an advantage.
 	// The CS:S content for this sound is silent anyways.
@@ -7442,7 +7442,7 @@ void CCSPlayer::PlayUseDenySound()
 //=============================================================================
 
 // [menglish, tj] This is where we reset all the per-round information for achievements for this player
-void CCSPlayer::ResetRoundBasedAchievementVariables()
+void CHL2MP_Player::ResetRoundBasedAchievementVariables()
 {
 	m_KillingSpreeStartTime = -1;
 
@@ -7523,7 +7523,7 @@ void CCSPlayer::ResetRoundBasedAchievementVariables()
 
 
 /**
- *	static public CCSPlayer::GetCSWeaponIDCausingDamage()
+ *	static public CHL2MP_Player::GetCSWeaponIDCausingDamage()
  *
  *		Helper function to get the ID of the weapon used to kill a player.
  *		This is slightly non-trivial because the grenade because a separate
@@ -7535,10 +7535,10 @@ void CCSPlayer::ResetRoundBasedAchievementVariables()
  *	Returns:
  *		int -
  */
-CSWeaponID CCSPlayer::GetWeaponIdCausingDamange( const CTakeDamageInfo &info )
+CSWeaponID CHL2MP_Player::GetWeaponIdCausingDamange( const CTakeDamageInfo &info )
 {
 	CBaseEntity *pInflictor = info.GetInflictor();
-	CCSPlayer *pAttacker = ToCSPlayer(info.GetAttacker());
+	CHL2MP_Player *pAttacker = ToCSPlayer(info.GetAttacker());
 	if (pAttacker == pInflictor)
 	{
 		CWeaponCSBase* pAttackerWeapon = dynamic_cast< CWeaponCSBase * >(pAttacker->GetActiveWeapon());
@@ -7559,7 +7559,7 @@ CSWeaponID CCSPlayer::GetWeaponIdCausingDamange( const CTakeDamageInfo &info )
 // HPE_BEGIN:
 // [dwenger] adding tracking for weapon used fun fact
 //=============================================================================
-void CCSPlayer::PlayerUsedFirearm( CBaseCombatWeapon* pBaseWeapon )
+void CHL2MP_Player::PlayerUsedFirearm( CBaseCombatWeapon* pBaseWeapon )
 {
 	if ( pBaseWeapon )
 	{
@@ -7584,7 +7584,7 @@ void CCSPlayer::PlayerUsedFirearm( CBaseCombatWeapon* pBaseWeapon )
 
 
 /**
- *	public CCSPlayer::ProcessPlayerDeathAchievements()
+ *	public CHL2MP_Player::ProcessPlayerDeathAchievements()
  *
  *		Do Achievement processing whenever a player is killed
  *
@@ -7593,7 +7593,7 @@ void CCSPlayer::PlayerUsedFirearm( CBaseCombatWeapon* pBaseWeapon )
  * 		pVictim -
  * 		info -
  */
-void CCSPlayer::ProcessPlayerDeathAchievements( CCSPlayer *pAttacker, CCSPlayer *pVictim, const CTakeDamageInfo &info )
+void CHL2MP_Player::ProcessPlayerDeathAchievements( CHL2MP_Player *pAttacker, CHL2MP_Player *pVictim, const CTakeDamageInfo &info )
 {
 	Assert(pVictim != NULL);
 	CBaseEntity *pInflictor = info.GetInflictor();	
@@ -7676,7 +7676,7 @@ void CCSPlayer::ProcessPlayerDeathAchievements( CCSPlayer *pAttacker, CCSPlayer 
 		//Calculate Avenging for all players the victim has killed
 		for ( int avengedIndex = 0; avengedIndex < pVictim->m_enemyPlayersKilledThisRound.Count(); avengedIndex++ )        
 		{
-			CCSPlayer* avengedPlayer = pVictim->m_enemyPlayersKilledThisRound[avengedIndex];
+			CHL2MP_Player* avengedPlayer = pVictim->m_enemyPlayersKilledThisRound[avengedIndex];
 
 			if (avengedPlayer)
 			{
@@ -7868,7 +7868,7 @@ void CCSPlayer::ProcessPlayerDeathAchievements( CCSPlayer *pAttacker, CCSPlayer 
 	//If you kill a friendly player while blind (from an enemy player), give the guy that blinded you an achievement    
 	if ( pAttacker != NULL && pVictim != NULL && pVictim->GetTeamNumber() == pAttacker->GetTeamNumber() && pAttacker->IsBlind())
 	{
-		CCSPlayer* flashbangAttacker = pAttacker->GetLastFlashbangAttacker();
+		CHL2MP_Player* flashbangAttacker = pAttacker->GetLastFlashbangAttacker();
 		if (flashbangAttacker && pAttacker->GetTeamNumber() != flashbangAttacker->GetTeamNumber())
 		{
 			flashbangAttacker->AwardAchievement(CSCauseFriendlyFireWithFlashbang);
@@ -7881,10 +7881,10 @@ void CCSPlayer::ProcessPlayerDeathAchievements( CCSPlayer *pAttacker, CCSPlayer 
 	int teamIgnoreCount[TEAM_MAXCOUNT];
 	memset(teamCount, 0, sizeof(teamCount));
 	memset(teamIgnoreCount, 0, sizeof(teamIgnoreCount));
-	CCSPlayer *pAlivePlayer = NULL;
+	CHL2MP_Player *pAlivePlayer = NULL;
 	for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 	{
-		CCSPlayer* pPlayer = (CCSPlayer*)UTIL_PlayerByIndex( i );
+		CHL2MP_Player* pPlayer = (CHL2MP_Player*)UTIL_PlayerByIndex( i );
 		if (pPlayer)
 		{
 			int teamNum = pPlayer->GetTeamNumber();
@@ -7925,7 +7925,7 @@ void CCSPlayer::ProcessPlayerDeathAchievements( CCSPlayer *pAttacker, CCSPlayer 
 
 //[tj]  traces up to maxTrace units down and returns any standable object it hits
 //      (doesn't check slope for standability)
-CBaseEntity* CCSPlayer::GetNearestSurfaceBelow(float maxTrace)
+CBaseEntity* CHL2MP_Player::GetNearestSurfaceBelow(float maxTrace)
 {
 	trace_t trace;
 	Ray_t ray;
@@ -7946,7 +7946,7 @@ CBaseEntity* CCSPlayer::GetNearestSurfaceBelow(float maxTrace)
 // [tj] Added a way to react to the round ending before we reset.
 //      It is important to note that this happens before the bomb explodes, so a player may die
 //      after this from a bomb explosion or a late kill after a defuse/detonation/rescue.
-void CCSPlayer::OnRoundEnd(int winningTeam, int reason)
+void CHL2MP_Player::OnRoundEnd(int winningTeam, int reason)
 {    
 	if (winningTeam == WINNER_CT || winningTeam == WINNER_TER)
 	{
@@ -7963,7 +7963,7 @@ void CCSPlayer::OnRoundEnd(int winningTeam, int reason)
 			int ignoreCount = 0;
 			for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 			{
-				CCSPlayer* pPlayer = (CCSPlayer*)UTIL_PlayerByIndex( i );
+				CHL2MP_Player* pPlayer = (CHL2MP_Player*)UTIL_PlayerByIndex( i );
 				if (pPlayer)
 				{
 					int teamNum = pPlayer->GetTeamNumber();
@@ -8026,7 +8026,7 @@ void CCSPlayer::OnRoundEnd(int winningTeam, int reason)
 	m_lastRoundResult = reason;
 }
 
-void CCSPlayer::OnPreResetRound()
+void CHL2MP_Player::OnPreResetRound()
 {
 	//Check headshot survival achievement
 	if (IsAlive() && m_bSurvivedHeadshotDueToHelmet)
@@ -8052,7 +8052,7 @@ void CCSPlayer::OnPreResetRound()
 	}
 }
 
-void CCSPlayer::OnCanceledDefuse()
+void CHL2MP_Player::OnCanceledDefuse()
 {
 	if (m_gooseChaseStep == GC_SHOT_DURING_DEFUSE)
 	{
@@ -8061,7 +8061,7 @@ void CCSPlayer::OnCanceledDefuse()
 }
 
 
-void CCSPlayer::OnStartedDefuse()
+void CHL2MP_Player::OnStartedDefuse()
 {
 	if (m_defuseDefenseStep == DD_NONE)
 	{
@@ -8071,7 +8071,7 @@ void CCSPlayer::OnStartedDefuse()
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CCSPlayer::AttemptToExitFreezeCam( void )
+void CHL2MP_Player::AttemptToExitFreezeCam( void )
 {
 	float fEndFreezeTravel = m_flDeathTime + CS_DEATH_ANIMATION_TIME + spec_freeze_traveltime.GetFloat();
 	if ( gpGlobals->curtime < fEndFreezeTravel )
@@ -8083,7 +8083,7 @@ void CCSPlayer::AttemptToExitFreezeCam( void )
 //-----------------------------------------------------------------------------
 // Purpose: Sets whether this player is dominating the specified other player
 //-----------------------------------------------------------------------------
-void CCSPlayer::SetPlayerDominated( CCSPlayer *pPlayer, bool bDominated )
+void CHL2MP_Player::SetPlayerDominated( CHL2MP_Player *pPlayer, bool bDominated )
 {
 	int iPlayerIndex = pPlayer->entindex();
 	m_bPlayerDominated.Set( iPlayerIndex, bDominated );
@@ -8093,7 +8093,7 @@ void CCSPlayer::SetPlayerDominated( CCSPlayer *pPlayer, bool bDominated )
 //-----------------------------------------------------------------------------
 // Purpose: Sets whether this player is being dominated by the other player
 //-----------------------------------------------------------------------------
-void CCSPlayer::SetPlayerDominatingMe( CCSPlayer *pPlayer, bool bDominated )
+void CHL2MP_Player::SetPlayerDominatingMe( CHL2MP_Player *pPlayer, bool bDominated )
 {
 	int iPlayerIndex = pPlayer->entindex();
 	m_bPlayerDominatingMe.Set( iPlayerIndex, bDominated );
@@ -8103,12 +8103,12 @@ void CCSPlayer::SetPlayerDominatingMe( CCSPlayer *pPlayer, bool bDominated )
 //-----------------------------------------------------------------------------
 // Purpose: Returns whether this player is dominating the specified other player
 //-----------------------------------------------------------------------------
-bool CCSPlayer::IsPlayerDominated( int iPlayerIndex )
+bool CHL2MP_Player::IsPlayerDominated( int iPlayerIndex )
 {
 	return m_bPlayerDominated.Get( iPlayerIndex );
 }
 
-bool CCSPlayer::IsPlayerDominatingMe( int iPlayerIndex )
+bool CHL2MP_Player::IsPlayerDominatingMe( int iPlayerIndex )
 {
 	return m_bPlayerDominatingMe.Get( iPlayerIndex );
 }
@@ -8118,7 +8118,7 @@ bool CCSPlayer::IsPlayerDominatingMe( int iPlayerIndex )
 // [menglish] MVP functions
 //=============================================================================
  
-void CCSPlayer::IncrementNumMVPs( CSMvpReason_t mvpReason )
+void CHL2MP_Player::IncrementNumMVPs( CSMvpReason_t mvpReason )
 {
 	//=============================================================================
 	// HPE_BEGIN:
@@ -8148,14 +8148,14 @@ void CCSPlayer::IncrementNumMVPs( CSMvpReason_t mvpReason )
 //-----------------------------------------------------------------------------
 // Purpose: Sets the number of rounds this player has caused to be won for their team
 //-----------------------------------------------------------------------------
-void CCSPlayer::SetNumMVPs( int iNumMVP )
+void CHL2MP_Player::SetNumMVPs( int iNumMVP )
 {
 	m_iMVPs = iNumMVP;
 }
 //-----------------------------------------------------------------------------
 // Purpose: Returns the number of rounds this player has caused to be won for their team
 //-----------------------------------------------------------------------------
-int CCSPlayer::GetNumMVPs()
+int CHL2MP_Player::GetNumMVPs()
 {
 	return m_iMVPs;
 }
@@ -8167,11 +8167,11 @@ int CCSPlayer::GetNumMVPs()
 //-----------------------------------------------------------------------------
 // Purpose: Removes all nemesis relationships between this player and others
 //-----------------------------------------------------------------------------
-void CCSPlayer::RemoveNemesisRelationships()
+void CHL2MP_Player::RemoveNemesisRelationships()
 {
 	for ( int i = 1 ; i <= gpGlobals->maxClients ; i++ )
 	{
-		CCSPlayer *pTemp = ToCSPlayer( UTIL_PlayerByIndex( i ) );
+		CHL2MP_Player *pTemp = ToCSPlayer( UTIL_PlayerByIndex( i ) );
 		if ( pTemp && pTemp != this )
 		{        
 			// set this player to be not dominating anyone else
@@ -8183,7 +8183,7 @@ void CCSPlayer::RemoveNemesisRelationships()
 	}	
 }
 
-void CCSPlayer::CheckMaxGrenadeKills(int grenadeKills)
+void CHL2MP_Player::CheckMaxGrenadeKills(int grenadeKills)
 {
 	if (grenadeKills > m_maxGrenadeKills)
 	{
@@ -8191,19 +8191,19 @@ void CCSPlayer::CheckMaxGrenadeKills(int grenadeKills)
 	}
 }
 
-void CCSPlayer::CommitSuicide( bool bExplode /*= false*/, bool bForce /*= false*/ )
+void CHL2MP_Player::CommitSuicide( bool bExplode /*= false*/, bool bForce /*= false*/ )
 {
 	m_wasNotKilledNaturally = true;
 	BaseClass::CommitSuicide(bExplode, bForce);
 }
 
-void CCSPlayer::CommitSuicide( const Vector &vecForce, bool bExplode /*= false*/, bool bForce /*= false*/ )
+void CHL2MP_Player::CommitSuicide( const Vector &vecForce, bool bExplode /*= false*/, bool bForce /*= false*/ )
 {
 	m_wasNotKilledNaturally = true;
 	BaseClass::CommitSuicide(vecForce, bExplode, bForce);
 }
 
-int CCSPlayer::GetNumEnemyDamagers()
+int CHL2MP_Player::GetNumEnemyDamagers()
 {
 	int numberOfEnemyDamagers = 0;
 	FOR_EACH_LL( m_DamageTakenList, i )
@@ -8223,7 +8223,7 @@ int CCSPlayer::GetNumEnemyDamagers()
 }
 
 
-int CCSPlayer::GetNumEnemiesDamaged()
+int CHL2MP_Player::GetNumEnemiesDamaged()
 {
 	int numberOfEnemiesDamaged = 0;
 	FOR_EACH_LL( m_DamageGivenList, i )
@@ -8250,7 +8250,7 @@ void UTIL_AwardMoneyToTeam( int iAmount, int iTeam, CBaseEntity *pIgnore )
 {
 	for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 	{
-		CCSPlayer *pPlayer = (CCSPlayer*) UTIL_PlayerByIndex( i );
+		CHL2MP_Player *pPlayer = (CHL2MP_Player*) UTIL_PlayerByIndex( i );
 
 		if ( !pPlayer )
 			continue;

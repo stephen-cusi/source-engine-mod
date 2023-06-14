@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 #include "items.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 
 class CItemDefuser : public CItem
 {
@@ -71,7 +71,7 @@ void CItemDefuser::DefuserTouch( CBaseEntity *pOther )
 
 	//if( GetFlags() & FL_ONGROUND )
 	{
-		CCSPlayer *pPlayer = (CCSPlayer *)pOther;
+		CHL2MP_Player *pPlayer = (CHL2MP_Player *)pOther;
 
 		if ( !pPlayer )
 		{

@@ -14,7 +14,7 @@
 #include "hl2_shareddefs.h"
 
 #ifdef CLIENT_DLL
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #else
 
 #include "eventqueue.h"
@@ -28,7 +28,7 @@
 #include <ctype.h>
 #include "voice_gamemgr.h"
 #include "iscorer.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 //#include "weapon_hl2mpbasehlmpcombatweapon.h"
 #include "team.h"
 #include "voice_gamemgr.h"
@@ -753,7 +753,7 @@ void CPortalMPGameRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 {
 #ifndef CLIENT_DLL
 
-	CPortal_Player *pPortalPlayer = ToPortalPlayer( pPlayer );
+	CHL2MP_Player *pPortalPlayer = ToPortalPlayer( pPlayer );
 	//CHL2MP_Player *pHL2Player = ToHL2MPPlayer( pPlayer );
 
 	if ( pPortalPlayer == NULL )

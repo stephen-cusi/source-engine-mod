@@ -37,6 +37,10 @@ void RegisterUserMessages( void )
 	usermessages->Register( "VoiceMask", VOICE_MAX_PLAYERS_DW*4 * 2 + 1 );
 	usermessages->Register( "RequestState", 0 );
 	usermessages->Register( "CloseCaption", -1 ); // Show a caption (by string id number)(duration in 10th of a second)
+
+	usermessages->Register("SendAudio", -1);	// play radio command
+	usermessages->Register("RawAudio", -1);	// play a .wav as a radio command
+
 	usermessages->Register( "HintText", -1 );	// Displays hint text display
 	usermessages->Register( "KeyHintText", -1 );	// Displays hint text display
 	usermessages->Register( "SquadMemberDied", 0 );
@@ -45,6 +49,24 @@ void RegisterUserMessages( void )
 	usermessages->Register( "LogoTimeMsg", 4 );
 	usermessages->Register( "AchievementEvent", -1 );
 	usermessages->Register( "UpdateJalopyRadar", -1 );
+	usermessages->Register( "EntityPortalled", sizeof( long ) + sizeof( long ) + sizeof( Vector ) + sizeof( QAngle ) ); //something got teleported through a portal
+
+	usermessages->Register("BarTime", -1);	// For the C4 progress bar.
+	usermessages->Register("RadioText", -1);		// for radio text display
+
+	usermessages->Register("ReloadEffect", 2);			// a player reloading..
+	usermessages->Register("PlayerAnimEvent", -1);	// jumping, firing, reload, etc.
+
+	usermessages->Register("UpdateRadar", -1);
+	usermessages->Register("KillCam", -1);
+	usermessages->Register("MarkAchievement", -1);
+
+	// Voting
+	usermessages->Register("CallVoteFailed", -1);
+	usermessages->Register("VoteStart", -1);
+	usermessages->Register("VotePass", -1);
+	usermessages->Register("VoteFailed", 2);
+	usermessages->Register("VoteSetup", -1);  // Initiates client-side voting UI
 
 #ifndef _X360
 	// NVNT register haptic user messages

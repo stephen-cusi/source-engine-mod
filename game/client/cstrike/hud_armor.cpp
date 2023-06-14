@@ -83,7 +83,7 @@ void CHudArmor::ApplySchemeSettings( IScheme *scheme )
 
 bool CHudArmor::ShouldDraw()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer )
 	{
 		return !pPlayer->IsObserver();
@@ -98,7 +98,7 @@ bool CHudArmor::ShouldDraw()
 void CHudArmor::Paint()
 {
 	// Update the time.
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer )
 	{
 		if( pPlayer->HasHelmet() && (int)pPlayer->ArmorValue() > 0 )

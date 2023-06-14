@@ -11,11 +11,11 @@
 #if defined( CLIENT_DLL )
 
 	#define CWeaponG3SG1 C_WeaponG3SG1
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "KeyValues.h"
 
 #endif
@@ -79,7 +79,7 @@ void CWeaponG3SG1::SecondaryAttack()
 {
 	const float kZoomTime = 0.10f;
 
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -133,7 +133,7 @@ float CWeaponG3SG1::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -160,7 +160,7 @@ float CWeaponG3SG1::GetInaccuracy() const
 
 void CWeaponG3SG1::PrimaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 	
@@ -205,7 +205,7 @@ bool CWeaponG3SG1::Deploy()
 
 float CWeaponG3SG1::GetMaxSpeed()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( pPlayer && pPlayer->GetFOV() == pPlayer->GetDefaultFOV() )
 		return BaseClass::GetMaxSpeed();
 	else

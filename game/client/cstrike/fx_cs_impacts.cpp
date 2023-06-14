@@ -8,7 +8,7 @@
 #include "engine/IEngineSound.h"
 
 
-
+/*
 //-----------------------------------------------------------------------------
 // Purpose: Handle weapon impacts
 //-----------------------------------------------------------------------------
@@ -42,3 +42,4 @@ void ImpactCallback( const CEffectData &data )
 }
 
 DECLARE_CLIENT_EFFECT( "Impact", ImpactCallback );
+*/

@@ -23,13 +23,13 @@ extern IVModelInfo* modelinfo;
 
 	#include "vgui/ISurface.h"
 	#include "vgui_controls/Controls.h"
-	#include "c_portal_player.h"
+	#include "c_hl2mp_player.h"
 	#include "hud_crosshair.h"
 	#include "PortalRender.h"
 
 #else
 
-	#include "portal_player.h"
+	#include "hl2mp_player.h"
 	#include "vphysics/constraints.h"
 
 #endif
@@ -40,11 +40,6 @@ extern IVModelInfo* modelinfo;
 // ----------------------------------------------------------------------------- //
 // Global functions.
 // ----------------------------------------------------------------------------- //
-
-bool IsAmmoType( int iAmmoType, const char *pAmmoName )
-{
-	return GetAmmoDef()->Index( pAmmoName ) == iAmmoType;
-}
 
 static const char * s_WeaponAliasInfo[] = 
 {
@@ -132,9 +127,9 @@ CBasePlayer* CWeaponPortalBase::GetPlayerOwner() const
 	return dynamic_cast< CBasePlayer* >( GetOwner() );
 }
 
-CPortal_Player* CWeaponPortalBase::GetPortalPlayerOwner() const
+CHL2MP_Player* CWeaponPortalBase::GetPortalPlayerOwner() const
 {
-	return dynamic_cast< CPortal_Player* >( GetOwner() );
+	return dynamic_cast< CHL2MP_Player* >( GetOwner() );
 }
 
 #ifdef CLIENT_DLL
@@ -381,16 +376,16 @@ void CWeaponPortalBase::	Materialize( void )
 
 #endif
 
-const CPortalSWeaponInfo &CWeaponPortalBase::GetPortalWpnData() const
+const CCSWeaponInfo &CWeaponPortalBase::GetPortalWpnData() const
 {
 	const FileWeaponInfo_t *pWeaponInfo = &GetWpnData();
-	const CPortalSWeaponInfo *pPortalInfo;
+	const CCSWeaponInfo *pPortalInfo;
 
 	#ifdef _DEBUG
-		pPortalInfo = dynamic_cast< const CPortalSWeaponInfo* >( pWeaponInfo );
+		pPortalInfo = dynamic_cast< const CCSWeaponInfo* >( pWeaponInfo );
 		Assert( pPortalInfo );
 	#else
-		pPortalInfo = static_cast< const CPortalSWeaponInfo* >( pWeaponInfo );
+		pPortalInfo = static_cast< const CCSWeaponInfo* >( pWeaponInfo );
 	#endif
 
 	return *pPortalInfo;
@@ -399,7 +394,7 @@ void CWeaponPortalBase::FireBullets( const FireBulletsInfo_t &info )
 {
 	FireBulletsInfo_t modinfo = info;
 
-	modinfo.m_iPlayerDamage = GetPortalWpnData().m_iPlayerDamage;
+	modinfo.m_iPlayerDamage = GetPortalWpnData().m_iDamage;
 
 	BaseClass::FireBullets( modinfo );
 }
@@ -416,27 +411,6 @@ bool CWeaponPortalBase::OnFireEvent( C_BaseViewModel *pViewModel, const Vector& 
 	return BaseClass::OnFireEvent( pViewModel, origin, angles, event, options );
 }
 
-
-void UTIL_ClipPunchAngleOffset( QAngle &in, const QAngle &punch, const QAngle &clip )
-{
-	QAngle	final = in + punch;
-
-	//Clip each component
-	for ( int i = 0; i < 3; i++ )
-	{
-		if ( final[i] > clip[i] )
-		{
-			final[i] = clip[i];
-		}
-		else if ( final[i] < -clip[i] )
-		{
-			final[i] = -clip[i];
-		}
-
-		//Return the result
-		in[i] = final[i] - punch[i];
-	}
-}
 
 #endif
 

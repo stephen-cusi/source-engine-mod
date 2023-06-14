@@ -1213,7 +1213,7 @@ bool CCSBot::IsFriendInTheWay( const Vector &goalPos )
 	// check if any friends are overlapping this linear path
 	for( int i = 1; i <= gpGlobals->maxClients; ++i )
 	{
-		CCSPlayer *player = static_cast<CCSPlayer *>( UTIL_PlayerByIndex( i ) );
+		CHL2MP_Player *player = static_cast<CHL2MP_Player *>( UTIL_PlayerByIndex( i ) );
 
 		if (player == NULL)
 			continue;

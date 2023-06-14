@@ -82,7 +82,7 @@ public:
 	virtual void	UpdateOnRemove( void );
 	virtual int		OnTakeDamage( const CTakeDamageInfo &info );
 	virtual bool	ShouldPuntUseLaunchForces( PhysGunForce_t reason ) { return ( reason == PHYSGUN_FORCE_LAUNCHED ); }
-	virtual QAngle	PreferredCarryAngles( void ) { return m_CarryAngles; }
+	virtual QAngle	PreferredCarryAngles( CBasePlayer *pPlayer ) { return m_CarryAngles; }
 	virtual bool	HasPreferredCarryAnglesForPlayer( CBasePlayer *pPlayer ) { return true; }
 
 	virtual void OnPhysGunPickup( CBasePlayer *pPhysGunUser, PhysGunPickup_t reason );

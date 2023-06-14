@@ -12,7 +12,7 @@
 
 #include "hl2mp_player_shared.h"
 #include "basecombatweapon_shared.h"
-#include "hl2mp_weapon_parse.h"
+#include "cs_weapon_parse.h"
 
 #if defined( CLIENT_DLL )
 	#define CWeaponHL2MPBase C_WeaponHL2MPBase
@@ -56,7 +56,7 @@ public:
 
 	void WeaponSound( WeaponSound_t sound_type, float soundtime = 0.0f );
 	
-	CHL2MPSWeaponInfo const	&GetHL2MPWpnData() const;
+	CCSWeaponInfo const	&GetHL2MPWpnData() const;
 
 
 	virtual void FireBullets( const FireBulletsInfo_t &info );

@@ -19,7 +19,7 @@
 //#include "multiplay_gamerules.h"
 #include "teamplay_gamerules.h"
 
-class CPortal_Player;
+class CHL2MP_Player;
 
 #ifdef CLIENT_DLL
 #define CPortalMPGameRules C_PortalMPGameRules

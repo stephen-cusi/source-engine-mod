@@ -63,7 +63,7 @@ void CHudShoppingCart::Init()
 
 bool CHudShoppingCart::ShouldDraw()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	//=============================================================================
 	// HPE_BEGIN:

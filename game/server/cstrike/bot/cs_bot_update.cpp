@@ -357,7 +357,7 @@ void CCSBot::Update( void )
 	UpdateReactionQueue();
 
 	// "threat" may be the same as our current enemy
-	CCSPlayer *threat = GetRecognizedEnemy();
+	CHL2MP_Player *threat = GetRecognizedEnemy();
 	if (threat)
 	{
 		Vector threatOrigin = GetCentroid( threat );
@@ -697,7 +697,7 @@ void CCSBot::Update( void )
 		// chance of following is proportional to teamwork attribute
 		if (GetProfile()->GetTeamwork() > RandomFloat( 0.0f, 1.0f ))
 		{
-			CCSPlayer *leader = GetClosestVisibleHumanFriend();
+			CHL2MP_Player *leader = GetClosestVisibleHumanFriend();
 			if (leader && leader->IsAutoFollowAllowed())
 			{
 				// count how many bots are already following this player
@@ -854,7 +854,7 @@ public:
 		{
 			CFmtStr msg;
 			player->EntityText(	0,
-								msg.sprintf( "%3.0f", m_me->GetTravelDistanceToPlayer( (CCSPlayer *)player ) ),
+								msg.sprintf( "%3.0f", m_me->GetTravelDistanceToPlayer( (CHL2MP_Player *)player ) ),
 								0.1f );
 
 
@@ -1130,7 +1130,7 @@ void CCSBot::DebugDisplay( void ) const
 	if (IsAttacking())
 	{
 		const float crossSize = 2.0f;
-		CCSPlayer *enemy = GetBotEnemy();
+		CHL2MP_Player *enemy = GetBotEnemy();
 		if (enemy)
 		{
 			NDebugOverlay::Cross3D( GetPartPosition( enemy, GUT ), crossSize, 0, 255, 0, true, 0.1f );
@@ -1158,7 +1158,7 @@ void CCSBot::UpdateTravelDistanceToAllPlayers( void )
 
 		for( int i=1; i<=gpGlobals->maxClients; ++i )
 		{
-			CCSPlayer *player = static_cast< CCSPlayer * >( UTIL_PlayerByIndex( i ) );
+			CHL2MP_Player *player = static_cast< CHL2MP_Player * >( UTIL_PlayerByIndex( i ) );
 
 			if (player == NULL)
 				continue;

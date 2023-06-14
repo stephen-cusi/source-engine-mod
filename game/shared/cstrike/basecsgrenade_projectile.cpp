@@ -12,12 +12,12 @@ float GetCurrentGravity( void );
 
 #ifdef CLIENT_DLL
 
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
 	#include "bot_manager.h"
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "soundent.h"
 	#include "te_effect_dispatch.h"
 	#include "KeyValues.h"
@@ -75,17 +75,17 @@ END_NETWORK_TABLE()
 		// During the first half-second of our life, don't draw ourselves if he's
 		// still playing his throw animation.
 		// (better yet, we could draw ourselves in his hand).
-		if ( GetThrower() != C_BasePlayer::GetLocalPlayer() )
+		/*if (GetThrower() != C_BasePlayer::GetLocalPlayer())
 		{
 			if ( gpGlobals->curtime - m_flSpawnTime < 0.5 )
 			{
-				C_CSPlayer *pPlayer = dynamic_cast<C_CSPlayer*>( GetThrower() );
-				if ( pPlayer && pPlayer->m_PlayerAnimState->IsThrowingGrenade() )
+				C_HL2MP_Player *pPlayer = dynamic_cast<C_HL2MP_Player*>( GetThrower() );
+				if ( pPlayer && pPlayer->m_PlayerAnimState.IsThrowingGrenade() )
 				{
 					return 0;
 				}
 			}
-		}
+		}*/
 
 		return BaseClass::DrawModel( flags );
 	}
@@ -270,7 +270,7 @@ END_NETWORK_TABLE()
 		BounceSound();
 
 		// tell the bots a grenade has bounced
-		CCSPlayer *player = ToCSPlayer(GetThrower());
+		CHL2MP_Player *player = ToCSPlayer(GetThrower());
 		if ( player )
 		{
 			IGameEvent * event = gameeventmanager->CreateEvent( "grenade_bounce" );

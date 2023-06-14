@@ -33,16 +33,16 @@ public:
 
 
 
-class C_CSPlayer : public C_BasePlayer, public ICSPlayerAnimStateHelpers
+class C_HL2MP_Player : public C_BasePlayer, public ICSPlayerAnimStateHelpers
 {
 public:
-	DECLARE_CLASS( C_CSPlayer, C_BasePlayer );
+	DECLARE_CLASS( C_HL2MP_Player, C_BasePlayer );
 	DECLARE_CLIENTCLASS();
 	DECLARE_PREDICTABLE();
 	DECLARE_INTERPOLATION();
 
-	C_CSPlayer();
-	~C_CSPlayer();
+	C_HL2MP_Player();
+	~C_HL2MP_Player();
 
 	virtual void Simulate();
 
@@ -53,7 +53,7 @@ public:
 
 	bool HasNightVision() const;
 
-	static C_CSPlayer* GetLocalCSPlayer();
+	static C_HL2MP_Player* GetLocalCSPlayer();
 	CSPlayerState State_Get() const;
 
 	virtual float GetMinFOV() const;
@@ -313,7 +313,7 @@ public:
 //=============================================================================
 
 // [tj] checks if this player has another given player on their Steam friends list.
-	bool HasPlayerAsFriend(C_CSPlayer* player);
+	bool HasPlayerAsFriend(C_HL2MP_Player* player);
 
 private:
 	CountdownTimer m_ladderSurpressionTimer;
@@ -393,17 +393,17 @@ private:
 
 
 
-	C_CSPlayer( const C_CSPlayer & );
+	C_HL2MP_Player( const C_HL2MP_Player & );
 };
 
-C_CSPlayer* GetLocalOrInEyeCSPlayer( void );
+C_HL2MP_Player* GetLocalOrInEyeCSPlayer( void );
 
-inline C_CSPlayer *ToCSPlayer( CBaseEntity *pEntity )
+inline C_HL2MP_Player *ToCSPlayer( CBaseEntity *pEntity )
 {
 	if ( !pEntity || !pEntity->IsPlayer() )
 		return NULL;
 
-	return dynamic_cast<C_CSPlayer*>( pEntity );
+	return dynamic_cast<C_HL2MP_Player*>( pEntity );
 }
 
 namespace vgui

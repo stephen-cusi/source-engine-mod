@@ -76,6 +76,7 @@ static ConVar	sv_max_connects_sec( "sv_max_connects_sec", "2.0", 0, "Maximum con
 static ConVar	sv_max_connects_window( "sv_max_connects_window", "4", 0, "Window over which to average connections per second averages." );
 // This defaults to zero so that somebody spamming the server with packets cannot lock out other clients.
 static ConVar	sv_max_connects_sec_global( "sv_max_connects_sec_global", "0", 0, "Maximum connections per second to respond to from anywhere." );
+static ConVar	sv_allow_any_connect( "sv_allow_any_connect", "0", 0, "Allow users outside of LAN to connect" );
 
 static CIPRateLimit s_queryRateChecker( &sv_max_queries_sec, &sv_max_queries_window, &sv_max_queries_sec_global );
 static CIPRateLimit s_connectRateChecker( &sv_max_connects_sec, &sv_max_connects_window, &sv_max_connects_sec_global );
@@ -466,7 +467,7 @@ IClient *CBaseServer::ConnectClient ( netadr_t &adr, int protocol, int challenge
 	{
 #ifndef NO_STEAM
 		// LAN servers restrict to class b IP addresses
-		if ( !CheckIPRestrictions( adr, authProtocol ) )
+		if ( !CheckIPRestrictions( adr, authProtocol ) && !sv_allow_any_connect.GetBool())
 		{
 			RejectConnection( adr, clientChallenge, "#GameUI_ServerRejectLANRestrict");
 			return NULL;

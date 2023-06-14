@@ -7,7 +7,7 @@
 #include "cbase.h"
 #include "hud_radar.h"
 #include "cs_hud_chat.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "c_cs_playerresource.h"
 #include "hud_macros.h"
 #include "text_message.h"
@@ -246,7 +246,7 @@ void CHudChat::MsgFunc_RawAudio( bf_read &msg )
 	if ( feedbackDuration > 0.0f )
 	{
 		//Flash them on the radar
-		C_CSPlayer *pPlayer = static_cast<C_CSPlayer*>( cl_entitylist->GetEnt(playerIndex) );
+		C_HL2MP_Player *pPlayer = static_cast<C_HL2MP_Player*>( cl_entitylist->GetEnt(playerIndex) );
 
 		if ( pPlayer )
 		{

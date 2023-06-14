@@ -26,7 +26,7 @@ extern ConVar cl_rebuy;
  */
 static bool CanBuyDefuser()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	return ( pPlayer && pPlayer->GetTeamNumber() == TEAM_CT && CSGameRules()->IsBombDefuseMap() );
 }
 
@@ -36,7 +36,7 @@ void BuyPresetManager::GetCurrentLoadout( WeaponSet *weaponSet )
 	if ( !weaponSet )
 		return;
 
-	C_CSPlayer *player = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *player = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !player )
 		return;
 
@@ -149,7 +149,7 @@ void WeaponSet::GetCurrent( int& cost, WeaponSet& ws ) const
 	if ( !engine->IsConnected() )
 		return;
 
-	C_CSPlayer *player = CCSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *player = CHL2MP_Player::GetLocalCSPlayer();
 	if ( !player )
 		return;
 

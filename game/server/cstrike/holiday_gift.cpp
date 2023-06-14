@@ -8,7 +8,7 @@
 #include "smokegrenade_projectile.h"
 #include "sendproxy.h"
 #include "holiday_gift.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "KeyValues.h"
 #include "bot_manager.h"
 #include "weapon_csbase.h"

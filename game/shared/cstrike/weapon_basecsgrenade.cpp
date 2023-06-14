@@ -17,11 +17,11 @@
 
 #ifdef CLIENT_DLL
 
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "items.h"
 	#include "../../server/cstrike/cs_gamestats.h"
 
@@ -86,7 +86,7 @@ bool CBaseCSGrenade::Deploy()
 
 #ifndef CLIENT_DLL
 	// if we're officially out of grenades, ditch this weapon
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -114,7 +114,7 @@ bool CBaseCSGrenade::Holster( CBaseCombatWeapon *pSwitchingTo )
 #ifndef CLIENT_DLL
 	// If they attempt to switch weapons before the throw animation is done, 
 	// allow it, but kill the weapon if we have to.
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -137,7 +137,7 @@ void CBaseCSGrenade::PrimaryAttack()
 	if ( m_bRedraw || m_bPinPulled || m_fThrowTime > 0.0f )
 		return;
 
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer || pPlayer->GetAmmoCount( m_iPrimaryAmmoType ) <= 0 )
 		return;
 
@@ -161,7 +161,7 @@ void CBaseCSGrenade::SecondaryAttack()
 	if ( m_bRedraw )
 		return;
 
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	
 	if ( pPlayer == NULL )
 		return;
@@ -213,7 +213,7 @@ bool CBaseCSGrenade::Reload()
 //-----------------------------------------------------------------------------
 void CBaseCSGrenade::ItemPostFrame()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -384,7 +384,7 @@ void CBaseCSGrenade::ItemPostFrame()
 		m_bRedraw = true;
 		m_fThrowTime = 0.0f;
 
-		CCSPlayer *pCSPlayer = ToCSPlayer( pPlayer );
+		CHL2MP_Player *pCSPlayer = ToCSPlayer( pPlayer );
 
 		if( pCSPlayer )
 		{
@@ -413,7 +413,7 @@ void CBaseCSGrenade::ItemPostFrame()
 
 		EmitGrenade( vecSrc, vec3_angle, vecVel, AngularImpulse(600,random->RandomInt(-1200,1200),0), pPlayer );
 
-		CCSPlayer *pCSPlayer = ToCSPlayer( pPlayer );
+		CHL2MP_Player *pCSPlayer = ToCSPlayer( pPlayer );
 
 		if( pCSPlayer )
 		{

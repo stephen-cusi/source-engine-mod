@@ -22,7 +22,7 @@
 #include "clientmode.h"
 #include <vgui_controls/AnimationController.h>
 #include "voice_status.h"
-#include "hud_radar.h"
+#include "cstrike/hud_radar.h"
 
 using namespace vgui;
 DECLARE_HUDELEMENT( CCSMapOverview )
@@ -125,7 +125,7 @@ void CCSSpectatorGUI::UpdateSpectatorPlayerList()
 
 bool CCSSpectatorGUI::NeedsUpdate( void )
 {
-	C_CSPlayer *player = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *player = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !player )
 		return false;
 
@@ -207,7 +207,7 @@ void CCSSpectatorGUI::UpdateTimer()
 
 void CCSSpectatorGUI::UpdateAccount()
 {
-	C_CSPlayer *player = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *player = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( !player )
 		return;
@@ -1060,7 +1060,7 @@ bool CCSMapOverview::ShouldDraw( void )
 		}
 
 		// We have to be alive and not blind to draw in this mode.
-		C_CSPlayer *pCSPlayer = C_CSPlayer::GetLocalCSPlayer();
+		C_HL2MP_Player *pCSPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 		if( !pCSPlayer || pCSPlayer->GetObserverMode() == OBS_MODE_DEATHCAM ) 
 		{
 			return false;

@@ -930,7 +930,7 @@ public:
 
 			if (DotProduct( to, forward ) > 0.95f)
 			{
-				if (m_me->IsVisible( (CCSPlayer *)player ))
+				if (m_me->IsVisible( (CHL2MP_Player *)player ))
 				{
 					// we see a friend in our FOV
 					return false;
@@ -1354,7 +1354,7 @@ float CCSBot::ComputeWeaponSightRange( void )
 /**
  * Return true if the given player just fired their weapon
  */
-bool CCSBot::DidPlayerJustFireWeapon( const CCSPlayer *player ) const
+bool CCSBot::DidPlayerJustFireWeapon( const CHL2MP_Player *player ) const
 {
 	// if this player has just fired his weapon, we notice him
 	CWeaponCSBase *weapon = player->GetActiveCSWeapon();

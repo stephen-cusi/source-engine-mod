@@ -5,6 +5,8 @@
 //=============================================================================
 
 //#include "stdafx.h"
+
+#include "hl2mp_player.h"
 #ifdef _WIN32
 #include "winlite.h"
 #include "winsock.h"

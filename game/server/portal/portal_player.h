@@ -245,7 +245,7 @@ inline CPortal_Player *ToPortalPlayer( CBaseEntity *pEntity )
 	return dynamic_cast<CPortal_Player*>( pEntity );
 }
 
-inline CPortal_Player *GetPortalPlayer( int iPlayerIndex )
+inline CPortal_Player*GetPortalPlayer( int iPlayerIndex )
 {
 	return static_cast<CPortal_Player*>( UTIL_PlayerByIndex( iPlayerIndex ) );
 }

@@ -9,7 +9,7 @@
 
 #include "cbase.h"
 #include "triggers.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "weapon_portalgun.h"
 #include "prop_portal_shared.h"
 #include "portal_shareddefs.h"
@@ -110,7 +110,7 @@ void CTriggerPortalCleanser::Touch( CBaseEntity *pOther )
 
 	if ( pOther->IsPlayer() )
 	{
-		CPortal_Player *pPlayer = ToPortalPlayer( pOther );
+		CHL2MP_Player *pPlayer = ToPortalPlayer( pOther );
 
 		if ( pPlayer )
 		{
@@ -216,7 +216,7 @@ void CTriggerPortalCleanser::Touch( CBaseEntity *pOther )
 
 		if ( pOldPhys && ( pOldPhys->GetGameFlags() & FVPHYSICS_PLAYER_HELD ) )
 		{
-			CPortal_Player *pPlayer = (CPortal_Player *)GetPlayerHoldingEntity( pBaseAnimating );
+			CHL2MP_Player *pPlayer = (CHL2MP_Player *)GetPlayerHoldingEntity( pBaseAnimating );
 			if( pPlayer )
 			{
 				// Modify the velocity for held objects so it gets away from the player

@@ -14,7 +14,7 @@
 #include "vgui_controls/Controls.h"
 #include "vgui_controls/Panel.h"
 #include "vgui/ISurface.h"
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #include "c_weapon_portalgun.h"
 #include "IGameUIFuncs.h"
 
@@ -174,7 +174,7 @@ bool CHUDQuickInfo::ShouldDraw( void )
 	if ( !m_icon_c || !m_icon_rb || !m_icon_rbe || !m_icon_lb || !m_icon_lbe )
 		return false;
 
-	C_Portal_Player *player = ToPortalPlayer(C_BasePlayer::GetLocalPlayer());
+	C_HL2MP_Player *player = ToPortalPlayer(C_BasePlayer::GetLocalPlayer());
 	if ( player == NULL )
 		return false;
 
@@ -190,7 +190,7 @@ bool CHUDQuickInfo::ShouldDraw( void )
 
 void CHUDQuickInfo::Paint()
 {
-	C_Portal_Player *pPortalPlayer = (C_Portal_Player*)( C_BasePlayer::GetLocalPlayer() );
+	C_HL2MP_Player *pPortalPlayer = (C_HL2MP_Player*)( C_BasePlayer::GetLocalPlayer() );
 	if ( pPortalPlayer == NULL )
 		return;
 

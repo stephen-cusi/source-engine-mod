@@ -12,7 +12,7 @@
 
 #include "cbase.h"
 #include "cs_simple_hostage.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "cs_gamerules.h"
 #include "game.h"
 #include "bot.h"
@@ -241,7 +241,7 @@ int CHostage::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 	// say something
 	EmitSound( "Hostage.Pain" );
 
-	CCSPlayer *player = ToCSPlayer( info.GetAttacker() );
+	CHL2MP_Player *player = ToCSPlayer( info.GetAttacker() );
 
 	if (player)
 	{
@@ -314,7 +314,7 @@ void CHostage::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, t
 /**
  * Check for hostage-killer abuse
  */
-void CHostage::CheckForHostageAbuse( CCSPlayer *player )
+void CHostage::CheckForHostageAbuse( CHL2MP_Player *player )
 {
 	int hostageKillLimit = mp_hostagepenalty.GetInt();
 
@@ -353,7 +353,7 @@ void CHostage::Event_Killed( const CTakeDamageInfo &info )
 	// HPE_END
 	//=============================================================================
 
-	CCSPlayer *attacker = ToCSPlayer( info.GetAttacker() );
+	CHL2MP_Player *attacker = ToCSPlayer( info.GetAttacker() );
 
 	if (attacker)
 	{
@@ -410,7 +410,7 @@ void CHostage::HostageRescueZoneTouch( inputdata_t &inputdata )
 		m_takedamage = DAMAGE_NO;
 
 		// give rescuer a cash bonus
-		CCSPlayer *player = GetLeader();
+		CHL2MP_Player *player = GetLeader();
 		if (player)
 		{
 			const int rescuerCashBonus = 1000;
@@ -633,7 +633,7 @@ void CHostage::UpdateFollowing( float deltaT )
 	}
 
 	// if we have a leader, follow him
-	CCSPlayer *leader = GetLeader();
+	CHL2MP_Player *leader = GetLeader();
 	if (leader)
 	{
 		// if leader is dead, stop following him
@@ -943,7 +943,7 @@ bool CHostage::IsVisible( const Vector &pos, bool testFOV ) const
 /**
  * Give bonus to CT's for talking to a hostage
  */
-void CHostage::GiveCTUseBonus( CCSPlayer *rescuer )
+void CHostage::GiveCTUseBonus( CHL2MP_Player *rescuer )
 {
 	// money to team
 	const int teamBonus = 100;
@@ -967,7 +967,7 @@ void CHostage::Idle( void )
 /**
  * Begin following "leader"
  */
-void CHostage::Follow( CCSPlayer *leader )
+void CHostage::Follow( CHL2MP_Player *leader )
 {
     //=============================================================================
     // HPE_BEGIN
@@ -994,7 +994,7 @@ void CHostage::Follow( CCSPlayer *leader )
 /**
  * Return our leader, or NULL
  */
-CCSPlayer *CHostage::GetLeader( void ) const
+CHL2MP_Player *CHostage::GetLeader( void ) const
 {
 	return ToCSPlayer( m_leader.m_Value );
 }
@@ -1018,7 +1018,7 @@ void CHostage::HostageUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TY
 	// TODO: check line of sight to hostage
 
 
-	CCSPlayer *user = ToCSPlayer( pActivator );
+	CHL2MP_Player *user = ToCSPlayer( pActivator );
 	if (user == NULL)
 	{
 		return;
@@ -1039,7 +1039,7 @@ void CHostage::HostageUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TY
 		return;
 	}
 
-	CCSPlayer *leader = GetLeader();
+	CHL2MP_Player *leader = GetLeader();
 	if( leader && !leader->IsAlive() )
 	{
 		Idle();

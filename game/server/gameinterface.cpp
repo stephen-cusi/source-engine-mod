@@ -122,7 +122,7 @@ extern ConVar tf_mm_servermode;
 
 #ifdef PORTAL
 #include "prop_portal_shared.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #endif
 
 #if defined( REPLAY_ENABLED )
@@ -3028,7 +3028,7 @@ void CServerGameClients::ClientSetupVisibility( edict_t *pViewEntity, edict_t *p
 
 #ifdef PORTAL 
 		// *After* the player's view has updated its area bits, add on any other areas seen by portals
-		CPortal_Player* pPortalPlayer = dynamic_cast<CPortal_Player*>( pPlayer );
+		CHL2MP_Player* pPortalPlayer = dynamic_cast<CHL2MP_Player*>( pPlayer );
 		if ( pPortalPlayer )
 		{
 			pPortalPlayer->UpdatePortalViewAreaBits( pvs, pvssize );

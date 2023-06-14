@@ -7,7 +7,7 @@
 #if defined( REPLAY_ENABLED )
 
 #include "cs_replay.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_gamestats_shared.h"
 #include "cs_client_gamestats.h"
 #include "clientmode_shared.h"
@@ -36,7 +36,7 @@ void CCSReplay::OnBeginRecording()
 	BaseClass::OnBeginRecording();
 
 	// Setup the newly created replay
-	C_CSPlayer* pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player* pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer )
 	{
 		SetPlayerClass( pPlayer->PlayerClass() );
@@ -72,7 +72,7 @@ float CCSReplay::GetSentryKillScreenshotDelay()
 
 void CCSReplay::FireGameEvent( IGameEvent *pEvent )
 {
-	C_CSPlayer *pLocalPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pLocalPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !pLocalPlayer )
 		return;
 
@@ -97,10 +97,10 @@ void CCSReplay::FireGameEvent( IGameEvent *pEvent )
 		bool bSuicide = nKillerID == nVictimID;
 
 		// Try to get killer
-		C_CSPlayer *pKiller = ToCSPlayer( USERID2PLAYER( nKillerID ) );
+		C_HL2MP_Player *pKiller = ToCSPlayer( USERID2PLAYER( nKillerID ) );
 
 		// Try to get victim
-		C_CSPlayer *pVictim = ToCSPlayer( USERID2PLAYER( nVictimID ) );
+		C_HL2MP_Player *pVictim = ToCSPlayer( USERID2PLAYER( nVictimID ) );
 
 		// Inflictor was a sentry gun?
 		bool bSentry = V_strnicmp( pWeaponName, "obj_sentrygun", 13 ) == 0;

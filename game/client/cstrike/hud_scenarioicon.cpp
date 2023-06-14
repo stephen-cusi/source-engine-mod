@@ -9,7 +9,7 @@
 #include <vgui_controls/Panel.h>
 #include <vgui/ISurface.h>
 #include "clientmode_csnormal.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_gamerules.h"
 
 #include "c_cs_hostage.h"
@@ -48,7 +48,7 @@ CHudScenarioIcon::CHudScenarioIcon( const char *pName ) :
 
 bool CHudScenarioIcon::ShouldDraw()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	return pPlayer && pPlayer->IsAlive();
 }
 

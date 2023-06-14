@@ -15,7 +15,7 @@
 #include "engine/imatchmaking.h"
 #include "ipresence.h"
 #include "usermessages.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "achievements_cs.h"
 #include "vgui/ILocalize.h"
 #include "c_team.h"
@@ -125,7 +125,7 @@ void CCSClientGameStats::FireGameEvent( IGameEvent *event )
 	else if ( Q_strcmp( pEventName, "round_start" ) == 0 && m_roundStats[CSSTAT_PLAYTIME] > 0 )
 	{
 		SRoundData *pRoundStatData = new SRoundData( &m_roundStats);
-		C_CSPlayer *pPlayer = ToCSPlayer( C_BasePlayer::GetLocalPlayer() );
+		C_HL2MP_Player *pPlayer = ToCSPlayer( C_BasePlayer::GetLocalPlayer() );
 		if ( pPlayer )
 		{
 			// Our current money + what we spent is what we started with at the beginning of round
@@ -550,7 +550,7 @@ PlayerStatData_t CCSClientGameStats::GetStatById( int id )
 
 void CCSClientGameStats::UpdateStats( const StatsCollection_t &stats )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !pPlayer )
 		return;
 

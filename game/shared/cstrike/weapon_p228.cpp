@@ -12,11 +12,11 @@
 #if defined( CLIENT_DLL )
 
 	#define CWeaponP228 C_WeaponP228
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 
 #endif
 
@@ -91,7 +91,7 @@ float CWeaponP228::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 
@@ -111,7 +111,7 @@ float CWeaponP228::GetInaccuracy() const
 
 void CWeaponP228::PrimaryAttack( void )
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 

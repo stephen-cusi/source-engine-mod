@@ -32,7 +32,7 @@
 #include "engine/IStaticPropMgr.h"
 #include "engine/ivdebugoverlay.h"
 #include "cs_view_scene.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_gamerules.h"
 #include "shake.h"
 #include "clienteffectprecachesystem.h"
@@ -98,7 +98,7 @@ void CCSViewRender::GetScreenFadeDistances( float *min, float *max )
 
 void CCSViewRender::PerformNightVisionEffect( const CViewSetup &view )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( !pPlayer )
 		return;
@@ -108,7 +108,7 @@ void CCSViewRender::PerformNightVisionEffect( const CViewSetup &view )
 		CBaseEntity *target = pPlayer->GetObserverTarget();
 		if (target && target->IsPlayer())
 		{
-			pPlayer = (C_CSPlayer *)target;
+			pPlayer = (C_HL2MP_Player *)target;
 		}
 	}
 
@@ -168,7 +168,7 @@ void CCSViewRender::PerformNightVisionEffect( const CViewSetup &view )
 // this does the burn in for the flashbang effect.
 void CCSViewRender::PerformFlashbangEffect( const CViewSetup &view )
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( pPlayer == NULL )
 		 return;

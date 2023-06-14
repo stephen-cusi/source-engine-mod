@@ -112,6 +112,7 @@ $Project "Client (HL2MP)"
 			$File	"hl2\hud_zoom.cpp"
 			$File	"hl2\shieldproxy.cpp"
 			$File	"hl2\vgui_rootpanel_hl2.cpp"
+			$File	"hl2\c_weapon_gravitygun.cpp"
 		}
 
 		$Folder	"HL2MP"
@@ -125,8 +126,6 @@ $Project "Client (HL2MP)"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_gamerules.h"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_player_shared.cpp"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_player_shared.h"
-			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_weapon_parse.cpp"
-			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_weapon_parse.h"
 
 			$Folder	"Weapons"
 			{

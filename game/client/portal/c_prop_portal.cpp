@@ -23,7 +23,7 @@
 #include "prop_portal_shared.h"
 #include "particles_new.h"
 
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 
 #include "c_pixel_visibility.h"
 
@@ -140,7 +140,7 @@ void __MsgFunc_EntityPortalled(bf_read &msg)
 
 
 	if( bIsPlayer )
-		((C_Portal_Player *)pEntity)->PlayerPortalled( pPortal );
+		((C_HL2MP_Player *)pEntity)->PlayerPortalled( pPortal );
 
 	if ( pEntity->IsToolRecording() )
 	{
@@ -281,7 +281,7 @@ void C_Prop_Portal::Simulate()
 
 
 	//Find objects that are intersecting the portal and mark them for later replication on the remote portal's side
-	C_Portal_Player *pLocalPlayer = C_Portal_Player::GetLocalPlayer();
+	C_HL2MP_Player *pLocalPlayer = C_HL2MP_Player::GetLocalHL2MPPlayer();
 	C_BaseViewModel *pLocalPlayerViewModel = pLocalPlayer->GetViewModel();
 
 	CBaseEntity *pEntsNearPortal[1024];
@@ -332,7 +332,7 @@ void C_Prop_Portal::Simulate()
 			C_BaseCombatWeapon *pWeapon = dynamic_cast<C_BaseCombatWeapon*>( pEntity );
 			if ( pWeapon )
 			{
-				C_Portal_Player *pPortalPlayer = ToPortalPlayer( pWeapon->GetOwner() );
+				C_HL2MP_Player *pPortalPlayer = ToPortalPlayer( pWeapon->GetOwner() );
 				if ( pPortalPlayer ) 
 				{
 					if ( pPortalPlayer->GetActiveWeapon() != pWeapon )

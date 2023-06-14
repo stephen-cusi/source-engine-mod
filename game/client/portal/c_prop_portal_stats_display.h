@@ -9,7 +9,7 @@
 #define C_PROP_PORTAL_STATS_DISPLAY_H
 
 #include "cbase.h"
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #include "portal_shareddefs.h"
 #include "utlvector.h"
 

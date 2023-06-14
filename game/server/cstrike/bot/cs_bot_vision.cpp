@@ -357,7 +357,7 @@ bool CCSBot::IsVisible( const Vector &pos, bool testFOV, const CBaseEntity *igno
  * Return true if we can see any part of the player
  * Check parts in order of importance. Return the first part seen in "visPart" if it is non-NULL.
  */
-bool CCSBot::IsVisible( CCSPlayer *player, bool testFOV, unsigned char *visParts ) const
+bool CCSBot::IsVisible( CHL2MP_Player *player, bool testFOV, unsigned char *visParts ) const
 {
 	VPROF_BUDGET( "CCSBot::IsVisible( player )", VPROF_BUDGETGROUP_NPCS );
 
@@ -443,7 +443,7 @@ CCSBot::PartInfo CCSBot::m_partInfo[ MAX_PLAYERS ];
 /**
  * Compute part positions from bone location.
  */
-void CCSBot::ComputePartPositions( CCSPlayer *player )
+void CCSBot::ComputePartPositions( CHL2MP_Player *player )
 {
 	const int headBox = 12;
 	const int gutBox = 9;
@@ -521,7 +521,7 @@ void CCSBot::ComputePartPositions( CCSPlayer *player )
  * Uses hitboxes to get accurate positions.
  * @todo Optimize by computing once for each player and storing.
  */
-const Vector &CCSBot::GetPartPosition( CCSPlayer *player, VisiblePartType part ) const
+const Vector &CCSBot::GetPartPosition( CHL2MP_Player *player, VisiblePartType part ) const
 {
 	VPROF_BUDGET( "CCSBot::GetPartPosition", VPROF_BUDGETGROUP_NPCS );
 
@@ -1045,7 +1045,7 @@ bool CCSBot::BendLineOfSight( const Vector &eye, const Vector &target, Vector *b
  * @todo Increase chance if player is rotating
  * @todo Decrease chance as nears edge of FOV
  */
-bool CCSBot::IsNoticable( const CCSPlayer *player, unsigned char visParts ) const
+bool CCSBot::IsNoticable( const CHL2MP_Player *player, unsigned char visParts ) const
 {
 	// if this player has just fired his weapon, we notice him
 	if (DidPlayerJustFireWeapon( player ))
@@ -1194,7 +1194,7 @@ bool CCSBot::IsNoticable( const CCSPlayer *player, unsigned char visParts ) cons
  * Return most dangerous threat in my field of view (feeds into reaction time queue).
  * @todo Account for lighting levels, cover, and distance to see if we notice enemy
  */
-CCSPlayer *CCSBot::FindMostDangerousThreat( void )
+CHL2MP_Player *CCSBot::FindMostDangerousThreat( void )
 {
 	VPROF_BUDGET( "CCSBot::FindMostDangerousThreat", VPROF_BUDGETGROUP_NPCS );
 
@@ -1206,7 +1206,7 @@ CCSPlayer *CCSBot::FindMostDangerousThreat( void )
 	enum { MAX_THREATS = 16 };		// maximum number of simulataneously attendable threats	
 	struct CloseInfo
 	{
-		CCSPlayer *enemy;
+		CHL2MP_Player *enemy;
 		float range;
 	}
 	threat[ MAX_THREATS ];
@@ -1215,7 +1215,7 @@ CCSPlayer *CCSBot::FindMostDangerousThreat( void )
 	int prevIndex = m_enemyQueueIndex - 1;
 	if ( prevIndex < 0 )
 		prevIndex = MAX_ENEMY_QUEUE - 1;
-	CCSPlayer *currentThreat = m_enemyQueue[ prevIndex ].player;
+	CHL2MP_Player *currentThreat = m_enemyQueue[ prevIndex ].player;
 
 	m_bomber = NULL;
 	m_isEnemySniperVisible = false;
@@ -1226,7 +1226,7 @@ CCSPlayer *CCSBot::FindMostDangerousThreat( void )
 	m_closestVisibleHumanFriend = NULL;
 	float closeHumanFriendRange = 99999999999.9f;
 
-	CCSPlayer *sniperThreat = NULL;
+	CHL2MP_Player *sniperThreat = NULL;
 	float sniperThreatRange = 99999999999.9f;
 	bool sniperThreatIsFacingMe = false;
 
@@ -1248,7 +1248,7 @@ CCSPlayer *CCSBot::FindMostDangerousThreat( void )
 			if (!entity->IsPlayer())
 				continue;
 
-			CCSPlayer *player = static_cast<CCSPlayer *>( entity );
+			CHL2MP_Player *player = static_cast<CHL2MP_Player *>( entity );
 
 			// ignore self
 			if (player->entindex() == entindex())
@@ -1582,7 +1582,7 @@ void CCSBot::UpdateReactionQueue( void )
 		return;
 
 	// find biggest threat at this instant
-	CCSPlayer *threat = FindMostDangerousThreat();
+	CHL2MP_Player *threat = FindMostDangerousThreat();
 
 	// reset timer
 	m_attentionInterval.Start();
@@ -1632,7 +1632,7 @@ void CCSBot::UpdateReactionQueue( void )
 /**
  * Return the most dangerous threat we are "conscious" of
  */
-CCSPlayer *CCSBot::GetRecognizedEnemy( void )
+CHL2MP_Player *CCSBot::GetRecognizedEnemy( void )
 {
 	if (m_enemyQueueAttendIndex >= m_enemyQueueCount || IsBlind())
 	{
@@ -1672,7 +1672,7 @@ bool CCSBot::IsRecognizedEnemyProtectedByShield( void )
  */
 float CCSBot::GetRangeToNearestRecognizedEnemy( void )
 {
-	const CCSPlayer *enemy = GetRecognizedEnemy();
+	const CHL2MP_Player *enemy = GetRecognizedEnemy();
 
 	if (enemy)
 		return (GetAbsOrigin() - enemy->GetAbsOrigin()).Length();
@@ -1768,7 +1768,7 @@ public:
 		if (!m_me->IsPlayerLookingAtMe( player ))
 			return true;
 			
-		if (m_me->IsVisible( (CCSPlayer *)player ))
+		if (m_me->IsVisible( (CHL2MP_Player *)player ))
 			return false;
 
 		return true;

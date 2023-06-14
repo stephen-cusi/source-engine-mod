@@ -12,7 +12,7 @@
 //=============================================================================//
 #include "cbase.h"
 #include "c_basetempentity.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "hud_radar.h"
 #include "radio_status.h"
 
@@ -58,7 +58,7 @@ void C_TERadioIcon::PostDataUpdate( DataUpdateType_t updateType )
 {
 	//Flash them on the radar
 	//this could be in a better place.
-	C_CSPlayer *pPlayer = static_cast<C_CSPlayer*>( cl_entitylist->GetEnt(m_iAttachToClient) );
+	C_HL2MP_Player *pPlayer = static_cast<C_HL2MP_Player*>( cl_entitylist->GetEnt(m_iAttachToClient) );
 
 	if ( pPlayer && !pPlayer->IsDormant() )
 	{

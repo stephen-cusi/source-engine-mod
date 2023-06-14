@@ -12,7 +12,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "in_buttons.h"
 #include "movehelper_server.h"
 #include "team.h"
@@ -20,7 +20,7 @@
 #include "client.h"
 
 
-void Bot_Think( CCSPlayer *pBot );
+void Bot_Think( CHL2MP_Player *pBot );
 
 ConVar bot_forcefireweapon( "bot_forcefireweapon", "", 0, "Force bots with the specified weapon to fire." );
 ConVar bot_forceattack2( "bot_forceattack2", "0", 0, "When firing, use attack2." );
@@ -77,7 +77,7 @@ CBasePlayer *BotPutInServer( bool bFrozen, int iTeam )
 	//ClientPutInServer( pEdict, botname );
 	//ClientActive( pEdict, false );
 
-	CCSPlayer *pPlayer = ((CCSPlayer *)CBaseEntity::Instance( pEdict ));
+	CHL2MP_Player *pPlayer = ((CHL2MP_Player *)CBaseEntity::Instance( pEdict ));
 	pPlayer->ClearFlags();
 	pPlayer->AddFlag( FL_CLIENT | FL_FAKECLIENT );
 
@@ -118,7 +118,7 @@ void Bot_RunAll( void )
 {
 	for ( int i = 1; i <= gpGlobals->maxClients; i++ )
 	{
-		CCSPlayer *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i ) );
+		CHL2MP_Player *pPlayer = ToCSPlayer( UTIL_PlayerByIndex( i ) );
 
 		if ( IsTempBot( pPlayer ) )
 		{
@@ -160,7 +160,7 @@ bool RunMimicCommand( CUserCmd& cmd )
 //			msec - 
 // Output : 	virtual void
 //-----------------------------------------------------------------------------
-static void RunPlayerMove( CCSPlayer *fakeclient, const QAngle& viewangles, float forwardmove, float sidemove, float upmove, unsigned short buttons, byte impulse, float frametime )
+static void RunPlayerMove( CHL2MP_Player *fakeclient, const QAngle& viewangles, float forwardmove, float sidemove, float upmove, unsigned short buttons, byte impulse, float frametime )
 {
 	if ( !fakeclient )
 		return;
@@ -204,7 +204,7 @@ static void RunPlayerMove( CCSPlayer *fakeclient, const QAngle& viewangles, floa
 //-----------------------------------------------------------------------------
 // Purpose: Run this Bot's AI for one frame.
 //-----------------------------------------------------------------------------
-void Bot_Think( CCSPlayer *pBot )
+void Bot_Think( CHL2MP_Player *pBot )
 {
 	// Make sure we stay being a bot
 	pBot->AddFlag( FL_FAKECLIENT );
@@ -434,7 +434,7 @@ CON_COMMAND_F( "bot_old", "Add a bot.", FCVAR_CHEAT )
 	//extern bool g_bEnableCSBots;
 	//g_bEnableCSBots = false;
 
-	CCSPlayer *pPlayer = CCSPlayer::Instance( UTIL_GetCommandClientIndex() );
+	CHL2MP_Player *pPlayer = CHL2MP_Player::Instance( UTIL_GetCommandClientIndex() );
 
 	// The bot command uses switches like command-line switches.
 	// -count <count> tells how many bots to spawn.
@@ -490,7 +490,7 @@ CON_COMMAND_F( "bot_old", "Add a bot.", FCVAR_CHEAT )
 // Handle the "PossessBot" command.
 void PossessBot_f( const CCommand &args )
 {
-	CCSPlayer *pPlayer = CCSPlayer::Instance( UTIL_GetCommandClientIndex() );
+	CHL2MP_Player *pPlayer = CHL2MP_Player::Instance( UTIL_GetCommandClientIndex() );
 	if ( !pPlayer )
 		return;
 

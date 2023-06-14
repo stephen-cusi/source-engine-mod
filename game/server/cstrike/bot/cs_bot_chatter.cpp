@@ -9,7 +9,7 @@
 
 #include "cbase.h"
 #include "cs_gamerules.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "shared_util.h"
 #include "engine/IEngineSound.h"
 #include "KeyValues.h"

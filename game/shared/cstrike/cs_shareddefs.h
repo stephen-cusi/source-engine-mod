@@ -76,7 +76,7 @@ extern CUtlVectorInitialized< const char * > CTPlayerModels;
 extern CUtlVectorInitialized< const char * > TerroristPlayerModels;
 
 
-// These go in CCSPlayer::m_iAddonBits and get sent to the client so it can create
+// These go in CHL2MP_Player::m_iAddonBits and get sent to the client so it can create
 // grenade models hanging off players.
 #define ADDON_FLASHBANG_1		0x001
 #define ADDON_FLASHBANG_2		0x002

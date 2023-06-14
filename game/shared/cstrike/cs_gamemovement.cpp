@@ -13,9 +13,9 @@
 #include "weapon_csbase.h"
 
 #ifdef CLIENT_DLL
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 #else
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "KeyValues.h"
 #endif
 
@@ -88,7 +88,7 @@ protected:
 	float m_fTimeLastUnducked;
 
 public:
-	CCSPlayer *m_pCSPlayer;
+	CHL2MP_Player *m_pCSPlayer;
 };
 
 //-----------------------------------------------------------------------------

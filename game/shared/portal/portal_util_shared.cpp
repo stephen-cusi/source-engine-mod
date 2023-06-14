@@ -18,7 +18,7 @@
 	#include "ndebugoverlay.h"
 	#include "env_debughistory.h"
 #else
-	#include "c_portal_player.h"
+	#include "c_hl2mp_player.h"
 #endif
 #include "PortalSimulation.h"
 
@@ -845,7 +845,7 @@ void UTIL_Portal_TraceEntity( CBaseEntity *pEntity, const Vector &vecAbsStart, c
 	CPortalSimulator *pPortalSimulator = NULL;
 	if( pEntity->IsPlayer() )
 	{
-		C_Prop_Portal *pPortal = ((C_Portal_Player *)pEntity)->m_hPortalEnvironment.Get();
+		C_Prop_Portal *pPortal = ((C_HL2MP_Player *)pEntity)->m_hPortalEnvironment.Get();
 		if( pPortal )
 			pPortalSimulator = &pPortal->m_PortalSimulator;
 	}

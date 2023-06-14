@@ -113,7 +113,7 @@ bool modelExists( const char *search, const CUtlVector< const char * > &names )
 
 void CClassMenu_TER::Update()
 {
-	C_CSPlayer *pLocalPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pLocalPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( pLocalPlayer && pLocalPlayer->PlayerClass() >= FIRST_T_CLASS && pLocalPlayer->PlayerClass() <= LAST_T_CLASS )
 	{
@@ -195,7 +195,7 @@ void CClassMenu_CT::SetVisible(bool state)
 
 void CClassMenu_CT::Update()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( pPlayer && pPlayer->PlayerClass() >= FIRST_CT_CLASS && pPlayer->PlayerClass() <= LAST_CT_CLASS )
 	{

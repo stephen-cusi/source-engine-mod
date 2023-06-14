@@ -384,7 +384,73 @@ characterset_t* CCommand::DefaultBreakSet()
 {
 	return &s_BreakSet;
 }
+/*
+bool CCommand::GetQuoted(const char* pCommand, int maxlen, int& index, int i) {
+	int c = 0;
+	for (; index < maxlen; index++) {
+		if (pCommand[index] == '"') {
+			m_pArgvBuffer[i][c] = '\x00';
+			return true;
+		}
+		m_pArgvBuffer[i][c] = pCommand[index];
+		c++;
+	}
+	return false;
+}
 
+bool CCommand::GetApostrophed(const char* pCommand, int maxlen, int& index, int i){
+	int c = 0;
+	for (; index < maxlen; index++) {
+		if (pCommand[index] == '\'') {
+			m_pArgvBuffer[i][c] = '\x00';
+			return true;
+		}
+		m_pArgvBuffer[i][c] = pCommand[index];
+		c++;
+	}
+	return false;
+}
+
+bool CCommand::GetArgument(const char* pCommand, int maxlen, int& index, int i) {
+	if (pCommand[index] == '"') {
+		index++;
+		return GetQuoted(pCommand, maxlen, index, i);
+	}
+	if (pCommand[index] == '\'') {
+		index++;
+		return GetApostrophed(pCommand, maxlen, index, i);
+	}
+	int c = 0;
+	for (; index < maxlen; index++) {
+		if (pCommand[index] == ' ') {
+			m_pArgvBuffer[i][c] = '\x00';
+			return true;
+		}
+		m_pArgvBuffer[i][c] = pCommand[index];
+		c++;
+	}
+	return true;
+}
+
+int CCommand::GetArguments(const char* pCommand) {
+	int maxlen = Q_strlen(pCommand);
+	if (maxlen >= COMMAND_MAX_LENGTH - 1)
+	{
+		Warning("CCommand::GetArguments: Encountered command which overflows the tokenizer buffer.. Skipping!\n");
+		return false;
+	}
+	int index = 0;
+	for (int i = 0; i < COMMAND_MAX_ARGC) {
+		if (!GetArgument(pCommand, maxlen, index, i)) {
+			return i;
+		}
+		if (index >= maxlen) {
+			return i;
+		}
+	}
+	return COMMAND_MAX_ARGC - 1;
+}
+*/
 bool CCommand::Tokenize( const char *pCommand, characterset_t *pBreakSet )
 {
 	Reset();

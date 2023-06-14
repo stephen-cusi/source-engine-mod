@@ -42,7 +42,7 @@
 		virtual void SetTransmit( CCheckTransmitInfo *pInfo, bool bAlways );
 		virtual int  ShouldTransmit( const CCheckTransmitInfo *pInfo );
 		
-		static CPlantedC4* ShootSatchelCharge( CCSPlayer *pevOwner, Vector vecStart, QAngle vecAngles );
+		static CPlantedC4* ShootSatchelCharge( CHL2MP_Player *pevOwner, Vector vecStart, QAngle vecAngles );
 		virtual void Precache();
 		
 		// Set these flags so CTs can use the C4 to disarm it.
@@ -57,8 +57,8 @@
         // [tj] Accessors related to planting of the bomb
         //=============================================================================
  
-        CCSPlayer*  GetPlanter() { return m_pPlanter; }
-        void        SetPlanter(CCSPlayer* player) { m_pPlanter = player; }
+        CHL2MP_Player*  GetPlanter() { return m_pPlanter; }
+        void        SetPlanter(CHL2MP_Player* player) { m_pPlanter = player; }
         
         void SetPlantedAfterPickup (bool plantedAfterPickup) { m_bPlantedAfterPickup = plantedAfterPickup; }
  
@@ -74,7 +74,7 @@
 
 	private:
 
-		void Init( CCSPlayer *pevOwner, Vector vecStart, QAngle vecAngles );
+		void Init( CHL2MP_Player *pevOwner, Vector vecStart, QAngle vecAngles );
 		void C4Think();
 		
 		// This becomes the think function when the timer has expired and it is about to explode.
@@ -87,7 +87,7 @@
 		CNetworkVar( float, m_flTimerLength );
 
 		// Info for defusing.
-		CHandle<CCSPlayer> m_pBombDefuser;
+		CHandle<CHL2MP_Player> m_pBombDefuser;
 		float			m_flNextDefuse;
 		bool			m_bStartDefuse;
 		int				m_iBombSiteIndex;
@@ -110,7 +110,7 @@
         //=============================================================================
          
         // [tj] We need to store who planted the bomb so we can track who deserves credits for the kills
-        CHandle<CCSPlayer>  m_pPlanter;
+        CHandle<CHL2MP_Player>  m_pPlanter;
 
         // [tj] We need to know if this was planted by a player who recovered the bomb
         bool m_bPlantedAfterPickup;

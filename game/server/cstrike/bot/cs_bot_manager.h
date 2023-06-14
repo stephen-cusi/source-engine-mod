@@ -16,7 +16,7 @@
 #include "bot_util.h"
 #include "bot_profile.h"
 #include "cs_shareddefs.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 
 extern ConVar friendlyfire;
 
@@ -133,7 +133,7 @@ public:
 	virtual void StartFrame( void );						///< (EXTEND) called each frame
 
 	virtual unsigned int GetPlayerPriority( CBasePlayer *player ) const;	///< return priority of player (0 = max pri)
-	virtual bool IsImportantPlayer( CCSPlayer *player ) const;				///< return true if player is important to scenario (VIP, bomb carrier, etc)
+	virtual bool IsImportantPlayer( CHL2MP_Player *player ) const;				///< return true if player is important to scenario (VIP, bomb carrier, etc)
 
 	void ExtractScenarioData( void );							///< search the map entities to determine the game scenario and define important zones
 
@@ -254,7 +254,7 @@ public:
 	bool IsBombPlanted( void ) const			{ return m_isBombPlanted; }			///< returns true if bomb has been planted
 	float GetBombPlantTimestamp( void ) const	{ return m_bombPlantTimestamp; }	///< return time bomb was planted
 	bool IsTimeToPlantBomb( void ) const;											///< return true if it's ok to try to plant bomb
-	CCSPlayer *GetBombDefuser( void ) const		{ return m_bombDefuser; }			///< return the player currently defusing the bomb, or NULL
+	CHL2MP_Player *GetBombDefuser( void ) const		{ return m_bombDefuser; }			///< return the player currently defusing the bomb, or NULL
 	float GetBombTimeLeft( void ) const;											///< get the time remaining before the planted bomb explodes
 	CBaseEntity *GetLooseBomb( void )			{ return m_looseBomb; }				///< return the bomb if it is loose on the ground
 	CNavArea *GetLooseBombArea( void ) const	{ return m_looseBombArea; }			///< return area that bomb is in/near
@@ -291,8 +291,8 @@ public:
 	bool IsWeaponUseable( const CWeaponCSBase *weapon ) const;	///< return true if the bot can use this weapon
 
 	bool IsDefenseRushing( void ) const				{ return m_isDefenseRushing; }		///< returns true if defense team has "decided" to rush this round
-	bool IsOnDefense( const CCSPlayer *player ) const;		///< return true if this player is on "defense"
-	bool IsOnOffense( const CCSPlayer *player ) const;		///< return true if this player is on "offense"
+	bool IsOnDefense( const CHL2MP_Player *player ) const;		///< return true if this player is on "defense"
+	bool IsOnOffense( const CHL2MP_Player *player ) const;		///< return true if this player is on "offense"
 
 	bool IsRoundOver( void ) const					{ return m_isRoundOver; }		///< return true if the round has ended
 
@@ -315,7 +315,7 @@ private:
 	bool m_isBombPlanted;									///< true if bomb has been planted
 	float m_bombPlantTimestamp;								///< time bomb was planted
 	float m_earliestBombPlantTimestamp;						///< don't allow planting until after this time has elapsed
-	CCSPlayer *m_bombDefuser;								///< the player currently defusing a bomb
+	CHL2MP_Player *m_bombDefuser;								///< the player currently defusing a bomb
 	EHANDLE m_looseBomb;									///< will be non-NULL if bomb is loose on the ground
 	CNavArea *m_looseBombArea;								///< area that bomb is is/near
 

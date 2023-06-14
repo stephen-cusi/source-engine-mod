@@ -14,10 +14,10 @@
 
 
 #if defined( CLIENT_DLL )
-class C_Portal_Player;
-#define CPortal_Player C_Portal_Player
+class C_HL2MP_Player;
+#define CHL2MP_Player C_HL2MP_Player
 #else
-class CPortal_Player;
+class CHL2MP_Player;
 #endif
 
 // forward declarations

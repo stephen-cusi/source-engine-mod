@@ -10,7 +10,7 @@
 #include "physicsshadowclone.h"
 #include "prop_combine_ball.h"
 #include "prop_portal.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "portal/weapon_physcannon.h" //grab controller
 
 
@@ -208,9 +208,9 @@ int CPortal_CollisionEvent::ShouldSolvePenetration( IPhysicsObject *pObj0, IPhys
 		//held objects are clipping into other objects when travelling across a portal. We're close to ship, so this seems to be the
 		//most localized way to make a fix.
 		//Note that we're not actually going to change whether it should solve, we're just going to tack on some hacks
-		CPortal_Player *pHoldingPlayer = (CPortal_Player *)GetPlayerHoldingEntity( pHeld );
+		CHL2MP_Player *pHoldingPlayer = (CHL2MP_Player *)GetPlayerHoldingEntity( pHeld );
 		if( !pHoldingPlayer && CPhysicsShadowClone::IsShadowClone( pHeld ) )
-			pHoldingPlayer = (CPortal_Player *)GetPlayerHoldingEntity( ((CPhysicsShadowClone *)pHeld)->GetClonedEntity() );
+			pHoldingPlayer = (CHL2MP_Player *)GetPlayerHoldingEntity( ((CPhysicsShadowClone *)pHeld)->GetClonedEntity() );
 		
 		Assert( pHoldingPlayer );
 		if( pHoldingPlayer )

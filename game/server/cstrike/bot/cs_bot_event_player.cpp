@@ -87,7 +87,7 @@ void CCSBot::OnPlayerDeath( IGameEvent *event )
 				// check that attacker is an enemy (for friendly fire, etc)
 				if (other && other->IsPlayer())
 				{
-					CCSPlayer *killer = static_cast<CCSPlayer *>( other );
+					CHL2MP_Player *killer = static_cast<CHL2MP_Player *>( other );
 					if (killer->GetTeamNumber() != GetTeamNumber())
 					{
 						// check if we saw our friend die - dont check FOV - assume we're aware of our surroundings in combat
@@ -172,7 +172,7 @@ void CCSBot::OnPlayerRadio( IGameEvent *event )
 		return;
 
 	// don't react to our own events
-	CCSPlayer *player = ToCSPlayer( UTIL_PlayerByUserId( event->GetInt( "userid" ) ) );
+	CHL2MP_Player *player = ToCSPlayer( UTIL_PlayerByUserId( event->GetInt( "userid" ) ) );
 	if ( player == this )
 		return;
 

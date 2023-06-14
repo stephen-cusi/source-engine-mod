@@ -20,7 +20,7 @@
 #ifndef CLIENT_DLL
 
 #include "world.h"
-#include "portal_player.h" //TODO: Move any portal mod specific code to callback functions or something
+#include "hl2mp_player.h" //TODO: Move any portal mod specific code to callback functions or something
 #include "physicsshadowclone.h"
 #include "portal/weapon_physcannon.h"
 #include "player_pickup.h"
@@ -104,7 +104,7 @@ static CPhysCollide *ConvertPolyhedronsToCollideable( CPolyhedron **pPolyhedrons
 
 #ifndef CLIENT_DLL
 static void UpdateShadowClonesPortalSimulationFlags( const CBaseEntity *pSourceEntity, unsigned int iFlags, int iSourceFlags );
-static bool g_bPlayerIsInSimulator = false;
+static bool g_bPlayerIsInSimulator[MAX_PLAYERS] = { false };
 #endif
 
 static CUtlVector<CPortalSimulator *> s_PortalSimulators;
@@ -789,11 +789,11 @@ void CPortalSimulator::TakePhysicsOwnership( CBaseEntity *pEntity )
 			{
 				//bool bHeldByPhyscannon = false;
 				CBaseEntity *pHeldEntity = NULL;
-				CPortal_Player *pPlayer = (CPortal_Player *)GetPlayerHoldingEntity( pEntity );
+				CHL2MP_Player *pPlayer = (CHL2MP_Player *)GetPlayerHoldingEntity( pEntity );
 
 				if ( !pPlayer && pEntity->IsPlayer() )
 				{
-					pPlayer = (CPortal_Player *)pEntity;
+					pPlayer = (CHL2MP_Player *)pEntity;
 				}
 
 				if ( pPlayer )
@@ -978,11 +978,11 @@ void CPortalSimulator::ReleasePhysicsOwnership( CBaseEntity *pEntity, bool bCont
 
 						//bool bHeldByPhyscannon = false;
 						CBaseEntity *pHeldEntity = NULL;
-						CPortal_Player *pPlayer = (CPortal_Player *)GetPlayerHoldingEntity( pEntity );
+						CHL2MP_Player *pPlayer = (CHL2MP_Player *)GetPlayerHoldingEntity( pEntity );
 
 						if ( !pPlayer && pEntity->IsPlayer() )
 						{
-							pPlayer = (CPortal_Player *)pEntity;
+							pPlayer = (CHL2MP_Player *)pEntity;
 						}
 
 						if ( pPlayer )
@@ -1096,7 +1096,7 @@ void CPortalSimulator::MarkAsOwned( CBaseEntity *pEntity )
 
 	if ( pEntity->IsPlayer() )
 	{
-		g_bPlayerIsInSimulator = true;
+		g_bPlayerIsInSimulator[pEntity->entindex()] = true;
 	}
 }
 
@@ -1123,7 +1123,7 @@ void CPortalSimulator::MarkAsReleased( CBaseEntity *pEntity )
 
 	if ( pEntity->IsPlayer() )
 	{
-		g_bPlayerIsInSimulator = false;
+		g_bPlayerIsInSimulator[pEntity->entindex()] = false;
 	}
 }
 
@@ -2437,19 +2437,24 @@ void CPortalSimulator::PrePhysFrame( void )
 
 void CPortalSimulator::PostPhysFrame( void )
 {
-	if ( g_bPlayerIsInSimulator )
-	{
-		CPortal_Player* pPlayer = dynamic_cast<CPortal_Player*>( UTIL_GetLocalPlayer() );
-		CProp_Portal* pTouchedPortal = pPlayer->m_hPortalEnvironment.Get();
-		CPortalSimulator* pSim = GetSimulatorThatOwnsEntity( pPlayer );
-		if ( pTouchedPortal && pSim && (pTouchedPortal->m_PortalSimulator.GetPortalSimulatorGUID() != pSim->GetPortalSimulatorGUID()) )
+	for (int i = 0; i < MAX_PLAYERS; i++) {
+		if (g_bPlayerIsInSimulator[i])
 		{
-			Warning ( "Player is simulated in a physics environment but isn't touching a portal! Can't teleport, but can fall through portal hole. Returning player to main environment.\n" );
-			ADD_DEBUG_HISTORY( HISTORY_PLAYER_DAMAGE, UTIL_VarArgs( "Player in PortalSimulator but not touching a portal, removing from sim at : %f\n",  gpGlobals->curtime ) );
-			
-			if ( pSim )
+			CHL2MP_Player* pPlayer = dynamic_cast<CHL2MP_Player*>(UTIL_PlayerByIndex(i));
+			if (!pPlayer) {
+				continue;
+			}
+			CProp_Portal* pTouchedPortal = pPlayer->m_hPortalEnvironment.Get();
+			CPortalSimulator* pSim = GetSimulatorThatOwnsEntity(pPlayer);
+			if (pTouchedPortal && pSim && (pTouchedPortal->m_PortalSimulator.GetPortalSimulatorGUID() != pSim->GetPortalSimulatorGUID()))
 			{
-				pSim->ReleaseOwnershipOfEntity( pPlayer, false );
+				Warning("Player is simulated in a physics environment but isn't touching a portal! Can't teleport, but can fall through portal hole. Returning player to main environment.\n");
+				ADD_DEBUG_HISTORY(HISTORY_PLAYER_DAMAGE, UTIL_VarArgs("Player in PortalSimulator but not touching a portal, removing from sim at : %f\n", gpGlobals->curtime));
+
+				if (pSim)
+				{
+					pSim->ReleaseOwnershipOfEntity(pPlayer, false);
+				}
 			}
 		}
 	}

@@ -1004,7 +1004,7 @@ void CPropJeepEpisodic::UpdateCargoEntry( void )
 	// Slerp our quaternions to find where we are this frame
 	Quaternion	qtTarget;
 	QAngle qa( 0, 90, 0 );
-	qa += pProp->PreferredCarryAngles();
+	qa += pProp->PreferredCarryAngles( this );
 	AngleQuaternion( qa, qtTarget );	// FIXME: Find the real offset to make this sit properly
 	Quaternion	qtCurrent;
 	AngleQuaternion( pProp->GetLocalAngles(), qtCurrent );

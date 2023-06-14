@@ -7,7 +7,7 @@
 #include "cbase.h"
 #include "hud.h"
 #include "hudelement.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "c_playerresource.h"
 #include "c_cs_playerresource.h"
 #include "vgui_entitypanel.h"
@@ -138,7 +138,7 @@ void CTargetID::Paint()
 
 	Color c = m_cHostageColor;
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( !pPlayer )
 		return;

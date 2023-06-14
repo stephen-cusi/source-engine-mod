@@ -8,11 +8,11 @@
 #include "cbase.h"
 
 #ifdef CLIENT_DLL
-#include "c_portal_player.h"
+#include "c_hl2mp_player.h"
 #include "prediction.h"
 #define CRecipientFilter C_RecipientFilter
 #else
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "ai_basenpc.h"
 #include "portal_gamestats.h"
 #include "util.h"

@@ -296,39 +296,43 @@ void CCSWeaponInfo::Parse( KeyValues *pKeyValuesData, const char *szWeaponName )
 {
 	BaseClass::Parse( pKeyValuesData, szWeaponName );
 
-	m_flMaxSpeed = (float)pKeyValuesData->GetInt( "MaxPlayerSpeed", 1 );
+	m_iDamage = pKeyValuesData->GetInt("Damage", 42); // Douglas Adams 1952 - 2001
+	m_iPlayerDamage = m_iDamage;
 
-	m_iDefaultPrice = m_iWeaponPrice = pKeyValuesData->GetInt( "WeaponPrice", -1 );
-	if ( m_iWeaponPrice == -1 )
+
+	m_flMaxSpeed = (float)pKeyValuesData->GetInt("MaxPlayerSpeed", 1);
+
+	m_iDefaultPrice = m_iWeaponPrice = pKeyValuesData->GetInt("WeaponPrice", -1);
+	if (m_iWeaponPrice == -1)
 	{
 		// This weapon should have the price in its script.
-		Assert( false );
+		Assert(false);
 	}
 
-	if ( CSGameRules()->IsBlackMarket() )
+	if (CSGameRules()->IsBlackMarket())
 	{
-		CSWeaponID iWeaponID = AliasToWeaponID( GetTranslatedWeaponAlias ( szWeaponName ) );
+		CSWeaponID iWeaponID = AliasToWeaponID(GetTranslatedWeaponAlias(szWeaponName));
 
 		m_iDefaultPrice = m_iWeaponPrice;
-		m_iPreviousPrice = CSGameRules()->GetBlackMarketPreviousPriceForWeapon( iWeaponID );
-		m_iWeaponPrice = CSGameRules()->GetBlackMarketPriceForWeapon( iWeaponID );
+		m_iPreviousPrice = CSGameRules()->GetBlackMarketPreviousPriceForWeapon(iWeaponID);
+		m_iWeaponPrice = CSGameRules()->GetBlackMarketPriceForWeapon(iWeaponID);
 	}
-		
-	m_flArmorRatio				= pKeyValuesData->GetFloat( "WeaponArmorRatio", 1 );
-	m_iCrosshairMinDistance		= pKeyValuesData->GetInt( "CrosshairMinDistance", 4 );
-	m_iCrosshairDeltaDistance	= pKeyValuesData->GetInt( "CrosshairDeltaDistance", 3 );
-	m_bCanUseWithShield			= !!pKeyValuesData->GetInt( "CanEquipWithShield", false );
-	m_flMuzzleScale				= pKeyValuesData->GetFloat( "MuzzleFlashScale", 1 );
 
-	const char *pMuzzleFlashStyle = pKeyValuesData->GetString( "MuzzleFlashStyle", "CS_MUZZLEFLASH_NORM" );
-	
-	if( pMuzzleFlashStyle )
+	m_flArmorRatio = pKeyValuesData->GetFloat("WeaponArmorRatio", 1);
+	m_iCrosshairMinDistance = pKeyValuesData->GetInt("CrosshairMinDistance", 4);
+	m_iCrosshairDeltaDistance = pKeyValuesData->GetInt("CrosshairDeltaDistance", 3);
+	m_bCanUseWithShield = !!pKeyValuesData->GetInt("CanEquipWithShield", false);
+	m_flMuzzleScale = pKeyValuesData->GetFloat("MuzzleFlashScale", 1);
+
+	const char* pMuzzleFlashStyle = pKeyValuesData->GetString("MuzzleFlashStyle", "CS_MUZZLEFLASH_NORM");
+
+	if (pMuzzleFlashStyle)
 	{
-		if ( Q_stricmp( pMuzzleFlashStyle, "CS_MUZZLEFLASH_X" ) == 0 )
+		if (Q_stricmp(pMuzzleFlashStyle, "CS_MUZZLEFLASH_X") == 0)
 		{
 			m_iMuzzleFlashStyle = CS_MUZZLEFLASH_X;
 		}
-		else if ( Q_stricmp( pMuzzleFlashStyle, "CS_MUZZLEFLASH_NONE" ) == 0 )
+		else if (Q_stricmp(pMuzzleFlashStyle, "CS_MUZZLEFLASH_NONE") == 0)
 		{
 			m_iMuzzleFlashStyle = CS_MUZZLEFLASH_NONE;
 		}
@@ -339,119 +343,121 @@ void CCSWeaponInfo::Parse( KeyValues *pKeyValuesData, const char *szWeaponName )
 	}
 	else
 	{
-		Assert( false );
+		Assert(false);
 	}
 
-	m_iPenetration		= pKeyValuesData->GetInt( "Penetration", 1 );
-	m_iDamage			= pKeyValuesData->GetInt( "Damage", 42 ); // Douglas Adams 1952 - 2001
-	m_flRange			= pKeyValuesData->GetFloat( "Range", 8192.0f );
-	m_flRangeModifier	= pKeyValuesData->GetFloat( "RangeModifier", 0.98f );
-	m_iBullets			= pKeyValuesData->GetInt( "Bullets", 1 );
-	m_flCycleTime		= pKeyValuesData->GetFloat( "CycleTime", 0.15 );
-	m_bAccuracyQuadratic= pKeyValuesData->GetInt( "AccuracyQuadratic", 0 );
-	m_flAccuracyDivisor	= pKeyValuesData->GetFloat( "AccuracyDivisor", -1 ); // -1 = off
-	m_flAccuracyOffset	= pKeyValuesData->GetFloat( "AccuracyOffset", 0 );
-	m_flMaxInaccuracy	= pKeyValuesData->GetFloat( "MaxInaccuracy", 0 );
+	m_iPenetration = pKeyValuesData->GetInt("Penetration", 1);
+	m_flRange = pKeyValuesData->GetFloat("Range", 8192.0f);
+	m_flRangeModifier = pKeyValuesData->GetFloat("RangeModifier", 0.98f);
+	m_iBullets = pKeyValuesData->GetInt("Bullets", 1);
+	m_flCycleTime = pKeyValuesData->GetFloat("CycleTime", 0.15);
+	m_bAccuracyQuadratic = pKeyValuesData->GetInt("AccuracyQuadratic", 0);
+	m_flAccuracyDivisor = pKeyValuesData->GetFloat("AccuracyDivisor", -1); // -1 = off
+	m_flAccuracyOffset = pKeyValuesData->GetFloat("AccuracyOffset", 0);
+	m_flMaxInaccuracy = pKeyValuesData->GetFloat("MaxInaccuracy", 0);
 
 	// new accuracy model parameters
-	m_fSpread[0]				= pKeyValuesData->GetFloat("Spread", 0.0f);
-	m_fInaccuracyCrouch[0]		= pKeyValuesData->GetFloat("InaccuracyCrouch", 0.0f);
-	m_fInaccuracyStand[0]		= pKeyValuesData->GetFloat("InaccuracyStand", 0.0f);
-	m_fInaccuracyJump[0]		= pKeyValuesData->GetFloat("InaccuracyJump", 0.0f);
-	m_fInaccuracyLand[0]		= pKeyValuesData->GetFloat("InaccuracyLand", 0.0f);
-	m_fInaccuracyLadder[0]		= pKeyValuesData->GetFloat("InaccuracyLadder", 0.0f);
-	m_fInaccuracyImpulseFire[0]	= pKeyValuesData->GetFloat("InaccuracyFire", 0.0f);
-	m_fInaccuracyMove[0]		= pKeyValuesData->GetFloat("InaccuracyMove", 0.0f);
+	m_fSpread[0] = pKeyValuesData->GetFloat("Spread", 0.0f);
+	m_fInaccuracyCrouch[0] = pKeyValuesData->GetFloat("InaccuracyCrouch", 0.0f);
+	m_fInaccuracyStand[0] = pKeyValuesData->GetFloat("InaccuracyStand", 0.0f);
+	m_fInaccuracyJump[0] = pKeyValuesData->GetFloat("InaccuracyJump", 0.0f);
+	m_fInaccuracyLand[0] = pKeyValuesData->GetFloat("InaccuracyLand", 0.0f);
+	m_fInaccuracyLadder[0] = pKeyValuesData->GetFloat("InaccuracyLadder", 0.0f);
+	m_fInaccuracyImpulseFire[0] = pKeyValuesData->GetFloat("InaccuracyFire", 0.0f);
+	m_fInaccuracyMove[0] = pKeyValuesData->GetFloat("InaccuracyMove", 0.0f);
 
-	m_fSpread[1]				= pKeyValuesData->GetFloat("SpreadAlt", 0.0f);
-	m_fInaccuracyCrouch[1]		= pKeyValuesData->GetFloat("InaccuracyCrouchAlt", 0.0f);
-	m_fInaccuracyStand[1]		= pKeyValuesData->GetFloat("InaccuracyStandAlt", 0.0f);
-	m_fInaccuracyJump[1]		= pKeyValuesData->GetFloat("InaccuracyJumpAlt", 0.0f);
-	m_fInaccuracyLand[1]		= pKeyValuesData->GetFloat("InaccuracyLandAlt", 0.0f);
-	m_fInaccuracyLadder[1]		= pKeyValuesData->GetFloat("InaccuracyLadderAlt", 0.0f);
-	m_fInaccuracyImpulseFire[1]	= pKeyValuesData->GetFloat("InaccuracyFireAlt", 0.0f);
-	m_fInaccuracyMove[1]		= pKeyValuesData->GetFloat("InaccuracyMoveAlt", 0.0f);
+	m_fSpread[1] = pKeyValuesData->GetFloat("SpreadAlt", 0.0f);
+	m_fInaccuracyCrouch[1] = pKeyValuesData->GetFloat("InaccuracyCrouchAlt", 0.0f);
+	m_fInaccuracyStand[1] = pKeyValuesData->GetFloat("InaccuracyStandAlt", 0.0f);
+	m_fInaccuracyJump[1] = pKeyValuesData->GetFloat("InaccuracyJumpAlt", 0.0f);
+	m_fInaccuracyLand[1] = pKeyValuesData->GetFloat("InaccuracyLandAlt", 0.0f);
+	m_fInaccuracyLadder[1] = pKeyValuesData->GetFloat("InaccuracyLadderAlt", 0.0f);
+	m_fInaccuracyImpulseFire[1] = pKeyValuesData->GetFloat("InaccuracyFireAlt", 0.0f);
+	m_fInaccuracyMove[1] = pKeyValuesData->GetFloat("InaccuracyMoveAlt", 0.0f);
 
-	m_fInaccuracyReload			= pKeyValuesData->GetFloat("InaccuracyReload", 0.0f);
-	m_fInaccuracyAltSwitch		= pKeyValuesData->GetFloat("InaccuracyAltSwitch", 0.0f);
+	m_fInaccuracyReload = pKeyValuesData->GetFloat("InaccuracyReload", 0.0f);
+	m_fInaccuracyAltSwitch = pKeyValuesData->GetFloat("InaccuracyAltSwitch", 0.0f);
 
-	m_fRecoveryTimeCrouch		= pKeyValuesData->GetFloat("RecoveryTimeCrouch", 1.0f);
-	m_fRecoveryTimeStand		= pKeyValuesData->GetFloat("RecoveryTimeStand", 1.0f);
+	m_fRecoveryTimeCrouch = pKeyValuesData->GetFloat("RecoveryTimeCrouch", 1.0f);
+	m_fRecoveryTimeStand = pKeyValuesData->GetFloat("RecoveryTimeStand", 1.0f);
 
-	m_flTimeToIdleAfterFire	= pKeyValuesData->GetFloat( "TimeToIdle", 2 );
-	m_flIdleInterval	= pKeyValuesData->GetFloat( "IdleInterval", 20 );
+	m_flTimeToIdleAfterFire = pKeyValuesData->GetFloat("TimeToIdle", 2);
+	m_flIdleInterval = pKeyValuesData->GetFloat("IdleInterval", 20);
 
 	// Figure out what team can have this weapon.
 	m_iTeam = TEAM_UNASSIGNED;
-	const char *pTeam = pKeyValuesData->GetString( "Team", NULL );
-	if ( pTeam )
+	const char* pTeam = pKeyValuesData->GetString("Team", NULL);
+	if (pTeam)
 	{
-		if ( Q_stricmp( pTeam, "CT" ) == 0 )
+		if (Q_stricmp(pTeam, "CT") == 0)
 		{
 			m_iTeam = TEAM_CT;
 		}
-		else if ( Q_stricmp( pTeam, "TERRORIST" ) == 0 )
+		else if (Q_stricmp(pTeam, "TERRORIST") == 0)
 		{
 			m_iTeam = TEAM_TERRORIST;
 		}
-		else if ( Q_stricmp( pTeam, "ANY" ) == 0 )
+		else if (Q_stricmp(pTeam, "ANY") == 0)
 		{
 			m_iTeam = TEAM_UNASSIGNED;
 		}
 		else
 		{
-			Assert( false );
+			Assert(false);
 		}
 	}
 	else
 	{
-		Assert( false );
+		Assert(false);
 	}
 
-	
-	const char *pWrongTeamMsg = pKeyValuesData->GetString( "WrongTeamMsg", "" );
-	Q_strncpy( m_WrongTeamMsg, pWrongTeamMsg, sizeof( m_WrongTeamMsg ) );
 
-	const char *pShieldViewModel = pKeyValuesData->GetString( "shieldviewmodel", "" );
-	Q_strncpy( m_szShieldViewModel, pShieldViewModel, sizeof( m_szShieldViewModel ) );
-	
-	const char *pAnimEx = pKeyValuesData->GetString( "PlayerAnimationExtension", "m4" );
-	Q_strncpy( m_szAnimExtension, pAnimEx, sizeof( m_szAnimExtension ) );
+	const char* pWrongTeamMsg = pKeyValuesData->GetString("WrongTeamMsg", "");
+	Q_strncpy(m_WrongTeamMsg, pWrongTeamMsg, sizeof(m_WrongTeamMsg));
+
+	const char* pShieldViewModel = pKeyValuesData->GetString("shieldviewmodel", "");
+	Q_strncpy(m_szShieldViewModel, pShieldViewModel, sizeof(m_szShieldViewModel));
+
+	const char* pAnimEx = pKeyValuesData->GetString("PlayerAnimationExtension", "m4");
+	Q_strncpy(m_szAnimExtension, pAnimEx, sizeof(m_szAnimExtension));
 
 	// Default is 2000.
-	m_flBotAudibleRange = pKeyValuesData->GetFloat( "BotAudibleRange", 2000.0f );
-	
-	const char *pTypeString = pKeyValuesData->GetString( "WeaponType", "" );
+	m_flBotAudibleRange = pKeyValuesData->GetFloat("BotAudibleRange", 2000.0f);
+
+	const char* pTypeString = pKeyValuesData->GetString("WeaponType", "");
 	m_WeaponType = WeaponClassFromString(pTypeString);
 
 	m_bFullAuto = pKeyValuesData->GetBool("FullAuto");
 
 	// Read the addon model.
-	Q_strncpy( m_szAddonModel, pKeyValuesData->GetString( "AddonModel" ), sizeof( m_szAddonModel ) );
+	Q_strncpy(m_szAddonModel, pKeyValuesData->GetString("AddonModel"), sizeof(m_szAddonModel));
 
 	// Read the dropped model.
-	Q_strncpy( m_szDroppedModel, pKeyValuesData->GetString( "DroppedModel" ), sizeof( m_szDroppedModel ) );
+	Q_strncpy(m_szDroppedModel, pKeyValuesData->GetString("DroppedModel"), sizeof(m_szDroppedModel));
 
 	// Read the silencer model.
-	Q_strncpy( m_szSilencerModel, pKeyValuesData->GetString( "SilencerModel" ), sizeof( m_szSilencerModel ) );
+	Q_strncpy(m_szSilencerModel, pKeyValuesData->GetString("SilencerModel"), sizeof(m_szSilencerModel));
 
 #ifndef CLIENT_DLL
-	// Enforce consistency for the weapon here, since that way we don't need to save off the model bounds
-	// for all time.
-	// Moved to pure_server_minimal.txt
-//	engine->ForceExactFile( UTIL_VarArgs("scripts/%s.ctx", szWeaponName ) );
+		// Enforce consistency for the weapon here, since that way we don't need to save off the model bounds
+		// for all time.
+		// Moved to pure_server_minimal.txt
+	//	engine->ForceExactFile( UTIL_VarArgs("scripts/%s.ctx", szWeaponName ) );
 
-	// Model bounds are rounded to the nearest integer, then extended by 1
-	engine->ForceModelBounds( szWorldModel, Vector( -15, -12, -18 ), Vector( 44, 16, 19 ) );
-	if ( m_szAddonModel[0] )
-	{
-		engine->ForceModelBounds( m_szAddonModel, Vector( -5, -5, -6 ), Vector( 13, 5, 7 ) );
-	}
-	if ( m_szSilencerModel[0] )
-	{
-		engine->ForceModelBounds( m_szSilencerModel, Vector( -15, -12, -18 ), Vector( 44, 16, 19 ) );
-	}
+		// Model bounds are rounded to the nearest integer, then extended by 1
+		if(szWorldModel[0])
+			engine->ForceModelBounds(szWorldModel, Vector(-15, -12, -18), Vector(44, 16, 19));
+		if (m_szAddonModel[0])
+		{
+			engine->ForceModelBounds(m_szAddonModel, Vector(-5, -5, -6), Vector(13, 5, 7));
+		}
+		if (m_szSilencerModel[0])
+		{
+			engine->ForceModelBounds(m_szSilencerModel, Vector(-15, -12, -18), Vector(44, 16, 19));
+		}
+	
 #endif // !CLIENT_DLL
+	
 }
 
 

@@ -25,7 +25,7 @@
 #include "physics_prop_ragdoll.h"
 #include "portal_util_shared.h"
 #include "prop_portal.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #include "world.h"
 #include "ai_baseactor.h"		// for Glados ent playing VCDs
 #include "sceneentity.h"		// precacheing vcds
@@ -1112,7 +1112,7 @@ bool CNPC_SecurityCamera::CanBeAnEnemyOf( CBaseEntity *pEnemy )
 void PlayDismountSounds()
 {
 	// Play GLaDOS's audio reaction
-	CPortal_Player* pPlayer = ToPortalPlayer( UTIL_PlayerByIndex( 1 ) );
+	CHL2MP_Player* pPlayer = ToPortalPlayer( UTIL_PlayerByIndex( 1 ) );
 	CAI_BaseActor* pGlaDOS  = (CAI_BaseActor*)gEntList.FindEntityByName( NULL, "Aperture_AI" );
 	
 	if ( !pPlayer || !pGlaDOS )

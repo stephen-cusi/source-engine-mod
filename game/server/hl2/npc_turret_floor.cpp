@@ -22,6 +22,7 @@
 #include "beam_shared.h"
 #include "props.h"
 #include "particle_parse.h"
+#include "player.h"
 
 #ifdef PORTAL
 	#include "prop_portal_shared.h"
@@ -1884,13 +1885,12 @@ void CNPC_FloorTurret::SpinUp( void )
 // Purpose: 
 // Output : const QAngle
 //-----------------------------------------------------------------------------
-QAngle CNPC_FloorTurret::PreferredCarryAngles( void )
+QAngle CNPC_FloorTurret::PreferredCarryAngles( CBasePlayer *pPlayer )
 {
 	// FIXME: Embed this into the class
 	static QAngle g_prefAngles;
 
 	Vector vecUserForward;
-	CBasePlayer *pPlayer = AI_GetSinglePlayer();
 	pPlayer->EyeVectors( &vecUserForward );
 
 	// If we're looking up, then face directly forward

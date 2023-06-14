@@ -14,15 +14,14 @@
 
 #ifndef _CS_BOT_H_
 #define _CS_BOT_H_
-
+#include "hl2mp_player.h"
 #include "bot/bot.h"
 #include "bot/cs_bot_manager.h"
 #include "bot/cs_bot_chatter.h"
 #include "cs_gamestate.h"
-#include "cs_player.h"
-#include "weapon_csbase.h"
 #include "cs_nav_pathfind.h"
 #include "cs_nav_area.h"
+#include "weapon_csbase.h"
 
 class CBaseDoor;
 class CBasePropDoor;
@@ -335,10 +334,10 @@ public:
 	virtual void OnExit( CCSBot *bot );
 	virtual const char *GetName( void ) const		{ return "Follow"; }
 
-	void SetLeader( CCSPlayer *player )				{ m_leader = player; }
+	void SetLeader( CHL2MP_Player *player )				{ m_leader = player; }
 
 private:
-	CHandle< CCSPlayer > m_leader;								///< the player we are following
+	CHandle< CHL2MP_Player > m_leader;								///< the player we are following
 	Vector m_lastLeaderPos;										///< where the leader was when we computed our follow path
 	bool m_isStopped;
 	float m_stoppedTimestamp;
@@ -415,10 +414,10 @@ private:
 /**
  * The Counter-strike Bot
  */
-class CCSBot : public CBot< CCSPlayer >
+class CCSBot : public CBot< CHL2MP_Player >
 {
 public:
-	DECLARE_CLASS( CCSBot, CBot< CCSPlayer > );
+	DECLARE_CLASS( CCSBot, CBot< CHL2MP_Player > );
 	DECLARE_DATADESC();
 
 	CCSBot( void );												///< constructor initializes all values to zero
@@ -474,7 +473,7 @@ public:
 	void Hunt( void );
 	bool IsHunting( void ) const;								///< returns true if bot is currently hunting
 
-	void Attack( CCSPlayer *victim );
+	void Attack( CHL2MP_Player *victim );
 	void FireWeaponAtEnemy( void );								///< fire our active weapon towards our current enemy
 	void StopAttacking( void );
 	bool IsAttacking( void ) const;								///< returns true if bot is currently engaging a target
@@ -512,11 +511,11 @@ public:
 
 	void TryToJoinTeam( int team );								///< try to join the given team
 
-	void Follow( CCSPlayer *player );							///< begin following given Player
+	void Follow( CHL2MP_Player *player );							///< begin following given Player
 	void ContinueFollowing( void );								///< continue following our leader after finishing what we were doing
 	void StopFollowing( void );									///< stop following
 	bool IsFollowing( void ) const;								///< return true if we are following someone (not necessarily in the follow state)
-	CCSPlayer *GetFollowLeader( void ) const;					///< return the leader we are following
+	CHL2MP_Player *GetFollowLeader( void ) const;					///< return the leader we are following
 	float GetFollowDuration( void ) const;						///< return how long we've been following our leader
 	bool CanAutoFollow( void ) const;							///< return true if we can auto-follow
 
@@ -624,36 +623,36 @@ public:
 	void SendRadioMessage( RadioType event );					///< send a radio message
 	void SpeakAudio( const char *voiceFilename, float duration, int pitch );	///< send voice chatter
 	BotChatterInterface *GetChatter( void );					///< return an interface to this bot's chatter system
-	bool RespondToHelpRequest( CCSPlayer *player, Place place, float maxRange = -1.0f );	///< decide if we should move to help the player, return true if we will
+	bool RespondToHelpRequest( CHL2MP_Player *player, Place place, float maxRange = -1.0f );	///< decide if we should move to help the player, return true if we will
 	bool IsUsingVoice() const;									///< new-style "voice" chatter gets voice feedback
 
 
 	//- enemies ------------------------------------------------------------------------------------------------------
 	// BOTPORT: GetEnemy() collides with GetEnemy() in CBaseEntity - need to use different nomenclature
-	void SetBotEnemy( CCSPlayer *enemy );						///< set given player as our current enemy
-	CCSPlayer *GetBotEnemy( void ) const;
+	void SetBotEnemy( CHL2MP_Player *enemy );						///< set given player as our current enemy
+	CHL2MP_Player *GetBotEnemy( void ) const;
 	int GetNearbyEnemyCount( void ) const;						///< return max number of nearby enemies we've seen recently
 	unsigned int GetEnemyPlace( void ) const;					///< return location where we see the majority of our enemies
 	bool CanSeeBomber( void ) const;							///< return true if we can see the bomb carrier
-	CCSPlayer *GetBomber( void ) const;
+	CHL2MP_Player *GetBomber( void ) const;
 
 	int GetNearbyFriendCount( void ) const;						///< return number of nearby teammates
-	CCSPlayer *GetClosestVisibleFriend( void ) const;			///< return the closest friend that we can see
-	CCSPlayer *GetClosestVisibleHumanFriend( void ) const;		///< return the closest human friend that we can see
+	CHL2MP_Player *GetClosestVisibleFriend( void ) const;			///< return the closest friend that we can see
+	CHL2MP_Player *GetClosestVisibleHumanFriend( void ) const;		///< return the closest human friend that we can see
 
 	bool IsOutnumbered( void ) const;							///< return true if we are outnumbered by enemies
 	int OutnumberedCount( void ) const;							///< return number of enemies we are outnumbered by
 
 	#define ONLY_VISIBLE_ENEMIES true
-	CCSPlayer *GetImportantEnemy( bool checkVisibility = false ) const;	///< return the closest "important" enemy for the given scenario (bomb carrier, VIP, hostage escorter)
+	CHL2MP_Player *GetImportantEnemy( bool checkVisibility = false ) const;	///< return the closest "important" enemy for the given scenario (bomb carrier, VIP, hostage escorter)
 
 	void UpdateReactionQueue( void );							///< update our reaction time queue
-	CCSPlayer *GetRecognizedEnemy( void );						///< return the most dangerous threat we are "conscious" of
+	CHL2MP_Player *GetRecognizedEnemy( void );						///< return the most dangerous threat we are "conscious" of
 	bool IsRecognizedEnemyReloading( void );					///< return true if the enemy we are "conscious" of is reloading
 	bool IsRecognizedEnemyProtectedByShield( void );			///< return true if the enemy we are "conscious" of is hiding behind a shield
 	float GetRangeToNearestRecognizedEnemy( void );				///< return distance to closest enemy we are "conscious" of
 
-	CCSPlayer *GetAttacker( void ) const;						///< return last enemy that hurt us
+	CHL2MP_Player *GetAttacker( void ) const;						///< return last enemy that hurt us
 	float GetTimeSinceAttacked( void ) const;					///< return duration since we were last injured by an attacker
 	float GetFirstSawEnemyTimestamp( void ) const;				///< time since we saw any enemies
 	float GetLastSawEnemyTimestamp( void ) const;
@@ -670,8 +669,8 @@ public:
 	bool CanSeeSniper( void ) const;							///< return true if we can see an enemy sniper
 	bool HasSeenSniperRecently( void ) const;					///< return true if we have seen a sniper recently
 
-	float GetTravelDistanceToPlayer( CCSPlayer *player ) const;	///< return shortest path travel distance to this player	
-	bool DidPlayerJustFireWeapon( const CCSPlayer *player ) const;	///< return true if the given player just fired their weapon
+	float GetTravelDistanceToPlayer( CHL2MP_Player *player ) const;	///< return shortest path travel distance to this player	
+	bool DidPlayerJustFireWeapon( const CHL2MP_Player *player ) const;	///< return true if the given player just fired their weapon
 
 	//- navigation --------------------------------------------------------------------------------------------------
 	bool HasPath( void ) const;
@@ -764,18 +763,18 @@ public:
 
 	#define CHECK_FOV true
 	bool IsVisible( const Vector &pos, bool testFOV = false, const CBaseEntity *ignore = NULL ) const;	///< return true if we can see the point
-	bool IsVisible( CCSPlayer *player, bool testFOV = false, unsigned char *visParts = NULL ) const;	///< return true if we can see any part of the player
+	bool IsVisible( CHL2MP_Player *player, bool testFOV = false, unsigned char *visParts = NULL ) const;	///< return true if we can see any part of the player
 
-	bool IsNoticable( const CCSPlayer *player, unsigned char visibleParts ) const;	///< return true if we "notice" given player 
+	bool IsNoticable( const CHL2MP_Player *player, unsigned char visibleParts ) const;	///< return true if we "notice" given player 
 
 	bool IsEnemyPartVisible( VisiblePartType part ) const;			///< if enemy is visible, return the part we see for our current enemy
-	const Vector &GetPartPosition( CCSPlayer *player, VisiblePartType part ) const;	///< return world space position of given part on player
+	const Vector &GetPartPosition( CHL2MP_Player *player, VisiblePartType part ) const;	///< return world space position of given part on player
 
 	float ComputeWeaponSightRange( void );							///< return line-of-sight distance to obstacle along weapon fire ray
 
 	bool IsAnyVisibleEnemyLookingAtMe( bool testFOV = false ) const;///< return true if any enemy I have LOS to is looking directly at me
 
-	bool IsSignificantlyCloser( const CCSPlayer *testPlayer, const CCSPlayer *referencePlayer ) const;	///< return true if testPlayer is significantly closer than referencePlayer
+	bool IsSignificantlyCloser( const CHL2MP_Player *testPlayer, const CHL2MP_Player *referencePlayer ) const;	///< return true if testPlayer is significantly closer than referencePlayer
 
 	//- approach points ---------------------------------------------------------------------------------------------
 	void ComputeApproachPoints( void );								///< determine the set of "approach points" representing where the enemy can enter this region
@@ -921,7 +920,7 @@ private:
 	CountdownTimer m_surpriseTimer;									///< when we were surprised
 
 	bool m_isFollowing;												///< true if we are following someone
-	CHandle< CCSPlayer > m_leader;									///< the ID of who we are following
+	CHandle< CHL2MP_Player > m_leader;									///< the ID of who we are following
 	float m_followTimestamp;										///< when we started following
 	float m_allowAutoFollowTime;									///< time when we can auto follow
 
@@ -1161,12 +1160,12 @@ private:
 		int m_validFrame;											///< frame of last computation (for lazy evaluation)
 	};
 	static PartInfo m_partInfo[ MAX_PLAYERS ];						///< part positions for each player
-	void ComputePartPositions( CCSPlayer *player );					///< compute part positions from bone location
+	void ComputePartPositions( CHL2MP_Player *player );					///< compute part positions from bone location
 
 	//- attack state data --------------------------------------------------------------------------------------------
 	DispositionType m_disposition;									///< how we will react to enemies
 	CountdownTimer m_ignoreEnemiesTimer;							///< how long will we ignore enemies
-	mutable CHandle< CCSPlayer > m_enemy;							///< our current enemy
+	mutable CHandle< CHL2MP_Player > m_enemy;							///< our current enemy
 	bool m_isEnemyVisible;											///< result of last visibility test on enemy
 	unsigned char m_visibleEnemyParts;								///< which parts of the visible enemy do we see
 	Vector m_lastEnemyPosition;										///< last place we saw the enemy
@@ -1185,15 +1184,15 @@ private:
 		bool isEnemy;
 	}
 	m_watchInfo[ MAX_PLAYERS ];
-	mutable CHandle< CCSPlayer > m_bomber;							///< points to bomber if we can see him
+	mutable CHandle< CHL2MP_Player > m_bomber;							///< points to bomber if we can see him
 
 	int m_nearbyFriendCount;										///< number of nearby teammates
-	mutable CHandle< CCSPlayer > m_closestVisibleFriend;			///< the closest friend we can see
-	mutable CHandle< CCSPlayer > m_closestVisibleHumanFriend;		///< the closest human friend we can see
+	mutable CHandle< CHL2MP_Player > m_closestVisibleFriend;			///< the closest friend we can see
+	mutable CHandle< CHL2MP_Player > m_closestVisibleHumanFriend;		///< the closest human friend we can see
 
 	IntervalTimer m_attentionInterval;								///< time between attention checks
 
-	mutable CHandle< CCSPlayer > m_attacker;						///< last enemy that hurt us (may not be same as m_enemy)
+	mutable CHandle< CHL2MP_Player > m_attacker;						///< last enemy that hurt us (may not be same as m_enemy)
 	float m_attackedTimestamp;										///< when we were hurt by the m_attacker
 
 	int m_lastVictimID;												///< the entindex of the last victim we killed, or zero
@@ -1216,7 +1215,7 @@ private:
 	struct ReactionState
 	{
 		// NOTE: player position & orientation is not currently stored separately
-		CHandle<CCSPlayer> player;
+		CHandle<CHL2MP_Player> player;
 		bool isReloading;
 		bool isProtectedByShield;
 	}
@@ -1225,7 +1224,7 @@ private:
 	byte m_enemyQueueCount;
 	byte m_enemyQueueAttendIndex;									///< index of the timeframe we are "conscious" of
 
-	CCSPlayer *FindMostDangerousThreat( void );						///< return most dangerous threat in my field of view (feeds into reaction time queue)
+	CHL2MP_Player *FindMostDangerousThreat( void );						///< return most dangerous threat in my field of view (feeds into reaction time queue)
 
 
 	//- stuck detection ---------------------------------------------------------------------------------------------
@@ -1246,7 +1245,7 @@ private:
 	RadioType m_lastRadioCommand;									///< last radio command we recieved
 	float m_lastRadioRecievedTimestamp;								///< time we recieved a radio message
 	float m_lastRadioSentTimestamp;									///< time when we send a radio message
-	CHandle< CCSPlayer > m_radioSubject;							///< who issued the radio message
+	CHandle< CHL2MP_Player > m_radioSubject;							///< who issued the radio message
 	Vector m_radioPosition;											///< position referred to in radio message
 	void RespondToRadioCommands( void );
 	bool IsRadioCommand( RadioType event ) const;					///< returns true if the radio message is an order to do something
@@ -1375,7 +1374,7 @@ inline bool CCSBot::IsFollowing( void ) const
 	return m_isFollowing;
 }
 
-inline CCSPlayer *CCSBot::GetFollowLeader( void ) const
+inline CHL2MP_Player *CCSBot::GetFollowLeader( void ) const
 { 
 	return m_leader;
 }
@@ -1484,7 +1483,7 @@ inline BotChatterInterface *CCSBot::GetChatter( void )
 	return &m_chatter;
 }
 
-inline CCSPlayer *CCSBot::GetBotEnemy( void ) const
+inline CHL2MP_Player *CCSBot::GetBotEnemy( void ) const
 {
 	return m_enemy;
 }
@@ -1504,7 +1503,7 @@ inline bool CCSBot::CanSeeBomber( void ) const
 	return (m_bomber == NULL) ? false : true;
 }
 
-inline CCSPlayer *CCSBot::GetBomber( void ) const
+inline CHL2MP_Player *CCSBot::GetBomber( void ) const
 {
 	return m_bomber;
 }
@@ -1514,12 +1513,12 @@ inline int CCSBot::GetNearbyFriendCount( void ) const
 	return MIN( GetFriendsRemaining(), m_nearbyFriendCount );
 }
 
-inline CCSPlayer *CCSBot::GetClosestVisibleFriend( void ) const
+inline CHL2MP_Player *CCSBot::GetClosestVisibleFriend( void ) const
 {
 	return m_closestVisibleFriend;
 }
 
-inline CCSPlayer *CCSBot::GetClosestVisibleHumanFriend( void ) const
+inline CHL2MP_Player *CCSBot::GetClosestVisibleHumanFriend( void ) const
 {
 	return m_closestVisibleHumanFriend;
 }
@@ -1579,7 +1578,7 @@ inline bool CCSBot::HasSeenSniperRecently( void ) const
 	return !m_sawEnemySniperTimer.IsElapsed();
 }
 
-inline float CCSBot::GetTravelDistanceToPlayer( CCSPlayer *player ) const
+inline float CCSBot::GetTravelDistanceToPlayer( CHL2MP_Player *player ) const
 {
 	if (player == NULL)
 		return -1.0f;
@@ -1725,7 +1724,7 @@ inline bool CCSBot::IsEnemyPartVisible( VisiblePartType part ) const
 	return (m_visibleEnemyParts & part) ? true : false;
 }
 
-inline bool CCSBot::IsSignificantlyCloser( const CCSPlayer *testPlayer, const CCSPlayer *referencePlayer ) const
+inline bool CCSBot::IsSignificantlyCloser( const CHL2MP_Player *testPlayer, const CHL2MP_Player *referencePlayer ) const
 {
 	if ( !referencePlayer )
 		return true;
@@ -1995,7 +1994,7 @@ private:
 //
 // Prototypes
 //
-extern int GetBotFollowCount( CCSPlayer *leader );
+extern int GetBotFollowCount( CHL2MP_Player *leader );
 extern const Vector *FindNearbyRetreatSpot( CCSBot *me, float maxRange = 250.0f );
 extern const HidingSpot *FindInitialEncounterSpot( CBaseEntity *me, const Vector &searchOrigin, float enemyArriveTime, float maxRange, bool isSniper );
 

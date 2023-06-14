@@ -52,7 +52,7 @@
 #endif
 
 #ifdef PORTAL
-#include "portal_player.h"
+#include "hl2mp_player.h"
 #endif // PORTAL
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -79,21 +79,21 @@ extern int gEvilImpulse101;
 
 ConVar sv_autojump( "sv_autojump", "0" );
 
-ConVar hl2_walkspeed( "hl2_walkspeed", "150" );
-ConVar hl2_normspeed( "hl2_normspeed", "190" );
-ConVar hl2_sprintspeed( "hl2_sprintspeed", "320" );
+ConVar hl2_walkspeed( "jb_walkspeed", "150" );
+ConVar hl2_normspeed( "jb_normspeed", "190" );
+ConVar hl2_sprintspeed( "jb_sprintspeed", "320" );
 
 ConVar hl2_darkness_flashlight_factor ( "hl2_darkness_flashlight_factor", "1" );
 
-#ifdef HL2MP
-	#define	HL2_WALK_SPEED 150
-	#define	HL2_NORM_SPEED 190
-	#define	HL2_SPRINT_SPEED 320
-#else
-	#define	HL2_WALK_SPEED hl2_walkspeed.GetFloat()
-	#define	HL2_NORM_SPEED hl2_normspeed.GetFloat()
-	#define	HL2_SPRINT_SPEED hl2_sprintspeed.GetFloat()
-#endif
+//#ifdef HL2MP
+//	#define	HL2_WALK_SPEED 150
+//	#define	HL2_NORM_SPEED 190
+//	#define	HL2_SPRINT_SPEED 320
+//#else
+#define	HL2_WALK_SPEED hl2_walkspeed.GetFloat()
+#define	HL2_NORM_SPEED hl2_normspeed.GetFloat()
+#define	HL2_SPRINT_SPEED hl2_sprintspeed.GetFloat()
+//#endif
 
 ConVar player_showpredictedposition( "player_showpredictedposition", "0" );
 ConVar player_showpredictedposition_timestep( "player_showpredictedposition_timestep", "1.0" );
@@ -101,11 +101,14 @@ ConVar player_showpredictedposition_timestep( "player_showpredictedposition_time
 ConVar player_squad_transient_commands( "player_squad_transient_commands", "1", FCVAR_REPLICATED );
 ConVar player_squad_double_tap_time( "player_squad_double_tap_time", "0.25" );
 
-ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "0", FCVAR_CHEAT );
+ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "0" );
 
 ConVar autoaim_unlock_target( "autoaim_unlock_target", "0.8666" );
 
 ConVar sv_stickysprint("sv_stickysprint", "0", FCVAR_ARCHIVE | FCVAR_ARCHIVE_XBOX);
+
+ConVar jb_suitpower_charge_rate("jb_suitpower_charge_rate", "12.5");
+ConVar jb_suitpower_recharge_delay("jb_suitpower_recharge_delay", "0.5");
 
 #define	FLASH_DRAIN_TIME	 1.1111	// 100 units / 90 secs
 #define	FLASH_CHARGE_TIME	 50.0f	// 100 units / 2 secs
@@ -400,7 +403,7 @@ CHL2_Player::CHL2_Player()
 //
 // SUIT POWER DEVICES
 //
-#define SUITPOWER_CHARGE_RATE	12.5											// 100 units in 8 seconds
+#define SUITPOWER_CHARGE_RATE	jb_suitpower_charge_rate.GetFloat()											// 100 units in 8 seconds
 
 #ifdef HL2MP
 	CSuitPowerDevice SuitDeviceSprint( bits_SUIT_DEVICE_SPRINT, 25.0f );				// 100 units in 4 seconds
@@ -1953,7 +1956,7 @@ bool CHL2_Player::SuitPower_RemoveDevice( const CSuitPowerDevice &device )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-#define SUITPOWER_BEGIN_RECHARGE_DELAY	0.5f
+#define SUITPOWER_BEGIN_RECHARGE_DELAY	jb_suitpower_recharge_delay.GetFloat()
 bool CHL2_Player::SuitPower_ShouldRecharge( void )
 {
 	// Make sure all devices are off.
@@ -2584,7 +2587,7 @@ bool CHL2_Player::ShouldKeepLockedAutoaimTarget( EHANDLE hLockedTarget )
 //			bSuppressSound - 
 // Output : int
 //-----------------------------------------------------------------------------
-int CHL2_Player::GiveAmmo( int nCount, int nAmmoIndex, bool bSuppressSound)
+int CHL2_Player::GiveAmmo( int nCount, int nAmmoIndex, bool bSuppressSound = false)
 {
 	// Don't try to give the player invalid ammo indices.
 	if (nAmmoIndex < 0)
@@ -3924,7 +3927,7 @@ void CLogicPlayerProxy::InputSuppressCrosshair( inputdata_t &inputdata )
 	if( m_hPlayer == NULL )
 		return;
 
-	CPortal_Player *pPlayer = ToPortalPlayer(m_hPlayer.Get());
+	CHL2MP_Player *pPlayer = ToPortalPlayer(m_hPlayer.Get());
 	pPlayer->SuppressCrosshair( true );
 }
 #endif // PORTAL

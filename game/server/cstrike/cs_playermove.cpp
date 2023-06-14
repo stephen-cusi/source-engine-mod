@@ -11,7 +11,7 @@
 #include "in_buttons.h"
 #include "ipredictionsystem.h"
 #include "iservervehicle.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 
 
 static CMoveData g_MoveData;
@@ -50,7 +50,7 @@ CPlayerMove *PlayerMove()
 
 void CCSPlayerMove::StartCommand( CBasePlayer *player, CUserCmd *cmd )
 {
-	CCSPlayer *pPlayer = ToCSPlayer( player );
+	CHL2MP_Player *pPlayer = ToCSPlayer( player );
 
 	// Reset this.. it gets reset each frame that we're in a bomb zone.
 	pPlayer->m_bInBombZone = false;

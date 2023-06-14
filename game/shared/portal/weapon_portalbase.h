@@ -11,14 +11,14 @@
 #endif
 
 #include "basecombatweapon_shared.h"
-#include "portal_weapon_parse.h"
+#include "cs_weapon_parse.h"
 
 #if defined( CLIENT_DLL )
 	#define CWeaponPortalBase C_WeaponPortalBase
 	void UTIL_ClipPunchAngleOffset( QAngle &in, const QAngle &punch, const QAngle &clip );
 #endif
 
-class CPortal_Player;
+class CHL2MP_Player;
 
 // These are the names of the ammo types that go in the CAmmoDefs and that the 
 // weapon script files reference.
@@ -27,7 +27,7 @@ class CPortal_Player;
 // against the ammo name you specify.
 // MIKETODO: this should use indexing instead of searching and strcmp()'ing all the time.
 bool IsAmmoType( int iAmmoType, const char *pAmmoName );
-
+/*
 typedef enum
 {
 	WEAPON_NONE = 0,
@@ -58,7 +58,7 @@ typedef enum
 
 	WEAPON_MAX,		// number of weapons weapon index
 
-} PortalWeaponID;
+} PortalWeaponID;*/
 
 class CWeaponPortalBase : public CBaseCombatWeapon
 {
@@ -81,15 +81,15 @@ public:
 	virtual bool	IsPredicted() const;
 
 	CBasePlayer* GetPlayerOwner() const;
-	CPortal_Player* GetPortalPlayerOwner() const;
+	CHL2MP_Player* GetPortalPlayerOwner() const;
 
 	// Get specific Portal weapon ID (ie: WEAPON_PORTALGUN, etc)
-	virtual PortalWeaponID GetWeaponID( void ) const { return WEAPON_NONE; }
+	virtual CSWeaponID GetWeaponID( void ) const { return WEAPON_NONE; }
 
 	void WeaponSound( WeaponSound_t sound_type, float soundtime = 0.0f );
 	
-	CPortalSWeaponInfo const	&GetPortalWpnData() const;
-
+	CCSWeaponInfo const	&GetPortalWpnData() const;
+	
 
 	virtual void FireBullets( const FireBulletsInfo_t &info );
 	

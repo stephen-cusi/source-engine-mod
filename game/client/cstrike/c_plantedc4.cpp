@@ -144,7 +144,7 @@ void C_PlantedC4::ClientThink( void )
 		// See if the c4 ended up underwater - we need to pull the flash up, or it won't get seen
 		if ( enginetrace->GetPointContents( vPos ) & (CONTENTS_WATER|CONTENTS_SLIME) )
 		{
-			C_CSPlayer *player = GetLocalOrInEyeCSPlayer();
+			C_HL2MP_Player *player = GetLocalOrInEyeCSPlayer();
 			if ( player )
 			{
 				const Vector& eyes = player->EyePosition();

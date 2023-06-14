@@ -54,7 +54,7 @@ public:
 	DECLARE_DATADESC();
 	virtual void VPhysicsUpdate( IPhysicsObject *pPhysics );
 
-	virtual QAngle PreferredCarryAngles( void ) { return QAngle( -90, 0, 0 ); }
+	virtual QAngle PreferredCarryAngles( CBasePlayer *pPlayer ) { return QAngle( -90, 0, 0 ); }
 	virtual bool HasPreferredCarryAnglesForPlayer( CBasePlayer *pPlayer ) { return true; }
 
 	//

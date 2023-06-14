@@ -89,7 +89,7 @@ static C_BasePlayer *s_pLocalPlayer = NULL;
 
 static ConVar	cl_customsounds ( "cl_customsounds", "1", 0, "Enable customized player sound playback" );
 static ConVar	spec_track		( "spec_track", "0", 0, "Tracks an entity in spec mode" );
-static ConVar	cl_smooth		( "cl_smooth", "1", 0, "Smooth view/eye origin after prediction errors" );
+static ConVar	cl_smooth		( "cl_smooth", "0", 0, "Smooth view/eye origin after prediction errors" );
 static ConVar	cl_smoothtime	( 
 	"cl_smoothtime", 
 	"0.1", 
@@ -1161,7 +1161,7 @@ bool C_BasePlayer::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 	}
 
 	// If the frozen flag is set, prevent view movement (server prevents the rest of the movement)
-	if ( GetFlags() & FL_FROZEN )
+	if ( GetFlags() & FL_FROZEN)
 	{
 		// Don't stomp the first time we get frozen
 		if ( m_bWasFrozen )

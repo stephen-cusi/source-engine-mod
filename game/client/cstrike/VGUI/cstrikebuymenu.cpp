@@ -19,7 +19,7 @@
 #include "cs_gamerules.h"
 #include "vgui_controls/RichText.h"
 #include "cs_weapon_parse.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_ammodef.h"
 
 
@@ -283,7 +283,7 @@ static void GetPanelBounds( Panel *pPanel, wrect_t& bounds )
 void CCSBaseBuyMenu::Paint()
 {
 #if USE_BUY_PRESETS
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	int account = (pPlayer) ? pPlayer->GetAccount() : 0;
 
 	if ( m_pMoney && m_lastMoney != account )
@@ -442,7 +442,7 @@ int GetWeeklyBargain( void )
 	if ( CSGameRules() == NULL || CSGameRules()->m_pPrices == NULL )
 		return 0;
 
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if ( pPlayer == NULL )
 		return 0;
@@ -699,7 +699,7 @@ void CCSBuySubMenu::OnThink()
 //-----------------------------------------------------------------------------
 void CCSBuySubMenu::UpdateVestHelmPrice()
 {
-	C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( pPlayer == NULL )
 		return;
 
@@ -724,7 +724,7 @@ void CCSBuySubMenu::OnCommand( const char *command )
 		if ( invalid )
 		{
 			// can't save the favorite because it has an invalid weapon (colt for a T, etc)
-			C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+			C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 			if ( pPlayer )
 			{
 				pPlayer->EmitSound( "BuyPreset.CantBuy" );
@@ -766,7 +766,7 @@ void CCSBuySubMenu::OnCommand( const char *command )
 
 	if ( FStrEq( command, "buy_unavailable" ) )
 	{
-		C_CSPlayer *pPlayer = C_CSPlayer::GetLocalCSPlayer();
+		C_HL2MP_Player *pPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 		if ( pPlayer )
 		{
 			pPlayer->EmitSound( "BuyPreset.CantBuy" );

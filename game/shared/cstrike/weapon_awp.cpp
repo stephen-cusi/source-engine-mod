@@ -11,11 +11,11 @@
 #if defined( CLIENT_DLL )
 
 	#define CWeaponAWP C_WeaponAWP
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "KeyValues.h"
 
 #endif
@@ -109,7 +109,7 @@ void CWeaponAWP::SecondaryAttack()
 {
 	const float kZoomTime = 0.10f;
 
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 	if ( pPlayer == NULL )
 	{
@@ -169,7 +169,7 @@ float CWeaponAWP::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -206,7 +206,7 @@ float CWeaponAWP::GetInaccuracy() const
 
 void CWeaponAWP::PrimaryAttack()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -243,7 +243,7 @@ void CWeaponAWP::PrimaryAttack()
 #ifdef AWP_UNZOOM
 void CWeaponAWP::UnzoomThink( void )
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 	if (pPlayer == NULL)
 	{
@@ -258,7 +258,7 @@ void CWeaponAWP::UnzoomThink( void )
 
 float CWeaponAWP::GetMaxSpeed() const
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 	if (pPlayer == NULL)
 	{

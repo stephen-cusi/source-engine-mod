@@ -337,7 +337,7 @@ void CHudHistoryResource::Paint( void )
 			case HISTSLOT_AMMO:
 				{
 					// Get the weapon we belong to
-#ifndef HL2MP
+//#ifndef HL2MP
 					const FileWeaponInfo_t *pWpnInfo = gWR.GetWeaponFromAmmo( m_PickupHistory[i].iId );
 					if ( pWpnInfo && ( pWpnInfo->iMaxClip1 >= 0 || pWpnInfo->iMaxClip2 >= 0 ) )
 					{
@@ -346,7 +346,7 @@ void CHudHistoryResource::Paint( void )
 						itemAmmoIcon = gWR.GetAmmoIconFromWeapon( m_PickupHistory[i].iId );
 					}
 					else
-#endif // HL2MP
+//#endif // HL2MP
 					{
 						itemIcon = gWR.GetAmmoIconFromWeapon( m_PickupHistory[i].iId );
 						itemAmmoIcon = NULL;

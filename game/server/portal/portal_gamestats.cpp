@@ -7,7 +7,7 @@
 #include "cbase.h"
 #include "portal_gamestats.h"
 #include "tier1/utlbuffer.h"
-#include "portal_player.h"
+#include "hl2mp_player.h"
 
 #define PORTALSTATS_TRIMEVENT( varName, varType )\
 	if( varName->Count() > varType::TRIMSIZE )\
@@ -557,7 +557,7 @@ void CPortalGameStats::Event_PlayerUsed( const Vector &ptTraceStart, const Vecto
 #endif
 }
 
-void CPortalGameStats::Event_PlayerStuck( CPortal_Player *pPlayer )
+void CPortalGameStats::Event_PlayerStuck(CHL2MP_Player *pPlayer )
 {
 #ifdef PORTAL_GAMESTATS_VERBOSE
 	if( CBaseGameStats::StatTrackingAllowed() == false )

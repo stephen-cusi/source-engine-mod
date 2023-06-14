@@ -18,16 +18,15 @@
 
 	#include "vgui/ISurface.h"
 	#include "vgui_controls/Controls.h"
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 	#include "hud_crosshair.h"
 	#include "c_te_effect_dispatch.h"
 	#include "c_te_legacytempents.h"
-
 	extern IVModelInfoClient* modelinfo;
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "te_effect_dispatch.h"
 	#include "KeyValues.h"
 	#include "cs_ammodef.h"
@@ -137,10 +136,10 @@ WeaponAliasInfo s_weaponAliasInfo[] =
 };
 
 
-bool IsAmmoType( int iAmmoType, const char *pAmmoName )
-{
-	return GetAmmoDef()->Index( pAmmoName ) == iAmmoType;
-}
+//bool IsAmmoType( int iAmmoType, const char *pAmmoName )
+//{
+//	return GetAmmoDef()->Index( pAmmoName ) == iAmmoType;
+//}
 
 //--------------------------------------------------------------------------------------------------------
 //
@@ -446,9 +445,9 @@ bool CWeaponCSBase::PlayEmptySound()
 	return 0;
 }
 
-CCSPlayer* CWeaponCSBase::GetPlayerOwner() const
+CHL2MP_Player* CWeaponCSBase::GetPlayerOwner() const
 {
-	return dynamic_cast< CCSPlayer* >( GetOwner() );
+	return dynamic_cast< CHL2MP_Player* >( GetOwner() );
 }
 
 //=============================================================================
@@ -456,7 +455,7 @@ CCSPlayer* CWeaponCSBase::GetPlayerOwner() const
 //=============================================================================
 
 //[dwenger] Accessors for the prior owner list
-void CWeaponCSBase::AddToPriorOwnerList(CCSPlayer* pPlayer)
+void CWeaponCSBase::AddToPriorOwnerList(CHL2MP_Player* pPlayer)
 {
     if ( !IsAPriorOwner( pPlayer ) )
     {
@@ -465,7 +464,7 @@ void CWeaponCSBase::AddToPriorOwnerList(CCSPlayer* pPlayer)
     }
 }
 
-bool CWeaponCSBase::IsAPriorOwner(CCSPlayer* pPlayer)
+bool CWeaponCSBase::IsAPriorOwner(CHL2MP_Player* pPlayer)
 {
     return (m_PriorOwners.Find( pPlayer ) != -1);
 }
@@ -478,7 +477,7 @@ bool CWeaponCSBase::IsAPriorOwner(CCSPlayer* pPlayer)
 void CWeaponCSBase::SecondaryAttack( void )
 {
 #ifndef CLIENT_DLL
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 	if ( !pPlayer )
 		return;
@@ -503,7 +502,7 @@ void CWeaponCSBase::SecondaryAttack( void )
 bool CWeaponCSBase::SendWeaponAnim( int iActivity )
 {
 #ifdef CS_SHIELD_ENABLED
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 	if ( pPlayer && pPlayer->HasShield() )
 	{
@@ -529,7 +528,7 @@ bool CWeaponCSBase::SendWeaponAnim( int iActivity )
 
 void CWeaponCSBase::ItemPostFrame()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 	if ( !pPlayer )
 		return;
@@ -694,7 +693,7 @@ void CWeaponCSBase::ItemBusyFrame()
 
 float CWeaponCSBase::GetInaccuracy() const
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return 0.0f;
 
@@ -750,7 +749,7 @@ const CCSWeaponInfo &CWeaponCSBase::GetCSWpnData() const
 //-----------------------------------------------------------------------------
 const char *CWeaponCSBase::GetViewModel( int /*viewmodelindex = 0 -- this is ignored in the base class here*/ ) const
 {
-	CCSPlayer *pOwner = GetPlayerOwner();
+	CHL2MP_Player *pOwner = GetPlayerOwner();
 
 	if ( pOwner == NULL )
 		 return BaseClass::GetViewModel();
@@ -789,7 +788,7 @@ Activity CWeaponCSBase::GetDeployActivity( void )
 bool CWeaponCSBase::DefaultDeploy( char *szViewModel, char *szWeaponModel, int iActivity, char *szAnimExt )
 {
 	// Msg( "deploy %s at %f\n", GetClassname(), gpGlobals->curtime );
-	CCSPlayer *pOwner = GetPlayerOwner();
+	CHL2MP_Player *pOwner = GetPlayerOwner();
 	if ( !pOwner )
 	{
 		return false;
@@ -818,7 +817,7 @@ bool CWeaponCSBase::DefaultDeploy( char *szViewModel, char *szWeaponModel, int i
 void CWeaponCSBase::UpdateShieldState( void )
 {
 	//empty by default.
-	CCSPlayer *pOwner = GetPlayerOwner();
+	CHL2MP_Player *pOwner = GetPlayerOwner();
 
 	if ( pOwner == NULL )
 		 return;
@@ -853,7 +852,7 @@ bool CWeaponCSBase::CanBeSelected( void )
 
 bool CWeaponCSBase::CanDeploy( void )
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -878,7 +877,7 @@ float CWeaponCSBase::CalculateNextAttackTime( float fCycleTime )
 
 bool CWeaponCSBase::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -893,7 +892,7 @@ bool CWeaponCSBase::Holster( CBaseCombatWeapon *pSwitchingTo )
 
 bool CWeaponCSBase::Deploy()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 
 #ifdef CLIENT_DLL
 	m_iAlpha =  80;
@@ -1015,7 +1014,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 		// clear crosshair
 		pCrosshair->SetCrosshair( 0, Color( 255, 255, 255, 255 ) );
 
-		CCSPlayer* pPlayer = (CCSPlayer*)C_BasePlayer::GetLocalPlayer();
+		CHL2MP_Player* pPlayer = (CHL2MP_Player*)C_BasePlayer::GetLocalPlayer();
 
 		if ( !pPlayer )
 			return;
@@ -1311,7 +1310,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	{
 		if( event == 5001 )
 		{
-			C_CSPlayer *pPlayer = ToCSPlayer( GetOwner() );
+			C_HL2MP_Player *pPlayer = ToCSPlayer( GetOwner() );
 			if( pPlayer && pPlayer->GetFOV() < pPlayer->GetDefaultFOV() && HideViewModelWhenZoomed() )
 				return true;
 
@@ -1500,7 +1499,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 
 	bool CWeaponCSBase::Reload()
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if ( !pPlayer )
 			return false;
 
@@ -1558,7 +1557,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 
 	void CWeaponCSBase::SendReloadEvents()
 	{
-		CCSPlayer *pPlayer = dynamic_cast< CCSPlayer* >( GetOwner() );
+		CHL2MP_Player *pPlayer = dynamic_cast< CHL2MP_Player* >( GetOwner() );
 		if ( !pPlayer )
 			return;
 
@@ -1579,7 +1578,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 
 bool CWeaponCSBase::DefaultPistolReload()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -1596,7 +1595,7 @@ bool CWeaponCSBase::DefaultPistolReload()
 
 bool CWeaponCSBase::IsUseable()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -1612,7 +1611,7 @@ bool CWeaponCSBase::IsUseable()
 	return true;
 }
 
-
+/*
 #if defined( CLIENT_DLL )
 
 	float	g_lateralBob = 0;
@@ -1749,6 +1748,7 @@ bool CWeaponCSBase::IsUseable()
 	}
 
 #endif
+*/
 
 #ifndef CLIENT_DLL
 bool CWeaponCSBase::PhysicsSplash( const Vector &centerPoint, const Vector &normal, float rawSpeed, float scaledSpeed )
@@ -1824,7 +1824,7 @@ void CWeaponCSBase::OnPickedUp( CBaseCombatCharacter *pNewOwner )
 
 void CWeaponCSBase::UpdateAccuracyPenalty()
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -1902,7 +1902,7 @@ void CWeaponCSBase::OnLand( float fVelocity )
 /*
 	// this bit of code is only if we want to punch the player view on all landings
 
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if ( !pPlayer )
 		return;
 

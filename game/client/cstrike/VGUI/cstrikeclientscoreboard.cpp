@@ -10,7 +10,7 @@
 #include "cstrikeclientscoreboard.h"
 #include "c_team.h"
 #include "c_cs_playerresource.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "cs_gamerules.h"
 #include "backgroundpanel.h"
 #include "clientmode.h"
@@ -734,7 +734,7 @@ void CCSClientScoreBoardDialog::UpdatePlayerList()
     m_teamDisplayT.playerScores.PurgeAndDeleteElements();
     m_teamDisplayCT.playerScores.PurgeAndDeleteElements();
 
-    C_CSPlayer *pLocalPlayer = C_CSPlayer::GetLocalCSPlayer();
+    C_HL2MP_Player *pLocalPlayer = C_HL2MP_Player::GetLocalCSPlayer();
     if ( !pLocalPlayer )
         return;
 
@@ -1342,7 +1342,7 @@ bool CCSClientScoreBoardDialog::GetPlayerScoreInfo( int playerIndex, PlayerScore
     // get CS specific infos
     C_CS_PlayerResource *cs_PR = dynamic_cast<C_CS_PlayerResource *>( g_PR );
 
-    C_CSPlayer *pLocalPlayer = C_CSPlayer::GetLocalCSPlayer();
+    C_HL2MP_Player *pLocalPlayer = C_HL2MP_Player::GetLocalCSPlayer();
 
     if ( !cs_PR || !pLocalPlayer )
 	{
@@ -1558,7 +1558,7 @@ void CCSClientScoreBoardDialog::OnThink()
     BaseClass::OnThink();
 
 #ifdef _XBOX
-    C_CSPlayer *pLocalPlayer = C_CSPlayer::GetLocalCSPlayer();
+    C_HL2MP_Player *pLocalPlayer = C_HL2MP_Player::GetLocalCSPlayer();
     if ( pLocalPlayer )
     {
         bool mouseEnabled = IsMouseInputEnabled();

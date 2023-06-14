@@ -5,7 +5,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "c_cs_player.h"
+#include "c_hl2mp_player.h"
 #include "c_user_message_register.h"
 #include "view.h"
 #include "iclientvehicle.h"
@@ -47,8 +47,8 @@
 
 #include "cs_blackmarket.h"				// for vest/helmet prices
 
-#if defined( CCSPlayer )
-	#undef CCSPlayer
+#if defined( CHL2MP_Player )
+	#undef CHL2MP_Player
 #endif
 
 #include "materialsystem/imesh.h"		//for materials->FindMaterial
@@ -124,7 +124,7 @@ public:
 	virtual void PostDataUpdate( DataUpdateType_t updateType )
 	{
 		// Create the effect.
-		C_CSPlayer *pPlayer = dynamic_cast< C_CSPlayer* >( m_hPlayer.Get() );
+		C_HL2MP_Player *pPlayer = dynamic_cast< C_HL2MP_Player* >( m_hPlayer.Get() );
 		if ( pPlayer && !pPlayer->IsDormant() )
 		{
 			pPlayer->DoAnimationEvent( (PlayerAnimEvent_t)m_iEvent.Get(), m_nData );
@@ -145,7 +145,7 @@ BEGIN_RECV_TABLE_NOBASE( C_TEPlayerAnimEvent, DT_TEPlayerAnimEvent )
 	RecvPropInt( RECVINFO( m_nData ) )
 END_RECV_TABLE()
 
-BEGIN_PREDICTION_DATA( C_CSPlayer )
+BEGIN_PREDICTION_DATA( C_HL2MP_Player )
 #ifdef CS_SHIELD_ENABLED
 	DEFINE_PRED_FIELD( m_bShieldDrawn, FIELD_BOOLEAN, FTYPEDESC_INSENDTABLE ),
 #endif
@@ -386,7 +386,7 @@ void C_CSRagdoll::CreateLowViolenceRagdoll( void )
 	SetAbsOrigin( m_vecRagdollOrigin );
 	SetAbsVelocity( m_vecRagdollVelocity );
 
-	C_CSPlayer *pPlayer = dynamic_cast< C_CSPlayer* >( m_hPlayer.Get() );
+	C_HL2MP_Player *pPlayer = dynamic_cast< C_HL2MP_Player* >( m_hPlayer.Get() );
 	if ( pPlayer )
 	{
 		if ( !pPlayer->IsDormant() )
@@ -413,7 +413,7 @@ void C_CSRagdoll::CreateCSRagdoll()
 {
 	// First, initialize all our data. If we have the player's entity on our client,
 	// then we can make ourselves start out exactly where the player is.
-	C_CSPlayer *pPlayer = dynamic_cast< C_CSPlayer* >( m_hPlayer.Get() );
+	C_HL2MP_Player *pPlayer = dynamic_cast< C_HL2MP_Player* >( m_hPlayer.Get() );
 
 	// mark this to prevent model changes from overwriting the death sequence with the server sequence
 	SetReceivedSequence();
@@ -601,7 +601,7 @@ IRagdoll* C_CSRagdoll::GetIRagdoll() const
 //-----------------------------------------------------------------------------
 void RecvProxy_NightVision( const CRecvProxyData *pData, void *pStruct, void *pOut )
 {
-	C_CSPlayer *pPlayerData = (C_CSPlayer *) pStruct;
+	C_HL2MP_Player *pPlayerData = (C_HL2MP_Player *) pStruct;
 
 	bool bNightVisionOn = ( pData->m_Value.m_Int > 0 );
 
@@ -616,7 +616,7 @@ void RecvProxy_NightVision( const CRecvProxyData *pData, void *pStruct, void *pO
 
 void RecvProxy_FlashTime( const CRecvProxyData *pData, void *pStruct, void *pOut )
 {
-	C_CSPlayer *pPlayerData = (C_CSPlayer *) pStruct;
+	C_HL2MP_Player *pPlayerData = (C_HL2MP_Player *) pStruct;
 
 	if( pPlayerData != C_BasePlayer::GetLocalPlayer() )
 		return;
@@ -632,7 +632,7 @@ void RecvProxy_FlashTime( const CRecvProxyData *pData, void *pStruct, void *pOut
 
 void RecvProxy_HasDefuser( const CRecvProxyData *pData, void *pStruct, void *pOut )
 {
-	C_CSPlayer *pPlayerData = (C_CSPlayer *)pStruct;
+	C_HL2MP_Player *pPlayerData = (C_HL2MP_Player *)pStruct;
 
 	if (pPlayerData == NULL)
 	{
@@ -666,12 +666,12 @@ void RecvProxy_HasDefuser( const CRecvProxyData *pData, void *pStruct, void *pOu
 	}
 }
 
-void C_CSPlayer::RecvProxy_CycleLatch( const CRecvProxyData *pData, void *pStruct, void *pOut )
+void C_HL2MP_Player::RecvProxy_CycleLatch( const CRecvProxyData *pData, void *pStruct, void *pOut )
 {
 	// This receive proxy looks to see if the server's value is close enough to what we think it should
 	// be.  We've been running the same code; this is an error correction for changes we didn't simulate
 	// while they were out of PVS.
-	C_CSPlayer *pPlayer = (C_CSPlayer *)pStruct;
+	C_HL2MP_Player *pPlayer = (C_HL2MP_Player *)pStruct;
 	if( pPlayer->IsLocalPlayer() )
 		return; // Don't need to fixup ourselves.
 
@@ -698,14 +698,14 @@ void C_CSPlayer::RecvProxy_CycleLatch( const CRecvProxyData *pData, void *pStruc
 void __MsgFunc_ReloadEffect( bf_read &msg )
 {
 	int iPlayer = msg.ReadShort();
-	C_CSPlayer *pPlayer = dynamic_cast< C_CSPlayer* >( C_BaseEntity::Instance( iPlayer ) );
+	C_HL2MP_Player *pPlayer = dynamic_cast< C_HL2MP_Player* >( C_BaseEntity::Instance( iPlayer ) );
 	if ( pPlayer )
 		pPlayer->PlayReloadEffect();
 
 }
 USER_MESSAGE_REGISTER( ReloadEffect );
 
-BEGIN_RECV_TABLE_NOBASE( C_CSPlayer, DT_CSLocalPlayerExclusive )
+BEGIN_RECV_TABLE_NOBASE( C_HL2MP_Player, DT_CSLocalPlayerExclusive )
 	RecvPropFloat( RECVINFO(m_flStamina) ),
 	RecvPropInt( RECVINFO( m_iDirection ) ),
 	RecvPropInt( RECVINFO( m_iShotsFired ) ),
@@ -728,12 +728,12 @@ BEGIN_RECV_TABLE_NOBASE( C_CSPlayer, DT_CSLocalPlayerExclusive )
 END_RECV_TABLE()
 
 
-BEGIN_RECV_TABLE_NOBASE( C_CSPlayer, DT_CSNonLocalPlayerExclusive )
+BEGIN_RECV_TABLE_NOBASE( C_HL2MP_Player, DT_CSNonLocalPlayerExclusive )
 	RecvPropVector( RECVINFO_NAME( m_vecNetworkOrigin, m_vecOrigin ) ),
 END_RECV_TABLE()
 
 
-IMPLEMENT_CLIENTCLASS_DT( C_CSPlayer, DT_CSPlayer, CCSPlayer )
+IMPLEMENT_CLIENTCLASS_DT( C_HL2MP_Player, DT_CSPlayer, CHL2MP_Player )
 	RecvPropDataTable( "cslocaldata", 0, 0, &REFERENCE_RECV_TABLE(DT_CSLocalPlayerExclusive) ),
 	RecvPropDataTable( "csnonlocaldata", 0, 0, &REFERENCE_RECV_TABLE(DT_CSNonLocalPlayerExclusive) ),
 	RecvPropInt( RECVINFO( m_iAddonBits ) ),
@@ -783,14 +783,14 @@ IMPLEMENT_CLIENTCLASS_DT( C_CSPlayer, DT_CSPlayer, CCSPlayer )
 	RecvPropInt( RECVINFO( m_iProgressBarDuration ) ),
 	RecvPropFloat( RECVINFO( m_flProgressBarStartTime ) ),
 	RecvPropEHandle( RECVINFO( m_hRagdoll ) ),
-	RecvPropInt( RECVINFO( m_cycleLatch ), 0, &C_CSPlayer::RecvProxy_CycleLatch ),
+	RecvPropInt( RECVINFO( m_cycleLatch ), 0, &C_HL2MP_Player::RecvProxy_CycleLatch ),
 
 END_RECV_TABLE()
 
 
 
-C_CSPlayer::C_CSPlayer() :
-	m_iv_angEyeAngles( "C_CSPlayer::m_iv_angEyeAngles" )
+C_HL2MP_Player::C_HL2MP_Player() :
+	m_iv_angEyeAngles( "C_HL2MP_Player::m_iv_angEyeAngles" )
 {
 	m_PlayerAnimState = CreatePlayerAnimState( this, this, LEGANIM_9WAY, true );
 
@@ -823,7 +823,7 @@ C_CSPlayer::C_CSPlayer() :
 }
 
 
-C_CSPlayer::~C_CSPlayer()
+C_HL2MP_Player::~C_HL2MP_Player()
 {
 	RemoveAddonModels();
 
@@ -833,27 +833,27 @@ C_CSPlayer::~C_CSPlayer()
 }
 
 
-bool C_CSPlayer::HasDefuser() const
+bool C_HL2MP_Player::HasDefuser() const
 {
 	return m_bHasDefuser;
 }
 
-void C_CSPlayer::GiveDefuser()
+void C_HL2MP_Player::GiveDefuser()
 {
 	m_bHasDefuser = true;
 }
 
-void C_CSPlayer::RemoveDefuser()
+void C_HL2MP_Player::RemoveDefuser()
 {
 	m_bHasDefuser = false;
 }
 
-bool C_CSPlayer::HasNightVision() const
+bool C_HL2MP_Player::HasNightVision() const
 {
 	return m_bHasNightVision;
 }
 
-bool C_CSPlayer::IsVIP() const
+bool C_HL2MP_Player::IsVIP() const
 {
 	C_CS_PlayerResource *pCSPR = (C_CS_PlayerResource*)GameResources();
 
@@ -863,60 +863,60 @@ bool C_CSPlayer::IsVIP() const
 	return pCSPR->IsVIP( entindex() );
 }
 
-C_CSPlayer* C_CSPlayer::GetLocalCSPlayer()
+C_HL2MP_Player* C_HL2MP_Player::GetLocalCSPlayer()
 {
-	return (C_CSPlayer*)C_BasePlayer::GetLocalPlayer();
+	return (C_HL2MP_Player*)C_BasePlayer::GetLocalPlayer();
 }
 
 
-CSPlayerState C_CSPlayer::State_Get() const
+CSPlayerState C_HL2MP_Player::State_Get() const
 {
 	return m_iPlayerState;
 }
 
 
-float C_CSPlayer::GetMinFOV() const
+float C_HL2MP_Player::GetMinFOV() const
 {
 	// Min FOV for AWP.
 	return 10;
 }
 
 
-int C_CSPlayer::GetAccount() const
+int C_HL2MP_Player::GetAccount() const
 {
 	return m_iAccount;
 }
 
 
-int C_CSPlayer::PlayerClass() const
+int C_HL2MP_Player::PlayerClass() const
 {
 	return m_iClass;
 }
 
-bool C_CSPlayer::IsInBuyZone()
+bool C_HL2MP_Player::IsInBuyZone()
 {
 	return m_bInBuyZone;
 }
 
-bool C_CSPlayer::CanShowTeamMenu() const
+bool C_HL2MP_Player::CanShowTeamMenu() const
 {
 	return true;
 }
 
 
-int C_CSPlayer::ArmorValue() const
+int C_HL2MP_Player::ArmorValue() const
 {
 	return m_ArmorValue;
 }
 
-bool C_CSPlayer::HasHelmet() const
+bool C_HL2MP_Player::HasHelmet() const
 {
 	return m_bHasHelmet;
 }
 
-int C_CSPlayer::GetCurrentAssaultSuitPrice()
+int C_HL2MP_Player::GetCurrentAssaultSuitPrice()
 {
-	// WARNING: This price logic also exists in CCSPlayer::AttemptToBuyAssaultSuit
+	// WARNING: This price logic also exists in CHL2MP_Player::AttemptToBuyAssaultSuit
 	// and must be kept in sync if changes are made.
 
 	int fullArmor = ArmorValue() >= 100 ? 1 : 0;
@@ -938,7 +938,7 @@ int C_CSPlayer::GetCurrentAssaultSuitPrice()
 	}
 }
 
-const QAngle& C_CSPlayer::GetRenderAngles()
+const QAngle& C_HL2MP_Player::GetRenderAngles()
 {
 	if ( IsRagdoll() )
 	{
@@ -952,7 +952,7 @@ const QAngle& C_CSPlayer::GetRenderAngles()
 
 
 float g_flFattenAmt = 4;
-void C_CSPlayer::GetShadowRenderBounds( Vector &mins, Vector &maxs, ShadowType_t shadowType )
+void C_HL2MP_Player::GetShadowRenderBounds( Vector &mins, Vector &maxs, ShadowType_t shadowType )
 {
 	if ( shadowType == SHADOWS_SIMPLE )
 	{
@@ -976,7 +976,7 @@ void C_CSPlayer::GetShadowRenderBounds( Vector &mins, Vector &maxs, ShadowType_t
 }
 
 
-void C_CSPlayer::GetRenderBounds( Vector& theMins, Vector& theMaxs )
+void C_HL2MP_Player::GetRenderBounds( Vector& theMins, Vector& theMaxs )
 {
 	// TODO POSTSHIP - this hack/fix goes hand-in-hand with a fix in CalcSequenceBoundingBoxes in utils/studiomdl/simplify.cpp.
 	// When we enable the fix in CalcSequenceBoundingBoxes, we can get rid of this.
@@ -994,7 +994,7 @@ void C_CSPlayer::GetRenderBounds( Vector& theMins, Vector& theMaxs )
 }
 
 
-bool C_CSPlayer::GetShadowCastDirection( Vector *pDirection, ShadowType_t shadowType ) const
+bool C_HL2MP_Player::GetShadowCastDirection( Vector *pDirection, ShadowType_t shadowType ) const
 {
 	if ( shadowType == SHADOWS_SIMPLE )
 	{
@@ -1009,13 +1009,13 @@ bool C_CSPlayer::GetShadowCastDirection( Vector *pDirection, ShadowType_t shadow
 }
 
 
-void C_CSPlayer::VPhysicsUpdate( IPhysicsObject *pPhysics )
+void C_HL2MP_Player::VPhysicsUpdate( IPhysicsObject *pPhysics )
 {
 	BaseClass::VPhysicsUpdate( pPhysics );
 }
 
 
-int C_CSPlayer::GetIDTarget() const
+int C_HL2MP_Player::GetIDTarget() const
 {
 	if ( !m_delayTargetIDTimer.IsElapsed() )
 		return 0;
@@ -1052,7 +1052,7 @@ void InitializeAddonModelFromWeapon( CWeaponCSBase *weapon, C_BreakableProp *add
 	}
 }
 
-void C_CSPlayer::CreateAddonModel( int i )
+void C_HL2MP_Player::CreateAddonModel( int i )
 {
 	COMPILE_TIME_ASSERT( (sizeof( g_AddonInfo ) / sizeof( g_AddonInfo[0] )) == NUM_ADDON_BITS );
 
@@ -1071,7 +1071,7 @@ void C_CSPlayer::CreateAddonModel( int i )
 		CCSWeaponInfo *weaponInfo = GetWeaponInfo( (CSWeaponID)((addonType == ADDON_PRIMARY) ? m_iPrimaryAddon.Get() : m_iSecondaryAddon.Get()) );
 		if ( !weaponInfo )
 		{
-			Warning( "C_CSPlayer::CreateAddonModel: Unable to get weapon info.\n" );
+			Warning( "C_HL2MP_Player::CreateAddonModel: Unable to get weapon info.\n" );
 			pEnt->Release();
 			return;
 		}
@@ -1115,7 +1115,7 @@ void C_CSPlayer::CreateAddonModel( int i )
 		else
 		{
 			pEnt->Release();
-			Warning( "C_CSPlayer::CreateAddonModel: Unable to get weapon info for %s.\n", pAddonInfo->m_pWeaponClassName );
+			Warning( "C_HL2MP_Player::CreateAddonModel: Unable to get weapon info for %s.\n", pAddonInfo->m_pWeaponClassName );
 			return;
 		}
 	}
@@ -1143,7 +1143,7 @@ void C_CSPlayer::CreateAddonModel( int i )
 }
 
 
-void C_CSPlayer::UpdateAddonModels()
+void C_HL2MP_Player::UpdateAddonModels()
 {
 	int iCurAddonBits = m_iAddonBits;
 
@@ -1209,14 +1209,14 @@ void C_CSPlayer::UpdateAddonModels()
 }
 
 
-void C_CSPlayer::RemoveAddonModels()
+void C_HL2MP_Player::RemoveAddonModels()
 {
 	m_iAddonBits = 0;
 	UpdateAddonModels();
 }
 
 
-void C_CSPlayer::NotifyShouldTransmit( ShouldTransmitState_t state )
+void C_HL2MP_Player::NotifyShouldTransmit( ShouldTransmitState_t state )
 {
 	// Remove all addon models if we go out of the PVS.
 	if ( state == SHOULDTRANSMIT_END )
@@ -1233,7 +1233,7 @@ void C_CSPlayer::NotifyShouldTransmit( ShouldTransmitState_t state )
 }
 
 
-void C_CSPlayer::UpdateSoundEvents()
+void C_HL2MP_Player::UpdateSoundEvents()
 {
 	int iNext;
 	for ( int i=m_SoundEvents.Head(); i != m_SoundEvents.InvalidIndex(); i = iNext )
@@ -1252,7 +1252,7 @@ void C_CSPlayer::UpdateSoundEvents()
 }
 
 //-----------------------------------------------------------------------------
-void C_CSPlayer::UpdateMinModels( void )
+void C_HL2MP_Player::UpdateMinModels( void )
 {
 	int modelIndex = m_nModelIndex;
 
@@ -1284,7 +1284,7 @@ void C_CSPlayer::UpdateMinModels( void )
 // NVNT gate for spectating.
 static bool inSpectating_Haptics = false;
 //-----------------------------------------------------------------------------
-void C_CSPlayer::ClientThink()
+void C_HL2MP_Player::ClientThink()
 {
 	BaseClass::ClientThink();
 
@@ -1358,7 +1358,7 @@ void C_CSPlayer::ClientThink()
 }
 
 
-void C_CSPlayer::OnDataChanged( DataUpdateType_t type )
+void C_HL2MP_Player::OnDataChanged( DataUpdateType_t type )
 {
 	BaseClass::OnDataChanged( type );
 
@@ -1383,13 +1383,13 @@ void C_CSPlayer::OnDataChanged( DataUpdateType_t type )
 }
 
 
-void C_CSPlayer::ValidateModelIndex( void )
+void C_HL2MP_Player::ValidateModelIndex( void )
 {
 	UpdateMinModels();
 }
 
 
-void C_CSPlayer::PostDataUpdate( DataUpdateType_t updateType )
+void C_HL2MP_Player::PostDataUpdate( DataUpdateType_t updateType )
 {
 	// C_BaseEntity assumes we're networking the entity's angles, so pretend that it
 	// networked the same value we already have.
@@ -1402,7 +1402,7 @@ void C_CSPlayer::PostDataUpdate( DataUpdateType_t updateType )
 // Purpose:
 // Output : Returns true on success, false on failure.
 //-----------------------------------------------------------------------------
-bool C_CSPlayer::Interpolate( float currentTime )
+bool C_HL2MP_Player::Interpolate( float currentTime )
 {
 	if ( !BaseClass::Interpolate( currentTime ) )
 		return false;
@@ -1416,7 +1416,7 @@ bool C_CSPlayer::Interpolate( float currentTime )
 	return true;
 }
 
-int	C_CSPlayer::GetMaxHealth() const
+int	C_HL2MP_Player::GetMaxHealth() const
 {
 	return 100;
 }
@@ -1424,9 +1424,9 @@ int	C_CSPlayer::GetMaxHealth() const
 //-----------------------------------------------------------------------------
 // Purpose: Return the local player, or the player being spectated in-eye
 //-----------------------------------------------------------------------------
-C_CSPlayer* GetLocalOrInEyeCSPlayer( void )
+C_HL2MP_Player* GetLocalOrInEyeCSPlayer( void )
 {
-	C_CSPlayer *player = C_CSPlayer::GetLocalCSPlayer();
+	C_HL2MP_Player *player = C_HL2MP_Player::GetLocalCSPlayer();
 
 	if( player && player->GetObserverMode() == OBS_MODE_IN_EYE )
 	{
@@ -1445,7 +1445,7 @@ C_CSPlayer* GetLocalOrInEyeCSPlayer( void )
 //-----------------------------------------------------------------------------
 // Purpose: Update this client's targetid entity
 //-----------------------------------------------------------------------------
-void C_CSPlayer::UpdateIDTarget()
+void C_HL2MP_Player::UpdateIDTarget()
 {
 	if ( !IsLocalPlayer() )
 		return;
@@ -1543,7 +1543,7 @@ void C_CSPlayer::UpdateIDTarget()
 //-----------------------------------------------------------------------------
 // Purpose: Input handling
 //-----------------------------------------------------------------------------
-bool C_CSPlayer::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
+bool C_HL2MP_Player::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 {
 	// Bleh... we will wind up needing to access bones for attachments in here.
 	C_BaseAnimating::AutoAllowBoneAccess boneaccess( true, true );
@@ -1554,17 +1554,17 @@ bool C_CSPlayer::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 //-----------------------------------------------------------------------------
 // Purpose: Flash this entity on the radar
 //-----------------------------------------------------------------------------
-bool C_CSPlayer::IsInHostageRescueZone()
+bool C_HL2MP_Player::IsInHostageRescueZone()
 {
 	return 	m_bInHostageRescueZone;
 }
 
-CWeaponCSBase* C_CSPlayer::GetActiveCSWeapon() const
+CWeaponCSBase* C_HL2MP_Player::GetActiveCSWeapon() const
 {
 	return dynamic_cast< CWeaponCSBase* >( GetActiveWeapon() );
 }
 
-CWeaponCSBase* C_CSPlayer::GetCSWeapon( CSWeaponID id ) const
+CWeaponCSBase* C_HL2MP_Player::GetCSWeapon( CSWeaponID id ) const
 {
 	for (int i=0;i<MAX_WEAPONS;i++)
 	{
@@ -1587,7 +1587,7 @@ CWeaponCSBase* C_CSPlayer::GetCSWeapon( CSWeaponID id ) const
 
 //REMOVEME
 /*
-void C_CSPlayer::SetFireAnimation( PLAYER_ANIM playerAnim )
+void C_HL2MP_Player::SetFireAnimation( PLAYER_ANIM playerAnim )
 {
 	Activity idealActivity = ACT_WALK;
 
@@ -1688,7 +1688,7 @@ void C_CSPlayer::SetFireAnimation( PLAYER_ANIM playerAnim )
 }
 */
 
-ShadowType_t C_CSPlayer::ShadowCastType( void )
+ShadowType_t C_HL2MP_Player::ShadowCastType( void )
 {
 	if ( !IsVisible() )
 		 return SHADOWS_NONE;
@@ -1700,7 +1700,7 @@ ShadowType_t C_CSPlayer::ShadowCastType( void )
 // Purpose: Returns whether or not we can switch to the given weapon.
 // Input  : pWeapon -
 //-----------------------------------------------------------------------------
-bool C_CSPlayer::Weapon_CanSwitchTo( CBaseCombatWeapon *pWeapon )
+bool C_HL2MP_Player::Weapon_CanSwitchTo( CBaseCombatWeapon *pWeapon )
 {
 	if ( !pWeapon->CanDeploy() )
 		return false;
@@ -1715,7 +1715,7 @@ bool C_CSPlayer::Weapon_CanSwitchTo( CBaseCombatWeapon *pWeapon )
 }
 
 
-void C_CSPlayer::UpdateClientSideAnimation()
+void C_HL2MP_Player::UpdateClientSideAnimation()
 {
 	// We do this in a different order than the base class.
 	// We need our cycle to be valid for when we call the playeranimstate update code,
@@ -1728,7 +1728,7 @@ void C_CSPlayer::UpdateClientSideAnimation()
 
 	// Update the animation data. It does the local check here so this works when using
 	// a third-person camera (and we don't have valid player angles).
-	if ( this == C_CSPlayer::GetLocalCSPlayer() )
+	if ( this == C_HL2MP_Player::GetLocalCSPlayer() )
 		m_PlayerAnimState->Update( EyeAngles()[YAW], m_angEyeAngles[PITCH] );
 	else
 		m_PlayerAnimState->Update( m_angEyeAngles[YAW], m_angEyeAngles[PITCH] );
@@ -1743,7 +1743,7 @@ void C_CSPlayer::UpdateClientSideAnimation()
 
 float g_flMuzzleFlashScale=1;
 
-void C_CSPlayer::ProcessMuzzleFlashEvent()
+void C_HL2MP_Player::ProcessMuzzleFlashEvent()
 {
 	CBasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
 
@@ -1821,7 +1821,7 @@ void C_CSPlayer::ProcessMuzzleFlashEvent()
 	}
 }
 
-const QAngle& C_CSPlayer::EyeAngles()
+const QAngle& C_HL2MP_Player::EyeAngles()
 {
 	if ( IsLocalPlayer() && !g_nKillCamMode )
 	{
@@ -1833,7 +1833,7 @@ const QAngle& C_CSPlayer::EyeAngles()
 	}
 }
 
-bool C_CSPlayer::ShouldDraw( void )
+bool C_HL2MP_Player::ShouldDraw( void )
 {
 	// If we're dead, our ragdoll will be drawn for us instead.
 	if ( !IsAlive() )
@@ -1969,7 +1969,7 @@ void GetCorrectionMatrices(
 }
 
 
-void C_CSPlayer::BuildTransformations( CStudioHdr *pHdr, Vector *pos, Quaternion q[], const matrix3x4_t& cameraTransform, int boneMask, CBoneBitList &boneComputed )
+void C_HL2MP_Player::BuildTransformations( CStudioHdr *pHdr, Vector *pos, Quaternion q[], const matrix3x4_t& cameraTransform, int boneMask, CBoneBitList &boneComputed )
 {
 	// First, setup our model's transformations like normal.
 	BaseClass::BuildTransformations( pHdr, pos, q, cameraTransform, boneMask, boneComputed );
@@ -2033,13 +2033,13 @@ void C_CSPlayer::BuildTransformations( CStudioHdr *pHdr, Vector *pos, Quaternion
 }
 
 
-C_BaseAnimating * C_CSPlayer::BecomeRagdollOnClient()
+C_BaseAnimating * C_HL2MP_Player::BecomeRagdollOnClient()
 {
 	return NULL;
 }
 
 
-IRagdoll* C_CSPlayer::GetRepresentativeRagdoll() const
+IRagdoll* C_HL2MP_Player::GetRepresentativeRagdoll() const
 {
 	if ( m_hRagdoll.Get() )
 	{
@@ -2054,10 +2054,10 @@ IRagdoll* C_CSPlayer::GetRepresentativeRagdoll() const
 }
 
 
-void C_CSPlayer::PlayReloadEffect()
+void C_HL2MP_Player::PlayReloadEffect()
 {
 	// Only play the effect for other players.
-	if ( this == C_CSPlayer::GetLocalCSPlayer() )
+	if ( this == C_HL2MP_Player::GetLocalCSPlayer() )
 	{
 		Assert( false ); // We shouldn't have been sent this message.
 		return;
@@ -2107,7 +2107,7 @@ void C_CSPlayer::PlayReloadEffect()
 	}
 }
 
-void C_CSPlayer::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
+void C_HL2MP_Player::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
 {
 	if ( event == PLAYERANIMEVENT_THROW_GRENADE )
 	{
@@ -2120,7 +2120,7 @@ void C_CSPlayer::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
 	}
 }
 
-void C_CSPlayer::FireEvent( const Vector& origin, const QAngle& angles, int event, const char *options )
+void C_HL2MP_Player::FireEvent( const Vector& origin, const QAngle& angles, int event, const char *options )
 {
 	if( event == 7001 )
 	{
@@ -2185,19 +2185,19 @@ void C_CSPlayer::FireEvent( const Vector& origin, const QAngle& angles, int even
 }
 
 
-void C_CSPlayer::SetActivity( Activity eActivity )
+void C_HL2MP_Player::SetActivity( Activity eActivity )
 {
 	m_Activity = eActivity;
 }
 
 
-Activity C_CSPlayer::GetActivity() const
+Activity C_HL2MP_Player::GetActivity() const
 {
 	return m_Activity;
 }
 
 
-const Vector& C_CSPlayer::GetRenderOrigin( void )
+const Vector& C_HL2MP_Player::GetRenderOrigin( void )
 {
 	if ( m_hRagdoll.Get() )
 	{
@@ -2210,7 +2210,7 @@ const Vector& C_CSPlayer::GetRenderOrigin( void )
 }
 
 
-void C_CSPlayer::Simulate( void )
+void C_HL2MP_Player::Simulate( void )
 {
 	if( this != C_BasePlayer::GetLocalPlayer() )
 	{
@@ -2289,7 +2289,7 @@ void C_CSPlayer::Simulate( void )
 	BaseClass::Simulate();
 }
 
-void C_CSPlayer::ReleaseFlashlight( void )
+void C_HL2MP_Player::ReleaseFlashlight( void )
 {
 	if( m_pFlashlightBeam )
 	{
@@ -2300,9 +2300,9 @@ void C_CSPlayer::ReleaseFlashlight( void )
 	}
 }
 
-bool C_CSPlayer::HasC4( void )
+bool C_HL2MP_Player::HasC4( void )
 {
-	if( this == C_CSPlayer::GetLocalPlayer() )
+	if( this == C_HL2MP_Player::GetLocalPlayer() )
 	{
 		return Weapon_OwnsThisType( "weapon_c4" );
 	}
@@ -2314,7 +2314,7 @@ bool C_CSPlayer::HasC4( void )
 	}
 }
 
-void C_CSPlayer::ImpactTrace( trace_t *pTrace, int iDamageType, const char *pCustomImpactName )
+void C_HL2MP_Player::ImpactTrace( trace_t *pTrace, int iDamageType, const char *pCustomImpactName )
 {
 	static ConVar *violence_hblood = cvar->FindVar( "violence_hblood" );
 	if ( violence_hblood && !violence_hblood->GetBool() )
@@ -2325,7 +2325,7 @@ void C_CSPlayer::ImpactTrace( trace_t *pTrace, int iDamageType, const char *pCus
 
 
 //-----------------------------------------------------------------------------
-void C_CSPlayer::CalcObserverView( Vector& eyeOrigin, QAngle& eyeAngles, float& fov )
+void C_HL2MP_Player::CalcObserverView( Vector& eyeOrigin, QAngle& eyeAngles, float& fov )
 {
 	/**
 	 * TODO: Fix this!
@@ -2339,7 +2339,7 @@ void C_CSPlayer::CalcObserverView( Vector& eyeOrigin, QAngle& eyeAngles, float& 
 	{
 		const float eyeClearance = 12.0f; // eye pos must be this far below the ceiling
 
-		C_CSPlayer *target = ToCSPlayer( GetObserverTarget() );
+		C_HL2MP_Player *target = ToCSPlayer( GetObserverTarget() );
 
 		Vector offset = eyeOrigin - GetAbsOrigin();
 
@@ -2386,7 +2386,7 @@ void C_CSPlayer::CalcObserverView( Vector& eyeOrigin, QAngle& eyeAngles, float& 
 // HPE_BEGIN:
 //=============================================================================
 // [tj] checks if this player has another given player on their Steam friends list.
-bool C_CSPlayer::HasPlayerAsFriend(C_CSPlayer* player)
+bool C_HL2MP_Player::HasPlayerAsFriend(C_HL2MP_Player* player)
 {
     if (!steamapicontext || !steamapicontext->SteamFriends() || !steamapicontext->SteamUtils() || !player)
     {
@@ -2410,12 +2410,12 @@ bool C_CSPlayer::HasPlayerAsFriend(C_CSPlayer* player)
 }
 
 // [menglish] Returns whether this player is dominating or is being dominated by the specified player
-bool C_CSPlayer::IsPlayerDominated( int iPlayerIndex )
+bool C_HL2MP_Player::IsPlayerDominated( int iPlayerIndex )
 {
 	return m_bPlayerDominated.Get( iPlayerIndex );
 }
 
-bool C_CSPlayer::IsPlayerDominatingMe( int iPlayerIndex )
+bool C_HL2MP_Player::IsPlayerDominatingMe( int iPlayerIndex )
 {
 	return m_bPlayerDominatingMe.Get( iPlayerIndex );
 }
@@ -2458,7 +2458,7 @@ namespace Interpolators
 //-----------------------------------------------------------------------------
 // Purpose: Calculate the view for the player while he's in freeze frame observer mode
 //-----------------------------------------------------------------------------
-void C_CSPlayer::CalcFreezeCamView( Vector& eyeOrigin, QAngle& eyeAngles, float& fov )
+void C_HL2MP_Player::CalcFreezeCamView( Vector& eyeOrigin, QAngle& eyeAngles, float& fov )
 {
 	C_BaseEntity *pTarget = GetObserverTarget();
 
@@ -2536,7 +2536,7 @@ void C_CSPlayer::CalcFreezeCamView( Vector& eyeOrigin, QAngle& eyeAngles, float&
 	}
 }
 
-float C_CSPlayer::GetDeathCamInterpolationTime()
+float C_HL2MP_Player::GetDeathCamInterpolationTime()
 {
 	static ConVarRef sv_disablefreezecam( "sv_disablefreezecam" );
 	if ( cl_disablefreezecam.GetBool() || sv_disablefreezecam.GetBool() || !GetObserverTarget() )

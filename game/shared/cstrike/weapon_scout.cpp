@@ -11,11 +11,11 @@
 #if defined( CLIENT_DLL )
 
 	#define CWeaponScout C_WeaponScout
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 
 #else
 
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "KeyValues.h"
 
 #endif
@@ -70,7 +70,7 @@ void CWeaponScout::SecondaryAttack()
 {
 	const float kZoomTime = 0.10f;
 
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if (pPlayer == NULL)
 	{
 		Assert(pPlayer != NULL);
@@ -127,7 +127,7 @@ float CWeaponScout::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CCSPlayer *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetPlayerOwner();
 		if (pPlayer == NULL)
 			return 0.0f;
 	
@@ -156,7 +156,7 @@ float CWeaponScout::GetInaccuracy() const
 
 void CWeaponScout::PrimaryAttack( void )
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if (pPlayer == NULL)
 		return;
 
@@ -192,7 +192,7 @@ void CWeaponScout::PrimaryAttack( void )
 
 float CWeaponScout::GetMaxSpeed() const
 {
-	CCSPlayer *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetPlayerOwner();
 	if (pPlayer == NULL)
 	{
 		Assert(pPlayer != NULL);

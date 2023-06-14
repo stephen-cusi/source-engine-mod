@@ -37,6 +37,30 @@ enum CSWeaponID
 {
 	WEAPON_NONE = 0,
 
+	//Melee
+	WEAPON_CROWBAR,
+
+	//Special
+	WEAPON_PORTALGUN,
+	WEAPON_PHYSCANNON,
+
+	//Pistols
+	WEAPON_PISTOL,
+	WEAPON_357,
+
+	//Machineguns
+	WEAPON_SMG,
+	WEAPON_AR2,
+
+	//Grenades
+	WEAPON_FRAG,
+	WEAPON_BUGBAIT,
+
+	//Other
+	WEAPON_SHOTGUN,
+	WEAPON_CROSSBOW,
+	WEAPON_RPG,
+
 	WEAPON_P228,
 	WEAPON_GLOCK,
 	WEAPON_SCOUT,
@@ -144,6 +168,7 @@ public:
 	// Parameters for FX_FireBullets:
 	int		m_iPenetration;
 	int		m_iDamage;
+	int		m_iPlayerDamage;
 	float	m_flRange;
 	float	m_flRangeModifier;
 	int		m_iBullets;

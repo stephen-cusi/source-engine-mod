@@ -29,7 +29,7 @@ END_DATADESC()
 /**
  * Return the number of bots following the given player
  */
-int GetBotFollowCount( CCSPlayer *leader )
+int GetBotFollowCount( CHL2MP_Player *leader )
 {
 	int count = 0;
 
@@ -111,7 +111,7 @@ int CCSBot::OnTakeDamage( const CTakeDamageInfo &info )
 	// if we were attacked by a teammate, rebuke
 	if (attacker->IsPlayer())
 	{
-		CCSPlayer *player = static_cast<CCSPlayer *>( attacker );
+		CHL2MP_Player *player = static_cast<CHL2MP_Player *>( attacker );
 		
 		if (InSameTeam( player ) && !player->IsBot())
 			GetChatter()->FriendlyFire();
@@ -120,11 +120,11 @@ int CCSBot::OnTakeDamage( const CTakeDamageInfo &info )
 	if (attacker->IsPlayer() && IsEnemy( attacker ))
 	{
 		// Track previous attacker so we don't try to panic multiple times for a shotgun blast
-		CCSPlayer *lastAttacker = m_attacker;
+		CHL2MP_Player *lastAttacker = m_attacker;
 		float lastAttackedTimestamp = m_attackedTimestamp;
 
 		// keep track of our last attacker
-		m_attacker = reinterpret_cast<CCSPlayer *>( attacker );
+		m_attacker = reinterpret_cast<CHL2MP_Player *>( attacker );
 		m_attackedTimestamp = gpGlobals->curtime;
 
 		// no longer safe
@@ -132,7 +132,7 @@ int CCSBot::OnTakeDamage( const CTakeDamageInfo &info )
 
 		if ( !IsSurprised() && (m_attacker != lastAttacker || m_attackedTimestamp != lastAttackedTimestamp) )
 		{
-			CCSPlayer *enemy = static_cast<CCSPlayer *>( attacker );
+			CHL2MP_Player *enemy = static_cast<CHL2MP_Player *>( attacker );
 
 			// being hurt by an enemy we can't see causes panic
 			if (!IsVisible( enemy, CHECK_FOV ))
@@ -261,7 +261,7 @@ void CCSBot::Touch( CBaseEntity *other )
 		if (IsUsingLadder())
 			return;
 
-		CCSPlayer *player = static_cast<CCSPlayer *>( other );
+		CHL2MP_Player *player = static_cast<CHL2MP_Player *>( other );
 
 		// get priority of other player
 		unsigned int otherPri = TheCSBots()->GetPlayerPriority( player );
@@ -340,7 +340,7 @@ void CCSBot::TryToJoinTeam( int team )
 /**
  * Assign given player as our current enemy to attack
  */
-void CCSBot::SetBotEnemy( CCSPlayer *enemy )
+void CCSBot::SetBotEnemy( CHL2MP_Player *enemy )
 {
 	if (m_enemy != enemy)
 	{
@@ -491,7 +491,7 @@ bool CCSBot::CanSeePlantedBomb( void ) const
 /**
  * Return last enemy that hurt us
  */
-CCSPlayer *CCSBot::GetAttacker( void ) const
+CHL2MP_Player *CCSBot::GetAttacker( void ) const
 {
 	if (m_attacker && m_attacker->IsAlive())
 		return m_attacker;
@@ -625,10 +625,10 @@ int CCSBot::OutnumberedCount( void ) const
 /**
  * Return the closest "important" enemy for the given scenario (bomb carrier, VIP, hostage escorter)
  */
-CCSPlayer *CCSBot::GetImportantEnemy( bool checkVisibility ) const
+CHL2MP_Player *CCSBot::GetImportantEnemy( bool checkVisibility ) const
 {
 	CCSBotManager *ctrl = static_cast<CCSBotManager *>( TheCSBots() );
-	CCSPlayer *nearEnemy = NULL;
+	CHL2MP_Player *nearEnemy = NULL;
 	float nearDist = 999999999.9f;
 
 	for ( int i = 1; i <= gpGlobals->maxClients; i++ )
@@ -648,7 +648,7 @@ CCSPlayer *CCSBot::GetImportantEnemy( bool checkVisibility ) const
 		if (!entity->IsPlayer())
 			continue;
 
-		CCSPlayer *player = static_cast<CCSPlayer *>( entity );
+		CHL2MP_Player *player = static_cast<CHL2MP_Player *>( entity );
 
 		// is it alive?
 		if (!player->IsAlive())

@@ -13,9 +13,9 @@
 #include "datacache/imdlcache.h"
 
 #ifdef CLIENT_DLL
-	#include "c_cs_player.h"
+	#include "c_hl2mp_player.h"
 #else
-	#include "cs_player.h"
+	#include "hl2mp_player.h"
 	#include "soundent.h"
 	#include "bot/cs_bot.h"
 	#include "KeyValues.h"
@@ -133,7 +133,7 @@ void DispatchEffect( const char *pName, const CEffectData &data );
 
 #endif
 
-float CCSPlayer::GetPlayerMaxSpeed()
+float CHL2MP_Player::GetPlayerMaxSpeed()
 {
 	if ( GetMoveType() == MOVETYPE_NONE )
 	{
@@ -181,7 +181,7 @@ float CCSPlayer::GetPlayerMaxSpeed()
 }
 
 
-void CCSPlayer::GetBulletTypeParameters(
+void CHL2MP_Player::GetBulletTypeParameters(
 	int iBulletType,
 	float &fPenetrationPower,
 	float &flPenetrationDistance )
@@ -323,7 +323,7 @@ inline void UTIL_TraceLineIgnoreTwoEntities( const Vector& vecAbsStart, const Ve
 	}
 }
 
-void CCSPlayer::FireBullet(
+void CHL2MP_Player::FireBullet(
 	Vector vecSrc,	// shooting postion
 	const QAngle &shootAngles,  //shooting angle
 	float flDistance, // max distance
@@ -682,7 +682,7 @@ void CCSPlayer::FireBullet(
 }
 
 
-void CCSPlayer::UpdateStepSound( surfacedata_t *psurface, const Vector &vecOrigin, const Vector &vecVelocity  )
+void CHL2MP_Player::UpdateStepSound( surfacedata_t *psurface, const Vector &vecOrigin, const Vector &vecVelocity  )
 {
 	float speedSqr = vecVelocity.AsVector2D().LengthSqr();
 
@@ -695,7 +695,7 @@ void CCSPlayer::UpdateStepSound( surfacedata_t *psurface, const Vector &vecOrigi
 
 
 // GOOSEMAN : Kick the view..
-void CCSPlayer::KickBack( float up_base, float lateral_base, float up_modifier, float lateral_modifier, float up_max, float lateral_max, int direction_change )
+void CHL2MP_Player::KickBack( float up_base, float lateral_base, float up_modifier, float lateral_modifier, float up_max, float lateral_max, int direction_change )
 {
 	float flKickUp;
 	float flKickLateral;
@@ -738,7 +738,7 @@ void CCSPlayer::KickBack( float up_base, float lateral_base, float up_modifier, 
 }
 
 
-bool CCSPlayer::CanMove() const
+bool CHL2MP_Player::CanMove() const
 {
 	// When we're in intro camera mode, it's important to return false here
 	// so our physics object doesn't fall out of the world.
@@ -766,7 +766,7 @@ bool CCSPlayer::CanMove() const
 }
 
 
-void CCSPlayer::OnJump( float fImpulse )
+void CHL2MP_Player::OnJump( float fImpulse )
 {
 	CWeaponCSBase* pActiveWeapon = GetActiveCSWeapon();
 	if ( pActiveWeapon != NULL )
@@ -774,7 +774,7 @@ void CCSPlayer::OnJump( float fImpulse )
 }
 
 
-void CCSPlayer::OnLand( float fVelocity )
+void CHL2MP_Player::OnLand( float fVelocity )
 {
 	CWeaponCSBase* pActiveWeapon = GetActiveCSWeapon();
 	if ( pActiveWeapon != NULL )
@@ -788,7 +788,7 @@ void CCSPlayer::OnLand( float fVelocity )
 * were grabbing it, so we don't reach behind us and grab it again as we are trying to
 * dismount.
 */
-void CCSPlayer::SurpressLadderChecks( const Vector& pos, const Vector& normal )
+void CHL2MP_Player::SurpressLadderChecks( const Vector& pos, const Vector& normal )
 {
 	m_ladderSurpressionTimer.Start( 1.0f );
 	m_lastLadderPos = pos;
@@ -803,7 +803,7 @@ void CCSPlayer::SurpressLadderChecks( const Vector& pos, const Vector& normal )
 *  - if the normal is different, let us grab
 *  - if the 2D pos is very different, let us grab, since it's probably a different ladder
 */
-bool CCSPlayer::CanGrabLadder( const Vector& pos, const Vector& normal )
+bool CHL2MP_Player::CanGrabLadder( const Vector& pos, const Vector& normal )
 {
 	if ( m_ladderSurpressionTimer.GetRemainingTime() <= 0.0f )
 	{
@@ -825,20 +825,20 @@ bool CCSPlayer::CanGrabLadder( const Vector& pos, const Vector& normal )
 }
 
 
-void CCSPlayer::SetAnimation( PLAYER_ANIM playerAnim )
+void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 {
 	// In CS, its CPlayerAnimState object manages ALL the animation state.
 	return;
 }
 
 
-CWeaponCSBase* CCSPlayer::CSAnim_GetActiveWeapon()
+CWeaponCSBase* CHL2MP_Player::CSAnim_GetActiveWeapon()
 {
 	return GetActiveCSWeapon();
 }
 
 
-bool CCSPlayer::CSAnim_CanMove()
+bool CHL2MP_Player::CSAnim_CanMove()
 {
 	return CanMove();
 }
@@ -920,7 +920,7 @@ C_FootstepControl::~C_FootstepControl()
 	s_footstepControllers.FindAndRemove( this );
 }
 
-surfacedata_t * CCSPlayer::GetFootstepSurface( const Vector &origin, const char *surfaceName )
+surfacedata_t * CHL2MP_Player::GetFootstepSurface( const Vector &origin, const char *surfaceName )
 {
 	for ( int i=0; i<s_footstepControllers.Count(); ++i )
 	{

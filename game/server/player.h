@@ -109,7 +109,7 @@ enum PlayerPhysFlag_e
 	PFLAG_OBSERVER		= ( 1<<3 ),		// player is locked in stationary cam mode. Spectators can move, observers can't.
 	PFLAG_VPHYSICS_MOTIONCONTROLLER = ( 1<<4 ),	// player is physically attached to a motion controller
 	PFLAG_GAMEPHYSICS_ROTPUSH = (1<<5), // game physics did a rotating push that we may want to override with vphysics
-
+	PFLAG_BLOCKLOOKAROUND = ( 1<<6 )
 	// If you add another flag here check that you aren't 
 	// overwriting phys flags in the HL2 of TF2 player classes
 };
@@ -1039,13 +1039,14 @@ private:
 	PlayerConnectedState	m_iConnected;
 
 	// from edict_t
-	// CBasePlayer doesn't send this but CCSPlayer does.
+	// CBasePlayer doesn't send this but CHL2MP_Player does.
 	CNetworkVarForDerived( int, m_ArmorValue );
 	float					m_AirFinished;
 	float					m_PainFinished;
 
 	// player locking
 	int						m_iPlayerLocked;
+
 		
 protected:
 	// the player's personal view model
@@ -1212,6 +1213,9 @@ private:
 
 public:
 	virtual unsigned int PlayerSolidMask( bool brushOnly = false ) const;	// returns the solid mask for the given player, so bots can have a more-restrictive set
+	short				m_sMousedx;
+	short				m_sMousedy;
+
 
 };
 

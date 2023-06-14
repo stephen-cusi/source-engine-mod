@@ -8,7 +8,7 @@
 
 #include "cbase.h"
 #include "items.h"
-#include "cs_player.h"
+#include "hl2mp_player.h"
 #include "weapon_csbase.h"
 #include "cs_ammodef.h"
 
@@ -21,7 +21,7 @@ public:
 
 	bool MyTouch( CBasePlayer *pBasePlayer )
 	{
-		CCSPlayer *pPlayer = dynamic_cast< CCSPlayer* >( pBasePlayer );
+		CHL2MP_Player *pPlayer = dynamic_cast< CHL2MP_Player* >( pBasePlayer );
 		if ( !pPlayer )
 		{
 			Assert( false );
@@ -35,7 +35,7 @@ public:
 			return false;
 		}
 
-		pPlayer->GiveAmmo( GetCSAmmoDef()->GetBuySize( ammoIndex ), ammoIndex );
+		pPlayer->GiveAmmo( GetCSAmmoDef()->GetBuySize( ammoIndex ), ammoIndex, true );
 
 		return true;
 	}
