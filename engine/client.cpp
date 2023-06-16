@@ -1656,28 +1656,28 @@ bool CheckSimpleMaterial( IMaterial *pMaterial )
 	if ( !pMaterial )
 		return false;
 
-	const char *name = pMaterial->GetShaderName();
-	if ( Q_strncasecmp( name, "VertexLitGeneric", 16 ) &&
-		 Q_strncasecmp( name, "UnlitGeneric", 12 ) )
-		return false;
+	//const char *name = pMaterial->GetShaderName();
+	//if ( Q_strncasecmp( name, "VertexLitGeneric", 16 ) &&
+	//	 Q_strncasecmp( name, "UnlitGeneric", 12 ) )
+	//	return false;
 
-	if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_IGNOREZ ) )
-		return false;
+	//if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_IGNOREZ ) )
+	//	return false;
 
-	if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_WIREFRAME ) )
-		return false;
+	//if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_WIREFRAME ) )
+	//	return false;
 
-	if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_SELFILLUM ) )
-		return false;
+	//if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_SELFILLUM ) )
+	//	return false;
 
-	if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_ADDITIVE ) )
-		return false;
+	//if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_ADDITIVE ) )
+	//	return false;
 
-	if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_NOFOG ) )
-		return false;
+	//if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_NOFOG ) )
+	//	return false;
 
-	if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_HALFLAMBERT ) )
-		return false;
+	//if ( pMaterial->GetMaterialVarFlag( MATERIAL_VAR_HALFLAMBERT ) )
+	//	return false;
 
 	return true;
 }
