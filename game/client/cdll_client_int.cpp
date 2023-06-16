@@ -980,7 +980,7 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 		return false;
 	InitFbx();
 #endif
-	engine->ClientCmd( "dumpentitytofile" );
+	engine->ClientCmd( "smwarning 1" );
 #ifdef LUA_SDK
 	MountAddons();
 #endif

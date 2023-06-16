@@ -59,9 +59,14 @@ float GetAutoPlayTime( void )
 //-----------------------------------------------------------------------------
 // Constructor, destructor
 //-----------------------------------------------------------------------------
-CMDLPanel::CMDLPanel( vgui::Panel *pParent, const char *pName, const char *pCmd ) : BaseClass( pParent, pName )
+CMDLPanel::CMDLPanel( vgui::Panel *pParent, const char *pName, const char *pCmd, bool bImagePanel ) : BaseClass( pParent, pName )
 {
 	SetVisible( true );
+
+	if ( bImagePanel )
+	{
+		m_bImagePanel = true;
+	}
 
 	// Used to poll input
 	vgui::ivgui()->AddTickSignal( GetVPanel() );
@@ -506,6 +511,11 @@ void CMDLPanel::OnPaint3D()
 		DrawCollisionModel();
 	}
 
+	if ( m_bImagePanel )
+	{
+		// TODO;
+	}
+
 	pRenderContext->Flush();
 	StudioRender()->UpdateConfig( oldStudioRenderConfig );
 
@@ -810,7 +820,9 @@ void CMDLPanel::OnMouseDoublePressed( vgui::MouseCode code )
 
 void CMDLPanel::OnMousePressed( vgui::MouseCode code )
 {
-	m_pParent->OnCommand( command );
+	//m_pParent->OnCommand( command );
+
+	BaseClass::OnMousePressed( code );
 }
 
 //-----------------------------------------------------------------------------

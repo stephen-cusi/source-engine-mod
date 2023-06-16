@@ -30,9 +30,7 @@
 #endif
 
 #ifdef HL2SB
-#include "menu/sm_menu_legacy.h"
-#include "menu/toolgun_menu.h"
-#include "menu/sm_menu_list.h"
+#include "menu/sm_menu.h"
 #endif
 
 #if defined( TF_CLIENT_DLL )
@@ -220,10 +218,7 @@ void VGui_CreateGlobalPanels( void )
 	touch_panel->Create( toolParent );
 
 #ifdef HL2SB
-	//toolgun menu
-	toolmenu->Create( gameParent );
 	smenu->Create(gameParent);
-	smlmenu->Create(gameParent);
 #endif
 
 #if defined( TRACK_BLOCKING_IO )
@@ -259,8 +254,6 @@ void VGui_Shutdown()
 
 #ifdef HL2SB
 	smenu->Destroy();
-	toolmenu->Destroy();
-	smlmenu->Destroy();
 #endif
 
 	messagechars->Destroy();

@@ -43,7 +43,7 @@ class CMDLPanel : public CPotteryWheelPanel
 
 public:
 	// constructor, destructor
-	CMDLPanel( vgui::Panel *pParent, const char *pName, const char *pCmd = NULL );
+	CMDLPanel( vgui::Panel *pParent, const char *pName, const char *pCmd = NULL, bool bImagePanel = false );
 	virtual ~CMDLPanel();
 
 	// Overriden methods of vgui::Panel
@@ -152,6 +152,8 @@ private:
 	bool	m_bLookAtCamera : 1;
 	bool	m_bIgnoreDoubleClick : 1;
 	bool	m_bThumbnailSafeZone : 1;
+
+	bool 	m_bImagePanel;
 
 	Panel* m_pParent;
 	char command[260];
