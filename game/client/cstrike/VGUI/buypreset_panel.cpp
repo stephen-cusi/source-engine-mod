@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "cs_ammodef.h"
 
 #include <vgui/IVGui.h>

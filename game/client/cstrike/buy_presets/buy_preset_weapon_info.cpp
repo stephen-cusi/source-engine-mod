@@ -8,7 +8,7 @@
 
 #include "buy_preset_debug.h"
 #include "buy_presets.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "cs_ammodef.h"
 #include "cs_gamerules.h"
 #include "cstrike/bot/shared_util.h"
@@ -322,7 +322,7 @@ void FillClientAmmo( int ammo[MAX_AMMO_TYPES] )
 //-----------------------------------------------------------------------------
 // Purpose: returns the weapon in the specified slot
 //-----------------------------------------------------------------------------
-CWeaponCSBase *GetWeaponInSlot( int iSlot, int iSlotPos )
+CWeaponHL2MPBase *GetWeaponInSlot( int iSlot, int iSlotPos )
 {
 	C_HL2MP_Player *player = C_HL2MP_Player::GetLocalCSPlayer();
 	if ( !player )
@@ -330,7 +330,7 @@ CWeaponCSBase *GetWeaponInSlot( int iSlot, int iSlotPos )
 
 	for ( int i = 0; i < MAX_WEAPONS; i++ )
 	{
-		CWeaponCSBase *pWeapon = dynamic_cast< CWeaponCSBase * >(player->GetWeapon(i));
+		CWeaponHL2MPBase *pWeapon = dynamic_cast< CWeaponHL2MPBase * >(player->GetWeapon(i));
 		
 		if ( pWeapon == NULL )
 			continue;
@@ -354,7 +354,7 @@ CSWeaponID GetClientWeaponID( bool primary )
 		return WEAPON_NONE;
 
 	int slot = (primary)?0:1;
-	CWeaponCSBase *pWeapon = GetWeaponInSlot( slot, slot );
+	CWeaponHL2MPBase *pWeapon = GetWeaponInSlot( slot, slot );
 	if ( !pWeapon )
 		return WEAPON_NONE;
 

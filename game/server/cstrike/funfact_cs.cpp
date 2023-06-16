@@ -4,7 +4,7 @@
 #include "cs_gamestats.h"
 #include "funfactmgr_cs.h"
 #include "funfact_cs.h"
-#include "../../game/shared/cstrike/weapon_csbase.h"
+#include "../../game/shared/hl2mp/weapon_hl2mpbase.h"
 #include "cs_achievement_constants.h"
 
 #define FIRST_BLOOD_TIME				45.0f
@@ -582,8 +582,8 @@ int FFEVAL_MULTIPLE_ATTACKER_COUNT( CHL2MP_Player* pPlayer )
 
 int FFEVAL_USED_ALL_AMMO( CHL2MP_Player* pPlayer )
 {
-    CWeaponCSBase *pRifleWeapon = dynamic_cast< CWeaponCSBase * >(pPlayer->Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
-    CWeaponCSBase *pHandgunWeapon = dynamic_cast< CWeaponCSBase * >(pPlayer->Weapon_GetSlot( WEAPON_SLOT_PISTOL ));
+    CWeaponHL2MPBase *pRifleWeapon = dynamic_cast< CWeaponHL2MPBase * >(pPlayer->Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
+    CWeaponHL2MPBase *pHandgunWeapon = dynamic_cast< CWeaponHL2MPBase * >(pPlayer->Weapon_GetSlot( WEAPON_SLOT_PISTOL ));
     if ( pRifleWeapon && !pRifleWeapon->HasAmmo() && pHandgunWeapon && !pHandgunWeapon->HasAmmo() )
 		return 1;
 	else

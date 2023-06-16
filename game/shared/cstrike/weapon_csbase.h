@@ -1,3 +1,4 @@
+/*
 //========= Copyright Valve Corporation, All rights reserved. ============//
 //
 // Purpose: 
@@ -15,7 +16,7 @@
 
 
 #if defined( CLIENT_DLL )
-	#define CWeaponCSBase C_WeaponCSBase
+	#define CWeaponHL2MPBase C_WeaponCSBase
 #endif
 
 extern CSWeaponID AliasToWeaponID( const char *alias );
@@ -66,7 +67,7 @@ enum CSWeaponMode
 	//--------------------------------------------------------------------------------------------------------------
 	/**
 	*  Returns the client's ID_* value for the currently owned weapon, or ID_NONE if no weapon is owned
-	*/
+	
 	CSWeaponID GetClientWeaponID( bool primary );
 
 #endif
@@ -75,14 +76,14 @@ enum CSWeaponMode
 	CCSWeaponInfo * GetWeaponInfo( CSWeaponID weaponID );
 
 
-class CWeaponCSBase : public CBaseCombatWeapon
+class CWeaponHL2MPBase : public CBaseCombatWeapon
 {
 public:
-	DECLARE_CLASS( CWeaponCSBase, CBaseCombatWeapon );
+	DECLARE_CLASS( CWeaponHL2MPBase, CBaseCombatWeapon );
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 
-	CWeaponCSBase();
+	CWeaponHL2MPBase();
 
 	#ifdef GAME_DLL
 		DECLARE_DATADESC();
@@ -259,7 +260,7 @@ private:
 
 	float	m_flDecreaseShotsFired;
 
-	CWeaponCSBase( const CWeaponCSBase & );
+	CWeaponHL2MPBase( const CWeaponHL2MPBase & );
 
 	int		m_iExtraPrimaryAmmo;
 
@@ -287,3 +288,4 @@ private:
 extern ConVar weapon_accuracy_model;
 
 #endif // WEAPON_CSBASE_H
+*/

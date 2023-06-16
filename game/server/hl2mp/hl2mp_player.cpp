@@ -20,7 +20,7 @@
 #include "grenade_satchel.h"
 #include "eventqueue.h"
 #include "gamestats.h"
-#include "weapon_portalbase.h"
+//#include "weapon_portalbase.h"
 
 #include "engine/IEngineSound.h"
 #include "SoundEmitterSystem/isoundemittersystembase.h"
@@ -1875,12 +1875,12 @@ bool CHL2MP_Player::CanHearAndReadChatFrom( CBasePlayer *pPlayer )
 }
 
 
-CWeaponPortalBase* CHL2MP_Player::GetActivePortalWeapon() const
+CWeaponHL2MPBase* CHL2MP_Player::GetActivePortalWeapon() const
 {
 	CBaseCombatWeapon* pWeapon = GetActiveWeapon();
 	if (pWeapon)
 	{
-		return dynamic_cast<CWeaponPortalBase*>(pWeapon);
+		return dynamic_cast<CWeaponHL2MPBase*>(pWeapon);
 	}
 	else
 	{
@@ -2213,9 +2213,9 @@ bool CHL2MP_Player::HasC4() const
 	return (Weapon_OwnsThisType("weapon_c4") != NULL);
 }
 
-CWeaponCSBase* CHL2MP_Player::GetActiveCSWeapon() const
+CWeaponHL2MPBase* CHL2MP_Player::GetActiveCSWeapon() const
 {
-	return dynamic_cast<CWeaponCSBase*>(GetActiveWeapon());
+	return dynamic_cast<CWeaponHL2MPBase*>(GetActiveWeapon());
 }
 void CHL2MP_Player::AwardAchievement(int iAchievement, int iCount)
 {
@@ -2296,7 +2296,7 @@ bool CHL2MP_Player::CSWeaponDrop(CBaseCombatWeapon* pWeapon, bool bDropShield, b
 		pWeapon->SetSolidFlags(FSOLID_NOT_STANDABLE | FSOLID_TRIGGER | FSOLID_USE_TRIGGER_BOUNDS);
 		pWeapon->SetMoveCollide(MOVECOLLIDE_FLY_BOUNCE);
 
-		CWeaponCSBase* pCSWeapon = dynamic_cast<CWeaponCSBase*>(pWeapon);
+		CWeaponHL2MPBase* pCSWeapon = dynamic_cast<CWeaponHL2MPBase*>(pWeapon);
 
 		if (pCSWeapon)
 		{
@@ -2641,7 +2641,7 @@ BuyResult_e CHL2MP_Player::AttemptToBuyShield(void)
 		if (HasSecondaryWeapon())
 		{
 			CBaseCombatWeapon* pWeapon = Weapon_GetSlot(WEAPON_SLOT_PISTOL);
-			CWeaponCSBase* pCSWeapon = dynamic_cast<CWeaponCSBase*>(pWeapon);
+			CWeaponHL2MPBase* pCSWeapon = dynamic_cast<CWeaponHL2MPBase*>(pWeapon);
 
 			if (pCSWeapon && pCSWeapon->GetCSWpnData().m_bCanUseWithShield == false)
 				return;
@@ -3827,7 +3827,7 @@ BuyResult_e CHL2MP_Player::RebuyArmor()
 
 void CHL2MP_Player::StockPlayerAmmo(CBaseCombatWeapon* pNewWeapon)
 {
-	CWeaponCSBase* pWeapon = dynamic_cast<CWeaponCSBase*>(pNewWeapon);
+	CWeaponHL2MPBase* pWeapon = dynamic_cast<CWeaponHL2MPBase*>(pNewWeapon);
 
 	if (pWeapon)
 	{
@@ -3845,7 +3845,7 @@ void CHL2MP_Player::StockPlayerAmmo(CBaseCombatWeapon* pNewWeapon)
 		return;
 	}
 
-	pWeapon = dynamic_cast<CWeaponCSBase*>(Weapon_GetSlot(WEAPON_SLOT_RIFLE));
+	pWeapon = dynamic_cast<CWeaponHL2MPBase*>(Weapon_GetSlot(WEAPON_SLOT_RIFLE));
 
 	if (pWeapon)
 	{
@@ -3858,7 +3858,7 @@ void CHL2MP_Player::StockPlayerAmmo(CBaseCombatWeapon* pNewWeapon)
 		}
 	}
 
-	pWeapon = dynamic_cast<CWeaponCSBase*>(Weapon_GetSlot(WEAPON_SLOT_PISTOL));
+	pWeapon = dynamic_cast<CWeaponHL2MPBase*>(Weapon_GetSlot(WEAPON_SLOT_PISTOL));
 
 	if (pWeapon)
 	{
@@ -4444,12 +4444,12 @@ void CHL2MP_Player::ResetRoundBasedAchievementVariables()
 
 
 	//Clear the previous owner field for currently held weapons
-	CWeaponCSBase* pWeapon = dynamic_cast<CWeaponCSBase*>(Weapon_GetSlot(WEAPON_SLOT_RIFLE));
+	CWeaponHL2MPBase* pWeapon = dynamic_cast<CWeaponHL2MPBase*>(Weapon_GetSlot(WEAPON_SLOT_RIFLE));
 	if (pWeapon)
 	{
 		pWeapon->SetPreviousOwner(NULL);
 	}
-	pWeapon = dynamic_cast<CWeaponCSBase*>(Weapon_GetSlot(WEAPON_SLOT_PISTOL));
+	pWeapon = dynamic_cast<CWeaponHL2MPBase*>(Weapon_GetSlot(WEAPON_SLOT_PISTOL));
 	if (pWeapon)
 	{
 		pWeapon->SetPreviousOwner(NULL);
@@ -4530,7 +4530,7 @@ void CHL2MP_Player::PlayerUsedFirearm(CBaseCombatWeapon* pBaseWeapon)
 {
 	if (pBaseWeapon)
 	{
-		CWeaponCSBase* pWeapon = dynamic_cast<CWeaponCSBase*>(pBaseWeapon);
+		CWeaponHL2MPBase* pWeapon = dynamic_cast<CWeaponHL2MPBase*>(pBaseWeapon);
 
 		if (pWeapon)
 		{

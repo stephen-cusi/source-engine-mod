@@ -216,7 +216,7 @@ void FindHullIntersection( const Vector &vecSrc, trace_t &tr, const Vector &mins
 
 void CKnife::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( pPlayer )
 	{
 #if !defined (CLIENT_DLL)
@@ -232,7 +232,7 @@ void CKnife::PrimaryAttack()
 
 void CKnife::SecondaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( pPlayer && !pPlayer->m_bIsDefusing && !CSGameRules()->IsFreezePeriod() )
 	{
 #if !defined (CLIENT_DLL)
@@ -304,7 +304,7 @@ void CKnife::WeaponIdle()
 	if (m_flTimeWeaponIdle > gpGlobals->curtime)
 		return;
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -332,7 +332,7 @@ void CKnife::WeaponIdle()
 
 bool CKnife::SwingOrStab( bool bStab )
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 

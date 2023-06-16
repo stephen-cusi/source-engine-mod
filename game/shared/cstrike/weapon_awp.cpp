@@ -109,7 +109,7 @@ void CWeaponAWP::SecondaryAttack()
 {
 	const float kZoomTime = 0.10f;
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if ( pPlayer == NULL )
 	{
@@ -169,7 +169,7 @@ float CWeaponAWP::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -206,7 +206,7 @@ float CWeaponAWP::GetInaccuracy() const
 
 void CWeaponAWP::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -243,7 +243,7 @@ void CWeaponAWP::PrimaryAttack()
 #ifdef AWP_UNZOOM
 void CWeaponAWP::UnzoomThink( void )
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if (pPlayer == NULL)
 	{
@@ -258,7 +258,7 @@ void CWeaponAWP::UnzoomThink( void )
 
 float CWeaponAWP::GetMaxSpeed() const
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if (pPlayer == NULL)
 	{

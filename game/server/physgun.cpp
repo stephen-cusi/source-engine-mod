@@ -23,7 +23,7 @@
 #include "portal_util_shared.h"
 #include "te.h"
 #include "prop_portal.h"
-
+#include "weapon_hl2mpbase.h"
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -473,12 +473,12 @@ struct pelletlist_t
 	EHANDLE						parent;
 };
 
-class CWeaponGravityGun : public CBaseCombatWeapon
+class CWeaponGravityGun : public CWeaponHL2MPBase
 {
 	DECLARE_DATADESC();
 
 public:
-	DECLARE_CLASS( CWeaponGravityGun, CBaseCombatWeapon );
+	DECLARE_CLASS( CWeaponGravityGun, CWeaponHL2MPBase );
 
 	CWeaponGravityGun();
 	void Spawn( void );
@@ -492,7 +492,7 @@ public:
 	virtual bool Holster( CBaseCombatWeapon *pSwitchingTo )
 	{
 		EffectDestroy();
-		return BaseClass::Holster();
+		return BaseClass::Holster( pSwitchingTo );
 	}
 
 	bool Reload( void );

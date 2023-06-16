@@ -8,7 +8,7 @@
 
 #include "buy_preset_debug.h"
 #include "buy_presets.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "game/client/iviewport.h"
 #include "filesystem.h"
 #include <vgui/ILocalize.h>

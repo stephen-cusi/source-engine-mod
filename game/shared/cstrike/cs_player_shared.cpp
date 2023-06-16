@@ -5,7 +5,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "decals.h"
 #include "cs_gamerules.h"
 #include "weapon_c4.h"
@@ -162,7 +162,7 @@ float CHL2MP_Player::GetPlayerMaxSpeed()
 	else
 	{
 
-		CWeaponCSBase *pWeapon = dynamic_cast<CWeaponCSBase*>( GetActiveWeapon() );
+		CWeaponHL2MPBase *pWeapon = dynamic_cast<CWeaponHL2MPBase*>( GetActiveWeapon() );
 
 		if ( pWeapon )
 		{
@@ -768,7 +768,7 @@ bool CHL2MP_Player::CanMove() const
 
 void CHL2MP_Player::OnJump( float fImpulse )
 {
-	CWeaponCSBase* pActiveWeapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase* pActiveWeapon = GetActiveCSWeapon();
 	if ( pActiveWeapon != NULL )
 		pActiveWeapon->OnJump(fImpulse);
 }
@@ -776,7 +776,7 @@ void CHL2MP_Player::OnJump( float fImpulse )
 
 void CHL2MP_Player::OnLand( float fVelocity )
 {
-	CWeaponCSBase* pActiveWeapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase* pActiveWeapon = GetActiveCSWeapon();
 	if ( pActiveWeapon != NULL )
 		pActiveWeapon->OnLand(fVelocity);
 }
@@ -832,7 +832,7 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 }
 
 
-CWeaponCSBase* CHL2MP_Player::CSAnim_GetActiveWeapon()
+CWeaponHL2MPBase* CHL2MP_Player::CSAnim_GetActiveWeapon()
 {
 	return GetActiveCSWeapon();
 }

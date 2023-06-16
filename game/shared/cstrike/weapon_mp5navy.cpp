@@ -90,7 +90,7 @@ float CWeaponMP5Navy::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -105,7 +105,7 @@ float CWeaponMP5Navy::GetInaccuracy() const
 
 void CWeaponMP5Navy::PrimaryAttack( void )
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -113,7 +113,7 @@ void CWeaponMP5Navy::PrimaryAttack( void )
 		return;
 
 	// CSBaseGunFire can kill us, forcing us to drop our weapon, if we shoot something that explodes
-	pPlayer = GetPlayerOwner();
+	pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 

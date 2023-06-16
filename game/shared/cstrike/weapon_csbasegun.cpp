@@ -43,7 +43,7 @@ void CWeaponCSBaseGun::Spawn()
 
 bool CWeaponCSBaseGun::Deploy()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -57,7 +57,7 @@ bool CWeaponCSBaseGun::Deploy()
 
 void CWeaponCSBaseGun::ItemPostFrame()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if ( !pPlayer )
 		return;
@@ -88,7 +88,7 @@ void CWeaponCSBaseGun::PrimaryAttack()
 
 bool CWeaponCSBaseGun::CSBaseGunFire( float flCycleTime, CSWeaponMode weaponMode )
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -167,7 +167,7 @@ bool CWeaponCSBaseGun::CSBaseGunFire( float flCycleTime, CSWeaponMode weaponMode
 
 void CWeaponCSBaseGun::DoFireEffects()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	
 	if ( pPlayer )
 		 pPlayer->DoMuzzleFlash();
@@ -176,7 +176,7 @@ void CWeaponCSBaseGun::DoFireEffects()
 
 bool CWeaponCSBaseGun::Reload()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 

@@ -109,7 +109,7 @@ void CHudScope::Paint( void )
 	if ( pPlayer == NULL )
 		return;
 
-	CWeaponCSBase *pWeapon = pPlayer->GetActiveCSWeapon();
+	CWeaponHL2MPBase *pWeapon = pPlayer->GetActiveCSWeapon();
 		
 	if( !pWeapon )
 		return;

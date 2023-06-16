@@ -68,7 +68,7 @@ CWeaponAug::CWeaponAug()
 
 void CWeaponAug::SecondaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -96,7 +96,7 @@ float CWeaponAug::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -114,7 +114,7 @@ float CWeaponAug::GetInaccuracy() const
 
 void CWeaponAug::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -129,7 +129,7 @@ void CWeaponAug::PrimaryAttack()
 		return;
 
 	// CSBaseGunFire can kill us, forcing us to drop our weapon, if we shoot something that explodes
-	pPlayer = GetPlayerOwner();
+	pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 

@@ -9,7 +9,7 @@
 #include "soundent.h"
 #include "hl2mp_player.h"
 #include "KeyValues.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 
 #define GRENADE_MODEL "models/Weapons/w_eq_fraggrenade_thrown.mdl"
 

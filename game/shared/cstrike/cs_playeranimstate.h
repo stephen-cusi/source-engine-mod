@@ -18,14 +18,15 @@
 #ifdef CLIENT_DLL
 	class C_BaseAnimatingOverlay;
 	class C_WeaponCSBase;
+	class C_WeaponHL2MPBase;
 	// Avoid redef warnings
 	#undef CBaseAnimatingOverlay
 	#define CBaseAnimatingOverlay C_BaseAnimatingOverlay
-	#define CWeaponCSBase C_WeaponCSBase
+	#define CWeaponHL2MPBase C_WeaponHL2MPBase
 	#define CHL2MP_Player C_HL2MP_Player
 #else
 	class CBaseAnimatingOverlay;
-	class CWeaponCSBase; 
+	class CWeaponHL2MPBase; 
 	class CHL2MP_Player;
 #endif
 
@@ -66,7 +67,7 @@ public:
 class ICSPlayerAnimStateHelpers
 {
 public:
-	virtual CWeaponCSBase* CSAnim_GetActiveWeapon() = 0;
+	virtual CWeaponHL2MPBase* CSAnim_GetActiveWeapon() = 0;
 	virtual bool CSAnim_CanMove() = 0;
 };
 

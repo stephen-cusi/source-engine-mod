@@ -328,7 +328,7 @@ void C_CHostage::Initialize( )
 }
 
 //-----------------------------------------------------------------------------
-CWeaponCSBase* C_CHostage::CSAnim_GetActiveWeapon()
+CWeaponHL2MPBase* C_CHostage::CSAnim_GetActiveWeapon()
 {
 	return NULL;
 }

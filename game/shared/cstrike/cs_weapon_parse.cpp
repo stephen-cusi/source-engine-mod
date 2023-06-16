@@ -8,7 +8,7 @@
 #include <KeyValues.h>
 #include "cs_weapon_parse.h"
 #include "cs_shareddefs.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "icvar.h"
 #include "cs_gamerules.h"
 #include "cs_blackmarket.h"

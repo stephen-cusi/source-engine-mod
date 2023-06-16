@@ -5,7 +5,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "fx_cs_shared.h"
 
 
@@ -22,10 +22,10 @@
 #endif
 
 
-class CWeaponElite : public CWeaponCSBase
+class CWeaponElite : public CWeaponHL2MPBase
 {
 public:
-	DECLARE_CLASS( CWeaponElite, CWeaponCSBase );
+	DECLARE_CLASS( CWeaponElite, CWeaponHL2MPBase );
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 	
@@ -148,7 +148,7 @@ float CWeaponElite::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 
@@ -170,7 +170,7 @@ float CWeaponElite::GetInaccuracy() const
 
 void CWeaponElite::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 

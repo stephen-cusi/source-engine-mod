@@ -306,7 +306,7 @@ bool CCSBot::AdjustZoom( float range )
  */
 bool CCSBot::IsUsing( CSWeaponID weaponID ) const
 {
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 
 	if (weapon == NULL)
 		return false;
@@ -323,7 +323,7 @@ bool CCSBot::IsUsing( CSWeaponID weaponID ) const
  */
 bool CCSBot::DoesActiveWeaponHaveSilencer( void ) const
 {
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 
 	if (weapon == NULL)
 		return false;
@@ -340,7 +340,7 @@ bool CCSBot::DoesActiveWeaponHaveSilencer( void ) const
  */
 bool CCSBot::IsUsingSniperRifle( void ) const
 {
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 
 	if (weapon && IsSniperRifle( weapon ))
 		return true;
@@ -354,7 +354,7 @@ bool CCSBot::IsUsingSniperRifle( void ) const
  */
 bool CCSBot::IsSniper( void ) const
 {
-	CWeaponCSBase *weapon = static_cast<CWeaponCSBase *>( Weapon_GetSlot( WEAPON_SLOT_RIFLE ) );
+	CWeaponHL2MPBase *weapon = static_cast<CWeaponHL2MPBase *>( Weapon_GetSlot( WEAPON_SLOT_RIFLE ) );
 
 	if (weapon && IsSniperRifle( weapon ))
 		return true;
@@ -380,7 +380,7 @@ bool CCSBot::IsSniping( void ) const
  */
 bool CCSBot::IsUsingShotgun( void ) const
 {
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 
 	if (weapon == NULL)
 		return false;
@@ -394,7 +394,7 @@ bool CCSBot::IsUsingShotgun( void ) const
  */
 bool CCSBot::IsUsingMachinegun( void ) const
 {
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 
 	if (weapon && weapon->IsA( WEAPON_M249 ))
 		return true;
@@ -408,7 +408,7 @@ bool CCSBot::IsUsingMachinegun( void ) const
  */
 bool CCSBot::IsPrimaryWeaponEmpty( void ) const
 {
-	CWeaponCSBase *weapon = static_cast<CWeaponCSBase *>( Weapon_GetSlot( WEAPON_SLOT_RIFLE ) );
+	CWeaponHL2MPBase *weapon = static_cast<CWeaponHL2MPBase *>( Weapon_GetSlot( WEAPON_SLOT_RIFLE ) );
 
 	if (weapon == NULL)
 		return true;
@@ -426,7 +426,7 @@ bool CCSBot::IsPrimaryWeaponEmpty( void ) const
  */
 bool CCSBot::IsPistolEmpty( void ) const
 {
-	CWeaponCSBase *weapon = static_cast<CWeaponCSBase *>( Weapon_GetSlot( WEAPON_SLOT_PISTOL ) );
+	CWeaponHL2MPBase *weapon = static_cast<CWeaponHL2MPBase *>( Weapon_GetSlot( WEAPON_SLOT_PISTOL ) );
 
 	if (weapon == NULL)
 		return true;
@@ -442,7 +442,7 @@ bool CCSBot::IsPistolEmpty( void ) const
 /**
  * Equip the given item
  */
-bool CCSBot::DoEquip( CWeaponCSBase *weapon )
+bool CCSBot::DoEquip( CWeaponHL2MPBase *weapon )
 {
 	if (weapon == NULL)
 		return false;
@@ -475,7 +475,7 @@ void CCSBot::EquipBestWeapon( bool mustEquip )
 
 	CCSBotManager *ctrl = static_cast<CCSBotManager *>( TheBots );
 
-	CWeaponCSBase *primary = static_cast<CWeaponCSBase *>( Weapon_GetSlot( WEAPON_SLOT_RIFLE ) );
+	CWeaponHL2MPBase *primary = static_cast<CWeaponHL2MPBase *>( Weapon_GetSlot( WEAPON_SLOT_RIFLE ) );
 	if (primary)
 	{
 		CSWeaponType weaponClass = primary->GetCSWpnData().m_WeaponType;
@@ -494,7 +494,7 @@ void CCSBot::EquipBestWeapon( bool mustEquip )
 
 	if (ctrl->AllowPistols())
 	{
-		if (DoEquip( static_cast<CWeaponCSBase *>( Weapon_GetSlot( WEAPON_SLOT_PISTOL ) ) ))
+		if (DoEquip( static_cast<CWeaponHL2MPBase *>( Weapon_GetSlot( WEAPON_SLOT_PISTOL ) ) ))
 			return;
 	}
 
@@ -514,7 +514,7 @@ void CCSBot::EquipPistol( void )
 
 	if (TheCSBots()->AllowPistols() && !IsUsingPistol())
 	{
-		CWeaponCSBase *pistol = static_cast<CWeaponCSBase *>( Weapon_GetSlot( WEAPON_SLOT_PISTOL ) );
+		CWeaponHL2MPBase *pistol = static_cast<CWeaponHL2MPBase *>( Weapon_GetSlot( WEAPON_SLOT_PISTOL ) );
 		DoEquip( pistol );
 	}
 }
@@ -537,7 +537,7 @@ void CCSBot::EquipKnife( void )
  */
 bool CCSBot::HasGrenade( void ) const
 {
-	CWeaponCSBase *grenade = static_cast<CWeaponCSBase *>( Weapon_GetSlot( WEAPON_SLOT_GRENADES ) );
+	CWeaponHL2MPBase *grenade = static_cast<CWeaponHL2MPBase *>( Weapon_GetSlot( WEAPON_SLOT_GRENADES ) );
 	return (grenade) ? true : false;
 }
 
@@ -556,7 +556,7 @@ bool CCSBot::EquipGrenade( bool noSmoke )
 
 	if (HasGrenade())
 	{
-		CWeaponCSBase *grenade = static_cast<CWeaponCSBase *>( Weapon_GetSlot( WEAPON_SLOT_GRENADES ) );
+		CWeaponHL2MPBase *grenade = static_cast<CWeaponHL2MPBase *>( Weapon_GetSlot( WEAPON_SLOT_GRENADES ) );
 
 		if (noSmoke && grenade->IsA( WEAPON_SMOKEGRENADE ))
 			return false;
@@ -575,7 +575,7 @@ bool CCSBot::EquipGrenade( bool noSmoke )
  */
 bool CCSBot::IsUsingKnife( void ) const
 {
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 
 	if (weapon && weapon->IsA( WEAPON_KNIFE ))
 		return true;
@@ -589,7 +589,7 @@ bool CCSBot::IsUsingKnife( void ) const
  */
 bool CCSBot::IsUsingPistol( void ) const
 {
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 
 	if (weapon && weapon->IsPistol())
 		return true;
@@ -603,7 +603,7 @@ bool CCSBot::IsUsingPistol( void ) const
  */
 bool CCSBot::IsUsingGrenade( void ) const
 {
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 
 	if (!weapon)
 		return false;
@@ -786,7 +786,7 @@ void CCSBot::LookForGrenadeTargets( void )
 	}
 
 
-	CWeaponCSBase *weapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 	if (weapon && weapon->IsA( WEAPON_SMOKEGRENADE ))
 	{
 		// don't worry so much about smokes
@@ -1231,7 +1231,7 @@ void CCSBot::SilencerCheck( void )
 	// don't touch the silencer if there are enemies nearby
 	if (GetNearbyEnemyCount() == 0)
 	{
-		CWeaponCSBase *weapon = GetActiveCSWeapon();
+		CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 		if (weapon == NULL)
 			return;
 
@@ -1256,12 +1256,12 @@ void CCSBot::SilencerCheck( void )
  */
 bool CCSBot::BumpWeapon( CBaseCombatWeapon *pWeapon )
 {
-	CWeaponCSBase *droppedGun = dynamic_cast< CWeaponCSBase* >( pWeapon );
+	CWeaponHL2MPBase *droppedGun = dynamic_cast< CWeaponHL2MPBase* >( pWeapon );
 
 	// right now we only care about primary weapons on the ground
 	if ( droppedGun && droppedGun->GetSlot() == WEAPON_SLOT_RIFLE )
 	{
-		CWeaponCSBase *myGun = dynamic_cast< CWeaponCSBase* >( Weapon_GetSlot( WEAPON_SLOT_RIFLE ) );
+		CWeaponHL2MPBase *myGun = dynamic_cast< CWeaponHL2MPBase* >( Weapon_GetSlot( WEAPON_SLOT_RIFLE ) );
 
 		// if the gun on the ground is the same one we have, dont bother
 		if ( myGun && droppedGun->GetWeaponID() != myGun->GetWeaponID() )
@@ -1357,7 +1357,7 @@ float CCSBot::ComputeWeaponSightRange( void )
 bool CCSBot::DidPlayerJustFireWeapon( const CHL2MP_Player *player ) const
 {
 	// if this player has just fired his weapon, we notice him
-	CWeaponCSBase *weapon = player->GetActiveCSWeapon();
+	CWeaponHL2MPBase* weapon = dynamic_cast<CWeaponHL2MPBase*>(GetActiveWeapon());
 	return (weapon && !weapon->IsSilenced() && weapon->m_flNextPrimaryAttack > gpGlobals->curtime);
 }
 

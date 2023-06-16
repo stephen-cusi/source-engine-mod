@@ -125,7 +125,7 @@ CHostage::~CHostage()
 	m_PlayerAnimState->Release();
 }
 
-CWeaponCSBase* CHostage::CSAnim_GetActiveWeapon()
+CWeaponHL2MPBase* CHostage::CSAnim_GetActiveWeapon()
 {
 	return NULL;
 }

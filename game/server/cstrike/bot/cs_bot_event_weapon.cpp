@@ -41,7 +41,7 @@ void CCSBot::OnWeaponFire( IGameEvent *event )
 
 	/// @todo Check weapon type (knives are pretty quiet)
 	/// @todo Use actual volume, account for silencers, etc.
-	CWeaponCSBase *weapon = (CWeaponCSBase *)((player)?player->GetActiveWeapon():NULL);
+	CWeaponHL2MPBase *weapon = (CWeaponHL2MPBase *)((player)?player->GetActiveWeapon():NULL);
 
 	if (weapon == NULL)
 		return;

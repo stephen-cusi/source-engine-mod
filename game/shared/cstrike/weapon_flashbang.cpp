@@ -5,7 +5,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "gamerules.h"
 #include "npcevent.h"
 #include "engine/IEngineSound.h"

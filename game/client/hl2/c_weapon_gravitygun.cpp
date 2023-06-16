@@ -10,6 +10,7 @@
 #include "in_buttons.h"
 #include "beamdraw.h"
 #include "c_weapon__stubs.h"
+#include "weapon_hl2mpbase.h"
 #include "clienteffectprecachesystem.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -54,9 +55,9 @@ public:
 };
 
 
-class C_WeaponGravityGun : public C_BaseCombatWeapon
+class C_WeaponGravityGun : public C_WeaponHL2MPBase
 {
-	DECLARE_CLASS( C_WeaponGravityGun, C_BaseCombatWeapon );
+	DECLARE_CLASS( C_WeaponGravityGun, C_WeaponHL2MPBase );
 public:
 	C_WeaponGravityGun() {}
 

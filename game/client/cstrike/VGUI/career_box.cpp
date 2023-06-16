@@ -16,7 +16,7 @@
 #include <vgui_controls/CheckButton.h>
 #include <vgui_controls/ComboBox.h>
 #include "cs_ammodef.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "backgroundpanel.h"
 #include "cs_gamerules.h"
 

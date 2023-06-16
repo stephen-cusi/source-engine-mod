@@ -288,7 +288,7 @@ public:
 
 	bool AllowFriendlyFireDamage( void ) const		{ return friendlyfire.GetBool(); }
 
-	bool IsWeaponUseable( const CWeaponCSBase *weapon ) const;	///< return true if the bot can use this weapon
+	bool IsWeaponUseable( const CWeaponHL2MPBase *weapon ) const;	///< return true if the bot can use this weapon
 
 	bool IsDefenseRushing( void ) const				{ return m_isDefenseRushing; }		///< returns true if defense team has "decided" to rush this round
 	bool IsOnDefense( const CHL2MP_Player *player ) const;		///< return true if this player is on "defense"

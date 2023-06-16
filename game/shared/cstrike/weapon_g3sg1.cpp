@@ -79,7 +79,7 @@ void CWeaponG3SG1::SecondaryAttack()
 {
 	const float kZoomTime = 0.10f;
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -133,7 +133,7 @@ float CWeaponG3SG1::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -160,7 +160,7 @@ float CWeaponG3SG1::GetInaccuracy() const
 
 void CWeaponG3SG1::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 	
@@ -205,7 +205,7 @@ bool CWeaponG3SG1::Deploy()
 
 float CWeaponG3SG1::GetMaxSpeed()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( pPlayer && pPlayer->GetFOV() == pPlayer->GetDefaultFOV() )
 		return BaseClass::GetMaxSpeed();
 	else

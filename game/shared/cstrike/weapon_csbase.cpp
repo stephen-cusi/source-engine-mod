@@ -1,3 +1,4 @@
+/*
 //========= Copyright Valve Corporation, All rights reserved. ============//
 //
 // Purpose: Laser Rifle & Shield combo
@@ -8,7 +9,7 @@
 #include "cbase.h"
 #include "in_buttons.h"
 #include "takedamageinfo.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "ammodef.h"
 #include "cs_gamerules.h"
 
@@ -265,12 +266,12 @@ int GetShellForAmmoType( const char *ammoname )
 
 
 // ----------------------------------------------------------------------------- //
-// CWeaponCSBase tables.
+// CWeaponHL2MPBase tables.
 // ----------------------------------------------------------------------------- //
 
 IMPLEMENT_NETWORKCLASS_ALIASED( WeaponCSBase, DT_WeaponCSBase )
 
-BEGIN_NETWORK_TABLE( CWeaponCSBase, DT_WeaponCSBase )
+BEGIN_NETWORK_TABLE( CWeaponHL2MPBase, DT_WeaponCSBase )
 #if !defined( CLIENT_DLL )
 SendPropInt( SENDINFO( m_weaponMode ), 1, SPROP_UNSIGNED ),
 SendPropFloat(SENDINFO(m_fAccuracyPenalty) ),
@@ -285,7 +286,7 @@ RecvPropFloat( RECVINFO(m_fAccuracyPenalty)),
 END_NETWORK_TABLE()
 
 #if defined(CLIENT_DLL)
-BEGIN_PREDICTION_DATA( CWeaponCSBase )
+BEGIN_PREDICTION_DATA( CWeaponHL2MPBase )
 	DEFINE_PRED_FIELD( m_flTimeWeaponIdle, FIELD_FLOAT, FTYPEDESC_OVERRIDE | FTYPEDESC_NOERRORCHECK ),
 	DEFINE_PRED_FIELD( m_flNextPrimaryAttack, FIELD_FLOAT, FTYPEDESC_OVERRIDE | FTYPEDESC_NOERRORCHECK ),
 	DEFINE_PRED_FIELD( m_flNextSecondaryAttack, FIELD_FLOAT, FTYPEDESC_OVERRIDE | FTYPEDESC_NOERRORCHECK ),
@@ -297,12 +298,12 @@ END_PREDICTION_DATA()
 #endif
 
 
-LINK_ENTITY_TO_CLASS( weapon_cs_base, CWeaponCSBase );
+LINK_ENTITY_TO_CLASS( weapon_cs_base, CWeaponHL2MPBase );
 
 
 #ifdef GAME_DLL
 
-	BEGIN_DATADESC( CWeaponCSBase )
+	BEGIN_DATADESC( CWeaponHL2MPBase )
 
 		//DEFINE_FUNCTION( DefaultTouch ),
 		DEFINE_THINKFUNC( FallThink )
@@ -360,9 +361,9 @@ void DrawCrosshairRect( int x0, int y0, int x1, int y1, bool bAdditive )
 
 
 // ----------------------------------------------------------------------------- //
-// CWeaponCSBase implementation.
+// CWeaponHL2MPBase implementation.
 // ----------------------------------------------------------------------------- //
-CWeaponCSBase::CWeaponCSBase()
+CWeaponHL2MPBase::CWeaponHL2MPBase()
 {
 	SetPredictionEligible( true );
 	m_bDelayFire = true;
@@ -383,7 +384,7 @@ CWeaponCSBase::CWeaponCSBase()
 
 
 #ifndef CLIENT_DLL
-bool CWeaponCSBase::KeyValue( const char *szKeyName, const char *szValue )
+bool CWeaponHL2MPBase::KeyValue( const char *szKeyName, const char *szValue )
 {
 	if ( !BaseClass::KeyValue( szKeyName, szValue ) )
 	{
@@ -404,25 +405,25 @@ bool CWeaponCSBase::KeyValue( const char *szKeyName, const char *szValue )
 #endif
 
 
-bool CWeaponCSBase::IsPredicted() const
+bool CWeaponHL2MPBase::IsPredicted() const
 {
 	return true;
 }
 
 
-bool CWeaponCSBase::IsPistol() const
+bool CWeaponHL2MPBase::IsPistol() const
 {
 	return GetCSWpnData().m_WeaponType == WEAPONTYPE_PISTOL;
 }
 
 
-bool CWeaponCSBase::IsFullAuto() const
+bool CWeaponHL2MPBase::IsFullAuto() const
 {
 	return GetCSWpnData().m_bFullAuto;
 }
 
 
-bool CWeaponCSBase::PlayEmptySound()
+bool CWeaponHL2MPBase::PlayEmptySound()
 {
 	//MIKETODO: certain weapons should override this to make it empty:
 	//	C4
@@ -445,7 +446,7 @@ bool CWeaponCSBase::PlayEmptySound()
 	return 0;
 }
 
-CHL2MP_Player* CWeaponCSBase::GetPlayerOwner() const
+CHL2MP_Player* CWeaponHL2MPBase::GetPlayerOwner() const
 {
 	return dynamic_cast< CHL2MP_Player* >( GetOwner() );
 }
@@ -455,7 +456,7 @@ CHL2MP_Player* CWeaponCSBase::GetPlayerOwner() const
 //=============================================================================
 
 //[dwenger] Accessors for the prior owner list
-void CWeaponCSBase::AddToPriorOwnerList(CHL2MP_Player* pPlayer)
+void CWeaponHL2MPBase::AddToPriorOwnerList(CHL2MP_Player* pPlayer)
 {
     if ( !IsAPriorOwner( pPlayer ) )
     {
@@ -464,7 +465,7 @@ void CWeaponCSBase::AddToPriorOwnerList(CHL2MP_Player* pPlayer)
     }
 }
 
-bool CWeaponCSBase::IsAPriorOwner(CHL2MP_Player* pPlayer)
+bool CWeaponHL2MPBase::IsAPriorOwner(CHL2MP_Player* pPlayer)
 {
     return (m_PriorOwners.Find( pPlayer ) != -1);
 }
@@ -474,10 +475,10 @@ bool CWeaponCSBase::IsAPriorOwner(CHL2MP_Player* pPlayer)
 //=============================================================================
 
 
-void CWeaponCSBase::SecondaryAttack( void )
+void CWeaponHL2MPBase::SecondaryAttack( void )
 {
 #ifndef CLIENT_DLL
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if ( !pPlayer )
 		return;
@@ -499,10 +500,10 @@ void CWeaponCSBase::SecondaryAttack( void )
 #endif
 }
 
-bool CWeaponCSBase::SendWeaponAnim( int iActivity )
+bool CWeaponHL2MPBase::SendWeaponAnim( int iActivity )
 {
 #ifdef CS_SHIELD_ENABLED
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if ( pPlayer && pPlayer->HasShield() )
 	{
@@ -526,9 +527,9 @@ bool CWeaponCSBase::SendWeaponAnim( int iActivity )
 }
 
 
-void CWeaponCSBase::ItemPostFrame()
+void CWeaponHL2MPBase::ItemPostFrame()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if ( !pPlayer )
 		return;
@@ -552,7 +553,7 @@ void CWeaponCSBase::ItemPostFrame()
 	if ((pPlayer->m_nButtons & IN_ATTACK2) && (m_flNextSecondaryAttack <= gpGlobals->curtime))
 	{
 		if ( pPlayer->HasShield() )
-			CWeaponCSBase::SecondaryAttack();
+			CWeaponHL2MPBase::SecondaryAttack();
 		else
 			SecondaryAttack();
 
@@ -683,7 +684,7 @@ void CWeaponCSBase::ItemPostFrame()
 }
 
 
-void CWeaponCSBase::ItemBusyFrame()
+void CWeaponHL2MPBase::ItemBusyFrame()
 {
 	UpdateAccuracyPenalty();
 
@@ -691,9 +692,9 @@ void CWeaponCSBase::ItemBusyFrame()
 }
 
 
-float CWeaponCSBase::GetInaccuracy() const
+float CWeaponHL2MPBase::GetInaccuracy() const
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return 0.0f;
 
@@ -711,7 +712,7 @@ float CWeaponCSBase::GetInaccuracy() const
 }
 
 
-float CWeaponCSBase::GetSpread() const
+float CWeaponHL2MPBase::GetSpread() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 		return 0.0f;
@@ -720,7 +721,7 @@ float CWeaponCSBase::GetSpread() const
 }
 
 
-float CWeaponCSBase::GetMaxSpeed() const
+float CWeaponHL2MPBase::GetMaxSpeed() const
 {
 	// The weapon should have set this in its constructor.
 	float flRet = GetCSWpnData().m_flMaxSpeed;
@@ -728,7 +729,7 @@ float CWeaponCSBase::GetMaxSpeed() const
 	return flRet;
 }
 
-const CCSWeaponInfo &CWeaponCSBase::GetCSWpnData() const
+const CCSWeaponInfo &CWeaponHL2MPBase::GetCSWpnData() const
 {
 	const FileWeaponInfo_t *pWeaponInfo = &GetWpnData();
 	const CCSWeaponInfo *pCSInfo;
@@ -747,7 +748,7 @@ const CCSWeaponInfo &CWeaponCSBase::GetCSWpnData() const
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-const char *CWeaponCSBase::GetViewModel( int /*viewmodelindex = 0 -- this is ignored in the base class here*/ ) const
+const char *CWeaponHL2MPBase::GetViewModel( int /*viewmodelindex = 0 -- this is ignored in the base class here ) const
 {
 	CHL2MP_Player *pOwner = GetPlayerOwner();
 
@@ -763,7 +764,7 @@ const char *CWeaponCSBase::GetViewModel( int /*viewmodelindex = 0 -- this is ign
 
 }
 
-void CWeaponCSBase::Precache( void )
+void CWeaponHL2MPBase::Precache( void )
 {
 	BaseClass::Precache();
 
@@ -780,12 +781,12 @@ void CWeaponCSBase::Precache( void )
 	PrecacheScriptSound( "Default.Zoom" );
 }
 
-Activity CWeaponCSBase::GetDeployActivity( void )
+Activity CWeaponHL2MPBase::GetDeployActivity( void )
 {
 	return ACT_VM_DRAW;
 }
 
-bool CWeaponCSBase::DefaultDeploy( char *szViewModel, char *szWeaponModel, int iActivity, char *szAnimExt )
+bool CWeaponHL2MPBase::DefaultDeploy( char *szViewModel, char *szWeaponModel, int iActivity, char *szAnimExt )
 {
 	// Msg( "deploy %s at %f\n", GetClassname(), gpGlobals->curtime );
 	CHL2MP_Player *pOwner = GetPlayerOwner();
@@ -814,7 +815,7 @@ bool CWeaponCSBase::DefaultDeploy( char *szViewModel, char *szWeaponModel, int i
 	return true;
 }
 
-void CWeaponCSBase::UpdateShieldState( void )
+void CWeaponHL2MPBase::UpdateShieldState( void )
 {
 	//empty by default.
 	CHL2MP_Player *pOwner = GetPlayerOwner();
@@ -837,12 +838,12 @@ void CWeaponCSBase::UpdateShieldState( void )
 	}
 }
 
-void CWeaponCSBase::SetWeaponModelIndex( const char *pName )
+void CWeaponHL2MPBase::SetWeaponModelIndex( const char *pName )
 {
  	 m_iWorldModelIndex = modelinfo->GetModelIndex( pName );
 }
 
-bool CWeaponCSBase::CanBeSelected( void )
+bool CWeaponHL2MPBase::CanBeSelected( void )
 {
 	if ( !VisibleInWeaponSelection() )
 		return false;
@@ -850,9 +851,9 @@ bool CWeaponCSBase::CanBeSelected( void )
 	return true;
 }
 
-bool CWeaponCSBase::CanDeploy( void )
+bool CWeaponHL2MPBase::CanDeploy( void )
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -862,7 +863,7 @@ bool CWeaponCSBase::CanDeploy( void )
 	return BaseClass::CanDeploy();
 }
 
-float CWeaponCSBase::CalculateNextAttackTime( float fCycleTime )
+float CWeaponHL2MPBase::CalculateNextAttackTime( float fCycleTime )
 {
 	float fCurAttack = m_flNextPrimaryAttack;
 	float fDeltaAttack = gpGlobals->curtime - fCurAttack;
@@ -875,9 +876,9 @@ float CWeaponCSBase::CalculateNextAttackTime( float fCycleTime )
 	return fCurAttack;
 }
 
-bool CWeaponCSBase::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CWeaponHL2MPBase::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -890,9 +891,9 @@ bool CWeaponCSBase::Holster( CBaseCombatWeapon *pSwitchingTo )
 	return BaseClass::Holster( pSwitchingTo );
 }
 
-bool CWeaponCSBase::Deploy()
+bool CWeaponHL2MPBase::Deploy()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 #ifdef CLIENT_DLL
 	m_iAlpha =  80;
@@ -921,7 +922,7 @@ bool CWeaponCSBase::Deploy()
 }
 
 #ifndef CLIENT_DLL
-bool CWeaponCSBase::IsRemoveable()
+bool CWeaponHL2MPBase::IsRemoveable()
 {
 	if ( BaseClass::IsRemoveable() == true )
 	{
@@ -935,7 +936,7 @@ bool CWeaponCSBase::IsRemoveable()
 }
 #endif
 
-void CWeaponCSBase::Drop(const Vector &vecVelocity)
+void CWeaponHL2MPBase::Drop(const Vector &vecVelocity)
 {
 
 #ifdef CLIENT_DLL
@@ -964,7 +965,7 @@ void CWeaponCSBase::Drop(const Vector &vecVelocity)
 	m_nextPrevOwnerTouchTime = gpGlobals->curtime + 0.8f;
 	m_prevOwner = GetPlayerOwner();
 
-	SetTouch(&CWeaponCSBase::DefaultTouch);
+	SetTouch(&CWeaponHL2MPBase::DefaultTouch);
 
 	IPhysicsObject *pObj = VPhysicsGetObject();
 	if ( pObj != NULL )
@@ -986,7 +987,7 @@ void CWeaponCSBase::Drop(const Vector &vecVelocity)
 
 // whats going on here is that if the player drops this weapon, they shouldn't take it back themselves
 // for a little while.  But if they throw it at someone else, the other player should get it immediately.
-void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
+void CWeaponHL2MPBase::DefaultTouch(CBaseEntity *pOther)
 {
 	if ((m_prevOwner != NULL) && (pOther == m_prevOwner) && (gpGlobals->curtime < m_nextPrevOwnerTouchTime))
 	{
@@ -1001,7 +1002,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	//-----------------------------------------------------------------------------
 	// Purpose: Draw the weapon's crosshair
 	//-----------------------------------------------------------------------------
-	void CWeaponCSBase::DrawCrosshair()
+	void CWeaponHL2MPBase::DrawCrosshair()
 	{
 		if ( !crosshair.GetInt() )
 			return;
@@ -1283,7 +1284,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 #endif
 	}
 
-	void CWeaponCSBase::OnDataChanged( DataUpdateType_t type )
+	void CWeaponHL2MPBase::OnDataChanged( DataUpdateType_t type )
 	{
 		BaseClass::OnDataChanged( type );
 
@@ -1292,7 +1293,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	}
 
 
-	bool CWeaponCSBase::ShouldPredict()
+	bool CWeaponHL2MPBase::ShouldPredict()
 	{
 		if ( GetOwner() && GetOwner() == C_BasePlayer::GetLocalPlayer() )
 			return true;
@@ -1300,13 +1301,13 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 		return BaseClass::ShouldPredict();
 	}
 
-	void CWeaponCSBase::ProcessMuzzleFlashEvent()
+	void CWeaponHL2MPBase::ProcessMuzzleFlashEvent()
 	{
 		// This is handled from the player's animstate, so it can match up to the beginning of the fire animation
 	}
 
 
-	bool CWeaponCSBase::OnFireEvent( C_BaseViewModel *pViewModel, const Vector& origin, const QAngle& angles, int event, const char *options )
+	bool CWeaponHL2MPBase::OnFireEvent( C_BaseViewModel *pViewModel, const Vector& origin, const QAngle& angles, int event, const char *options )
 	{
 		if( event == 5001 )
 		{
@@ -1345,12 +1346,12 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 		return BaseClass::OnFireEvent( pViewModel, origin, angles, event, options );
 	}
 
-	int CWeaponCSBase::GetMuzzleFlashStyle( void )
+	int CWeaponHL2MPBase::GetMuzzleFlashStyle( void )
 	{
 		return GetCSWpnData().m_iMuzzleFlashStyle;
 	}
 
-	int CWeaponCSBase::GetMuzzleAttachment( void )
+	int CWeaponHL2MPBase::GetMuzzleAttachment( void )
 	{
 		return LookupAttachment( "muzzle_flash" );
 	}
@@ -1360,7 +1361,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	//-----------------------------------------------------------------------------
 	// Purpose: Get the accuracy derived from weapon and player, and return it
 	//-----------------------------------------------------------------------------
-	const Vector& CWeaponCSBase::GetBulletSpread()
+	const Vector& CWeaponHL2MPBase::GetBulletSpread()
 	{
 		static Vector cone = VECTOR_CONE_8DEGREES;
 		return cone;
@@ -1369,7 +1370,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	//-----------------------------------------------------------------------------
 	// Purpose: Match the anim speed to the weapon speed while crouching
 	//-----------------------------------------------------------------------------
-	float CWeaponCSBase::GetDefaultAnimSpeed()
+	float CWeaponHL2MPBase::GetDefaultAnimSpeed()
 	{
 		return 1.0;
 	}
@@ -1377,12 +1378,12 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	//-----------------------------------------------------------------------------
 	// Purpose: Draw the laser rifle effect
 	//-----------------------------------------------------------------------------
-	void CWeaponCSBase::BulletWasFired( const Vector &vecStart, const Vector &vecEnd )
+	void CWeaponHL2MPBase::BulletWasFired( const Vector &vecStart, const Vector &vecEnd )
 	{
 	}
 
 
-	bool CWeaponCSBase::ShouldRemoveOnRoundRestart()
+	bool CWeaponHL2MPBase::ShouldRemoveOnRoundRestart()
 	{
 		if ( GetPlayerOwner() )
 			return false;
@@ -1396,7 +1397,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
     // [dwenger] Handle round restart processing for the weapon.
     //=============================================================================
 
-    void CWeaponCSBase::OnRoundRestart()
+    void CWeaponHL2MPBase::OnRoundRestart()
     {
         // Clear out the list of prior owners
         m_PriorOwners.RemoveAll();
@@ -1407,9 +1408,9 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
     //=============================================================================
 
 	//=========================================================
-	// Materialize - make a CWeaponCSBase visible and tangible
+	// Materialize - make a CWeaponHL2MPBase visible and tangible
 	//=========================================================
-	void CWeaponCSBase::Materialize()
+	void CWeaponHL2MPBase::Materialize()
 	{
 		if ( IsEffectActive( EF_NODRAW ) )
 		{
@@ -1420,7 +1421,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 
 		AddSolidFlags( FSOLID_TRIGGER );
 
-		//SetTouch( &CWeaponCSBase::DefaultTouch );
+		//SetTouch( &CWeaponHL2MPBase::DefaultTouch );
 
 		SetThink( NULL );
 
@@ -1430,7 +1431,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	// AttemptToMaterialize - the item is trying to rematerialize,
 	// should it do so now or wait longer?
 	//=========================================================
-	void CWeaponCSBase::AttemptToMaterialize()
+	void CWeaponHL2MPBase::AttemptToMaterialize()
 	{
 		float time = g_pGameRules->FlWeaponTryRespawn( this );
 
@@ -1447,7 +1448,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	// CheckRespawn - a player is taking this weapon, should
 	// it respawn?
 	//=========================================================
-	void CWeaponCSBase::CheckRespawn()
+	void CWeaponHL2MPBase::CheckRespawn()
 	{
 		//GOOSEMAN : Do not respawn weapons!
 		return;
@@ -1458,7 +1459,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	// Respawn- this item is already in the world, but it is
 	// invisible and intangible. Make it visible and tangible.
 	//=========================================================
-	CBaseEntity* CWeaponCSBase::Respawn()
+	CBaseEntity* CWeaponHL2MPBase::Respawn()
 	{
 		// make a copy of this weapon that is invisible and inaccessible to players (no touch function). The weapon spawn/respawn code
 		// will decide when to make the weapon visible and touchable.
@@ -1468,7 +1469,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 		{
 			pNewWeapon->AddEffects( EF_NODRAW );// invisible for now
 			pNewWeapon->SetTouch( NULL );// no touch
-			pNewWeapon->SetThink( &CWeaponCSBase::AttemptToMaterialize );
+			pNewWeapon->SetThink( &CWeaponHL2MPBase::AttemptToMaterialize );
 
 			UTIL_DropToFloor( this, MASK_SOLID );
 
@@ -1487,7 +1488,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 	//-----------------------------------------------------------------------------
 	// Purpose:
 	//-----------------------------------------------------------------------------
-	void CWeaponCSBase::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+	void CWeaponHL2MPBase::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
 	{
 		CBasePlayer *pPlayer = ToBasePlayer( pActivator );
 		
@@ -1497,9 +1498,9 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 		}
 	}
 
-	bool CWeaponCSBase::Reload()
+	bool CWeaponHL2MPBase::Reload()
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return false;
 
@@ -1510,7 +1511,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 		return retval;
 	}
 
-	void CWeaponCSBase::Spawn()
+	void CWeaponHL2MPBase::Spawn()
 	{
 		BaseClass::Spawn();
 
@@ -1542,7 +1543,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
         //=============================================================================
 	}
 
-	bool CWeaponCSBase::DefaultReload( int iClipSize1, int iClipSize2, int iActivity )
+	bool CWeaponHL2MPBase::DefaultReload( int iClipSize1, int iClipSize2, int iActivity )
 	{
 		if ( BaseClass::DefaultReload( iClipSize1, iClipSize2, iActivity ) )
 		{
@@ -1555,7 +1556,7 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 		}
 	}
 
-	void CWeaponCSBase::SendReloadEvents()
+	void CWeaponHL2MPBase::SendReloadEvents()
 	{
 		CHL2MP_Player *pPlayer = dynamic_cast< CHL2MP_Player* >( GetOwner() );
 		if ( !pPlayer )
@@ -1576,9 +1577,9 @@ void CWeaponCSBase::DefaultTouch(CBaseEntity *pOther)
 #endif
 
 
-bool CWeaponCSBase::DefaultPistolReload()
+bool CWeaponHL2MPBase::DefaultPistolReload()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -1593,9 +1594,9 @@ bool CWeaponCSBase::DefaultPistolReload()
 	return true;
 }
 
-bool CWeaponCSBase::IsUseable()
+bool CWeaponHL2MPBase::IsUseable()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -1625,7 +1626,7 @@ bool CWeaponCSBase::IsUseable()
 	// Purpose:
 	// Output : float
 	//-----------------------------------------------------------------------------
-	float CWeaponCSBase::CalcViewmodelBob( void )
+	float CWeaponHL2MPBase::CalcViewmodelBob( void )
 	{
 		static	float bobtime;
 		static	float lastbobtime;
@@ -1713,7 +1714,7 @@ bool CWeaponCSBase::IsUseable()
 	//			&angles -
 	//			viewmodelindex -
 	//-----------------------------------------------------------------------------
-	void CWeaponCSBase::AddViewmodelBob( CBaseViewModel *viewmodel, Vector &origin, QAngle &angles )
+	void CWeaponHL2MPBase::AddViewmodelBob( CBaseViewModel *viewmodel, Vector &origin, QAngle &angles )
 	{
 		Vector	forward, right;
 		AngleVectors( angles, &forward, &right, NULL );
@@ -1737,21 +1738,21 @@ bool CWeaponCSBase::IsUseable()
 
 #else
 
-	void CWeaponCSBase::AddViewmodelBob( CBaseViewModel *viewmodel, Vector &origin, QAngle &angles )
+	void CWeaponHL2MPBase::AddViewmodelBob( CBaseViewModel *viewmodel, Vector &origin, QAngle &angles )
 	{
 
 	}
 
-	float CWeaponCSBase::CalcViewmodelBob( void )
+	float CWeaponHL2MPBase::CalcViewmodelBob( void )
 	{
 		return 0.0f;
 	}
 
 #endif
-*/
+
 
 #ifndef CLIENT_DLL
-bool CWeaponCSBase::PhysicsSplash( const Vector &centerPoint, const Vector &normal, float rawSpeed, float scaledSpeed )
+bool CWeaponHL2MPBase::PhysicsSplash( const Vector &centerPoint, const Vector &normal, float rawSpeed, float scaledSpeed )
 {
 	if ( rawSpeed > 20 )
 	{
@@ -1786,7 +1787,7 @@ bool CWeaponCSBase::PhysicsSplash( const Vector &centerPoint, const Vector &norm
 // Purpose:
 // Input  : *pPicker -
 //-----------------------------------------------------------------------------
-void CWeaponCSBase::OnPickedUp( CBaseCombatCharacter *pNewOwner )
+void CWeaponHL2MPBase::OnPickedUp( CBaseCombatCharacter *pNewOwner )
 {
 #if !defined( CLIENT_DLL )
 	RemoveEffects( EF_ITEM_BLINK );
@@ -1822,9 +1823,9 @@ void CWeaponCSBase::OnPickedUp( CBaseCombatCharacter *pNewOwner )
 }
 
 
-void CWeaponCSBase::UpdateAccuracyPenalty()
+void CWeaponHL2MPBase::UpdateAccuracyPenalty()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -1889,12 +1890,12 @@ void CWeaponCSBase::UpdateAccuracyPenalty()
 
 const float kJumpVelocity = sqrtf(2.0f * 800.0f * 57.0f);	// see CCSGameMovement::CheckJumpButton()
 
-void CWeaponCSBase::OnJump( float fImpulse )
+void CWeaponHL2MPBase::OnJump( float fImpulse )
 {
 	m_fAccuracyPenalty += GetCSWpnData().m_fInaccuracyJump[m_weaponMode] * fImpulse / kJumpVelocity;
 }
 
-void CWeaponCSBase::OnLand( float fVelocity )
+void CWeaponHL2MPBase::OnLand( float fVelocity )
 {
 	float fPenalty = GetCSWpnData().m_fInaccuracyLand[m_weaponMode] * fVelocity / kJumpVelocity;
 	m_fAccuracyPenalty += fPenalty;
@@ -1902,7 +1903,7 @@ void CWeaponCSBase::OnLand( float fVelocity )
 /*
 	// this bit of code is only if we want to punch the player view on all landings
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -1913,5 +1914,6 @@ void CWeaponCSBase::OnLand( float fVelocity )
 	angle.x += fVKick;	// pitch
 	angle.y += fHKick;	// yaw
 	pPlayer->SetPunchAngle( angle );
-*/
+
 }
+*/

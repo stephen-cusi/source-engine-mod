@@ -11,7 +11,7 @@
 #endif
 
 
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 
 
 // This is the base class for pistols and rifles.
@@ -23,11 +23,11 @@
 #endif
 
 
-class CWeaponCSBaseGun : public CWeaponCSBase
+class CWeaponCSBaseGun : public CWeaponHL2MPBase
 {
 public:
 	
-	DECLARE_CLASS( CWeaponCSBaseGun, CWeaponCSBase );
+	DECLARE_CLASS( CWeaponCSBaseGun, CWeaponHL2MPBase );
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 	

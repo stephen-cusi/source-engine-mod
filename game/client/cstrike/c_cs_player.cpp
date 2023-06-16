@@ -1034,7 +1034,7 @@ int C_HL2MP_Player::GetIDTarget() const
 }
 
 
-void InitializeAddonModelFromWeapon( CWeaponCSBase *weapon, C_BreakableProp *addon )
+void InitializeAddonModelFromWeapon( CWeaponHL2MPBase *weapon, C_BreakableProp *addon )
 {
 	if ( !weapon )
 	{
@@ -1559,19 +1559,19 @@ bool C_HL2MP_Player::IsInHostageRescueZone()
 	return 	m_bInHostageRescueZone;
 }
 
-CWeaponCSBase* C_HL2MP_Player::GetActiveCSWeapon() const
+CWeaponHL2MPBase* C_HL2MP_Player::GetActiveCSWeapon() const
 {
-	return dynamic_cast< CWeaponCSBase* >( GetActiveWeapon() );
+	return dynamic_cast< CWeaponHL2MPBase* >( GetActiveWeapon() );
 }
 
-CWeaponCSBase* C_HL2MP_Player::GetCSWeapon( CSWeaponID id ) const
+CWeaponHL2MPBase* C_HL2MP_Player::GetCSWeapon( CSWeaponID id ) const
 {
 	for (int i=0;i<MAX_WEAPONS;i++)
 	{
 		CBaseCombatWeapon *weapon = GetWeapon( i );
 		if ( weapon )
 		{
-			CWeaponCSBase *csWeapon = dynamic_cast< CWeaponCSBase * >( weapon );
+			CWeaponHL2MPBase *csWeapon = dynamic_cast< CWeaponHL2MPBase * >( weapon );
 			if ( csWeapon )
 			{
 				if ( id == csWeapon->GetWeaponID() )
@@ -1654,7 +1654,7 @@ void C_HL2MP_Player::SetFireAnimation( PLAYER_ANIM playerAnim )
 		break;
 	}
 
-	CWeaponCSBase *pWeapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *pWeapon = GetActiveCSWeapon();
 
 	if ( pWeapon )
 	{
@@ -1758,7 +1758,7 @@ void C_HL2MP_Player::ProcessMuzzleFlashEvent()
 			return;
 	}
 
-	CWeaponCSBase *pWeapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *pWeapon = GetActiveCSWeapon();
 
 	if ( !pWeapon )
 		return;
@@ -2064,7 +2064,7 @@ void C_HL2MP_Player::PlayReloadEffect()
 	}
 
 	// Get the view model for our current gun.
-	CWeaponCSBase *pWeapon = GetActiveCSWeapon();
+	CWeaponHL2MPBase *pWeapon = GetActiveCSWeapon();
 	if ( !pWeapon )
 		return;
 

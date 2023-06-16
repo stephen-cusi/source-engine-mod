@@ -9,7 +9,7 @@
 #include "cbase.h"
 #include "items.h"
 #include "hl2mp_player.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "cs_ammodef.h"
 
 

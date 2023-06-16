@@ -300,7 +300,7 @@ void AttackState::OnUpdate( CCSBot *me )
 	me->ResetStuckMonitor();
 
 	// if we somehow ended up with the C4 or a grenade in our hands, grab our weapon!
-	CWeaponCSBase *weapon = me->GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = me->GetActiveCSWeapon();
 	if (weapon)
 	{
 		if (weapon->GetWeaponID() == WEAPON_C4 || 

@@ -92,7 +92,7 @@ float CWeaponMAC10::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 
@@ -107,7 +107,7 @@ float CWeaponMAC10::GetInaccuracy() const
 
 void CWeaponMAC10::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -115,7 +115,7 @@ void CWeaponMAC10::PrimaryAttack()
 		return;
 
 	// CSBaseGunFire can kill us, forcing us to drop our weapon, if we shoot something that explodes
-	pPlayer = GetPlayerOwner();
+	pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 

@@ -21,7 +21,7 @@
 #include "cs_gamestate.h"
 #include "cs_nav_pathfind.h"
 #include "cs_nav_area.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 
 class CBaseDoor;
 class CBasePropDoor;
@@ -812,7 +812,7 @@ public:
 	bool IsAvoidingGrenade( void ) const;							///< return true if we are in the act of avoiding a grenade
 	bool DoesActiveWeaponHaveSilencer( void ) const;				///< returns true if we are using a weapon with a removable silencer
 	bool CanActiveWeaponFire( void ) const;							///< returns true if our current weapon can attack
-	CWeaponCSBase *GetActiveCSWeapon( void ) const;					///< get our current Counter-Strike weapon
+	CWeaponHL2MPBase *GetActiveCSWeapon( void ) const;					///< get our current Counter-Strike weapon
 
 	void GiveWeapon( const char *weaponAlias );						///< Debug command to give a named weapon
 
@@ -1200,7 +1200,7 @@ private:
 	bool m_isRapidFiring;											///< if true, RunUpkeep() will toggle our primary attack as fast as it can
 	IntervalTimer m_equipTimer;										///< how long have we had our current weapon equipped
 	CountdownTimer m_zoomTimer;										///< for delaying firing immediately after zoom
-	bool DoEquip( CWeaponCSBase *gun );								///< equip the given item
+	bool DoEquip( CWeaponHL2MPBase *gun );								///< equip the given item
 
 	void ReloadCheck( void );										///< reload our weapon if we must
 	void SilencerCheck( void );										///< use silencer
@@ -1317,9 +1317,9 @@ inline bool CCSBot::IsNotMoving( float minDuration ) const
 	return (m_stillTimer.HasStarted() && m_stillTimer.GetElapsedTime() >= minDuration);
 }
 
-inline CWeaponCSBase *CCSBot::GetActiveCSWeapon( void ) const
+inline CWeaponHL2MPBase *CCSBot::GetActiveCSWeapon( void ) const
 {
-	return reinterpret_cast<CWeaponCSBase *>( GetActiveWeapon() );
+	return reinterpret_cast<CWeaponHL2MPBase *>( GetActiveWeapon() );
 }
 
 
@@ -1821,7 +1821,7 @@ inline bool CCSBot::IsOpeningDoor( void ) const
 /**
  * Return true if the given weapon is a sniper rifle
  */
-inline bool IsSniperRifle( CWeaponCSBase *weapon )
+inline bool IsSniperRifle( CWeaponHL2MPBase *weapon )
 {
 	if (weapon == NULL)
 		return false;

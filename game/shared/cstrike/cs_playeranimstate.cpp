@@ -9,7 +9,7 @@
 #include "base_playeranimstate.h"
 #include "tier0/vprof.h"
 #include "animation.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "studio.h"
 #include "apparent_velocity_helper.h"
 #include "utldict.h"
@@ -451,7 +451,7 @@ void CCSPlayerAnimState::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
 	case PLAYERANIMEVENT_RELOAD:
 		{
 			// ignore normal reload events for shotguns - they get sent to trigger sounds etc only
-			CWeaponCSBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
+			CWeaponHL2MPBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
 			if ( pWeapon && pWeapon->GetCSWpnData().m_WeaponType != WEAPONTYPE_SHOTGUN )
 			{
 				m_iReloadSequence = CalcReloadLayerSequence( event );
@@ -476,7 +476,7 @@ void CCSPlayerAnimState::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
 	case PLAYERANIMEVENT_RELOAD_END:
 		{
 			// ignore shotgun reload events for non-shotguns
-			CWeaponCSBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
+			CWeaponHL2MPBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
 			if ( pWeapon && pWeapon->GetCSWpnData().m_WeaponType != WEAPONTYPE_SHOTGUN )
 			{
 				m_flReloadHoldEndTime = 0.0f;  // clear this out in case we set it in _START or _LOOP above
@@ -534,7 +534,7 @@ int CCSPlayerAnimState::CalcReloadLayerSequence( PlayerAnimEvent_t event )
 	if ( !weaponSuffix )
 		return -1;
 
-	CWeaponCSBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
+	CWeaponHL2MPBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
 	if ( !pWeapon )
 		return -1;
 
@@ -819,7 +819,7 @@ const char* CCSPlayerAnimState::GetWeaponSuffix()
 	VPROF( "CCSPlayerAnimState::GetWeaponSuffix" );
 
 	// Figure out the weapon suffix.
-	CWeaponCSBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
+	CWeaponHL2MPBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
 	if ( !pWeapon )
 		return 0;
 
@@ -842,7 +842,7 @@ const char* CCSPlayerAnimState::GetWeaponSuffix()
 int CCSPlayerAnimState::CalcFireLayerSequence(PlayerAnimEvent_t event)
 {
 	// Figure out the weapon suffix.
-	CWeaponCSBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
+	CWeaponHL2MPBase *pWeapon = m_pHelpers->CSAnim_GetActiveWeapon();
 	if ( !pWeapon )
 		return -1;
 
@@ -910,7 +910,7 @@ float CCSPlayerAnimState::GetCurrentMaxGroundSpeed()
 			CBaseCombatWeapon *activeWeapon = m_pPlayer->GetActiveWeapon();
 			if ( activeWeapon )
 			{
-				CWeaponCSBase *csWeapon = dynamic_cast< CWeaponCSBase * >( activeWeapon );
+				CWeaponHL2MPBase *csWeapon = dynamic_cast< CWeaponHL2MPBase * >( activeWeapon );
 				if ( csWeapon )
 				{
 					return csWeapon->GetMaxSpeed();

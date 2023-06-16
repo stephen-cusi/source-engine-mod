@@ -80,7 +80,7 @@ void CWeaponSG550::SecondaryAttack()
 {
 	const float kZoomTime = 0.10f;
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -135,7 +135,7 @@ float CWeaponSG550::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -162,7 +162,7 @@ float CWeaponSG550::GetInaccuracy() const
 
 void CWeaponSG550::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -205,7 +205,7 @@ bool CWeaponSG550::Deploy()
 
 float CWeaponSG550::GetMaxSpeed() const
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if ( !pPlayer || pPlayer->GetFOV() == 90 )
 		return BaseClass::GetMaxSpeed();

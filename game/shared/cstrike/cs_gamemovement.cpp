@@ -10,7 +10,7 @@
 #include "cs_gamerules.h"
 #include "in_buttons.h"
 #include "movevars_shared.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 
 #ifdef CLIENT_DLL
 	#include "c_hl2mp_player.h"

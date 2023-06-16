@@ -1022,7 +1022,7 @@ bool ClientModeCSNormal::ShouldDrawViewModel( void )
 	
 	if( pPlayer && pPlayer->GetFOV() != CSGameRules()->DefaultFOV() )
 	{
-		CWeaponCSBase *pWpn = pPlayer->GetActiveCSWeapon();
+		CWeaponHL2MPBase *pWpn = pPlayer->GetActiveCSWeapon();
 
 		if( pWpn && pWpn->HideViewModelWhenZoomed() )
 		{

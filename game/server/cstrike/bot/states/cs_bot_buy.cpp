@@ -63,7 +63,7 @@ void CCSBot::GiveWeapon( const char *weaponAlias )
 //--------------------------------------------------------------------------------------------------------------
 static bool HasDefaultPistol( CCSBot *me )
 {
-	CWeaponCSBase *pistol = (CWeaponCSBase *)me->Weapon_GetSlot( WEAPON_SLOT_PISTOL );
+	CWeaponHL2MPBase *pistol = (CWeaponHL2MPBase *)me->Weapon_GetSlot( WEAPON_SLOT_PISTOL );
 
 	if (pistol == NULL)
 		return false;

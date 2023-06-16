@@ -14,7 +14,7 @@
 #include "igamemovement.h"
 #include "ai_hull.h"
 #include "ndebugoverlay.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "decals.h"
 #include "cs_ammodef.h"
 #include "IEffects.h"
@@ -1461,7 +1461,7 @@ void CHL2MP_Player::UpdateAddonBits()
 	if ( HasDefuser() )
 		iNewBits |= ADDON_DEFUSEKIT;
 
-	CWeaponCSBase *weapon = dynamic_cast< CWeaponCSBase * >(Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
+	CWeaponHL2MPBase *weapon = dynamic_cast< CWeaponHL2MPBase * >(Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
 	if ( weapon && weapon != GetActiveWeapon() )
 	{
 		iNewBits |= ADDON_PRIMARY;
@@ -1472,7 +1472,7 @@ void CHL2MP_Player::UpdateAddonBits()
 		m_iPrimaryAddon = WEAPON_NONE;
 	}
 
-	weapon = dynamic_cast< CWeaponCSBase * >(Weapon_GetSlot( WEAPON_SLOT_PISTOL ));
+	weapon = dynamic_cast< CWeaponHL2MPBase * >(Weapon_GetSlot( WEAPON_SLOT_PISTOL ));
 	if ( weapon && weapon != GetActiveWeapon() )
 	{
 		iNewBits |= ADDON_PISTOL;
@@ -1726,7 +1726,7 @@ bool CHL2MP_Player::ShouldDoLargeFlinch( int nHitGroup, CBaseEntity *pAttacker )
 
 	if ( pPlayer )
 	{
-		CWeaponCSBase *pWeapon = pPlayer->GetActiveCSWeapon();
+		CWeaponHL2MPBase *pWeapon = pPlayer->GetActiveCSWeapon();
 
 		if ( pWeapon )
 		{
@@ -1956,7 +1956,7 @@ int CHL2MP_Player::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 			}
 			else
 			{
-				CWeaponCSBase *pWeapon = pPlayer->GetActiveCSWeapon();
+				CWeaponHL2MPBase *pWeapon = pPlayer->GetActiveCSWeapon();
 
 				if ( pWeapon )
 				{
@@ -2700,9 +2700,9 @@ void CHL2MP_Player::CheckTKPunishment( void )
 	}
 }
 
-CWeaponCSBase* CHL2MP_Player::GetActiveCSWeapon() const
+CWeaponHL2MPBase* CHL2MP_Player::GetActiveCSWeapon() const
 {
-	return dynamic_cast< CWeaponCSBase* >( GetActiveWeapon() );
+	return dynamic_cast< CWeaponHL2MPBase* >( GetActiveWeapon() );
 }
 
 void CHL2MP_Player::PreThink()
@@ -2911,7 +2911,7 @@ bool CHL2MP_Player::CSWeaponDrop( CBaseCombatWeapon *pWeapon, bool bDropShield, 
 		pWeapon->SetSolidFlags( FSOLID_NOT_STANDABLE | FSOLID_TRIGGER | FSOLID_USE_TRIGGER_BOUNDS );
 		pWeapon->SetMoveCollide( MOVECOLLIDE_FLY_BOUNCE );
 
-		CWeaponCSBase *pCSWeapon = dynamic_cast< CWeaponCSBase* >( pWeapon );
+		CWeaponHL2MPBase *pCSWeapon = dynamic_cast< CWeaponHL2MPBase* >( pWeapon );
 
 		if( pCSWeapon )
 		{
@@ -3316,7 +3316,7 @@ BuyResult_e CHL2MP_Player::AttemptToBuyShield( void )
 		if ( HasSecondaryWeapon() )
 		{
 			CBaseCombatWeapon *pWeapon = Weapon_GetSlot( WEAPON_SLOT_PISTOL );
-			CWeaponCSBase *pCSWeapon = dynamic_cast< CWeaponCSBase* >( pWeapon );
+			CWeaponHL2MPBase *pCSWeapon = dynamic_cast< CWeaponHL2MPBase* >( pWeapon );
 
 			if ( pCSWeapon && pCSWeapon->GetCSWpnData().m_bCanUseWithShield == false )
 				 return;
@@ -4190,7 +4190,7 @@ bool CHL2MP_Player::WantsLagCompensationOnEntity( const CBasePlayer *pPlayer, co
 		if ( ( pCmd->buttons & IN_ATTACK2 ) == 0 )
 			return false;
 
-		CWeaponCSBase *weapon = GetActiveCSWeapon();
+		CWeaponHL2MPBase *weapon = GetActiveCSWeapon();
 		if ( !weapon )
 			return false;
 
@@ -4493,7 +4493,7 @@ bool CHL2MP_Player::ClientCommand( const CCommand &args )
 	}
 	else if ( FStrEq( pcmd, "drop" ) )
 	{
-		CWeaponCSBase *pWeapon = dynamic_cast< CWeaponCSBase* >( GetActiveWeapon() );
+		CWeaponHL2MPBase *pWeapon = dynamic_cast< CWeaponHL2MPBase* >( GetActiveWeapon() );
 
 		if( pWeapon )
 		{
@@ -5578,7 +5578,7 @@ void CHL2MP_Player::State_PreThink_ACTIVE()
 
 void CHL2MP_Player::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 {
-	CWeaponCSBase *pCSWeapon = dynamic_cast< CWeaponCSBase* >( pWeapon );
+	CWeaponHL2MPBase *pCSWeapon = dynamic_cast< CWeaponHL2MPBase* >( pWeapon );
 	if ( pCSWeapon )
 	{
 		// For rifles, pistols, or the knife, drop our old weapon in this slot.
@@ -5612,7 +5612,7 @@ void CHL2MP_Player::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 
 bool CHL2MP_Player::Weapon_CanUse( CBaseCombatWeapon *pBaseWeapon )
 {
-	CWeaponCSBase *pWeapon = dynamic_cast< CWeaponCSBase* >( pBaseWeapon );
+	CWeaponHL2MPBase *pWeapon = dynamic_cast< CWeaponHL2MPBase* >( pBaseWeapon );
 
 	if ( pWeapon )
 	{
@@ -5628,7 +5628,7 @@ bool CHL2MP_Player::Weapon_CanUse( CBaseCombatWeapon *pBaseWeapon )
 
 bool CHL2MP_Player::BumpWeapon( CBaseCombatWeapon *pBaseWeapon )
 {
-	CWeaponCSBase *pWeapon = dynamic_cast< CWeaponCSBase* >( pBaseWeapon );
+	CWeaponHL2MPBase *pWeapon = dynamic_cast< CWeaponHL2MPBase* >( pBaseWeapon );
 	if ( !pWeapon )
 	{
 		Assert( !pWeapon );
@@ -6569,7 +6569,7 @@ BuyResult_e CHL2MP_Player::RebuyArmor()
 
 bool CHL2MP_Player::IsUseableEntity( CBaseEntity *pEntity, unsigned int requiredCaps )
 {
-	CWeaponCSBase *pCSWepaon = dynamic_cast<CWeaponCSBase*>(pEntity);
+	CWeaponHL2MPBase *pCSWepaon = dynamic_cast<CWeaponHL2MPBase*>(pEntity);
 
 	if( pCSWepaon )
 	{
@@ -6631,7 +6631,7 @@ CBaseEntity *CHL2MP_Player::FindUseEntity()
 
 void CHL2MP_Player::StockPlayerAmmo( CBaseCombatWeapon *pNewWeapon )
 {
-	CWeaponCSBase *pWeapon =  dynamic_cast< CWeaponCSBase * >( pNewWeapon );
+	CWeaponHL2MPBase *pWeapon =  dynamic_cast< CWeaponHL2MPBase * >( pNewWeapon );
 
 	if ( pWeapon )
 	{
@@ -6649,7 +6649,7 @@ void CHL2MP_Player::StockPlayerAmmo( CBaseCombatWeapon *pNewWeapon )
 		return;
 	}
 
-	pWeapon = dynamic_cast< CWeaponCSBase * >(Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
+	pWeapon = dynamic_cast< CWeaponHL2MPBase * >(Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
 
 	if ( pWeapon )
 	{
@@ -6662,7 +6662,7 @@ void CHL2MP_Player::StockPlayerAmmo( CBaseCombatWeapon *pNewWeapon )
 		}
 	}
 
-	pWeapon = dynamic_cast< CWeaponCSBase * >(Weapon_GetSlot( WEAPON_SLOT_PISTOL ));
+	pWeapon = dynamic_cast< CWeaponHL2MPBase * >(Weapon_GetSlot( WEAPON_SLOT_PISTOL ));
 
 	if ( pWeapon )
 	{
@@ -7465,12 +7465,12 @@ void CHL2MP_Player::ResetRoundBasedAchievementVariables()
 
 
 	//Clear the previous owner field for currently held weapons
-	CWeaponCSBase* pWeapon = dynamic_cast< CWeaponCSBase * >(Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
+	CWeaponHL2MPBase* pWeapon = dynamic_cast< CWeaponHL2MPBase * >(Weapon_GetSlot( WEAPON_SLOT_RIFLE ));
 	if ( pWeapon )
 	{
 		pWeapon->SetPreviousOwner(NULL);
 	}
-	pWeapon = dynamic_cast< CWeaponCSBase * >(Weapon_GetSlot( WEAPON_SLOT_PISTOL));
+	pWeapon = dynamic_cast< CWeaponHL2MPBase * >(Weapon_GetSlot( WEAPON_SLOT_PISTOL));
 	if ( pWeapon )
 	{
 		pWeapon->SetPreviousOwner(NULL);
@@ -7541,7 +7541,7 @@ CSWeaponID CHL2MP_Player::GetWeaponIdCausingDamange( const CTakeDamageInfo &info
 	CHL2MP_Player *pAttacker = ToCSPlayer(info.GetAttacker());
 	if (pAttacker == pInflictor)
 	{
-		CWeaponCSBase* pAttackerWeapon = dynamic_cast< CWeaponCSBase * >(pAttacker->GetActiveWeapon());
+		CWeaponHL2MPBase* pAttackerWeapon = dynamic_cast< CWeaponHL2MPBase * >(pAttacker->GetActiveWeapon());
 		if (!pAttackerWeapon)
 			return WEAPON_NONE;
 
@@ -7563,7 +7563,7 @@ void CHL2MP_Player::PlayerUsedFirearm( CBaseCombatWeapon* pBaseWeapon )
 {
 	if ( pBaseWeapon )
 	{
-		CWeaponCSBase* pWeapon = dynamic_cast< CWeaponCSBase* >( pBaseWeapon );
+		CWeaponHL2MPBase* pWeapon = dynamic_cast< CWeaponHL2MPBase* >( pBaseWeapon );
 
 		if ( pWeapon )
 		{
@@ -7602,14 +7602,14 @@ void CHL2MP_Player::ProcessPlayerDeathAchievements( CHL2MP_Player *pAttacker, CH
 	if ( pAttacker != NULL && pVictim != NULL && pVictim->GetTeamNumber() != pAttacker->GetTeamNumber() )
 	{
 		// get the weapon used - some of the achievements will need this data
-		CWeaponCSBase* pAttackerWeapon = dynamic_cast< CWeaponCSBase * >(pAttacker->GetActiveWeapon());
+		CWeaponHL2MPBase* pAttackerWeapon = dynamic_cast< CWeaponHL2MPBase * >(pAttacker->GetActiveWeapon());
 
 		//=============================================================================
 		// HPE_BEGIN:
 		// [dwenger] Fun-fact processing
 		//=============================================================================
 
-		CWeaponCSBase* pVictimWeapon = dynamic_cast< CWeaponCSBase* >(pVictim->GetActiveWeapon());
+		CWeaponHL2MPBase* pVictimWeapon = dynamic_cast< CWeaponHL2MPBase* >(pVictim->GetActiveWeapon());
 
 		//=============================================================================
 		// HPE_END
@@ -7822,7 +7822,7 @@ void CHL2MP_Player::ProcessPlayerDeathAchievements( CHL2MP_Player *pAttacker, CH
 		}
 
 		//[tj] Check for dual elites fight
-		CWeaponCSBase* victimWeapon = pVictim->GetActiveCSWeapon();
+		CWeaponHL2MPBase* victimWeapon = pVictim->GetActiveCSWeapon();
 
 		if (victimWeapon)
 		{

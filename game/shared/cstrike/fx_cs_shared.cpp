@@ -6,7 +6,7 @@
 
 #include "cbase.h"
 #include "fx_cs_shared.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 
 #ifndef CLIENT_DLL
 	#include "ilagcompensationmanager.h"

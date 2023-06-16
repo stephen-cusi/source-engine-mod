@@ -101,7 +101,7 @@ LINK_ENTITY_TO_CLASS( weapon_sdk_base, CWeaponSDKBase );
 #endif
 
 // ----------------------------------------------------------------------------- //
-// CWeaponCSBase implementation. 
+// CWeaponHL2MPBase implementation. 
 // ----------------------------------------------------------------------------- //
 CWeaponSDKBase::CWeaponSDKBase()
 {

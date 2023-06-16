@@ -109,7 +109,7 @@ public:
 
 // ICSPlayerAnimState overrides.
 public:
-	virtual CWeaponCSBase* CSAnim_GetActiveWeapon();
+	virtual CWeaponHL2MPBase* CSAnim_GetActiveWeapon();
 	virtual bool CSAnim_CanMove();
 
 

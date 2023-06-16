@@ -5,7 +5,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "gamerules.h"
 #include "npcevent.h"
 #include "engine/IEngineSound.h"
@@ -86,7 +86,7 @@ bool CBaseCSGrenade::Deploy()
 
 #ifndef CLIENT_DLL
 	// if we're officially out of grenades, ditch this weapon
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -114,7 +114,7 @@ bool CBaseCSGrenade::Holster( CBaseCombatWeapon *pSwitchingTo )
 #ifndef CLIENT_DLL
 	// If they attempt to switch weapons before the throw animation is done, 
 	// allow it, but kill the weapon if we have to.
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 
@@ -137,7 +137,7 @@ void CBaseCSGrenade::PrimaryAttack()
 	if ( m_bRedraw || m_bPinPulled || m_fThrowTime > 0.0f )
 		return;
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer || pPlayer->GetAmmoCount( m_iPrimaryAmmoType ) <= 0 )
 		return;
 
@@ -161,7 +161,7 @@ void CBaseCSGrenade::SecondaryAttack()
 	if ( m_bRedraw )
 		return;
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	
 	if ( pPlayer == NULL )
 		return;
@@ -213,7 +213,7 @@ bool CBaseCSGrenade::Reload()
 //-----------------------------------------------------------------------------
 void CBaseCSGrenade::ItemPostFrame()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 

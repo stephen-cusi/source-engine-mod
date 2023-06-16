@@ -18,12 +18,13 @@ class CHL2MP_Player;
 #include "hl2mp_player_shared.h"
 #include "hl2mp_gamerules.h"
 #include "utldict.h"
-#include "weapon_portalbase.h"
 #include "prop_portal.h"
 #include "func_liquidportal.h"
 #include "cs_shareddefs.h"
 #include "basehlcombatweapon_shared.h"
 #include "cs_autobuy.h"
+#include "cs_weapon_parse.h"
+#include "cs_playeranimstate.h"
 struct PortalPlayerStatistics_t
 {
 	int iNumPortalsPlaced;
@@ -334,7 +335,7 @@ public:
 
 	void SetStuckOnPortalCollisionObject(void) { m_bStuckOnPortalCollisionObject = true; }
 
-	CWeaponPortalBase* GetActivePortalWeapon() const;
+	CWeaponHL2MPBase* GetActivePortalWeapon() const;
 
 	void IncrementPortalsPlaced(void);
 	void IncrementStepsTaken(void);
@@ -404,7 +405,7 @@ public:
 	int  m_iNumFollowers;       // Number of hostages following this player
 	bool m_bSurvivedHeadshotDueToHelmet;
 
-	CBaseHLCombatWeapon* GetActiveCSWeapon() const;
+	CWeaponHL2MPBase* GetActiveCSWeapon() const;
 
 	void AddAccount(int amount, bool bTrackChange = true, bool bItemBought = false, const char* pItemName = NULL);
 

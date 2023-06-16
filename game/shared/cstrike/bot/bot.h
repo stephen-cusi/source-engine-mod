@@ -24,7 +24,7 @@
 #include "bot_constants.h"
 #include "nav_mesh.h"
 #include "gameinterface.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "shared_util.h"
 #include "util.h"
 #include "shareddefs.h"
@@ -678,7 +678,7 @@ inline void CBot< PlayerType >::Reload( void )
 template < class PlayerType >
 inline float CBot< PlayerType >::GetActiveWeaponAmmoRatio( void ) const
 {
-	CWeaponCSBase *weapon = this->GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = dynamic_cast<CWeaponHL2MPBase*>(this->GetActiveWeapon());
 
 	if (weapon == NULL)
 		return 0.0f;
@@ -697,7 +697,7 @@ inline float CBot< PlayerType >::GetActiveWeaponAmmoRatio( void ) const
 template < class PlayerType >
 inline bool CBot< PlayerType >::IsActiveWeaponClipEmpty( void ) const
 {
-	CWeaponCSBase *gun = this->GetActiveCSWeapon();
+	CWeaponHL2MPBase *gun = dynamic_cast<CWeaponHL2MPBase*>(this->GetActiveWeapon());
 
 	if (gun && gun->Clip1() == 0)
 		return true;
@@ -712,7 +712,8 @@ inline bool CBot< PlayerType >::IsActiveWeaponClipEmpty( void ) const
 template < class PlayerType >
 inline bool CBot< PlayerType >::IsActiveWeaponOutOfAmmo( void ) const
 {
-	CWeaponCSBase *weapon = this->GetActiveCSWeapon();
+	CWeaponHL2MPBase *weapon = dynamic_cast<CWeaponHL2MPBase*>(this->GetActiveWeapon());
+	
 
 	if (weapon == NULL)
 		return true;

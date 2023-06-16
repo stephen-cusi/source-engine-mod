@@ -10,14 +10,17 @@
 #pragma once
 
 class C_HL2MP_Player;
+class C_WeaponHL2MPBase;
 #include "c_basehlplayer.h"
 #include "hl2mp_player_shared.h"
 #include "beamdraw.h"
 #include "c_prop_portal.h"
 #include "c_func_liquidportal.h"
 #include "cs_shareddefs.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "baseparticleentity.h"
+#include "cs_weapon_parse.h"
+#include "cs_playeranimstate.h"
 
 
 
@@ -185,8 +188,8 @@ public:
 
 	EHANDLE	m_hRagdoll;
 
-	CWeaponCSBase* GetActiveCSWeapon() const;
-	CWeaponCSBase* GetCSWeapon(CSWeaponID id) const;
+	C_WeaponHL2MPBase* GetActiveCSWeapon() const;
+	C_WeaponHL2MPBase* GetCSWeapon(CSWeaponID id) const;
 
 #ifdef CS_SHIELD_ENABLED
 	bool HasShield(void) { return m_bHasShield; }

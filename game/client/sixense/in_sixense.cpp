@@ -14,7 +14,7 @@
 #include "sixense/sixense_convars_extern.h"
 
 #if !defined( HL2_CLIENT_DLL) && !defined( TF_CLIENT_DLL )
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #endif
 
 #if defined( HL2_CLIENT_DLL )
@@ -1792,7 +1792,7 @@ void SixenseInput::CheckWeaponForScope()
 		if( pWeapon )
 		{
 
-			CWeaponCSBase *pCSWeapon = dynamic_cast< CWeaponCSBase * >( pWeapon );
+			CWeaponHL2MPBase *pCSWeapon = dynamic_cast< CWeaponHL2MPBase * >( pWeapon );
 
 			if( pCSWeapon )
 			{

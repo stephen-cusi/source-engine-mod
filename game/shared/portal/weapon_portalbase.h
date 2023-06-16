@@ -11,6 +11,7 @@
 #endif
 
 #include "basecombatweapon_shared.h"
+#include "../hl2mp/weapon_hl2mpbase.h"
 #include "cs_weapon_parse.h"
 
 #if defined( CLIENT_DLL )
@@ -60,10 +61,11 @@ typedef enum
 
 } PortalWeaponID;*/
 
-class CWeaponPortalBase : public CBaseCombatWeapon
+
+class CWeaponPortalBase : public CWeaponHL2MPBase
 {
 public:
-	DECLARE_CLASS( CWeaponPortalBase, CBaseCombatWeapon );
+	DECLARE_CLASS( CWeaponPortalBase, CWeaponHL2MPBase );
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 

@@ -11,7 +11,7 @@
 #include "hl2mp_player.h"
 #include "dlight.h"
 #include "KeyValues.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "collisionutils.h"
 #include "particle_smokegrenade.h"
 #include "smoke_fog_overlay_shared.h"

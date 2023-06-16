@@ -29,7 +29,7 @@
 	#include "iscorer.h"
 	#include "hl2mp_player.h"
 	#include "weapon_hl2mpbasehlmpcombatweapon.h"
-	#include "weapon_csbase.h"
+	#include "weapon_hl2mpbase.h"
 	#include "team.h"
 	#include "voice_gamemgr.h"
 	#include "hl2mp_gameinterface.h"

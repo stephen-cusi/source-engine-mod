@@ -14,7 +14,7 @@
 #include <tier0/platform.h>
 #include "cs_gamerules.h"
 #include "cs_gamestats.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "props.h"
 #include "cs_achievement_constants.h"
 #include "../../shared/cstrike/weapon_c4.h"
@@ -378,7 +378,7 @@ void CCSGameStats::Event_ShotFired( CBasePlayer *pPlayer, CBaseCombatWeapon* pWe
 	Assert( pPlayer );
 	CHL2MP_Player *pCSPlayer = ToCSPlayer( pPlayer );
 
-	CWeaponCSBase* pCSWeapon = dynamic_cast< CWeaponCSBase * >(pWeapon);
+	CWeaponHL2MPBase* pCSWeapon = dynamic_cast< CWeaponHL2MPBase * >(pWeapon);
 
     //=============================================================================
     // HPE_BEGIN:
@@ -429,7 +429,7 @@ void CCSGameStats::Event_ShotHit( CBasePlayer *pPlayer, const CTakeDamageInfo &i
 		{			
 			if ( pPlayer->GetActiveWeapon() )
 			{
-				CWeaponCSBase* pCSWeapon = dynamic_cast< CWeaponCSBase * >(pPlayer->GetActiveWeapon());
+				CWeaponHL2MPBase* pCSWeapon = dynamic_cast< CWeaponHL2MPBase * >(pPlayer->GetActiveWeapon());
 				if (pCSWeapon)
 				{
 					CSWeaponID weaponId = pCSWeapon->GetWeaponID();
@@ -475,8 +475,8 @@ void CCSGameStats::Event_PlayerKilled_PreWeaponDrop( CBasePlayer *pPlayer, const
 	//Check for knife fight
 	if (pAttacker && pCSPlayer && pAttacker == info.GetInflictor() && pAttacker->GetTeamNumber() != pCSPlayer->GetTeamNumber())
 	{
-		CWeaponCSBase* attackerWeapon = pAttacker->GetActiveCSWeapon();
-		CWeaponCSBase* victimWeapon = pCSPlayer->GetActiveCSWeapon();
+		CWeaponHL2MPBase* attackerWeapon = dynamic_cast<CWeaponHL2MPBase*>(pAttacker->GetActiveWeapon());
+		CWeaponHL2MPBase* victimWeapon = dynamic_cast<CWeaponHL2MPBase*>(pCSPlayer->GetActiveWeapon());
 
 		if (attackerWeapon && victimWeapon)
 		{
@@ -939,7 +939,7 @@ void CCSGameStats::Event_PlayerKilledOther( CBasePlayer *pAttacker, CBaseEntity 
 				CBaseCombatWeapon* weapon = pAttacker->GetActiveWeapon();
 				if (weapon)
 				{
-					CWeaponCSBase* pCSWeapon = static_cast<CWeaponCSBase*>(weapon);
+					CWeaponHL2MPBase* pCSWeapon = static_cast<CWeaponHL2MPBase*>(weapon);
 
 					weaponId = pCSWeapon->GetWeaponID();
 
@@ -1129,7 +1129,7 @@ void CCSGameStats::Event_PlayerDamage( CBasePlayer *pBasePlayer, const CTakeDama
 		{
 			if ( pAttacker->GetActiveWeapon() )
 			{
-				CWeaponCSBase* pCSWeapon = dynamic_cast< CWeaponCSBase * >(pAttacker->GetActiveWeapon());
+				CWeaponHL2MPBase* pCSWeapon = dynamic_cast< CWeaponHL2MPBase * >(pAttacker->GetActiveWeapon());
 				if (pCSWeapon)
 				{
 					pWeaponName = pCSWeapon->GetClassname();

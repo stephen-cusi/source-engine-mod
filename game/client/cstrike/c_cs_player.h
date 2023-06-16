@@ -14,7 +14,7 @@
 #include "cs_playeranimstate.h"
 #include "c_baseplayer.h"
 #include "cs_shareddefs.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "baseparticleentity.h"
 #include "beamdraw.h"
 
@@ -159,7 +159,7 @@ public:
 public:
 
 	// ICSPlayerAnimState overrides.
-	virtual CWeaponCSBase* CSAnim_GetActiveWeapon();
+	virtual CWeaponHL2MPBase* CSAnim_GetActiveWeapon();
 	virtual bool CSAnim_CanMove();
 
 
@@ -275,8 +275,8 @@ public:
 
 	EHANDLE	m_hRagdoll;
 
-	CWeaponCSBase* GetActiveCSWeapon() const;
-	CWeaponCSBase* GetCSWeapon( CSWeaponID id ) const;
+	CWeaponHL2MPBase* GetActiveCSWeapon() const;
+	CWeaponHL2MPBase* GetCSWeapon( CSWeaponID id ) const;
 
 	virtual ShadowType_t		ShadowCastType();
 

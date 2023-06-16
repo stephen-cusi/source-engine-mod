@@ -24,7 +24,7 @@
 #include "../vgui_controls/ScrollBar.h"
 #include "stat_card.h"
 
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "cs_weapon_parse.h"
 #include "buy_presets/buy_presets.h"
 #include "win_panel_round.h"

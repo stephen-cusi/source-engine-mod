@@ -1633,19 +1633,19 @@ bool C_HL2MP_Player::IsPlayerDominatingMe(int iPlayerIndex)
 	return m_bPlayerDominatingMe.Get(iPlayerIndex);
 }
 
-CWeaponCSBase* C_HL2MP_Player::GetActiveCSWeapon() const
+CWeaponHL2MPBase* C_HL2MP_Player::GetActiveCSWeapon() const
 {
-	return dynamic_cast<CWeaponCSBase*>(GetActiveWeapon());
+	return dynamic_cast<CWeaponHL2MPBase*>(GetActiveWeapon());
 }
 
-CWeaponCSBase* C_HL2MP_Player::GetCSWeapon(CSWeaponID id) const
+CWeaponHL2MPBase* C_HL2MP_Player::GetCSWeapon(CSWeaponID id) const
 {
 	for (int i = 0; i < MAX_WEAPONS; i++)
 	{
 		CBaseCombatWeapon* weapon = GetWeapon(i);
 		if (weapon)
 		{
-			CWeaponCSBase* csWeapon = dynamic_cast<CWeaponCSBase*>(weapon);
+			CWeaponHL2MPBase* csWeapon = dynamic_cast<CWeaponHL2MPBase*>(weapon);
 			if (csWeapon)
 			{
 				if (id == csWeapon->GetWeaponID())

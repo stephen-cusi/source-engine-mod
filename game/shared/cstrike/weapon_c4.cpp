@@ -804,7 +804,7 @@ void CC4::Spawn()
 
 void CC4::ItemPostFrame()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -874,7 +874,7 @@ void CC4::ItemPostFrame()
 
 	bool CC4::Holster( CBaseCombatWeapon *pSwitchingTo )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( pPlayer )
 			pPlayer->SetProgressBarTime( 0 );
 
@@ -891,7 +891,7 @@ void CC4::ItemPostFrame()
 	{
 		// Doesn't matter if we have an owner or not.. always remove the C4 when the round restarts.
 		// The gamerules will give another C4 to some lucky player.
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( pPlayer && pPlayer->GetActiveWeapon() == this )
 			engine->ClientCommand( pPlayer->edict(), "lastinv reset\n" );
 		return true;
@@ -903,7 +903,7 @@ void CC4::ItemPostFrame()
 void CC4::PrimaryAttack()
 {
 	bool	bArmingTimeSatisfied = false;
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -1159,7 +1159,7 @@ void CC4::WeaponIdle()
 	{
 		AbortBombPlant();
 
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 		// TODO: make this use SendWeaponAnim and activities when the C4 has the activities hooked up.
 		if ( pPlayer )
@@ -1178,7 +1178,7 @@ void CC4::WeaponIdle()
 void CC4::UpdateShieldState( void )
 {
 	//ADRIANTODO
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 	
@@ -1221,7 +1221,7 @@ void CC4::PlayArmingBeeps( void )
 		{
 			m_bPlayedArmingBeeps[i] = true;
 
-			CHL2MP_Player *owner = GetPlayerOwner();
+			CHL2MP_Player *owner = GetHL2MPPlayerOwner();
 			Vector soundPosition = owner->GetAbsOrigin() + Vector( 0, 0, 5 );
 			CPASAttenuationFilter filter( soundPosition );
 
@@ -1329,7 +1329,7 @@ void CC4::AbortBombPlant()
 {
 	m_bStartedArming = false; 
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 

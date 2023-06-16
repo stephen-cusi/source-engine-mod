@@ -11,7 +11,7 @@
 #endif
 
 
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 
 
 #ifdef CLIENT_DLL
@@ -21,10 +21,10 @@
 #endif
 
 
-class CBaseCSGrenade : public CWeaponCSBase
+class CBaseCSGrenade : public CWeaponHL2MPBase
 {
 public:
-	DECLARE_CLASS( CBaseCSGrenade, CWeaponCSBase );
+	DECLARE_CLASS( CBaseCSGrenade, CWeaponHL2MPBase );
 	DECLARE_NETWORKCLASS();
 	DECLARE_PREDICTABLE();
 

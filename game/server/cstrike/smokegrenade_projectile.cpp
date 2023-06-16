@@ -11,7 +11,7 @@
 #include "hl2mp_player.h"
 #include "KeyValues.h"
 #include "bot_manager.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 
 #define GRENADE_MODEL "models/Weapons/w_eq_smokegrenade_thrown.mdl"
 

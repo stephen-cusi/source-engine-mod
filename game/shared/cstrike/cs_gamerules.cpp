@@ -8,7 +8,7 @@
 #include "cbase.h"
 #include "cs_gamerules.h"
 #include "cs_ammodef.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "cs_shareddefs.h"
 #include "KeyValues.h"
 #include "cs_achievement_constants.h"
@@ -4563,7 +4563,7 @@ ConVar cl_autohelp(
 		CBaseEntity *pCur = gEntList.FirstEnt();
 		while ( pCur )
 		{
-			CWeaponCSBase *pWeapon = dynamic_cast< CWeaponCSBase* >( pCur );
+			CWeaponHL2MPBase *pWeapon = dynamic_cast< CWeaponHL2MPBase* >( pCur );
 			// Weapons with owners don't want to be removed..
 			if ( pWeapon )
 			{
@@ -4889,7 +4889,7 @@ CBaseCombatWeapon *CCSGameRules::GetNextBestWeapon( CBaseCombatCharacter *pPlaye
 
 #ifndef CLIENT_DLL
 		CHL2MP_Player *csPlayer = ToCSPlayer(pPlayer);
-		CWeaponCSBase *csWeapon = static_cast< CWeaponCSBase * >(weapon);
+		CWeaponHL2MPBase *csWeapon = static_cast< CWeaponHL2MPBase * >(weapon);
 		if ( csPlayer && csPlayer->IsBot() && !TheCSBots()->IsWeaponUseable( csWeapon ) )
 			continue;
 #endif // CLIENT_DLL

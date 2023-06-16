@@ -300,7 +300,7 @@ void CCSBotManager::StartFrame( void )
 /**
  * Return true if the bot can use this weapon
  */
-bool CCSBotManager::IsWeaponUseable( const CWeaponCSBase *weapon ) const
+bool CCSBotManager::IsWeaponUseable( const CWeaponHL2MPBase *weapon ) const
 {
 	if (weapon == NULL)
 		return false;

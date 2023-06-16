@@ -20,7 +20,7 @@
 
 
 
-class CWeaponCSBase;
+class CWeaponHL2MPBase;
 class CMenu;
 class CHintMessageQueue;
 class CNavArea;
@@ -292,7 +292,7 @@ public:
 public:
 
 	// ICSPlayerAnimState overrides.
-	virtual CWeaponCSBase* CSAnim_GetActiveWeapon();
+	virtual CWeaponHL2MPBase* CSAnim_GetActiveWeapon();
 	virtual bool CSAnim_CanMove();
 
 	virtual float GetPlayerMaxSpeed();
@@ -444,7 +444,7 @@ public:
 
 	void EmitPrivateSound( const char *soundName );		///< emit given sound that only we can hear
 
-	CWeaponCSBase* GetActiveCSWeapon() const;
+	CWeaponHL2MPBase* GetActiveCSWeapon() const;
 
 	void PreThink();
 

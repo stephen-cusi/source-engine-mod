@@ -11,7 +11,7 @@
 #endif
 
 
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 
 
 #if defined( CLIENT_DLL )
@@ -25,10 +25,10 @@
 // CKnife class definition.
 // ----------------------------------------------------------------------------- //
 
-class CKnife : public CWeaponCSBase
+class CKnife : public CWeaponHL2MPBase
 {
 public:
-	DECLARE_CLASS( CKnife, CWeaponCSBase );
+	DECLARE_CLASS( CKnife, CWeaponHL2MPBase );
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 	

@@ -70,7 +70,7 @@ void CWeaponScout::SecondaryAttack()
 {
 	const float kZoomTime = 0.10f;
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if (pPlayer == NULL)
 	{
 		Assert(pPlayer != NULL);
@@ -127,7 +127,7 @@ float CWeaponScout::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if (pPlayer == NULL)
 			return 0.0f;
 	
@@ -156,7 +156,7 @@ float CWeaponScout::GetInaccuracy() const
 
 void CWeaponScout::PrimaryAttack( void )
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if (pPlayer == NULL)
 		return;
 
@@ -192,7 +192,7 @@ void CWeaponScout::PrimaryAttack( void )
 
 float CWeaponScout::GetMaxSpeed() const
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if (pPlayer == NULL)
 	{
 		Assert(pPlayer != NULL);

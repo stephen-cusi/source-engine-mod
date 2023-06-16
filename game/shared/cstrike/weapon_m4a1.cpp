@@ -218,7 +218,7 @@ float CWeaponM4A1::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 
@@ -247,7 +247,7 @@ float CWeaponM4A1::GetInaccuracy() const
 
 void CWeaponM4A1::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -257,7 +257,7 @@ void CWeaponM4A1::PrimaryAttack()
 	if ( m_bSilencerOn )
 		 SendWeaponAnim( ACT_VM_PRIMARYATTACK_SILENCED );
 
-	pPlayer = GetPlayerOwner();
+	pPlayer = GetHL2MPPlayerOwner();
 
 	// CSBaseGunFire can kill us, forcing us to drop our weapon, if we shoot something that explodes
 	if ( !pPlayer )
@@ -278,7 +278,7 @@ void CWeaponM4A1::DoFireEffects()
 {
 	if ( !m_bSilencerOn )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( pPlayer )
 		{
 			pPlayer->DoMuzzleFlash();
@@ -288,7 +288,7 @@ void CWeaponM4A1::DoFireEffects()
 
 bool CWeaponM4A1::Reload()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return false;
 

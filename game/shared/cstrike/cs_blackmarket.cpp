@@ -7,7 +7,7 @@
 #include "cbase.h"
 #include "cs_gamerules.h"
 #include "cs_blackmarket.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "filesystem.h"
 #include <KeyValues.h>
 #include "cs_gamestats.h"

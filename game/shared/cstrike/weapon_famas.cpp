@@ -24,7 +24,7 @@
 class CWeaponFamas : public CWeaponCSBaseGun
 {
 public:
-	DECLARE_CLASS( CWeaponFamas, CWeaponCSBase );
+	DECLARE_CLASS( CWeaponFamas, CWeaponHL2MPBase );
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 	
@@ -96,7 +96,7 @@ bool CWeaponFamas::Deploy( )
 // Secondary attack could be three-round burst mode
 void CWeaponFamas::SecondaryAttack()
 {	
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -121,7 +121,7 @@ float CWeaponFamas::GetInaccuracy() const
 	{
 		float fAutoPenalty = m_bBurstMode ? 0.0f : 0.01f;
 
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -162,7 +162,7 @@ void CWeaponFamas::FireRemaining()
 		return;
 	}
 
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		Error( "!pPlayer" );
 
@@ -198,7 +198,7 @@ void CWeaponFamas::FireRemaining()
 
 void CWeaponFamas::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -210,7 +210,7 @@ void CWeaponFamas::PrimaryAttack()
 		return;
 	}
 
-	pPlayer = GetPlayerOwner();
+	pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 

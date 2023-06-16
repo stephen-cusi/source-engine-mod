@@ -71,7 +71,7 @@ CWeaponSG552::CWeaponSG552()
 
 void CWeaponSG552::SecondaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -99,7 +99,7 @@ float CWeaponSG552::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 	
@@ -116,7 +116,7 @@ float CWeaponSG552::GetInaccuracy() const
 
 void CWeaponSG552::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -131,7 +131,7 @@ void CWeaponSG552::PrimaryAttack()
 		return;
 
 	// CSBaseGunFire can kill us, forcing us to drop our weapon, if we shoot something that explodes
-	pPlayer = GetPlayerOwner();
+	pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -148,7 +148,7 @@ void CWeaponSG552::PrimaryAttack()
 
 float CWeaponSG552::GetMaxSpeed() const
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 
 	if ( !pPlayer || pPlayer->GetFOV() == pPlayer->GetDefaultFOV() )
 		return BaseClass::GetMaxSpeed();

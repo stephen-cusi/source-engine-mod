@@ -5,7 +5,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "fx_cs_shared.h"
 
 
@@ -21,10 +21,10 @@
 #endif
 
 
-class CWeaponGlock : public CWeaponCSBase
+class CWeaponGlock : public CWeaponHL2MPBase
 {
 public:
-	DECLARE_CLASS( CWeaponGlock, CWeaponCSBase );
+	DECLARE_CLASS( CWeaponGlock, CWeaponHL2MPBase );
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 	
@@ -114,7 +114,7 @@ bool CWeaponGlock::Deploy( )
 
 void CWeaponGlock::SecondaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -138,7 +138,7 @@ float CWeaponGlock::GetInaccuracy() const
 {
 	if ( weapon_accuracy_model.GetInt() == 1 )
 	{
-		CHL2MP_Player *pPlayer = GetPlayerOwner();
+		CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 		if ( !pPlayer )
 			return 0.0f;
 
@@ -178,7 +178,7 @@ float CWeaponGlock::GetInaccuracy() const
 
 void CWeaponGlock::PrimaryAttack()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 
@@ -267,7 +267,7 @@ void CWeaponGlock::PrimaryAttack()
 
 void CWeaponGlock::FireRemaining( float fSpread )
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		Error( "!pPlayer" );
 
@@ -343,7 +343,7 @@ bool CWeaponGlock::Reload()
 
 void CWeaponGlock::WeaponIdle()
 {
-	CHL2MP_Player *pPlayer = GetPlayerOwner();
+	CHL2MP_Player *pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
 

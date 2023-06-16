@@ -34,7 +34,7 @@
  *  pistol, and equipment.
  */
 
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include <KeyValues.h>
 #include <utlvector.h>
 

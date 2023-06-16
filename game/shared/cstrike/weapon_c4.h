@@ -11,7 +11,7 @@
 #endif
 
 
-#include "weapon_csbase.h"
+#include "weapon_hl2mpbase.h"
 #include "utlvector.h"
 
 #define NUM_BEEPS 7
@@ -128,10 +128,10 @@
 #define WEAPON_C4_CLASSNAME "weapon_c4"
 #define PLANTED_C4_CLASSNAME "planted_c4"
 
-class CC4 : public CWeaponCSBase
+class CC4 : public CWeaponHL2MPBase
 {
 public:
-	DECLARE_CLASS( CC4, CWeaponCSBase );
+	DECLARE_CLASS( CC4, CWeaponHL2MPBase );
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 	
