@@ -50,7 +50,7 @@ void CC_MessageBoxWarn()
 SMModels::SMModels( vgui::Panel *parent, const char *panelName ) : BaseClass( parent, panelName )
 {
 	vgui::ivgui()->AddTickSignal( GetVPanel(), 250 );
-	box = new ComboBox( this, "ComboBox", 100, true);
+	box = new ComboBox( this, "ComboBox", 100, false);
 	mdl = new CMDLPanel( this, "MDLPanel", NULL, false );
 	LoadControlSettings("resource/ui/smmodels.res");
 }
@@ -332,6 +332,11 @@ void SMList::InitModels( PanelListPanel *panel, const char *modeltype, const cha
 
 CSMenu::CSMenu( vgui::VPANEL *parent, const char *panelName ) : BaseClass( NULL, "SMenu" )
 {
+	SetTitle( "SMenu", true );
+	SetScheme(vgui::scheme()->LoadSchemeFromFile("resource/sch.res", "SourceScheme"));
+
+	SetProportional(true);
+	
 	int w = 800;
 	int h = 640;
 
@@ -342,9 +347,6 @@ CSMenu::CSMenu( vgui::VPANEL *parent, const char *panelName ) : BaseClass( NULL,
 	}
 
 	SetSize(w, h);
-
-	SetTitle( "SMenu", true );
-	SetScheme(vgui::scheme()->LoadSchemeFromFile("resource/sch.res", "SourceScheme"));
 	
 	SMToolMenu *first = new SMToolMenu(this, "Panel");
 	AddPage( first, "SMenu" );
