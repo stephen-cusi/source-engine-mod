@@ -332,8 +332,17 @@ void SMList::InitModels( PanelListPanel *panel, const char *modeltype, const cha
 
 CSMenu::CSMenu( vgui::VPANEL *parent, const char *panelName ) : BaseClass( NULL, "SMenu" )
 {
-	SetWide( 800 );
-	SetTall( 640 );
+	int w = 800;
+	int h = 640;
+
+	if (IsProportional())
+	{
+		w = scheme()->GetProportionalScaledValueEx(GetScheme(), w);
+		h = scheme()->GetProportionalScaledValueEx(GetScheme(), h);
+	}
+
+	SetSize(w, h);
+
 	SetTitle( "SMenu", true );
 	SetScheme(vgui::scheme()->LoadSchemeFromFile("resource/sch.res", "SourceScheme"));
 	
