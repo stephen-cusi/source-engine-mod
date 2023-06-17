@@ -215,6 +215,7 @@ class Android:
 		# TODO: proper STL support
 		return [
 			#os.path.abspath(os.path.join(self.ndk_home, 'sources', 'cxx-stl', 'system', 'include')),
+			os.path.abspath(os.path.join(self.ndk_home, 'sources', 'cxx-stl', 'stlport', 'stlport')),
 			os.path.abspath(os.path.join(self.ndk_home, 'sources', 'android', 'support', 'include'))
 		]
 
