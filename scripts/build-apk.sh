@@ -5,7 +5,7 @@ export MODNAME=hl2sb
 export MODNAMESTRING=Half-Life-2:Sandbox
 git pull
 # sudo apt install -y imagemagick
-# ./mod.sh
+./mod.sh
 # wget https://raw.githubusercontent.com/ItzVladik/extras/main/mi_logo.png
 # mv mi_logo.png android/
 # ./android/scripts/conv.sh android/mi_logo.png
