@@ -338,7 +338,7 @@ CSMenu::CSMenu( vgui::VPANEL *parent, const char *panelName ) : BaseClass( NULL,
 	SetProportional(true);
 	
 	int w = 800;
-	int h = 640;
+	int h = 500;
 
 	if (IsProportional())
 	{
