@@ -1,8 +1,8 @@
-# JBMOD: Community Edition
+# SourceBox
 - Discord: [![Discord Server](https://img.shields.io/discord/1093917978522812457.svg)](https://discord.gg/Rb7Aw5UXb3)
  
-JBMod: Community Edition is a free and open source Source Engine sandbox game which features content from other Source games.
-JB:CE is based on the nillerusr fork of the 2018 engine leak.
+SourceBox is a free and open source Source Engine sandbox game which features content from other Source games.
+SourceBox is based on the nillerusr fork of the 2018 engine leak.
 
 # Features:
 - Half-Life 2: Deathmatch
