@@ -50,7 +50,8 @@ void CC_MessageBoxWarn()
 SMModels::SMModels( vgui::Panel *parent, const char *panelName ) : BaseClass( parent, panelName )
 {
 	vgui::ivgui()->AddTickSignal( GetVPanel(), 250 );
-	box = new ComboBox( this, "ComboBox", 100, false);
+	box = new ComboBox( this, "ComboBox", 10, false);
+	box->SetEditable( false );
 	mdl = new CMDLPanel( this, "MDLPanel", NULL, false );
 	LoadControlSettings("resource/ui/smmodels.res");
 }
@@ -337,8 +338,8 @@ CSMenu::CSMenu( vgui::VPANEL *parent, const char *panelName ) : BaseClass( NULL,
 
 	SetProportional(true);
 	
-	int w = 800;
-	int h = 500;
+	int w = 750;
+	int h = 450;
 
 	if (IsProportional())
 	{
