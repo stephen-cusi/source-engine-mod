@@ -15,7 +15,7 @@
 	#include "te_effect_dispatch.h"
 #endif
 
-#include "hl1_player_shared.h"
+#include "cs_playeranimstate.h"
 
 LINK_ENTITY_TO_CLASS( basehl1mpcombatweapon, CBaseHL1MPCombatWeapon );
 

@@ -46,7 +46,9 @@ enum PlayerAnimEvent_t
 	PLAYERANIMEVENT_RELOAD_LOOP,	///< w_model partial reload for shotguns
 	PLAYERANIMEVENT_RELOAD_END,		///< w_model partial reload for shotguns
 	PLAYERANIMEVENT_CLEAR_FIRING,	///< clear animations on the firing layer
-	
+	PLAYERANIMEVENT_DIE,
+	PLAYERANIMEVENT_FIRE_GUN,
+
 	PLAYERANIMEVENT_COUNT
 };
 

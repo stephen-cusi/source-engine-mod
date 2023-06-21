@@ -7,7 +7,7 @@
 
 #include "cbase.h"
 #include "npcevent.h"
-#include "hl1mp_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 #include "Sprite.h"
 #include "beam_shared.h"
 #include "takedamageinfo.h"
@@ -16,10 +16,10 @@
 
 #ifdef CLIENT_DLL
 #include "c_baseplayer.h"
-#include "hl1/hl1_c_player.h"
+#include "c_hl2mp_player.h"
 #else
 #include "player.h"
-#include "hl1_player.h"
+#include "hl2mp_player.h"
 #endif
 
 //#include "player.h"
@@ -54,22 +54,22 @@ enum EGON_FIRESTATE { FIRE_OFF, FIRE_STARTUP, FIRE_CHARGE };
 extern ConVar sk_plr_dmg_egon_wide;
 
 //-----------------------------------------------------------------------------
-// CWeaponEgon
+// CHL1MPWeaponEgon
 //-----------------------------------------------------------------------------
 
 #ifdef CLIENT_DLL
-#define CWeaponEgon C_WeaponEgon
+#define CHL1MPWeaponEgon C_HL1MPWeaponEgon
 #endif
 
-class CWeaponEgon : public CBaseHL1MPCombatWeapon
+class CHL1MPWeaponEgon : public CWeaponHL2MPBase 
 {
-	DECLARE_CLASS( CWeaponEgon, CBaseHL1MPCombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponEgon, CWeaponHL2MPBase );
 public:
 
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 
-    CWeaponEgon(void);
+    CHL1MPWeaponEgon(void);
 
 	virtual bool	Deploy( void );
 	void	PrimaryAttack( void );
@@ -106,24 +106,24 @@ private:
 	CHandle<CBeam>		m_hNoise;
 };
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponEgon, DT_WeaponEgon );
+IMPLEMENT_NETWORKCLASS_ALIASED( HL1MPWeaponEgon, DT_HL1MPWeaponEgon );
 
-BEGIN_NETWORK_TABLE( CWeaponEgon, DT_WeaponEgon )
+BEGIN_NETWORK_TABLE( CHL1MPWeaponEgon, DT_HL1MPWeaponEgon )
 END_NETWORK_TABLE()    
 
-BEGIN_PREDICTION_DATA( CWeaponEgon )
+BEGIN_PREDICTION_DATA( CHL1MPWeaponEgon )
 END_PREDICTION_DATA()
 
-LINK_ENTITY_TO_CLASS( weapon_egon, CWeaponEgon );
-PRECACHE_WEAPON_REGISTER( weapon_egon );
+LINK_ENTITY_TO_CLASS( weapon_hl1mp_egon, CHL1MPWeaponEgon );
+PRECACHE_WEAPON_REGISTER( weapon_hl1mp_egon );
 
 /*
-IMPLEMENT_SERVERCLASS_ST( CWeaponEgon, DT_WeaponEgon )
+IMPLEMENT_SERVERCLASS_ST( CHL1MPWeaponEgon, DT_WeaponEgon )
 END_SEND_TABLE()
 */
 
     /*
-BEGIN_DATADESC( CWeaponEgon )
+BEGIN_DATADESC( CHL1MPWeaponEgon )
 	DEFINE_FIELD( m_fireState, FIELD_INTEGER ),
 	DEFINE_FIELD( m_flAmmoUseTime, FIELD_TIME ),
 	DEFINE_FIELD( m_flShakeTime, FIELD_TIME ),
@@ -138,7 +138,7 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponEgon::CWeaponEgon( void )
+CHL1MPWeaponEgon::CHL1MPWeaponEgon( void )
 {
 	m_bReloadsSingly	= false;
 	m_bFiresUnderwater	= true;
@@ -147,7 +147,7 @@ CWeaponEgon::CWeaponEgon( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponEgon::Precache( void )
+void CHL1MPWeaponEgon::Precache( void )
 {
     PrecacheScriptSound( "Weapon_Gluon.Start" );
     PrecacheScriptSound( "Weapon_Gluon.Run" );
@@ -159,16 +159,16 @@ void CWeaponEgon::Precache( void )
 	BaseClass::Precache();
 }
 
-bool CWeaponEgon::Deploy( void )
+bool CHL1MPWeaponEgon::Deploy( void )
 {
 	m_fireState = FIRE_OFF;
 
 	return BaseClass::Deploy();
 }
 
-bool CWeaponEgon::HasAmmo( void )
+bool CHL1MPWeaponEgon::HasAmmo( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return false;
@@ -180,9 +180,9 @@ bool CWeaponEgon::HasAmmo( void )
 	return true;
 }
 
-void CWeaponEgon::UseAmmo( int count )
+void CHL1MPWeaponEgon::UseAmmo( int count )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -197,9 +197,9 @@ void CWeaponEgon::UseAmmo( int count )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponEgon::PrimaryAttack( void )
+void CHL1MPWeaponEgon::PrimaryAttack( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -286,9 +286,9 @@ void CWeaponEgon::PrimaryAttack( void )
 	}
 }
 
-void CWeaponEgon::Fire( const Vector &vecOrigSrc, const Vector &vecDir )
+void CHL1MPWeaponEgon::Fire( const Vector &vecOrigSrc, const Vector &vecDir )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -386,7 +386,7 @@ void CWeaponEgon::Fire( const Vector &vecOrigSrc, const Vector &vecDir )
 	UpdateEffect( tmpSrc, tr.endpos );
 }
 
-void CWeaponEgon::UpdateEffect( const Vector &startPoint, const Vector &endPoint )
+void CHL1MPWeaponEgon::UpdateEffect( const Vector &startPoint, const Vector &endPoint )
 {
 	if ( !m_hBeam )
 	{
@@ -413,10 +413,10 @@ void CWeaponEgon::UpdateEffect( const Vector &startPoint, const Vector &endPoint
 	}
 }
 
-void CWeaponEgon::CreateEffect( void )
+void CHL1MPWeaponEgon::CreateEffect( void )
 {
 #ifndef CLIENT_DLL    
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -454,7 +454,7 @@ void CWeaponEgon::CreateEffect( void )
 }
 
 
-void CWeaponEgon::DestroyEffect( void )
+void CHL1MPWeaponEgon::DestroyEffect( void )
 {
 #ifndef CLIENT_DLL    
 	if ( m_hBeam )
@@ -475,7 +475,7 @@ void CWeaponEgon::DestroyEffect( void )
 #endif
 }
 
-void CWeaponEgon::EndAttack( void )
+void CHL1MPWeaponEgon::EndAttack( void )
 {
     StopSound( "Weapon_Gluon.Run" );
 	
@@ -493,14 +493,14 @@ void CWeaponEgon::EndAttack( void )
 	DestroyEffect();
 }
 
-bool CWeaponEgon::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CHL1MPWeaponEgon::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
     EndAttack();
 
 	return BaseClass::Holster( pSwitchingTo );
 }
 
-void CWeaponEgon::WeaponIdle( void )
+void CHL1MPWeaponEgon::WeaponIdle( void )
 {
 	if ( !HasWeaponIdleTimeElapsed() )
 		return;

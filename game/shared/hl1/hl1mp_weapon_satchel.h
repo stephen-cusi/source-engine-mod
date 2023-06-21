@@ -13,28 +13,28 @@
 
 #ifndef CLIENT_DLL
 #include "hl1_basegrenade.h"
-#include "hl1_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 #endif
 
 
 #ifdef CLIENT_DLL
-#define CWeaponSatchel C_WeaponSatchel
+#define CHL1MPWeaponSatchel C_HL1MPWeaponSatchel
 #endif
 
 
 //-----------------------------------------------------------------------------
-// CWeaponSatchel
+// CHL1MPWeaponSatchel
 //-----------------------------------------------------------------------------
 
-class CWeaponSatchel : public CBaseHL1CombatWeapon
+class CHL1MPWeaponSatchel : public CWeaponHL2MPBase
 {
-	DECLARE_CLASS( CWeaponSatchel, CBaseHL1CombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponSatchel, CWeaponHL2MPBase );
 
 	DECLARE_NETWORKCLASS();
 	DECLARE_PREDICTABLE();
 public:
 
-	CWeaponSatchel( void );
+	CHL1MPWeaponSatchel( void );
 
 	void	Equip( CBaseCombatCharacter *pOwner );
 	bool	HasAnyAmmo( void );
@@ -73,15 +73,15 @@ private:
 
 #ifndef CLIENT_DLL
 //-----------------------------------------------------------------------------
-// CSatchelCharge
+// CHL1MPSatchelCharge
 //-----------------------------------------------------------------------------
 
-class CSatchelCharge : public CHL1BaseGrenade
+class CHL1MPSatchelCharge : public CHL1BaseGrenade
 {
 public:
-	DECLARE_CLASS( CSatchelCharge, CHL1BaseGrenade );
+	DECLARE_CLASS( CHL1MPSatchelCharge, CHL1BaseGrenade );
 
-	CSatchelCharge();
+	CHL1MPSatchelCharge();
 
 	void	Spawn( void );
 	void	Precache( void );

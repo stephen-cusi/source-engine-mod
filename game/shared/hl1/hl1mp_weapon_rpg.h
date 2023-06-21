@@ -12,7 +12,7 @@
 #endif
 
 
-#include "hl1mp_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 
 #ifdef CLIENT_DLL
 #include "iviewrender_beams.h"
@@ -26,7 +26,7 @@
 #include "beam_shared.h"
 #include "hl1_basegrenade.h"
 
-class CWeaponRPG;
+class CHL1MPWeaponRPG;
 
 //###########################################################################
 //	CRpgRocket
@@ -51,7 +51,7 @@ public:
 
 	static CRpgRocket *Create( const Vector &vecOrigin, const QAngle &angAngles, CBasePlayer *pentOwner = NULL );
 
-	CHandle<CWeaponRPG>		m_hOwner;
+	CHandle<CHL1MPWeaponRPG>		m_hOwner;
 	float					m_flIgniteTime;
 	int						m_iTrail;
 	
@@ -62,25 +62,25 @@ public:
 #endif
 
 #ifdef CLIENT_DLL
-#define CLaserDot C_LaserDot
+#define CHL1MPLaserDot C_HL1MPLaserDot
 #endif
 
-class CLaserDot;
+class CHL1MPLaserDot;
 
 #ifdef CLIENT_DLL
-#define CWeaponRPG C_WeaponRPG
+#define CHL1MPWeaponRPG C_HL1MPWeaponRPG
 #endif
 
 //-----------------------------------------------------------------------------
-// CWeaponRPG
+// CHL1MPWeaponRPG
 //-----------------------------------------------------------------------------
-class CWeaponRPG : public CBaseHL1MPCombatWeapon
+class CHL1MPWeaponRPG : public CWeaponHL2MPBase
 {
-	DECLARE_CLASS( CWeaponRPG, CBaseHL1MPCombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponRPG, CWeaponHL2MPBase );
 public:
 
-	CWeaponRPG( void );
-	~CWeaponRPG();
+	CHL1MPWeaponRPG( void );
+	~CHL1MPWeaponRPG();
 
 	void	ItemPostFrame( void );
 	void	Precache( void );
@@ -113,21 +113,21 @@ private:
 
 private:
 //	bool				m_bGuiding;
-//	CHandle<CLaserDot>	m_hLaserDot;
+//	CHandle<CHL1MPLaserDot>	m_hHL1MPLaserDot;
 //	CHandle<CRpgRocket>	m_hMissile;
 //	bool				m_bIntialStateUpdate;
-//	bool				m_bLaserDotSuspended;
-//	float				m_flLaserDotReviveTime;
+//	bool				m_bHL1MPLaserDotSuspended;
+//	float				m_flHL1MPLaserDotReviveTime;
 
 	CNetworkVar( bool, m_bGuiding );
 	CNetworkVar( bool, m_bIntialStateUpdate );
-	CNetworkVar( bool, m_bLaserDotSuspended );
-	CNetworkVar( float, m_flLaserDotReviveTime );
+	CNetworkVar( bool, m_bHL1MPLaserDotSuspended );
+	CNetworkVar( float, m_flHL1MPLaserDotReviveTime );
 
 	CNetworkHandle( CBaseEntity, m_hMissile );
 
 #ifndef CLIENT_DLL
-	CHandle<CLaserDot>	m_hLaserDot;
+	CHandle<CHL1MPLaserDot>	m_hHL1MPLaserDot;
 #endif
 };
 

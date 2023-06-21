@@ -10,7 +10,7 @@
 #include "hl1_clientscoreboard.h"
 #include "c_team.h"
 #include "c_playerresource.h"
-#include "c_hl1mp_player.h"
+#include "c_hl2mp_player.h"
 //#include "hl2mp_gamerules.h"
 
 #include <KeyValues.h>

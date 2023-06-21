@@ -120,6 +120,16 @@ enum Class_T
 	CLASS_EARTH_FAUNA,
 	CLASS_HACKED_ROLLERMINE,
 	CLASS_COMBINE_HUNTER,
+	CLASS_MACHINE,
+	CLASS_HUMAN_PASSIVE,
+	CLASS_HUMAN_MILITARY,
+	CLASS_ALIEN_MILITARY,
+	CLASS_ALIEN_MONSTER,
+	CLASS_ALIEN_PREY,
+	CLASS_ALIEN_PREDATOR,
+	CLASS_INSECT,
+	CLASS_PLAYER_BIOWEAPON,
+	CLASS_ALIEN_BIOWEAPON,
 
 	NUM_AI_CLASSES
 };
@@ -185,6 +195,32 @@ enum Class_T
 	CLASS_NONE = 0,
 	CLASS_PLAYER,
 	CLASS_PLAYER_ALLY,
+	CLASS_PLAYER_ALLY_VITAL,
+	CLASS_ANTLION,
+	CLASS_BARNACLE,
+	CLASS_BULLSEYE,
+	//CLASS_BULLSQUID,	
+	CLASS_CITIZEN_PASSIVE,
+	CLASS_CITIZEN_REBEL,
+	CLASS_COMBINE,
+	CLASS_COMBINE_GUNSHIP,
+	CLASS_CONSCRIPT,
+	CLASS_HEADCRAB,
+	//CLASS_HOUNDEYE,
+	CLASS_MANHACK,
+	CLASS_METROPOLICE,
+	CLASS_MILITARY,
+	CLASS_SCANNER,
+	CLASS_STALKER,
+	CLASS_VORTIGAUNT,
+	CLASS_ZOMBIE,
+	CLASS_PROTOSNIPER,
+	CLASS_MISSILE,
+	CLASS_FLARE,
+	CLASS_EARTH_FAUNA,
+	CLASS_HACKED_ROLLERMINE,
+	CLASS_COMBINE_HUNTER,
+
 	NUM_AI_CLASSES
 };
 
@@ -1624,6 +1660,8 @@ private:
 	// Precache model sounds + particles
 	static void PrecacheModelComponents( int nModelIndex );
 	static void PrecacheSoundHelper( const char *pName );
+	
+
 
 protected:
 	// Which frame did I simulate?
@@ -1678,7 +1716,7 @@ private:
 	unsigned char	m_nWaterTouch;
 	unsigned char	m_nSlimeTouch;
 	unsigned char	m_nWaterType;
-	CNetworkVarForDerived( unsigned char, m_nWaterLevel );
+	
 	float			m_flNavIgnoreUntilTime;
 
 	CNetworkHandleForDerived( CBaseEntity, m_hGroundEntity );
@@ -1778,6 +1816,8 @@ public:
 	static bool						PrecacheSound( const char *name );
 	static void						PrefetchSound( const char *name );
 	void							Remove( ); // UTIL_Remove( this );
+
+	CNetworkVarForDerived(unsigned char, m_nWaterLevel);
 
 private:
 

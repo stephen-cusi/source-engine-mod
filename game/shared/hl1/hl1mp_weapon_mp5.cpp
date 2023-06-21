@@ -7,12 +7,12 @@
 
 #include "cbase.h"
 //#include "basecombatweapon.h"
-#include "hl1mp_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 #include "npcevent.h"
 //#include "basecombatcharacter.h"
 //#include "AI_BaseNPC.h"
 #ifdef CLIENT_DLL
-#include "hl1/hl1_c_player.h"
+#include "c_hl2mp_player.h"
 #else
 #include "player.h"
 #endif
@@ -38,31 +38,31 @@ extern ConVar	 sk_mp5_grenade_radius;
 //=========================================================
 //=========================================================
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponMP5, DT_WeaponMP5 );
+IMPLEMENT_NETWORKCLASS_ALIASED( HL1MPWeaponMP5, DT_HL1MPWeaponMP5 );
 
-BEGIN_NETWORK_TABLE( CWeaponMP5, DT_WeaponMP5 )
+BEGIN_NETWORK_TABLE( CHL1MPWeaponMP5, DT_HL1MPWeaponMP5 )
 END_NETWORK_TABLE()
 
-BEGIN_PREDICTION_DATA( CWeaponMP5 )
+BEGIN_PREDICTION_DATA( CHL1MPWeaponMP5 )
 END_PREDICTION_DATA()
 
-LINK_ENTITY_TO_CLASS( weapon_mp5, CWeaponMP5 );
+LINK_ENTITY_TO_CLASS( weapon_hl1mp_mp5, CHL1MPWeaponMP5 );
 
-PRECACHE_WEAPON_REGISTER(weapon_mp5);
+PRECACHE_WEAPON_REGISTER(weapon_hl1mp_mp5);
 
-//IMPLEMENT_SERVERCLASS_ST( CWeaponMP5, DT_WeaponMP5 )
+//IMPLEMENT_SERVERCLASS_ST( CHL1MPWeaponMP5, DT_WeaponMP5 )
 //END_SEND_TABLE()
 
-BEGIN_DATADESC( CWeaponMP5 )
+BEGIN_DATADESC( CHL1MPWeaponMP5 )
 END_DATADESC()
 
-CWeaponMP5::CWeaponMP5( )
+CHL1MPWeaponMP5::CHL1MPWeaponMP5( )
 {
 	m_bReloadsSingly	= false;
 	m_bFiresUnderwater	= false;
 }
 
-void CWeaponMP5::Precache( void )
+void CHL1MPWeaponMP5::Precache( void )
 {
 	BaseClass::Precache();
 
@@ -72,7 +72,7 @@ void CWeaponMP5::Precache( void )
 }
 
 
-void CWeaponMP5::PrimaryAttack( void )
+void CHL1MPWeaponMP5::PrimaryAttack( void )
 {
 	// Only the player fires this way so we can cast
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -147,7 +147,7 @@ void CWeaponMP5::PrimaryAttack( void )
 }
 
 
-void CWeaponMP5::SecondaryAttack( void )
+void CHL1MPWeaponMP5::SecondaryAttack( void )
 {
 	// Only the player fires this way so we can cast
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -212,7 +212,7 @@ void CWeaponMP5::SecondaryAttack( void )
 }
 
 
-void CWeaponMP5::DryFire( void )
+void CHL1MPWeaponMP5::DryFire( void )
 {
 	WeaponSound( EMPTY );
 	m_flNextPrimaryAttack	= gpGlobals->curtime + 0.15;
@@ -220,7 +220,7 @@ void CWeaponMP5::DryFire( void )
 }
 
 
-void CWeaponMP5::WeaponIdle( void )
+void CHL1MPWeaponMP5::WeaponIdle( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	if ( pPlayer )

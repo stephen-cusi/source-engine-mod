@@ -33,9 +33,9 @@
 // Monster's Anim Events Go Here
 //=========================================================
 
-class CNPC_GMan : public CAI_BaseActor
+class CHL1MPNPC_GMan : public CAI_BaseActor
 {
-	DECLARE_CLASS( CNPC_GMan, CAI_BaseActor );
+	DECLARE_CLASS( CHL1MPNPC_GMan, CAI_BaseActor );
 public:
 
 	void Spawn( void );
@@ -59,12 +59,12 @@ public:
 	float   m_flTalkTime;
 };
 
-LINK_ENTITY_TO_CLASS( monster_gman, CNPC_GMan );
+LINK_ENTITY_TO_CLASS( monster_gman, CHL1MPNPC_GMan );
 
 //=========================================================
 // Hack that tells us whether the GMan is in the final map
 //=========================================================
-bool CNPC_GMan::IsInC5A1()
+bool CHL1MPNPC_GMan::IsInC5A1()
 {
 	const char *pMapName = STRING(gpGlobals->mapname);
 
@@ -80,7 +80,7 @@ bool CNPC_GMan::IsInC5A1()
 // Classify - indicates this monster's place in the 
 // relationship table.
 //=========================================================
-Class_T	CNPC_GMan::Classify ( void )
+Class_T	CHL1MPNPC_GMan::Classify ( void )
 {
 	return	CLASS_NONE;
 }
@@ -90,7 +90,7 @@ Class_T	CNPC_GMan::Classify ( void )
 // HandleAnimEvent - catches the monster-specific messages
 // that occur when tagged animation frames are played.
 //=========================================================
-void CNPC_GMan::HandleAnimEvent( animevent_t *pEvent )
+void CHL1MPNPC_GMan::HandleAnimEvent( animevent_t *pEvent )
 {
 	switch( pEvent->event )
 	{
@@ -104,7 +104,7 @@ void CNPC_GMan::HandleAnimEvent( animevent_t *pEvent )
 //=========================================================
 // GetSoundInterests - generic monster can't hear.
 //=========================================================
-int CNPC_GMan::GetSoundInterests ( void )
+int CHL1MPNPC_GMan::GetSoundInterests ( void )
 {
 	return	NULL;
 }
@@ -112,7 +112,7 @@ int CNPC_GMan::GetSoundInterests ( void )
 //=========================================================
 // Spawn
 //=========================================================
-void CNPC_GMan::Spawn()
+void CHL1MPNPC_GMan::Spawn()
 {
 	Precache();
 
@@ -139,7 +139,7 @@ void CNPC_GMan::Spawn()
 //=========================================================
 // Precache - precaches all resources this monster needs
 //=========================================================
-void CNPC_GMan::Precache()
+void CHL1MPNPC_GMan::Precache()
 {
 	PrecacheModel( "models/gman.mdl" );
 }	
@@ -150,7 +150,7 @@ void CNPC_GMan::Precache()
 //=========================================================
 
 
-void CNPC_GMan::StartTask( const Task_t *pTask )
+void CHL1MPNPC_GMan::StartTask( const Task_t *pTask )
 {
 	switch( pTask->iTask )
 	{
@@ -165,7 +165,7 @@ void CNPC_GMan::StartTask( const Task_t *pTask )
 	BaseClass::StartTask( pTask );
 }
 
-void CNPC_GMan::RunTask( const Task_t *pTask )
+void CHL1MPNPC_GMan::RunTask( const Task_t *pTask )
 {
 	switch( pTask->iTask )
 	{
@@ -201,7 +201,7 @@ void CNPC_GMan::RunTask( const Task_t *pTask )
 //=========================================================
 // Override all damage
 //=========================================================
-int CNPC_GMan::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
+int CHL1MPNPC_GMan::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 {
 	m_iHealth = m_iMaxHealth / 2; // always trigger the 50% damage aitrigger
 
@@ -215,13 +215,13 @@ int CNPC_GMan::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 }
 
 
-void CNPC_GMan::TraceAttack( CBaseEntity *pAttacker, float flDamage, const Vector &vecDir, trace_t *ptr, int bitsDamageType)
+void CHL1MPNPC_GMan::TraceAttack( CBaseEntity *pAttacker, float flDamage, const Vector &vecDir, trace_t *ptr, int bitsDamageType)
 {
 	g_pEffects->Ricochet( ptr->endpos, ptr->plane.normal );
 //	AddMultiDamage( pevAttacker, this, flDamage, bitsDamageType );
 }
 
-int CNPC_GMan::PlayScriptedSentence( const char *pszSentence, float delay, float volume, soundlevel_t soundlevel, bool bConcurrent, CBaseEntity *pListener )
+int CHL1MPNPC_GMan::PlayScriptedSentence( const char *pszSentence, float delay, float volume, soundlevel_t soundlevel, bool bConcurrent, CBaseEntity *pListener )
 {
 	BaseClass::PlayScriptedSentence( pszSentence, delay, volume, soundlevel, bConcurrent, pListener );
 

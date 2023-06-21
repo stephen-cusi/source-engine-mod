@@ -7,7 +7,7 @@
 #include "cbase.h"
 #include "hl1_basecombatweapon_shared.h"
 
-#include "hl1_player_shared.h"
+#include "cs_playeranimstate.h"
 
 LINK_ENTITY_TO_CLASS( basehl1combatweapon, CBaseHL1CombatWeapon );
 

@@ -30,9 +30,9 @@ IGameMovement *g_pGameMovement = ( IGameMovement * )&g_GameMovement;
 EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CGameMovement, IGameMovement, INTERFACENAME_GAMEMOVEMENT, g_GameMovement );
 
 #ifdef CLIENT_DLL
-#include "hl1/c_hl1mp_player.h"
+#include "c_hl2mp_player.h"
 #else
-#include "hl1mp_player.h"
+#include "hl2mp_player.h"
 #endif
 
 //-----------------------------------------------------------------------------
@@ -40,7 +40,7 @@ EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CGameMovement, IGameMovement, INTERFACENAME_G
 //-----------------------------------------------------------------------------
 bool CHL1GameMovement::CheckJumpButton( void )
 {
-	m_pHL1Player = ToHL1Player( player );
+	m_pHL1Player = ToHL2MPPlayer( player );
 
 	Assert( m_pHL1Player );
 
@@ -145,9 +145,9 @@ bool CHL1GameMovement::CheckJumpButton( void )
 	
 	if ( gpGlobals->maxClients > 1 )
 #ifdef CLIENT_DLL
-		(dynamic_cast<C_HL1MP_Player*>(m_pHL1Player))->DoAnimationEvent( PLAYERANIMEVENT_JUMP );
+		(dynamic_cast<C_HL2MP_Player*>(m_pHL1Player))->DoAnimationEvent( PLAYERANIMEVENT_JUMP );
 #else
-		(dynamic_cast<CHL1MP_Player*>(m_pHL1Player))->DoAnimationEvent( PLAYERANIMEVENT_JUMP );
+		(dynamic_cast<CHL2MP_Player*>(m_pHL1Player))->DoAnimationEvent( PLAYERANIMEVENT_JUMP );
 #endif
 
 	// Flag that we jumped.
@@ -295,7 +295,7 @@ void CHL1GameMovement::CheckParameters( void )
 		mv->m_flClientMaxSpeed = mv->m_flMaxSpeed;
 	}
 
-	CHL1_Player* pHL1Player = dynamic_cast<CHL1_Player*>(player);
+	CHL2MP_Player* pHL1Player = dynamic_cast<CHL2MP_Player*>(player);
 	if( pHL1Player && pHL1Player->IsPullingObject() )
 	{
 		mv->m_flClientMaxSpeed = mv->m_flMaxSpeed * 0.5f;

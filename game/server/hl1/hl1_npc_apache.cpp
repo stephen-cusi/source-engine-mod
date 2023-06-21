@@ -41,9 +41,9 @@
 
 extern short g_sModelIndexFireball;
 
-class CNPC_Apache : public CBaseHelicopter
+class CHL1MPNPC_Apache : public CHL1MPBaseHelicopter
 {
-	DECLARE_CLASS( CNPC_Apache, CBaseHelicopter );
+	DECLARE_CLASS( CHL1MPNPC_Apache, CHL1MPBaseHelicopter );
 public:
 	DECLARE_DATADESC();
 
@@ -136,7 +136,7 @@ public:
 	CBeam *m_pBeam;
 };
 
-BEGIN_DATADESC( CNPC_Apache )
+BEGIN_DATADESC( CHL1MPNPC_Apache )
 	DEFINE_FIELD( m_iRockets, FIELD_INTEGER ),
 	DEFINE_FIELD( m_flForce, FIELD_FLOAT ),
 	DEFINE_FIELD( m_flNextRocket, FIELD_TIME ),
@@ -163,7 +163,7 @@ static Vector s_vecSurroundingMins( -300, -300, -172);
 static Vector s_vecSurroundingMaxs(300, 300, 8);
 
 
-void CNPC_Apache::Spawn( void )
+void CHL1MPNPC_Apache::Spawn( void )
 {
 	Precache( );
 	SetModel( "models/apache.mdl" );
@@ -198,9 +198,9 @@ void CNPC_Apache::Spawn( void )
 	m_hSmoke = NULL;
 }
 
-LINK_ENTITY_TO_CLASS ( monster_apache, CNPC_Apache );
+LINK_ENTITY_TO_CLASS ( monster_apache, CHL1MPNPC_Apache );
 
-int CNPC_Apache::ObjectCaps( void ) 
+int CHL1MPNPC_Apache::ObjectCaps( void ) 
 { 
 	if ( GetSpawnFlags() & SF_NOTRANSITION )
 	     return BaseClass::ObjectCaps() & ~FCAP_ACROSS_TRANSITION; 
@@ -208,7 +208,7 @@ int CNPC_Apache::ObjectCaps( void )
 		 return BaseClass::ObjectCaps();
 }
 
-void CNPC_Apache::Precache( void )
+void CHL1MPNPC_Apache::Precache( void )
 {
 	// Get to tha chopper!
 	PrecacheModel( "models/apache.mdl" );
@@ -227,7 +227,7 @@ void CNPC_Apache::Precache( void )
 	BaseClass::Precache();
 }
 
-void CNPC_Apache::InitializeRotorSound( void )
+void CHL1MPNPC_Apache::InitializeRotorSound( void )
 {
 	CSoundEnvelopeController &controller = CSoundEnvelopeController::GetController();
 
@@ -237,7 +237,7 @@ void CNPC_Apache::InitializeRotorSound( void )
 	BaseClass::InitializeRotorSound();
 }
 
-void CNPC_Apache::Flight( void )
+void CHL1MPNPC_Apache::Flight( void )
 {
 	StudioFrameAdvance( );
 
@@ -450,7 +450,7 @@ void CNPC_Apache::Flight( void )
 #define CHOPPER_BC_GUN_PITCH		1
 #define CHOPPER_BC_POD_PITCH		2
 
-bool CNPC_Apache::FireGun( )
+bool CHL1MPNPC_Apache::FireGun( )
 {
 	if ( !GetEnemy() )
 		return false;
@@ -530,7 +530,7 @@ bool CNPC_Apache::FireGun( )
 	return false;
 }
 
-void CNPC_Apache::FireRocket( void )
+void CHL1MPNPC_Apache::FireRocket( void )
 {
 	static float side = 1.0;
 	static int count;
@@ -558,7 +558,7 @@ void CNPC_Apache::FireRocket( void )
 
 	side = - side;
 }
-void CNPC_Apache::AimRocketGun( void )
+void CHL1MPNPC_Apache::AimRocketGun( void )
 {
 	Vector vForward, vRight, vUp;
 	
@@ -632,7 +632,7 @@ void CNPC_Apache::AimRocketGun( void )
 #define MISSILE_HOMING_DURATION		1.0
 #define MISSILE_HOMING_RAMP_DOWN	0.5
 
-void CNPC_Apache::LaunchRocket( Vector &viewDir, int damage, int radius, Vector vecLaunchPoint )
+void CHL1MPNPC_Apache::LaunchRocket( Vector &viewDir, int damage, int radius, Vector vecLaunchPoint )
 {
 
 	CGrenadeHomer *pGrenade = CGrenadeHomer::CreateGrenadeHomer( 
@@ -654,7 +654,7 @@ void CNPC_Apache::LaunchRocket( Vector &viewDir, int damage, int radius, Vector 
 //-----------------------------------------------------------------------------
 // Purpose:	Lame, temporary death
 //-----------------------------------------------------------------------------
-void CNPC_Apache::DyingThink( void )
+void CHL1MPNPC_Apache::DyingThink( void )
 {
 	StudioFrameAdvance( );
 	SetNextThink( gpGlobals->curtime + 0.1f );
@@ -700,7 +700,7 @@ void CNPC_Apache::DyingThink( void )
 
 
 
-void CNPC_Apache::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
+void CHL1MPNPC_Apache::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
 {
 
 	CTakeDamageInfo dmgInfo = info;

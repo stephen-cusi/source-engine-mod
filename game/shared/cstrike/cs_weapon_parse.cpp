@@ -437,7 +437,7 @@ void CCSWeaponInfo::Parse( KeyValues *pKeyValuesData, const char *szWeaponName )
 
 	// Read the silencer model.
 	Q_strncpy(m_szSilencerModel, pKeyValuesData->GetString("SilencerModel"), sizeof(m_szSilencerModel));
-
+	/*
 #ifndef CLIENT_DLL
 		// Enforce consistency for the weapon here, since that way we don't need to save off the model bounds
 		// for all time.
@@ -457,7 +457,7 @@ void CCSWeaponInfo::Parse( KeyValues *pKeyValuesData, const char *szWeaponName )
 		}
 	
 #endif // !CLIENT_DLL
-	
+	*/
 }
 
 

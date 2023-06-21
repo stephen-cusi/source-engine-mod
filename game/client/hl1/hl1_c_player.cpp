@@ -5,16 +5,16 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "hl1_c_player.h"
+#include "c_hl2mp_player.h"
 
-ConVar cl_npc_speedmod_intime( "cl_npc_speedmod_intime", "0.25", FCVAR_CLIENTDLL | FCVAR_ARCHIVE );
-ConVar cl_npc_speedmod_outtime( "cl_npc_speedmod_outtime", "1.5", FCVAR_CLIENTDLL | FCVAR_ARCHIVE );
+//ConVar cl_npc_speedmod_intime( "cl_npc_speedmod_intime", "0.25", FCVAR_CLIENTDLL | FCVAR_ARCHIVE );
+//ConVar cl_npc_speedmod_outtime( "cl_npc_speedmod_outtime", "1.5", FCVAR_CLIENTDLL | FCVAR_ARCHIVE );
 
-#if defined( CHL1_Player )
-#undef CHL1_Player	
+#if defined( CHL2MP_Player )
+#undef CHL2MP_Player	
 #endif
 
-IMPLEMENT_CLIENTCLASS_DT( C_HL1_Player, DT_HL1Player, CHL1_Player )
+IMPLEMENT_CLIENTCLASS_DT( C_HL1_Player, DT_HL1Player, CHL2MP_Player )
 	RecvPropInt( RECVINFO( m_bHasLongJump ) ),
 	RecvPropInt( RECVINFO( m_nFlashBattery ) ),
 	RecvPropBool( RECVINFO( m_bIsPullingObject ) ),

@@ -206,6 +206,8 @@ public:
 
 	virtual void		Event_KilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &info );
 
+	virtual Vector		GetAutoaimVector(float flScale);
+	virtual Vector		GetAutoaimVector(float flScale, float flMaxDist);
 	virtual void		GetAutoaimVector( autoaim_params_t &params );
 	bool				ShouldKeepLockedAutoaimTarget( EHANDLE hLockedTarget );
 

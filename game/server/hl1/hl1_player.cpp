@@ -6,7 +6,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "hl1_player.h"
+#include "hl2mp_player.h"
 #include "gamerules.h"
 #include "trains.h"
 #include "hl1_basecombatweapon_shared.h"
@@ -66,10 +66,10 @@ ConVar player_showpredictedposition_timestep( "player_showpredictedposition_time
 
 ConVar sv_hl1_allowpickup( "sv_hl1_allowpickup", "0" );
 
-LINK_ENTITY_TO_CLASS( player, CHL1_Player );
+LINK_ENTITY_TO_CLASS( player, CHL2MP_Player );
 PRECACHE_REGISTER(player);
 
-BEGIN_DATADESC( CHL1_Player )
+BEGIN_DATADESC( CHL2MP_Player )
 	DEFINE_FIELD( m_nControlClass, FIELD_INTEGER ),
 	DEFINE_AUTO_ARRAY( m_vecMissPositions, FIELD_POSITION_VECTOR ),
 	DEFINE_FIELD( m_nNumMissPositions, FIELD_INTEGER ),
@@ -94,7 +94,7 @@ BEGIN_DATADESC( CHL1_Player )
 END_DATADESC()
 
 
-IMPLEMENT_SERVERCLASS_ST( CHL1_Player, DT_HL1Player )
+IMPLEMENT_SERVERCLASS_ST( CHL2MP_Player, DT_HL1Player )
 	SendPropInt( SENDINFO( m_bHasLongJump ), 1, SPROP_UNSIGNED ),
 	SendPropInt( SENDINFO( m_nFlashBattery ), 8, SPROP_UNSIGNED ),
 	SendPropBool( SENDINFO( m_bIsPullingObject ) ),
@@ -106,12 +106,12 @@ IMPLEMENT_SERVERCLASS_ST( CHL1_Player, DT_HL1Player )
 
 END_SEND_TABLE()
 
-CHL1_Player::CHL1_Player()
+CHL2MP_Player::CHL2MP_Player()
 {
 	m_nNumMissPositions	= 0;
 }
 
-void CHL1_Player::Precache( void )
+void CHL2MP_Player::Precache( void )
 {
 	BaseClass::Precache();
 
@@ -124,7 +124,7 @@ void CHL1_Player::Precache( void )
 //-----------------------------------------------------------------------------
 // Purpose: Allow pre-frame adjustments on the player
 //-----------------------------------------------------------------------------
-void CHL1_Player::PreThink(void)
+void CHL2MP_Player::PreThink(void)
 {
 	if ( player_showpredictedposition.GetBool() )
 	{
@@ -306,7 +306,7 @@ void CHL1_Player::PreThink(void)
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-Class_T  CHL1_Player::Classify ( void )
+Class_T  CHL2MP_Player::Classify ( void )
 {
 	// If player controlling another entity?  If so, return this class
 	if (m_nControlClass != CLASS_NONE)
@@ -327,7 +327,7 @@ Class_T  CHL1_Player::Classify ( void )
 // Output :	 true  - if sub-class has a response for the interaction
 //			 false - if sub-class has no response
 //-----------------------------------------------------------------------------
-bool CHL1_Player::HandleInteraction(int interactionType, void *data, CBaseCombatCharacter* sourceEnt)
+bool CHL2MP_Player::HandleInteraction(int interactionType, void *data, CBaseCombatCharacter* sourceEnt)
 {
 	if ( interactionType == g_interactionBarnacleVictimDangle )
 	{
@@ -351,7 +351,7 @@ bool CHL1_Player::HandleInteraction(int interactionType, void *data, CBaseCombat
 }
 
 
-void CHL1_Player::PlayerRunCommand(CUserCmd *ucmd, IMoveHelper *moveHelper)
+void CHL2MP_Player::PlayerRunCommand(CUserCmd *ucmd, IMoveHelper *moveHelper)
 {
 	// Handle FL_FROZEN.
 	if ( m_afPhysicsFlags & PFLAG_ONBARNACLE )
@@ -403,7 +403,7 @@ void CHL1_Player::PlayerRunCommand(CUserCmd *ucmd, IMoveHelper *moveHelper)
 //-----------------------------------------------------------------------------
 // Purpose: Create and give the named item to the player. Then return it.
 //-----------------------------------------------------------------------------
-CBaseEntity	*CHL1_Player::GiveNamedItem( const char *pszName, int iSubType )
+CBaseEntity	*CHL2MP_Player::GiveNamedItem( const char *pszName, int iSubType )
 {
 	// If I already own this type don't create one
 	if ( Weapon_OwnsThisType(pszName, iSubType) )
@@ -444,7 +444,7 @@ CBaseEntity	*CHL1_Player::GiveNamedItem( const char *pszName, int iSubType )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CHL1_Player::StartPullingObject( CBaseEntity *pObject )
+void CHL2MP_Player::StartPullingObject( CBaseEntity *pObject )
 {
 	if ( pObject->VPhysicsGetObject() == NULL || VPhysicsGetObject() == NULL )
 	{
@@ -477,7 +477,7 @@ void CHL1_Player::StartPullingObject( CBaseEntity *pObject )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CHL1_Player::StopPullingObject()
+void CHL2MP_Player::StopPullingObject()
 {
 	if( m_pPullConstraint )
 	{
@@ -491,7 +491,7 @@ void CHL1_Player::StopPullingObject()
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CHL1_Player::UpdatePullingObject()
+void CHL2MP_Player::UpdatePullingObject()
 {
 	if( !IsPullingObject() )
 		return;
@@ -535,7 +535,7 @@ void CHL1_Player::UpdatePullingObject()
 //-----------------------------------------------------------------------------
 // Purpose: Sets HL1specific defaults.
 //-----------------------------------------------------------------------------
-void CHL1_Player::Spawn(void)
+void CHL2MP_Player::Spawn(void)
 {
 	// In multiplayer ,this is handled in the super class
 	if ( !g_pGameRules->IsMultiplayer () )
@@ -563,13 +563,13 @@ void CHL1_Player::Spawn(void)
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CHL1_Player::Event_Killed( const CTakeDamageInfo &info )
+void CHL2MP_Player::Event_Killed( const CTakeDamageInfo &info )
 {
 	StopPullingObject();
 	BaseClass::Event_Killed(info);
 }
 
-void CHL1_Player::CheckTimeBasedDamage( void ) 
+void CHL2MP_Player::CheckTimeBasedDamage( void ) 
 {
 	int i;
 	byte bDuration = 0;
@@ -667,7 +667,7 @@ class CPhysicsPlayerCallback : public IPhysicsPlayerControllerEvent
 public:
 	int ShouldMoveTo( IPhysicsObject *pObject, const Vector &position )
 	{
-		CHL1_Player *pPlayer = (CHL1_Player *)pObject->GetGameData();
+		CHL2MP_Player *pPlayer = (CHL2MP_Player *)pObject->GetGameData();
 		if ( pPlayer )
 		{
 			if ( pPlayer->TouchedPhysics() )
@@ -684,7 +684,7 @@ static CPhysicsPlayerCallback playerCallback;
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CHL1_Player::InitVCollision( const Vector &vecAbsOrigin, const Vector &vecAbsVelocity )
+void CHL2MP_Player::InitVCollision( const Vector &vecAbsOrigin, const Vector &vecAbsVelocity )
 {
 	BaseClass::InitVCollision( vecAbsOrigin, vecAbsVelocity );
 
@@ -693,12 +693,12 @@ void CHL1_Player::InitVCollision( const Vector &vecAbsOrigin, const Vector &vecA
 }
 
 
-CHL1_Player::~CHL1_Player( void )
+CHL2MP_Player::~CHL2MP_Player( void )
 {
 }
 
 extern int gEvilImpulse101;
-void CHL1_Player::CheatImpulseCommands( int iImpulse )
+void CHL2MP_Player::CheatImpulseCommands( int iImpulse )
 {
 	if ( !sv_cheats->GetBool() )
 	{
@@ -744,7 +744,7 @@ void CHL1_Player::CheatImpulseCommands( int iImpulse )
 	}
 }
 
-void CHL1_Player::SetupVisibility( CBaseEntity *pViewEntity, unsigned char *pvs, int pvssize )
+void CHL2MP_Player::SetupVisibility( CBaseEntity *pViewEntity, unsigned char *pvs, int pvssize )
 {
 	int area = pViewEntity ? pViewEntity->NetworkProp()->AreaNum() : NetworkProp()->AreaNum();
 	BaseClass::SetupVisibility( pViewEntity, pvs, pvssize );
@@ -756,7 +756,7 @@ void CHL1_Player::SetupVisibility( CBaseEntity *pViewEntity, unsigned char *pvs,
 #define ARMOR_BONUS  0.5	// Each Point of Armor is work 1/x points of health
 
 
-int	CHL1_Player::OnTakeDamage( const CTakeDamageInfo &inputInfo )
+int	CHL2MP_Player::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 {
 	// have suit diagnose the problem - ie: report damage type
 	int bitsDamage = inputInfo.GetDamageType();
@@ -1020,7 +1020,7 @@ int	CHL1_Player::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 }
 
 
-int CHL1_Player::OnTakeDamage_Alive( const CTakeDamageInfo &info )
+int CHL2MP_Player::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 {
 	int nRet;
 	int nSavedHealth = m_iHealth;
@@ -1059,7 +1059,7 @@ int CHL1_Player::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CHL1_Player::FindMissTargets( void )
+void CHL2MP_Player::FindMissTargets( void )
 {
 	if ( m_flTargetFindTime > gpGlobals->curtime )
 		return;
@@ -1098,7 +1098,7 @@ void CHL1_Player::FindMissTargets( void )
 // Purpose: 
 // Output : Good position to shoot at
 //-----------------------------------------------------------------------------
-bool CHL1_Player::GetMissPosition( Vector *position )
+bool CHL2MP_Player::GetMissPosition( Vector *position )
 {
 	if ( m_nNumMissPositions == 0 )
 		return false;
@@ -1111,7 +1111,7 @@ bool CHL1_Player::GetMissPosition( Vector *position )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-int CHL1_Player::FlashlightIsOn( void )
+int CHL2MP_Player::FlashlightIsOn( void )
 {
 	return IsEffectActive( EF_DIMLIGHT);
 }
@@ -1119,7 +1119,7 @@ int CHL1_Player::FlashlightIsOn( void )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CHL1_Player::FlashlightTurnOn( void )
+void CHL2MP_Player::FlashlightTurnOn( void )
 {
 	if ( IsSuitEquipped() )
 	{
@@ -1134,7 +1134,7 @@ void CHL1_Player::FlashlightTurnOn( void )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CHL1_Player::FlashlightTurnOff( void )
+void CHL2MP_Player::FlashlightTurnOff( void )
 {
 	RemoveEffects( EF_DIMLIGHT );
 	CPASAttenuationFilter filter( this );
@@ -1143,7 +1143,7 @@ void CHL1_Player::FlashlightTurnOff( void )
 }
 
 
-void CHL1_Player::UpdateClientData( void )
+void CHL2MP_Player::UpdateClientData( void )
 {
 	if (m_DmgTake || m_DmgSave || m_bitsHUDDamage != m_bitsDamageType)
 	{
@@ -1209,7 +1209,7 @@ void CHL1_Player::UpdateClientData( void )
 	BaseClass::UpdateClientData();
 }
 
-void CHL1_Player::OnSave( IEntitySaveUtils *pUtils )
+void CHL2MP_Player::OnSave( IEntitySaveUtils *pUtils )
 {
 	// If I'm pulling a box, stop.
 	StopPullingObject();
@@ -1217,7 +1217,7 @@ void CHL1_Player::OnSave( IEntitySaveUtils *pUtils )
 	BaseClass::OnSave(pUtils);
 }
 
-void CHL1_Player::CreateViewModel( int index /*=0*/ )
+void CHL2MP_Player::CreateViewModel( int index /*=0*/ )
 {
 	Assert( index >= 0 && index < MAX_VIEWMODELS );
 
@@ -1236,7 +1236,7 @@ void CHL1_Player::CreateViewModel( int index /*=0*/ )
 	}
 }	
 
-void CHL1_Player::OnRestore( void )
+void CHL2MP_Player::OnRestore( void )
 {
 	BaseClass::OnRestore();
 
@@ -2101,7 +2101,7 @@ void PlayerPickupObject( CBasePlayer *pPlayer, CBaseEntity *pObject )
 {
 	if( hl1_new_pull.GetBool() )
 	{
-		CHL1_Player	*pHL1Player = dynamic_cast<CHL1_Player*>(pPlayer);
+		CHL2MP_Player	*pHL1Player = dynamic_cast<CHL2MP_Player*>(pPlayer);
 		if( pHL1Player && !pHL1Player->IsPullingObject() )
 		{
 			pHL1Player->StartPullingObject(pObject);

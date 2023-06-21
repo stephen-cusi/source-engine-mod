@@ -13,7 +13,7 @@
 #include "c_baseplayer.h"
 
 
-#define CHL1_Player C_HL1_Player
+#define CHL2MP_Player C_HL1_Player
 
 class C_HL1_Player : public C_BasePlayer
 {
@@ -39,7 +39,7 @@ private:
 	
 };
 
-inline C_HL1_Player *ToHL1Player( CBaseEntity *pEntity )
+inline C_HL1_Player *ToHL2MPPlayer( CBaseEntity *pEntity )
 {
 	if ( !pEntity || !pEntity->IsPlayer() )
 		return NULL;

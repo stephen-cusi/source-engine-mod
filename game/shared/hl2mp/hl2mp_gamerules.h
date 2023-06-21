@@ -112,7 +112,8 @@ public:
 	virtual void DeathNotice( CBasePlayer *pVictim, const CTakeDamageInfo &info );
 	virtual const char *GetGameDescription( void );
 	// derive this function if you mod uses encrypted weapon info files
-	virtual const unsigned char *GetEncryptionKey( void ) { return (unsigned char *)"x9Ke0BY7"; }
+	//virtual const unsigned char *GetEncryptionKey( void ) { return (unsigned char *)"x9Ke0BY7"; }
+	virtual const unsigned char* GetEncryptionKey(void) { return (unsigned char*)"d7NSuLq2"; }
 	virtual const CViewVectors* GetViewVectors() const;
 	const HL2MPViewVectors* GetHL2MPViewVectors() const;
 

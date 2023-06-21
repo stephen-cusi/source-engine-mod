@@ -22,19 +22,19 @@
 #include "vstdlib/random.h"
 #include "engine/IEngineSound.h"
 
-ConVar	sk_zombie_health( "sk_zombie_health","50");
-ConVar  sk_zombie_dmg_one_slash( "sk_zombie_dmg_one_slash", "20" );
-ConVar  sk_zombie_dmg_both_slash( "sk_zombie_dmg_both_slash", "40" );
+extern ConVar	sk_zombie_health;
+extern ConVar  sk_zombie_dmg_one_slash;
+extern ConVar  sk_zombie_dmg_both_slash;
 
 
 
-LINK_ENTITY_TO_CLASS( monster_zombie, CNPC_Zombie );
+LINK_ENTITY_TO_CLASS( monster_zombie, CHL1MPNPC_Zombie );
 
 
 //=========================================================
 // Spawn
 //=========================================================
-void CNPC_Zombie::Spawn()
+void CHL1MPNPC_Zombie::Spawn()
 {
 	Precache( );
 
@@ -62,7 +62,7 @@ void CNPC_Zombie::Spawn()
 //=========================================================
 // Precache - precaches all resources this monster needs
 //=========================================================
-void CNPC_Zombie::Precache()
+void CHL1MPNPC_Zombie::Precache()
 {
 	PrecacheModel( "models/zombie.mdl" );
 
@@ -80,7 +80,7 @@ void CNPC_Zombie::Precache()
 //-----------------------------------------------------------------------------
 // Purpose: Returns this monster's place in the relationship table.
 //-----------------------------------------------------------------------------
-Class_T	CNPC_Zombie::Classify( void )
+Class_T	CHL1MPNPC_Zombie::Classify( void )
 {
 	return CLASS_ALIEN_MONSTER; 
 }
@@ -89,7 +89,7 @@ Class_T	CNPC_Zombie::Classify( void )
 // HandleAnimEvent - catches the monster-specific messages
 // that occur when tagged animation frames are played.
 //=========================================================
-void CNPC_Zombie::HandleAnimEvent( animevent_t *pEvent )
+void CHL1MPNPC_Zombie::HandleAnimEvent( animevent_t *pEvent )
 {
 	Vector v_forward, v_right;
 	switch( pEvent->event )
@@ -220,7 +220,7 @@ static float DamageForce( const Vector &size, float damage )
 //			bitsDamageType - 
 // Output : int
 //-----------------------------------------------------------------------------
-int CNPC_Zombie::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
+int CHL1MPNPC_Zombie::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 {
 	CTakeDamageInfo info = inputInfo;
 
@@ -241,7 +241,7 @@ int CNPC_Zombie::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 	return BaseClass::OnTakeDamage_Alive( info );
 }
 
-void CNPC_Zombie::PainSound( const CTakeDamageInfo &info )
+void CHL1MPNPC_Zombie::PainSound( const CTakeDamageInfo &info )
 {
 	if ( random->RandomInt(0,5) < 2)
 	{
@@ -250,27 +250,27 @@ void CNPC_Zombie::PainSound( const CTakeDamageInfo &info )
 	}
 }
 
-void CNPC_Zombie::AlertSound( void )
+void CHL1MPNPC_Zombie::AlertSound( void )
 {
 	CPASAttenuationFilter filter( this );
 	EmitSound( filter, entindex(), "Zombie.Alert" );
 }
 
-void CNPC_Zombie::IdleSound( void )
+void CHL1MPNPC_Zombie::IdleSound( void )
 {
 	// Play a random idle sound
 	CPASAttenuationFilter filter( this );
 	EmitSound( filter, entindex(), "Zombie.Idle" );
 }
 
-void CNPC_Zombie::AttackSound( void )
+void CHL1MPNPC_Zombie::AttackSound( void )
 {
 	// Play a random attack sound
 	CPASAttenuationFilter filter( this );
 	EmitSound( filter, entindex(), "Zombie.Attack" );
 }
 
-int CNPC_Zombie::MeleeAttack1Conditions ( float flDot, float flDist )
+int CHL1MPNPC_Zombie::MeleeAttack1Conditions ( float flDot, float flDist )
 {
 	if ( flDist > 64)
 	{
@@ -288,7 +288,7 @@ int CNPC_Zombie::MeleeAttack1Conditions ( float flDot, float flDist )
 	return COND_CAN_MELEE_ATTACK1;
 }
 
-void CNPC_Zombie::RemoveIgnoredConditions ( void )
+void CHL1MPNPC_Zombie::RemoveIgnoredConditions ( void )
 {
 	if ( GetActivity() == ACT_MELEE_ATTACK1 )
 	{

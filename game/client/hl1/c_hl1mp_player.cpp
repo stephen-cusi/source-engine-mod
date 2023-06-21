@@ -7,13 +7,13 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "c_hl1mp_player.h"
+#include "c_hl2mp_player.h"
 #include "c_basetempentity.h"
 #include "iinput.h"
 
 // Don't alias here
-#if defined( CHL1MP_Player )
-#undef CHL1MP_Player	
+#if defined( CHL2MP_Player )
+#undef CHL2MP_Player	
 #endif
 
 
@@ -29,7 +29,7 @@ public:
 	virtual void PostDataUpdate( DataUpdateType_t updateType )
 	{
 		// Create the effect.
-		C_HL1MP_Player *pPlayer = dynamic_cast< C_HL1MP_Player* >( m_hPlayer.Get() );
+		C_HL2MP_Player *pPlayer = dynamic_cast< C_HL2MP_Player* >( m_hPlayer.Get() );
 		if ( pPlayer && !pPlayer->IsDormant() )
 		{
 			pPlayer->DoAnimationEvent( (PlayerAnimEvent_t)m_iEvent.Get(), m_nData );
@@ -54,7 +54,7 @@ BEGIN_RECV_TABLE_NOBASE( C_TEPlayerAnimEvent, DT_TEPlayerAnimEvent )
 	RecvPropInt( RECVINFO( m_nData ) )
 END_RECV_TABLE()
 
-IMPLEMENT_CLIENTCLASS_DT( C_HL1MP_Player, DT_HL1MP_Player, CHL1MP_Player )
+IMPLEMENT_CLIENTCLASS_DT( C_HL2MP_Player, DT_HL1MP_Player, CHL2MP_Player )
 	RecvPropFloat( RECVINFO( m_angEyeAngles[0] ) ),
 	RecvPropFloat( RECVINFO( m_angEyeAngles[1] ) ),
     RecvPropEHandle( RECVINFO( m_hRagdoll ) ),
@@ -63,15 +63,15 @@ IMPLEMENT_CLIENTCLASS_DT( C_HL1MP_Player, DT_HL1MP_Player, CHL1MP_Player )
 //	RecvPropDataTable( RECVINFO_DT( m_Shared ), 0, &REFERENCE_RECV_TABLE( DT_TFCPlayerShared ) )
 END_RECV_TABLE()
 
-BEGIN_PREDICTION_DATA( C_HL1MP_Player )
+BEGIN_PREDICTION_DATA( C_HL2MP_Player )
 END_PREDICTION_DATA()
 
 /////////////////////////////////////////////////////////////////////
 
 static ConVar cl_playermodel( "cl_playermodel", "none", FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_SERVER_CAN_EXECUTE, "Default Player Model");
     
-C_HL1MP_Player::C_HL1MP_Player( void ) :
-	m_iv_angEyeAngles( "C_HL1MP_Player::m_iv_angEyeAngles" )
+C_HL2MP_Player::C_HL2MP_Player( void ) :
+	m_iv_angEyeAngles( "C_HL2MP_Player::m_iv_angEyeAngles" )
 {
 	m_PlayerAnimState = CreatePlayerAnimState( this );
 	m_angEyeAngles.Init();
@@ -82,12 +82,12 @@ C_HL1MP_Player::C_HL1MP_Player( void ) :
 //	AddVar( &m_angEyeAngles, &m_iv_angEyeAngles, LATCH_SIMULATION_VAR );
 }
 
-C_HL1MP_Player::~C_HL1MP_Player()
+C_HL2MP_Player::~C_HL2MP_Player()
 {
 	m_PlayerAnimState->Release();
 }
 
-const QAngle& C_HL1MP_Player::GetRenderAngles()
+const QAngle& C_HL2MP_Player::GetRenderAngles()
 {
 	if ( IsRagdoll() )
 	{
@@ -99,7 +99,7 @@ const QAngle& C_HL1MP_Player::GetRenderAngles()
 	}
 }
 
-void C_HL1MP_Player::UpdateClientSideAnimation()
+void C_HL2MP_Player::UpdateClientSideAnimation()
 {
 	// Update the animation data. It does the local check here so this works when using
 	// a third-person camera (and we don't have valid player angles).
@@ -112,13 +112,13 @@ void C_HL1MP_Player::UpdateClientSideAnimation()
 }
 
 
-void C_HL1MP_Player::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
+void C_HL2MP_Player::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
 {
 	m_PlayerAnimState->DoAnimationEvent( event, nData );
 }
 
 
-void C_HL1MP_Player::ProcessMuzzleFlashEvent()
+void C_HL2MP_Player::ProcessMuzzleFlashEvent()
 {
 #if 0
 	// Reenable when the weapons have muzzle flash attachments in the right spot.
@@ -169,7 +169,7 @@ void C_HL1MP_Player::ProcessMuzzleFlashEvent()
 }
 
 
-void C_HL1MP_Player::Spawn( void )
+void C_HL2MP_Player::Spawn( void )
 {
     BaseClass::Spawn();
 
@@ -180,7 +180,7 @@ void C_HL1MP_Player::Spawn( void )
 	UpdateVisibility();
 }
 
-void C_HL1MP_Player::AddEntity( void )
+void C_HL2MP_Player::AddEntity( void )
 {
     BaseClass::AddEntity();
 
@@ -189,7 +189,7 @@ void C_HL1MP_Player::AddEntity( void )
 //    SetLocalAnglesDim( X_INDEX, 0 );
 }
 
-void C_HL1MP_Player::OnDataChanged( DataUpdateType_t type )
+void C_HL2MP_Player::OnDataChanged( DataUpdateType_t type )
 {
 	BaseClass::OnDataChanged( type );
 
@@ -201,13 +201,13 @@ void C_HL1MP_Player::OnDataChanged( DataUpdateType_t type )
 	UpdateVisibility();
 }
 
-C_BaseAnimating *C_HL1MP_Player::BecomeRagdollOnClient()
+C_BaseAnimating *C_HL2MP_Player::BecomeRagdollOnClient()
 {
     // Handled elsewhere
     return NULL;
 }
 
-void C_HL1MP_Player::PreThink( void )
+void C_HL2MP_Player::PreThink( void )
 {
 	BaseClass::PreThink();
 	return;
@@ -244,7 +244,7 @@ void C_HL1MP_Player::PreThink( void )
 #endif
 }
 
-void C_HL1MP_Player::PostDataUpdate( DataUpdateType_t updateType )
+void C_HL2MP_Player::PostDataUpdate( DataUpdateType_t updateType )
 {
 	// C_BaseEntity assumes we're networking the entity's angles, so pretend that it
 	// networked the same value we already have.
@@ -254,7 +254,7 @@ void C_HL1MP_Player::PostDataUpdate( DataUpdateType_t updateType )
 }
 
 
-void C_HL1MP_Player::ClientThink( void )
+void C_HL2MP_Player::ClientThink( void )
 {
 	BaseClass::ClientThink();
 //    m_PlayerAnimState.Update();
@@ -349,7 +349,7 @@ void C_HL1MPRagdoll::ImpactTrace( trace_t *pTrace, int iDamageType, const char *
 }
 
 
-void C_HL1MP_Player::CalcView( Vector &eyeOrigin, QAngle &eyeAngles, float &zNear, float &zFar, float &fov )
+void C_HL2MP_Player::CalcView( Vector &eyeOrigin, QAngle &eyeAngles, float &zNear, float &zFar, float &fov )
 {
 	if ( m_lifeState != LIFE_ALIVE )
 	{
@@ -392,7 +392,7 @@ void C_HL1MP_Player::CalcView( Vector &eyeOrigin, QAngle &eyeAngles, float &zNea
 	BaseClass::CalcView( eyeOrigin, eyeAngles, zNear, zFar, fov );
 }
 
-IRagdoll* C_HL1MP_Player::GetRepresentativeRagdoll() const
+IRagdoll* C_HL2MP_Player::GetRepresentativeRagdoll() const
 {
 	if ( m_hRagdoll.Get() )
 	{
@@ -410,7 +410,7 @@ void C_HL1MPRagdoll::CreateHL1MPRagdoll( void )
 {
 	// First, initialize all our data. If we have the player's entity on our client,
 	// then we can make ourselves start out exactly where the player is.
-	C_HL1MP_Player *pPlayer = dynamic_cast< C_HL1MP_Player* >( m_hPlayer.Get() );
+	C_HL2MP_Player *pPlayer = dynamic_cast< C_HL2MP_Player* >( m_hPlayer.Get() );
 	
 	if ( pPlayer && !pPlayer->IsDormant() )
 	{
@@ -548,7 +548,7 @@ void C_HL1MPRagdoll::SetupWeights( const matrix3x4_t *pBoneToWorld, int nFlexWei
 	}
 }
 
-bool C_HL1MP_Player::ShouldDraw( void )
+bool C_HL2MP_Player::ShouldDraw( void )
 {
     if ( !IsAlive() )
         return false;
@@ -562,7 +562,7 @@ bool C_HL1MP_Player::ShouldDraw( void )
     return BaseClass::ShouldDraw();
 }
 
-bool C_HL1MP_Player::ShouldPredict( void )
+bool C_HL2MP_Player::ShouldPredict( void )
 {
 	// Do this before calling into baseclass so prediction data block gets allocated
 	if ( IsLocalPlayer() )

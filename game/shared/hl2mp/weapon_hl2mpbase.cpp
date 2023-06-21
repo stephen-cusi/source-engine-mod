@@ -2189,6 +2189,45 @@ void CWeaponHL2MPBase::OnLand(float fVelocity)
 	*/
 }
 
+void CWeaponHL2MPBase::EjectShell(CBaseEntity* pPlayer, int iType)
+{
+	QAngle angShellAngles = pPlayer->GetAbsAngles();
+
+	Vector vecForward, vecRight, vecUp;
+	AngleVectors(angShellAngles, &vecForward, &vecRight, &vecUp);
+
+	Vector vecShellPosition = pPlayer->GetAbsOrigin() + pPlayer->GetViewOffset();
+	switch (iType)
+	{
+	case 0:
+	default:
+		vecShellPosition += vecRight * 4;
+		vecShellPosition += vecUp * -12;
+		vecShellPosition += vecForward * 20;
+		break;
+	case 1:
+		vecShellPosition += vecRight * 6;
+		vecShellPosition += vecUp * -12;
+		vecShellPosition += vecForward * 32;
+		break;
+	}
+
+	Vector vecShellVelocity = vec3_origin; // pPlayer->GetAbsVelocity();
+	vecShellVelocity += vecRight * random->RandomFloat(50, 70);
+	vecShellVelocity += vecUp * random->RandomFloat(100, 150);
+	vecShellVelocity += vecForward * 25;
+
+	angShellAngles.x = 0;
+	angShellAngles.z = 0;
+
+	CEffectData	data;
+	data.m_vStart = vecShellVelocity;
+	data.m_vOrigin = vecShellPosition;
+	data.m_vAngles = angShellAngles;
+	data.m_fFlags = iType;
+
+	DispatchEffect("HL1ShellEject", data);
+}
 
 
 

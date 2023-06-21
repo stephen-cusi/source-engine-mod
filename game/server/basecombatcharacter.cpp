@@ -2621,7 +2621,7 @@ void CBaseCombatCharacter::AddEntityRelationship ( CBaseEntity* pEntity, Disposi
 {
 	// First check to see if a relationship has already been declared for this entity
 	// If so, update it with the new relationship
-	for (int i=m_Relationship.Count()-1;i >= 0;i--) 
+	for (int i = m_Relationship.Count() - 1; i >= 0; i--)
 	{
 		if (m_Relationship[i].entity == pEntity) 
 		{

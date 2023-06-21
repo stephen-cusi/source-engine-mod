@@ -11,14 +11,14 @@
 #endif
 
 #ifdef CLIENT_DLL
-	#include "hl1/hl1_c_player.h"
+	#include "c_hl2mp_player.h"
 #else
-	#include "hl1_player.h"
+	#include "hl2mp_player.h"
 #endif
 
 #if defined( CLIENT_DLL )
-	class CHL1_Player;
-	#define CHL1_Player C_HL1_Player
+	class CHL2MP_Player;
+	#define CHL2MP_Player C_HL1_Player
 #endif
 
 #define PLAYER_LONGJUMP_SPEED 350 // how fast we longjump
@@ -36,7 +36,7 @@ public:
 	virtual void CheckParameters( void );
 
 protected:
-	CHL1_Player *m_pHL1Player;
+	CHL2MP_Player *m_pHL1Player;
 };
 
 #endif //C_HL1_GAMEMOVEMENT_H

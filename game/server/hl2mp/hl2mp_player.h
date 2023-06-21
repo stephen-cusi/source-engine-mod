@@ -673,8 +673,12 @@ public:
 	void OutputDamageTaken(void);
 	void OutputDamageGiven(void);
 
-
-
+	CNetworkVar(float, m_flStartCharge);
+	CNetworkVar(float, m_flAmmoStartCharge);
+	CNetworkVar(float, m_flPlayAftershock);
+	CNetworkVar(float, m_flNextAmmoBurn);	// while charging, when to absorb another unit of player's ammo?
+	CNetworkVar(bool, m_bHasLongJump);
+	CNetworkVar(bool, m_bIsPullingObject);
 
 private:
 

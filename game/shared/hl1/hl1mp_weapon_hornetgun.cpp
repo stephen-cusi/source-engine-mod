@@ -7,15 +7,15 @@
 
 #include "cbase.h"
 #include "npcevent.h"
-#include "hl1mp_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 //#include "basecombatcharacter.h"
 //#include "AI_BaseNPC.h"
 #include "gamerules.h"
 #include "in_buttons.h"
 #ifdef CLIENT_DLL
-#include "hl1/c_hl1mp_player.h"
+#include "c_hl2mp_player.h"
 #else
-#include "hl1mp_player.h"
+#include "hl2mp_player.h"
 #include "soundent.h"
 #include "game.h"
 #endif
@@ -27,22 +27,22 @@
 
 
 //-----------------------------------------------------------------------------
-// CWeaponHgun
+// CHL1MPWeaponHgun
 //-----------------------------------------------------------------------------
 
 #ifdef CLIENT_DLL
-#define CWeaponHgun C_WeaponHgun
+#define CHL1MPWeaponHgun C_HL1MPWeaponHgun
 #endif
 
-class CWeaponHgun : public CBaseHL1MPCombatWeapon
+class CHL1MPWeaponHgun : public CWeaponHL2MPBase
 {
-	DECLARE_CLASS( CWeaponHgun, CBaseHL1MPCombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponHgun, CWeaponHL2MPBase );
 public:
 
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 
-	CWeaponHgun( void );
+	CHL1MPWeaponHgun( void );
 
 	void	Precache( void );
 	void	PrimaryAttack( void );
@@ -65,9 +65,9 @@ private:
 	CNetworkVar( int,	m_iFirePhase );
 };
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponHgun, DT_WeaponHgun );
+IMPLEMENT_NETWORKCLASS_ALIASED( HL1MPWeaponHgun, DT_HL1MPWeaponHgun );
 
-BEGIN_NETWORK_TABLE( CWeaponHgun, DT_WeaponHgun )
+BEGIN_NETWORK_TABLE( CHL1MPWeaponHgun, DT_HL1MPWeaponHgun )
 #ifdef CLIENT_DLL
 	RecvPropFloat( RECVINFO( m_flRechargeTime ) ),
 	RecvPropInt( RECVINFO( m_iFirePhase ) ),
@@ -77,21 +77,21 @@ BEGIN_NETWORK_TABLE( CWeaponHgun, DT_WeaponHgun )
 #endif
 END_NETWORK_TABLE()
 
-BEGIN_PREDICTION_DATA( CWeaponHgun )
+BEGIN_PREDICTION_DATA( CHL1MPWeaponHgun )
 #ifdef CLIENT_DLL
 	DEFINE_PRED_FIELD( m_flRechargeTime, FIELD_FLOAT, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_iFirePhase, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 #endif
 END_PREDICTION_DATA()
 
-LINK_ENTITY_TO_CLASS( weapon_hornetgun, CWeaponHgun );
+LINK_ENTITY_TO_CLASS( weapon_hl1mp_hornetgun, CHL1MPWeaponHgun );
 
-PRECACHE_WEAPON_REGISTER( weapon_hornetgun );
+PRECACHE_WEAPON_REGISTER( weapon_hl1mp_hornetgun );
 
-//IMPLEMENT_SERVERCLASS_ST( CWeaponHgun, DT_WeaponHgun )
+//IMPLEMENT_SERVERCLASS_ST( CHL1MPWeaponHgun, DT_WeaponHgun )
 //END_SEND_TABLE()
 
-BEGIN_DATADESC( CWeaponHgun )
+BEGIN_DATADESC( CHL1MPWeaponHgun )
 	DEFINE_FIELD( m_flRechargeTime,	FIELD_TIME ),
 	DEFINE_FIELD( m_iFirePhase,		FIELD_INTEGER ),
 END_DATADESC()
@@ -99,7 +99,7 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponHgun::CWeaponHgun( void )
+CHL1MPWeaponHgun::CHL1MPWeaponHgun( void )
 {
 	m_bReloadsSingly	= false;
 	m_bFiresUnderwater	= true;
@@ -111,7 +111,7 @@ CWeaponHgun::CWeaponHgun( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponHgun::Precache( void )
+void CHL1MPWeaponHgun::Precache( void )
 {
 #ifndef CLIENT_DLL
 	UTIL_PrecacheOther( "hornet" );
@@ -123,9 +123,9 @@ void CWeaponHgun::Precache( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponHgun::PrimaryAttack( void )
+void CHL1MPWeaponHgun::PrimaryAttack( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -175,9 +175,9 @@ void CWeaponHgun::PrimaryAttack( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponHgun::SecondaryAttack( void )
+void CHL1MPWeaponHgun::SecondaryAttack( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -259,7 +259,7 @@ void CWeaponHgun::SecondaryAttack( void )
 	SetWeaponIdleTime( random->RandomFloat( 10, 15 ) );
 }
 
-void CWeaponHgun::WeaponIdle( void )
+void CHL1MPWeaponHgun::WeaponIdle( void )
 {
 	if ( !HasWeaponIdleTimeElapsed() )
 		return;
@@ -278,7 +278,7 @@ void CWeaponHgun::WeaponIdle( void )
 	SendWeaponAnim( iAnim );
 }
 
-bool CWeaponHgun::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CHL1MPWeaponHgun::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
 	bool bRet;
 
@@ -286,7 +286,7 @@ bool CWeaponHgun::Holster( CBaseCombatWeapon *pSwitchingTo )
 
 	if ( bRet )
 	{
-		CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+		CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 		if ( pPlayer )
 		{
 #if !defined(CLIENT_DLL)            
@@ -303,14 +303,14 @@ bool CWeaponHgun::Holster( CBaseCombatWeapon *pSwitchingTo )
 	return bRet;
 }
 
-bool CWeaponHgun::Reload( void )
+bool CHL1MPWeaponHgun::Reload( void )
 {
 	if ( m_flRechargeTime >= gpGlobals->curtime )
 	{
 		return true;
 	}
 
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return true;
@@ -331,7 +331,7 @@ bool CWeaponHgun::Reload( void )
 	return true;
 }
 
-void CWeaponHgun::ItemPostFrame( void )
+void CHL1MPWeaponHgun::ItemPostFrame( void )
 {
 	Reload();
 

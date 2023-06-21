@@ -13,7 +13,7 @@ def options(opt):
 
 games = {
 	'hl2': ['client_base.vpc', 'client_hl2.vpc'],
-	'hl2mp': ['client_base.vpc', 'client_hl2mp.vpc', 'client_portal.vpc', 'client_cstrike.vpc'],
+	'hl2mp': ['client_base.vpc', 'client_hl2mp.vpc', 'client_portal.vpc', 'client_cstrike.vpc', 'client_hl1mp.vpc'],
 	'hl1': ['client_base.vpc', 'client_hl1.vpc'],
 	'episodic': ['client_base.vpc', 'client_episodic.vpc'],
 	'portal': ['client_base.vpc', 'client_portal.vpc'],

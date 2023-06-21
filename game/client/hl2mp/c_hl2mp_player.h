@@ -263,6 +263,12 @@ public:
 	bool	m_bHasDefuser;
 	CUtlVector<C_BaseParticleEntity*> m_SmokeGrenades;
 	bool	m_bInHostageRescueZone;
+
+	CNetworkVar(float, m_flStartCharge);
+	CNetworkVar(float, m_flAmmoStartCharge);
+	CNetworkVar(float, m_flPlayAftershock);
+	CNetworkVar(float, m_flNextAmmoBurn);	// while charging, when to absorb another unit of player's ammo?
+
 private:
 	
 	C_HL2MP_Player( const C_HL2MP_Player & );

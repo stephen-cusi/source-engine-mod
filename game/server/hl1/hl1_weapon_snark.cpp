@@ -7,7 +7,7 @@
 
 #include "cbase.h"
 #include "npcevent.h"
-#include "hl1_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 #include "basecombatcharacter.h"
 #include "ai_basenpc.h"
 #include "player.h"
@@ -22,19 +22,19 @@
 
 
 //-----------------------------------------------------------------------------
-// CWeaponSnark
+// CHL1MPWeaponSnark
 //-----------------------------------------------------------------------------
 
 
 #define SNARK_NEST_MODEL	"models/w_sqknest.mdl"
 
 
-class CWeaponSnark : public CBaseHL1CombatWeapon
+class CHL1MPWeaponSnark : public CWeaponHL2MPBase
 {
-	DECLARE_CLASS( CWeaponSnark, CBaseHL1CombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponSnark, CWeaponHL2MPBase );
 public:
 
-	CWeaponSnark( void );
+	CHL1MPWeaponSnark( void );
 
 	void	Precache( void );
 	void	PrimaryAttack( void );
@@ -49,21 +49,21 @@ private:
 	bool	m_bJustThrown;
 };
 
-LINK_ENTITY_TO_CLASS( weapon_snark, CWeaponSnark );
+LINK_ENTITY_TO_CLASS( weapon_hl1mp_snark, CHL1MPWeaponSnark );
 
-PRECACHE_WEAPON_REGISTER( weapon_snark );
+PRECACHE_WEAPON_REGISTER( weapon_hl1mp_snark );
 
-IMPLEMENT_SERVERCLASS_ST( CWeaponSnark, DT_WeaponSnark )
+IMPLEMENT_SERVERCLASS_ST( CHL1MPWeaponSnark, DT_HL1MPWeaponSnark )
 END_SEND_TABLE()
 
-BEGIN_DATADESC( CWeaponSnark )
+BEGIN_DATADESC( CHL1MPWeaponSnark )
 	DEFINE_FIELD( m_bJustThrown, FIELD_BOOLEAN ),
 END_DATADESC()
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponSnark::CWeaponSnark( void )
+CHL1MPWeaponSnark::CHL1MPWeaponSnark( void )
 {
 	m_bReloadsSingly	= false;
 	m_bFiresUnderwater	= true;
@@ -73,7 +73,7 @@ CWeaponSnark::CWeaponSnark( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponSnark::Precache( void )
+void CHL1MPWeaponSnark::Precache( void )
 {
 	BaseClass::Precache();
 
@@ -86,7 +86,7 @@ void CWeaponSnark::Precache( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponSnark::PrimaryAttack( void )
+void CHL1MPWeaponSnark::PrimaryAttack( void )
 {
 	// Only the player fires this way so we can cast
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -135,7 +135,7 @@ void CWeaponSnark::PrimaryAttack( void )
 	SetWeaponIdleTime( gpGlobals->curtime + 1.0 );
 }
 
-void CWeaponSnark::WeaponIdle( void )
+void CHL1MPWeaponSnark::WeaponIdle( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 
@@ -175,7 +175,7 @@ void CWeaponSnark::WeaponIdle( void )
 	}
 }
 
-bool CWeaponSnark::Deploy( void )
+bool CHL1MPWeaponSnark::Deploy( void )
 {
 	CPASAttenuationFilter filter( this );
 	EmitSound( filter, entindex(), "WpnSnark.Deploy" );
@@ -183,7 +183,7 @@ bool CWeaponSnark::Deploy( void )
 	return BaseClass::Deploy();
 }
 
-bool CWeaponSnark::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CHL1MPWeaponSnark::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	if ( !pPlayer )
@@ -198,7 +198,7 @@ bool CWeaponSnark::Holster( CBaseCombatWeapon *pSwitchingTo )
 
 	if ( pPlayer->GetAmmoCount( m_iPrimaryAmmoType ) <= 0 )
 	{
-		SetThink( &CWeaponSnark::DestroyItem );
+		SetThink( &CHL1MPWeaponSnark::DestroyItem );
 		SetNextThink( gpGlobals->curtime + 0.1 );
 	}
 

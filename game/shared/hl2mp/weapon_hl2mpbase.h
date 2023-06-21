@@ -300,6 +300,8 @@ public:
 	// HPE_END
 	//=============================================================================
 
+	void EjectShell(CBaseEntity* pPlayer, int iType);
+
 protected:
 
 	float	CalculateNextAttackTime(float flCycleTime);

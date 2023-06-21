@@ -12,9 +12,9 @@
 
 #include "hl1_ai_basenpc.h"
 
-class CNPC_Headcrab : public CHL1BaseNPC
+class CHL1MPNPC_Headcrab : public CHL1BaseNPC
 {
-	DECLARE_CLASS( CNPC_Headcrab, CHL1BaseNPC );
+	DECLARE_CLASS( CHL1MPNPC_Headcrab, CHL1BaseNPC );
 public:
 
 	void Spawn( void );

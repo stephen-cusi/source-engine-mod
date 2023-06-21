@@ -9,7 +9,7 @@
 
 #include "cbase.h"
 #include "npcevent.h"
-#include "hl1mp_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 //#include "basecombatcharacter.h"
 //#include "AI_BaseNPC.h"
 #ifdef CLIENT_DLL
@@ -24,7 +24,7 @@
 
 
 #ifdef CLIENT_DLL
-#define CWeaponShotgun C_WeaponShotgun
+#define CHL1MPWeaponShotgun C_HL1MPWeaponShotgun
 #endif
 
 // special deathmatch shotgun spreads
@@ -32,9 +32,9 @@
 #define VECTOR_CONE_DM_DOUBLESHOTGUN Vector( 0.17365, 0.04362, 0.00 ) // 20 degrees by 5 degrees
 
 
-class CWeaponShotgun : public CBaseHL1MPCombatWeapon
+class CHL1MPWeaponShotgun : public CWeaponHL2MPBase
 {
-	DECLARE_CLASS( CWeaponShotgun, CBaseHL1MPCombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponShotgun, CWeaponHL2MPBase );
 
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
@@ -59,7 +59,7 @@ public:
 //	DECLARE_SERVERCLASS();
 //	DECLARE_DATADESC();
 
-	CWeaponShotgun(void);
+	CHL1MPWeaponShotgun(void);
 
 //#ifndef CLIENT_DLL
 //	DECLARE_ACTTABLE();
@@ -67,9 +67,9 @@ public:
 };
 
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponShotgun, DT_WeaponShotgun );
+IMPLEMENT_NETWORKCLASS_ALIASED( HL1MPWeaponShotgun, DT_HL1MPWeaponShotgun );
 
-BEGIN_NETWORK_TABLE( CWeaponShotgun, DT_WeaponShotgun )
+BEGIN_NETWORK_TABLE( CHL1MPWeaponShotgun, DT_HL1MPWeaponShotgun )
 #ifdef CLIENT_DLL
 	RecvPropFloat( RECVINFO( m_flPumpTime ) ),
 	RecvPropInt( RECVINFO( m_fInSpecialReload ) ),
@@ -79,26 +79,26 @@ BEGIN_NETWORK_TABLE( CWeaponShotgun, DT_WeaponShotgun )
 #endif
 END_NETWORK_TABLE()
 
-BEGIN_PREDICTION_DATA( CWeaponShotgun )
+BEGIN_PREDICTION_DATA( CHL1MPWeaponShotgun )
 #ifdef CLIENT_DLL
 	DEFINE_PRED_FIELD( m_flPumpTime, FIELD_FLOAT, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_fInSpecialReload, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 #endif
 END_PREDICTION_DATA()
 
-LINK_ENTITY_TO_CLASS( weapon_shotgun, CWeaponShotgun );
-PRECACHE_WEAPON_REGISTER(weapon_shotgun);
+LINK_ENTITY_TO_CLASS( weapon_hl1mp_shotgun, CHL1MPWeaponShotgun );
+PRECACHE_WEAPON_REGISTER(weapon_hl1mp_shotgun);
 
-//IMPLEMENT_SERVERCLASS_ST( CWeaponShotgun, DT_WeaponShotgun )
+//IMPLEMENT_SERVERCLASS_ST( CHL1MPWeaponShotgun, DT_HL1MPWeaponShotgun )
 //END_SEND_TABLE()
 
-//BEGIN_DATADESC( CWeaponShotgun )
+//BEGIN_DATADESC( CHL1MPWeaponShotgun )
 //END_DATADESC()
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponShotgun::CWeaponShotgun( void )
+CHL1MPWeaponShotgun::CHL1MPWeaponShotgun( void )
 {
 	m_bReloadsSingly	= true;
 	m_bFiresUnderwater	= false;
@@ -107,12 +107,12 @@ CWeaponShotgun::CWeaponShotgun( void )
 }
 
 
-void CWeaponShotgun::Precache( void )
+void CHL1MPWeaponShotgun::Precache( void )
 {
 	BaseClass::Precache();
 }
 
-void CWeaponShotgun::PrimaryAttack( void )
+void CHL1MPWeaponShotgun::PrimaryAttack( void )
 {
 	// Only the player fires this way so we can cast
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -190,7 +190,7 @@ void CWeaponShotgun::PrimaryAttack( void )
 }
 
 
-void CWeaponShotgun::SecondaryAttack( void )
+void CHL1MPWeaponShotgun::SecondaryAttack( void )
 {
 	// Only the player fires this way so we can cast
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -279,7 +279,7 @@ void CWeaponShotgun::SecondaryAttack( void )
 }
 
 
-bool CWeaponShotgun::Reload( void )
+bool CHL1MPWeaponShotgun::Reload( void )
 {
 	CBaseCombatCharacter *pOwner  = GetOwner();
 	
@@ -333,7 +333,7 @@ bool CWeaponShotgun::Reload( void )
 }
 
 
-void CWeaponShotgun::FillClip( void )
+void CHL1MPWeaponShotgun::FillClip( void )
 {
 	CBaseCombatCharacter *pOwner  = GetOwner();
 	
@@ -346,7 +346,7 @@ void CWeaponShotgun::FillClip( void )
 }
 
 
-void CWeaponShotgun::DryFire( void )
+void CHL1MPWeaponShotgun::DryFire( void )
 {
 	WeaponSound( EMPTY );
 	m_flNextPrimaryAttack	= gpGlobals->curtime + 0.75;
@@ -354,7 +354,7 @@ void CWeaponShotgun::DryFire( void )
 }
 
 
-void CWeaponShotgun::WeaponIdle( void )
+void CHL1MPWeaponShotgun::WeaponIdle( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 

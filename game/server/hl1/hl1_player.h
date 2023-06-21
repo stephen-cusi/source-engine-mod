@@ -43,21 +43,21 @@ public:
 //=============================================================================
 // >> HL1_PLAYER
 //=============================================================================
-class CHL1_Player : public CBasePlayer
+class CHL2MP_Player : public CBasePlayer
 {
-	DECLARE_CLASS( CHL1_Player, CBasePlayer );
+	DECLARE_CLASS( CHL2MP_Player, CBasePlayer );
 	DECLARE_SERVERCLASS();
 public:
 
 	DECLARE_DATADESC();
 
-	CHL1_Player();
-	~CHL1_Player( void );
+	CHL2MP_Player();
+	~CHL2MP_Player( void );
 
-	static CHL1_Player *CreatePlayer( const char *className, edict_t *ed )
+	static CHL2MP_Player *CreatePlayer( const char *className, edict_t *ed )
 	{
-		CHL1_Player::s_PlayerEdict = ed;
-		return (CHL1_Player*)CreateEntityByName( className );
+		CHL2MP_Player::s_PlayerEdict = ed;
+		return (CHL2MP_Player*)CreateEntityByName( className );
 	}
 
 	void		CreateCorpse( void ) { CopyToBodyQue( this ); };
@@ -153,14 +153,14 @@ public:
 //-----------------------------------------------------------------------------
 // Converts an entity to a HL1 player
 //-----------------------------------------------------------------------------
-inline CHL1_Player *ToHL1Player( CBaseEntity *pEntity )
+inline CHL2MP_Player *ToHL2MPPlayer( CBaseEntity *pEntity )
 {
 	if ( !pEntity || !pEntity->IsPlayer() )
 		return NULL;
 #if _DEBUG
-	return dynamic_cast<CHL1_Player *>( pEntity );
+	return dynamic_cast<CHL2MP_Player *>( pEntity );
 #else
-	return static_cast<CHL1_Player *>( pEntity );
+	return static_cast<CHL2MP_Player *>( pEntity );
 #endif
 }
 

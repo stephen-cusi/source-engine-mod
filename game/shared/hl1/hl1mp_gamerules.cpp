@@ -8,7 +8,7 @@
 
 #ifdef CLIENT_DLL
 
-#include "hl1/c_hl1mp_player.h"
+#include "c_hl2mp_player.h"
 
 #else
 
@@ -22,7 +22,7 @@
 #include <ctype.h>
 #include "voice_gamemgr.h"
 #include "iscorer.h"
-#include "hl1mp_player.h"
+#include "hl2mp_player.h"
 #include "team.h"
 #include "voice_gamemgr.h"
 
@@ -237,7 +237,7 @@ bool CHL1MPRules::ClientCommand( CBaseEntity *pEdict, const CCommand &args )
 		return true;
 
 
-	CHL1MP_Player *pPlayer = (CHL1MP_Player *) pEdict;
+	CHL2MP_Player *pPlayer = (CHL2MP_Player *) pEdict;
 
 	if ( pPlayer->ClientCommand( args ) )
 		return true;
@@ -392,7 +392,7 @@ void CHL1MPRules::ChangePlayerTeam( CBasePlayer *pPlayer, const char *pTeamName,
 
 void CHL1MPRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 {
-	CHL1MP_Player *pHL1Player = ToHL1MPPlayer( pPlayer );
+	CHL2MP_Player *pHL1Player = ToHL2MPPlayer( pPlayer );
 
 	if ( pHL1Player == NULL )
 		return;

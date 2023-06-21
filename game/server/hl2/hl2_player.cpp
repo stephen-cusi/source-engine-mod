@@ -2497,6 +2497,20 @@ void CHL2_Player::NotifyScriptsOfDeath( void )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
+Vector CHL2_Player::GetAutoaimVector(float flScale)
+{
+	return BaseClass::GetAutoaimVector(flScale);
+}
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+Vector CHL2_Player::GetAutoaimVector(float flScale, float flMaxDist)
+{
+	return BaseClass::GetAutoaimVector(flScale, flMaxDist);
+}
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 void CHL2_Player::GetAutoaimVector( autoaim_params_t &params )
 {
 	BaseClass::GetAutoaimVector( params );

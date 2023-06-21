@@ -51,9 +51,9 @@ typedef struct
 #define DEFAULT_SPEED 250
 #define HELICOPTER_THINK_INTERVAL		0.1
 
-class CNPC_Osprey : public CBaseHelicopter
+class CHL1MPNPC_Osprey : public CHL1MPBaseHelicopter
 {
-	DECLARE_CLASS( CNPC_Osprey, CBaseHelicopter );
+	DECLARE_CLASS( CHL1MPNPC_Osprey, CHL1MPBaseHelicopter );
 public:
 
 	int		ObjectCaps( void ) { return BaseClass::ObjectCaps() & ~FCAP_ACROSS_TRANSITION; }
@@ -125,9 +125,9 @@ public:
 	int m_iNextCrashModel;	//which gib to explode with next
 };
 
-LINK_ENTITY_TO_CLASS( monster_osprey, CNPC_Osprey );
+LINK_ENTITY_TO_CLASS( monster_osprey, CHL1MPNPC_Osprey );
 
-BEGIN_DATADESC( CNPC_Osprey )
+BEGIN_DATADESC( CHL1MPNPC_Osprey )
 	DEFINE_FIELD( m_startTime, FIELD_TIME ),
 
 	DEFINE_FIELD( m_flIdealtilt, FIELD_FLOAT ),
@@ -176,7 +176,7 @@ BEGIN_DATADESC( CNPC_Osprey )
 END_DATADESC()
 
 
-void CNPC_Osprey::Spawn( void )
+void CHL1MPNPC_Osprey::Spawn( void )
 {
 	Precache( );
 	// motor
@@ -226,7 +226,7 @@ void CNPC_Osprey::Spawn( void )
 }
 
 
-void CNPC_Osprey::Precache( void )
+void CHL1MPNPC_Osprey::Precache( void )
 {
 	UTIL_PrecacheOther( "monster_human_grunt" );
 
@@ -247,7 +247,7 @@ void CNPC_Osprey::Precache( void )
 	BaseClass::Precache();
 }
 
-void CNPC_Osprey::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
+void CHL1MPNPC_Osprey::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
 {
 	float flDamage = info.GetDamage();
 
@@ -330,7 +330,7 @@ void CNPC_Osprey::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CNPC_Osprey::InitializeRotorSound( void )
+void CHL1MPNPC_Osprey::InitializeRotorSound( void )
 {
 	CSoundEnvelopeController &controller = CSoundEnvelopeController::GetController();
 
@@ -340,7 +340,7 @@ void CNPC_Osprey::InitializeRotorSound( void )
 	BaseClass::InitializeRotorSound();
 }
 
-void CNPC_Osprey::FindAllThink( void )
+void CHL1MPNPC_Osprey::FindAllThink( void )
 {
 	CBaseEntity *pEntity = NULL;
 
@@ -368,7 +368,7 @@ void CNPC_Osprey::FindAllThink( void )
 	m_startTime = 0.0f;
 }
 
-void CNPC_Osprey::DeployThink( void )
+void CHL1MPNPC_Osprey::DeployThink( void )
 {
 	Vector vecForward;
 	Vector vecRight;
@@ -401,7 +401,7 @@ void CNPC_Osprey::DeployThink( void )
 	HoverThink();
 }
 
-bool CNPC_Osprey::HasDead( )
+bool CHL1MPNPC_Osprey::HasDead( )
 {
 	for (int i = 0; i < m_iUnits; i++)
 	{
@@ -417,7 +417,7 @@ bool CNPC_Osprey::HasDead( )
 	return FALSE;
 }
 
-void CNPC_Osprey::HoverThink( void )
+void CHL1MPNPC_Osprey::HoverThink( void )
 {
 	int i = 0;
 	for (i = 0; i < 4; i++)
@@ -440,7 +440,7 @@ void CNPC_Osprey::HoverThink( void )
 	}
 }
 
-CAI_BaseNPC *CNPC_Osprey::MakeGrunt( Vector vecSrc )
+CAI_BaseNPC *CHL1MPNPC_Osprey::MakeGrunt( Vector vecSrc )
 {
 	CBaseEntity *pEntity;
 	CAI_BaseNPC *pGrunt;
@@ -490,7 +490,7 @@ CAI_BaseNPC *CNPC_Osprey::MakeGrunt( Vector vecSrc )
 	return NULL;
 }
 
-void CNPC_Osprey::Flight( void )
+void CHL1MPNPC_Osprey::Flight( void )
 {
 	if ( m_iRepelState == LOADED_WITH_GRUNTS )
 	{
@@ -510,7 +510,7 @@ void CNPC_Osprey::Flight( void )
 	}
 }
 
-void CNPC_Osprey::PrescheduleThink( void )
+void CHL1MPNPC_Osprey::PrescheduleThink( void )
 {
 	BaseClass::PrescheduleThink();
 	
@@ -544,7 +544,7 @@ void CNPC_Osprey::PrescheduleThink( void )
 //-----------------------------------------------------------------------------
 // Purpose:	Lame, temporary death
 //-----------------------------------------------------------------------------
-void CNPC_Osprey::DyingThink( void )
+void CHL1MPNPC_Osprey::DyingThink( void )
 {
 	StudioFrameAdvance( );
 	SetNextThink( gpGlobals->curtime + 0.1f );
@@ -620,7 +620,7 @@ void CNPC_Osprey::DyingThink( void )
 
 }
 
-void CNPC_Osprey::CrashTouch( CBaseEntity *pOther )
+void CHL1MPNPC_Osprey::CrashTouch( CBaseEntity *pOther )
 {
 	Vector vecSize = Vector( 120, 120, 30 );
 	CPVSFilter filter( GetAbsOrigin() );
@@ -648,7 +648,7 @@ void CNPC_Osprey::CrashTouch( CBaseEntity *pOther )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-BEGIN_DATADESC( CBaseHelicopter )
+BEGIN_DATADESC( CHL1MPBaseHelicopter )
 
 	DEFINE_THINKFUNC( HelicopterThink ),
 	DEFINE_THINKFUNC( CallDyingThink ),
@@ -686,7 +686,7 @@ BEGIN_DATADESC( CBaseHelicopter )
 
 END_DATADESC()
 
-IMPLEMENT_SERVERCLASS_ST( CBaseHelicopter, DT_BaseHelicopter )
+IMPLEMENT_SERVERCLASS_ST( CHL1MPBaseHelicopter, DT_HL1MPBaseHelicopter )
 END_SEND_TABLE()
 
 
@@ -696,7 +696,7 @@ END_SEND_TABLE()
 // Output  :
 // Notes   : Have your derived Helicopter's Spawn() function call this one FIRST
 //------------------------------------------------------------------------------
-void CBaseHelicopter::Precache( void )
+void CHL1MPBaseHelicopter::Precache( void )
 {
 }
 
@@ -707,7 +707,7 @@ void CBaseHelicopter::Precache( void )
 // Output  :
 // Notes   : Have your derived Helicopter's Spawn() function call this one FIRST
 //------------------------------------------------------------------------------
-void CBaseHelicopter::Spawn( void )
+void CHL1MPBaseHelicopter::Spawn( void )
 {
 	Precache( );
 
@@ -749,7 +749,7 @@ void CBaseHelicopter::Spawn( void )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-bool CBaseHelicopter::FireGun( void )
+bool CHL1MPBaseHelicopter::FireGun( void )
 {
 	return true;
 }
@@ -760,7 +760,7 @@ bool CBaseHelicopter::FireGun( void )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::HelicopterThink( void )
+void CHL1MPBaseHelicopter::HelicopterThink( void )
 {
 	SetNextThink( gpGlobals->curtime + HELICOPTER_THINK_INTERVAL );
 
@@ -797,7 +797,7 @@ void CBaseHelicopter::HelicopterThink( void )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::Hunt( void )
+void CHL1MPBaseHelicopter::Hunt( void )
 {
 	FlyPathCorners( );
 
@@ -908,7 +908,7 @@ void CBaseHelicopter::Hunt( void )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::FlyPathCorners( void )
+void CHL1MPBaseHelicopter::FlyPathCorners( void )
 {
 
 	if ( GetGoalEnt() == NULL && m_target != NULL_STRING )// this monster has a target
@@ -964,7 +964,7 @@ void CBaseHelicopter::FlyPathCorners( void )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::UpdatePlayerDopplerShift( )
+void CHL1MPBaseHelicopter::UpdatePlayerDopplerShift( )
 {
 	// -----------------------------
 	// make rotor, engine sounds
@@ -1012,7 +1012,7 @@ void CBaseHelicopter::UpdatePlayerDopplerShift( )
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
-void CBaseHelicopter::Flight( void )
+void CHL1MPBaseHelicopter::Flight( void )
 {
 	if( GetFlags() & FL_ONGROUND )
 	{
@@ -1214,7 +1214,7 @@ void CBaseHelicopter::Flight( void )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::InitializeRotorSound( void )
+void CHL1MPBaseHelicopter::InitializeRotorSound( void )
 {
 	if (m_pRotorSound)
 	{
@@ -1234,7 +1234,7 @@ void CBaseHelicopter::InitializeRotorSound( void )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::UpdateRotorSoundPitch( int iPitch )
+void CHL1MPBaseHelicopter::UpdateRotorSoundPitch( int iPitch )
 {
 	if (m_pRotorSound)
 	{
@@ -1250,7 +1250,7 @@ void CBaseHelicopter::UpdateRotorSoundPitch( int iPitch )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::FlyTouch( CBaseEntity *pOther )
+void CHL1MPBaseHelicopter::FlyTouch( CBaseEntity *pOther )
 {
 	// bounce if we hit something solid
 	if ( pOther->GetSolid() == SOLID_BSP) 
@@ -1268,7 +1268,7 @@ void CBaseHelicopter::FlyTouch( CBaseEntity *pOther )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::CrashTouch( CBaseEntity *pOther )
+void CHL1MPBaseHelicopter::CrashTouch( CBaseEntity *pOther )
 {
 	// only crash if we hit something solid
 	if ( pOther->GetSolid() == SOLID_BSP) 
@@ -1297,7 +1297,7 @@ void CBaseHelicopter::CrashTouch( CBaseEntity *pOther )
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::DyingThink( void )
+void CHL1MPBaseHelicopter::DyingThink( void )
 {
 	StudioFrameAdvance( );
 	SetNextThink( gpGlobals->curtime + 0.1f );
@@ -1311,7 +1311,7 @@ void CBaseHelicopter::DyingThink( void )
 // Input  :
 // Output : 
 //-----------------------------------------------------------------------------
-int CBaseHelicopter::OnTakeDamage_Alive( const CTakeDamageInfo &info )
+int CHL1MPBaseHelicopter::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 {
 #if 0
 	// This code didn't port easily. WTF does it do? (sjb)
@@ -1336,7 +1336,7 @@ int CBaseHelicopter::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 // Input  :
 // Output : 
 //-----------------------------------------------------------------------------
-void CBaseHelicopter::DrawDebugGeometryOverlays(void) 
+void CHL1MPBaseHelicopter::DrawDebugGeometryOverlays(void) 
 {
 	if (m_pfnThink!= NULL)
 	{
@@ -1357,7 +1357,7 @@ void CBaseHelicopter::DrawDebugGeometryOverlays(void)
 // Input  :
 // Output : 
 //-----------------------------------------------------------------------------
-void CBaseHelicopter::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
+void CHL1MPBaseHelicopter::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
 {
 	CTakeDamageInfo dmgInfo = info;
 
@@ -1390,23 +1390,23 @@ void CBaseHelicopter::TraceAttack( const CTakeDamageInfo &info, const Vector &ve
 // Input   :
 // Output  :
 //------------------------------------------------------------------------------
-void CBaseHelicopter::NullThink( void )
+void CHL1MPBaseHelicopter::NullThink( void )
 {
 	StudioFrameAdvance( );
 	SetNextThink( gpGlobals->curtime + 0.5f );
 }
 
 
-void CBaseHelicopter::Startup( void )
+void CHL1MPBaseHelicopter::Startup( void )
 {
 	m_flGoalSpeed = m_flInitialSpeed;
-	SetThink( &CBaseHelicopter::HelicopterThink );
-	SetTouch( &CBaseHelicopter::FlyTouch );
+	SetThink( &CHL1MPBaseHelicopter::HelicopterThink );
+	SetTouch( &CHL1MPBaseHelicopter::FlyTouch );
 	SetNextThink( gpGlobals->curtime + 0.1f );
 }
 
 
-void CBaseHelicopter::Event_Killed( const CTakeDamageInfo &info )
+void CHL1MPBaseHelicopter::Event_Killed( const CTakeDamageInfo &info )
 {
 	m_lifeState			= LIFE_DYING;
 
@@ -1416,8 +1416,8 @@ void CBaseHelicopter::Event_Killed( const CTakeDamageInfo &info )
 	// Kill the rotor sound.
 
 	UTIL_SetSize( this, Vector( -32, -32, -64), Vector( 32, 32, 0) );
-	SetThink( &CBaseHelicopter::CallDyingThink );
-	SetTouch( &CBaseHelicopter::CrashTouch );
+	SetThink( &CHL1MPBaseHelicopter::CallDyingThink );
+	SetTouch( &CHL1MPBaseHelicopter::CrashTouch );
 
 	m_flNextCrashExplosion = gpGlobals->curtime + 0.0f;
 
@@ -1439,7 +1439,7 @@ void CBaseHelicopter::Event_Killed( const CTakeDamageInfo &info )
 }
 
 
-void CBaseHelicopter::StopLoopingSounds()
+void CHL1MPBaseHelicopter::StopLoopingSounds()
 {
 	CSoundEnvelopeController &controller = CSoundEnvelopeController::GetController();
 	controller.SoundDestroy( m_pRotorSound );
@@ -1448,12 +1448,12 @@ void CBaseHelicopter::StopLoopingSounds()
 	BaseClass::StopLoopingSounds();
 }
 
-void CBaseHelicopter::GibMonster( void )
+void CHL1MPBaseHelicopter::GibMonster( void )
 {
 }
 
 
-void CBaseHelicopter::ChangePathCorner( const char *pszName )
+void CHL1MPBaseHelicopter::ChangePathCorner( const char *pszName )
 {
 	if( m_lifeState != LIFE_ALIVE )
 	{
@@ -1480,7 +1480,7 @@ void CBaseHelicopter::ChangePathCorner( const char *pszName )
 //          This code does NOT check that the path from the current position
 //			to the wished path corner is clear!
 //-----------------------------------------------------------------------------
-void CBaseHelicopter::InputChangePathCorner( inputdata_t &inputdata )
+void CHL1MPBaseHelicopter::InputChangePathCorner( inputdata_t &inputdata )
 {
 	ChangePathCorner( inputdata.value.String() );
 }
@@ -1489,7 +1489,7 @@ void CBaseHelicopter::InputChangePathCorner( inputdata_t &inputdata )
 //-----------------------------------------------------------------------------
 // Purpose: Call Startup for a helicopter that's been flagged to start disabled
 //-----------------------------------------------------------------------------
-void CBaseHelicopter::InputActivate( inputdata_t &inputdata )
+void CHL1MPBaseHelicopter::InputActivate( inputdata_t &inputdata )
 {
 	if( m_spawnflags & SF_AWAITINPUT )
 	{
@@ -1508,7 +1508,7 @@ void CBaseHelicopter::InputActivate( inputdata_t &inputdata )
 // Output : 
 //-----------------------------------------------------------------------------
 
-void CBaseHelicopter::ApplySidewaysDrag( const Vector &vecRight )
+void CHL1MPBaseHelicopter::ApplySidewaysDrag( const Vector &vecRight )
 {
 	Vector vecNewVelocity = GetAbsVelocity();
 	vecNewVelocity.x *= 1.0 - fabs( vecRight.x ) * 0.05;
@@ -1523,7 +1523,7 @@ void CBaseHelicopter::ApplySidewaysDrag( const Vector &vecRight )
 // Input  :
 // Output : 
 //-----------------------------------------------------------------------------
-void CBaseHelicopter::ApplyGeneralDrag( void )
+void CHL1MPBaseHelicopter::ApplyGeneralDrag( void )
 {
 	Vector vecNewVelocity = GetAbsVelocity();
 	vecNewVelocity *= 0.995;
@@ -1536,7 +1536,7 @@ void CBaseHelicopter::ApplyGeneralDrag( void )
 // Input  :
 // Output : 
 //-----------------------------------------------------------------------------
-bool CBaseHelicopter::ChooseEnemy( void )
+bool CHL1MPBaseHelicopter::ChooseEnemy( void )
 {
 	// See if there's a new enemy.
 	CBaseEntity *pNewEnemy;
@@ -1563,7 +1563,7 @@ bool CBaseHelicopter::ChooseEnemy( void )
 // Input  :
 // Output : 
 //-----------------------------------------------------------------------------
-void CBaseHelicopter::CheckEnemy( CBaseEntity *pEnemy )
+void CHL1MPBaseHelicopter::CheckEnemy( CBaseEntity *pEnemy )
 {
 	// -------------------
 	// If enemy is dead
@@ -1577,7 +1577,7 @@ void CBaseHelicopter::CheckEnemy( CBaseEntity *pEnemy )
 	}
 }
 
-bool CBaseHelicopter::HasReachedTarget( void )
+bool CHL1MPBaseHelicopter::HasReachedTarget( void )
 { 
 	float flDist = (WorldSpaceCenter() - m_vecDesiredPosition).Length();
 

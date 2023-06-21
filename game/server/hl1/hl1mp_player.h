@@ -11,25 +11,25 @@
 #pragma once
 
 #include "cbase.h"
-#include "hl1_player_shared.h"
-#include "hl1_player.h"
+#include "cs_playeranimstate.h"
+#include "hl2mp_player.h"
 #include "takedamageinfo.h"
 
 
-class CHL1MP_Player;
+class CHL2MP_Player;
 
 
 //=============================================================================
 // >> HL1MP_Player
 //=============================================================================
-class CHL1MP_Player : public CHL1_Player
+class CHL2MP_Player : public CHL2MP_Player
 {
 public:
-	DECLARE_CLASS( CHL1MP_Player, CHL1_Player );
+	DECLARE_CLASS( CHL2MP_Player, CHL2MP_Player );
 	DECLARE_SERVERCLASS();
     
-	CHL1MP_Player();
-	~CHL1MP_Player( void );
+	CHL2MP_Player();
+	~CHL2MP_Player( void );
 	
     virtual void Event_Killed( const CTakeDamageInfo &info );
     virtual void Spawn( void );
@@ -70,17 +70,17 @@ private:
 	CNetworkVar( int, m_iSpawnInterpCounter );
 	CNetworkQAngle( m_angEyeAngles );
 
-    IHL1MPPlayerAnimState*		m_PlayerAnimState;
+    ICSPlayerAnimState*		m_PlayerAnimState;
 	float						m_flNextModelChangeTime;
 	float						m_flNextTeamChangeTime;
 };
 
-inline CHL1MP_Player *ToHL1MPPlayer( CBaseEntity *pEntity )
+inline CHL2MP_Player *ToHL2MPPlayer( CBaseEntity *pEntity )
 {
 	if ( !pEntity || !pEntity->IsPlayer() )
 		return NULL;
 
-	return dynamic_cast<CHL1MP_Player*>( pEntity );
+	return dynamic_cast<CHL2MP_Player*>( pEntity );
 }
 
 

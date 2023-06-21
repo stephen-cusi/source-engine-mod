@@ -30,9 +30,9 @@
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-class CNPC_Barnacle : public CHL1BaseNPC
+class CHL1MPNPC_Barnacle : public CHL1BaseNPC
 {
-	DECLARE_CLASS( CNPC_Barnacle, CHL1BaseNPC );
+	DECLARE_CLASS( CHL1MPNPC_Barnacle, CHL1BaseNPC );
 
 public:
 	void			Spawn( void );

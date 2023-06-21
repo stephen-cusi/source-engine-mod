@@ -14,8 +14,8 @@
 */
 
 #include "cbase.h"
-#include "hl1_player.h"
-#include "hl1mp_player.h"
+#include "hl2mp_player.h"
+#include "hl2mp_player.h"
 #include "hl1_gamerules.h"
 #include "gamerules.h"
 #include "teamplay_gamerules.h"
@@ -41,13 +41,13 @@ called each time a player is spawned into the game
 */
 void ClientPutInServer( edict_t *pEdict, const char *playername )
 {
-	CHL1_Player *pPlayer = NULL;
+	CHL2MP_Player *pPlayer = NULL;
 
 	// Allocate a CBasePlayer for pev, and call spawn
     if ( g_pGameRules->IsMultiplayer() )
-		pPlayer = CHL1_Player::CreatePlayer( "player_mp", pEdict );
+		pPlayer = CHL2MP_Player::CreatePlayer( "player_mp", pEdict );
 	else
-		pPlayer = CHL1_Player::CreatePlayer( "player", pEdict );
+		pPlayer = CHL2MP_Player::CreatePlayer( "player", pEdict );
 
 	pPlayer->SetPlayerName( playername );
 }
@@ -55,7 +55,7 @@ void ClientPutInServer( edict_t *pEdict, const char *playername )
 
 void ClientActive( edict_t *pEdict, bool bLoadGame )
 {
-	CHL1_Player *pPlayer = dynamic_cast< CHL1_Player* >( CBaseEntity::Instance( pEdict ) );
+	CHL2MP_Player *pPlayer = dynamic_cast< CHL2MP_Player* >( CBaseEntity::Instance( pEdict ) );
 
 	pPlayer->InitialSpawn();
 
@@ -136,7 +136,7 @@ void respawn( CBaseEntity *pEdict, bool fCopyCorpse )
 		if ( fCopyCorpse )
 		{
 			// make a copy of the dead body for appearances sake
-			((CHL1MP_Player *)pEdict)->CreateCorpse();
+			((CHL2MP_Player *)pEdict)->CreateCorpse();
 		}
 
 		// respawn player

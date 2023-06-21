@@ -10,7 +10,7 @@
 #include "hudelement.h"
 #include "hud_macros.h"
 #include "iclientmode.h"
-#include "hl1_c_player.h"
+#include "c_hl2mp_player.h"
 
 #include <vgui/ISurface.h>
 #include <vgui_controls/Panel.h>
@@ -58,7 +58,7 @@ void CHudFlashlight::Paint( void )
 	bool	bIsOn;
 	Color	clrFlash;
 
-	C_HL1_Player *pPlayer = ToHL1Player( C_HL1_Player::GetLocalPlayer() );
+	C_HL1_Player *pPlayer = ToHL2MPPlayer( C_HL1_Player::GetLocalPlayer() );
 	if ( !pPlayer )
 		return;
 

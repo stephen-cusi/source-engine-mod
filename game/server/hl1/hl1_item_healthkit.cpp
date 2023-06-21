@@ -13,31 +13,31 @@
 #include "in_buttons.h"
 
 
-ConVar	sk_healthkit( "sk_healthkit","0" );		
-ConVar	sk_healthvial( "sk_healthvial","0" );		
-ConVar	sk_healthcharger( "sk_healthcharger","0" );		
+extern ConVar	sk_healthkit;
+extern ConVar	sk_healthvial;
+extern ConVar	sk_healthcharger;
 
 //-----------------------------------------------------------------------------
 // Small health kit. Heals the player when picked up.
 //-----------------------------------------------------------------------------
-class CHealthKit : public CHL1Item
+class CHL1MPHealthKit : public CHL1Item
 {
 public:
-	DECLARE_CLASS( CHealthKit, CHL1Item );
+	DECLARE_CLASS( CHL1MPHealthKit, CHL1Item );
 
 	void Spawn( void );
 	void Precache( void );
 	bool MyTouch( CBasePlayer *pPlayer );
 };
 
-LINK_ENTITY_TO_CLASS( item_healthkit, CHealthKit );
-PRECACHE_REGISTER(item_healthkit);
+LINK_ENTITY_TO_CLASS( item_hl1mp_healthkit, CHL1MPHealthKit );
+PRECACHE_REGISTER(item_hl1mp_healthkit);
 
 
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CHealthKit::Spawn( void )
+void CHL1MPHealthKit::Spawn( void )
 {
 	Precache();
 	SetModel( "models/w_medkit.mdl" );
@@ -49,7 +49,7 @@ void CHealthKit::Spawn( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CHealthKit::Precache( void )
+void CHL1MPHealthKit::Precache( void )
 {
 	PrecacheModel("models/w_medkit.mdl");
 
@@ -62,7 +62,7 @@ void CHealthKit::Precache( void )
 // Input  : *pPlayer - 
 // Output : 
 //-----------------------------------------------------------------------------
-bool CHealthKit::MyTouch( CBasePlayer *pPlayer )
+bool CHL1MPHealthKit::MyTouch( CBasePlayer *pPlayer )
 {
 	if ( pPlayer->TakeHealth( sk_healthkit.GetFloat(), DMG_GENERIC ) )
 	{
@@ -95,10 +95,10 @@ bool CHealthKit::MyTouch( CBasePlayer *pPlayer )
 // Small dynamically dropped health kit
 //-----------------------------------------------------------------------------
 
-class CHealthVial : public CHL1Item
+class CHL1MPHealthVial : public CHL1Item
 {
 public:
-	DECLARE_CLASS( CHealthVial, CHL1Item );
+	DECLARE_CLASS( CHL1MPHealthVial, CHL1Item );
 
 	void Spawn( void )
 	{
@@ -145,16 +145,16 @@ public:
 	}
 };
 
-LINK_ENTITY_TO_CLASS( item_healthvial, CHealthVial );
-PRECACHE_REGISTER( item_healthvial );
+LINK_ENTITY_TO_CLASS( item_hl1mp_healthvial, CHL1MPHealthVial );
+PRECACHE_REGISTER( item_hl1mp_healthvial );
 
 //-----------------------------------------------------------------------------
 // Wall mounted health kit. Heals the player when used.
 //-----------------------------------------------------------------------------
-class CWallHealth : public CBaseToggle
+class CHL1MPWallHealth : public CBaseToggle
 {
 public:
-	DECLARE_CLASS( CWallHealth, CBaseToggle );
+	DECLARE_CLASS( CHL1MPWallHealth, CBaseToggle );
 
 	void Spawn( );
 	void Precache( void );
@@ -175,10 +175,10 @@ public:
 	DECLARE_DATADESC();
 };
 
-LINK_ENTITY_TO_CLASS(func_healthcharger, CWallHealth);
+LINK_ENTITY_TO_CLASS(func_hl1mp_healthcharger, CHL1MPWallHealth);
 
 
-BEGIN_DATADESC( CWallHealth )
+BEGIN_DATADESC( CHL1MPWallHealth )
 
 	DEFINE_FIELD( m_flNextCharge, FIELD_TIME),
 	DEFINE_FIELD( m_iReactivate, FIELD_INTEGER),
@@ -199,7 +199,7 @@ END_DATADESC()
 // Purpose: 
 // Input  : *pkvd - 
 //-----------------------------------------------------------------------------
-bool CWallHealth::KeyValue(  const char *szKeyName, const char *szValue )
+bool CHL1MPWallHealth::KeyValue(  const char *szKeyName, const char *szValue )
 {
 	if (FStrEq(szKeyName, "style") ||
 		FStrEq(szKeyName, "height") ||
@@ -222,7 +222,7 @@ bool CWallHealth::KeyValue(  const char *szKeyName, const char *szValue )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWallHealth::Spawn(void)
+void CHL1MPWallHealth::Spawn(void)
 {
 	Precache( );
 
@@ -241,7 +241,7 @@ void CWallHealth::Spawn(void)
 
 //-----------------------------------------------------------------------------
 
-bool CWallHealth::CreateVPhysics(void)
+bool CHL1MPWallHealth::CreateVPhysics(void)
 {
 	VPhysicsInitStatic();
 	return true;
@@ -251,7 +251,7 @@ bool CWallHealth::CreateVPhysics(void)
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWallHealth::Precache(void)
+void CHL1MPWallHealth::Precache(void)
 {
 	PrecacheScriptSound( "WallHealth.Deny" );
 	PrecacheScriptSound( "WallHealth.Start" );
@@ -267,7 +267,7 @@ void CWallHealth::Precache(void)
 //			useType - 
 //			value - 
 //-----------------------------------------------------------------------------
-void CWallHealth::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+void CHL1MPWallHealth::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
 { 
 	// Make sure that we have a caller
 	if (!pActivator)
@@ -316,7 +316,7 @@ void CWallHealth::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE u
 	}
 
 	SetNextThink( gpGlobals->curtime + 0.25 );
-	SetThink(&CWallHealth::Off);
+	SetThink(&CHL1MPWallHealth::Off);
 
 	// Time to recharge yet?
 
@@ -353,7 +353,7 @@ void CWallHealth::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE u
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWallHealth::Recharge(void)
+void CHL1MPWallHealth::Recharge(void)
 {
 	EmitSound( "WallHealth.Recharge" );
 	m_iJuice = sk_healthcharger.GetFloat();
@@ -365,7 +365,7 @@ void CWallHealth::Recharge(void)
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWallHealth::Off(void)
+void CHL1MPWallHealth::Off(void)
 {
 	// Stop looping sound.
 	if (m_iOn > 1)
@@ -376,7 +376,7 @@ void CWallHealth::Off(void)
 	if ((!m_iJuice) &&  ( ( m_iReactivate = g_pGameRules->FlHealthChargerRechargeTime() ) > 0) )
 	{
 		SetNextThink( gpGlobals->curtime + m_iReactivate );
-		SetThink(&CWallHealth::Recharge);
+		SetThink(&CHL1MPWallHealth::Recharge);
 	}
 	else
 		SetThink( NULL );

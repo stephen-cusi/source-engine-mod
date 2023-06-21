@@ -12,9 +12,9 @@
 
 //=========================================================
 //=========================================================
-class CNPC_Barney : public CHL1NPCTalker
+class CHL1MPNPC_Barney : public CHL1NPCTalker
 {
-	DECLARE_CLASS( CNPC_Barney, CHL1NPCTalker );
+	DECLARE_CLASS( CHL1MPNPC_Barney, CHL1NPCTalker );
 public:
 	
 	DECLARE_DATADESC();

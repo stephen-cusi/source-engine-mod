@@ -10,7 +10,7 @@
 #include "igamemovement.h"
 #include "in_buttons.h"
 #include "ipredictionsystem.h"
-#include "hl1_player.h"
+#include "hl2mp_player.h"
 
 
 static CMoveData g_MoveData;

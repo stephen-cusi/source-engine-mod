@@ -9,11 +9,11 @@
 #include "tier0/vprof.h"
 
 #ifdef CLIENT_DLL
-#include "hl1_player_shared.h"
-#include "hl1/c_hl1mp_player.h"
+#include "cs_playeranimstate.h"
+#include "c_hl2mp_player.h"
 //#define CRecipientFilter C_RecipientFilter
 #else
-#include "hl1mp_player.h"
+#include "hl2mp_player.h"
 #endif
 
 // When moving this fast, he plays run anim.
@@ -27,14 +27,14 @@
 // CPlayerAnimState declaration.
 // ------------------------------------------------------------------------------------------------ //
 
-class CPlayerAnimState : public IHL1MPPlayerAnimState, public CBasePlayerAnimState
+class CPlayerAnimState : public ICSPlayerAnimState, public CBasePlayerAnimState
 {
 public:
 	
 	DECLARE_CLASS( CPlayerAnimState, CBasePlayerAnimState );
 
 	CPlayerAnimState();
-	void Init( CHL1MP_Player *pPlayer );
+	void Init( CHL2MP_Player *pPlayer );
 
 	// This is called by both the client and the server in the same way to trigger events for
 	// players firing, jumping, throwing grenades, etc.
@@ -61,7 +61,7 @@ private:
 
 private:
 	
-	CHL1MP_Player *m_pOuter;
+	CHL2MP_Player *m_pOuter;
 	
 	bool m_bJumping;
 	bool m_bFirstJumpFrame;
@@ -75,7 +75,7 @@ private:
 };
 
 
-IHL1MPPlayerAnimState* CreatePlayerAnimState( CHL1MP_Player *pPlayer )
+ICSPlayerAnimState* CreatePlayerAnimState( CHL2MP_Player *pPlayer )
 {
 	CPlayerAnimState *pRet = new CPlayerAnimState;
 	pRet->Init( pPlayer );
@@ -96,7 +96,7 @@ CPlayerAnimState::CPlayerAnimState()
 }
 
 
-void CPlayerAnimState::Init( CHL1MP_Player *pPlayer )
+void CPlayerAnimState::Init( CHL2MP_Player *pPlayer )
 {
 	m_pOuter = pPlayer;
 	

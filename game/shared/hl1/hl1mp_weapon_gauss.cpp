@@ -7,14 +7,14 @@
 
 #include "cbase.h"
 #include "npcevent.h"
-#include "hl1mp_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 //#include "basecombatcharacter.h"
 //#include "AI_BaseNPC.h"
 #include "takedamageinfo.h"
 #ifdef CLIENT_DLL
-#include "hl1/hl1_c_player.h"
+#include "c_hl2mp_player.h"
 #else
-#include "hl1_player.h"
+#include "hl2mp_player.h"
 #endif
 #include "gamerules.h"
 #include "in_buttons.h"
@@ -26,7 +26,7 @@
 #include "vstdlib/random.h"
 #include "engine/IEngineSound.h"
 #include "soundenvelope.h"
-//#include "hl1_player.h"
+//#include "hl2mp_player.h"
 #include "shake.h"
 #include "effect_dispatch_data.h"
 #ifdef CLIENT_DLL
@@ -43,23 +43,23 @@
 extern ConVar sk_plr_dmg_gauss;
 
 #ifdef CLIENT_DLL
-#define CWeaponGauss C_WeaponGauss
+#define CHL1MPWeaponGauss C_HL1MPWeaponGauss
 #endif
 
 //-----------------------------------------------------------------------------
-// CWeaponGauss
+// CHL1MPWeaponGauss
 //-----------------------------------------------------------------------------
 
 
-class CWeaponGauss : public CBaseHL1MPCombatWeapon
+class CHL1MPWeaponGauss : public CWeaponHL2MPBase
 {
-	DECLARE_CLASS( CWeaponGauss, CBaseHL1MPCombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponGauss, CWeaponHL2MPBase );
 public:
 
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 
-	CWeaponGauss( void );
+	CHL1MPWeaponGauss( void );
 
 	void	Precache( void );
 	void	PrimaryAttack( void );
@@ -87,9 +87,9 @@ private:
 	CSoundPatch	*m_sndCharge;
 };
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponGauss, DT_WeaponGauss );
+IMPLEMENT_NETWORKCLASS_ALIASED( HL1MPWeaponGauss, DT_HL1MPWeaponGauss );
 
-BEGIN_NETWORK_TABLE( CWeaponGauss, DT_WeaponGauss )
+BEGIN_NETWORK_TABLE( CHL1MPWeaponGauss, DT_HL1MPWeaponGauss )
 #ifdef CLIENT_DLL
 	RecvPropInt( RECVINFO( m_nAttackState ) ),
 	RecvPropBool( RECVINFO( m_bPrimaryFire ) ),
@@ -99,21 +99,21 @@ BEGIN_NETWORK_TABLE( CWeaponGauss, DT_WeaponGauss )
 #endif
 END_NETWORK_TABLE()
 
-BEGIN_PREDICTION_DATA( CWeaponGauss )
+BEGIN_PREDICTION_DATA( CHL1MPWeaponGauss )
 #ifdef CLIENT_DLL
 	DEFINE_PRED_FIELD( m_nAttackState, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_bPrimaryFire, FIELD_BOOLEAN, FTYPEDESC_INSENDTABLE ),
 #endif
 END_PREDICTION_DATA()
 
-LINK_ENTITY_TO_CLASS( weapon_gauss, CWeaponGauss );
+LINK_ENTITY_TO_CLASS( weapon_hl1mp_gauss, CHL1MPWeaponGauss );
 
-PRECACHE_WEAPON_REGISTER( weapon_gauss );
+PRECACHE_WEAPON_REGISTER( weapon_hl1mp_gauss );
 
-//IMPLEMENT_SERVERCLASS_ST( CWeaponGauss, DT_WeaponGauss )
+//IMPLEMENT_SERVERCLASS_ST( CHL1MPWeaponGauss, DT_WeaponGauss )
 //END_SEND_TABLE()
 
-BEGIN_DATADESC( CWeaponGauss )
+BEGIN_DATADESC( CHL1MPWeaponGauss )
 	DEFINE_FIELD( m_nAttackState, FIELD_INTEGER ),
 	DEFINE_FIELD( m_bPrimaryFire,	FIELD_BOOLEAN ),
 	DEFINE_SOUNDPATCH( m_sndCharge ),
@@ -122,7 +122,7 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponGauss::CWeaponGauss( void )
+CHL1MPWeaponGauss::CHL1MPWeaponGauss( void )
 {
 	m_bReloadsSingly	= false;
 	m_bFiresUnderwater	= false;
@@ -135,7 +135,7 @@ CWeaponGauss::CWeaponGauss( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponGauss::Precache( void )
+void CHL1MPWeaponGauss::Precache( void )
 {
 	PrecacheModel( GAUSS_GLOW_SPRITE );
 	PrecacheModel( GAUSS_BEAM_SPRITE );
@@ -149,7 +149,7 @@ void CWeaponGauss::Precache( void )
 	BaseClass::Precache();
 }
 
-float CWeaponGauss::GetFullChargeTime( void )
+float CHL1MPWeaponGauss::GetFullChargeTime( void )
 {
 	if ( g_pGameRules->IsMultiplayer() )
 	{
@@ -164,7 +164,7 @@ float CWeaponGauss::GetFullChargeTime( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponGauss::PrimaryAttack( void )
+void CHL1MPWeaponGauss::PrimaryAttack( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	if ( !pPlayer )
@@ -193,9 +193,9 @@ void CWeaponGauss::PrimaryAttack( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponGauss::SecondaryAttack( void )
+void CHL1MPWeaponGauss::SecondaryAttack( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -345,11 +345,11 @@ void CWeaponGauss::SecondaryAttack( void )
 // of weaponidle() and make its own function then to try to
 // merge this into Fire(), which has some identical variable names 
 //=========================================================
-void CWeaponGauss::StartFire( void )
+void CHL1MPWeaponGauss::StartFire( void )
 {
 	float flDamage;
 	
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -398,7 +398,7 @@ void CWeaponGauss::StartFire( void )
 	Fire( vecSrc, vecAiming, flDamage );
 }
 
-void CWeaponGauss::Fire( Vector vecOrigSrc, Vector vecDir, float flDamage )
+void CHL1MPWeaponGauss::Fire( Vector vecOrigSrc, Vector vecDir, float flDamage )
 {
 	CBaseEntity *pIgnore;
 	Vector		vecSrc		= vecOrigSrc;
@@ -632,9 +632,9 @@ void CWeaponGauss::Fire( Vector vecOrigSrc, Vector vecDir, float flDamage )
 	}
 }
 
-void CWeaponGauss::WeaponIdle( void )
+void CHL1MPWeaponGauss::WeaponIdle( void )
 {
-	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 	if ( !pPlayer )
 	{
 		return;
@@ -678,15 +678,15 @@ AddViewKick
 ==================================================
 */
 
-void CWeaponGauss::AddViewKick( void )
+void CHL1MPWeaponGauss::AddViewKick( void )
 {
 }
 
-bool CWeaponGauss::Deploy( void )
+bool CHL1MPWeaponGauss::Deploy( void )
 {
 	if ( DefaultDeploy( (char*)GetViewModel(), (char*)GetWorldModel(), ACT_VM_DRAW, (char*)GetAnimPrefix() ) )
 	{
-		CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
+		CHL2MP_Player *pPlayer = ToHL2MPPlayer( GetOwner() );
 		if ( pPlayer )
 		{
 			pPlayer->m_flPlayAftershock = 0.0;
@@ -700,7 +700,7 @@ bool CWeaponGauss::Deploy( void )
 	}
 }
 
-bool CWeaponGauss::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CHL1MPWeaponGauss::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
 
 	StopSpinSound();
@@ -709,7 +709,7 @@ bool CWeaponGauss::Holster( CBaseCombatWeapon *pSwitchingTo )
 	return BaseClass::Holster(pSwitchingTo);
 }
 
-void CWeaponGauss::StopSpinSound( void )
+void CHL1MPWeaponGauss::StopSpinSound( void )
 {
 	if ( m_sndCharge != NULL )
 	{

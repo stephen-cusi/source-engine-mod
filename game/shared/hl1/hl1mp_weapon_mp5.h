@@ -18,7 +18,7 @@
 #else
 #include "hl1_basegrenade.h"
 #endif
-#include "hl1mp_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 
 #ifdef CLIENT_DLL
 class CGrenadeMP5;
@@ -26,18 +26,18 @@ class CGrenadeMP5;
 #endif
 
 #ifdef CLIENT_DLL
-#define CWeaponMP5 C_WeaponMP5
+#define CHL1MPWeaponMP5 C_HL1MPWeaponMP5
 #endif
 
-class CWeaponMP5 : public CBaseHL1MPCombatWeapon
+class CHL1MPWeaponMP5 : public CWeaponHL2MPBase
 {
-	DECLARE_CLASS( CWeaponMP5, CBaseHL1MPCombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponMP5, CWeaponHL2MPBase );
 public:
 
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 
-	CWeaponMP5();
+	CHL1MPWeaponMP5();
 
 	void	Precache( void );
 	void	PrimaryAttack( void );

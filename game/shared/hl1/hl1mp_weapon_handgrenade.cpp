@@ -7,13 +7,13 @@
 
 #include "cbase.h"
 #include "npcevent.h"
-#include "hl1mp_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 //#include "basecombatcharacter.h"
 //#include "AI_BaseNPC.h"
 #ifdef CLIENT_DLL
-#include "hl1/hl1_c_player.h"
+#include "c_hl2mp_player.h"
 #else
-#include "hl1_player.h"
+#include "hl2mp_player.h"
 #endif
 #include "gamerules.h"
 #include "in_buttons.h"
@@ -193,22 +193,22 @@ void CHandGrenade::BounceTouch( CBaseEntity *pOther )
 #endif
 
 #ifdef CLIENT_DLL
-#define CWeaponHandGrenade C_WeaponHandGrenade
+#define CHL1MPWeaponHandGrenade C_HL1MPWeaponHandGrenade
 #endif
 
 //-----------------------------------------------------------------------------
-// CWeaponHandGrenade
+// CHL1MPWeaponHandGrenade
 //-----------------------------------------------------------------------------
 
-class CWeaponHandGrenade : public CBaseHL1MPCombatWeapon
+class CHL1MPWeaponHandGrenade : public CWeaponHL2MPBase
 {
-	DECLARE_CLASS( CWeaponHandGrenade, CBaseHL1MPCombatWeapon );
+	DECLARE_CLASS( CHL1MPWeaponHandGrenade, CWeaponHL2MPBase);
 public:
 
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
 
-	CWeaponHandGrenade( void );
+	CHL1MPWeaponHandGrenade( void );
 
 	void	Precache( void );
 	void	PrimaryAttack( void );
@@ -226,9 +226,9 @@ private:
 	CNetworkVar( float, m_flReleaseThrow );
 };
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponHandGrenade, DT_WeaponHandGrenade );
+IMPLEMENT_NETWORKCLASS_ALIASED( HL1MPWeaponHandGrenade, DT_HL1MPWeaponHandGrenade );
 
-BEGIN_NETWORK_TABLE( CWeaponHandGrenade, DT_WeaponHandGrenade )
+BEGIN_NETWORK_TABLE( CHL1MPWeaponHandGrenade, DT_HL1MPWeaponHandGrenade )
 #ifdef CLIENT_DLL
 	RecvPropFloat( RECVINFO( m_flStartThrow ) ),
 	RecvPropFloat( RECVINFO( m_flReleaseThrow ) ),
@@ -238,27 +238,27 @@ BEGIN_NETWORK_TABLE( CWeaponHandGrenade, DT_WeaponHandGrenade )
 #endif
 END_NETWORK_TABLE()
 
-BEGIN_PREDICTION_DATA( CWeaponHandGrenade )
+BEGIN_PREDICTION_DATA( CHL1MPWeaponHandGrenade )
 #ifdef CLIENT_DLL
 	DEFINE_PRED_FIELD( m_flStartThrow, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_flReleaseThrow, FIELD_BOOLEAN, FTYPEDESC_INSENDTABLE ),
 #endif
 END_PREDICTION_DATA()
 
-LINK_ENTITY_TO_CLASS( weapon_handgrenade, CWeaponHandGrenade );
+LINK_ENTITY_TO_CLASS( weapon_hl1mp_handgrenade, CHL1MPWeaponHandGrenade );
 
-PRECACHE_WEAPON_REGISTER( weapon_handgrenade );
+PRECACHE_WEAPON_REGISTER( weapon_hl1mp_handgrenade );
 
-//IMPLEMENT_SERVERCLASS_ST( CWeaponHandGrenade, DT_WeaponHandGrenade )
+//IMPLEMENT_SERVERCLASS_ST( CHL1MPWeaponHandGrenade, DT_WeaponHandGrenade )
 //END_SEND_TABLE()
 
-BEGIN_DATADESC( CWeaponHandGrenade )
+BEGIN_DATADESC( CHL1MPWeaponHandGrenade )
 END_DATADESC()
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponHandGrenade::CWeaponHandGrenade( void )
+CHL1MPWeaponHandGrenade::CHL1MPWeaponHandGrenade( void )
 {
 	m_bReloadsSingly	= false;
 	m_bFiresUnderwater	= true;
@@ -267,7 +267,7 @@ CWeaponHandGrenade::CWeaponHandGrenade( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponHandGrenade::Precache( void )
+void CHL1MPWeaponHandGrenade::Precache( void )
 {
 #ifndef CLIENT_DLL
 	UTIL_PrecacheOther( "grenade_hand" );
@@ -279,7 +279,7 @@ void CWeaponHandGrenade::Precache( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponHandGrenade::PrimaryAttack( void )
+void CHL1MPWeaponHandGrenade::PrimaryAttack( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	if ( !pPlayer )
@@ -298,7 +298,7 @@ void CWeaponHandGrenade::PrimaryAttack( void )
 }
 
 
-void CWeaponHandGrenade::WeaponIdle( void )
+void CHL1MPWeaponHandGrenade::WeaponIdle( void )
 {
 	if ( m_flReleaseThrow == 0 && m_flStartThrow )
 		 m_flReleaseThrow = gpGlobals->curtime;
@@ -417,14 +417,14 @@ void CWeaponHandGrenade::WeaponIdle( void )
 	}
 }
 
-bool CWeaponHandGrenade::Deploy( void )
+bool CHL1MPWeaponHandGrenade::Deploy( void )
 {
 	m_flReleaseThrow = -1;
 
 	return DefaultDeploy( (char*)GetViewModel(), (char*)GetWorldModel(), ACT_VM_DRAW, (char*)GetAnimPrefix() );
 }
 
-bool CWeaponHandGrenade::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CHL1MPWeaponHandGrenade::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	if ( !pPlayer )
@@ -445,7 +445,7 @@ bool CWeaponHandGrenade::Holster( CBaseCombatWeapon *pSwitchingTo )
 	if ( pPlayer->GetAmmoCount( m_iPrimaryAmmoType ) <= 0 )
 	{
 #ifndef CLIENT_DLL
-		SetThink( &CWeaponHandGrenade::DestroyItem );
+		SetThink( &CHL1MPWeaponHandGrenade::DestroyItem );
 		SetNextThink( gpGlobals->curtime + 0.1 );
 #endif
 	}

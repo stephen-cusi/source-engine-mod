@@ -236,7 +236,15 @@ KeyValues* ReadEncryptedKVFile( IFileSystem *filesystem, const char *szFilenameW
 
 			UTIL_DecodeICE( (unsigned char*)buffer, fileSize, pICEKey );
 
+			
+
 			bool retOK = pKV->LoadFromBuffer( szFullName, buffer, filesystem );
+
+			//Q_snprintf(szFullName, sizeof(szFullName), "%s.txt", szFilenameWithoutExtension);
+
+			//FileHandle_t decrypted = filesystem->Open(szFullName, "w+");
+			//filesystem->Write(buffer, fileSize, decrypted);
+			//filesystem->Close(decrypted);
 
 			MemFreeScratch();
 

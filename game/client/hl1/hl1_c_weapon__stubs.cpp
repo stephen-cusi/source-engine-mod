@@ -8,13 +8,13 @@
 
 #include "cbase.h"
 #include "c_weapon__stubs.h"
-#include "hl1_basecombatweapon_shared.h"
+#include "weapon_hl2mpbase.h"
 
 
 STUB_WEAPON_CLASS( foo_weapon_basebludgeonweapon, BaseBludgeonWeapon, C_BaseCombatWeapon );
 
-STUB_WEAPON_CLASS( cycler_weapon, WeaponCycler, C_BaseCombatWeapon );
-STUB_WEAPON_CLASS( weapon_physcannon, PhysgunCannon, C_BaseCombatWeapon );
+//STUB_WEAPON_CLASS( cycler_weapon, WeaponCycler, C_BaseCombatWeapon );
+//STUB_WEAPON_CLASS( weapon_physcannon, PhysgunCannon, C_BaseCombatWeapon );
 
 // HL1 stuff
 //STUB_WEAPON_CLASS( weapon_357,			Weapon357,			C_BaseHL1CombatWeapon );
@@ -29,6 +29,6 @@ STUB_WEAPON_CLASS( weapon_physcannon, PhysgunCannon, C_BaseCombatWeapon );
 //STUB_WEAPON_CLASS( weapon_rpg,			WeaponRPG,			C_BaseHL1CombatWeapon );
 //STUB_WEAPON_CLASS( weapon_satchel,		WeaponSatchel,		C_BaseHL1CombatWeapon );
 //STUB_WEAPON_CLASS( weapon_shotgun,		WeaponShotgun,		C_BaseHL1CombatWeapon );
-STUB_WEAPON_CLASS( weapon_snark,		WeaponSnark,		C_BaseHL1CombatWeapon );
-STUB_WEAPON_CLASS( weapon_tripmine,		WeaponTripMine,		C_BaseHL1CombatWeapon );
-STUB_WEAPON_CLASS( weapon_cubemap,		WeaponCubemap,		C_BaseCombatWeapon );
+STUB_WEAPON_CLASS( weapon_hl1mp_snark,		HL1MPWeaponSnark,		C_WeaponHL2MPBase );
+STUB_WEAPON_CLASS( weapon_hl1mp_tripmine,		HL1MPWeaponTripMine, C_WeaponHL2MPBase);
+//STUB_WEAPON_CLASS( weapon_cubemap,		WeaponCubemap,		C_BaseCombatWeapon );

@@ -10,20 +10,20 @@
 #pragma once
 
 #include "cbase.h"
-#include "hl1_c_player.h"
-#include "hl1_player_shared.h"
+#include "c_hl2mp_player.h"
+#include "cs_playeranimstate.h"
 
 
-class C_HL1MP_Player : public C_HL1_Player
+class C_HL2MP_Player : public C_HL1_Player
 {
 public:
-    DECLARE_CLASS( C_HL1MP_Player, C_HL1_Player );
+    DECLARE_CLASS( C_HL2MP_Player, C_HL1_Player );
     DECLARE_CLIENTCLASS();
     DECLARE_PREDICTABLE();
     DECLARE_INTERPOLATION();
 
-    C_HL1MP_Player( void );
-	~C_HL1MP_Player();
+    C_HL2MP_Player( void );
+	~C_HL2MP_Player();
 
 	virtual const QAngle& GetRenderAngles();
 	virtual void UpdateClientSideAnimation();
@@ -68,7 +68,7 @@ public:
 	int	m_iRealSequence;
 
 private:
-	C_HL1MP_Player( const C_HL1MP_Player & );
+	C_HL2MP_Player( const C_HL2MP_Player & );
 
     EHANDLE m_hRagdoll;
 
@@ -76,7 +76,7 @@ private:
 
 	CInterpolatedVar< QAngle >	m_iv_angEyeAngles;
 
-    IHL1MPPlayerAnimState* m_PlayerAnimState;
+    ICSPlayerAnimState* m_PlayerAnimState;
     
     int m_iSpawnInterpCounter;
     int m_iSpawnInterpCounterCache;
@@ -118,12 +118,12 @@ private:
 };
 
 
-inline C_HL1MP_Player *ToHL1MPPlayer( CBaseEntity *pEntity )
+inline C_HL2MP_Player *ToHL2MPPlayer( CBaseEntity *pEntity )
 {
 	if ( !pEntity || !pEntity->IsPlayer() )
 		return NULL;
 
-	return dynamic_cast<C_HL1MP_Player*>( pEntity );
+	return dynamic_cast<C_HL2MP_Player*>( pEntity );
 }
 
 

@@ -2882,7 +2882,7 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 	{
 	case CChoreoEvent::SUBSCENE:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				DispatchStartSubScene( scene, pActor, event );
 			}
@@ -2890,7 +2890,7 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 		break;
 	case CChoreoEvent::EXPRESSION:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				DispatchStartExpression( scene, pActor, event );
 			}
@@ -2898,7 +2898,7 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 		break;
 	case CChoreoEvent::FLEXANIMATION:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				DispatchStartFlexAnimation( scene, pActor, event );
 			}
@@ -2906,7 +2906,7 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 		break;
 	case CChoreoEvent::LOOKAT:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				CBaseEntity *pActor2 = FindNamedEntity( event->GetParameters( ), pActor );
 				if ( pActor2 )
@@ -2948,7 +2948,7 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 				event->SetEndTime( event->GetStartTime() + 1.0 );
 			}
 
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				CBaseEntity *pActor2 = NULL;
 				if ( event->GetParameters3( ) && strlen( event->GetParameters3( ) ) > 0 )
@@ -2973,7 +2973,7 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 		break;
 	case CChoreoEvent::FACE:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				CBaseEntity *pActor2 = FindNamedEntity( event->GetParameters( ), pActor );
 				if ( pActor2 )
@@ -3031,8 +3031,6 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 		break;
 	case CChoreoEvent::FIRETRIGGER:
 		{
-			if ( IsMultiplayer() )
-				break;
 
 			// Don't re-fire triggers during restore, the entities should already reflect all such state...
 			if ( m_bRestoring )
@@ -3110,8 +3108,6 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 		break;
 	case CChoreoEvent::SECTION:
 		{
-			if ( IsMultiplayer() )
-				break;
 
 			// Pauses scene playback
 			DispatchPauseScene( scene, event->GetParameters() );
@@ -3124,8 +3120,6 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 		break;
 	case CChoreoEvent::INTERRUPT:
 		{
-			if ( IsMultiplayer() )
-				break;
 
 			DispatchStartInterrupt( scene, event );
 		}
@@ -3133,8 +3127,6 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 
 	case CChoreoEvent::STOPPOINT:
 		{
-			if ( IsMultiplayer() )
-				break;
 
 			DispatchStopPoint( scene, event->GetParameters() );
 		}
@@ -3142,8 +3134,6 @@ void CSceneEntity::StartEvent( float currenttime, CChoreoScene *scene, CChoreoEv
 
 	case CChoreoEvent::PERMIT_RESPONSES:
 		{
-			if ( IsMultiplayer() )
-				break;
 
 			DispatchStartPermitResponses( scene, pActor, event );
 		}
@@ -3184,7 +3174,7 @@ void CSceneEntity::EndEvent( float currenttime, CChoreoScene *scene, CChoreoEven
 	{
 	case CChoreoEvent::EXPRESSION:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				DispatchEndExpression( scene, pActor, event );
 			}
@@ -3200,7 +3190,7 @@ void CSceneEntity::EndEvent( float currenttime, CChoreoScene *scene, CChoreoEven
 		break;
 	case CChoreoEvent::FLEXANIMATION:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				DispatchEndFlexAnimation( scene, pActor, event );
 			}
@@ -3209,7 +3199,7 @@ void CSceneEntity::EndEvent( float currenttime, CChoreoScene *scene, CChoreoEven
 
 	case CChoreoEvent::LOOKAT:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				DispatchEndLookAt( scene, pActor, event );
 			}
@@ -3248,7 +3238,7 @@ void CSceneEntity::EndEvent( float currenttime, CChoreoScene *scene, CChoreoEven
 
 	case CChoreoEvent::FACE:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				DispatchEndFace( scene, pActor, event );
 			}
@@ -3257,7 +3247,7 @@ void CSceneEntity::EndEvent( float currenttime, CChoreoScene *scene, CChoreoEven
 
 	case CChoreoEvent::MOVETO:
 		{
-			if ( pActor && !IsMultiplayer() )
+			if ( pActor )
 			{
 				DispatchEndMoveTo( scene, pActor, event );
 			}
@@ -3266,8 +3256,6 @@ void CSceneEntity::EndEvent( float currenttime, CChoreoScene *scene, CChoreoEven
 
 	case CChoreoEvent::SUBSCENE:
 		{
-			if ( IsMultiplayer() )
-				break;
 
 			CChoreoScene *subscene = event->GetSubScene();
 			if ( subscene )
@@ -3278,8 +3266,7 @@ void CSceneEntity::EndEvent( float currenttime, CChoreoScene *scene, CChoreoEven
 		break;
 	case CChoreoEvent::INTERRUPT:
 		{
-			if ( IsMultiplayer() )
-				break;
+
 
 			DispatchEndInterrupt( scene, event );
 		}
@@ -3287,8 +3274,7 @@ void CSceneEntity::EndEvent( float currenttime, CChoreoScene *scene, CChoreoEven
 
 	case CChoreoEvent::PERMIT_RESPONSES:
 		{
-			if ( IsMultiplayer() )
-				break;
+
 
 			DispatchEndPermitResponses( scene, pActor, event );
 		}

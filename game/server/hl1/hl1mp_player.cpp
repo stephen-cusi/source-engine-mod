@@ -6,7 +6,7 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "hl1mp_player.h"
+#include "hl2mp_player.h"
 #include "client.h"
 #include "team.h"
 
@@ -55,10 +55,10 @@ void TE_PlayerAnimEvent( CBasePlayer *pPlayer, PlayerAnimEvent_t event, int nDat
 
 extern int	gEvilImpulse101;
 
-LINK_ENTITY_TO_CLASS( player_mp, CHL1MP_Player );
+LINK_ENTITY_TO_CLASS( player_mp, CHL2MP_Player );
 PRECACHE_REGISTER( player_mp );
 
-IMPLEMENT_SERVERCLASS_ST( CHL1MP_Player, DT_HL1MP_PLAYER )
+IMPLEMENT_SERVERCLASS_ST( CHL2MP_Player, DT_HL1MP_PLAYER )
 	SendPropExclude( "DT_BaseAnimating", "m_flPoseParameter" ),
 	SendPropExclude( "DT_BaseAnimating", "m_flPlaybackRate" ),	
 	SendPropExclude( "DT_BaseAnimating", "m_nSequence" ),
@@ -90,7 +90,7 @@ ConCommand cc_CreatePredictionError( "CreatePredictionError", cc_CreatePredictio
 
 static const char * s_szModelPath = "models/player/mp/";
 
-CHL1MP_Player::CHL1MP_Player()
+CHL2MP_Player::CHL2MP_Player()
 {
 	m_PlayerAnimState = CreatePlayerAnimState( this );
 //	item_list = 0;
@@ -109,12 +109,12 @@ CHL1MP_Player::CHL1MP_Player()
 //	SetContextThink( &CTFCPlayer::TFCPlayerThink, gpGlobals->curtime, "TFCPlayerThink" );
 }
 
-CHL1MP_Player::~CHL1MP_Player()
+CHL2MP_Player::~CHL2MP_Player()
 {
 	m_PlayerAnimState->Release();
 }
 
-void CHL1MP_Player::PostThink( void )
+void CHL2MP_Player::PostThink( void )
 {
     BaseClass::PostThink();
 
@@ -128,7 +128,7 @@ void CHL1MP_Player::PostThink( void )
     m_PlayerAnimState->Update( m_angEyeAngles[YAW], m_angEyeAngles[PITCH] );
 }
 
-void CHL1MP_Player::Spawn( void )
+void CHL2MP_Player::Spawn( void )
 {
 	if ( !IsObserver() )
 	{
@@ -157,13 +157,13 @@ void CHL1MP_Player::Spawn( void )
 	m_iSpawnInterpCounter = (m_iSpawnInterpCounter + 1) % 8;
 }
 
-void CHL1MP_Player::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
+void CHL2MP_Player::DoAnimationEvent( PlayerAnimEvent_t event, int nData )
 {
 	m_PlayerAnimState->DoAnimationEvent( event, nData );
 	TE_PlayerAnimEvent( this, event, nData );	// Send to any clients who can see this guy.
 }
 
-void CHL1MP_Player::GiveDefaultItems( void )
+void CHL2MP_Player::GiveDefaultItems( void )
 {
     GiveNamedItem( "weapon_crowbar" );
     GiveNamedItem( "weapon_glock" );
@@ -171,7 +171,7 @@ void CHL1MP_Player::GiveDefaultItems( void )
     CBasePlayer::GiveAmmo( 68, "9mmRound" );
 }
 
-void CHL1MP_Player::UpdateOnRemove( void )
+void CHL2MP_Player::UpdateOnRemove( void )
 {
     if ( m_hRagdoll )
     {
@@ -183,7 +183,7 @@ void CHL1MP_Player::UpdateOnRemove( void )
 }
 
 
-void CHL1MP_Player::DetonateSatchelCharges( void )
+void CHL2MP_Player::DetonateSatchelCharges( void )
 {
 	CBaseEntity *pSatchel = NULL;
 
@@ -196,7 +196,7 @@ void CHL1MP_Player::DetonateSatchelCharges( void )
 	}
 }
 
-void CHL1MP_Player::Event_Killed( const CTakeDamageInfo &info )
+void CHL2MP_Player::Event_Killed( const CTakeDamageInfo &info )
 {
 	DoAnimationEvent( PLAYERANIMEVENT_DIE );
 //    SetNumAnimOverlays( 0 );
@@ -216,7 +216,7 @@ void CHL1MP_Player::Event_Killed( const CTakeDamageInfo &info )
 }
 
 
-void CHL1MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
+void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 {
 //    BaseClass::SetAnimation( playerAnim );
 	if ( playerAnim == PLAYER_ATTACK1 )
@@ -398,7 +398,7 @@ void CHL1MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 static ConVar sv_debugweaponpickup( "sv_debugweaponpickup", "0", FCVAR_CHEAT, "Prints descriptive reasons as to why pickup did not work." );
 
 // correct respawning of weapons
-bool CHL1MP_Player::BumpWeapon( CBaseCombatWeapon *pWeapon )
+bool CHL2MP_Player::BumpWeapon( CBaseCombatWeapon *pWeapon )
 {	CBaseCombatCharacter *pOwner = pWeapon->GetOwner();
 
 	// Can I have this weapon type?
@@ -475,7 +475,7 @@ bool CHL1MP_Player::BumpWeapon( CBaseCombatWeapon *pWeapon )
 }
 
 
-void CHL1MP_Player::ChangeTeam( int iTeamNum )
+void CHL2MP_Player::ChangeTeam( int iTeamNum )
 {
 	bool bKill = false;
 
@@ -506,7 +506,7 @@ void CHL1MP_Player::ChangeTeam( int iTeamNum )
 	}
 }
 
-void CHL1MP_Player::SetPlayerTeamModel( void )
+void CHL2MP_Player::SetPlayerTeamModel( void )
 {
 	int iTeamNum = GetTeamNumber();
 
@@ -531,7 +531,7 @@ void CHL1MP_Player::SetPlayerTeamModel( void )
 }
 
 
-void CHL1MP_Player::SetPlayerModel( void )
+void CHL2MP_Player::SetPlayerModel( void )
 {
 	char szBaseName[128];
 	Q_FileBase( engine->GetClientConVarValue( engine->IndexOfEdict( edict() ), "cl_playermodel" ), szBaseName, 128 );
@@ -597,7 +597,7 @@ IMPLEMENT_SERVERCLASS_ST_NOBASE( CHL1MPRagdoll, DT_HL1MPRagdoll )
 END_SEND_TABLE()
 
 
-void CHL1MP_Player::CreateRagdollEntity( void )
+void CHL2MP_Player::CreateRagdollEntity( void )
 {
     if ( m_hRagdoll )
     {
@@ -629,7 +629,7 @@ void CHL1MP_Player::CreateRagdollEntity( void )
 	m_hRagdoll = pRagdoll;    
 }
 
-void CHL1MP_Player::CreateCorpse( void )
+void CHL2MP_Player::CreateCorpse( void )
 {
 
 }
