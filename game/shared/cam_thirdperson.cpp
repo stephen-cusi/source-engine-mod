@@ -171,6 +171,8 @@ void CThirdPersonManager::PositionCamera( CBasePlayer *pPlayer, QAngle angles )
 
 		Vector vecCamOffset = endPos + (camForward * - GetDesiredCameraOffset()[DIST_FORWARD]) + (camRight * GetDesiredCameraOffset()[ DIST_RIGHT ]) + (camUp * GetDesiredCameraOffset()[ DIST_UP ] );
 
+
+
 		// use our previously #defined hull to collision trace
 		CTraceFilterSimple traceFilter( pPlayer, COLLISION_GROUP_NONE );
 		UTIL_TraceHull( endPos, vecCamOffset, CAM_HULL_MIN, CAM_HULL_MAX, MASK_SOLID & ~CONTENTS_MONSTER, &traceFilter, &trace );
@@ -203,7 +205,7 @@ void CThirdPersonManager::PositionCamera( CBasePlayer *pPlayer, QAngle angles )
 				if ( trace.fraction != m_flTargetUpFraction )
 				{
 					m_flUpLerpTime = gpGlobals->curtime;
-				}
+				}	
 
 				m_flTargetUpFraction = trace.fraction;
 
@@ -214,6 +216,9 @@ void CThirdPersonManager::PositionCamera( CBasePlayer *pPlayer, QAngle angles )
 				}
 			}
 		}
+
+
+		//DebugDrawLine(trace.startpos, trace.endpos, 255, 0, 0, true, 10);
 	}
 }
 

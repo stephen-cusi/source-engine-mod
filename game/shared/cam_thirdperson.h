@@ -28,8 +28,8 @@
 #define MAX_ANGLE_DIFF 10.0
 #define PITCH_MAX 90.0
 #define PITCH_MIN 0
-#define YAW_MAX  135.0
-#define YAW_MIN	 -135.0
+//#define YAW_MAX  135.0
+//#define YAW_MIN	 -135.0
 #define	DIST	 2
 #define CAM_HULL_OFFSET		14.0    // the size of the bounding hull used for collision checking
 

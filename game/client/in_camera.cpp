@@ -35,8 +35,8 @@ static ConVar cam_collision( "cam_collision", "1", FCVAR_ARCHIVE | FCVAR_CHEAT, 
 static ConVar cam_showangles( "cam_showangles", "0", FCVAR_CHEAT, "When in thirdperson, print viewangles/idealangles/cameraoffsets to the console." );
 static ConVar c_maxpitch( "c_maxpitch", "90", FCVAR_ARCHIVE| FCVAR_CHEAT );
 static ConVar c_minpitch( "c_minpitch", "0", FCVAR_ARCHIVE| FCVAR_CHEAT );
-static ConVar c_maxyaw( "c_maxyaw",   "135", FCVAR_ARCHIVE | FCVAR_CHEAT);
-static ConVar c_minyaw( "c_minyaw",   "-135", FCVAR_ARCHIVE| FCVAR_CHEAT );
+//static ConVar c_maxyaw( "c_maxyaw",   "135", FCVAR_ARCHIVE | FCVAR_CHEAT);
+//static ConVar c_minyaw( "c_minyaw",   "-135", FCVAR_ARCHIVE| FCVAR_CHEAT );
 static ConVar c_maxdistance( "c_maxdistance",   "200", FCVAR_ARCHIVE| FCVAR_CHEAT );
 static ConVar c_mindistance( "c_mindistance",   "30", FCVAR_ARCHIVE| FCVAR_CHEAT );
 static ConVar c_orthowidth( "c_orthowidth",   "100", FCVAR_ARCHIVE| FCVAR_CHEAT );
@@ -338,7 +338,7 @@ void CInput::CAM_Think( void )
 		{
 			int x, y;
 			GetWindowCenter( x,  y );
-			
+			/*
 			//keep the camera within certain limits around the player (ie avoid certain bad viewing angles)  
 			if (m_nCameraX>x)
 			{
@@ -393,7 +393,7 @@ void CInput::CAM_Think( void )
 					idealAngles[PITCH]=c_minpitch.GetFloat();
 				}
 			}
-			
+			*/
 			//set old mouse coordinates to current mouse coordinates
 			//since we are done with the mouse
 			
@@ -506,8 +506,8 @@ void CInput::CAM_Think( void )
 		idealAngles[ YAW ] += 360;
 
 	// clamp pitch, yaw and dist...
-	idealAngles[ PITCH ] = clamp( idealAngles[ PITCH ], c_minpitch.GetFloat(), c_maxpitch.GetFloat() );
-	idealAngles[ YAW ]   = clamp( idealAngles[ YAW ], c_minyaw.GetFloat(), c_maxyaw.GetFloat() );
+	idealAngles[PITCH] = idealAngles[PITCH]; //clamp( idealAngles[PITCH], c_minpitch.GetFloat(), c_maxpitch.GetFloat());
+	idealAngles[ YAW ]   = /*clamp(*/ idealAngles[YAW]/*, c_minyaw.GetFloat(), c_maxyaw.GetFloat())*/;
 	idealAngles[ DIST ]  = clamp( idealAngles[ DIST ], c_mindistance.GetFloat(), c_maxdistance.GetFloat() );
 
 	// update ideal angles

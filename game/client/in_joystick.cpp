@@ -798,7 +798,7 @@ void CInput::JoyStickMove( float frametime, CUserCmd *cmd )
 			g_ThirdPersonManager.SetCameraOffsetAngles( vTempOffset );
 		}
 
-		if ( m_flPreviousJoystickForward || m_flPreviousJoystickSide || m_flPreviousJoystickPitch || m_flPreviousJoystickYaw )
+		if (m_flPreviousJoystickForward || m_flPreviousJoystickSide || m_flPreviousJoystickPitch || m_flPreviousJoystickYaw)
 		{
 			Vector vTempOffset = g_ThirdPersonManager.GetCameraOffsetAngles();
 
