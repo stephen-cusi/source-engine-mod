@@ -798,7 +798,7 @@ bool GotoSequence( CStudioHdr *pstudiohdr, int iCurrentSequence, float flCurrent
 	return false;
 }
 
-void SetBodygroup( CStudioHdr *pstudiohdr, int& body, int iGroup, int iValue )
+void SetBodygroup( CStudioHdr *pstudiohdr, int& body, unsigned int iGroup, int iValue )
 {
 	if (! pstudiohdr)
 		return;
@@ -817,7 +817,7 @@ void SetBodygroup( CStudioHdr *pstudiohdr, int& body, int iGroup, int iValue )
 }
 
 
-int GetBodygroup( CStudioHdr *pstudiohdr, int body, int iGroup )
+unsigned int GetBodygroup( CStudioHdr *pstudiohdr, int body, unsigned int iGroup )
 {
 	if (! pstudiohdr)
 		return 0;
@@ -830,12 +830,12 @@ int GetBodygroup( CStudioHdr *pstudiohdr, int body, int iGroup )
 	if (pbodypart->nummodels <= 1)
 		return 0;
 
-	int iCurrent = (body / pbodypart->base) % pbodypart->nummodels;
+	unsigned int iCurrent = (body / pbodypart->base) % pbodypart->nummodels;
 
 	return iCurrent;
 }
 
-const char *GetBodygroupName( CStudioHdr *pstudiohdr, int iGroup )
+const char *GetBodygroupName( CStudioHdr *pstudiohdr, unsigned int iGroup )
 {
 	if ( !pstudiohdr)
 		return "";
@@ -865,7 +865,7 @@ int FindBodygroupByName( CStudioHdr *pstudiohdr, const char *name )
 	return -1;
 }
 
-int GetBodygroupCount( CStudioHdr *pstudiohdr, int iGroup )
+unsigned int GetBodygroupCount( CStudioHdr *pstudiohdr, unsigned int iGroup )
 {
 	if ( !pstudiohdr )
 		return 0;
@@ -877,7 +877,7 @@ int GetBodygroupCount( CStudioHdr *pstudiohdr, int iGroup )
 	return pbodypart->nummodels;
 }
 
-int GetNumBodyGroups( CStudioHdr *pstudiohdr )
+unsigned int GetNumBodyGroups( CStudioHdr *pstudiohdr )
 {
 	if ( !pstudiohdr )
 		return 0;

@@ -622,7 +622,7 @@ bool C_HL2MP_Player::CanSprint( void )
 //-----------------------------------------------------------------------------
 void C_HL2MP_Player::StartSprinting( void )
 {
-	static const ConVar* hl2_sprintspeed = g_pCVar->FindVar("jb_sprintspeed");
+	static const ConVar* hl2_sprintspeed = g_pCVar->FindVar("sb_sprintspeed");
 	if( m_HL2Local.m_flSuitPower < 10 )
 	{
 		// Don't sprint unless there's a reasonable
@@ -646,7 +646,7 @@ void C_HL2MP_Player::StartSprinting( void )
 //-----------------------------------------------------------------------------
 void C_HL2MP_Player::StopSprinting( void )
 {
-	static const ConVar* hl2_normspeed = g_pCVar->FindVar("jb_normspeed");
+	static const ConVar* hl2_normspeed = g_pCVar->FindVar("sb_normspeed");
 	SetMaxSpeed( HL2_NORM_SPEED );
 	m_fIsSprinting = false;
 }
@@ -703,7 +703,7 @@ void C_HL2MP_Player::HandleSpeedChanges( void )
 void C_HL2MP_Player::StartWalking( void )
 {
 
-	static const ConVar* hl2_walkspeed = g_pCVar->FindVar("jb_walkspeed");
+	static const ConVar* hl2_walkspeed = g_pCVar->FindVar("sb_walkspeed");
 	SetMaxSpeed( HL2_WALK_SPEED );
 	m_fIsWalking = true;
 }
@@ -712,7 +712,7 @@ void C_HL2MP_Player::StartWalking( void )
 //-----------------------------------------------------------------------------
 void C_HL2MP_Player::StopWalking( void )
 {
-	static const ConVar* hl2_normspeed = g_pCVar->FindVar("jb_normspeed");
+	static const ConVar* hl2_normspeed = g_pCVar->FindVar("sb_normspeed");
 	SetMaxSpeed( HL2_NORM_SPEED );
 	m_fIsWalking = false;
 }

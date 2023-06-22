@@ -193,7 +193,9 @@ extern ConVar ammo_smokegrenade_max;
 EHANDLE g_pLastCTSpawn;
 EHANDLE g_pLastTerroristSpawn;
 
-
+// Max mass the player can lift with +use
+#define PORTAL_PLAYER_MAX_LIFT_MASS 85
+#define PORTAL_PLAYER_MAX_LIFT_SIZE 128
 
 class NotVIP
 {
@@ -514,9 +516,28 @@ void CHL2MP_Player::Spawn(void)
 	m_bReady = false;
 }
 
-void CHL2MP_Player::PickupObject( CBaseEntity *pObject, bool bLimitMassAndSize )
+//-----------------------------------------------------------------------------
+// Purpose: Overload for portal-- Our player can lift his own mass.
+// Input  : *pObject - The object to lift
+//			bLimitMassAndSize - check for mass/size limits
+//-----------------------------------------------------------------------------
+void CHL2MP_Player::PickupObject(CBaseEntity* pObject, bool bLimitMassAndSize)
 {
-	
+	// can't pick up what you're standing on
+	if (GetGroundEntity() == pObject)
+		return;
+
+	if (bLimitMassAndSize == true)
+	{
+		if (CBasePlayer::CanPickupObject(pObject, PORTAL_PLAYER_MAX_LIFT_MASS, PORTAL_PLAYER_MAX_LIFT_SIZE) == false)
+			return;
+	}
+
+	// Can't be picked up if NPCs are on me
+	if (pObject->HasNPCsOnIt())
+		return;
+
+	PlayerPickupObject(this, pObject);
 }
 
 bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )

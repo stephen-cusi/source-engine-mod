@@ -347,13 +347,13 @@ public:
 	void SetCycle( float flCycle );
 	float GetCycle() const;
 
-	void SetBodygroup( int iGroup, int iValue );
-	int GetBodygroup( int iGroup );
+	void SetBodygroup( unsigned int iGroup, int iValue );
+	unsigned int GetBodygroup(unsigned int iGroup );
 
-	const char *GetBodygroupName( int iGroup );
-	int FindBodygroupByName( const char *name );
-	int GetBodygroupCount( int iGroup );
-	int GetNumBodyGroups( void );
+	const char *GetBodygroupName( unsigned int iGroup );
+	unsigned int FindBodygroupByName( const char *name );
+	unsigned int GetBodygroupCount(unsigned int iGroup );
+	unsigned int GetNumBodyGroups( void );
 
 	class CBoneCache				*GetBoneCache( CStudioHdr *pStudioHdr );
 	void							SetHitboxSet( int setnum );

@@ -141,7 +141,6 @@ public:
 	DECLARE_CLASS( CTimerEntity, CLogicalEntity );
 
 	void Spawn( void );
-	void Think( void );
 
 	void Toggle( void );
 	void Enable( void );
@@ -188,6 +187,7 @@ BEGIN_DATADESC( CTimerEntity )
 	DEFINE_KEYFIELD( m_flRefireTime, FIELD_FLOAT, "RefireTime" ),
 
 	DEFINE_FIELD( m_bUpDownState, FIELD_BOOLEAN ),
+	DEFINE_THINKFUNC( FireTimer ),
 
 	// Inputs
 	DEFINE_INPUTFUNC( FIELD_FLOAT, "RefireTime", InputRefireTime ),
@@ -233,7 +233,7 @@ void CTimerEntity::Spawn( void )
 	}
 }
 
-
+/*
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
@@ -241,7 +241,7 @@ void CTimerEntity::Think( void )
 {
 	FireTimer();
 }
-
+*/
 
 //-----------------------------------------------------------------------------
 // Purpose: Sets the time the timerentity will next fire

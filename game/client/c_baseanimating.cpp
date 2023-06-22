@@ -5358,7 +5358,7 @@ int C_BaseAnimating::FindTransitionSequence( int iCurrentSequence, int iGoalSequ
 
 }
 
-void C_BaseAnimating::SetBodygroup( int iGroup, int iValue )
+void C_BaseAnimating::SetBodygroup( unsigned int iGroup, int iValue )
 {
 	// SetBodygroup is not supported on pending dynamic models. Wait for it to load!
 	// XXX TODO we could buffer up the group and value if we really needed to. -henryg
@@ -5366,31 +5366,31 @@ void C_BaseAnimating::SetBodygroup( int iGroup, int iValue )
 	::SetBodygroup( GetModelPtr( ), m_nBody, iGroup, iValue );
 }
 
-int C_BaseAnimating::GetBodygroup( int iGroup )
+unsigned int C_BaseAnimating::GetBodygroup( unsigned int iGroup )
 {
 	Assert( IsDynamicModelLoading() || GetModelPtr() );
 	return IsDynamicModelLoading() ? 0 : ::GetBodygroup( GetModelPtr( ), m_nBody, iGroup );
 }
 
-const char *C_BaseAnimating::GetBodygroupName( int iGroup )
+const char *C_BaseAnimating::GetBodygroupName(unsigned int iGroup )
 {
 	Assert( IsDynamicModelLoading() || GetModelPtr() );
 	return IsDynamicModelLoading() ? "" : ::GetBodygroupName( GetModelPtr( ), iGroup );
 }
 
-int C_BaseAnimating::FindBodygroupByName( const char *name )
+unsigned int C_BaseAnimating::FindBodygroupByName( const char *name )
 {
 	Assert( IsDynamicModelLoading() || GetModelPtr() );
 	return IsDynamicModelLoading() ? -1 : ::FindBodygroupByName( GetModelPtr( ), name );
 }
 
-int C_BaseAnimating::GetBodygroupCount( int iGroup )
+unsigned int C_BaseAnimating::GetBodygroupCount( unsigned int iGroup )
 {
 	Assert( IsDynamicModelLoading() || GetModelPtr() );
 	return IsDynamicModelLoading() ? 0 : ::GetBodygroupCount( GetModelPtr( ), iGroup );
 }
 
-int C_BaseAnimating::GetNumBodyGroups( void )
+unsigned int C_BaseAnimating::GetNumBodyGroups( void )
 {
 	Assert( IsDynamicModelLoading() || GetModelPtr() );
 	return IsDynamicModelLoading() ? 0 : ::GetNumBodyGroups( GetModelPtr( ) );

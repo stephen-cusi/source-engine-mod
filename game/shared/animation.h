@@ -44,13 +44,13 @@ bool HasAnimationEventOfType( CStudioHdr *pstudiohdr, int sequence, int type );
 int FindTransitionSequence( CStudioHdr *pstudiohdr, int iCurrentSequence, int iGoalSequence, int *piDir );
 bool GotoSequence( CStudioHdr *pstudiohdr, int iCurrentSequence, float flCurrentCycle, float flCurrentRate, int iGoalSequence, int &nNextSequence, float &flNextCycle, int &iNextDir );
 
-void SetBodygroup( CStudioHdr *pstudiohdr, int& body, int iGroup, int iValue );
-int GetBodygroup( CStudioHdr *pstudiohdr, int body, int iGroup );
+void SetBodygroup( CStudioHdr *pstudiohdr, int& body, unsigned int iGroup, int iValue );
+unsigned int GetBodygroup( CStudioHdr *pstudiohdr, int body, unsigned int iGroup );
 
-const char *GetBodygroupName( CStudioHdr *pstudiohdr, int iGroup );
+const char *GetBodygroupName( CStudioHdr *pstudiohdr, unsigned int iGroup );
 int FindBodygroupByName( CStudioHdr *pstudiohdr, const char *name );
-int GetBodygroupCount( CStudioHdr *pstudiohdr, int iGroup );
-int GetNumBodyGroups( CStudioHdr *pstudiohdr );
+unsigned int GetBodygroupCount( CStudioHdr *pstudiohdr, unsigned int iGroup );
+unsigned int GetNumBodyGroups( CStudioHdr *pstudiohdr );
 
 int GetSequenceActivity( CStudioHdr *pstudiohdr, int sequence, int *pweight = NULL );
 

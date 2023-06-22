@@ -1684,7 +1684,7 @@ struct mstudiobodyparts_t
 	DECLARE_BYTESWAP_DATADESC();
 	int					sznameindex;
 	inline char * const pszName( void ) const { return ((char *)this) + sznameindex; }
-	int					nummodels;
+	unsigned int		nummodels;
 	int					base;
 	int					modelindex; // index into models array
 	inline mstudiomodel_t *pModel( int i ) const { return (mstudiomodel_t *)(((byte *)this) + modelindex) + i; };
@@ -2261,9 +2261,9 @@ struct studiohdr_t
 	int					skinindex;
 	inline short		*pSkinref( int i ) const { return (short *)(((byte *)this) + skinindex) + i; };
 
-	int					numbodyparts;		
+	unsigned int					numbodyparts;
 	int					bodypartindex;
-	inline mstudiobodyparts_t	*pBodypart( int i ) const { return (mstudiobodyparts_t *)(((byte *)this) + bodypartindex) + i; };
+	inline mstudiobodyparts_t	*pBodypart( unsigned int i ) const { return (mstudiobodyparts_t *)(((byte *)this) + bodypartindex) + i; };
 
 	// queryable attachable points
 //private:
@@ -2546,8 +2546,8 @@ public:
 	inline mstudiobbox_t *pHitbox( int i, int set ) const { return m_pStudioHdr->pHitbox( i, set ); }; 
 	inline int			iHitboxCount( int set ) const { return m_pStudioHdr->iHitboxCount( set ); };
 
-	inline int			numbodyparts() const { return m_pStudioHdr->numbodyparts; };		
-	inline mstudiobodyparts_t	*pBodypart( int i ) const { return m_pStudioHdr->pBodypart( i ); };
+	inline unsigned int			numbodyparts() const { return m_pStudioHdr->numbodyparts; };
+	inline mstudiobodyparts_t	*pBodypart( unsigned int i ) const { return m_pStudioHdr->pBodypart( i ); };
 
 	inline int			numskinfamilies() const { return m_pStudioHdr->numskinfamilies; }
 
