@@ -5,6 +5,7 @@ SourceBox is a free and open source Source Engine sandbox game which features co
 SourceBox is based on the nillerusr fork of the 2018 engine leak.
 
 # Features:
+- Half-Life 1: Deathmatch
 - Half-Life 2: Deathmatch
 - Portal 1
 - Counter-Strike: Source (WIP)
