@@ -117,7 +117,7 @@ protected:
 
 	// allow overridden versions to respond to jumping
 	virtual void	OnJump( float fImpulse ) {}
-	virtual void	OnLand( float fVelocity ) {}
+	virtual void	OnLand(float fVelocity);
 
 	// Implement this if you want to know when the player collides during OnPlayerMove
 	virtual void	OnTryPlayerMoveCollision( trace_t &tr ) {}
