@@ -42,7 +42,7 @@ CLIENTEFFECT_MATERIAL( "models/portals/portal_refract_1" )
 CLIENTEFFECT_MATERIAL( "models/portals/portal_refract_2" )
 //CLIENTEFFECT_MATERIAL( "effects/flashlight001" ) //light transfers disabled indefinitely
 CLIENTEFFECT_REGISTER_END()
-
+/*
 class CAutoInitFlatBasicPortalDrawingMaterials : public CAutoGameSystem
 {
 public:
@@ -59,14 +59,14 @@ public:
 		m_Materials.m_Portal_Stencil_Hole.Init( "models/portals/portal_stencil_hole", TEXTURE_GROUP_CLIENT_EFFECTS );
 		m_Materials.m_Portal_Refract[0].Init( "models/portals/portal_refract_1", TEXTURE_GROUP_CLIENT_EFFECTS );
 		m_Materials.m_Portal_Refract[1].Init( "models/portals/portal_refract_2", TEXTURE_GROUP_CLIENT_EFFECTS );
-		//m_Materials.m_PortalLightTransfer_ShadowTexture.Init( "effects/flashlight001", TEXTURE_GROUP_OTHER ); //light transfers disabled indefinitely
+		m_Materials.m_PortalLightTransfer_ShadowTexture.Init( "effects/flashlight001", TEXTURE_GROUP_OTHER ); //light transfers disabled indefinitely
 	
 		m_Materials.m_pDepthDoubleViewMatrixVar = m_Materials.m_PortalDepthDoubler->FindVar( "$alternateviewmatrix", NULL, false );
 		Assert( m_Materials.m_pDepthDoubleViewMatrixVar != NULL );
 	}
 };
 static CAutoInitFlatBasicPortalDrawingMaterials s_FlatBasicPortalDrawingMaterials;
-
+*/
 const FlatBasicPortalRenderingMaterials_t& CPortalRenderable_FlatBasic::m_Materials = s_FlatBasicPortalDrawingMaterials.m_Materials;
 
 

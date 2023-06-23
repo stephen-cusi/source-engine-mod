@@ -3205,7 +3205,7 @@ TODO: do we even need to do the far plane?
 		}
 	}
 
-	// Calculate scissoring rect
+	/*// Calculate scissoring rect
 	flashlightInfo.m_FlashlightState.m_bScissor = false;
 	if ( r_flashlightscissor.GetBool() && (nNumPolygons > 0) )
 	{
@@ -3218,7 +3218,7 @@ TODO: do we even need to do the far plane?
 			flashlightInfo.m_FlashlightState.m_nRight  = nRight;
 			flashlightInfo.m_FlashlightState.m_nBottom = nBottom;
 		}
-	}
+	}*/
 
 	if ( r_flashlightdrawclip.GetBool() && r_flashlightclip.GetBool() && bUseStencil )
 	{

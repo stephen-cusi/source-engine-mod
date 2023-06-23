@@ -26,10 +26,34 @@ struct FlatBasicPortalRenderingMaterials_t
 	CMaterialReference	m_PortalStaticOverlay[2];
 	CMaterialReference	m_Portal_Stencil_Hole;
 	CMaterialReference	m_Portal_Refract[2];
-	//CTextureReference	m_PortalLightTransfer_ShadowTexture; //light transfers disabled indefinitely
+	CTextureReference	m_PortalLightTransfer_ShadowTexture; //light transfers disabled indefinitely
 
 	IMaterialVar		*m_pDepthDoubleViewMatrixVar;
 };
+
+class CAutoInitFlatBasicPortalDrawingMaterials : public CAutoGameSystem
+{
+public:
+	FlatBasicPortalRenderingMaterials_t m_Materials;
+	void LevelInitPreEntity()
+	{
+		m_Materials.m_PortalMaterials[0].Init("models/portals/portal_1_dynamicmesh", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_PortalMaterials[1].Init("models/portals/portal_2_dynamicmesh", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_PortalRenderFixMaterials[0].Init("models/portals/portal_1_renderfix_dynamicmesh", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_PortalRenderFixMaterials[1].Init("models/portals/portal_2_renderfix_dynamicmesh", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_PortalDepthDoubler.Init("models/portals/portal_depthdoubler", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_PortalStaticOverlay[0].Init("models/portals/portalstaticoverlay_1", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_PortalStaticOverlay[1].Init("models/portals/portalstaticoverlay_2", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_Portal_Stencil_Hole.Init("models/portals/portal_stencil_hole", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_Portal_Refract[0].Init("models/portals/portal_refract_1", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_Portal_Refract[1].Init("models/portals/portal_refract_2", TEXTURE_GROUP_CLIENT_EFFECTS);
+		m_Materials.m_PortalLightTransfer_ShadowTexture.Init("effects/flashlight001", TEXTURE_GROUP_OTHER); //light transfers disabled indefinitely
+
+		m_Materials.m_pDepthDoubleViewMatrixVar = m_Materials.m_PortalDepthDoubler->FindVar("$alternateviewmatrix", NULL, false);
+		Assert(m_Materials.m_pDepthDoubleViewMatrixVar != NULL);
+	}
+};
+static CAutoInitFlatBasicPortalDrawingMaterials s_FlatBasicPortalDrawingMaterials;
 
 //As seen in "Portal"
 class CPortalRenderable_FlatBasic : public C_BaseAnimating, public CPortalRenderable

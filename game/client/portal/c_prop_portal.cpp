@@ -632,7 +632,7 @@ void C_Prop_Portal::OnDataChanged( DataUpdateType_t updateType )
 
 			if( pRemote ) //now, see if we need to fake light coming through a portal
 			{
-#if 0
+#if 1
 				Vector vLightAtRemotePortal( vec3_origin ), vLightAtLocalPortal( vec3_origin );
 
 				if( pRemote ) //get lighting at remote portal
@@ -642,7 +642,7 @@ void C_Prop_Portal::OnDataChanged( DataUpdateType_t updateType )
 
 				//now get lighting at the local portal
 				{
-					engine->ComputeLighting( ptOrigin, NULL, false, vLightAtLocalPortal, NULL );
+					engine->ComputeLighting( m_ptOrigin, NULL, false, vLightAtLocalPortal, NULL );
 				}
 
 				//Vector vLightDiff = vLightAtLocalPortal - vLightAtRemotePortal;
@@ -665,8 +665,8 @@ void C_Prop_Portal::OnDataChanged( DataUpdateType_t updateType )
 						else
 						{
 							vColor = vLightAtRemotePortal;
-							vLightForward = vForward;
-							ptLightOrigin = ptOrigin;
+							vLightForward = m_vForward;
+							ptLightOrigin = m_ptOrigin;
 						}
 
 						//clamp color values
@@ -742,7 +742,7 @@ void C_Prop_Portal::OnDataChanged( DataUpdateType_t updateType )
 						state.m_NearZ = 4.0f;
 						state.m_FarZ = 500.0f;
 						state.m_nSpotlightTextureFrame = 0;
-						state.m_pSpotlightTexture = PortalDrawingMaterials::PortalLightTransfer_ShadowTexture;
+						state.m_pSpotlightTexture = s_FlatBasicPortalDrawingMaterials.m_Materials.m_PortalLightTransfer_ShadowTexture;
 						state.m_fConstantAtten = 0.0f;
 						state.m_fLinearAtten = 500.0f;
 						state.m_fQuadraticAtten = 0.0f;			

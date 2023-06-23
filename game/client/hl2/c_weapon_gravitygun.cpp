@@ -31,7 +31,7 @@ public:
 	virtual const QAngle&			GetRenderAngles( void ) { return vec3_angle; }
 	virtual bool					ShouldDraw( void ) { return true; }
 	virtual bool					IsTransparent( void ) { return true; }
-	virtual bool					ShouldReceiveProjectedTextures( int flags ) { return false; }
+	virtual bool					ShouldReceiveProjectedTextures( int flags ) { return true; }
 	virtual int						DrawModel( int flags );
 	
 
