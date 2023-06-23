@@ -1159,6 +1159,7 @@ bool CGameClient::ExecuteStringCommand( const char *pCommandString )
 		}
 
 		g_pServerPluginHandler->SetCommandClient( m_nClientSlot );
+		Msg("[%s]: %s\n", m_Name, args.GetCommandString());
 		Cmd_Dispatch( pCommand, args );
 	}
 	else

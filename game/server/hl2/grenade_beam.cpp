@@ -51,7 +51,12 @@ void CGrenadeBeamChaser::Spawn( void )
 //------------------------------------------------------------------------------
 void CGrenadeBeamChaser::ChaserThink( void )
 {
+	if (!m_pTarget) {
+		SetNextThink(gpGlobals->curtime);
+		return;
+	}
 	Vector vTargetPos;
+	
 	m_pTarget->GetChaserTargetPos(&vTargetPos);
 	Vector vTargetDir = (vTargetPos - GetLocalOrigin());
 

@@ -254,6 +254,9 @@ void CPropPortalStatsDisplay::Disable( void )
 
 void CPropPortalStatsDisplay::Enable( void )
 {
+	if (gpGlobals->maxClients > 1) {
+		return;
+	}
 	if ( m_bEnabled )
 		return;
 

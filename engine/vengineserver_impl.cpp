@@ -1008,13 +1008,21 @@ public:
 	*/
 	virtual void ClientCommand(edict_t* pEdict, const char* szFmt, ...)
 	{
+		
 		va_list		argptr; 
 		static char	szOut[1024];
 		
 		va_start(argptr, szFmt);
 		Q_vsnprintf(szOut, sizeof( szOut ), szFmt, argptr);
 		va_end(argptr);
+		//int entnum = NUM_FOR_EDICT(pEdict);
 
+		//Msg("[%s]: %s", sv.GetClient(entnum - 1)->GetClientName(), szOut);
+		if (!pEdict) 
+		{
+			Msg("A null player just executed: %s", szOut);
+			return;
+		}
 		if ( szOut[0] == 0 )
 		{
 			Warning( "ClientCommand, 0 length string supplied.\n" );
