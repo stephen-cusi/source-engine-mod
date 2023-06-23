@@ -42,22 +42,22 @@ const char *CHL2MP_Player::GetPlayerModelSoundPrefix( void )
 	return g_ppszPlayerSoundPrefixNames[m_iPlayerSoundType];
 }
 
-void CHL2MP_Player::PrecacheFootStepSounds( void )
-{
-	int iFootstepSounds = ARRAYSIZE( g_ppszPlayerSoundPrefixNames );
-	int i;
+//void CHL2MP_Player::PrecacheFootStepSounds( void )
+//{
+	//int iFootstepSounds = ARRAYSIZE( g_ppszPlayerSoundPrefixNames );
+	//int i;
 
-	for ( i = 0; i < iFootstepSounds; ++i )
-	{
-		char szFootStepName[128];
+	//for ( i = 0; i < iFootstepSounds; ++i )
+	//{
+		//char szFootStepName[128];
 
-		Q_snprintf( szFootStepName, sizeof( szFootStepName ), "%s.RunFootstepLeft", g_ppszPlayerSoundPrefixNames[i] );
-		PrecacheScriptSound( szFootStepName );
+		//Q_snprintf( szFootStepName, sizeof( szFootStepName ), "%s.RunFootstepLeft", g_ppszPlayerSoundPrefixNames[i] );
+		//PrecacheScriptSound( szFootStepName );
 
-		Q_snprintf( szFootStepName, sizeof( szFootStepName ), "%s.RunFootstepRight", g_ppszPlayerSoundPrefixNames[i] );
-		PrecacheScriptSound( szFootStepName );
-	}
-}
+		//Q_snprintf( szFootStepName, sizeof( szFootStepName ), "%s.RunFootstepRight", g_ppszPlayerSoundPrefixNames[i] );
+		//PrecacheScriptSound( szFootStepName );
+	//}
+//}
 
 //-----------------------------------------------------------------------------
 // Consider the weapon's built-in accuracy, this character's proficiency with
