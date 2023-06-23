@@ -94,7 +94,7 @@ Vector CHL2MP_Player::GetAttackSpread( CBaseCombatWeapon *pWeapon, CBaseEntity *
 //#endif
 
 	//if ( gpGlobals->maxClients > 1 && !sv_footsteps.GetFloat() )
-		return;
+		//return;
 
 //#if defined( CLIENT_DLL )
 	// during prediction play footstep sounds only once
@@ -103,7 +103,7 @@ Vector CHL2MP_Player::GetAttackSpread( CBaseCombatWeapon *pWeapon, CBaseEntity *
 //#endif
 
 	//if ( GetFlags() & FL_DUCKING )
-		return;
+		//return;
 
 	//m_Local.m_nStepside = !m_Local.m_nStepside;
 
@@ -113,7 +113,7 @@ Vector CHL2MP_Player::GetAttackSpread( CBaseCombatWeapon *pWeapon, CBaseEntity *
 	//{
 		//Q_snprintf( szStepSound, sizeof( szStepSound ), "%s.RunFootstepLeft", g_ppszPlayerSoundPrefixNames[m_iPlayerSoundType] );
 	//}
-	else
+	//else
 	//{
 		//Q_snprintf( szStepSound, sizeof( szStepSound ), "%s.RunFootstepRight", g_ppszPlayerSoundPrefixNames[m_iPlayerSoundType] );
 	//}
