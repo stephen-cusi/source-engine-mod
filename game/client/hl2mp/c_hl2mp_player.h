@@ -58,7 +58,8 @@ public:
 	virtual void CreateLightEffects( void ) {}
 	virtual bool ShouldReceiveProjectedTextures( int flags );
 	virtual void PostDataUpdate( DataUpdateType_t updateType );
-	virtual void PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force );
+	//Footstep sound material fix
+	//virtual void PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force ); 
 	virtual void PreThink( void );
 	virtual void DoImpactEffect( trace_t &tr, int nDamageType );
 	IRagdoll* GetRepresentativeRagdoll() const;
@@ -74,7 +75,8 @@ public:
 	void	Initialize( void );
 	int		GetIDTarget() const;
 	void	UpdateIDTarget( void );
-	void	PrecacheFootStepSounds( void );
+	//Footstep sound material fix
+	//void	PrecacheFootStepSounds( void );
 	const char	*GetPlayerModelSoundPrefix( void );
 
 	HL2MPPlayerState State_Get() const;
