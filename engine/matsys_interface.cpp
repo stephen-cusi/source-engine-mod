@@ -2176,6 +2176,9 @@ void WorldStaticMeshCreate( void )
 		if ( g_VBAllocTracker )
 			g_VBAllocTracker->TrackMeshAllocations( "WorldStaticMeshCreate" );
 		VertexFormat_t vertexFormat = ComputeWorldStaticMeshVertexFormat( g_Meshes[i].pMaterial );
+		if (vertexFormat == 0) {
+			Warning("g_Meshes[i].pMaterial vertexFormat is 0! The game will crash! Material name: %s, Shader: %s", g_Meshes[i].pMaterial->GetName(), g_Meshes[i].pMaterial->GetShaderName());
+		}
 		g_Meshes[i].pMesh = pRenderContext->CreateStaticMesh( vertexFormat, TEXTURE_GROUP_STATIC_VERTEX_BUFFER_WORLD, g_Meshes[i].pMaterial );
 		int vertBufferIndex = 0;
 		// NOTE: Index count is zero because this will be a static vertex buffer!!!

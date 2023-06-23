@@ -394,6 +394,10 @@ void CVertexBuffer::Create( IDirect3DDevice9 *pD3D )
 
 	HRESULT hr = pD3D->CreateVertexBuffer( m_nBufferSize, desc.Usage, desc.FVF, desc.Pool, &m_pVB, NULL );
 
+	if (!m_pVB) {
+		Warning("ERROR! m_pVB IS NULL!!! hr is: %i", hr);
+	}
+
 	if ( hr == D3DERR_OUTOFVIDEOMEMORY || hr == E_OUTOFMEMORY )
 	{
 		// Don't have the memory for this.  Try flushing all managed resources

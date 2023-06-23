@@ -2625,7 +2625,7 @@ int CHL2_Player::GiveAmmo( int nCount, int nAmmoIndex, bool bSuppressSound = fal
 		MessageEnd();
 	}
 
-	//
+	//w
 	// If I was dry on ammo for my best weapon and justed picked up ammo for it,
 	// autoswitch to my best weapon now.
 	//

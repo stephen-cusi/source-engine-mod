@@ -3456,25 +3456,30 @@ bool AccumulateRecursiveVmtPatches( KeyValues &patchKeyValuesOut, KeyValues **pp
 		CUtlString includeFileName( pIncludeFileName ); // copy off the string before we clear the keyvalues it lives in
 		pCurrentKeyValues->Clear();
 		bool bSuccess = pCurrentKeyValues->LoadFromFile( g_pFullFileSystem, includeFileName, pPathID );
-		if( bSuccess )
+		if ( pIncludes ) 
 		{
-			if ( pIncludes )
+			if (bSuccess)
 			{
 				// Remember that we included this file for the pure server stuff.
-				pIncludes->AddToTail( g_pFullFileSystem->FindOrAddFileName( includeFileName ) );
+				pIncludes->AddToTail(g_pFullFileSystem->FindOrAddFileName(includeFileName));
 			}
-		}
-		else
-		{
-			pCurrentKeyValues->deleteThis();
-#ifndef DEDICATED
-			Warning( "Failed to load $include VMT file (%s)\n", includeFileName.String() );
-#endif
-			if ( !HushAsserts() )
+			else
 			{
-				AssertMsg( false, "Failed to load $include VMT file (%s)", includeFileName.String() );
+				/*
+				pCurrentKeyValues->deleteThis();
+	#ifndef DEDICATED
+				Warning( "Failed to load $include VMT file (%s)\n", includeFileName.String() );
+	#endif
+				if ( !HushAsserts() )
+				{
+					AssertMsg( false, "Failed to load $include VMT file (%s)", includeFileName.String() );
+				}
+				return false;
+				*/
+				pCurrentKeyValues->Clear();
+				pCurrentKeyValues->LoadFromFile(g_pFullFileSystem, "materials/debug/debugempty.vmt", pPathID);
+				pIncludes->AddToTail(g_pFullFileSystem->FindOrAddFileName("materials/debug/debugempty.vmt"));
 			}
-			return false;
 		}
 
 		nCount++;

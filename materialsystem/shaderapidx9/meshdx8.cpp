@@ -2589,6 +2589,9 @@ bool CMeshDX8::Lock( int nVertexCount, bool bAppend, VertexDesc_t &desc )
 	if (!m_pVertexBuffer)
 	{
 		int size = g_MeshMgr.VertexFormatSize( m_VertexFormat );
+		if (size == 0) {
+			Warning("VertexFormatSize is 0. The game will crash!");
+		}
 		m_pVertexBuffer = new CVertexBuffer( Dx9Device(), m_VertexFormat, 0, size, nVertexCount, m_pTextureGroupName, ShaderAPI()->UsingSoftwareVertexProcessing() );
 	}
 
