@@ -78,70 +78,71 @@ Vector CHL2MP_Player::GetAttackSpread( CBaseCombatWeapon *pWeapon, CBaseEntity *
 //			fvol - 
 //			force - force sound to play
 //-----------------------------------------------------------------------------
-void CHL2MP_Player::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force )
-{
-#if defined( LUA_SDK )
-	BEGIN_LUA_CALL_HOOK( "PlayerPlayStepSound" );
-		lua_pushhl2mpplayer( L, this );
-		lua_pushvector( L, vecOrigin );
-		lua_pushsurfacedata( L, psurface );
-		lua_pushnumber( L, fvol );
-		lua_pushboolean( L, force );
-	END_LUA_CALL_HOOK( 5, 1 );
+//Im not sure, if i comment lua string, it will work? 
+//void CHL2MP_Player::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force )
+//{
+//#if defined( LUA_SDK )
+	//BEGIN_LUA_CALL_HOOK( "PlayerPlayStepSound" );
+		//lua_pushhl2mpplayer( L, this );
+		//lua_pushvector( L, vecOrigin );
+		//lua_pushsurfacedata( L, psurface );
+		//lua_pushnumber( L, fvol );
+		//lua_pushboolean( L, force );
+	//END_LUA_CALL_HOOK( 5, 1 );
 
-	RETURN_LUA_NONE();
-#endif
+	//RETURN_LUA_NONE();
+//#endif
 
-	if ( gpGlobals->maxClients > 1 && !sv_footsteps.GetFloat() )
+	//if ( gpGlobals->maxClients > 1 && !sv_footsteps.GetFloat() )
 		return;
 
-#if defined( CLIENT_DLL )
+//#if defined( CLIENT_DLL )
 	// during prediction play footstep sounds only once
-	if ( !prediction->IsFirstTimePredicted() )
+	//if ( !prediction->IsFirstTimePredicted() )
+		//return;
+//#endif
+
+	//if ( GetFlags() & FL_DUCKING )
 		return;
-#endif
 
-	if ( GetFlags() & FL_DUCKING )
-		return;
+	//m_Local.m_nStepside = !m_Local.m_nStepside;
 
-	m_Local.m_nStepside = !m_Local.m_nStepside;
+	//char szStepSound[128];
 
-	char szStepSound[128];
-
-	if ( m_Local.m_nStepside )
-	{
-		Q_snprintf( szStepSound, sizeof( szStepSound ), "%s.RunFootstepLeft", g_ppszPlayerSoundPrefixNames[m_iPlayerSoundType] );
-	}
+	//if ( m_Local.m_nStepside )
+	//{
+		//Q_snprintf( szStepSound, sizeof( szStepSound ), "%s.RunFootstepLeft", g_ppszPlayerSoundPrefixNames[m_iPlayerSoundType] );
+	//}
 	else
-	{
-		Q_snprintf( szStepSound, sizeof( szStepSound ), "%s.RunFootstepRight", g_ppszPlayerSoundPrefixNames[m_iPlayerSoundType] );
-	}
+	//{
+		//Q_snprintf( szStepSound, sizeof( szStepSound ), "%s.RunFootstepRight", g_ppszPlayerSoundPrefixNames[m_iPlayerSoundType] );
+	//}
 
-	CSoundParameters params;
-	if ( GetParametersForSound( szStepSound, params, NULL ) == false )
-		return;
+	//CSoundParameters params;
+	//if ( GetParametersForSound( szStepSound, params, NULL ) == false )
+		//return;
 
-	CRecipientFilter filter;
-	filter.AddRecipientsByPAS( vecOrigin );
+	//CRecipientFilter filter;
+	//filter.AddRecipientsByPAS( vecOrigin );
 
-#ifndef CLIENT_DLL
+//#ifndef CLIENT_DLL
 	// im MP, server removed all players in origins PVS, these players 
 	// generate the footsteps clientside
-	if ( gpGlobals->maxClients > 1 )
-		filter.RemoveRecipientsByPVS( vecOrigin );
-#endif
+	//if ( gpGlobals->maxClients > 1 )
+		//filter.RemoveRecipientsByPVS( vecOrigin );
+//#endif
 
-	EmitSound_t ep;
-	ep.m_nChannel = CHAN_BODY;
-	ep.m_pSoundName = params.soundname;
-	ep.m_flVolume = fvol;
-	ep.m_SoundLevel = params.soundlevel;
-	ep.m_nFlags = 0;
-	ep.m_nPitch = params.pitch;
-	ep.m_pOrigin = &vecOrigin;
+	//EmitSound_t ep;
+	//ep.m_nChannel = CHAN_BODY;
+	//ep.m_pSoundName = params.soundname;
+	//ep.m_flVolume = fvol;
+	//ep.m_SoundLevel = params.soundlevel;
+	//ep.m_nFlags = 0;
+	//ep.m_nPitch = params.pitch;
+	//ep.m_pOrigin = &vecOrigin;
 
-	EmitSound( filter, entindex(), ep );
-}
+	//mitSound( filter, entindex(), ep );
+//}
 
 
 //==========================
