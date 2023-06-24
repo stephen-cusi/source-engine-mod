@@ -15,8 +15,10 @@
 #include "coordsize.h"
 #include "rumble_shared.h"
 
+#ifdef CLIENT_DLL
 #include "hl2/hl2_player_shared.h"
 #include "util_shared.h"
+#endif // CLIENT_DLL
 
 #if defined(HL2_DLL) || defined(HL2_CLIENT_DLL)
 	#include "hl_movedata.h"
@@ -38,7 +40,7 @@ extern IFileSystem *filesystem;
 	static ConVar dispcoll_drawplane( "dispcoll_drawplane", "0" );
 #endif
 
-//#ifdef CLIENT_DLL
+#ifdef CLIENT_DLL
 
 	//cam viewbob
 	ConVar cl_viewbob_enabled("cl_viewbob_enabled", "0", 0, "Oscillation Toggle");
@@ -62,7 +64,7 @@ extern IFileSystem *filesystem;
 	ConVar cl_viewbob_zoffset("cl_viewbob_zoffset", "100", 0, "Division xoffset");
 
 	ConVar cl_viewbob_jump_scale("cl_viewbob_jump_scale", "2", 0, "Magnitude of jump Oscillation (float)"); 
-//#endif // !CLIENT
+#endif // !CLIENT
 
 // tickcount currently isn't set during prediction, although gpGlobals->curtime and
 // gpGlobals->frametime are. We should probably set tickcount (to player->m_nTickBase),
@@ -1942,7 +1944,7 @@ void CGameMovement::WalkMove( void )
 	fmove = mv->m_flForwardMove;
 	smove = mv->m_flSideMove;
 
-//#ifdef CLIENT_DLL
+#ifdef CLIENT_DLL
 	if (cl_viewbob_enabled.GetBool() && !engine->IsPaused())
 	{
 		CHL2_Player* HLplayer = dynamic_cast<CHL2_Player*>(player);
@@ -1975,7 +1977,7 @@ void CGameMovement::WalkMove( void )
 			player->ViewPunch(QAngle(0, 0, -zoffset));
 		}
 	}
-//#endif
+#endif
 
 	// Zero out z components of movement vectors
 	if ( g_bMovementOptimizations )
@@ -2083,8 +2085,10 @@ void CGameMovement::WalkMove( void )
 
 void CGameMovement::OnLand(float fVelocity)
 {
+#ifdef CLIENT_DLL
 	if (cl_viewbob_enabled.GetBool())
 		player->ViewPunch(QAngle(fVelocity * cl_viewbob_onland_force.GetFloat(), 0, 0));
+#endif // CLIENT_DLL
 }
 
 //-----------------------------------------------------------------------------
@@ -2487,7 +2491,7 @@ bool CGameMovement::CheckJumpButton( void )
 
 	// In the air now.
     SetGroundEntity( NULL );
-
+#ifdef CLIENT_DLL
 	if (cl_viewbob_enabled.GetBool() && !engine->IsPaused())
 	{
 		if (mv->m_flForwardMove >= 0)
@@ -2499,6 +2503,8 @@ bool CGameMovement::CheckJumpButton( void )
 			player->ViewPunch(QAngle(-cl_viewbob_jump_scale.GetFloat(), 0, 0));
 		}
 	}
+#endif // CLIENT_DLL
+
 	
 	player->PlayStepSound( (Vector &)mv->GetAbsOrigin(), player->m_pSurfaceData, 1.0, true );
 	

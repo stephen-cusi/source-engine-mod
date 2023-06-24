@@ -40,3 +40,4 @@ waf3*/
 source-engine.sln
 build
 *.lastbuildstate
+source-engine.unsuccessfulbuild
