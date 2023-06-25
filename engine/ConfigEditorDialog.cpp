@@ -10,6 +10,10 @@ CConfigEditorDialog::CConfigEditorDialog(vgui::Panel* parent) : BaseClass(parent
 	SetSizeable(true);
 	SetVisible(false);
 	m_pTextEntry = new TextEntry(this,"CodeInput");
+	m_pTextEntry->SetMultiline(true);
+	m_pTextEntry->SetCatchEnterKey(true);
+	m_pTextEntry->SetVerticalScrollbar(true);
+	m_pTextEntry->SetHorizontalScrolling(true);
 }
 
 void CConfigEditorDialog::PerformLayout()
