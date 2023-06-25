@@ -61,6 +61,7 @@ $Project "Server (HL2MP)"
 		$File   "$SRCDIR\game\shared\teamplay_round_timer.cpp"
 		$File   "$SRCDIR\game\shared\teamplay_round_timer.h"
 		$File   "physgun.cpp"
+		$File   "SourceBoxCmds.cpp"
 
 		$Folder	"HL2 DLL"
 		{

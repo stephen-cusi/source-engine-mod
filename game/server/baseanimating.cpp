@@ -2500,6 +2500,7 @@ void CBaseAnimating::SetModel( const char *szModelName )
 	if ( szModelName[0] )
 	{
 		int modelIndex = modelinfo->GetModelIndex( szModelName );
+		
 		const model_t *model = modelinfo->GetModel( modelIndex );
 		if ( model && ( modelinfo->GetModelType( model ) != mod_studio ) )
 		{
