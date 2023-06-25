@@ -448,6 +448,7 @@ public:
 
 	FSDirtyDiskReportFunc_t		GetDirtyDiskReportFunc() { return m_DirtyDiskReportFunc; }
 
+	virtual void SearchEntireFilesystem(const char* startfolder, const char* searchfor, CUtlStringList& paths);
 	//-----------------------------------------------------------------------------
 	// MemoryFile cache implementation
 	//-----------------------------------------------------------------------------
@@ -780,6 +781,9 @@ public:
 	void						LogAccessToFile( char const *accesstype, char const *fullpath, char const *options );
 	void						Warning( FileWarningLevel_t level, PRINTF_FORMAT_STRING const char *fmt, ... );
 
+	// Global/shared filename/path table
+	CUtlFilenameSymbolTable		m_FileNames;
+
 protected:
 	// Note: if pFoundStoreID is passed in, then it will set that to the CSearchPath::m_storeId value of the search path it found the file in.
 	const char*					FindFirstHelper( const char *pWildCard, const char *pPathID, FileFindHandle_t *pHandle, int *pFoundStoreID );
@@ -820,8 +824,7 @@ protected:
 	CPathIDInfo*				FindOrAddPathIDInfo( const CUtlSymbol &id, int bByRequestOnly );
 	static bool					FilterByPathID( const CSearchPath *pSearchPath, const CUtlSymbol &pathID );
 
-	// Global/shared filename/path table
-	CUtlFilenameSymbolTable		m_FileNames;
+	
 
 	int				m_WhitelistFileTrackingEnabled;	// -1 if unset, 0 if disabled (single player), 1 if enabled (multiplayer).
 	FSDirtyDiskReportFunc_t m_DirtyDiskReportFunc;

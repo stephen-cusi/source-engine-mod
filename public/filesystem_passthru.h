@@ -248,7 +248,7 @@ public:
 		{ return m_pFileSystemPassThru->CheckVPKFileHash( PackFileID, nPackFileNumber, nFileFraction, md5Value ); }
 	virtual void			NotifyFileUnloaded( const char *pszFilename, const char *pPathId ) OVERRIDE
 		{ m_pFileSystemPassThru->NotifyFileUnloaded( pszFilename, pPathId ); }
-
+	virtual void SearchEntireFilesystem(const char* startfolder, const char* searchfor, CUtlStringList& paths) { return m_pFileSystemPassThru->SearchEntireFilesystem(startfolder,searchfor,paths); }
 protected:
 	IFileSystem *m_pFileSystemPassThru;
 };

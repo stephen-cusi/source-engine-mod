@@ -331,6 +331,8 @@ def build(bld):
 			'vgui_vprofgraphpanel.cpp',
 			'vgui_vprofpanel.cpp',
 			'toolframework.cpp',
+            'ConfigEditorDialog.cpp',
+            'ModelBrowser.cpp',
 		]
 		
 		if bld.env.DEST_OS != 'win32':

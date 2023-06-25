@@ -928,7 +928,13 @@ public:
 	{
 		return GetCaseCorrectFullPath_Ptr( pFullPath, pDest, (int)maxLenInChars );
 	}
+
+	virtual void SearchEntireFilesystem(const char* startfolder, const char* searchfor, CUtlStringList& paths) = 0;
 };
+
+
+
+
 
 //-----------------------------------------------------------------------------
 // Memory file backing, which you can use to fake out the filesystem, caching data

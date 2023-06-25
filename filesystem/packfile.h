@@ -172,12 +172,12 @@ public:
 	bool				m_bIsExcluded;
 
 	int					m_PackFileID;
+	CBaseFileSystem		*m_fs;
 protected:
 	// This is the core IO routine for reading anything from a pack file, everything should go through here at some point
 	virtual int ReadFromPack( int nIndex, void* buffer, int nDestBytes, int nBytes, int64 nOffset ) = 0;
 
 	int64				m_FileLength;
-	CBaseFileSystem		*m_fs;
 
 	friend class		CPackFileHandle;
 };

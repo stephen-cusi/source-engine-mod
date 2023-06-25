@@ -91,6 +91,9 @@
 #include "toolframework/itoolframework.h"
 #include "filesystem/IQueuedLoader.h"
 
+#include "ConfigEditorDialog.h"
+#include "ModelBrowser.h"
+
 #if defined( _X360 )
 #include "xbox/xbox_win32stubs.h"
 #endif
@@ -742,6 +745,10 @@ void CEngineVGui::Init()
 
 		// Install texture view panel
 		TxViewPanel::Install( staticEngineToolsPanel );
+
+		CConfigEditorDialog::InstallConfigEditor( staticEngineToolsPanel );
+
+		CModelBrowser::InstallModelBrowser(staticEngineToolsPanel);
 
 		COM_TimestampedLog( "Install bug reporter" );
 

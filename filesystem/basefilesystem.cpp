@@ -43,7 +43,7 @@
 #endif
 
 #include <time.h>
-
+#include "vpklib/packedstore.h"
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -5105,6 +5105,133 @@ void CBaseFileSystem::RemoveLoggingFunc( FileSystemLoggingFunc_t logFunc )
 	m_LogFuncs.FindAndRemove(logFunc);
 }
 
+typedef uint16 PackFileIndex_t;
+#define PACKFILEINDEX_END 0xffff
+const uint16 packedfileindex_end = 0xffff;
+
+#pragma pack(1)
+struct CFilePartDescr
+{
+	PackFileIndex_t m_nFileNumber;
+	uint32 m_nFileDataOffset;
+	uint32 m_nFileDataSize;
+};
+
+
+struct CFileHeaderFixedData
+{
+	uint32 m_nFileCRC;
+	uint16 m_nMetaDataSize;
+	CFilePartDescr m_PartDescriptors[1];					// variable length
+
+	FORCEINLINE const void* MetaData(void) const;
+
+	FORCEINLINE const CFilePartDescr* FileData(int nPart = 0) const;
+
+	uint32 TotalDataSize(void) const
+	{
+		return m_nMetaDataSize + m_PartDescriptors[0].m_nFileDataSize;
+	}
+
+	size_t HeaderSizeIncludingMetaData(void) const
+	{
+		size_t nRet = sizeof(*this) - sizeof(m_PartDescriptors) + m_nMetaDataSize;
+		// see how many parts we have and count the size of their descriptors
+		CFilePartDescr const* pPart = m_PartDescriptors;
+		while (pPart->m_nFileNumber != PACKFILEINDEX_END)
+		{
+			nRet += sizeof(CFilePartDescr);
+			pPart++;
+		}
+		nRet += sizeof(PackFileIndex_t);					// count terminator
+		return nRet;
+	}
+
+};
+#pragma pack()
+#define VPKFILENUMBER_EMBEDDED_IN_DIR_FILE  0x7fff
+
+static int SkipFile(char const*& pData)					// returns highest file index
+{
+	int nHighestChunkIndex = -1;
+	pData += 1 + V_strlen(pData);
+	pData += sizeof(uint32);
+
+	uint16 nMetaDataSize;
+	Q_memcpy(&nMetaDataSize, pData, sizeof(uint16));
+
+	pData += sizeof(uint16);
+	while (Q_memcmp(pData, &packedfileindex_end, sizeof(packedfileindex_end)) != 0)
+	{
+		int nIdx = reinterpret_cast<CFilePartDescr const*>(pData)->m_nFileNumber;
+
+		if (nIdx != VPKFILENUMBER_EMBEDDED_IN_DIR_FILE)
+			nHighestChunkIndex = MAX(nHighestChunkIndex, nIdx);
+		pData += sizeof(CFilePartDescr);
+	}
+	pData += sizeof(PackFileIndex_t);
+	pData += nMetaDataSize;
+	return nHighestChunkIndex;
+}
+
+
+void CBaseFileSystem::SearchEntireFilesystem(const char* startfolder, const char* searchfor, CUtlStringList& paths)
+{
+	int c = m_SearchPaths.Count();
+	for (int i = 0; i < c; i++) 
+	{
+		CPackedStoreRefCount *packedstore = m_SearchPaths[i].GetPackedStore();
+		if (!packedstore) 
+		{
+			CPackFile* packfile = m_SearchPaths[i].GetPackFile();
+			if (!packfile)
+			{
+				continue;
+			}
+			packedstore = packfile->m_fs->m_SearchPaths[0].GetPackedStore();
+			if (!packedstore)
+			{
+				continue;
+			}
+		}
+		char const* pData = reinterpret_cast<char const*>(packedstore->DirectoryData());
+		while (*pData)
+		{
+			// for each extension
+			char pszCurExtension[MAX_PATH];
+			if (pData[0] != ' ')
+				sprintf(pszCurExtension, ".%s", pData);
+			else
+				pszCurExtension[0] = 0;
+			// now, iterate over all directories associated with this extension
+			pData += 1 + strlen(pData);
+			while (*pData)
+			{
+				char pszCurDir[MAX_PATH];
+				if (pData[0] != ' ')
+					sprintf(pszCurDir, "%s/", pData);
+				else
+					pszCurDir[0] = 0;
+				pData += 1 + strlen(pData);					// skip dir name
+				// now, march through all the files
+				while (*pData)
+				{
+					char filename[MAX_PATH];
+					Q_strcpy(filename, pszCurDir);
+					Q_strcat(filename, pData, MAX_PATH);
+					Q_strcat(filename, pszCurExtension, MAX_PATH);
+					if (strstr(filename, searchfor)) {
+						paths.CopyAndAddToTail(filename);
+					}
+					SkipFile(pData);
+				}
+				pData++;
+			}
+			pData++;
+		}
+	}
+}
+
 //-----------------------------------------------------------------------------
 // Make sure that slashes are of the right kind and that there is a slash at the 
 // end of the filename.
@@ -5389,7 +5516,6 @@ void CBaseFileSystem::UnregisterMemoryFile( CMemoryFileBacking *pFile )
 		pFile->Release();
 	}
 }
-
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructs a file handle

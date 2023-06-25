@@ -324,9 +324,11 @@ public:
 	bool				SaveToBuffer( CUtlBuffer &buffer );
 	bool				RestoreFromBuffer( CUtlBuffer &buffer );
 
-private:
 	CCountedStringPoolBase<unsigned short> m_PathStringPool;
 	CCountedStringPoolBase<unsigned int> m_FileStringPool;
+
+private:
+	
 	mutable CThreadSpinRWLock m_lock;
 };
 
