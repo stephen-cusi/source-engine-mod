@@ -75,7 +75,7 @@ typedef uint64 VertexFormat_t;
 #ifdef POSIX
 #define ABSOLUTE_MINIMUM_DXLEVEL 90
 #else
-#define ABSOLUTE_MINIMUM_DXLEVEL 80
+#define ABSOLUTE_MINIMUM_DXLEVEL 90
 #endif
 
 enum ShaderParamType_t 
