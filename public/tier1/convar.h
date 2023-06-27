@@ -211,6 +211,7 @@ private:
 	bool GetArgument(const char* pCommand, int maxlen, int& index, int i);
 	bool GetApostrophed(const char* pCommand, int maxlen, int& index, int i);
 	bool GetQuoted(const char* pCommand, int maxlen, int& index, int i);
+	int ParseBrackets(char* output, int& index, int i, bool inconvar);
 
 	int		m_nArgc;
 	int		m_nArgv0Size;

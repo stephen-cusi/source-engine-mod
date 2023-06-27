@@ -962,7 +962,6 @@ const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t 
 	
 	cmd_source = src;
 	cmd_clientslot = nClientSlot;
-
 	// check ConCommands
 	const ConCommandBase *pCommand = g_pCVar->FindCommandBase( command[ 0 ] );
 

@@ -439,8 +439,12 @@ bool CCvarUtilities::IsCommand( const CCommand &args )
 
 	// Note that we don't want the tokenized list, send down the entire string
 	// except for surrounding quotes
-	char remaining[1024];
-	const char *pArgS = args.ArgS();
+	char remaining[1024] = { 0 };
+	for (int i = 1; i < args.ArgC(); i++)
+	{
+		Q_strcat(remaining, args[i], 1024);
+	}
+	/*const char* pArgS = args.ArgS();
 	int nLen = Q_strlen( pArgS );
 	bool bIsQuoted = pArgS[0] == '\"';
 	if ( !bIsQuoted )
@@ -470,7 +474,7 @@ bool CCvarUtilities::IsCommand( const CCommand &args )
 		{
 			*p = 0;
 		}
-	}
+	}*/
 
 	SetDirect( v, remaining );
 	return true;

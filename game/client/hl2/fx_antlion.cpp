@@ -77,7 +77,7 @@ void CAntlionGibManager::RemoveGib( C_BaseEntity *pEntity )
 //-----------------------------------------------------------------------------
 void CAntlionGibManager::Update( float frametime )
 {
-	if ( m_LRU.Count() < g_antlion_maxgibs.GetInt() )
+	if ( m_LRU.Count() < g_antlion_maxgibs.GetInt() || m_LRU.Count() == 0)
 		 return;
 	
 	int i = 0;
