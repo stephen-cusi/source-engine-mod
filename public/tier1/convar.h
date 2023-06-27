@@ -174,6 +174,11 @@ protected:
 	static IConCommandBaseAccessor	*s_pAccessor;
 };
 
+enum
+{
+	COMMAND_MAX_ARGC = 64,
+	COMMAND_MAX_LENGTH = 512,
+};
 
 //-----------------------------------------------------------------------------
 // Command tokenizer
@@ -182,7 +187,7 @@ class CCommand
 {
 public:
 	CCommand();
-	CCommand( int nArgC, const char **ppArgV );
+	//CCommand( int nArgC, const char **ppArgV );
 	bool Tokenize( const char *pCommand, characterset_t *pBreakSet = NULL );
 	void Reset();
 
@@ -201,17 +206,17 @@ public:
 	static characterset_t* DefaultBreakSet();
 
 private:
-	enum
-	{
-		COMMAND_MAX_ARGC = 64,
-		COMMAND_MAX_LENGTH = 512,
-	};
+	
+	int GetArguments(const char* pCommand);
+	bool GetArgument(const char* pCommand, int maxlen, int& index, int i);
+	bool GetApostrophed(const char* pCommand, int maxlen, int& index, int i);
+	bool GetQuoted(const char* pCommand, int maxlen, int& index, int i);
 
 	int		m_nArgc;
 	int		m_nArgv0Size;
 	char	m_pArgSBuffer[ COMMAND_MAX_LENGTH ];
 	char	m_pArgvBuffer[ COMMAND_MAX_LENGTH ];
-	const char*	m_ppArgv[ COMMAND_MAX_ARGC ];
+	char	m_ppArgv[ COMMAND_MAX_ARGC ][ COMMAND_MAX_LENGTH ];
 };
 
 inline int CCommand::MaxCommandLength()

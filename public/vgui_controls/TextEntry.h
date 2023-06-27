@@ -314,10 +314,10 @@ private:
 public:
 	virtual void GetTextRange( wchar_t *buf, int from, int numchars );	// copy a portion of the text to the buffer and add zero-termination
 	virtual void GetTextRange( char *buf, int from, int numchars );	// copy a portion of the text to the buffer and add zero-termination
+	CUtlVector<wchar_t> m_TextStream;		// the text in the text window is stored in this buffer
 
 private:
 
-	CUtlVector<wchar_t> m_TextStream;		// the text in the text window is stored in this buffer
 	CUtlVector<wchar_t> m_UndoTextStream;	// a copy of the text buffer to revert changes
 	CUtlVector<int>		m_LineBreaks;		// an array that holds the index in the buffer to wrap lines at
 

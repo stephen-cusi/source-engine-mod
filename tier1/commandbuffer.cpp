@@ -166,20 +166,26 @@ void CCommandBuffer::GetNextCommandLength( const char *pText, int nMaxLen, int *
 	int nCommandLength = 0;
 	int nNextCommandOffset;
 	bool bIsQuoted = false;
+	bool bIsApostrophed = false;
 	bool bIsCommented = false;
 	for ( nNextCommandOffset=0; nNextCommandOffset < nMaxLen; ++nNextCommandOffset, nCommandLength += bIsCommented ? 0 : 1 )
 	{
 		char c = pText[nNextCommandOffset];
 		if ( !bIsCommented )
 		{
-			if ( c == '"' )
+			if ( c == '"' && !bIsApostrophed )
 			{
 				bIsQuoted = !bIsQuoted;
 				continue;
 			}
+			if (c == '\'' && !bIsQuoted)
+			{
+				bIsApostrophed = !bIsApostrophed;
+				continue;
+			}
 
 			// don't break if inside a C++ style comment
-			if ( !bIsQuoted && c == '/' )
+			if ( !bIsQuoted && !bIsApostrophed && c == '/' )
 			{
 				bIsCommented = ( nNextCommandOffset < nMaxLen-1 ) && pText[nNextCommandOffset+1] == '/';
 				if ( bIsCommented )
@@ -190,7 +196,7 @@ void CCommandBuffer::GetNextCommandLength( const char *pText, int nMaxLen, int *
 			}
 
 			// don't break if inside a quoted string
-			if ( !bIsQuoted && c == ';' )
+			if ( !bIsQuoted && !bIsApostrophed && c == ';' )
 				break;	
 		}
 

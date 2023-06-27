@@ -310,9 +310,8 @@ void Snd_Restart_f()
 	ConCommand *pCommand = (ConCommand*)dynamic_cast< const ConCommand* >( g_pCVar->FindCommand( "cl_soundscape_flush" ) );
 	if ( pCommand )
 	{
-		char const *argv[ 1 ] = { "cl_soundscape_flush" };
-
-		CCommand cmd( 1, argv );
+		CCommand cmd;
+		cmd.Tokenize("cl_soundscape_flush");
 		pCommand->Dispatch( cmd );
 	}
 #endif
