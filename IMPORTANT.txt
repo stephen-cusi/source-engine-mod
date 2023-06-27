@@ -1,14 +1,14 @@
 
 Developer Command Prompt for VS 2022:
 
-Create a solution
-waf.bat configure -T release --prefix=J:\SourceBox\build --build-games=hl2mp
+Configure a solution
+waf.bat configure -T release --prefix=..\build --build-games=hl2mp
 
-Configure solution
-waf.bat configure -T release --prefix=J:\SourceBox\build --build-games=hl2mp
+Create solution
+waf.bat msvs
 
 Compile the solution
-waf.bat install --execsolution=J:\SourceBox\SourceBox\source-engine.sln
+waf.bat install
 
 
 
