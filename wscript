@@ -41,6 +41,7 @@ projects={
 		'filesystem',
 		'game/client',
 		'game/server',
+        'game/gamepadui',
 		'gameui',
 		'inputsystem',
 		'ivp/havana',

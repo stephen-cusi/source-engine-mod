@@ -117,6 +117,14 @@ $Project "client"
 	"game\client\client_hl1mp.vpc"		[($WIN32||$POSIX) && $HL1MP]
 }
 
+$Project "gamepadui"
+{
+	"game\gamepadui\gamepadui_base.vpc"		[($WIN32||$X360||$POSIX)]
+	"game\gamepadui\gamepadui_hl2.vpc"		[($WIN32||$X360||$POSIX)]
+	//"game\gamepadui\gamepadui_episodic.vpc"		[($WIN32||$X360||$POSIX)]
+	//"game\gamepadui\gamepadui_portal.vpc"		[($WIN32||$X360||$POSIX)]
+}
+
 $Project "client_sdk"
 {
 	"game\client\client_sdk.vpc" [$WIN32]

@@ -455,6 +455,7 @@ $Group "everything"
 	"vvis_launcher"
     "zlib"
 	"coroutine_osx"
+	"gamepadui"
 
 //	"vs_python2.5"
 //	"vslib_python2.5"

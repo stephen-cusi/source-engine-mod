@@ -3306,6 +3306,13 @@ void CBasePanel::OnOpenServerBrowser()
 {
 	g_VModuleLoader.ActivateModule("Servers");
 }
+void OpenServerBrowser()
+{
+	BasePanel()->OnOpenServerBrowser();
+	Msg("Subject to change.");
+}
+
+static ConCommand open_serverbrowser("open_serverbrowser", OpenServerBrowser);
 
 //-----------------------------------------------------------------------------
 // Purpose: 
@@ -3314,6 +3321,14 @@ void CBasePanel::OnOpenFriendsDialog()
 {
 	g_VModuleLoader.ActivateModule("Friends");
 }
+
+void OnOpenFriendsDialog()
+{
+	g_VModuleLoader.ActivateModule("Friends");
+}
+
+static ConCommand open_friends("open_friends", OpenServerBrowser);
+
 
 //-----------------------------------------------------------------------------
 // Purpose: 
@@ -3340,6 +3355,15 @@ void CBasePanel::OnOpenCreateMultiplayerGameDialog()
 	}
 	m_hCreateMultiplayerGameDialog->Activate();
 }
+
+void OpenCreateMultiplayerGame()
+{
+	BasePanel()->OnOpenCreateMultiplayerGameDialog();
+	Msg("Subject to change.");
+}
+
+ConCommand open_createserver("open_createserver", OpenCreateMultiplayerGame);
+
 
 //-----------------------------------------------------------------------------
 // Purpose: 
@@ -3371,6 +3395,14 @@ void CBasePanel::OnOpenPlayerListDialog()
 	}
 	m_hPlayerListDialog->Activate();
 }
+
+void OpenPlayerListDialog()
+{
+	BasePanel()->OnOpenPlayerListDialog();
+	Msg("Subject to change.");
+}
+
+ConCommand open_playerlist("open_playerlist", OpenPlayerListDialog);
 
 //-----------------------------------------------------------------------------
 // Purpose: 
