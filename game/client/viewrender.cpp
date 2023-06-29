@@ -4798,7 +4798,8 @@ bool CSkyboxView::Setup( const CViewSetup &view, int *pClearFlags, SkyboxVisibil
 	BaseClass::Setup( view );
 
 	// The skybox might not be visible from here
-	*pSkyboxVisible = ComputeSkyboxVisibility();
+	//pSkyboxVisible = ComputeSkyboxVisibility();
+	*pSkyboxVisible = SKYBOX_2DSKYBOX_VISIBLE;
 	m_pSky3dParams = PreRender3dSkyboxWorld( *pSkyboxVisible );
 
 	if ( !m_pSky3dParams )
