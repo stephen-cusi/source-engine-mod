@@ -1129,7 +1129,7 @@ bool CGameClient::ExecuteStringCommand( const char *pCommandString )
 
 	if ( IsEngineClientCommand( args ) )
 	{
-		Cmd_ExecuteCommand( args, src_client, m_nClientSlot );
+		Cmd_ExecuteCommand( args, src_client, m_nClientSlot, 0 );
 		return true;
 	}
 	

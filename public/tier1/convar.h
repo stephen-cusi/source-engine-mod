@@ -42,6 +42,11 @@ struct characterset_t;
 
 
 
+extern char s_convar_capture[64][8192];
+extern int s_current_capture;
+extern bool s_free_captures[64];
+extern SpewRetval_t CaptureSpewFunc(SpewType_t type, const tchar* pMsg);
+
 //-----------------------------------------------------------------------------
 // Any executable that wants to use ConVars need to implement one of
 // these to hook up access to console variables.
@@ -207,11 +212,13 @@ public:
 
 private:
 	
+	void SquareBracketCheck(int i, const char* pCommand, int& c, int& index, int maxlen);
+	void CurlyBracketCheck(int i, const char* pCommand, int& c, int& index, int maxlen);
 	int GetArguments(const char* pCommand);
 	bool GetArgument(const char* pCommand, int maxlen, int& index, int i);
 	bool GetApostrophed(const char* pCommand, int maxlen, int& index, int i);
 	bool GetQuoted(const char* pCommand, int maxlen, int& index, int i);
-	int ParseBrackets(char* output, int& index, int i, bool inconvar);
+	int ParseBrackets(char* output, int& index, int i, bool inconvar, bool inint);
 
 	int		m_nArgc;
 	int		m_nArgv0Size;

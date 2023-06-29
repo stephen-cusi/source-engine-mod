@@ -38,6 +38,7 @@ CCommandBuffer::CCommandBuffer( ) : m_Commands( 32, 32 )
 	m_bIsProcessingCommands = false;
 	m_nMaxArgSBufferLength = ARGS_BUFFER_LENGTH;
 	m_bWaitEnabled = true;
+	m_nOutputBuffer = 0;
 }
 
 CCommandBuffer::~CCommandBuffer()
@@ -93,7 +94,7 @@ bool CCommandBuffer::ParseArgV0( CUtlBuffer &buf, char *pArgV0, int nMaxLen, con
 //-----------------------------------------------------------------------------
 // Insert a command into the command queue
 //-----------------------------------------------------------------------------
-void CCommandBuffer::InsertCommandAtAppropriateTime( CommandHandle_t hCommand )
+CommandHandle_t CCommandBuffer::InsertCommandAtAppropriateTime( CommandHandle_t hCommand )
 {
 	intp i;
 	Command_t &command = m_Commands[hCommand];
@@ -103,27 +104,29 @@ void CCommandBuffer::InsertCommandAtAppropriateTime( CommandHandle_t hCommand )
 			break;
 	}
 	m_Commands.LinkBefore( i, hCommand );
+	return hCommand;
 }
 
 
 //-----------------------------------------------------------------------------
 // Insert a command into the command queue at the appropriate time
 //-----------------------------------------------------------------------------
-void CCommandBuffer::InsertImmediateCommand( CommandHandle_t hCommand )
+CommandHandle_t CCommandBuffer::InsertImmediateCommand( CommandHandle_t hCommand )
 {
 	m_Commands.LinkBefore( m_hNextCommand, hCommand );
+	return hCommand;
 }
 
 
 //-----------------------------------------------------------------------------
 // Insert a command into the command queue
 //-----------------------------------------------------------------------------
-bool CCommandBuffer::InsertCommand( const char *pArgS, int nCommandSize, int nTick )
+CommandHandle_t CCommandBuffer::InsertCommand( const char *pArgS, int nCommandSize, int nTick)
 {
 	if ( nCommandSize >= CCommand::MaxCommandLength() )
 	{
 		Warning( "WARNING: Command too long... ignoring!\n%s\n", pArgS );
-		return false;
+		return NULL;
 	}
 
 	// Add one for null termination
@@ -131,7 +134,7 @@ bool CCommandBuffer::InsertCommand( const char *pArgS, int nCommandSize, int nTi
 	{
 		Compact();
 		if ( m_nArgSBufferSize + nCommandSize + 1 > m_nMaxArgSBufferLength )
-			return false;
+			return NULL;
 	}
 	
 	memcpy( &m_pArgSBuffer[m_nArgSBufferSize], pArgS, nCommandSize );
@@ -143,18 +146,20 @@ bool CCommandBuffer::InsertCommand( const char *pArgS, int nCommandSize, int nTi
 	command.m_nTick = nTick;
 	command.m_nFirstArgS = m_nArgSBufferSize;
 	command.m_nBufferSize = nCommandSize;
+	command.m_nBufferId = -1;
+	command.m_nCommandBit = -1;
+	command.m_nCommandBitLength = -1;
 
 	m_nArgSBufferSize += nCommandSize;
 
 	if ( !m_bIsProcessingCommands || ( nTick > m_nCurrentTick ) )
 	{
-		InsertCommandAtAppropriateTime( hCommand );
+		return InsertCommandAtAppropriateTime( hCommand );
 	}
 	else
 	{
-		InsertImmediateCommand( hCommand );
+		return InsertImmediateCommand( hCommand );
 	}
-	return true;
 }
 
 		
@@ -209,7 +214,223 @@ void CCommandBuffer::GetNextCommandLength( const char *pText, int nMaxLen, int *
 	*pNextCommandOffset = nNextCommandOffset;
 }
 
+// wait {
+//       wait [
+//             convar_a
+//            ]; (wait convar_a)
+//       convar_b (convar_b -> buffer_a)
+//      }; (wait buffer_a) (free buffer_a)
+//
+// split [ent_probe !picker origin; (ent_probe !picker origin -> buffer_a)
+//        wait 1{
+//              convar_a [
+//                        ent_probe ent value (ent_probe ent value -> buffer_b)
+//                       ]; (convar_a buffer_b) (free buffer_b)
+//              incrementvar convar_a convar_[
+//                                            complication
+//                                           ]; (incrementvar convar_a convar_[complication])
+//              convar_a (convar_a -> buffer_a)
+//             }; (wait buffer_a) (free buffer_a)
+//        ent_probe !picker origin
+//       ] " " a b
+// 
+// 
+// 
+// 
+// Have a list of buffers and use different buffers for different commands
+// Free a buffer once its command has been finished
+// 
+// cmd = wait {wait [convar_a]; convar_b}; split [ent_probe !picker origin;( )wait {convar_a [ent_probe ent value]; incrementvar convar_a convar_[complication]; convar_a}; ent_probe !picker origin] " " a b
+// 
+// wait [convar_a]
+// 
+// cmd = wait {convar_b}; split [ent_probe !picker origin;( )wait {convar_a [ent_probe ent value]; incrementvar convar_a convar_[complication]; convar_a}; ent_probe !picker origin] " " a b
+// 
+// wait {convar_b}
+// 
+// cmd = split [ent_probe !picker origin;( )wait {convar_a [ent_probe ent value]; incrementvar convar_a convar_[complication]; convar_a}; ent_probe !picker origin] " " a b
+// 
+// ent_probe !picker origin 
+// -> 5 6 78
+// 
+// cmd = split [(5 6 78)( )wait {convar_a [ent_probe ent value]; incrementvar convar_a convar_[complication]; convar_a}; ent_probe !picker origin] " " a b
+// 
+// ent_probe ent value
+// -> 17
+// 
+// cmd = split [(5 6 78)( )wait {convar_a [(17)]; incrementvar convar_a convar_[complication]; convar_a}; ent_probe !picker origin] " " a b
+// 
+// convar_a 17
+// 
+// cmd = split [(5 6 78)( )wait {incrementvar convar_a convar_[complication]; convar_a}; ent_probe !picker origin] " " a b
+// 
+// incrementvar convar_a convar_[complication];
+// 
+// cmd = split [(5 6 78)( )wait {convar_a}; ent_probe !picker origin] " " a b
+// 
+// wait {convar_a};
+// 
+// cmd = split [(5 6 78)( )ent_probe !picker origin] " " a b
+// 
+// ent_probe !picker origin
+// -> 7 8 75
+// 
+// cmd = split [(5 6 78)( )(7 8 75)] " " a b
+// 
+// split (5 6 78 7 8 75) " " a b
+// 
+//       v         v          
+// wait {ent_probe [ent_probe [convar]]}
+// 
+// 
+// wait [convar_a]
+// wait {convar_b}
+// ent_probe !picker origin;
+// split [ent_probe !picker origin;( )wait {convar_a [ent_probe ent value]; incrementvar convar_a convar_[complication]; convar_a}; ent_probe !picker origin] " " a b
+// 
+// 
 
+bool SkipParen(char* pCurrentCommand, int& i)
+{
+	while (i < COMMAND_MAX_LENGTH && pCurrentCommand[i])
+	{
+		if (pCurrentCommand[i] == '(')
+		{
+			i++;
+			if (SkipParen(pCurrentCommand, i))
+			{
+				return true;
+			}
+		}
+		else if (pCurrentCommand[i] == ')')
+		{
+			i++;
+			return false;
+		}
+		i++;
+	}
+	return true;
+}
+
+
+
+int CCommandBuffer::IsCommand(char* pCurrentCommand, char* commandBit, int &i, char closechar, int &length)
+{
+	i++;
+	int startpos = i;
+	bool encountered = false;
+	while (i < COMMAND_MAX_LENGTH && pCurrentCommand[i])
+	{
+		if (pCurrentCommand[i] == '(')
+		{
+			i++;
+			startpos = i;
+			if (SkipParen(pCurrentCommand, startpos))
+			{
+				return -1;
+			}
+			i = startpos;
+		}
+		if (pCurrentCommand[i] == '[' || pCurrentCommand[i] == '{')
+		{
+			int result = IsCommand(pCurrentCommand, commandBit, i, pCurrentCommand[i] == '[' ? ']' : '}', length);
+			if (result != -1)
+			{
+				return result;
+			}
+		}
+		if ((pCurrentCommand[i] == closechar || pCurrentCommand[i] == ' ' || pCurrentCommand[i] == ';') && !encountered)
+		{
+			encountered = true;
+			char origchar = pCurrentCommand[i];
+			pCurrentCommand[i] = 0;
+			if (g_pCVar->FindVar(pCurrentCommand+startpos))
+			{
+				pCurrentCommand[i] = origchar;
+				if (origchar != ' ')
+				{
+					i++;
+					return -1;
+				}
+			}
+			else if (g_pCVar->FindCommandBase(pCurrentCommand + startpos) || (strcmp(pCurrentCommand + startpos,"wait") == 0))
+			{
+				pCurrentCommand[i] = origchar;		
+			}
+			else {
+				pCurrentCommand[i] = origchar;
+				i++;
+				return -1;
+			}
+		}
+		if (pCurrentCommand[i] == closechar || pCurrentCommand[i] == ';') {
+			char origchar = pCurrentCommand[i];
+			pCurrentCommand[i] = 0;
+			strcpy(commandBit, pCurrentCommand + startpos);
+			pCurrentCommand[i] = origchar;
+			i++;
+			length = i - startpos;
+			return startpos;
+		}
+		i++;
+	}
+	return -1;
+}
+
+
+int CCommandBuffer::EvaluateFirstExecutable(char* pCurrentCommand, char* commandBit, int& i, int &length)
+{
+	int commandpos = 0;
+	while (i < COMMAND_MAX_LENGTH && pCurrentCommand[i])
+	{
+		if (pCurrentCommand[i] == '(')
+		{
+			i++;
+			if (SkipParen(pCurrentCommand, i))
+			{
+				return -1;
+			}
+		}
+		if (pCurrentCommand[i] == '[' || pCurrentCommand[i] == '{')
+		{
+			if (commandpos = IsCommand(pCurrentCommand, commandBit, i, pCurrentCommand[i] == '[' ? ']' : '}', length)) {
+				return commandpos;
+			}
+		}
+		if (pCurrentCommand[i] == ';')
+		{
+			pCurrentCommand[i] = 0;
+			strcpy(commandBit, pCurrentCommand);
+			pCurrentCommand[i] = ';';
+			memmove(pCurrentCommand, pCurrentCommand + i + 1, strlen(pCurrentCommand) - i);
+			length = i;
+			return -2;
+		}
+		i++;
+	}
+	return -1;
+}
+
+
+
+bool CCommandBuffer::AddText(const char* pText, int nTickDelay)
+{
+	int i = 1;
+	int len = strlen(pText);
+	while (i < len)
+	{
+		if ((pText[i] == '/') && (pText[i - 1] == '/'))
+		{
+			char cmd[COMMAND_MAX_LENGTH];
+			strncpy(cmd, pText, i - 1);
+			return InsertCommand(cmd, i - 1, m_nCurrentTick + nTickDelay) ? true : false;
+		}
+		i++;
+	}
+	return InsertCommand(pText, strlen(pText), m_nCurrentTick + nTickDelay) ? true : false;
+}
+
+/*
 //-----------------------------------------------------------------------------
 // Add text to command buffer, return false if it couldn't owing to overflow
 //-----------------------------------------------------------------------------
@@ -252,7 +473,7 @@ bool CCommandBuffer::AddText( const char *pText, int nTickDelay )
 
 	return true;
 }
-
+*/
 
 //-----------------------------------------------------------------------------
 // Are we in the middle of processing commands?
@@ -293,13 +514,20 @@ void CCommandBuffer::BeginProcessingCommands( int nDeltaTicks )
 	// Necessary to insert commands while commands are being processed
 	m_hNextCommand = m_Commands.Head();
 }
-
+void SkipSemicolon(char* str, int& skipped)
+{
+	while (str[skipped] == ';' || str[skipped] == ' ' || str[skipped] == '\n')
+	{
+		skipped++;
+	}
+}
 
 //-----------------------------------------------------------------------------
 // Returns the next command
 //-----------------------------------------------------------------------------
 bool CCommandBuffer::DequeueNextCommand( )
 {
+	Redo:
 	m_CurrentCommand.Reset();
 
 	Assert( m_bIsProcessingCommands );
@@ -318,13 +546,151 @@ bool CCommandBuffer::DequeueNextCommand( )
 	// to become invalid by calling AddText. Is there a way we can avoid the memcpy?
 	if ( command.m_nBufferSize > 0 )
 	{
-		m_CurrentCommand.Tokenize( &m_pArgSBuffer[command.m_nFirstArgS] );
+		char curcommand[COMMAND_MAX_LENGTH] = { 0 };
+		int i = 0;
+		if (command.m_nCommandBit != -1)
+		{
+			strncpy(curcommand,&m_pArgSBuffer[command.m_nFirstArgS],command.m_nCommandBit);
+			if (s_convar_capture[command.m_nBufferId][0])
+			{
+				strcat(curcommand, "(");
+				strcat(curcommand, s_convar_capture[command.m_nBufferId]);
+				strcat(curcommand, ")");
+			}
+			int skipped = 0;
+			SkipSemicolon(&m_pArgSBuffer[command.m_nFirstArgS] + command.m_nCommandBit + command.m_nCommandBitLength - 1, skipped);
+			strcat(curcommand, &m_pArgSBuffer[command.m_nFirstArgS] + command.m_nCommandBit + command.m_nCommandBitLength - 1 + skipped);
+		}
+		else
+		{
+			strcpy(curcommand, &m_pArgSBuffer[command.m_nFirstArgS]);
+			int skipped = 0;
+			SkipSemicolon(curcommand, skipped);
+			if (skipped)
+			{
+				memmove(curcommand, curcommand + skipped, strlen(curcommand) - skipped + 1);
+			}
+		}
+		char commandBit[COMMAND_MAX_LENGTH] = { 0 };
+		int length = 0;
+		int nCommandBit = EvaluateFirstExecutable(curcommand, commandBit, i, length);
+		command.m_nCommandBit = nCommandBit;
+		//Msg("Evaluating: %s\n", curcommand);
+		if (command.m_nCommandBit != -1)
+		{
+			//Msg("Executing inner command: %s\n", commandBit);
+			if (command.m_nCommandBit == -2)
+			{
+				m_nOutputBuffer = -1;
+				m_CurrentCommand.Tokenize(commandBit);
+				command.m_nCommandBit = -1;
+				m_Commands.Remove(nHead);
+				m_hNextCommand = m_Commands.Head();
+				if (strcmp(m_CurrentCommand.Arg(0), "wait") == 0)
+				{
+					if (curcommand[0] != 0)
+					{
+						InsertCommand(curcommand, strlen(curcommand), m_nCurrentTick + atoi(m_CurrentCommand.Arg(1)));
+						goto Redo;
+					}
+				}
+				else
+				{
+					if (curcommand[0] != 0)
+					{
+						InsertCommand(curcommand, strlen(curcommand), m_nCurrentTick);
+					}
+				}
+				
+				goto ThereWasntAInnerCommandButThereWasASemicolonAndIDontWantToWaitTwentyMinutesForItToCompile;
+			}
+			m_CurrentCommand.Tokenize(commandBit);
+			int bufid = command.m_nBufferId;
+			if (bufid == -1)
+			{
+				int j = 0;
+				for (; j < 64 && s_free_captures[j]; j++)
+				{
+					
+				}
+				command.m_nBufferId = j;
+				bufid = j;
+				s_free_captures[command.m_nBufferId] = true;
+			}
+			else
+			{
+				s_convar_capture[bufid][0] = 0;
+			}
+			command.m_nCommandBitLength = length;
+			m_nOutputBuffer = command.m_nBufferId;
+			m_Commands.Remove(nHead);
+			m_hNextCommand = m_Commands.Head();
+			CommandHandle_t handle;
+			if (strcmp(m_CurrentCommand.Arg(0), "wait") == 0)
+			{
+				if (curcommand[0] != 0) 
+				{
+					handle = InsertCommand(curcommand, strlen(curcommand), m_nCurrentTick+atoi(m_CurrentCommand.Arg(1)));
+					if (handle)
+					{
+						Command_t& cmd = m_Commands[handle];
+						cmd.m_nCommandBit = nCommandBit;
+						cmd.m_nCommandBitLength = length;
+						cmd.m_nBufferId = bufid;
+					}
+					goto Redo;
+				}
+			}
+			else
+			{
+				if (curcommand[0] != 0)
+				{
+					handle = InsertCommand(curcommand, strlen(curcommand), m_nCurrentTick);
+					if (handle)
+					{
+						Command_t& cmd = m_Commands[handle];
+						cmd.m_nCommandBit = nCommandBit;
+						cmd.m_nCommandBitLength = length;
+						cmd.m_nBufferId = bufid;
+					}
+				}
+			}
+			
+			
+		}
+		else
+		{
+			if (command.m_nBufferId != -1)
+			{
+				s_free_captures[command.m_nBufferId] = false;
+				s_convar_capture[command.m_nBufferId][0] = 0;
+			}
+			if (curcommand[0] == 0) {
+				m_Commands.Remove(nHead);
+				m_nOutputBuffer = -1;
+				goto Redo;
+			}
+			//Msg("No inner command found, executing: %s\n", curcommand);
+			m_CurrentCommand.Tokenize(curcommand);
+			m_Commands.Remove(nHead);
+			m_nOutputBuffer = -1;
+			m_hNextCommand = m_Commands.Head();
+			if (strcmp(m_CurrentCommand.Arg(0), "wait") == 0)
+			{
+				goto Redo;
+			}
+		}
 	}
-
-	m_Commands.Remove( nHead );
+	else {
+		m_Commands.Remove(nHead);
+		m_nOutputBuffer = -1;
+		m_hNextCommand = m_Commands.Head();
+	}
+ThereWasntAInnerCommandButThereWasASemicolonAndIDontWantToWaitTwentyMinutesForItToCompile:
+	
 
 	// Necessary to insert commands while commands are being processed
-	m_hNextCommand = m_Commands.Head();
+	
 
 //	Msg("Dequeue : ");
 //	for ( int i = 0; i < nArgc; ++i )

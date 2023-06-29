@@ -23,12 +23,23 @@
 #include "xbox/xbox_console.h"
 #endif
 #include "tier0/memdbgon.h"
+#include "CommandBuffer.h"
 
 #ifndef NDEBUG
 // Comment this out when we release.
 #define ALLOW_DEVELOPMENT_CVARS
 #endif
 
+
+char s_convar_capture[64][8192];
+int s_current_capture;
+bool s_free_captures[64];
+
+SpewRetval_t CaptureSpewFunc(SpewType_t type, const tchar* pMsg)
+{
+	strcat(s_convar_capture[s_current_capture], pMsg);
+	return SPEW_CONTINUE;
+}
 
 
 //-----------------------------------------------------------------------------
@@ -415,22 +426,88 @@ bool CCommand::GetApostrophed(const char* pCommand, int maxlen, int& index, int 
 	return false;
 }
 
+void CCommand::CurlyBracketCheck(int i, const char* pCommand, int& c, int& index, int maxlen)
+{
+	if (pCommand[index] != '{')
+	{
+		return;
+	}
+	m_ppArgv[i][c] = pCommand[index];
+	c++;
+	index++;
+	while (index < maxlen && pCommand[index])
+	{
+		m_ppArgv[i][c] = pCommand[index];
+		if (pCommand[index] == '{')
+		{
+			CurlyBracketCheck(i, pCommand, c, index, maxlen);
+		}
+		if (pCommand[index] == '}')
+		{
+			index++;
+			c++;
+			return;
+		}
+		if (pCommand[index] == '[')
+		{
+			SquareBracketCheck(i, pCommand, c, index, maxlen);
+		}
+		c++;
+		index++;
+	}
+}
+
+void CCommand::SquareBracketCheck(int i, const char* pCommand, int& c, int& index, int maxlen)
+{
+	if (pCommand[index] != '[')
+	{
+		return;
+	}
+	m_ppArgv[i][c] = pCommand[index];
+	c++;
+	index++;
+	while (index < maxlen && pCommand[index])
+	{
+		m_ppArgv[i][c] = pCommand[index];
+		if (pCommand[index] == '[')
+		{
+			SquareBracketCheck(i, pCommand, c, index, maxlen);
+		}
+		if (pCommand[index] == ']')
+		{
+			index++;
+			c++;
+			return;
+		}
+		if (pCommand[index] == '{')
+		{
+			CurlyBracketCheck(i, pCommand, c, index, maxlen);
+		}
+		c++;
+		index++;
+	}
+}
+
 bool CCommand::GetArgument(const char* pCommand, int maxlen, int& index, int i) {
 	while (index < maxlen && (pCommand[index] == ' ' || pCommand[index] == '\t'))
 	{
 		index++;
 	}
-	if (pCommand[index] == '"') {
+	if (pCommand[index] == '"') 
+	{
 		index++;
 		return GetQuoted(pCommand, maxlen, index, i);
 	}
-	if (pCommand[index] == '\'') {
+	if (pCommand[index] == '\'')
+	{
 		index++;
 		return GetApostrophed(pCommand, maxlen, index, i);
 	}
 	int c = 0;
 	for (; index < maxlen; index++) {
-		if (pCommand[index] == ' ') {
+		SquareBracketCheck(i, pCommand, c, index, maxlen);
+		CurlyBracketCheck(i, pCommand, c, index, maxlen);
+		if (pCommand[index] == ' ' || pCommand[index] == '\t' || pCommand[index] == '\n') {
 			m_ppArgv[i][c] = '\x00';
 			index++;
 			return true;
@@ -441,7 +518,7 @@ bool CCommand::GetArgument(const char* pCommand, int maxlen, int& index, int i) 
 	m_ppArgv[i][c] = '\x00';
 	char processed[512] = { 0 };
 	int bracketindex = 0;
-	ParseBrackets(processed, bracketindex, i, false);
+	ParseBrackets(processed, bracketindex, i, false, false);
 	strcpy(m_ppArgv[i], processed);
 	return true;
 }
@@ -476,39 +553,99 @@ int CCommand::GetArguments(const char* pCommand) {
 	return COMMAND_MAX_ARGC - 1;
 }
 
-int CCommand::ParseBrackets(char* output, int& index, int i, bool inconvar)
+
+
+int CCommand::ParseBrackets(char* output, int& index, int i, bool inconvar, bool inint)
 {
-	char convarname[COMMAND_MAX_LENGTH] = { 0 };
+	char convarname[COMMAND_MAX_LENGTH+2] = { 0 };
 	int j = 0;
+	int addedchars = 0;
 	while (index < COMMAND_MAX_LENGTH && j < COMMAND_MAX_LENGTH && m_ppArgv[i][index])
 	{
 		if (index == 0 || m_ppArgv[i][index - 1] != '\\')
 		{
+			if (m_ppArgv[i][index] == '(')
+			{
+				index++;
+				int outlen = strlen(output);
+				while (index < COMMAND_MAX_LENGTH && outlen < COMMAND_MAX_LENGTH && m_ppArgv[i][index])
+				{
+					if (m_ppArgv[i][index] == ')')
+					{
+						if (index == 0 || m_ppArgv[i][index - 1] != '\\')
+						{
+							index++;
+							break;
+						}
+					}
+					output[outlen] = m_ppArgv[i][index];
+					index++;
+					outlen++;
+					addedchars++;
+				}
+				continue;
+			}
 			if (m_ppArgv[i][index] == '[')
 			{
 				index++;
 				if (inconvar)
 				{
-					j += ParseBrackets(convarname, index, i, true);
+					j += ParseBrackets(convarname, index, i, true, false);
 				}
 				else
 				{
-					j += ParseBrackets(output, index, i, true);
+					j += ParseBrackets(output, index, i, true, false);
 				}
 				continue;
-			}else if (m_ppArgv[i][index] == ']' && inconvar)
+			}
+			else if (m_ppArgv[i][index] == '{')
+			{
+				index++;
+				if (inconvar)
+				{
+					j += ParseBrackets(convarname, index, i, true, true);
+				}
+				else
+				{
+					j += ParseBrackets(output, index, i, true, true);
+				}
+				continue;
+			}
+			else if (m_ppArgv[i][index] == ']' && inconvar && !inint)
 			{
 				convarname[j] = 0;
-				char convarvalue[512] = { 0 };
-				ConVar *cvar = g_pCVar->FindVar(convarname);
-				int len = 0;
+				ConVar* cvar = g_pCVar->FindVar(convarname);
 				if (cvar)
 				{
 					strcat(output, cvar->GetString());
-					len = strlen(cvar->GetString());
+					addedchars += strlen(cvar->GetString());
 				}
+				//else 
+				//{
+				//	strcat(output, convarname);
+				//	len = strlen(convarname);
+				//}
 				index++;
-				return len;
+				return addedchars;
+			}
+			else if (m_ppArgv[i][index] == '}' && inconvar && inint)
+			{
+				convarname[j] = 0;
+				ConVar* cvar = g_pCVar->FindVar(convarname);
+				if (cvar)
+				{
+					char str[32] = { 0 };
+					itoa(cvar->GetInt(), str, 10);
+					strcat(output, str);
+					addedchars += strlen(str);
+				}
+				//else
+				//{
+				//	strcat(output, convarname);
+				//	len = strlen(convarname);
+				//}
+				index++;
+				return addedchars;
 			}
 		}
 		if (inconvar)

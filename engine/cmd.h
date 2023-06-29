@@ -20,7 +20,7 @@
 #pragma once
 #endif
 
-
+#include "dbg.h"
 //-----------------------------------------------------------------------------
 // Forward declarations
 //-----------------------------------------------------------------------------
@@ -135,7 +135,7 @@ void Cmd_Shutdown( void );
 //-----------------------------------------------------------------------------
 // Executes a command given a CCommand argument structure
 //-----------------------------------------------------------------------------
-const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t src, int nClientSlot = -1 );
+const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t src, int nClientSlot = -1, int outputBuffer = -1 );
 
 
 //-----------------------------------------------------------------------------
@@ -165,4 +165,5 @@ void Cmd_SetRptActive( bool bActive );
 bool Cmd_IsRptActive();
 
 
+extern SpewRetval_t CaptureSpewFunc(SpewType_t type, const tchar* pMsg);
 #endif // CMD_H

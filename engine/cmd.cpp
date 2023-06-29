@@ -43,7 +43,7 @@
 
 
 // This denotes an execution marker in the command stream.
-#define CMDSTR_ADD_EXECUTION_MARKER "[$&*,`]"
+#define CMDSTR_ADD_EXECUTION_MARKER "!$&*,`!"
 
 
 #ifdef _DEBUG
@@ -364,7 +364,7 @@ bool Cbuf_HasRoomForExecutionMarkers( int cExecutionMarkers )
 //-----------------------------------------------------------------------------
 // Executes commands in the buffer
 //-----------------------------------------------------------------------------
-static void Cbuf_ExecuteCommand( const CCommand &args, cmd_source_t source )
+static void Cbuf_ExecuteCommand( const CCommand &args, cmd_source_t source, int outputBuffer)
 {
 	// Note: If you remove this, PerfMark needs to do the same logic--so don't do that.
 	tmMessage( TELEMETRY_LEVEL0, TMMF_SEVERITY_LOG | TMMF_ICON_NOTE, "(source/command) %s", tmDynamicString( TELEMETRY_LEVEL0, args.GetCommandString() ) );
@@ -372,7 +372,7 @@ static void Cbuf_ExecuteCommand( const CCommand &args, cmd_source_t source )
 	ETWMark( args.GetCommandString() );
 
 	// execute the command line
-	const ConCommandBase *pCmd = Cmd_ExecuteCommand( args, source );
+	const ConCommandBase *pCmd = Cmd_ExecuteCommand( args, source, -1, outputBuffer);
 
 #if !defined(SWDS) && !defined(_XBOX)
 	if ( pCmd && !pCmd->IsFlagSet( FCVAR_DONTRECORD ) )
@@ -416,7 +416,7 @@ void Cbuf_Execute()
 	s_CommandBuffer.BeginProcessingCommands( 1 );
 	while ( s_CommandBuffer.DequeueNextCommand( ) )
 	{
-		Cbuf_ExecuteCommand( s_CommandBuffer.GetCommand(), src_command );
+		Cbuf_ExecuteCommand( s_CommandBuffer.GetCommand(), src_command, s_CommandBuffer.m_nOutputBuffer );
 	}
 	s_CommandBuffer.EndProcessingCommands( );
 }
@@ -666,7 +666,7 @@ void Cmd_Exec_f( const CCommand &args )
 		{
 			if( s_CommandBuffer.DequeueNextCommand( ) )
 			{
-				Cbuf_ExecuteCommand( s_CommandBuffer.GetCommand(), src_command );
+				Cbuf_ExecuteCommand( s_CommandBuffer.GetCommand(), src_command, s_CommandBuffer.m_nOutputBuffer );
 			}
 			else
 			{
@@ -923,12 +923,13 @@ static bool ShouldPreventClientCommand( const ConCommandBase *pCommand )
 	return false;
 }
 
+extern SpewRetval_t Sys_SpewFunc(SpewType_t spewType, const char* pMsg);
 
 //-----------------------------------------------------------------------------
 // A complete command line has been parsed, so try to execute it
 // FIXME: lookupnoadd the token to speed search?
 //-----------------------------------------------------------------------------
-const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t src, int nClientSlot )
+const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t src, int nClientSlot, int outputBuffer)
 {	
 	// execute the command line
 	if ( !command.ArgC() )
@@ -1041,8 +1042,17 @@ const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t 
 				Msg( "Unknown command \"%s\"\n", pCommand->GetName() );
 				return NULL;
 			}
+			if (outputBuffer != -1)
+			{
+				s_current_capture = outputBuffer;
+				SpewOutputFunc(CaptureSpewFunc);
+				Cmd_Dispatch(pCommand, command);
+				SpewOutputFunc(Sys_SpewFunc);
+			}
+			else {
+				Cmd_Dispatch(pCommand, command);
+			}
 			
-			Cmd_Dispatch( pCommand, command );
 			return pCommand;
 		}
 	}
