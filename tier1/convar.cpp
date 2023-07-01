@@ -504,7 +504,7 @@ bool CCommand::GetArgument(const char* pCommand, int maxlen, int& index, int i) 
 	{
 		index++;
 	}
-	if (pCommand[index] == '"') 
+	if (pCommand[index] == '"')
 	{
 		index++;
 		return GetQuoted(pCommand, maxlen, index, i);
@@ -514,14 +514,32 @@ bool CCommand::GetArgument(const char* pCommand, int maxlen, int& index, int i) 
 		index++;
 		return GetApostrophed(pCommand, maxlen, index, i);
 	}
+	bool inGroup = false;
+	if (pCommand[index] == '<')
+	{
+		index++;
+		inGroup = true;
+	}
 	int c = 0;
 	for (; index < maxlen; index++) {
 		SquareBracketCheck(i, pCommand, c, index, maxlen);
 		CurlyBracketCheck(i, pCommand, c, index, maxlen);
-		if (pCommand[index] == ' ' || pCommand[index] == '\t' || pCommand[index] == '\n') {
-			m_ppArgv[i][c] = '\x00';
-			index++;
-			break;
+		if (inGroup)
+		{
+			if (pCommand[index] == '>')
+			{
+				m_ppArgv[i][c] = '\x00';
+				index++;
+				break;
+			}
+		}
+		else
+		{
+			if (pCommand[index] == ' ' || pCommand[index] == '\t' || pCommand[index] == '\n') {
+				m_ppArgv[i][c] = '\x00';
+				index++;
+				break;
+			}
 		}
 		m_ppArgv[i][c] = pCommand[index];
 		c++;

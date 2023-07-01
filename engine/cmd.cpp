@@ -833,10 +833,18 @@ CON_COMMAND( split, "Split a string into two convars\nUSAGE: split <STRING> <SPL
 	{
 		return;
 	}
+	
 	char first[512] = { 0 };
 	strncpy(first, args[1], point - args[1]);
-	g_pCVar->FindVar(args[3])->SetValue(first);
-	g_pCVar->FindVar(args[4])->SetValue(point + strlen(args[2]));
+	
+	if (g_pCVar->FindVar(args[3]))
+	{
+		g_pCVar->FindVar(args[3])->SetValue(first);
+	}
+	if (g_pCVar->FindVar(args[4]))
+	{
+		g_pCVar->FindVar(args[4])->SetValue(point + strlen(args[2]));
+	}
 }
 
 static void exec_if(const CCommand& args);
@@ -1090,6 +1098,8 @@ const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t 
 				Cmd_Dispatch(pCommand, command);
 				CompletelyLockOutputFunc(false);
 				SpewOutputFunc(Sys_SpewFunc);
+
+				
 			}
 			else {
 				SpewOutputFunc(Sys_SpewFunc);

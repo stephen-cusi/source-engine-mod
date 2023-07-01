@@ -469,7 +469,10 @@ int CCommandBuffer::EvaluateFirstExecutable(char* pCurrentCommand, char* command
 		if (pCurrentCommand[i] == '[' || pCurrentCommand[i] == '{')
 		{
 			if (commandpos = IsCommand(pCurrentCommand, commandBit, i, pCurrentCommand[i] == '[' ? ']' : '}', length)) {
-				return commandpos;
+				if (commandpos != -1)
+				{
+					return commandpos;
+				}
 			}
 		}
 		if (pCurrentCommand[i] == ';')
@@ -664,8 +667,15 @@ bool CCommandBuffer::DequeueNextCommand( )
 		if (command.m_nCommandBit != -1)
 		{
 			//Msg("Executing inner command: %s\n", commandBit);
+			int bufid = command.m_nBufferId;
+			if (bufid != -1)
+			{
+				s_convar_capture[bufid][0] = 0;
+				s_free_captures[bufid] = false;
+			}
 			if (command.m_nCommandBit == -2)
 			{
+
 				m_nOutputBuffer = -1;
 				m_CurrentCommand.Tokenize(commandBit);
 				command.m_nCommandBit = -1;
@@ -690,22 +700,16 @@ bool CCommandBuffer::DequeueNextCommand( )
 				goto ThereWasntAInnerCommandButThereWasASemicolonAndIDontWantToWaitTwentyMinutesForItToCompile;
 			}
 			m_CurrentCommand.Tokenize(commandBit);
-			int bufid = command.m_nBufferId;
-			if (bufid == -1)
+			
+			int j = 0;
+			for (; j < 64 && s_free_captures[j]; j++)
 			{
-				int j = 0;
-				for (; j < 64 && s_free_captures[j]; j++)
-				{
 					
-				}
-				command.m_nBufferId = j;
-				bufid = j;
-				s_free_captures[command.m_nBufferId] = true;
 			}
-			else
-			{
-				s_convar_capture[bufid][0] = 0;
-			}
+			command.m_nBufferId = j;
+			bufid = j;
+			s_free_captures[command.m_nBufferId] = true;
+
 			command.m_nCommandBitLength = length;
 			m_nOutputBuffer = command.m_nBufferId;
 			m_Commands.Remove(nHead);

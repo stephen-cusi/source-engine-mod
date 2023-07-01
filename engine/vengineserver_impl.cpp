@@ -374,7 +374,9 @@ public:
 	
 	virtual int PrecacheModel( const char *s, bool preload /*= false*/ )
 	{
-		PR_CheckEmptyString (s);
+		if (s[0] <= ' ') {
+			return 0;
+		}
 		int i = SV_FindOrAddModel( s, preload );
 		if ( i >= 0 )
 		{

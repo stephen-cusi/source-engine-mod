@@ -12,7 +12,7 @@ void SB_ModelSpawn(const CCommand& args)
 	{
 		return;
 	}
-	if (engine->PrecacheModel(args[1], 0) == -1) {
+	if (engine->PrecacheModel(args[1], 0) == 0) {
 		return;
 	}
 	int modelindex = modelinfo->GetModelIndex(args[1]);
@@ -56,6 +56,7 @@ CON_COMMAND(ent_probe, "Probe a keyvalue from an entity\nUSAGE: ent_probe <ENTIT
 	if (args.ArgC() <= 2)
 	{
 		Msg("USAGE: ent_probe <ENTITY> <KEYVALUE>\n");
+		return;
 	}
 	CBasePlayer* pPlayer = UTIL_GetCommandClient();
 	CBaseEntity* target = gEntList.FindEntityByName(NULL, args[1], pPlayer);
@@ -70,11 +71,60 @@ CON_COMMAND(ent_probe, "Probe a keyvalue from an entity\nUSAGE: ent_probe <ENTIT
 	Msg("%s\n", value);
 }
 
+CON_COMMAND(ent_setpos, "Set an entity's position, angles, and velocity. Leave argument blank with \"\" or <> to ignore\nUSAGE: ent_setpos <ENTITY> <X> <Y> <Z> <PITCH> <YAW> <ROLL> <VEL X> <VEL Y> <VEL Z>")
+{
+	if (args.ArgC() <= 2)
+	{
+		Msg("USAGE: ent_setpos <ENTITY> <X> <Y> <Z> <PITCH> <YAW> <ROLL> <VEL X> <VEL Y> <VEL Z>\n");
+		return;
+	}
+	CBasePlayer* pPlayer = UTIL_GetCommandClient();
+	CBaseEntity* target = gEntList.FindEntityByName(NULL, args[1], pPlayer);
+	if (target == NULL)
+	{
+		target = UTIL_EntityByIndex(atoi(args[1]));
+		if (target == NULL)
+			return;
+	}
+	Vector pos = target->GetAbsOrigin();
+	QAngle ang = target->GetAbsAngles();
+	Vector vel = target->GetAbsVelocity();
+	pos[0] = atof(args[2]);
+	if (args.ArgC() < 3)
+		goto tel;
+	pos[1] = atof(args[3]);
+	if (args.ArgC() < 4)
+		goto tel;
+	pos[2] = atof(args[4]);
+	if (args.ArgC() < 5)
+		goto tel;
+	ang[0] = atof(args[5]);
+	if (args.ArgC() < 6)
+		goto tel;
+	ang[1] = atof(args[6]);
+	if (args.ArgC() < 7)
+		goto tel;
+	ang[2] = atof(args[7]);
+	if (args.ArgC() < 8)
+		goto tel;
+	vel[0] = atof(args[8]);
+	if (args.ArgC() < 9)
+		goto tel;
+	vel[1] = atof(args[9]);
+	if (args.ArgC() < 10)
+		goto tel;
+	vel[2] = atof(args[10]);
+	tel:
+	target->Teleport(&pos,&ang,&vel);
+}
+
+
 CON_COMMAND(sb_equal, "Returns 1 if the two values are equal, otherwise returns 0\nUSAGE: sb_equal <VALUE A> <VALUE B>")
 {
 	if (args.ArgC() <= 2)
 	{
 		Msg("USAGE: sb_equal <VALUE A> <VALUE B>\n");
+		return;
 	}
 	if (strcmp(args[1], args[2]) == 0)
 	{
@@ -91,6 +141,7 @@ CON_COMMAND(sb_greater, "Returns 1 if the the first value is greater than the se
 	if (args.ArgC() <= 2)
 	{
 		Msg("USAGE: sb_greater <VALUE A> <VALUE B>\n");
+		return;
 	}
 	if(atoi(args[1]) > atoi(args[2]))
 	{
@@ -107,6 +158,7 @@ CON_COMMAND(sb_lesser, "Returns 1 if the the first value is lesser than the seco
 	if (args.ArgC() <= 2)
 	{
 		Msg("USAGE: sb_lesser <VALUE A> <VALUE B>\n");
+		return;
 	}
 	if (atoi(args[1]) < atoi(args[2]))
 	{
@@ -254,7 +306,7 @@ CON_COMMAND(sb_lerp, "Linearly interpolate between two values\nUSAGE: sb_lerp <A
 	Msg("%f\n", (1-i)*atof(args[1]) + i*atof(args[2]) );
 }
 
-CON_COMMAND_F(getang, "Get player angles\nUSAGE: getang <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
+CON_COMMAND_F(geteyeang, "Get player angles\nUSAGE: getang <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
 {
 	CBasePlayer* player = NULL;
 	if (args.ArgC() < 2)
@@ -344,4 +396,50 @@ CON_COMMAND_F(geteyevectors, "Get player eye vectors\nUSAGE: geteyevectors <OPTI
 	Vector up;
 	player->EyeVectors(&fwd, &right, &up);
 	Msg("%f %f %f;%f %f %f;%f %f %f\n", fwd[0], fwd[1], fwd[2], right[0], right[1], right[2], up[0], up[1], up[2]);
+}
+
+CON_COMMAND_F(getvel, "Get player position\nUSAGE: getpos <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
+{
+	CBasePlayer* player = NULL;
+	if (args.ArgC() < 2)
+	{
+		player = UTIL_GetCommandClient();
+		if (!player)
+		{
+			return;
+		}
+	}
+	else
+	{
+		player = UTIL_PlayerByIndex(atoi(args[1]));
+		if (!player)
+		{
+			return;
+		}
+	}
+	Vector vel = player->GetAbsVelocity();
+	Msg("%f %f %f\n", vel[0], vel[1], vel[2]);
+}
+
+CON_COMMAND_F(getang, "Get player position\nUSAGE: getpos <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
+{
+	CBasePlayer* player = NULL;
+	if (args.ArgC() < 2)
+	{
+		player = UTIL_GetCommandClient();
+		if (!player)
+		{
+			return;
+		}
+	}
+	else
+	{
+		player = UTIL_PlayerByIndex(atoi(args[1]));
+		if (!player)
+		{
+			return;
+		}
+	}
+	QAngle ang = player->GetAbsAngles();
+	Msg("%f %f %f\n", ang[0], ang[1], ang[2]);
 }
