@@ -53,7 +53,7 @@ ConCommand sb_modelspawn("sb_modelspawn", SB_ModelSpawn);
 
 CON_COMMAND(ent_probe, "Probe a keyvalue from an entity\nUSAGE: ent_probe <ENTITY> <KEYVALUE>")
 {
-	if (args.ArgC() < 2)
+	if (args.ArgC() <= 2)
 	{
 		Msg("USAGE: ent_probe <ENTITY> <KEYVALUE>\n");
 	}
@@ -72,7 +72,7 @@ CON_COMMAND(ent_probe, "Probe a keyvalue from an entity\nUSAGE: ent_probe <ENTIT
 
 CON_COMMAND(sb_equal, "Returns 1 if the two values are equal, otherwise returns 0\nUSAGE: sb_equal <VALUE A> <VALUE B>")
 {
-	if (args.ArgC() < 2)
+	if (args.ArgC() <= 2)
 	{
 		Msg("USAGE: sb_equal <VALUE A> <VALUE B>\n");
 	}
@@ -88,7 +88,7 @@ CON_COMMAND(sb_equal, "Returns 1 if the two values are equal, otherwise returns 
 
 CON_COMMAND(sb_greater, "Returns 1 if the the first value is greater than the second value, otherwise returns 0\nUSAGE: sb_greater <VALUE A> <VALUE B>")
 {
-	if (args.ArgC() < 2)
+	if (args.ArgC() <= 2)
 	{
 		Msg("USAGE: sb_greater <VALUE A> <VALUE B>\n");
 	}
@@ -104,7 +104,7 @@ CON_COMMAND(sb_greater, "Returns 1 if the the first value is greater than the se
 
 CON_COMMAND(sb_lesser, "Returns 1 if the the first value is lesser than the second value, otherwise returns 0\nUSAGE: sb_lesser <VALUE A> <VALUE B>")
 {
-	if (args.ArgC() < 2)
+	if (args.ArgC() <= 2)
 	{
 		Msg("USAGE: sb_lesser <VALUE A> <VALUE B>\n");
 	}
@@ -120,7 +120,7 @@ CON_COMMAND(sb_lesser, "Returns 1 if the the first value is lesser than the seco
 
 CON_COMMAND(sb_random_int, "Returns a random integer in a range\nUSAGE: sb_random_int <MIN> <MAX>")
 {
-	if (args.ArgC() < 2) {
+	if (args.ArgC() <= 2) {
 		Msg("USAGE: sb_random_int <MIN> <MAX>\n");
 		return;
 	}
@@ -129,7 +129,7 @@ CON_COMMAND(sb_random_int, "Returns a random integer in a range\nUSAGE: sb_rando
 
 CON_COMMAND(sb_random_float, "Returns a random float in a range\nUSAGE: sb_random_float <MIN> <MAX>")
 {
-	if (args.ArgC() < 2) {
+	if (args.ArgC() <= 2) {
 		Msg("USAGE: sb_random_float <MIN> <MAX>\n");
 		return;
 	}
@@ -138,7 +138,7 @@ CON_COMMAND(sb_random_float, "Returns a random float in a range\nUSAGE: sb_rando
 
 CON_COMMAND(sb_add, "Add two values\nUSAGE: sb_add <A> <B>")
 {
-	if (args.ArgC() < 2) {
+	if (args.ArgC() <= 2) {
 		Msg("USAGE: sb_add <A> <B>\n");
 		return;
 	}
@@ -147,7 +147,7 @@ CON_COMMAND(sb_add, "Add two values\nUSAGE: sb_add <A> <B>")
 
 CON_COMMAND(sb_subtract, "Subtract two values\nUSAGE: sb_subtract <A> <B>")
 {
-	if (args.ArgC() < 2) {
+	if (args.ArgC() <= 2) {
 		Msg("USAGE: sb_subtract <A> <B>\n");
 		return;
 	}
@@ -156,7 +156,7 @@ CON_COMMAND(sb_subtract, "Subtract two values\nUSAGE: sb_subtract <A> <B>")
 
 CON_COMMAND(sb_multiply, "Multiply two values\nUSAGE: sb_multiply <A> <B>")
 {
-	if (args.ArgC() < 2) {
+	if (args.ArgC() <= 2) {
 		Msg("USAGE: sb_multiply <A> <B>\n");
 		return;
 	}
@@ -165,7 +165,7 @@ CON_COMMAND(sb_multiply, "Multiply two values\nUSAGE: sb_multiply <A> <B>")
 
 CON_COMMAND(sb_divide, "Divide two values\nUSAGE: sb_divide <A> <B>")
 {
-	if (args.ArgC() < 2) {
+	if (args.ArgC() <= 2) {
 		Msg("USAGE: sb_divide <A> <B>\n");
 		return;
 	}
@@ -174,7 +174,7 @@ CON_COMMAND(sb_divide, "Divide two values\nUSAGE: sb_divide <A> <B>")
 
 CON_COMMAND(sb_pow, "Raise A to the power of B\nUSAGE: sb_pow <A> <B>")
 {
-	if (args.ArgC() < 2) {
+	if (args.ArgC() <= 2) {
 		Msg("USAGE: sb_pow <A> <B>\n");
 		return;
 	}
@@ -183,7 +183,7 @@ CON_COMMAND(sb_pow, "Raise A to the power of B\nUSAGE: sb_pow <A> <B>")
 
 CON_COMMAND(sb_nthroot, "Take the Bth root of A\nUSAGE: sb_root <A> <B>")
 {
-	if (args.ArgC() < 2) {
+	if (args.ArgC() <= 2) {
 		Msg("USAGE: sb_nthroot <A> <B>\n");
 		return;
 	}
@@ -192,7 +192,7 @@ CON_COMMAND(sb_nthroot, "Take the Bth root of A\nUSAGE: sb_root <A> <B>")
 
 CON_COMMAND(sb_floor, "Round a value down\nUSAGE: sb_floor <A>")
 {
-	if (args.ArgC() < 1) {
+	if (args.ArgC() <= 1) {
 		Msg("USAGE: sb_floor <A>\n");
 		return;
 	}
@@ -201,7 +201,7 @@ CON_COMMAND(sb_floor, "Round a value down\nUSAGE: sb_floor <A>")
 
 CON_COMMAND(sb_round, "Round a value to the nearest integer\nUSAGE: sb_round <A>")
 {
-	if (args.ArgC() < 1) {
+	if (args.ArgC() <= 1) {
 		Msg("USAGE: sb_round <A>\n");
 		return;
 	}
@@ -210,7 +210,7 @@ CON_COMMAND(sb_round, "Round a value to the nearest integer\nUSAGE: sb_round <A>
 
 CON_COMMAND(sb_ceil, "Round a value up\nUSAGE: sb_ceil <A>")
 {
-	if (args.ArgC() < 1) {
+	if (args.ArgC() <= 1) {
 		Msg("USAGE: sb_ceil <A>\n");
 		return;
 	}
@@ -219,7 +219,7 @@ CON_COMMAND(sb_ceil, "Round a value up\nUSAGE: sb_ceil <A>")
 
 CON_COMMAND(sb_cos, "Take a cosine of a value\nUSAGE: sb_cos <A>")
 {
-	if (args.ArgC() < 1) {
+	if (args.ArgC() <= 1) {
 		Msg("USAGE: sb_cos <A>\n");
 		return;
 	}
@@ -228,7 +228,7 @@ CON_COMMAND(sb_cos, "Take a cosine of a value\nUSAGE: sb_cos <A>")
 
 CON_COMMAND(sb_sin, "Take a cosine of a value\nUSAGE: sb_sin <A>")
 {
-	if (args.ArgC() < 1) {
+	if (args.ArgC() <= 1) {
 		Msg("USAGE: sb_sin <A>\n");
 		return;
 	}
@@ -237,7 +237,7 @@ CON_COMMAND(sb_sin, "Take a cosine of a value\nUSAGE: sb_sin <A>")
 
 CON_COMMAND(sb_tan, "Take a cosine of a value\nUSAGE: sb_tan <A>")
 {
-	if (args.ArgC() < 1) {
+	if (args.ArgC() <= 1) {
 		Msg("USAGE: sb_tan <A>\n");
 		return;
 	}
@@ -246,7 +246,7 @@ CON_COMMAND(sb_tan, "Take a cosine of a value\nUSAGE: sb_tan <A>")
 
 CON_COMMAND(sb_lerp, "Linearly interpolate between two values\nUSAGE: sb_lerp <A> <B> <I>")
 {
-	if (args.ArgC() < 3) {
+	if (args.ArgC() <= 3) {
 		Msg("USAGE: sb_lerp <A> <B> <I>\n");
 		return;
 	}
@@ -257,7 +257,7 @@ CON_COMMAND(sb_lerp, "Linearly interpolate between two values\nUSAGE: sb_lerp <A
 CON_COMMAND_F(getang, "Get player angles\nUSAGE: getang <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
 {
 	CBasePlayer* player = NULL;
-	if (args.ArgC() < 1)
+	if (args.ArgC() < 2)
 	{
 		player = UTIL_GetCommandClient();
 		if (!player)
@@ -279,7 +279,7 @@ CON_COMMAND_F(getang, "Get player angles\nUSAGE: getang <OPTIONAL PLAYER INDEX>"
 CON_COMMAND_F(getpos, "Get player position\nUSAGE: getpos <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
 {
 	CBasePlayer* player = NULL;
-	if (args.ArgC() < 1)
+	if (args.ArgC() < 2)
 	{
 		player = UTIL_GetCommandClient();
 		if (!player)
@@ -301,7 +301,7 @@ CON_COMMAND_F(getpos, "Get player position\nUSAGE: getpos <OPTIONAL PLAYER INDEX
 CON_COMMAND_F(geteyepos, "Get player eye position\nUSAGE: geteyepos <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
 {
 	CBasePlayer* player = NULL;
-	if (args.ArgC() < 1)
+	if (args.ArgC() < 2)
 	{
 		player = UTIL_GetCommandClient();
 		if (!player)
@@ -323,7 +323,7 @@ CON_COMMAND_F(geteyepos, "Get player eye position\nUSAGE: geteyepos <OPTIONAL PL
 CON_COMMAND_F(geteyevectors, "Get player eye vectors\nUSAGE: geteyevectors <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
 {
 	CBasePlayer* player = NULL;
-	if (args.ArgC() < 1)
+	if (args.ArgC() < 2)
 	{
 		player = UTIL_GetCommandClient();
 		if (!player)

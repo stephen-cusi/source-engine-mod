@@ -1343,7 +1343,7 @@ CON_COMMAND( spec_pos, "dump position and angles to the console" )
 		vecOrigin.z, angles.x, angles.y );
 }
 
-CON_COMMAND( getpos, "dump position and angles to the console" )
+CON_COMMAND( getpos_cmd, "dump position and angles to the console" )
 {
 	Vector vecOrigin;
 	QAngle angles;

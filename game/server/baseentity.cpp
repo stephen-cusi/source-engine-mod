@@ -5040,29 +5040,29 @@ void CC_Ent_Remove( const CCommand& args )
 	{
 		pEntity = FindPickerEntity(UTIL_GetCommandClient());
 	}
-	else 
+	else
 	{
-		int index = atoi( args[1] );
-		if ( index )
+		int index = atoi(args[1]);
+		if (index)
 		{
-			pEntity = CBaseEntity::Instance( index );
+			pEntity = CBaseEntity::Instance(index);
 		}
 		else
 		{
 			// Otherwise set bits based on name or classname
-			CBaseEntity *ent = NULL;
-			while ( (ent = gEntList.NextEnt(ent)) != NULL )
+			CBaseEntity* ent = NULL;
+			while ((ent = gEntList.NextEnt(ent)) != NULL)
 			{
-				if (  (ent->GetEntityName() != NULL_STRING	&& FStrEq(args[1], STRING(ent->GetEntityName())))	|| 
-					(ent->m_iClassname != NULL_STRING	&& FStrEq(args[1], STRING(ent->m_iClassname))) ||
-					(ent->GetClassname()!=NULL && FStrEq(args[1], ent->GetClassname())))
+				if ((ent->GetEntityName() != NULL_STRING && FStrEq(args[1], STRING(ent->GetEntityName()))) ||
+					(ent->m_iClassname != NULL_STRING && FStrEq(args[1], STRING(ent->m_iClassname))) ||
+					(ent->GetClassname() != NULL && FStrEq(args[1], ent->GetClassname())))
 				{
 					pEntity = ent;
 					break;
 				}
 			}
 		}
-
+	}
 	// Found one?
 	if ( pEntity )
 	{
