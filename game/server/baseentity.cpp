@@ -5036,12 +5036,9 @@ void CC_Ent_Remove( const CCommand& args )
 {
 	CBaseEntity *pEntity = NULL;
 
-	// If no name was given set bits based on the picked
-	pEntity = UTIL_GetCommandClient();
-
-	/*if (FStrEq(args[1], ""))
+	if (FStrEq(args[1], ""))
 	{
-		pEntity = UTIL_GetCommandClient();
+		pEntity = FindPickerEntity(UTIL_GetCommandClient());
 	}
 	else 
 	{
@@ -5064,7 +5061,7 @@ void CC_Ent_Remove( const CCommand& args )
 					break;
 				}
 			}
-		}*/
+		}
 
 	// Found one?
 	if ( pEntity )
@@ -5079,13 +5076,7 @@ static ConCommand ent_remove("ent_remove", CC_Ent_Remove, "Removes the given ent
 void CC_Ent_RemoveAll( const CCommand& args )
 {
 	// If no name was given remove based on the picked
-	CBaseEntity *pEntity = UTIL_GetCommandClient();
-	if (pEntity)
-	{
-		Msg("Removed %s(%s)\n", STRING(pEntity->m_iClassname), pEntity->GetDebugName());
-		UTIL_Remove(pEntity);
-	}
-	/*if (args.ArgC() < 2)
+	if (args.ArgC() < 2)
 	{
 		Msg( "Removes all entities of the specified type\n\tArguments:   	{entity_name} / {class_name}\n" );
 	}
@@ -5113,7 +5104,7 @@ void CC_Ent_RemoveAll( const CCommand& args )
 		{
 			Msg( "No %s found.\n", args[1] );
 		}
-	}*/
+	}
 }
 static ConCommand ent_remove_all("ent_remove_all", CC_Ent_RemoveAll, "Removes all entities of the specified type\n\tArguments:   	{entity_name} / {class_name} ", FCVAR_CHEAT);
 

@@ -253,3 +253,95 @@ CON_COMMAND(sb_lerp, "Linearly interpolate between two values\nUSAGE: sb_lerp <A
 	float i = atof(args[3]);
 	Msg("%f\n", (1-i)*atof(args[1]) + i*atof(args[2]) );
 }
+
+CON_COMMAND_F(getang, "Get player angles\nUSAGE: getang <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
+{
+	CBasePlayer* player = NULL;
+	if (args.ArgC() < 1)
+	{
+		player = UTIL_GetCommandClient();
+		if (!player)
+		{
+			return;
+		}
+	}
+	else
+	{
+		player = UTIL_PlayerByIndex(atoi(args[1]));
+		if (!player)
+		{
+			return;
+		}
+	}
+	QAngle angles = player->EyeAngles();
+	Msg("%f %f %f\n", angles[0], angles[1], angles[2]);
+}
+CON_COMMAND_F(getpos, "Get player position\nUSAGE: getpos <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
+{
+	CBasePlayer* player = NULL;
+	if (args.ArgC() < 1)
+	{
+		player = UTIL_GetCommandClient();
+		if (!player)
+		{
+			return;
+		}
+	}
+	else
+	{
+		player = UTIL_PlayerByIndex(atoi(args[1]));
+		if (!player)
+		{
+			return;
+		}
+	}
+	Vector pos = player->GetAbsOrigin();
+	Msg("%f %f %f\n", pos[0], pos[1], pos[2]);
+}
+CON_COMMAND_F(geteyepos, "Get player eye position\nUSAGE: geteyepos <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
+{
+	CBasePlayer* player = NULL;
+	if (args.ArgC() < 1)
+	{
+		player = UTIL_GetCommandClient();
+		if (!player)
+		{
+			return;
+		}
+	}
+	else
+	{
+		player = UTIL_PlayerByIndex(atoi(args[1]));
+		if (!player)
+		{
+			return;
+		}
+	}
+	Vector pos = player->EyePosition();
+	Msg("%f %f %f\n", pos[0], pos[1], pos[2]);
+}
+CON_COMMAND_F(geteyevectors, "Get player eye vectors\nUSAGE: geteyevectors <OPTIONAL PLAYER INDEX>", FCVAR_CHEAT)
+{
+	CBasePlayer* player = NULL;
+	if (args.ArgC() < 1)
+	{
+		player = UTIL_GetCommandClient();
+		if (!player)
+		{
+			return;
+		}
+	}
+	else
+	{
+		player = UTIL_PlayerByIndex(atoi(args[1]));
+		if (!player)
+		{
+			return;
+		}
+	}
+	Vector fwd;
+	Vector right;
+	Vector up;
+	player->EyeVectors(&fwd, &right, &up);
+	Msg("%f %f %f;%f %f %f;%f %f %f\n", fwd[0], fwd[1], fwd[2], right[0], right[1], right[2], up[0], up[1], up[2]);
+}
