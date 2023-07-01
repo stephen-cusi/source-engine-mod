@@ -301,14 +301,35 @@ enum StandardSpewGroup_t
 
 static int s_pGroupIndices[GROUP_COUNT] = { -1, -1, -1 };
 static const char *s_pGroupNames[GROUP_COUNT] = { s_pDeveloper, s_pConsole, s_pNetwork };
+static bool s_bLockSpew = false;
+static bool s_bCompletelyLockSpew = false;
 
+void LockOutputFunc(bool lock)
+{
+	s_bLockSpew = lock;
+}
+bool GetLockOutputFunc()
+{
+	return s_bLockSpew;
+}
 
+void CompletelyLockOutputFunc(bool lock)
+{
+	s_bCompletelyLockSpew = lock;
+}
+bool GetCompletelyLockOutputFunc()
+{
+	return s_bCompletelyLockSpew;
+}
 //-----------------------------------------------------------------------------
 // Spew output management.
 //-----------------------------------------------------------------------------
-void SpewOutputFunc( SpewOutputFunc_t func )
+void SpewOutputFunc(SpewOutputFunc_t func)
 {
-	s_SpewOutputFunc = func ? func : DefaultSpewFunc;
+	if (!s_bCompletelyLockSpew)
+	{
+		s_SpewOutputFunc = func ? func : DefaultSpewFunc;
+	}
 }
 
 SpewOutputFunc_t GetSpewOutputFunc( void )

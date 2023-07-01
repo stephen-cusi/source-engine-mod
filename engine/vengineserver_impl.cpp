@@ -160,7 +160,7 @@ void SeedRandomNumberGenerator( bool random_invariant )
 static void PR_CheckEmptyString (const char *s)
 {
 	if (s[0] <= ' ') {
-		__debugbreak();
+		//__debugbreak();
 		Host_Error("Bad string: %s", s);
 	}
 		

@@ -187,6 +187,14 @@ enum SpewRetval_t
 /* type of externally defined function used to display debug spew */
 typedef SpewRetval_t (*SpewOutputFunc_t)( SpewType_t spewType, const tchar *pMsg );
 
+DBG_INTERFACE void   LockOutputFunc(bool lock);
+
+DBG_INTERFACE bool   GetLockOutputFunc();
+
+DBG_INTERFACE void   CompletelyLockOutputFunc(bool lock);
+
+DBG_INTERFACE bool   GetCompletelyLockOutputFunc();
+
 /* Used to redirect spew output */
 DBG_INTERFACE void   SpewOutputFunc( SpewOutputFunc_t func );
 

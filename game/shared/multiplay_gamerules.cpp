@@ -625,6 +625,9 @@ ConVarRef suitcharger( "sk_suitcharger" );
 			pPlayer->m_Local.m_flFallVelocity -= PLAYER_MAX_SAFE_FALL_SPEED;
 			return pPlayer->m_Local.m_flFallVelocity * DAMAGE_FOR_FALL_SPEED;
 			break;
+		case -1:
+			return 0;
+			break;
 		default:
 		case 0:// fixed
 			return 10;
@@ -636,14 +639,14 @@ ConVarRef suitcharger( "sk_suitcharger" );
 	//=========================================================
 	bool CMultiplayRules::AllowDamage( CBaseEntity *pVictim, const CTakeDamageInfo &info )
 	{
-		return true;
+		return mp_god.GetInt() == 0;
 	}
 
 	//=========================================================
 	//=========================================================
 	bool CMultiplayRules::FPlayerCanTakeDamage( CBasePlayer *pPlayer, CBaseEntity *pAttacker, const CTakeDamageInfo &info )
 	{
-		return true;
+		return pvp.GetInt() == 1;
 	}
 
 	//=========================================================

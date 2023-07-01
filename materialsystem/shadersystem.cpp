@@ -41,6 +41,7 @@ static ConVar mat_showenvmapmask( "mat_showenvmapmask", "0" );
 static ConVar mat_debugdepth( "mat_debugdepth", "0" );
 extern ConVar mat_supportflashlight;
 
+
 //-----------------------------------------------------------------------------
 // Implementation of the shader system
 //-----------------------------------------------------------------------------
@@ -93,6 +94,8 @@ public:
 
 	// Used to prevent re-entrant rendering from warning messages
 	void				BufferSpew( SpewType_t spewType, const Color &c, const char *pMsg );
+
+	virtual void LockSpew(bool lock) { m_bLockSpew = lock; }
 
 private:
 	struct ShaderDLLInfo_t
@@ -169,7 +172,11 @@ private:
 
 	int GetModulationSnapshotCount( IMaterialVar **params );
 
+	
+
 private:
+	bool m_bLockSpew;
+	bool m_bOrigLock;
 	// List of all DLLs containing shaders
 	CUtlVector< ShaderDLLInfo_t > m_ShaderDLLs;
 
@@ -938,13 +945,16 @@ void CShaderSystem::PrepForShaderDraw( IShader *pShader,
 
 	// 360 runs the console remotely, spew cannot cause the matsys to be reentrant
 	// 360 sidesteps the other negative affect that *all* buffered spew redirects as warning text
-	if ( IsPC() || !IsX360() )
+	m_bOrigLock = GetLockOutputFunc();
+	if ( (IsPC() || !IsX360()) )
 	{
 		Assert( !m_SaveSpewOutput );
 		m_SaveSpewOutput = GetSpewOutputFunc();
-		SpewOutputFunc( MySpewOutputFunc );
+		if (!m_bOrigLock)
+		{
+			SpewOutputFunc(MySpewOutputFunc);
+		}
 	}
-
 	m_pRenderState = pRenderState;
 	m_nModulation = nModulation;
 	m_nRenderPass = 0;
@@ -952,13 +962,15 @@ void CShaderSystem::PrepForShaderDraw( IShader *pShader,
 
 void CShaderSystem::DoneWithShaderDraw()
 {
-	if ( IsPC() || !IsX360() )
+	if ( (IsPC() || !IsX360()))
 	{
 		SpewOutputFunc( m_SaveSpewOutput );
-		PrintBufferedSpew();
+		if (!m_bOrigLock)
+		{
+			PrintBufferedSpew();
+		}
 		m_SaveSpewOutput = NULL;
 	}
-
 	m_pRenderState = NULL;
 }
 

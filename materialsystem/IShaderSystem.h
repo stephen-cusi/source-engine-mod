@@ -68,6 +68,8 @@ public:
 
 	// Are we using graphics?
 	virtual bool CanUseEditorMaterials() const = 0;
+
+	virtual void LockSpew(bool lock) = 0;
 };
 
 

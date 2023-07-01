@@ -521,7 +521,7 @@ CBaseEntity *CGlobalEntityList::FindEntityProcedural( const char *szName, CBaseE
 		//
 		if ( FStrEq( pName, "player" ) )
 		{
-			return (CBaseEntity *)UTIL_PlayerByIndex( 1 );
+			return pSearchingEntity;
 		}
 		else if ( FStrEq( pName, "pvsplayer" ) )
 		{
@@ -551,7 +551,7 @@ CBaseEntity *CGlobalEntityList::FindEntityProcedural( const char *szName, CBaseE
 		}
 		else if ( FStrEq( pName, "picker" ) )
 		{
-			return FindPickerEntity( UTIL_PlayerByIndex(1) );
+			return FindPickerEntity( (CBasePlayer*)pSearchingEntity );
 		}
 		else if ( FStrEq( pName, "self" ) )
 		{

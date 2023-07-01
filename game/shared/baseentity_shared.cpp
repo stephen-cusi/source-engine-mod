@@ -541,7 +541,7 @@ bool CBaseEntity::GetKeyValue( const char *szKeyName, char *szValue, int iMaxLen
 		return true;
 	}
 
-	if ( FStrEq( szKeyName, "mins" ))
+	/*if (FStrEq(szKeyName, "mins"))
 	{
 		Assert( 0 );
 		return false;
@@ -551,7 +551,7 @@ bool CBaseEntity::GetKeyValue( const char *szKeyName, char *szValue, int iMaxLen
 	{
 		Assert( 0 );
 		return false;
-	}
+	}*/
 
 	if ( FStrEq( szKeyName, "disablereceiveshadows" ))
 	{

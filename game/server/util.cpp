@@ -1295,9 +1295,11 @@ void UTIL_SetModel( CBaseEntity *pEntity, const char *pModelName )
 	int i = modelinfo->GetModelIndex( pModelName );
 	if ( i == -1 )	
 	{
-		Error("%i/%s - %s:  UTIL_SetModel:  not precached: %s\n", pEntity->entindex(),
-			STRING( pEntity->GetEntityName() ),
-			pEntity->GetClassname(), pModelName);
+		//pEntity->Remove();
+		i = 1;
+		//Error("%i/%s - %s:  UTIL_SetModel:  not precached: %s\n", pEntity->entindex(),
+		//	STRING( pEntity->GetEntityName() ),
+		//	pEntity->GetClassname(), pModelName);
 	}
 
 	CBaseAnimating *pAnimating = pEntity->GetBaseAnimating();

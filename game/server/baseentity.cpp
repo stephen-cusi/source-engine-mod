@@ -5482,8 +5482,13 @@ private:
 
 		// Find the target entity by name
 		CBaseEntity *target = gEntList.FindEntityByName( NULL, targetEntity );
-		if ( target == NULL )
-			return 0;
+		if (target == NULL)
+		{
+			target = UTIL_EntityByIndex(atoi(targetEntity));
+			if(target == NULL)
+				return 0;
+		}
+			
 
 		CUtlRBTree< CUtlString > symbols( 0, 0, UtlStringLessFunc );
 

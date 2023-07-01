@@ -215,10 +215,10 @@ void CPlayerListDialog::OnItemSelected()
 		player_info_t pi;
 
 		int iLocalPlayer = engine->GetLocalPlayer();
-
+		
 		int iPlayerIndex = data->GetInt("index");		
 		bool isValidPlayer = engine->GetPlayerInfo( iPlayerIndex, &pi );
-
+		
 		// make sure the player is not a bot, or the user 
 		// Matt - changed this check to see if player indeces match, instead of using friends ID
 		if ( pi.fakeplayer || iPlayerIndex == iLocalPlayer ) // || pi.friendsID == g_pFriendsUser->GetFriendsID() )

@@ -35,9 +35,16 @@ char s_convar_capture[64][8192];
 int s_current_capture;
 bool s_free_captures[64];
 
+#define stricat(_Destination, _Source, maxlen) strncat(_Destination, _Source, min(maxlen - strlen(_Destination), strlen(_Source)))
+
 SpewRetval_t CaptureSpewFunc(SpewType_t type, const tchar* pMsg)
 {
-	strcat(s_convar_capture[s_current_capture], pMsg);
+	stricat(s_convar_capture[s_current_capture], pMsg, 8192);
+	int l = strlen(s_convar_capture[s_current_capture]) - 1;
+	if (l != -1 && s_convar_capture[s_current_capture][l] == '\n')
+	{
+		s_convar_capture[s_current_capture][l] = 0;
+	}
 	return SPEW_CONTINUE;
 }
 
@@ -441,6 +448,7 @@ void CCommand::CurlyBracketCheck(int i, const char* pCommand, int& c, int& index
 		if (pCommand[index] == '{')
 		{
 			CurlyBracketCheck(i, pCommand, c, index, maxlen);
+			continue;
 		}
 		if (pCommand[index] == '}')
 		{
@@ -451,6 +459,7 @@ void CCommand::CurlyBracketCheck(int i, const char* pCommand, int& c, int& index
 		if (pCommand[index] == '[')
 		{
 			SquareBracketCheck(i, pCommand, c, index, maxlen);
+			continue;
 		}
 		c++;
 		index++;
@@ -472,6 +481,7 @@ void CCommand::SquareBracketCheck(int i, const char* pCommand, int& c, int& inde
 		if (pCommand[index] == '[')
 		{
 			SquareBracketCheck(i, pCommand, c, index, maxlen);
+			continue;
 		}
 		if (pCommand[index] == ']')
 		{
@@ -482,6 +492,7 @@ void CCommand::SquareBracketCheck(int i, const char* pCommand, int& c, int& inde
 		if (pCommand[index] == '{')
 		{
 			CurlyBracketCheck(i, pCommand, c, index, maxlen);
+			continue;
 		}
 		c++;
 		index++;
@@ -510,7 +521,7 @@ bool CCommand::GetArgument(const char* pCommand, int maxlen, int& index, int i) 
 		if (pCommand[index] == ' ' || pCommand[index] == '\t' || pCommand[index] == '\n') {
 			m_ppArgv[i][c] = '\x00';
 			index++;
-			return true;
+			break;
 		}
 		m_ppArgv[i][c] = pCommand[index];
 		c++;

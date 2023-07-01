@@ -312,6 +312,45 @@ bool SkipParen(char* pCurrentCommand, int& i)
 	return true;
 }
 
+bool SkipQuote(char* pCurrentCommand, int& i)
+{
+	if (pCurrentCommand[i] == '"')
+	{
+		i++;
+		return false;
+	}
+	i++;
+	while (i < COMMAND_MAX_LENGTH && pCurrentCommand[i])
+	{
+		if (pCurrentCommand[i - 1] != '\\' && pCurrentCommand[i] == '"')
+		{
+			i++;
+			return false;
+		}
+		i++;
+	}
+	return true;
+}
+
+bool SkipApostrophe(char* pCurrentCommand, int& i)
+{
+	if (pCurrentCommand[i] == '\'')
+	{
+		i++;
+		return false;
+	}
+	i++;
+	while (i < COMMAND_MAX_LENGTH && pCurrentCommand[i])
+	{
+		if (pCurrentCommand[i - 1] != '\\' && pCurrentCommand[i] == '\'')
+		{
+			i++;
+			return false;
+		}
+		i++;
+	}
+	return true;
+}
 
 
 int CCommandBuffer::IsCommand(char* pCurrentCommand, char* commandBit, int &i, char closechar, int &length)
@@ -326,6 +365,26 @@ int CCommandBuffer::IsCommand(char* pCurrentCommand, char* commandBit, int &i, c
 			i++;
 			startpos = i;
 			if (SkipParen(pCurrentCommand, startpos))
+			{
+				return -1;
+			}
+			i = startpos;
+		}
+		if (pCurrentCommand[i] == '"')
+		{
+			i++;
+			startpos = i;
+			if (SkipQuote(pCurrentCommand, startpos))
+			{
+				return -1;
+			}
+			i = startpos;
+		}
+		if (pCurrentCommand[i] == '\'')
+		{
+			i++;
+			startpos = i;
+			if (SkipApostrophe(pCurrentCommand, startpos))
 			{
 				return -1;
 			}
@@ -391,6 +450,22 @@ int CCommandBuffer::EvaluateFirstExecutable(char* pCurrentCommand, char* command
 				return -1;
 			}
 		}
+		if (pCurrentCommand[i] == '"')
+		{
+			i++;
+			if (SkipQuote(pCurrentCommand, i))
+			{
+				return -1;
+			}
+		}
+		if (pCurrentCommand[i] == '\'')
+		{
+			i++;
+			if (SkipApostrophe(pCurrentCommand, i))
+			{
+				return -1;
+			}
+		}
 		if (pCurrentCommand[i] == '[' || pCurrentCommand[i] == '{')
 		{
 			if (commandpos = IsCommand(pCurrentCommand, commandBit, i, pCurrentCommand[i] == '[' ? ']' : '}', length)) {
@@ -402,6 +477,15 @@ int CCommandBuffer::EvaluateFirstExecutable(char* pCurrentCommand, char* command
 			pCurrentCommand[i] = 0;
 			strcpy(commandBit, pCurrentCommand);
 			pCurrentCommand[i] = ';';
+			memmove(pCurrentCommand, pCurrentCommand + i + 1, strlen(pCurrentCommand) - i);
+			length = i;
+			return -2;
+		}
+		if (pCurrentCommand[i] == '\n')
+		{
+			pCurrentCommand[i] = 0;
+			strcpy(commandBit, pCurrentCommand);
+			pCurrentCommand[i] = '\n';
 			memmove(pCurrentCommand, pCurrentCommand + i + 1, strlen(pCurrentCommand) - i);
 			length = i;
 			return -2;
@@ -522,6 +606,7 @@ void SkipSemicolon(char* str, int& skipped)
 	}
 }
 
+#define stricat(_Destination, _Source, maxlen) strncat(_Destination, _Source, min(maxlen - strlen(_Destination), strlen(_Source)))
 //-----------------------------------------------------------------------------
 // Returns the next command
 //-----------------------------------------------------------------------------
@@ -553,13 +638,13 @@ bool CCommandBuffer::DequeueNextCommand( )
 			strncpy(curcommand,&m_pArgSBuffer[command.m_nFirstArgS],command.m_nCommandBit);
 			if (s_convar_capture[command.m_nBufferId][0])
 			{
-				strcat(curcommand, "(");
-				strcat(curcommand, s_convar_capture[command.m_nBufferId]);
-				strcat(curcommand, ")");
+				stricat(curcommand, "(", COMMAND_MAX_LENGTH);
+				stricat(curcommand, s_convar_capture[command.m_nBufferId], COMMAND_MAX_LENGTH);
+				stricat(curcommand, ")", COMMAND_MAX_LENGTH);
 			}
 			int skipped = 0;
 			SkipSemicolon(&m_pArgSBuffer[command.m_nFirstArgS] + command.m_nCommandBit + command.m_nCommandBitLength - 1, skipped);
-			strcat(curcommand, &m_pArgSBuffer[command.m_nFirstArgS] + command.m_nCommandBit + command.m_nCommandBitLength - 1 + skipped);
+			stricat(curcommand, &m_pArgSBuffer[command.m_nFirstArgS] + command.m_nCommandBit + command.m_nCommandBitLength - 1 + skipped, COMMAND_MAX_LENGTH);
 		}
 		else
 		{

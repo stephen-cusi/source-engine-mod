@@ -33,6 +33,8 @@ extern ConVar	teamlist;
 extern ConVar	teamoverride;
 extern ConVar	defaultteam;
 extern ConVar	allowNPCs;
+extern ConVar	pvp;
+extern ConVar	mp_god;
 
 extern ConVar	suitvolume;
 

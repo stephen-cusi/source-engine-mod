@@ -37,6 +37,7 @@
 #include "tier0/etwprof.h"
 #include "tier0/vprof.h"
 #include "gl_matsysiface.h"		// update materialsystem config
+#include "../materialsystem/shadersystem.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -413,12 +414,14 @@ void Cbuf_Execute()
 	// NOTE: The command buffer knows about execution time related to commands,
 	// but since HL2 doesn't, we're going to spoof the command time to simply
 	// be the the number of times Cbuf_Execute is called.
+	LockOutputFunc(true);
 	s_CommandBuffer.BeginProcessingCommands( 1 );
 	while ( s_CommandBuffer.DequeueNextCommand( ) )
 	{
 		Cbuf_ExecuteCommand( s_CommandBuffer.GetCommand(), src_command, s_CommandBuffer.m_nOutputBuffer );
 	}
 	s_CommandBuffer.EndProcessingCommands( );
+	LockOutputFunc(false);
 }
 
 
@@ -818,6 +821,42 @@ CON_COMMAND( cmd, "Forward command to server." )
 CON_COMMAND_AUTOCOMPLETEFILE( exec, Cmd_Exec_f, "Execute script file.", "cfg", cfg );
 
 
+CON_COMMAND( split, "Split a string into two convars\nUSAGE: split <STRING> <SPLIT TOKEN> <CONVAR A> <CONVAR B>")
+{
+	if (args.ArgC() < 5)
+	{
+		ConMsg("USAGE: split <STRING> <SPLIT TOKEN> <CONVAR A> <CONVAR B>\n");
+		return;
+	}
+	const char* point = strstr(args[1],args[2]);
+	if (!point)
+	{
+		return;
+	}
+	char first[512] = { 0 };
+	strncpy(first, args[1], point - args[1]);
+	g_pCVar->FindVar(args[3])->SetValue(first);
+	g_pCVar->FindVar(args[4])->SetValue(point + strlen(args[2]));
+}
+
+static void exec_if(const CCommand& args);
+static ConCommand exec_if_command("if", exec_if, "Execute a command if the first argument is 1, otherwise execute another command if given.\nUSAGE: if <VALUE> <COMMAND> <OPTIONAL COMMAND>\nEXAMPLE: if [sv_cheats] \"echo sv_cheats is on!\" \"echo sv_cheats is off.\"");
+static void exec_if(const CCommand& args)
+{
+	if (args.ArgC() < 2)
+	{
+		ConMsg("USAGE: if <VALUE> <COMMAND> <OPTIONAL COMMAND>\n");
+	}
+	if (atoi(args[1]) != 1)
+	{
+		if (args.ArgC() > 2)
+		{
+			Cbuf_InsertText(args[3]);
+		}
+		return;
+	}
+	Cbuf_InsertText(args[2]);
+}
 
 
 void Cmd_Init( void )
@@ -1042,14 +1081,18 @@ const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t 
 				Msg( "Unknown command \"%s\"\n", pCommand->GetName() );
 				return NULL;
 			}
+
 			if (outputBuffer != -1)
 			{
 				s_current_capture = outputBuffer;
 				SpewOutputFunc(CaptureSpewFunc);
+				CompletelyLockOutputFunc(true); // fuck you materialsystem.dll
 				Cmd_Dispatch(pCommand, command);
+				CompletelyLockOutputFunc(false);
 				SpewOutputFunc(Sys_SpewFunc);
 			}
 			else {
+				SpewOutputFunc(Sys_SpewFunc);
 				Cmd_Dispatch(pCommand, command);
 			}
 			
