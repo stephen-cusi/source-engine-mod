@@ -14,11 +14,7 @@
 #include "decals.h"
 #include "coordsize.h"
 #include "rumble_shared.h"
-
-#ifdef CLIENT_DLL
-#include "hl2/hl2_player_shared.h"
 #include "util_shared.h"
-#endif // CLIENT_DLL
 
 #if defined(HL2_DLL) || defined(HL2_CLIENT_DLL)
 	#include "hl_movedata.h"
@@ -35,12 +31,16 @@
 
 extern IFileSystem *filesystem;
 
+#ifndef HL2MP
+#include "hl2/hl2_player_shared.h"
+#endif // CLIENT_DLL
+
 #ifndef CLIENT_DLL
 	#include "env_player_surface_trigger.h"
 	static ConVar dispcoll_drawplane( "dispcoll_drawplane", "0" );
 #endif
 
-#ifdef CLIENT_DLL
+#ifndef HL2MP
 
 	//cam viewbob
 	ConVar cl_viewbob_enabled("cl_viewbob_enabled", "0", 0, "Oscillation Toggle");
@@ -1944,7 +1944,7 @@ void CGameMovement::WalkMove( void )
 	fmove = mv->m_flForwardMove;
 	smove = mv->m_flSideMove;
 
-#ifdef CLIENT_DLL
+#ifndef HL2MP
 	if (cl_viewbob_enabled.GetBool() && !engine->IsPaused())
 	{
 		CHL2_Player* HLplayer = dynamic_cast<CHL2_Player*>(player);
@@ -2085,7 +2085,7 @@ void CGameMovement::WalkMove( void )
 
 void CGameMovement::OnLand(float fVelocity)
 {
-#ifdef CLIENT_DLL
+#ifndef HL2MP
 	if (cl_viewbob_enabled.GetBool())
 		player->ViewPunch(QAngle(fVelocity * cl_viewbob_onland_force.GetFloat(), 0, 0));
 #endif // CLIENT_DLL
@@ -2491,7 +2491,7 @@ bool CGameMovement::CheckJumpButton( void )
 
 	// In the air now.
     SetGroundEntity( NULL );
-#ifdef CLIENT_DLL
+#ifndef HL2MP
 	if (cl_viewbob_enabled.GetBool() && !engine->IsPaused())
 	{
 		if (mv->m_flForwardMove >= 0)

@@ -44,7 +44,10 @@ public:
 	//Visibility through portals
 	//----------------------------------------------------------------------------
 	virtual bool	DoesExitViewIntersectWaterPlane( float waterZ, int leafWaterDataID ) const { return false; };
-	virtual SkyboxVisibility_t	SkyBoxVisibleFromPortal( void ) { return SKYBOX_NOT_VISIBLE; };
+	virtual SkyboxVisibility_t	SkyBoxVisibleFromPortal( void )
+	{	
+		return SKYBOX_NOT_VISIBLE;
+	};
 
 	//-----------------------------------------------------------------------------
 	//Fog workarounds
