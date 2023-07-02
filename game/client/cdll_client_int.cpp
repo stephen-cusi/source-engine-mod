@@ -2328,7 +2328,109 @@ void OnRenderEnd()
 	DisplayBoneSetupEnts();
 }
 
+//#ifdef SOURCEBOX
+#ifdef HL2MP
 
+///
+///I hate multiplayer branch, and i hate my life
+///			-celisej
+///
+
+#include "hl2/hl2_player_shared.h"
+#include "gamemovement.h"
+
+//cam viewbob
+ConVar cl_viewbob_enabled("cl_viewbob_enabled", "0", 0, "Oscillation Toggle");
+ConVar cl_viewbob_enabled_z("cl_viewbob_enabled_z", "1");
+
+ConVar cl_viewbob_drop_xscale("cl_viewbob_drop_xscale", "1");
+ConVar cl_viewbob_drop_yscale("cl_viewbob_drop_yscale", "1");
+
+ConVar cl_viewbob_xtimer("cl_viewbob_xtimer", "10", 0, "Speed of Oscillation");
+ConVar cl_viewbob_ytimer("cl_viewbob_ytimer", "2.5", 0, "Speed of Oscillation");
+ConVar cl_viewbob_ztimer("cl_viewbob_ztimer", "5", 0, "Speed of Oscillation");
+
+ConVar cl_viewbob_onland_force("cl_viewbob_onland_force", "0.01");
+
+ConVar cl_viewbob_xscale("cl_viewbob_xscale", "0.01", 0, "Magnitude of Oscillation");
+ConVar cl_viewbob_yscale("cl_viewbob_yscale", "0.01", 0, "Magnitude of Oscillation");
+ConVar cl_viewbob_zscale("cl_viewbob_zscale", "0.02", 0, "Magnitude of Oscillation");
+
+ConVar cl_viewbob_xoffset("cl_viewbob_xoffset", "100", 0, "Division xoffset");
+ConVar cl_viewbob_yoffset("cl_viewbob_yoffset", "100", 0, "Division xoffset");
+ConVar cl_viewbob_zoffset("cl_viewbob_zoffset", "100", 0, "Division xoffset");
+
+ConVar cl_viewbob_jump_scale("cl_viewbob_jump_scale", "2", 0, "Magnitude of jump Oscillation (float)");
+
+//extern static C_BasePlayer* s_pLocalPlayer;
+C_BasePlayer* player;
+
+extern IGameMovement* g_pGameMovement;
+float lastFallVelocity;
+
+void UpdateViewbob()
+{
+	if(player == nullptr)
+		player = C_BasePlayer::GetLocalPlayer();
+
+	if (player == nullptr)
+		return;
+
+	//Msg("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \n");
+
+	CGameMovement* gm = dynamic_cast<CGameMovement*>(g_pGameMovement);
+
+	CMoveData* mv = gm->GetMoveData();
+
+	if (mv == nullptr)
+		return;
+
+	// Copy movement amounts
+	float fmove = mv->m_flForwardMove;
+	float smove = mv->m_flSideMove;
+	
+	
+	float FallVelocity = player->GetAbsVelocity().z;
+
+	Vector Velocity = Vector(player->GetAbsVelocity().x, player->GetAbsVelocity().y, 0);
+	
+	if (cl_viewbob_enabled.GetBool() && !engine->IsPaused())
+	{
+		CHL2_Player* HLplayer = dynamic_cast<CHL2_Player*>(player);
+		if (!HLplayer->IsSprinting())
+		{
+			float xoffset = sin(gpGlobals->curtime * cl_viewbob_xtimer.GetFloat()) * player->GetAbsVelocity().Length() * cl_viewbob_xscale.GetFloat() / cl_viewbob_xoffset.GetFloat();
+			float yoffset = sin(2 * gpGlobals->curtime * cl_viewbob_ytimer.GetFloat()) * player->GetAbsVelocity().Length() * cl_viewbob_yscale.GetFloat() / cl_viewbob_yoffset.GetFloat();
+			float zoffset = sin(gpGlobals->curtime * cl_viewbob_ztimer.GetFloat()) * player->GetAbsVelocity().Length() * cl_viewbob_zscale.GetFloat() / cl_viewbob_zoffset.GetFloat();
+			player->ViewPunch(QAngle(xoffset, yoffset, zoffset));
+
+		}
+		else
+		{
+			float xoffset = sin(gpGlobals->curtime * (cl_viewbob_xtimer.GetFloat() * 2)) * player->GetAbsVelocity().Length() * cl_viewbob_xscale.GetFloat() / cl_viewbob_xoffset.GetFloat();
+			float yoffset = sin(2 * gpGlobals->curtime * (cl_viewbob_ytimer.GetFloat() * 2)) * player->GetAbsVelocity().Length() * cl_viewbob_yscale.GetFloat() / cl_viewbob_yoffset.GetFloat();
+
+			float zoffset = sin(2 * gpGlobals->curtime * cl_viewbob_ztimer.GetFloat()) * player->GetAbsVelocity().Length() * cl_viewbob_zscale.GetFloat() / cl_viewbob_zoffset.GetFloat();
+			player->ViewPunch(QAngle(xoffset, yoffset, zoffset));
+
+		}
+
+		if (smove > 0)
+		{
+			float zoffset = 2.5 * player->GetAbsVelocity().Length() * cl_viewbob_zscale.GetFloat() / cl_viewbob_zoffset.GetFloat();
+			player->ViewPunch(QAngle(0, 0, zoffset));
+		}
+		else if (smove < 0)
+		{
+			float zoffset = 2.5 * player->GetAbsVelocity().Length() * cl_viewbob_zscale.GetFloat() / cl_viewbob_zoffset.GetFloat();
+			player->ViewPunch(QAngle(0, 0, -zoffset));
+		}
+	}
+
+	lastFallVelocity = FallVelocity;
+}
+
+#endif
 
 void CHLClient::FrameStageNotify( ClientFrameStage_t curStage )
 {
@@ -2345,6 +2447,9 @@ void CHLClient::FrameStageNotify( ClientFrameStage_t curStage )
 
 			// Last thing before rendering, run simulation.
 			OnRenderStart();
+#ifdef HL2MP
+			UpdateViewbob();
+#endif
 		}
 		break;
 		
