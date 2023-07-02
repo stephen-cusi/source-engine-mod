@@ -5348,19 +5348,6 @@ public:
 			//	  ent_create point_servercommand; ent_setname mine; ent_fire mine command "rcon_password mynewpassword"
 			// So, I'm removing the ability for anyone to execute ent_fires on dedicated servers (we can't check to see if
 			// this command is going to connect with a point_servercommand entity here, because they could delay the event and create it later).
-			if ( engine->IsDedicatedServer() )
-			{
-				// We allow people with disabled autokick to do it, because they already have rcon.
-				if ( pPlayer->IsAutoKickDisabled() == false )
-					return;
-			}
-			else if ( gpGlobals->maxClients > 1 )
-			{
-				// On listen servers with more than 1 player, only allow the host to issue ent_fires.
-				CBasePlayer *pHostPlayer = UTIL_GetListenServerHost();
-				if ( pPlayer != pHostPlayer )
-					return;
-			}
 
 			if ( command.ArgC() >= 3 )
 			{
