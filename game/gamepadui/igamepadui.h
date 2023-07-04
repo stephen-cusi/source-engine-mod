@@ -9,6 +9,8 @@
 #include "mathlib/vector.h"
 #include "ivrenderview.h"
 
+class ISource2013SteamInput;
+
 abstract_class IGamepadUI : public IBaseInterface
 {
 public:
@@ -21,6 +23,15 @@ public:
     virtual void OnLevelShutdown() = 0;
 	
     virtual void VidInit() = 0;
+#ifdef STEAM_INPUT
+    //// TODO: Replace with proper singleton interface in the future
+    virtual void SetSteamInput( ISource2013SteamInput *pSteamInput ) = 0;
+#endif
+
+#ifdef MAPBASE
+	virtual void BonusMapChallengeNames( char *pchFileName, char *pchMapName, char *pchChallengeName ) = 0;
+	virtual void BonusMapChallengeObjectives( int &iBronze, int &iSilver, int &iGold ) = 0;
+#endif
 };
 
 #define GAMEPADUI_INTERFACE_VERSION "GamepadUI001"

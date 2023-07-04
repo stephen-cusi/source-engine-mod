@@ -2,6 +2,7 @@
 #include "gamepadui_frame.h"
 #include "gamepadui_button.h"
 #include "gamepadui_interface.h"
+#include "gamepadui_basepanel.h"
 
 #include "inputsystem/iinputsystem.h"
 #include "vgui/ISurface.h"
@@ -16,6 +17,12 @@ GamepadUIFrame::GamepadUIFrame( vgui::Panel *pParent, const char *pszPanelName, 
     // bodge to disable the frames title image and display our own
     // (the frames title has an invalid zpos and does not draw over the garnish)
     Frame::SetTitle( "", false );
+
+    if (pParent && pParent == GamepadUI::GetInstance().GetBasePanel())
+    {
+        GamepadUIBasePanel *pPanel = static_cast<GamepadUIBasePanel*>(pParent);
+        pPanel->SetCurrentFrame( this );
+    }
 
 	memset( &m_pFooterButtons, 0, sizeof( m_pFooterButtons ) );
 }
@@ -180,18 +187,36 @@ void GamepadUIFrame::LayoutFooterButtons()
         m_nFooterButtonWidth = m_pFooterButtons[i]->GetWide();
         m_nFooterButtonHeight = m_pFooterButtons[i]->GetTall();
         FooterButton button = FooterButtons::GetButtonByIdx( i );
-        if ( button & FooterButtons::LeftMask )
+        if ( m_bFooterButtonsStack )
         {
-            m_pFooterButtons[i]->SetPos( m_flFooterButtonsOffsetX + nLeftOffset, nParentH - m_flFooterButtonsOffsetY - m_nFooterButtonHeight );
-            nLeftOffset += m_flFooterButtonsSpacing + m_pFooterButtons[i]->GetWide();
+            if ( button & FooterButtons::LeftMask )
+            {
+                m_pFooterButtons[i]->SetPos( m_flFooterButtonsOffsetX, nParentH - m_flFooterButtonsOffsetY - m_nFooterButtonHeight - nLeftOffset );
+                nLeftOffset += m_flFooterButtonsSpacing + m_pFooterButtons[i]->GetTall();
+            }
+            else
+            {
+                m_pFooterButtons[i]->SetPos( nParentW - m_pFooterButtons[i]->GetWide() - m_flFooterButtonsOffsetX, nParentH - m_flFooterButtonsOffsetY - m_nFooterButtonHeight - nRightOffset );
+                nRightOffset += m_flFooterButtonsSpacing + m_pFooterButtons[i]->GetTall();
+            }
         }
         else
         {
-            m_pFooterButtons[i]->SetPos( nParentW - m_pFooterButtons[i]->GetWide() - nRightOffset - m_flFooterButtonsOffsetX, nParentH - m_flFooterButtonsOffsetY - m_nFooterButtonHeight );
-            nRightOffset += m_flFooterButtonsSpacing + m_pFooterButtons[i]->GetWide();
+            if ( button & FooterButtons::LeftMask )
+            {
+                m_pFooterButtons[i]->SetPos( m_flFooterButtonsOffsetX + nLeftOffset, nParentH - m_flFooterButtonsOffsetY - m_nFooterButtonHeight );
+                nLeftOffset += m_flFooterButtonsSpacing + m_pFooterButtons[i]->GetWide();
+            }
+            else
+            {
+                m_pFooterButtons[i]->SetPos( nParentW - m_pFooterButtons[i]->GetWide() - nRightOffset - m_flFooterButtonsOffsetX, nParentH - m_flFooterButtonsOffsetY - m_nFooterButtonHeight );
+                nRightOffset += m_flFooterButtonsSpacing + m_pFooterButtons[i]->GetWide();
+            }
         }
 
-#ifdef HL2_RETAIL // Steam input and Steam Controller are not supported in SDK2013 (Madi)
+#ifdef STEAM_INPUT
+        const bool bController = GamepadUI::GetInstance().GetSteamInput()->IsEnabled();
+#elif defined(HL2_RETAIL) // Steam input and Steam Controller are not supported in SDK2013 (Madi)
         const bool bController = g_pInputSystem->IsSteamControllerActive();
 #else
         const bool bController = ( g_pInputSystem->GetJoystickCount() >= 1 );
@@ -205,6 +230,12 @@ void GamepadUIFrame::LayoutFooterButtons()
 void GamepadUIFrame::OnClose()
 {
     BaseClass::OnClose();
+
+    if (GetParent() && GetParent() == GamepadUI::GetInstance().GetBasePanel())
+    {
+        GamepadUIBasePanel *pPanel = static_cast<GamepadUIBasePanel*>(GetParent());
+        pPanel->SetCurrentFrame( NULL );
+    }
 
     GamepadUIFrame *pFrame = dynamic_cast<GamepadUIFrame *>( GetParent() );
     if ( pFrame )
@@ -256,7 +287,7 @@ void GamepadUIFrame::OnKeyCodePressed( vgui::KeyCode code )
     case KEY_XBUTTON_X:
         for ( int i = 0; i < FooterButtons::MaxFooterButtons; i++ )
         {
-            if ( FooterButtons::GetButtonByIdx(i) & ( FooterButtons::BonusMaps | FooterButtons::UseDefaults ) )
+            if ( FooterButtons::GetButtonByIdx(i) & ( FooterButtons::BonusMaps | FooterButtons::UseDefaults | FooterButtons::Delete ) )
             {
                 if ( m_pFooterButtons[i] )
                     m_pFooterButtons[i]->ForceDepressed( true );
@@ -340,7 +371,7 @@ void GamepadUIFrame::OnKeyCodeReleased( vgui::KeyCode code )
     case KEY_XBUTTON_X:
         for ( int i = 0; i < FooterButtons::MaxFooterButtons; i++ )
         {
-            if ( FooterButtons::GetButtonByIdx(i) & ( FooterButtons::BonusMaps | FooterButtons::UseDefaults ) )
+            if ( FooterButtons::GetButtonByIdx(i) & ( FooterButtons::BonusMaps | FooterButtons::UseDefaults | FooterButtons::Delete ) )
             {
                 if ( m_pFooterButtons[i] )
                 {

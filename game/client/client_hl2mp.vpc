@@ -35,6 +35,7 @@ $Project "Client (HL2MP)"
 		$File	"$SRCDIR\game\shared\teamplay_round_timer.cpp"
 		$File	"$SRCDIR\game\shared\teamplay_round_timer.h"
 		$File	"vgui_schemeeditor.cpp"
+		$File	"episodic/c_weapon_hopwire.cpp"
 
 		$Folder	"HL2 DLL"
 		{

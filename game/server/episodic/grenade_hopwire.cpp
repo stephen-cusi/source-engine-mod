@@ -18,7 +18,7 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
-ConVar hopwire_vortex( "hopwire_vortex", "0" );
+ConVar hopwire_vortex( "hopwire_vortex", "1" );
 ConVar hopwire_trap( "hopwire_trap", "1" );
 ConVar hopwire_strider_kill_dist_h( "hopwire_strider_kill_dist_h", "300" );
 ConVar hopwire_strider_kill_dist_v( "hopwire_strider_kill_dist_v", "256" );
@@ -206,7 +206,7 @@ void CGravityVortexController::CreateDenseBall( void )
 void CGravityVortexController::PullThink( void )
 {
 	// Pull any players close enough to us
-	PullPlayersInRange();
+	//PullPlayersInRange();
 
 	Vector mins, maxs;
 	mins = GetAbsOrigin() - Vector( m_flRadius, m_flRadius, m_flRadius );
