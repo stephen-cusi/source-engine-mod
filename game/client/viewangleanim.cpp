@@ -235,7 +235,6 @@ void CViewAngleAnimation::SaveAsAnimFile( const char *pKeyFrameFileName )
 		pKey->SetFloat( "time", m_KeyFrames[i]->m_flTime );
 		pKey->SetInt( "flags", m_KeyFrames[i]->m_iFlags );
 	}
-
 	pData->SaveToFile( filesystem, pKeyFrameFileName, NULL );
 	pData->deleteThis();
 }

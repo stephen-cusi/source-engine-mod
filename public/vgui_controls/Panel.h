@@ -739,6 +739,7 @@ public:
 		BUILDMODE_SAVE_WIDE_PROPORTIONAL_SELF = 1 << 17,
 		BUILDMODE_SAVE_TALL_PROPORTIONAL_SELF = 1 << 18,
 	};
+	CUtlFlags< unsigned short > _flags;	// see PanelFlags_t
 
 protected:
 	//this will return m_NavDown and will not look for the next visible panel
@@ -852,7 +853,6 @@ private:
 	char			*_panelName;		// string name of the panel - only unique within the current context
 	IBorder			*_border;
 
-	CUtlFlags< unsigned short > _flags;	// see PanelFlags_t
 	Dar<HPanel>		_actionSignalTargetDar;	// the panel to direct notify messages to ("Command", "TextChanged", etc.)
 
 	CUtlVector<OverridableColorEntry>	m_OverridableColorEntries;

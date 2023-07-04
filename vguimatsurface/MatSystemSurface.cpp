@@ -1453,6 +1453,7 @@ void CMatSystemSurface::DrawOutlinedCircle(int x, int y, int radius, int segment
 }
 
 
+
 //-----------------------------------------------------------------------------
 // Loads a particular texture (material)
 //-----------------------------------------------------------------------------
@@ -3107,8 +3108,8 @@ void CMatSystemSurface::InternalSchemeSettingsTraverse(VPANEL panel, bool forceA
 		}
 	}
 	// and then the parent
+	vp->Client()->GetPanel()->_flags.SetFlag(0x0100);
 	vp->Client()->PerformApplySchemeSettings();
-
 	vp->TraverseLevel( -1 );
 }
 

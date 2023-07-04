@@ -4151,6 +4151,7 @@ void Panel::PerformApplySchemeSettings()
 
 			ApplyOverridableColors();
 
+
 			UpdateSiblingPin();
 		}
 	}

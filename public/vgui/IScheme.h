@@ -63,6 +63,12 @@ public:
 
 	// Get color data
 	virtual const KeyValues *GetColorData() const = 0;
+
+	virtual KeyValues *GetBaseSettings() = 0;
+
+	virtual KeyValues* GetBorders() = 0;
+
+	virtual void ReloadBorders() = 0;
 };
 
 

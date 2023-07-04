@@ -34,6 +34,7 @@ $Project "Client (HL2MP)"
 		$File	"$SRCDIR\game\shared\predicted_viewmodel.h"
 		$File	"$SRCDIR\game\shared\teamplay_round_timer.cpp"
 		$File	"$SRCDIR\game\shared\teamplay_round_timer.h"
+		$File	"vgui_schemeeditor.cpp"
 
 		$Folder	"HL2 DLL"
 		{
