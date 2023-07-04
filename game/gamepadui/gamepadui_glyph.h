@@ -7,7 +7,9 @@
 #include "gamepadui_interface.h"
 #include "gamepadui_util.h"
 
-#ifdef HL2_RETAIL // Steam input and Steam Controller are not supported in SDK2013 (Madi)
+#ifdef STEAM_INPUT
+#include "img_png_loader.h"
+#elif defined(HL2_RETAIL) // Steam input and Steam Controller are not supported in SDK2013 (Madi)
 #include "steam/hl2/isteaminput.h"
 #include "imageutils.h"
 #endif // HL2_RETAIL
@@ -31,7 +33,54 @@ public:
 
     bool SetupGlyph( int nSize, const char *pszAction, bool bBaseLight = false )
     {
-#ifdef HL2_RETAIL // Steam input and Steam Controller are not supported in SDK2013 (Madi)
+#ifdef STEAM_INPUT
+
+        if (m_pszActionOrigin && !V_strcmp(pszAction, m_pszActionOrigin))
+            return IsValid();
+
+        Cleanup();
+
+        m_pszActionOrigin = pszAction;
+
+        int iRealSize = nSize;
+
+        int kStyles[2] =
+        {
+            //bBaseLight ? ESteamInputGlyphStyle_Light : ESteamInputGlyphStyle_Knockout,
+            //ESteamInputGlyphStyle_Dark,
+            bBaseLight ? 1 : 0,
+            2,
+        };
+
+        for ( int i = 0; i < 2; i++ )
+        {
+            CUtlVector <const char *> szStringList;
+            GamepadUI::GetInstance().GetSteamInput()->GetGlyphPNGsForCommand( szStringList, pszAction, iRealSize, kStyles[i] );
+            if (szStringList.Count() == 0)
+            {
+                Cleanup();
+                return false;
+            }
+
+		    CUtlMemory< byte > image;
+            int w, h;
+		    if ( !PNGtoRGBA( g_pFullFileSystem, szStringList[0], image, w, h ) )
+            {
+                Cleanup();
+                return false;
+            }
+
+			DevMsg( "Loaded png %dx%d\n", w, h );
+
+            m_nOriginTextures[i] = vgui::surface()->CreateNewTextureID(true);
+            if ( m_nOriginTextures[i] <= 0 )
+            {
+                Cleanup();
+                return false;
+            }
+            g_pMatSystemSurface->DrawSetTextureRGBA( m_nOriginTextures[i], image.Base(), w, h, true, false );
+        }
+#elif defined(HL2_RETAIL) // Steam input and Steam Controller are not supported in SDK2013 (Madi)
         uint64 nSteamInputHandles[STEAM_INPUT_MAX_COUNT];
         if ( !GamepadUI::GetInstance().GetSteamAPIContext() || !GamepadUI::GetInstance().GetSteamAPIContext()->SteamInput() )
             return false;
@@ -166,14 +215,18 @@ public:
             m_nOriginTextures[ i ] = -1;
         }
 
-#ifdef HL2_RETAIL
+#ifdef STEAM_INPUT
+        m_pszActionOrigin = NULL;
+#elif defined(HL2_RETAIL)
         m_eActionOrigin = k_EInputActionOrigin_None;
 #endif // HL2_RETAIL
     }
 
 private:
 
-#ifdef HL2_RETAIL
+#ifdef STEAM_INPUT
+    const char *m_pszActionOrigin = NULL;
+#elif defined(HL2_RETAIL)
     EInputActionOrigin m_eActionOrigin = k_EInputActionOrigin_None;
 #endif // HL2_RETAIL
 

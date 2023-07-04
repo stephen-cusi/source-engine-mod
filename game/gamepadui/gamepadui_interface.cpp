@@ -62,7 +62,7 @@ void GamepadUI::Initialize( CreateInterfaceFn factory )
     g_pVGuiLocalize->AddFile( "resource/gameui_%language%.txt", "GAME", true );
     g_pVGuiLocalize->AddFile( "resource/deck_%language%.txt", "GAME", true );
 
-#ifdef HL2_RETAIL // not necessary on SDK2013 (Madi)
+#if defined(HL2_RETAIL) || defined(STEAM_INPUT)
     SteamAPI_InitSafe();
     SteamAPI_SetTryCatchCallbacks( false );
     m_SteamAPIContext.Init();
@@ -93,7 +93,7 @@ void GamepadUI::Shutdown()
     if ( m_pBasePanel )
         m_pBasePanel->DeletePanel();
 
-#ifdef HL2_RETAIL // not necessary on SDK2013 (Madi)
+#if defined(HL2_RETAIL) || defined(STEAM_INPUT)
     m_SteamAPIContext.Clear();
 #endif
 
@@ -145,12 +145,14 @@ void GamepadUI::VidInit()
 
     if (flInvAspectRatio != flDefaultInvAspect)
     {
-        m_flScreenRatio = 1.0f - (flInvAspectRatio - flDefaultInvAspect);
+        m_flScreenXRatio = 1.0f - (flInvAspectRatio - flDefaultInvAspect);
     }
     else
     {
-        m_flScreenRatio = 1.0f;
+        m_flScreenXRatio = 1.0f;
     }
+
+    m_flScreenYRatio = 1.0f;
 
     m_pBasePanel->InvalidateLayout( false, true );
 }
@@ -199,6 +201,16 @@ vgui::VPANEL GamepadUI::GetBaseVPanel() const
     return m_pBasePanel ? m_pBasePanel->GetVPanel() : 0;
 }
 
+vgui::Panel *GamepadUI::GetSizingPanel() const
+{
+    return m_pBasePanel ? m_pBasePanel->GetSizingPanel() : NULL;
+}
+
+vgui::VPANEL GamepadUI::GetSizingVPanel() const
+{
+    return GetSizingPanel() ? GetSizingPanel()->GetVPanel() : 0;
+}
+
 vgui::Panel *GamepadUI::GetMainMenuPanel() const
 {
     return m_pBasePanel ? m_pBasePanel->GetMainMenuPanel() : NULL;
@@ -213,3 +225,45 @@ GamepadUIMainMenu* GamepadUI::GetMainMenu() const
 {
     return static_cast<GamepadUIMainMenu*>( GetMainMenuPanel() );
 }
+
+void GamepadUI::GetSizingPanelScale( float &flX, float &flY ) const
+{
+    vgui::Panel *pPanel = GetSizingPanel();
+    if (!pPanel)
+        return;
+    static_cast<GamepadUISizingPanel*>(pPanel)->GetScale( flX, flY );
+}
+
+void GamepadUI::GetSizingPanelOffset( int &nX, int &nY ) const
+{
+    vgui::Panel *pPanel = GetSizingPanel();
+    if (!pPanel)
+        return;
+    pPanel->GetPos( nX, nY );
+}
+
+#ifdef MAPBASE
+void GamepadUI::BonusMapChallengeNames( char *pchFileName, char *pchMapName, char *pchChallengeName )
+{
+    Q_strncpy( pchFileName, m_szChallengeFileName, sizeof( m_szChallengeFileName ) );
+    Q_strncpy( pchMapName, m_szChallengeMapName, sizeof( m_szChallengeMapName ) );
+    Q_strncpy( pchChallengeName, m_szChallengeName, sizeof( m_szChallengeName ) );
+}
+
+void GamepadUI::BonusMapChallengeObjectives( int &iBronze, int &iSilver, int &iGold )
+{
+    iBronze = m_iBronze; iSilver = m_iSilver; iGold = m_iGold;
+}
+
+void GamepadUI::SetCurrentChallengeObjectives( int iBronze, int iSilver, int iGold )
+{
+    m_iBronze = iBronze; m_iSilver = iSilver; m_iGold = iGold;
+}
+
+void GamepadUI::SetCurrentChallengeNames( const char *pszFileName, const char *pszMapName, const char *pszChallengeName )
+{
+    Q_strncpy( m_szChallengeFileName, pszFileName, sizeof( m_szChallengeFileName ) );
+    Q_strncpy( m_szChallengeMapName, pszMapName, sizeof( m_szChallengeMapName ) );
+    Q_strncpy( m_szChallengeName, pszChallengeName, sizeof( m_szChallengeName ) );
+}
+#endif

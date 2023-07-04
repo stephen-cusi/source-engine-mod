@@ -2,7 +2,7 @@
 #include "gamepadui_image.h"
 #include "gamepadui_util.h"
 #include "gamepadui_frame.h"
-#include "gamepadui_scroll.h"
+#include "gamepadui_scrollbar.h"
 #include "gamepadui_genericconfirmation.h"
 
 #include "ienginevgui.h"
@@ -26,15 +26,23 @@ struct chapter_t;
 
 #define GAMEPADUI_CHAPTER_SCHEME GAMEPADUI_RESOURCE_FOLDER "schemechapterbutton.res"
 
+ConVar gamepadui_newgame_commentary_toggle( "gamepadui_newgame_commentary_toggle", "1", FCVAR_NONE, "Makes the commentary button toggle commentary mode instead of going straight into the game" );
+
 // Modders should override this if necessary. (Madi)
 // TODO - merge these into scheme config?
 bool GameHasCommentary()
 {
+#ifdef GAMEPADUI_GAME_EZ2
+    // NOTE: Not all builds have commentary yet, so check for a file in the first map first
+    static bool bHasCommentary = g_pFullFileSystem->FileExists( "maps/ez2_c0_1_commentary.txt" );
+    return bHasCommentary;
+#else
     const char *pszGameDir = CommandLine()->ParmValue( "-game", CommandLine()->ParmValue( "-defaultgamedir", "hl2" ) );
     return !V_strcmp( pszGameDir, "episodic" ) ||
            !V_strcmp( pszGameDir, "ep2" ) ||
            !V_strcmp( pszGameDir, "portal" ) ||
            !V_strcmp( pszGameDir, "lostcoast" );
+#endif
 }
 
 bool GameHasBonusMaps()
@@ -64,17 +72,32 @@ public:
 
     void StartGame( int nChapter );
 
+    bool InCommentaryMode() const { return m_bCommentaryMode; }
+
+    GamepadUIImage *GetCommentaryThumb( float &flSize, float &flOffsetX, float &flOffsetY ) 
+    {
+        flSize = m_flCommentaryThumbSize; flOffsetX = m_flCommentaryThumbOffsetX; flOffsetY = m_flCommentaryThumbOffsetY;
+        return &m_CommentaryThumb;
+    }
+
 private:
     CUtlVector< GamepadUIChapterButton* > m_pChapterButtons;
     CUtlVector< chapter_t > m_Chapters;
 
     GamepadUIScrollState m_ScrollState;
 
+    GamepadUIScrollBar *m_pScrollBar;
+
     GAMEPADUI_PANEL_PROPERTY( float, m_ChapterOffsetX, "Chapters.OffsetX", "0", SchemeValueTypes::ProportionalFloat );
     GAMEPADUI_PANEL_PROPERTY( float, m_ChapterOffsetY, "Chapters.OffsetY", "0", SchemeValueTypes::ProportionalFloat );
     GAMEPADUI_PANEL_PROPERTY( float, m_ChapterSpacing, "Chapters.Spacing", "0", SchemeValueTypes::ProportionalFloat );
 
+    GAMEPADUI_PANEL_PROPERTY( float, m_flCommentaryThumbSize, "Chapters.CommentaryThumb.Size", "64", SchemeValueTypes::ProportionalFloat );
+    GAMEPADUI_PANEL_PROPERTY( float, m_flCommentaryThumbOffsetX, "Chapters.CommentaryThumb.OffsetX", "8", SchemeValueTypes::ProportionalFloat );
+    GAMEPADUI_PANEL_PROPERTY( float, m_flCommentaryThumbOffsetY, "Chapters.CommentaryThumb.OffsetY", "8", SchemeValueTypes::ProportionalFloat );
+
     bool m_bCommentaryMode = false;
+    GamepadUIImage m_CommentaryThumb;
 };
 
 class GamepadUIChapterButton : public GamepadUIButton
@@ -127,6 +150,19 @@ public:
             vgui::surface()->DrawFilledRect( 0, 0, w, imgH - offset );
         }
 
+        if ( GetParent() && gamepadui_newgame_commentary_toggle.GetBool() )
+        {
+            GamepadUINewGamePanel *pPanel = static_cast<GamepadUINewGamePanel*>( GetParent() );
+            if (pPanel && pPanel->InCommentaryMode())
+            {
+                float flSize, flOffsetX, flOffsetY;
+                vgui::surface()->DrawSetColor( Color( 255, 255, 255, 255 ) );
+                vgui::surface()->DrawSetTexture( *pPanel->GetCommentaryThumb( flSize, flOffsetX, flOffsetY ) );
+                vgui::surface()->DrawTexturedRect( flOffsetX, flOffsetY, flOffsetX + flSize, flOffsetY + flSize );
+                vgui::surface()->DrawSetTexture( 0 );
+            }
+        }
+
         PaintText();
     }
 	
@@ -134,18 +170,20 @@ public:
     {
         BaseClass::ApplySchemeSettings( pScheme );
 
-        if (GamepadUI::GetInstance().GetScreenRatio() != 1.0f)
+        float flX, flY;
+        if (GamepadUI::GetInstance().GetScreenRatio( flX, flY ))
         {
-            float flScreenRatio = GamepadUI::GetInstance().GetScreenRatio();
+            if (flX != 1.0f)
+            {
+                m_flHeight *= flX;
+                for (int i = 0; i < ButtonStates::Count; i++)
+                    m_flHeightAnimationValue[i] *= flX;
 
-            m_flHeight *= flScreenRatio;
-            for (int i = 0; i < ButtonStates::Count; i++)
-                m_flHeightAnimationValue[i] *= flScreenRatio;
-
-            // Also change the text offset
-            m_flTextOffsetY *= flScreenRatio;
-            for (int i = 0; i < ButtonStates::Count; i++)
-                m_flTextOffsetYAnimationValue[i] *= flScreenRatio;
+                // Also change the text offset
+                m_flTextOffsetY *= flX;
+                for (int i = 0; i < ButtonStates::Count; i++)
+                    m_flTextOffsetYAnimationValue[i] *= flX;
+            }
 
             SetSize( m_flWidth, m_flHeight + m_flExtraHeight );
             DoAnimations( true );
@@ -243,7 +281,7 @@ static int GetUnlockedChapters()
 
 GamepadUINewGamePanel::GamepadUINewGamePanel( vgui::Panel *pParent, const char* PanelName ) : BaseClass( pParent, PanelName )
 {
-    vgui::HScheme hScheme = vgui::scheme()->LoadSchemeFromFile( GAMEPADUI_DEFAULT_PANEL_SCHEME, "SchemePanel" );
+    vgui::HScheme hScheme = vgui::scheme()->LoadSchemeFromFileEx( GamepadUI::GetInstance().GetSizingVPanel(), GAMEPADUI_DEFAULT_PANEL_SCHEME, "SchemePanel" );
     SetScheme( hScheme );
 
     GetFrameTitle() = GamepadUIString( "#GameUI_NewGame" );
@@ -309,7 +347,14 @@ GamepadUINewGamePanel::GamepadUINewGamePanel( vgui::Panel *pParent, const char* 
         m_pChapterButtons[i - 1]->SetNavRight( m_pChapterButtons[i] );
     }
 
+    m_CommentaryThumb.SetImage( "vgui/hud/icon_commentary" );
+
     UpdateGradients();
+
+    m_pScrollBar = new GamepadUIScrollBar(
+        this, this,
+        GAMEPADUI_RESOURCE_FOLDER "schemescrollbar.res",
+        NULL, true );
 }
 
 void GamepadUINewGamePanel::UpdateGradients()
@@ -331,10 +376,16 @@ void GamepadUINewGamePanel::ApplySchemeSettings( vgui::IScheme* pScheme )
 {
     BaseClass::ApplySchemeSettings( pScheme );
 
-    if (GamepadUI::GetInstance().GetScreenRatio() != 1.0f)
+    float flX, flY;
+    if (GamepadUI::GetInstance().GetScreenRatio( flX, flY ))
     {
-        float flScreenRatio = GamepadUI::GetInstance().GetScreenRatio();
-        m_ChapterOffsetX *= (flScreenRatio*flScreenRatio);
+        m_ChapterOffsetX *= (flX*flX);
+        m_ChapterOffsetX *= (flY*flY);
+    }
+
+    if (m_pChapterButtons.Count() > 0)
+    {
+        m_pScrollBar->InitScrollBar( &m_ScrollState, m_ChapterOffsetX, m_ChapterOffsetY + m_pChapterButtons[0]->GetTall() + m_ChapterSpacing );
     }
 }
 
@@ -376,7 +427,7 @@ void GamepadUINewGamePanel::LayoutChapterButtons()
     int nParentW, nParentH;
 	GetParent()->GetSize( nParentW, nParentH );
 
-    float flScrollClamp = 0.0f;
+    float flScrollClamp = m_ChapterOffsetX;
     for ( int i = 0; i < m_pChapterButtons.Count(); i++ )
     {
         int nSize = ( m_pChapterButtons[0]->GetWide() + m_ChapterSpacing );
@@ -386,6 +437,12 @@ void GamepadUINewGamePanel::LayoutChapterButtons()
     }
 
     m_ScrollState.UpdateScrollBounds( 0.0f, flScrollClamp );
+
+    if (m_pChapterButtons.Count() > 0)
+    {
+        m_pScrollBar->UpdateScrollBounds( 0.0f, flScrollClamp,
+            ( m_pChapterButtons[0]->GetWide() + m_ChapterSpacing ) * 2.0f, nParentW - (m_ChapterOffsetX*2.0f) );
+    }
 
     for ( int i = 0; i < m_pChapterButtons.Count(); i++ )
     {
@@ -409,8 +466,15 @@ void GamepadUINewGamePanel::OnCommand( char const* pCommand )
         GamepadUIChapterButton *pPanel = GamepadUIChapterButton::GetLastNewGameButton();
         if ( pPanel )
         {
-            m_bCommentaryMode = true;
-            pPanel->DoClick();
+            if ( gamepadui_newgame_commentary_toggle.GetBool() )
+            {
+                m_bCommentaryMode = !m_bCommentaryMode;
+            }
+            else
+            {
+                m_bCommentaryMode = true;
+                pPanel->DoClick();
+            }
         }
     }
     else if ( !V_strcmp( pCommand, "action_bonus_maps" ) )

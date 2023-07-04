@@ -1341,6 +1341,14 @@ void CHLClient::HudUpdate( bool bActive )
 {
 	float frametime = gpGlobals->frametime;
 
+#ifdef GAMEPADUI
+	if (!enginevgui->IsGameUIVisible())
+	{
+		engine->ExecuteClientCmd("gamepadui_resetfade");
+	}
+#endif // GAMEPADUI
+
+
 #if defined( TF_CLIENT_DLL )
 	CRTime::UpdateRealTime();
 #endif

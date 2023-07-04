@@ -43,11 +43,12 @@ namespace FooterButtons
         BonusMaps  = ( 1 << 7 ),
         Challenge  = ( 1 << 8 ),
         UseDefaults  = ( 1 << 9 ),
+        Delete  = ( 1 << 10 ),
 
         // Buttons that are 'confirmatory'
         ConfirmMask = ( LeftSelect | Select | Okay ),
     };
-    static const int MaxFooterButtons = 10;
+    static const int MaxFooterButtons = 11;
 
     inline const char* GetButtonName( FooterButton button )
     {
@@ -63,6 +64,7 @@ namespace FooterButtons
             case BonusMaps: return "#Deck_BonusMaps";
             case Challenge: return "#Deck_Challenges";
             case UseDefaults: return "#GameUI_UseDefaults";
+            case Delete: return "#GameUI_Delete";
         }
         return "Unknown";
     }
@@ -81,6 +83,7 @@ namespace FooterButtons
             case BonusMaps: return "action_bonus_maps";
             case Challenge: return "action_challenges";
             case UseDefaults: return "action_usedefaults";
+            case Delete: return "action_delete";
         }
         return "";
     }
@@ -99,6 +102,7 @@ namespace FooterButtons
             case BonusMaps: return "menu_x";
             case Challenge: return "menu_y";
             case UseDefaults: return "menu_x";
+            case Delete: return "menu_x";
         }
         return "";
     }
