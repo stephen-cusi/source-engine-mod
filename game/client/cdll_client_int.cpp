@@ -1342,10 +1342,13 @@ void CHLClient::HudUpdate( bool bActive )
 	float frametime = gpGlobals->frametime;
 
 #ifdef GAMEPADUI
+if(IsSteamDeck())
+{
 	if (!enginevgui->IsGameUIVisible())
 	{
 		engine->ExecuteClientCmd("gamepadui_resetfade");
 	}
+}
 #endif // GAMEPADUI
 
 
