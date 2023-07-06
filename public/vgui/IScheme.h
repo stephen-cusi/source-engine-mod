@@ -69,6 +69,9 @@ public:
 	virtual KeyValues* GetBorders() = 0;
 
 	virtual void ReloadBorders() = 0;
+
+	virtual KeyValues* GetData() = 0;
+
 };
 
 
@@ -76,6 +79,12 @@ public:
 class ISchemeManager: public IBaseInterface
 {
 public:
+
+	virtual void SetTheme(const char* theme) = 0;
+	virtual void GetTheme(char* out, int maxlen=MAX_PATH) = 0;
+
+	virtual void SaveTheme(const char* filename) = 0;
+
 	// loads a scheme from a file
 	// first scheme loaded becomes the default scheme, and all subsequent loaded scheme are derivitives of that
 	virtual HScheme LoadSchemeFromFile(const char *fileName, const char *tag) = 0;

@@ -1192,7 +1192,7 @@ void Q_URLEncode( OUT_Z_CAP(nDestLen) char *pchDest, int nDestLen, const char *p
 // Returns the amount of space actually used in the output buffer.  
 size_t Q_URLDecode( OUT_CAP(nDecodeDestLen) char *pchDecodeDest, int nDecodeDestLen, const char *pchEncodedSource, int nEncodedSourceLen );
 
-
+#define V_strrepchr( str, from, to ) while(char *subStr = strchr(str,from)) { subStr[0] = to; }
 // NOTE: This is for backward compatability!
 // We need to DLL-export the Q methods in vstdlib but not link to them in other projects
 #if !defined( VSTDLIB_BACKWARD_COMPAT )

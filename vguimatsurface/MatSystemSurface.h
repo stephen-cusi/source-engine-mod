@@ -213,7 +213,7 @@ public:
 	virtual void ReleasePanel(vgui::VPANEL panel);
 	virtual void MovePopupToFront(vgui::VPANEL panel);
 
-	virtual void SolveTraverse(vgui::VPANEL panel, bool forceApplySchemeSettings);
+	virtual void SolveTraverse(vgui::VPANEL panel, bool forceApplySchemeSettings, bool forcePerformApplyScheme = false);
 	virtual void PaintTraverse(vgui::VPANEL panel);
 
 	virtual void EnableMouseCapture(vgui::VPANEL panel, bool state);
@@ -407,7 +407,7 @@ private:
 
 	void InternalThinkTraverse(VPANEL panel);
 	void InternalSolveTraverse(VPANEL panel);
-	void InternalSchemeSettingsTraverse(VPANEL panel, bool forceApplySchemeSettings);
+	void InternalSchemeSettingsTraverse(VPANEL panel, bool forceApplySchemeSettings, bool forcePerformApplyScheme = false);
 
 	// handles mouse movement
 	void SetCursorPos(int x, int y);

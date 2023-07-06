@@ -206,7 +206,7 @@ public:
 	virtual bool IsWithin(int x, int y);
 	virtual bool HasFocus();
 	virtual void GetWorkspaceBounds(int &x, int &y, int &wide, int &tall);
-	virtual void SolveTraverse(VPANEL panel, bool forceApplySchemeSettings);
+	virtual void SolveTraverse(VPANEL panel, bool forceApplySchemeSettings, bool forcePerformApplyScheme = false);
 	virtual void PaintTraverse(VPANEL panel);
 
 
@@ -2844,7 +2844,7 @@ void CWin32Surface::InternalSchemeSettingsTraverse(VPANEL panel, bool forceApply
 //-----------------------------------------------------------------------------
 // Purpose: Walks through the panel tree calling Solve() on them all, in order
 //-----------------------------------------------------------------------------
-void CWin32Surface::SolveTraverse(VPANEL panel, bool forceApplySchemeSettings)
+void CWin32Surface::SolveTraverse(VPANEL panel, bool forceApplySchemeSettings, bool forcePerformApplyScheme)
 {
 	// ignore visibility for this
 	InternalSchemeSettingsTraverse(panel,forceApplySchemeSettings); // do apply scheme settings, child to parent

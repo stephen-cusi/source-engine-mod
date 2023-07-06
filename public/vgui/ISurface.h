@@ -282,7 +282,7 @@ public:
 	virtual void MovePopupToFront(VPANEL panel) = 0;
 	virtual void MovePopupToBack(VPANEL panel) = 0;
 
-	virtual void SolveTraverse(VPANEL panel, bool forceApplySchemeSettings = false) = 0;
+	virtual void SolveTraverse(VPANEL panel, bool forceApplySchemeSettings = false, bool forcePerformApplyScheme = false) = 0;
 	virtual void PaintTraverse(VPANEL panel) = 0;
 
 	virtual void EnableMouseCapture(VPANEL panel, bool state) = 0;

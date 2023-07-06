@@ -284,8 +284,9 @@ void CBorderSideChangePanel::OnCommand(const char *cmd)
 	if (strcmp(cmd, "add") == 0)
 	{
 		AddLine(Color(0, 0, 0, 255), 0, 0);
-		InvalidateLayout();
-		GetParent()->InvalidateLayout();
+		InvalidateLayout(true);
+		GetParent()->InvalidateLayout(true);
+		GetParent()->GetParent()->InvalidateLayout(true);
 	}
 	else if(strcmp(cmd,"remove") == 0)
 	{
@@ -293,8 +294,9 @@ void CBorderSideChangePanel::OnCommand(const char *cmd)
 		{
 			m_vpBorders.Tail()->DeletePanel();
 			m_vpBorders.RemoveMultipleFromTail(1);
-			InvalidateLayout();
-			GetParent()->InvalidateLayout();
+			InvalidateLayout(true);
+			GetParent()->InvalidateLayout(true);
+			GetParent()->GetParent()->InvalidateLayout(true);
 		}
 	}
 	else
@@ -392,19 +394,102 @@ bool CheckColor(const char* colorName, IScheme* pScheme)
 CSchemeEditor::CSchemeEditor( vgui::Panel *pParent )
 :	vgui::Frame( pParent, "SchemeEditor" )
 {
-	SetBounds(200, 200, 500, 400);
+	SetBounds(200, 200, 700, 400);
 	m_pTabs = new PropertySheet(this, "SchemeEditorTabs", true);
 	m_pTabs->AddPage(new PanelListPanel(this, "SchemeEditorFonts"), "Fonts");
 	m_pTabs->AddPage(new PanelListPanel(this, "SchemeEditorColors"), "Colors");
 	m_pTabs->AddPage(new PanelListPanel(this, "SchemeEditorBorders"), "Borders");
+	reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(2))->SetFirstColumnWidth(0);
 	m_pPreviewButton = new Button(this, "SchemeEditorPreviewButton", "Button");
 	m_pPreviewCheckButton = new CheckButton(this, "SchemeEditorPreviewCheckButton", "");
 	m_pPreviewRadioButton = new RadioButton(this, "SchemeEditorPreviewRadioButton", "");
 	m_pPreviewLabel = new Label(this, "SchemeEditorPreviewLabel", "Preview");
 	m_pApplyButton = new Button(this, "SchemeEditorApplyButton", "Apply", this, "apply");
-	
-
+	m_pFileList = new TreeView(this, "ThemeSelector");
+	RepopulateFileList();
 }
+
+void CSchemeEditor::RepopulateFileList()
+{
+	m_pFileList->RemoveAll();
+	KeyValues* kv = new KeyValues("root", "Text", "themes");
+	kv->SetString("PathWithoutName", "themes/");
+	kv->SetBool("Folder", true);
+	int rootindex = m_pFileList->AddItem(kv, -1);
+	m_pFileList->SetFgColor(Color(255, 255, 255, 255));
+	m_pFileList->SetItemFgColor(rootindex, Color(127, 127, 127, 255));
+	m_pFileList->AddActionSignalTarget(this);
+	kv->deleteThis();
+	PopulateFileList("themes/", rootindex);
+}
+
+void CSchemeEditor::PopulateFileList(const char* startpath, int rootindex)
+{
+	FileFindHandle_t findHandle;
+	char searchpath[MAX_PATH];
+	strcpy(searchpath, startpath);
+	strcat(searchpath, "*");
+	const char* pszFileName = g_pFullFileSystem->FindFirst(searchpath, &findHandle);
+	while (pszFileName)
+	{
+		if (pszFileName[0] == '.')
+		{
+			pszFileName = g_pFullFileSystem->FindNext(findHandle);
+			continue;
+		}
+		int len = strlen(pszFileName);
+		if (g_pFullFileSystem->FindIsDirectory(findHandle))
+		{
+			char pNextPath[MAX_PATH];
+			strcpy(pNextPath, startpath);
+			strcat(pNextPath, pszFileName);
+			strcat(pNextPath, "/");
+			KeyValues* kv = new KeyValues("folder", "Text", pszFileName);
+			kv->SetBool("Folder", true);
+			kv->SetString("PathWithoutName", startpath);
+			int folderindex = m_pFileList->AddItem(kv, rootindex);
+			m_pFileList->SetItemFgColor(folderindex, Color(224, 255, 255, 255));
+			kv->deleteThis();
+			PopulateFileList(pNextPath, folderindex);
+		}
+		else if (len >= 4 && pszFileName[len - 4] == '.' && pszFileName[len - 3] == 't' && pszFileName[len - 2] == 'h' && pszFileName[len - 1] == 'm')
+		{
+			KeyValues* kv = new KeyValues("file", "Text", pszFileName);
+			char pFilePath[MAX_PATH];
+			strcpy(pFilePath, startpath);
+			strcat(pFilePath, pszFileName);
+			kv->SetString("Path", pFilePath);
+			kv->SetBool("Folder", false);
+			kv->SetString("PathWithoutName", startpath);
+			m_pFileList->SetItemFgColor(m_pFileList->AddItem(kv, rootindex), Color(255, 255, 255, 255));
+			kv->deleteThis();
+		}
+		pszFileName = g_pFullFileSystem->FindNext(findHandle);
+	}
+}
+void CSchemeEditor::OnFileSelected(int itemindex)
+{
+	KeyValues* kv = m_pFileList->GetItemData(itemindex);
+	if (kv->GetBool("Folder"))
+	{
+		return;
+	}
+	IScheme* sch = scheme()->GetIScheme(GetScheme());
+	if (m_sCurrentFile[0])
+	{
+		KeyValues* data = sch->GetData();
+		data->RemoveSubKey(data->FindKey("BaseSettings"));
+		data->AddSubKey(sch->GetBaseSettings()->MakeCopy());
+		data->RemoveSubKey(data->FindKey("Borders"));
+		data->AddSubKey(sch->GetBorders()->MakeCopy());
+		scheme()->SaveTheme(m_sCurrentFile);
+	}
+	
+	const char* filename = kv->GetString("Path");
+	scheme()->SetTheme(filename);
+	strcpy(m_sCurrentFile, filename);
+}
+
 
 void CSchemeEditor::ApplySchemeSettings(IScheme* sch)
 {
@@ -512,12 +597,13 @@ void CSchemeEditor::PerformLayout()
 	BaseClass::PerformLayout();
 	int wide, tall;
 	GetSize(wide, tall);
-	m_pTabs->SetBounds(wide / 2, 32 + 24, wide / 2 - 16, tall - 32 - 24 - 16);
+	m_pTabs->SetBounds(wide / 3 + 8, 32 + 24, wide / 3 - 16, tall - 32 - 24 - 16);
 	m_pPreviewButton->SetBounds(32, 64, 64, 24);
 	m_pPreviewCheckButton->SetPos(32, 64+32);
 	m_pPreviewRadioButton->SetPos(32, 64+64);
 	m_pPreviewLabel->SetPos(32, 32);
-	m_pApplyButton->SetBounds(wide / 2, 32, 64, 24);
+	m_pApplyButton->SetBounds(wide / 3 + 8, 32, 64, 24);
+	m_pFileList->SetBounds(2 * wide / 3 + 8, 32, wide / 3 - 16, tall - 32 - 16);
 }
 
 void ApplyBorderSide(KeyValues* borderside, CBorderSideChangePanel* sidepanel)
@@ -555,7 +641,7 @@ void CSchemeEditor::OnCommand(const char* cmd)
 			reinterpret_cast<CColorChangePanel*>(colorlistpanel->GetItemPanel(i))->GetColorString(color);
 			colorData->SetString(name, color);
 		}
-		colorData->SaveToFile(g_pFullFileSystem, "savedThemeBaseSettings.txt");
+		//colorData->SaveToFile(g_pFullFileSystem, "savedThemeBaseSettings.txt");
 		PanelListPanel *borderlistpanel = reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(2));
 		KeyValues* borderData = sch->GetBorders();
 		KeyValues* border;
@@ -577,10 +663,15 @@ void CSchemeEditor::OnCommand(const char* cmd)
 			borderside = border->FindKey("Bottom", true);
 			ApplyBorderSide(borderside, borderpanel->m_pBottomBorder);
 		}
-		borderData->SaveToFile(g_pFullFileSystem, "savedThemeBorders.txt");
-		sch->ReloadBorders();
+		char theme[MAX_PATH];
+		scheme()->GetTheme(theme);
+		scheme()->SaveTheme(theme);
+		scheme()->SetTheme(theme); //this will also reload
+
+		//borderData->SaveToFile(g_pFullFileSystem, "savedThemeBorders.txt");
+		//sch->ReloadBorders();
 		//vgui::ipanel()->PerformApplySchemeSettings(vgui::surface()->GetEmbeddedPanel());
-		surface()->SolveTraverse(vgui::surface()->GetEmbeddedPanel(), true);
+		surface()->SolveTraverse(vgui::surface()->GetEmbeddedPanel(), true, true);
 		//vgui::ipanel()->PerformApplySchemeSettings(vgui::surface()->GetEmbeddedPanel());
 	}
 	else 

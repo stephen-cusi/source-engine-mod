@@ -584,7 +584,7 @@ ImageFormat FindNearestSupportedBackBufferFormat( UINT displayAdapter,
 		if (IsFrameBufferFormatValid( displayAdapter, deviceType, d3dDisplayFormat, D3DFMT_X1R5G5B5, bIsWindowed ))
 			return IMAGE_FORMAT_BGRX5551;
 
-		return IMAGE_FORMAT_UNKNOWN;
+		return IMAGE_FORMAT_BGRX8888;
 
 	case IMAGE_FORMAT_RGB888:
 	case IMAGE_FORMAT_BGR888:
