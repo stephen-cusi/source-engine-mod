@@ -3104,7 +3104,7 @@ void CMatSystemSurface::InternalSchemeSettingsTraverse(VPANEL panel, bool forceA
 		VPanel *child = children[ i ];
 		if ( forceApplySchemeSettings || child->IsVisible() )
 		{	
-			InternalSchemeSettingsTraverse((VPANEL)child, forceApplySchemeSettings);
+			InternalSchemeSettingsTraverse((VPANEL)child, forceApplySchemeSettings, forcePerformApplyScheme);
 		}
 	}
 	// and then the parent

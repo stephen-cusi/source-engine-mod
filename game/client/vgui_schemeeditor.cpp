@@ -404,8 +404,11 @@ CSchemeEditor::CSchemeEditor( vgui::Panel *pParent )
 	m_pPreviewCheckButton = new CheckButton(this, "SchemeEditorPreviewCheckButton", "");
 	m_pPreviewRadioButton = new RadioButton(this, "SchemeEditorPreviewRadioButton", "");
 	m_pPreviewLabel = new Label(this, "SchemeEditorPreviewLabel", "Preview");
+	m_pSaveButton = new Button(this, "SchemeEditorSaveButton", "Save", this, "save");
+	m_pSaveAsButton = new Button(this, "SchemeEditorSaveAsButton", "Save As", this, "saveas");
 	m_pApplyButton = new Button(this, "SchemeEditorApplyButton", "Apply", this, "apply");
 	m_pFileList = new TreeView(this, "ThemeSelector");
+	m_pDialog = NULL;
 	RepopulateFileList();
 }
 
@@ -487,17 +490,26 @@ void CSchemeEditor::OnFileSelected(int itemindex)
 	
 	const char* filename = kv->GetString("Path");
 	scheme()->SetTheme(filename);
+	scheme()->SetTheme(filename);
+
+	sch->ReloadBorders();
+	surface()->SolveTraverse(vgui::surface()->GetEmbeddedPanel(), true, true);
+
 	strcpy(m_sCurrentFile, filename);
+	ReloadTabs();
 }
 
-
-void CSchemeEditor::ApplySchemeSettings(IScheme* sch)
+void CSchemeEditor::ReloadTabs()
 {
-	BaseClass::ApplySchemeSettings(sch);
-	if (reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(1))->GetItemCount() > 0) 
+	if (reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(1))->GetItemCount() > 0)
 	{
-		return;
+		reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(1))->DeleteAllItems();
 	}
+	if (reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(2))->GetItemCount() > 0)
+	{
+		reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(2))->DeleteAllItems();
+	}
+	IScheme* sch = scheme()->GetIScheme(GetScheme());
 	KeyValues* colorData = sch->GetBaseSettings();
 	for (KeyValues* pKey = colorData->GetFirstValue(); pKey; pKey = pKey->GetNextValue())
 	{
@@ -592,6 +604,12 @@ void CSchemeEditor::ApplySchemeSettings(IScheme* sch)
 	}
 }
 
+
+void CSchemeEditor::ApplySchemeSettings(IScheme* sch)
+{
+	BaseClass::ApplySchemeSettings(sch);
+}
+
 void CSchemeEditor::PerformLayout()
 {
 	BaseClass::PerformLayout();
@@ -602,7 +620,9 @@ void CSchemeEditor::PerformLayout()
 	m_pPreviewCheckButton->SetPos(32, 64+32);
 	m_pPreviewRadioButton->SetPos(32, 64+64);
 	m_pPreviewLabel->SetPos(32, 32);
-	m_pApplyButton->SetBounds(wide / 3 + 8, 32, 64, 24);
+	m_pSaveButton->SetBounds(wide / 3 + 8, 32, 64, 24);
+	m_pSaveAsButton->SetBounds(wide / 3 + 8 + 64 + 8, 32, 64, 24);
+	m_pApplyButton->SetBounds(wide / 3 + 8 + 64 + 8 + 64 + 8, 32, 64, 24);
 	m_pFileList->SetBounds(2 * wide / 3 + 8, 32, wide / 3 - 16, tall - 32 - 16);
 }
 
@@ -663,22 +683,81 @@ void CSchemeEditor::OnCommand(const char* cmd)
 			borderside = border->FindKey("Bottom", true);
 			ApplyBorderSide(borderside, borderpanel->m_pBottomBorder);
 		}
+		KeyValues* data = sch->GetData();
+		data->RemoveSubKey(data->FindKey("BaseSettings"));
+		data->AddSubKey(colorData->MakeCopy());
+		data->RemoveSubKey(data->FindKey("Borders"));
+		data->AddSubKey(borderData->MakeCopy());
 		char theme[MAX_PATH];
 		scheme()->GetTheme(theme);
 		scheme()->SaveTheme(theme);
 		scheme()->SetTheme(theme); //this will also reload
+		scheme()->SetTheme(theme); //THIS IS REALLY FUCKING BAD BUT IT WORKS???????????????
 
 		//borderData->SaveToFile(g_pFullFileSystem, "savedThemeBorders.txt");
-		//sch->ReloadBorders();
+		sch->ReloadBorders();
 		//vgui::ipanel()->PerformApplySchemeSettings(vgui::surface()->GetEmbeddedPanel());
 		surface()->SolveTraverse(vgui::surface()->GetEmbeddedPanel(), true, true);
 		//vgui::ipanel()->PerformApplySchemeSettings(vgui::surface()->GetEmbeddedPanel());
+	}
+	else if (strcmp(cmd, "saveas") == 0 && !m_pDialog)
+	{
+		m_pDialog = new InputDialog(this, "Theme editor", "Input the new theme name (without extension)");
+		KeyValues* kv = new KeyValues("dialog");
+		kv->SetBool("IsSaveAs", true);
+		m_pDialog->DoModal(kv);
+		m_pDialog->AddActionSignalTarget(this);
+	}
+	else if (strcmp(cmd, "save") == 0 && !m_pDialog)
+	{
+		if (m_sCurrentFile[0])
+		{
+			IScheme* sch = scheme()->GetIScheme(GetScheme());
+			KeyValues* data = sch->GetData();
+			data->RemoveSubKey(data->FindKey("BaseSettings"));
+			data->AddSubKey(sch->GetBaseSettings()->MakeCopy());
+			data->RemoveSubKey(data->FindKey("Borders"));
+			data->AddSubKey(sch->GetBorders()->MakeCopy());
+			scheme()->SaveTheme(m_sCurrentFile);
+		}
 	}
 	else 
 	{
 		BaseClass::OnCommand(cmd);
 	}
 }
+
+void CSchemeEditor::OnClosePrompt()
+{
+	m_pDialog->MarkForDeletion();
+	m_pDialog = NULL;
+}
+void CSchemeEditor::OnInputPrompt(KeyValues* kv)
+{
+	const char* filename = kv->GetString("text");
+	int selecteditem = m_pFileList->GetFirstSelectedItem();
+	const char* foldername = m_pFileList->GetItemData(selecteditem != -1 ? selecteditem : m_pFileList->GetRootItemIndex())->GetString("PathWithoutName");
+	char fullname[MAX_PATH];
+	strcpy(fullname, foldername);
+	strcat(fullname, filename);
+	strcat(fullname, ".thm");
+	if (kv->GetFirstTrueSubKey()->GetBool("IsSaveAs"))
+	{//Pressed save as
+		IScheme* sch = scheme()->GetIScheme(GetScheme());
+		KeyValues* data = sch->GetData();
+		data->RemoveSubKey(data->FindKey("BaseSettings"));
+		data->AddSubKey(sch->GetBaseSettings()->MakeCopy());
+		data->RemoveSubKey(data->FindKey("Borders"));
+		data->AddSubKey(sch->GetBorders()->MakeCopy());
+		scheme()->SaveTheme(fullname);
+	}
+	RepopulateFileList();
+	m_pDialog->MarkForDeletion();
+	m_pDialog = NULL;
+}
+
+
+
 
 //----------------------------------------------------------------------------------------
 

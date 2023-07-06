@@ -705,6 +705,7 @@ void CScheme::SetFontRange( const char *fontname, int nMin, int nMax )
 //-----------------------------------------------------------------------------
 void CScheme::LoadFonts()
 {
+	m_FontAliases.RemoveAll();
 	bool bValid = false;
 	char language[64];
 	memset( language, 0, sizeof( language ) );
@@ -1064,6 +1065,7 @@ void CScheme::ReloadBorders()
 //-----------------------------------------------------------------------------
 void CScheme::LoadBorders()
 {
+	m_BorderList.RemoveAll();
 	m_pkvBorders = m_pData->FindKey("Borders", true);
 	{for ( KeyValues *kv = m_pkvBorders->GetFirstSubKey(); kv != NULL; kv = kv->GetNextKey())
 	{

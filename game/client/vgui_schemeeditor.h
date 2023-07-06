@@ -32,13 +32,13 @@ private:
 	virtual void	PopulateFileList(const char* startpath, int rootindex);
 	virtual void	RepopulateFileList();
 	virtual void	PerformLayout();
+	virtual void	ReloadTabs();
 
 	MESSAGE_FUNC_INT(OnFileSelected, "TreeViewItemSelected", itemIndex);
-	//MESSAGE_FUNC_PARAMS(OnInputPrompt, "InputCompleted", kv);
-	//MESSAGE_FUNC(OnClosePrompt, "InputCanceled");
+	MESSAGE_FUNC_PARAMS(OnInputPrompt, "InputCompleted", kv);
+	MESSAGE_FUNC(OnClosePrompt, "InputCanceled");
 
 
-	vgui::Button* m_pNewButton;
 	vgui::Button* m_pSaveButton;
 	vgui::Button* m_pSaveAsButton;
 	vgui::Button* m_pApplyButton;

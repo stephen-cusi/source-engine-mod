@@ -251,6 +251,12 @@ void PanelListPanel::DeleteAllItems()
 			m_DataItems[i].panel->MarkForDeletion();
 			m_DataItems[i].panel = NULL;
 		}
+		if (m_DataItems[i].labelPanel )
+		{
+			m_DataItems[i].labelPanel->MarkForDeletion();
+			m_DataItems[i].labelPanel = NULL;
+		}
+
 	}
 
 	m_DataItems.RemoveAll();
