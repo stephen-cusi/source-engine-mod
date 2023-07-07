@@ -802,6 +802,9 @@ void CFuncTank::Spawn( void )
 			if ( pProp )
 			{
 				pProp->m_bUseHitboxesForRenderBox = true;
+#ifdef HL2MP
+				pProp->m_bClientSideAnimation = false;
+#endif
 			}
 		}
 	}
@@ -923,6 +926,9 @@ void CFuncTank::Activate( void )
 			if ( pProp )
 			{
 				pProp->m_bUseHitboxesForRenderBox = true;
+#ifdef HL2MP
+				pProp->m_bClientSideAnimation = false;
+#endif
 			}
 		}
 	}
@@ -2217,6 +2223,9 @@ void CFuncTank::DoMuzzleFlash( void )
 			CEffectData data;
 			data.m_nAttachmentIndex = m_nBarrelAttachment;
 			data.m_nEntIndex = pAnim->entindex();
+#ifdef HL2MP
+			pAnim->GetAttachment( m_nBarrelAttachment, data.m_vOrigin );
+#endif
 			
 			// FIXME: Create a custom entry here!
 			DispatchEffect( "ChopperMuzzleFlash", data );
@@ -2228,7 +2237,10 @@ void CFuncTank::DoMuzzleFlash( void )
 			data.m_nAttachmentIndex = m_nBarrelAttachment;
 			data.m_flScale = 1.0f;
 			data.m_fFlags = MUZZLEFLASH_COMBINE;
-
+#ifdef HL2MP
+			pAnim->GetAttachment( m_nBarrelAttachment, data.m_vOrigin );
+#endif
+			
 			DispatchEffect( "MuzzleFlash", data );
 		}
 	}
@@ -2495,6 +2507,10 @@ LINK_ENTITY_TO_CLASS( func_tank, CFuncTankGun );
 //-----------------------------------------------------------------------------
 void CFuncTankGun::Fire( int bulletCount, const Vector &barrelEnd, const Vector &forward, CBaseEntity *pAttacker, bool bIgnoreSpread )
 {
+#ifdef HL2MP
+	IPredictionSystem::SuppressHostEvents( NULL );
+#endif
+	
 	int i;
 
 	FireBulletsInfo_t info;
@@ -3021,6 +3037,9 @@ void CFuncTankAirboatGun::DoMuzzleFlash( void )
 		data.m_nEntIndex = m_hAirboatGunModel->entindex();
 		data.m_nAttachmentIndex = m_nGunBarrelAttachment;
 		data.m_flScale = 1.0f;
+#ifdef HL2MP
+		m_hAirboatGunModel->GetAttachment( m_nGunBarrelAttachment, data.m_vOrigin );
+#endif
 		DispatchEffect( "AirboatMuzzleFlash", data );
 	}
 }
