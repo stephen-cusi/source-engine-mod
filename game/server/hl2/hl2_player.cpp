@@ -605,6 +605,7 @@ void CHL2_Player::PreThink(void)
 
 	// This is an experiment of mine- autojumping! 
 	// only affects you if sv_autojump is nonzero.
+	/*
 	if( (GetFlags() & FL_ONGROUND) && sv_autojump.GetFloat() != 0 )
 	{
 		VPROF( "CHL2_Player::PreThink-Autojump" );
@@ -644,7 +645,8 @@ void CHL2_Player::PreThink(void)
 				}
 			}
 		}
-	}
+		
+	}*/
 
 	VPROF_SCOPE_BEGIN( "CHL2_Player::PreThink-Speed" );
 	HandleSpeedChanges();

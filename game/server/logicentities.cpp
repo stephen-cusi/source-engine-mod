@@ -218,6 +218,7 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 void CTimerEntity::Spawn( void )
 {
+	SetThink(&CTimerEntity::FireTimer);
 	if (!m_iUseRandomTime && (m_flRefireTime < LOGIC_TIMER_MIN_INTERVAL))
 	{
 		m_flRefireTime = LOGIC_TIMER_MIN_INTERVAL;
@@ -255,7 +256,7 @@ void CTimerEntity::ResetTimer( void )
 	{
 		m_flRefireTime = random->RandomFloat( m_flLowerRandomBound, m_flUpperRandomBound );
 	}
-
+	
 	SetNextThink( gpGlobals->curtime + m_flRefireTime );
 }
 
