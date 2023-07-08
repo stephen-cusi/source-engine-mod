@@ -3375,7 +3375,10 @@ void CNavMesh::CreateNavAreasFromNodes( void )
 void CNavMesh::AddWalkableSeeds( void )
 {
 	CBaseEntity *spawn = gEntList.FindEntityByClassname( NULL, GetPlayerSpawnName() );
-
+	if (!spawn)
+	{
+		spawn = gEntList.FindEntityByClassname(NULL, "info_player_start");
+	}
 	if (spawn )
 	{
 		// snap it to the sampling grid

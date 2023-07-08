@@ -698,11 +698,13 @@ void CBasePlayerAnimState::ComputePoseParam_MoveYaw( CStudioHdr *pStudioHdr )
 				else
 					pLayer->m_nSequence = m_iCurrent8WayIdleSequence;
 			}
-			
-			pLayer->m_flPlaybackRate = 1;
-			pLayer->m_flCycle += m_pOuter->GetSequenceCycleRate( pStudioHdr, pLayer->m_nSequence ) * gpGlobals->frametime;
-			pLayer->m_flCycle = fmod( pLayer->m_flCycle, 1 );
-			pLayer->m_nOrder = MAIN_IDLE_SEQUENCE_LAYER;
+			if (pLayer->m_nSequence != -1)
+			{
+				pLayer->m_flPlaybackRate = 1;
+				pLayer->m_flCycle += m_pOuter->GetSequenceCycleRate(pStudioHdr, pLayer->m_nSequence) * gpGlobals->frametime;
+				pLayer->m_flCycle = fmod(pLayer->m_flCycle, 1);
+				pLayer->m_nOrder = MAIN_IDLE_SEQUENCE_LAYER;
+			}
 #endif
 		}
 	}

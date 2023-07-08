@@ -105,40 +105,43 @@ void CHudFlashlight::SetFlashlightState( bool flashlightOn )
 void CHudFlashlight::Paint()
 {
 #ifdef HL2_EPISODIC
-	C_BaseHLPlayer *pPlayer = (C_BaseHLPlayer *)C_BasePlayer::GetLocalPlayer();
-	if ( !pPlayer )
+	C_BaseHLPlayer* pPlayer = (C_BaseHLPlayer*)C_BasePlayer::GetLocalPlayer();
+	if (!pPlayer)
 		return;
 
 	// Only paint if we're using the new flashlight code
-	if ( pPlayer->m_HL2Local.m_flFlashBattery < 0.0f )
+	if (pPlayer->m_HL2Local.m_flFlashBattery < 0.0f)
 	{
-		SetPaintBackgroundEnabled( false );
+		SetPaintBackgroundEnabled(false);
 		return;
 	}
 
-	bool bIsOn = pPlayer->IsEffectActive( EF_DIMLIGHT );
-	SetFlashlightState( bIsOn );
+	bool bIsOn = pPlayer->IsEffectActive(EF_DIMLIGHT);
+	SetFlashlightState(bIsOn);
 
 	// get bar chunks
 	int chunkCount = m_flBarWidth / (m_flBarChunkWidth + m_flBarChunkGap);
-	int enabledChunks = (int)((float)chunkCount * (pPlayer->m_HL2Local.m_flFlashBattery * 1.0f/100.0f) + 0.5f );
+	int enabledChunks = (int)((float)chunkCount * (pPlayer->m_HL2Local.m_flFlashBattery * 1.0f / 100.0f) + 0.5f);
 
 	Color clrFlashlight;
-	clrFlashlight = ( enabledChunks < ( chunkCount / 4 ) ) ? gHUD.m_clrCaution : gHUD.m_clrNormal;
-	clrFlashlight[3] = ( bIsOn ) ? 255: 32;
+	clrFlashlight = (enabledChunks < (chunkCount / 4)) ? gHUD.m_clrCaution : gHUD.m_clrNormal;
+	clrFlashlight[3] = (bIsOn) ? 255 : 32;
 
 	// Pick the right character given our current state
-	wchar_t pState = ( bIsOn ) ? WCHAR_FLASHLIGHT_ON : WCHAR_FLASHLIGHT_OFF;
+	wchar_t pState = (bIsOn) ? WCHAR_FLASHLIGHT_ON : WCHAR_FLASHLIGHT_OFF;
 
-	surface()->DrawSetTextFont( m_hFont );
-	surface()->DrawSetTextColor( clrFlashlight );
-	surface()->DrawSetTextPos( m_IconX, m_IconY );
-	surface()->DrawUnicodeChar( pState );
+	surface()->DrawSetTextFont(m_hFont);
+	surface()->DrawSetTextColor(clrFlashlight);
+	surface()->DrawSetTextPos(m_IconX, m_IconY);
+	surface()->DrawUnicodeChar(pState);
 
 	// Don't draw the progress bar if we're fully charged
-	if ( bIsOn == false && chunkCount == enabledChunks )
+	if (bIsOn == false && chunkCount == enabledChunks)
+	{
+		SetPaintBackgroundEnabled(false);
 		return;
-
+	}
+	SetPaintBackgroundEnabled(true);
 	// draw the suit power bar
 	surface()->DrawSetColor( clrFlashlight );
 	int xpos = m_flBarInsetX, ypos = m_flBarInsetY;

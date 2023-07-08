@@ -665,6 +665,7 @@ int CPortalGameMovement::CheckStuck( void )
 
 void CPortalGameMovement::SetGroundEntity( trace_t *pm )
 {
+	/*
 #ifndef CLIENT_DLL
 	if ( !player->GetGroundEntity() && pm && pm->m_pEnt )
 	{
@@ -676,6 +677,7 @@ void CPortalGameMovement::SetGroundEntity( trace_t *pm )
 		}
 	}
 #endif
+*/
 
 	BaseClass::SetGroundEntity( pm );
 }
