@@ -53,6 +53,9 @@ END_PREDICTION_DATA()
 
 static ConVar cl_playermodel( "cl_playermodel", "none", FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_SERVER_CAN_EXECUTE, "Default Player Model");
 static ConVar cl_defaultweapon( "cl_defaultweapon", "weapon_physcannon", FCVAR_USERINFO | FCVAR_ARCHIVE, "Default Spawn Weapon");
+//thx developer.valvesoftware.com
+static ConVar cl_fp_ragdoll ( "cl_fp_ragdoll", "1", FCVAR_ARCHIVE, "Allow first person ragdolls" );
+static ConVar cl_fp_ragdoll_auto ( "cl_fp_ragdoll_auto", "1", FCVAR_ARCHIVE, "Autoswitch to ragdoll thirdperson-view when necessary" );
 
 void SpawnBlood (Vector vecSpot, const Vector &vecDir, int bloodColor, float flDamage);
 
@@ -739,44 +742,62 @@ C_BaseAnimating *C_HL2MP_Player::BecomeRagdollOnClient()
 
 void C_HL2MP_Player::CalcView( Vector &eyeOrigin, QAngle &eyeAngles, float &zNear, float &zFar, float &fov )
 {
+	// if we're dead, we want to deal with first or third person ragdolls.
 	if ( m_lifeState != LIFE_ALIVE && !IsObserver() )
 	{
-		Vector origin = EyePosition();			
+		// First person ragdolls
+		if ( cl_fp_ragdoll.GetBool() && m_hRagdoll.Get() )
+		{
+			// pointer to the ragdoll
+			C_HL2MPRagdoll *pRagdoll = (C_HL2MPRagdoll*)m_hRagdoll.Get();
 
+			// gets its origin and angles
+			pRagdoll->GetAttachment( pRagdoll->LookupAttachment( "eyes" ), eyeOrigin, eyeAngles );
+			Vector vForward; 
+			AngleVectors( eyeAngles, &vForward );
+
+			if ( cl_fp_ragdoll_auto.GetBool() )
+			{
+				// DM: Don't use first person view when we are very close to something
+				trace_t tr;
+				UTIL_TraceLine( eyeOrigin, eyeOrigin + ( vForward * 10000 ), MASK_ALL, pRagdoll, COLLISION_GROUP_NONE, &tr );
+
+				if ( (!(tr.fraction < 1) || (tr.endpos.DistTo(eyeOrigin) > 25)) )
+					return;
+			}
+			else
+				return;
+		}
+
+		eyeOrigin = vec3_origin;
+		eyeAngles = vec3_angle;
+
+		Vector origin = EyePosition();
 		IRagdoll *pRagdoll = GetRepresentativeRagdoll();
-
 		if ( pRagdoll )
 		{
 			origin = pRagdoll->GetRagdollOrigin();
-			origin.z += VEC_DEAD_VIEWHEIGHT_SCALED( this ).z; // look over ragdoll, not through
+			origin.z += VEC_DEAD_VIEWHEIGHT.z; // look over ragdoll, not through
 		}
-
 		BaseClass::CalcView( eyeOrigin, eyeAngles, zNear, zFar, fov );
-
 		eyeOrigin = origin;
-		
 		Vector vForward; 
 		AngleVectors( eyeAngles, &vForward );
-
 		VectorNormalize( vForward );
 		VectorMA( origin, -CHASE_CAM_DISTANCE_MAX, vForward, eyeOrigin );
-
 		Vector WALL_MIN( -WALL_OFFSET, -WALL_OFFSET, -WALL_OFFSET );
 		Vector WALL_MAX( WALL_OFFSET, WALL_OFFSET, WALL_OFFSET );
-
 		trace_t trace; // clip against world
-		C_BaseEntity::PushEnableAbsRecomputations( false ); // HACK don't recompute positions while doing RayTrace
+		// HACK don't recompute positions while doing RayTrace
+		C_BaseEntity::EnableAbsRecomputations( false );
 		UTIL_TraceHull( origin, eyeOrigin, WALL_MIN, WALL_MAX, MASK_SOLID_BRUSHONLY, this, COLLISION_GROUP_NONE, &trace );
-		C_BaseEntity::PopEnableAbsRecomputations();
-
+		C_BaseEntity::EnableAbsRecomputations( true );
 		if (trace.fraction < 1.0)
 		{
 			eyeOrigin = trace.endpos;
 		}
-		
 		return;
 	}
-
 	BaseClass::CalcView( eyeOrigin, eyeAngles, zNear, zFar, fov );
 }
 
