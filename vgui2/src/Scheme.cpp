@@ -411,6 +411,17 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 	data = theme->FindKey(name);
 	if (!data)
 	{	
+		HScheme hScheme = FindLoadedScheme(fileName);
+		if (hScheme != 0)
+		{
+			CScheme* pScheme = static_cast<CScheme*>(GetIScheme(hScheme));
+			if (IsPC() && pScheme)
+			{
+				pScheme->ReloadFontGlyphs();
+			}
+			theme->deleteThis();
+			return hScheme;
+		}
 		data = new KeyValues("Scheme");
 
 		data->UsesEscapeSequences(true);
@@ -421,6 +432,7 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 			result = data->LoadFromFile(g_pFullFileSystem, fileName);
 			if (!result) {
 				data->deleteThis();
+				theme->deleteThis();
 				return 0;
 			}
 		}
