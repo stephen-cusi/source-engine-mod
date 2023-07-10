@@ -31,7 +31,7 @@
 
 #include "mathlib/ssemath.h"
 #include "mathlib/ssequaternion.h"
-
+#include "../public/worldsize.h"
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -3511,8 +3511,8 @@ int PolyFromPlane( Vector *outVerts, const Vector& normal, float dist, float fHa
 	Vector	org, vright, vup;
 
 	// find the major axis
-
-	max = -16384; //MAX_COORD_INTEGER
+	
+	max = MIN_COORD_INTEGER;
 	x = -1;
 	for (i=0 ; i<3; i++)
 	{

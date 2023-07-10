@@ -3474,13 +3474,29 @@ void CWeaponPhysCannon::StartEffects( void )
 		m_Parameters[i].GetAlpha().SetAbsolute( 64.0f );
 		
 		// Different for different views
-		if ( ShouldDrawUsingViewModel() )
+		if (ShouldDrawUsingViewModel())
 		{
-			m_Parameters[i].SetAttachment( LookupAttachment( attachNamesGlow[i-PHYSCANNON_GLOW1] ) );
+			int attachment = LookupAttachment(attachNamesGlow[i - PHYSCANNON_GLOW1]);
+			if (attachment)
+			{
+				m_Parameters[i].SetAttachment(attachment);
+			}
+			else
+			{
+				m_Parameters[i].SetVisible(false);
+			}
 		}
 		else
 		{
-			m_Parameters[i].SetAttachment( LookupAttachment( attachNamesGlowThirdPerson[i-PHYSCANNON_GLOW1] ) );
+			int attachment = LookupAttachment(attachNamesGlowThirdPerson[i - PHYSCANNON_GLOW1]);
+			if (attachment)
+			{
+				m_Parameters[i].SetAttachment(attachment);
+			}
+			else
+			{
+				m_Parameters[i].SetVisible(false);
+			}
 		}
 		m_Parameters[i].SetColor( Vector( 255, 128, 0 ) );
 		
@@ -3550,28 +3566,34 @@ void CWeaponPhysCannon::DoEffectReady( void )
 
 #ifdef CLIENT_DLL
 
-	// Special POV case
-	if ( ShouldDrawUsingViewModel() )
+	if (m_Parameters[PHYSCANNON_CORE].GetAttachment() != -1)
 	{
-		//Turn on the center sprite
-		m_Parameters[PHYSCANNON_CORE].GetScale().InitFromCurrent( 14.0f, 0.2f );
-		m_Parameters[PHYSCANNON_CORE].GetAlpha().InitFromCurrent( 128.0f, 0.2f );
-		m_Parameters[PHYSCANNON_CORE].SetVisible();
-	}
-	else
-	{
-		//Turn off the center sprite
-		m_Parameters[PHYSCANNON_CORE].GetScale().InitFromCurrent( 8.0f, 0.2f );
-		m_Parameters[PHYSCANNON_CORE].GetAlpha().InitFromCurrent( 0.0f, 0.2f );
-		m_Parameters[PHYSCANNON_CORE].SetVisible();
+		// Special POV case
+		if (ShouldDrawUsingViewModel())
+		{
+			//Turn on the center sprite
+			m_Parameters[PHYSCANNON_CORE].GetScale().InitFromCurrent(14.0f, 0.2f);
+			m_Parameters[PHYSCANNON_CORE].GetAlpha().InitFromCurrent(128.0f, 0.2f);
+			m_Parameters[PHYSCANNON_CORE].SetVisible();
+		}
+		else
+		{
+			//Turn off the center sprite
+			m_Parameters[PHYSCANNON_CORE].GetScale().InitFromCurrent(8.0f, 0.2f);
+			m_Parameters[PHYSCANNON_CORE].GetAlpha().InitFromCurrent(0.0f, 0.2f);
+			m_Parameters[PHYSCANNON_CORE].SetVisible();
+		}
 	}
 
 	// Turn on the glow sprites
 	for ( int i = PHYSCANNON_GLOW1; i < (PHYSCANNON_GLOW1+NUM_GLOW_SPRITES); i++ )
 	{
-		m_Parameters[i].GetScale().InitFromCurrent( 0.4f * SPRITE_SCALE, 0.2f );
-		m_Parameters[i].GetAlpha().InitFromCurrent( 64.0f, 0.2f );
-		m_Parameters[i].SetVisible();
+		if (m_Parameters[i].GetAttachment() != -1)
+		{
+			m_Parameters[i].GetScale().InitFromCurrent(0.4f * SPRITE_SCALE, 0.2f);
+			m_Parameters[i].GetAlpha().InitFromCurrent(64.0f, 0.2f);
+			m_Parameters[i].SetVisible();
+		}
 	}
 
 	// Turn on the glow sprites
@@ -3606,16 +3628,23 @@ void CWeaponPhysCannon::DoEffectHolding( void )
 		// Turn on the glow sprites
 		for ( int i = PHYSCANNON_GLOW1; i < (PHYSCANNON_GLOW1+NUM_GLOW_SPRITES); i++ )
 		{
-			m_Parameters[i].GetScale().InitFromCurrent( 0.5f * SPRITE_SCALE, 0.2f );
-			m_Parameters[i].GetAlpha().InitFromCurrent( 64.0f, 0.2f );
-			m_Parameters[i].SetVisible();
+			if (m_Parameters[i].GetAttachment() != -1)
+			{
+				m_Parameters[i].GetScale().InitFromCurrent(0.5f * SPRITE_SCALE, 0.2f);
+				m_Parameters[i].GetAlpha().InitFromCurrent(64.0f, 0.2f);
+				m_Parameters[i].SetVisible();
+			}
+			else 
+			{
+				m_Parameters[i].SetVisible(false);
+			}
 		}
 
 		// Turn on the glow sprites
 		// NOTE: The last glow is left off for first-person
 		for ( int i = PHYSCANNON_ENDCAP1; i < (PHYSCANNON_ENDCAP1+NUM_ENDCAP_SPRITES-1); i++ )
 		{
-			m_Parameters[i].SetVisible();
+			m_Parameters[i].SetVisible(m_Parameters[i].GetAttachment() != -1);
 		}
 
 		// Create our beams
@@ -3623,12 +3652,25 @@ void CWeaponPhysCannon::DoEffectHolding( void )
 		CBaseEntity *pBeamEnt = pOwner->GetViewModel();
 
 		// Setup the beams
-		m_Beams[0].Init( LookupAttachment( "fork1t" ), 1, pBeamEnt, true );
-		m_Beams[1].Init( LookupAttachment( "fork2t" ), 1, pBeamEnt, true );
 
-		// Set them visible
-		m_Beams[0].SetVisible();
-		m_Beams[1].SetVisible();
+		if (LookupAttachment("fork1t"))
+		{
+			m_Beams[0].Init(LookupAttachment("fork1t"), 1, pBeamEnt, true);
+			m_Beams[0].SetVisible();
+		}
+		else 
+		{
+			m_Beams[0].SetVisible(false);
+		}
+		if (LookupAttachment("fork2t"))
+		{
+			m_Beams[1].Init(LookupAttachment("fork2t"), 1, pBeamEnt, true);
+			m_Beams[1].SetVisible();
+		}
+		else
+		{
+			m_Beams[1].SetVisible(false);
+		}
 	}
 	else
 	{
@@ -3655,14 +3697,21 @@ void CWeaponPhysCannon::DoEffectHolding( void )
 		}
 
 		// Setup the beams
-		m_Beams[0].Init( LookupAttachment( "fork1t" ), 1, this, false );
-		m_Beams[1].Init( LookupAttachment( "fork2t" ), 1, this, false );
-		m_Beams[2].Init( LookupAttachment( "fork3t" ), 1, this, false );
-
-		// Set them visible
-		m_Beams[0].SetVisible();
-		m_Beams[1].SetVisible();
-		m_Beams[2].SetVisible();
+		if (LookupAttachment("fork1t"))
+		{
+			m_Beams[0].Init(LookupAttachment("fork1t"), 1, this, false);
+			m_Beams[0].SetVisible();
+		}
+		if (LookupAttachment("fork2t"))
+		{
+			m_Beams[1].Init(LookupAttachment("fork2t"), 1, this, false);
+			m_Beams[1].SetVisible();
+		}
+		if (LookupAttachment("fork3t"))
+		{
+			m_Beams[2].Init(LookupAttachment("fork3t"), 1, this, false);
+			m_Beams[2].SetVisible();
+		}
 	}
 
 #endif

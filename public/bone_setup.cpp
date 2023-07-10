@@ -5871,7 +5871,7 @@ int Studio_FindAttachment( const CStudioHdr *pStudioHdr, const char *pAttachment
 			}
 		}
 	}
-
+	DevMsg(4, "%s has no attachment %s!\n", pStudioHdr->pszName(), pAttachmentName);
 	return -1;
 }
 
