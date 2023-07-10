@@ -410,8 +410,20 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 	V_strrepchr(name, '/', '|')
 	data = theme->FindKey(name);
 	if (!data)
-	{
-		return 0;
+	{	
+		data = new KeyValues("Scheme");
+
+		data->UsesEscapeSequences(true);
+
+		bool result = data->LoadFromFile(g_pFullFileSystem, fileName, "GAME");
+		if (!result)
+		{
+			result = data->LoadFromFile(g_pFullFileSystem, fileName);
+			if (!result) {
+				data->deleteThis();
+				return 0;
+			}
+		}
 	}
 	
 	if ( IsX360() )
