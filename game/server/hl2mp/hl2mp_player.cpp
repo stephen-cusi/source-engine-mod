@@ -1584,8 +1584,8 @@ CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )
 
 	if ( !pSpot  )
 	{
-		pSpot = gEntList.FindEntityByClassname( pSpot, "info_player_start" );
-
+		//pSpot = gEntList.FindEntityByClassname( pSpot, "info_player_start" );
+		pSpot = gEntList.FindEntityByClassnameRandom(pSpot, "info_player_start");
 		if ( pSpot )
 			goto ReturnSpot;
 
