@@ -220,6 +220,7 @@ private:
 	{
 		Bitmap *pBitmap;
 	};
+	KeyValues* m_pkTheme;
 	static bool BitmapHandleSearchFunc(const CachedBitmapHandle_t &, const CachedBitmapHandle_t &);
 	CUtlRBTree<CachedBitmapHandle_t, int> m_Bitmaps;
 };
@@ -268,7 +269,6 @@ CSchemeManager::CSchemeManager()
 	CScheme *nullScheme = new CScheme();
 	m_Schemes.AddToTail(nullScheme);
 	m_Bitmaps.SetLessFunc(&BitmapHandleSearchFunc);
-	strcpy(s_pszTheme, "themes/defaulttheme.thm");
 }
 
 //-----------------------------------------------------------------------------
@@ -329,6 +329,13 @@ IScheme *CSchemeManager::GetIScheme( HScheme scheme )
 void CSchemeManager::SetTheme(const char* theme)
 {
 	strncpy(s_pszTheme, theme, MAX_PATH);
+	if (m_pkTheme)
+	{
+		m_pkTheme->deleteThis();
+	}
+	m_pkTheme = new KeyValues("Theme");
+	m_pkTheme->UsesEscapeSequences(true);
+	m_pkTheme->LoadFromFile(g_pFullFileSystem, s_pszTheme);
 	ReloadSchemes();
 }
 
@@ -398,17 +405,11 @@ CScheme::CScheme()
 // first scheme loaded becomes the default scheme, and all subsequent loaded scheme are derivitives of that
 HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *fileName, const char *tag)
 {
-	KeyValues* theme;
-	theme = new KeyValues("Theme");
-
-	theme->UsesEscapeSequences(true);
-	// Look first in game directory
-	theme->LoadFromFile(g_pFullFileSystem, s_pszTheme);
 	KeyValues* data;
 	char name[MAX_PATH];
 	strncpy(name, fileName, MAX_PATH);
 	V_strrepchr(name, '/', '|')
-	data = theme->FindKey(name);
+	data = m_pkTheme->FindKey(name);
 	if (!data)
 	{	
 		HScheme hScheme = FindLoadedScheme(fileName);
@@ -419,7 +420,6 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 			{
 				pScheme->ReloadFontGlyphs();
 			}
-			theme->deleteThis();
 			return hScheme;
 		}
 		data = new KeyValues("Scheme");
@@ -432,7 +432,6 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 			result = data->LoadFromFile(g_pFullFileSystem, fileName);
 			if (!result) {
 				data->deleteThis();
-				theme->deleteThis();
 				return 0;
 			}
 		}

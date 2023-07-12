@@ -605,9 +605,12 @@ void CEngineVGui::Init()
 
 	// Need to be able to play sounds through vgui
 	g_pMatSystemSurface->InstallPlaySoundFunc( VGui_PlaySound );
+	COM_TimestampedLog("Load Theme File");
+	vgui::scheme()->SetTheme("themes/defaulttheme.thm");
+
 
 	COM_TimestampedLog( "Load Scheme File" );
-
+	
 	// load scheme
 	const char *pStr = "Resource/SourceScheme.res";
 	if ( !vgui::scheme()->LoadSchemeFromFile( pStr, "Tracker" ))
