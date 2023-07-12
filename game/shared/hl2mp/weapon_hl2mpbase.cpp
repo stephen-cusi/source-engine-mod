@@ -852,6 +852,11 @@ void CWeaponHL2MPBase::ItemPostFrame()
 		if (pPlayer->m_iShotsFired > 0 && !IsFullAuto())
 			return;
 
+		if ((pPlayer->m_afButtonPressed & IN_ATTACK) || (pPlayer->m_afButtonReleased & IN_ATTACK2))
+		{
+			m_flNextPrimaryAttack = gpGlobals->curtime;
+		}
+
 #if !defined(CLIENT_DLL)
 		// allow the bots to react to the gunfire
 		if (GetCSWpnData().m_WeaponType != WEAPONTYPE_GRENADE)
