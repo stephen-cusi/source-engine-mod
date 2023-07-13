@@ -13,7 +13,7 @@
 #include "worldsize.h"
 
 // OVERALL Coordinate Size Limits used in COMMON.C MSG_*BitCoord() Routines (and someday the HUD)
-#define	COORD_INTEGER_BITS			14
+#define	COORD_INTEGER_BITS			17
 #define COORD_FRACTIONAL_BITS		5
 #define COORD_DENOMINATOR			(1<<(COORD_FRACTIONAL_BITS))
 #define COORD_RESOLUTION			(1.0/(COORD_DENOMINATOR))
