@@ -11,12 +11,12 @@
 #ifdef POSIX
 #include <stdlib.h>
 #endif
-#include "tier0/memdbgon.h"
+#include "../../public/tier0/memdbgon.h"
 #include "../../public/tier1/lzmaDecoder.h"
 #include "C/7zTypes.h"
 #include "C/LzmaEnc.h"
 #include "C/LzmaDec.h"
-#include "tier0/dbg.h"
+#include "../../public/tier0/dbg.h"
 
 // Allocator to pass to LZMA functions
 static void *SzAlloc(void *p, size_t size) { return malloc(size); }

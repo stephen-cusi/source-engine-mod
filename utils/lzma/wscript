@@ -1,0 +1,76 @@
+#! /usr/bin/env python
+# encoding: utf-8
+
+from waflib import Utils
+import os
+import vpc_parser
+
+top = '.'
+PROJECT_NAME = 'lzma'
+
+def options(opt):
+	return
+
+games = {
+	'hl2': ['lzma.vpc'],
+	'hl2mp': ['lzma.vpc'],
+	'hl1': ['lzma.vpc'],
+	'episodic': ['lzma.vpc'],
+	'portal': ['lzma.vpc'],
+	'hl1mp': ['lzma.vpc'],
+	'cstrike': ['lzma.vpc'],
+	'dod': ['lzma.vpc']
+}
+
+def configure(conf):
+	#game = conf.options.GAMES
+	#conf.env.GAMES = game
+    #
+	#conf.env.append_unique('DEFINES', ['DISABLE_STEAM=1'])
+    #
+	#if game not in games.keys():
+	#	conf.fatal("Couldn't find game: ", game)
+	return
+
+def build(bld):
+
+	#game = vpc_parser.parse_vpcs( bld.env, games[bld.env.GAMES], '../..' )
+	includes = [
+		'.'
+		'../../public/tier0',
+		'../../tier0',
+		'./C',
+	]
+	libs = [
+	'tier0'
+	]
+	source = []
+	source += ['lzma.cpp',
+    #'C/7zTypes.h',
+    #'C/LzmaEnc.h',
+    'C/LzmaEnc.c',
+    'C/LzmaDec.c',
+    #'C/LzmaDec.h',
+    #'С/LzFind.h',
+    #'С/LzFind.c',
+    #'C/LzHash.h'
+    ]
+	#includes += game["includes"]
+	#defines = game["defines"]
+	defines = ['_NO_EXCEPTIONS', '_LZMA_PROB32', '_7ZIP_ST']
+	#source.remove('../../public/bspfile.h')
+	#source.remove('./notes.txt')
+	#defines.remove('PROTECTED_THINGS_ENABLE')
+
+	bld.shlib(
+		source   = source,
+		target   = PROJECT_NAME,
+		name	 = PROJECT_NAME,
+		features = 'c cxx',
+		includes = includes,
+		defines  = defines,
+		use	  = libs,
+		subsystem = bld.env.MSVC_SUBSYSTEM,
+		idx	  = bld.get_taskgen_count()
+	)
+

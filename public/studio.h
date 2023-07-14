@@ -2368,8 +2368,8 @@ struct studiohdr_t
 
 	// used by tools only that don't cache, but persist mdl's peer data
 	// engine uses virtualModel to back link to cache pointers
-    int                 unused_pVertexBase;
-    int                 unused_pIndexBase;
+	void*                 pVertexBase;
+	void*                 pIndexBase;
 
 	// if STUDIOHDR_FLAGS_CONSTANT_DIRECTIONAL_LIGHT_DOT is set,
 	// this value is used to calculate directional components of lighting 

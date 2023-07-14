@@ -34,7 +34,7 @@ VALID_BUILD_TYPES = ['fastnative', 'fast', 'release', 'debug', 'nooptimize', 'sa
 
 LINKFLAGS = {
 	'common': {
-        'msvc': ['/DEBUG'], # always create PDB, doesn't affect result binaries
+        #'msvc': ['/DEBUG'], # always create PDB, doesn't affect result binaries
 		'clang': ['-fvisibility=hidden'],
 		'gcc':   ['-Wl,--no-undefined'],
 		'owcc':  ['-Wl,option stack=512k', '-fvisibility=hidden']

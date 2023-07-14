@@ -42,6 +42,8 @@ projects={
 		'game/client',
 		'game/server',
         'game/gamepadui',
+        'utils/lzma',
+        'utils/vbsp',
 		'gameui',
 		'inputsystem',
 		'ivp/havana',
