@@ -65,6 +65,14 @@ $Project "Vbsp"
 		$File	"worldvertextransitionfixup.cpp"
 		$File	"writebsp.cpp"
 		$File	"$SRCDIR\public\zip_utils.cpp"
+		$File	"$SRCDIR\fgdlib\gdclass.cpp"
+		$File	"$SRCDIR\fgdlib\gamedata.cpp"
+		$File	"$SRCDIR\fgdlib\gdvar.cpp"
+		$File	"$SRCDIR\fgdlib\inputoutput.cpp"
+		$File	"$SRCDIR\fgdlib\wckeyvalues.cpp"
+		
+
+		
 
 		$Folder	"Common Files"
 		{
@@ -102,6 +110,14 @@ $Project "Vbsp"
 		$File	"vbsp.h"
 		$File	"worldvertextransitionfixup.h"
 		$File	"writebsp.h"
+		$File	"$SRCDIR\public\fgdlib\fgdlib.h"
+		$File	"$SRCDIR\public\fgdlib\gamedata.h"
+		$File	"$SRCDIR\public\fgdlib\gdclass.h"
+		$File	"$SRCDIR\public\fgdlib\gdvar.h"
+		$File	"$SRCDIR\public\fgdlib\helperinfo.h"
+		$File	"$SRCDIR\public\fgdlib\ieditortexture.h"
+		$File	"$SRCDIR\public\fgdlib\inputoutput.h"
+		$File	"$SRCDIR\public\fgdlib\wckeyvalues.h"
 
 		$Folder	"Common header files"
 		{
@@ -179,7 +195,7 @@ $Project "Vbsp"
 		$Lib mathlib
 		$Lib tier2
 		$Lib vtf
-		$Lib "$LIBCOMMON/lzma"
+		$Lib lzma
 	}
 
 	$File	"notes.txt"

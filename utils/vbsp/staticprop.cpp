@@ -183,8 +183,8 @@ bool LoadStudioModel( char const* pModelName, char const* pEntityType, CUtlBuffe
 	}
 
 	// ensure reset
-	pHdr->pVertexBase = NULL;
-	pHdr->pIndexBase  = NULL;
+	pHdr->unused_pVertexBase = NULL;
+	pHdr->unused_pIndexBase  = NULL;
 
 	return true;
 }
@@ -692,10 +692,10 @@ static void FreeCurrentModelVertexes()
 {
 	Assert( g_pActiveStudioHdr );
 
-	if ( g_pActiveStudioHdr->pVertexBase )
+	if ( g_pActiveStudioHdr->unused_pVertexBase )
 	{
-		free( g_pActiveStudioHdr->pVertexBase );
-		g_pActiveStudioHdr->pVertexBase = NULL;
+		free( g_pActiveStudioHdr->unused_pVertexBase );
+		g_pActiveStudioHdr->unused_pVertexBase = NULL;
 	}
 }
 
@@ -708,9 +708,9 @@ const vertexFileHeader_t * mstudiomodel_t::CacheVertexData( void * pModelData )
 	Assert( pModelData == NULL );
 	Assert( g_pActiveStudioHdr );
 
-	if ( g_pActiveStudioHdr->pVertexBase )
+	if ( g_pActiveStudioHdr->unused_pVertexBase )
 	{
-		return (vertexFileHeader_t *)g_pActiveStudioHdr->pVertexBase;
+		return (vertexFileHeader_t *)g_pActiveStudioHdr->unused_pVertexBase;
 	}
 
 	// mandatory callback to make requested data resident
@@ -753,7 +753,7 @@ const vertexFileHeader_t * mstudiomodel_t::CacheVertexData( void * pModelData )
 		Error("Error Vertex File %s checksum %d should be %d\n", fileName, pVvdHdr->checksum, g_pActiveStudioHdr->checksum);
 	}
 
-	g_pActiveStudioHdr->pVertexBase = (void*)pVvdHdr;
+	g_pActiveStudioHdr->unused_pVertexBase = (void*)pVvdHdr;
 	return pVvdHdr;
 }
 

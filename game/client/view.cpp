@@ -132,6 +132,7 @@ ConVar	gl_clear( "gl_clear", "0");
 ConVar	gl_clear_randomcolor( "gl_clear_randomcolor", "0", FCVAR_CHEAT, "Clear the back buffer to random colors every frame. Helps spot open seams in geometry." );
 
 static ConVar r_farz( "r_farz", "-1", FCVAR_CHEAT, "Override the far clipping plane. -1 means to use the value in env_fog_controller." );
+static ConVar r_nearz("r_nearz", "3", FCVAR_CHEAT, "Override the near clipping plane.",true, 0.00001f,false,10.0f);
 static ConVar cl_demoviewoverride( "cl_demoviewoverride", "0", 0, "Override view during demo playback" );
 
 
@@ -608,7 +609,8 @@ static QAngle s_DbgSetupAngles;
 //-----------------------------------------------------------------------------
 float CViewRender::GetZNear()
 {
-	return VIEW_NEARZ;
+	return r_nearz.GetFloat();
+	//return VIEW_NEARZ;
 }
 
 float CViewRender::GetZFar()

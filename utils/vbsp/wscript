@@ -43,7 +43,7 @@ def build(bld):
 		'../../fdglib',
 		'../../public/tier0',
 		'../../public/tier1',
-		'../../public/mathlib',
+		'../../public/mathlib'
 	]
 
 	libs = [
@@ -55,9 +55,12 @@ def build(bld):
 		'tier0',
 		'tier1',
 		'vtf',
+        'lzma',
+        'USER32',
+        'SHELL32',
 		'utils/lzma'
 	]
-	install_path = bld.env.PREFIX
+	install_path = bld.env.LIBDIR
 	source = []
 	source += game["sources"] + ['../../public/tier0/memoverride.cpp']
 	includes += game["includes"]
@@ -65,17 +68,16 @@ def build(bld):
 	source.remove('../../public/bspfile.h')
 	source.remove('./notes.txt')
 	#defines.remove('PROTECTED_THINGS_ENABLE')
-
-	bld.shlib(
+	bld(
 		source   = source,
 		target   = PROJECT_NAME,
 		name	 = PROJECT_NAME,
-		features = 'c cxx',
+		features = 'c cxx cxxprogram',
 		includes = includes,
 		defines  = defines,
 		use	  = libs,
 		install_path = install_path,
-		subsystem = bld.env.MSVC_SUBSYSTEM,
+		subsystem = 'CONSOLE,5.01',
 		idx	  = bld.get_taskgen_count()
 	)
 
