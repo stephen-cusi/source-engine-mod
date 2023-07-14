@@ -16,6 +16,7 @@
 #include "datamap.h"
 #include "mathlib/bumpvects.h"
 #include "mathlib/compressed_light_cube.h"
+#include "const.h"
 
 // little-endian "VBSP"
 #define IDBSPHEADER	(('P'<<24)+('S'<<16)+('B'<<8)+'V')		
@@ -59,7 +60,7 @@
 // 16 bit short limits
 #define	MAX_MAP_MODELS					1024
 #define	MAX_MAP_BRUSHES					8192
-#define	MAX_MAP_ENTITIES				8192
+#define	MAX_MAP_ENTITIES				MAX_EDICTS
 #define	MAX_MAP_TEXINFO					12288
 #define MAX_MAP_TEXDATA					2048
 #define MAX_MAP_DISPINFO				4096
