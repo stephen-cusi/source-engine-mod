@@ -16,6 +16,7 @@
 #include "ispatialpartitioninternal.h"
 #include "bsptreedata.h"
 #include "worldsize.h"
+#include "coordsize.h"
 #include "cmodel.h"
 #include "sys_dll.h"
 #include "collisionutils.h"
@@ -301,7 +302,7 @@ public:
 	bool EnumerateElementsAlongRay_ExtrudedRay( SpatialPartitionListMask_t listMask, 
 		const Ray_t &ray, const Vector &vecInvDelta, const Vector &vecEnd, IPartitionEnumerator *pIterator );
 
-	bool EnumerateRayStartVoxels( SpatialPartitionListMask_t listMask, IPartitionEnumerator *pIterator, CIntersectSweptBox &intersectSweptBox, int voxelBounds[7][2][3] );
+	bool EnumerateRayStartVoxels( SpatialPartitionListMask_t listMask, IPartitionEnumerator *pIterator, CIntersectSweptBox &intersectSweptBox, int voxelBounds[COORD_INTEGER_BITS-10][2][3] );
 
 	// Purpose:
 	void ComputeSweptRayBounds( const Ray_t &ray, const Vector &vecStartMin, const Vector &vecStartMax, Vector *pVecMin, Vector *pVecMax );
@@ -2349,7 +2350,7 @@ void CVoxelTree::ComputeSweptRayBounds( const Ray_t &ray, const Vector &vecStart
 	}
 }
 
-bool CVoxelTree::EnumerateRayStartVoxels( SpatialPartitionListMask_t listMask, IPartitionEnumerator *pIterator, CIntersectSweptBox &intersectSweptBox, int voxelBounds[7][2][3] )
+bool CVoxelTree::EnumerateRayStartVoxels( SpatialPartitionListMask_t listMask, IPartitionEnumerator *pIterator, CIntersectSweptBox &intersectSweptBox, int voxelBounds[COORD_INTEGER_BITS-10][2][3] )
 {
 	// Iterate over all voxels that intersect the box around the starting ray point
 	int nMinX = voxelBounds[0][0][0];
