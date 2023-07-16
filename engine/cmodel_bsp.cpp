@@ -470,10 +470,10 @@ void CollisionBSPData_LoadLeafs_Version_0( CCollisionBSPData *pBSPData, CMapLoad
 void CollisionBSPData_LoadLeafs_Version_1( CCollisionBSPData *pBSPData, CMapLoadHelper &lh )
 {
 	int			i;
-	dleaf_t 	*in;
+	dleaf_version_1_t* in;
 	int			count;
 	
-	in = (dleaf_t *)lh.LumpBase();
+	in = (dleaf_version_1_t *)lh.LumpBase();
 	if (lh.LumpSize() % sizeof(*in))
 	{
 		Sys_Error( "CollisionBSPData_LoadLeafs: funny lump size");
@@ -527,6 +527,68 @@ void CollisionBSPData_LoadLeafs_Version_1( CCollisionBSPData *pBSPData, CMapLoad
 	memset( &pBSPData->map_leafs[pBSPData->emptyleaf], 0, sizeof(pBSPData->map_leafs[pBSPData->emptyleaf]) );
 	pBSPData->numleafs++;
 }
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+void CollisionBSPData_LoadLeafs_Version_2(CCollisionBSPData* pBSPData, CMapLoadHelper& lh)
+{
+	int			i;
+	dleaf_t* in;
+	int			count;
+
+	in = (dleaf_t*)lh.LumpBase();
+	if (lh.LumpSize() % sizeof(*in))
+	{
+		Sys_Error("CollisionBSPData_LoadLeafs: funny lump size");
+	}
+
+	count = lh.LumpSize() / sizeof(*in);
+
+	if (count < 1)
+	{
+		Sys_Error("Map with no leafs");
+	}
+
+	// need to save space for box planes
+	if (count > MAX_MAP_PLANES)
+	{
+		Sys_Error("Map has too many planes");
+	}
+
+	// Need an extra one for the emptyleaf below
+	int nSize = (count + 1) * sizeof(cleaf_t);
+	pBSPData->map_leafs.Attach(count + 1, (cleaf_t*)Hunk_Alloc(nSize));
+
+	pBSPData->numleafs = count;
+	pBSPData->numclusters = 0;
+
+	for (i = 0; i < count; i++, in++)
+	{
+		cleaf_t* out = &pBSPData->map_leafs[i];
+		out->contents = in->contents;
+		out->cluster = in->cluster;
+		out->area = in->area;
+		out->flags = in->flags;
+		out->firstleafbrush = in->firstleafbrush;
+		out->numleafbrushes = in->numleafbrushes;
+
+		out->dispCount = 0;
+
+		if (out->cluster >= pBSPData->numclusters)
+		{
+			pBSPData->numclusters = out->cluster + 1;
+		}
+	}
+
+	if (pBSPData->map_leafs[0].contents != CONTENTS_SOLID)
+	{
+		Sys_Error("Map leaf 0 is not CONTENTS_SOLID");
+	}
+
+	pBSPData->solidleaf = 0;
+	pBSPData->emptyleaf = pBSPData->numleafs;
+	memset(&pBSPData->map_leafs[pBSPData->emptyleaf], 0, sizeof(pBSPData->map_leafs[pBSPData->emptyleaf]));
+	pBSPData->numleafs++;
+}
 
 void CollisionBSPData_LoadLeafs( CCollisionBSPData *pBSPData )
 {
@@ -538,6 +600,9 @@ void CollisionBSPData_LoadLeafs( CCollisionBSPData *pBSPData )
 		break;
 	case 1:
 		CollisionBSPData_LoadLeafs_Version_1( pBSPData, lh );
+		break;
+	case 2:
+		CollisionBSPData_LoadLeafs_Version_2( pBSPData, lh );
 		break;
 	default:
 		Assert( 0 );
@@ -861,14 +926,14 @@ void CollisionBSPData_LoadSubmodels( CCollisionBSPData *pBSPData )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CollisionBSPData_LoadNodes( CCollisionBSPData *pBSPData )
+void CollisionBSPData_LoadNodes_Version_0( CCollisionBSPData *pBSPData)
 {
 	CMapLoadHelper lh( LUMP_NODES );
 
-	dnode_t		*in;
+	dnode_version_0_t		*in;
 	int			i, j, count;
 	
-	in = (dnode_t *)lh.LumpBase();
+	in = (dnode_version_0_t *)lh.LumpBase();
 	if (lh.LumpSize() % sizeof(*in))
 		Sys_Error( "CollisionBSPData_LoadNodes: funny lump size");
 	count = lh.LumpSize() / sizeof(*in);
@@ -894,6 +959,64 @@ void CollisionBSPData_LoadNodes( CCollisionBSPData *pBSPData )
 			out->children[j] = in->children[j];
 		}
 	}
+}
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+void CollisionBSPData_LoadNodes_Version_1(CCollisionBSPData* pBSPData)
+{
+	CMapLoadHelper lh(LUMP_NODES);
+
+	dnode_t* in;
+	int			i, j, count;
+
+	in = (dnode_t*)lh.LumpBase();
+	if (lh.LumpSize() % sizeof(*in))
+		Sys_Error("CollisionBSPData_LoadNodes: funny lump size");
+	count = lh.LumpSize() / sizeof(*in);
+
+	if (count < 1)
+		Sys_Error("Map has no nodes");
+	if (count > MAX_MAP_NODES)
+		Sys_Error("Map has too many nodes");
+
+	// 6 extra for box hull
+	int nSize = (count + 6) * sizeof(cnode_t);
+	pBSPData->map_nodes.Attach(count + 6, (cnode_t*)Hunk_Alloc(nSize));
+
+	pBSPData->numnodes = count;
+	pBSPData->map_rootnode = pBSPData->map_nodes.Base();
+
+	for (i = 0; i < count; i++, in++)
+	{
+		cnode_t* out = &pBSPData->map_nodes[i];
+		out->plane = &pBSPData->map_planes[in->planenum];
+		for (j = 0; j < 2; j++)
+		{
+			out->children[j] = in->children[j];
+		}
+	}
+}
+
+
+void CollisionBSPData_LoadNodes(CCollisionBSPData* pBSPData)
+{
+	CMapLoadHelper lh(LUMP_LEAFS);
+	switch (lh.LumpVersion())
+	{
+	case 0:
+	case 1:
+		CollisionBSPData_LoadNodes_Version_0(pBSPData);
+		break;
+	case 2:
+		CollisionBSPData_LoadNodes_Version_1(pBSPData);
+		break;
+	default:
+		Assert(0);
+		Error("Unknown LUMP_LEAFS version\n");
+		break;
+	}
+
 }
 
 

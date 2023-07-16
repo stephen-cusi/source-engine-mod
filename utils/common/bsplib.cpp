@@ -2074,6 +2074,9 @@ int LoadLeafs( void )
 	case 1:
 		return CopyLump( LUMP_LEAFS, dleafs );
 
+	case 2:
+		return CopyLump( LUMP_LEAFS, dleafs );
+
 	default:
 		Assert( 0 );
 		Error( "Unknown LUMP_LEAFS version\n" );

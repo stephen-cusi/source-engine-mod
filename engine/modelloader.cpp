@@ -2097,16 +2097,16 @@ static void CheckSmallVolumeDifferences( mnode_t *pNode, const Vector &parentSiz
 //			*l - 
 //			*loadname - 
 //-----------------------------------------------------------------------------
-void Mod_LoadNodes( void )
+void Mod_LoadNodes_Version_0( void )
 {
 	Vector mins( 0, 0, 0 ), maxs( 0, 0, 0 );
 	int			i, j, count, p;
-	dnode_t		*in;
+	dnode_version_0_t		*in;
 	mnode_t 	*out;
 
 	CMapLoadHelper lh( LUMP_NODES );
 
-	in = (dnode_t *)lh.LumpBase();
+	in = (dnode_version_0_t *)lh.LumpBase();
 	if (lh.LumpSize() % sizeof(*in))
 		Host_Error ("Mod_LoadNodes: funny lump size in %s",lh.GetMapName());
 	count = lh.LumpSize() / sizeof(*in);
@@ -2166,6 +2166,107 @@ void Mod_LoadNodes( void )
 				CheckSmallVolumeDifferences( pNode->children[1], pNode->m_vecHalfDiagonal );
 			}
 		}
+	}
+}
+
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+// Input  : *loadmodel - 
+//			*l - 
+//			*loadname - 
+//-----------------------------------------------------------------------------
+void Mod_LoadNodes_Version_1( void )
+{
+	Vector mins(0, 0, 0), maxs(0, 0, 0);
+	int			i, j, count, p;
+	dnode_t* in;
+	mnode_t* out;
+	CMapLoadHelper lh(LUMP_NODES);
+
+	in = (dnode_t*)lh.LumpBase();
+	if (lh.LumpSize() % sizeof(*in))
+		Host_Error("Mod_LoadNodes: funny lump size in %s", lh.GetMapName());
+	count = lh.LumpSize() / sizeof(*in);
+	out = (mnode_t*)Hunk_AllocName(count * sizeof(*out), va("%s [%s]", lh.GetLoadName(), "nodes"));
+
+	lh.GetMap()->nodes = out;
+	lh.GetMap()->numnodes = count;
+
+	for (i = 0; i < count; i++, in++, out++)
+	{
+		for (j = 0; j < 3; j++)
+		{
+			mins[j] = in->mins[j];
+			maxs[j] = in->maxs[j];
+		}
+
+		VectorAdd(mins, maxs, out->m_vecCenter);
+		out->m_vecCenter *= 0.5f;
+		VectorSubtract(maxs, out->m_vecCenter, out->m_vecHalfDiagonal);
+
+		p = in->planenum;
+		out->plane = lh.GetMap()->planes + p;
+
+		out->firstsurface = in->firstface;
+		out->numsurfaces = in->numfaces;
+		out->area = in->area;
+		out->contents = -1;	// differentiate from leafs
+
+		for (j = 0; j < 2; j++)
+		{
+			p = in->children[j];
+			if (p >= 0)
+				out->children[j] = lh.GetMap()->nodes + p;
+			else
+				out->children[j] = (mnode_t*)(lh.GetMap()->leafs + (-1 - p));
+		}
+	}
+
+	Mod_SetParent(lh.GetMap()->nodes, NULL);	// sets nodes and leafs
+
+	// Check for small-area parents... no culling below them...
+	mnode_t* pNode = lh.GetMap()->nodes;
+	for (i = 0; i < count; ++i, ++pNode)
+	{
+		if (pNode->contents == -1)
+		{
+			if ((pNode->m_vecHalfDiagonal.x <= 50) && (pNode->m_vecHalfDiagonal.y <= 50) &&
+				(pNode->m_vecHalfDiagonal.z <= 50))
+			{
+				// Mark all children as being too small to bother with...
+				MarkSmallNode(pNode->children[0]);
+				MarkSmallNode(pNode->children[1]);
+			}
+			else
+			{
+				CheckSmallVolumeDifferences(pNode->children[0], pNode->m_vecHalfDiagonal);
+				CheckSmallVolumeDifferences(pNode->children[1], pNode->m_vecHalfDiagonal);
+			}
+		}
+	}
+}
+
+
+
+
+void Mod_LoadNodes(void)
+{
+	CMapLoadHelper lh(LUMP_LEAFS);
+
+	switch (lh.LumpVersion())
+	{
+		case 0:
+		case 1:
+			Mod_LoadNodes_Version_0();
+			break;
+		case 2:
+			Mod_LoadNodes_Version_1();
+			break;
+		default:
+			Assert(0);
+			Error("Unknown LUMP_LEAFS version\n");
+			break;
 	}
 }
 
@@ -2244,11 +2345,11 @@ void Mod_LoadLeafs_Version_0( CMapLoadHelper &lh )
 void Mod_LoadLeafs_Version_1( CMapLoadHelper &lh, CMapLoadHelper &ambientLightingLump, CMapLoadHelper &ambientLightingTable )
 {
 	Vector mins( 0, 0, 0 ), maxs( 0, 0, 0 );
-	dleaf_t 	*in;
+	dleaf_version_1_t 	*in;
 	mleaf_t 	*out;
 	int			i, j, count, p;
 
-	in = (dleaf_t *)lh.LumpBase();
+	in = (dleaf_version_1_t*)lh.LumpBase();
 	if (lh.LumpSize() % sizeof(*in))
 		Host_Error ("Mod_LoadLeafs: funny lump size in %s",lh.GetMapName());
 	count = lh.LumpSize() / sizeof(*in);
@@ -2336,6 +2437,108 @@ void Mod_LoadLeafs_Version_1( CMapLoadHelper &lh, CMapLoadHelper &ambientLightin
 	}	
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: 
+// Input  : *loadmodel - 
+//			*l - 
+//			*loadname - 
+//-----------------------------------------------------------------------------
+void Mod_LoadLeafs_Version_2(CMapLoadHelper& lh, CMapLoadHelper& ambientLightingLump, CMapLoadHelper& ambientLightingTable)
+{
+	Vector mins(0, 0, 0), maxs(0, 0, 0);
+	dleaf_t* in;
+	mleaf_t* out;
+	int			i, j, count, p;
+
+	in = (dleaf_t*)lh.LumpBase();
+	if (lh.LumpSize() % sizeof(*in))
+		Host_Error("Mod_LoadLeafs: funny lump size in %s", lh.GetMapName());
+	count = lh.LumpSize() / sizeof(*in);
+	out = (mleaf_t*)Hunk_AllocName(count * sizeof(*out), va("%s [%s]", lh.GetLoadName(), "leafs"));
+
+	lh.GetMap()->leafs = out;
+	lh.GetMap()->numleafs = count;
+
+	if (ambientLightingLump.LumpVersion() != LUMP_LEAF_AMBIENT_LIGHTING_VERSION || ambientLightingTable.LumpSize() == 0)
+	{
+		// convert from previous version
+		CompressedLightCube* inLightCubes = NULL;
+		if (ambientLightingLump.LumpSize())
+		{
+			inLightCubes = (CompressedLightCube*)ambientLightingLump.LumpBase();
+			Assert(ambientLightingLump.LumpSize() % sizeof(CompressedLightCube) == 0);
+			Assert(ambientLightingLump.LumpSize() / sizeof(CompressedLightCube) == lh.LumpSize() / sizeof(dleaf_t));
+		}
+		lh.GetMap()->m_pLeafAmbient = (mleafambientindex_t*)Hunk_AllocName(count * sizeof(*lh.GetMap()->m_pLeafAmbient), "LeafAmbient");
+		lh.GetMap()->m_pAmbientSamples = (mleafambientlighting_t*)Hunk_AllocName(count * sizeof(*lh.GetMap()->m_pAmbientSamples), "LeafAmbientSamples");
+		mleafambientindex_t* pTable = lh.GetMap()->m_pLeafAmbient;
+		mleafambientlighting_t* pSamples = lh.GetMap()->m_pAmbientSamples;
+		Vector gray(0.5, 0.5, 0.5);
+		ColorRGBExp32 grayColor;
+		VectorToColorRGBExp32(gray, grayColor);
+		for (i = 0; i < count; i++)
+		{
+			pTable[i].ambientSampleCount = 1;
+			pTable[i].firstAmbientSample = i;
+			pSamples[i].x = pSamples[i].y = pSamples[i].z = 128;
+			pSamples[i].pad = 0;
+			if (inLightCubes)
+			{
+				Q_memcpy(&pSamples[i].cube, &inLightCubes[i], sizeof(pSamples[i].cube));
+			}
+			else
+			{
+				for (j = 0; j < 6; j++)
+				{
+					pSamples[i].cube.m_Color[j] = grayColor;
+				}
+			}
+		}
+	}
+	else
+	{
+		Assert(ambientLightingLump.LumpSize() % sizeof(dleafambientlighting_t) == 0);
+		Assert(ambientLightingTable.LumpSize() % sizeof(dleafambientindex_t) == 0);
+		Assert((ambientLightingTable.LumpSize() / sizeof(dleafambientindex_t)) == (unsigned)count);	// should have one of these per leaf
+		lh.GetMap()->m_pLeafAmbient = (mleafambientindex_t*)Hunk_AllocName(ambientLightingTable.LumpSize(), "LeafAmbient");
+		lh.GetMap()->m_pAmbientSamples = (mleafambientlighting_t*)Hunk_AllocName(ambientLightingLump.LumpSize(), "LeafAmbientSamples");
+		Q_memcpy(lh.GetMap()->m_pLeafAmbient, ambientLightingTable.LumpBase(), ambientLightingTable.LumpSize());
+		Q_memcpy(lh.GetMap()->m_pAmbientSamples, ambientLightingLump.LumpBase(), ambientLightingLump.LumpSize());
+	}
+
+
+	for (i = 0; i < count; i++, in++, out++)
+	{
+		for (j = 0; j < 3; j++)
+		{
+			mins[j] = in->mins[j];
+			maxs[j] = in->maxs[j];
+		}
+
+		VectorAdd(mins, maxs, out->m_vecCenter);
+		out->m_vecCenter *= 0.5f;
+		VectorSubtract(maxs, out->m_vecCenter, out->m_vecHalfDiagonal);
+
+		p = in->contents;
+		out->contents = p;
+
+		out->cluster = in->cluster;
+		out->area = in->area;
+		out->flags = in->flags;
+		/*
+				out->firstmarksurface = lh.GetMap()->marksurfaces + in->firstleafface;
+		*/
+		out->firstmarksurface = in->firstleafface;
+		out->nummarksurfaces = in->numleaffaces;
+		out->parent = NULL;
+
+		out->dispCount = 0;
+
+		out->leafWaterDataID = in->leafWaterDataID;
+	}
+}
+
+
 void Mod_LoadLeafs( void )
 {
 	CMapLoadHelper lh( LUMP_LEAFS );
@@ -2357,6 +2560,20 @@ void Mod_LoadLeafs( void )
 			CMapLoadHelper mlh( LUMP_LEAF_AMBIENT_LIGHTING );
 			CMapLoadHelper mlhTable( LUMP_LEAF_AMBIENT_INDEX );
 			Mod_LoadLeafs_Version_1( lh, mlh, mlhTable ); 
+		}
+		break;
+	case 2:
+		if (g_pMaterialSystemHardwareConfig->GetHDREnabled() && CMapLoadHelper::LumpSize(LUMP_LEAF_AMBIENT_LIGHTING_HDR) > 0)
+		{
+			CMapLoadHelper mlh(LUMP_LEAF_AMBIENT_LIGHTING_HDR);
+			CMapLoadHelper mlhTable(LUMP_LEAF_AMBIENT_INDEX_HDR);
+			Mod_LoadLeafs_Version_2(lh, mlh, mlhTable);
+		}
+		else
+		{
+			CMapLoadHelper mlh(LUMP_LEAF_AMBIENT_LIGHTING);
+			CMapLoadHelper mlhTable(LUMP_LEAF_AMBIENT_INDEX);
+			Mod_LoadLeafs_Version_2(lh, mlh, mlhTable);
 		}
 		break;
 	default:
