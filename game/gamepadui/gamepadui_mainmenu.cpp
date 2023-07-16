@@ -19,14 +19,24 @@ ConVar gamepadui_show_ez2_version( "gamepadui_show_ez2_version", "1", FCVAR_NONE
 ConVar gamepadui_show_old_ui_button( "gamepadui_show_old_ui_button", "1", FCVAR_NONE, "Show button explaining how to switch to the old UI (Changes may not take effect until changing level)" );
 #endif
 
-float m_flButtonsRealOffsetX = -100;
+#define BUTTONS_DEVIDE_SIZE 2
+
+float m_flButtonsRealOffsetX = -500;
 float m_flButtonsRealAlpha = 0;
-float m_flButtonsAlpha = 255;
+int m_flButtonsAlpha = 255;
+
+float m_flLogoRealOffsetX = -500;
+int m_flLogoAlpha = 255;
+
+bool ResetFade = false;
+
+int LogoSizeX, LogoSizeY;
+
+int nMaxLogosW = 0, nTotalLogosH = 0;
 
 void CC_ResetFade()
 {
-    m_flButtonsRealOffsetX = -100;
-    m_flButtonsRealAlpha = 0;
+    ResetFade = true;
 }
 
 ConCommand gamepadui_resetfade("gamepadui_resetfade", CC_ResetFade);
@@ -70,6 +80,8 @@ void GamepadUIMainMenu::UpdateGradients()
 
 void GamepadUIMainMenu::LoadMenuButtons()
 {
+
+
     KeyValues* pDataFile = new KeyValues( "MainMenuScript" );
     if ( pDataFile )
     {
@@ -86,6 +98,8 @@ void GamepadUIMainMenu::LoadMenuButtons()
                 pButton->SetName( pData->GetName() );
                 pButton->SetPriority( V_atoi( pData->GetString( "priority", "0" ) ) );
                 pButton->SetVisible( true );
+
+                //pButton->SetSize(pButton->GetWide() / BUTTONS_DEVIDE_SIZE , pButton->GetTall() / BUTTONS_DEVIDE_SIZE);
 
                 const char* pFamily = pData->GetString( "family", "all" );
                 if ( !V_strcmp( pFamily, "ingame" ) || !V_strcmp( pFamily, "all" ) )
@@ -117,13 +131,34 @@ void GamepadUIMainMenu::ApplySchemeSettings( vgui::IScheme* pScheme )
 {
     BaseClass::ApplySchemeSettings( pScheme );
 
+    /*float flX, flY;
+    if (GamepadUI::GetInstance().GetScreenRatio(flX, flY))
+    {
+        m_flButtonsOffsetX *= (flX * flX);
+    }
+
+    int nX, nY;
+    GamepadUI::GetInstance().GetSizingPanelOffset(nX, nY);
+    if (nX > 0)
+    {
+        GamepadUI::GetInstance().GetSizingPanelScale(flX, flY);
+        m_flButtonsOffsetX += ((float)nX) * flX * 0.5f;
+    }*/
+
+
     int nParentW, nParentH;
 	GetParent()->GetSize( nParentW, nParentH );
     SetBounds( 0, 0, nParentW, nParentH );
 
     const char *pImage = pScheme->GetResourceString( "Logo.Image" );
-    if ( pImage && *pImage )
-        m_LogoImage.SetImage( pImage );
+
+    Msg(pImage);
+
+    if (pImage && *pImage)
+    {
+        m_LogoImage.SetImage(pImage);
+        m_LogoImage.GetImageSize(LogoSizeX, LogoSizeY);
+    }
     m_hLogoFont = pScheme->GetFont( "Logo.Font", true );
 
 #ifdef GAMEPADUI_GAME_EZ2
@@ -132,26 +167,37 @@ void GamepadUIMainMenu::ApplySchemeSettings( vgui::IScheme* pScheme )
     ConVarRef ez2_version( "ez2_version" );
     m_strEZ2Version = ez2_version.GetString();
 #endif
+
+    m_flButtonsRealOffsetX = m_flButtonsStartOffsetX;
+    m_flButtonsRealAlpha = 0;
+    m_flLogoRealOffsetX = m_flLogoStartOffsetX;
 }
+
+int LogoID;
 
 void GamepadUIMainMenu::LayoutMainMenu()
 {
     int nY = GetCurrentButtonOffset();
     CUtlVector<GamepadUIButton*>& currentButtons = GetCurrentButtons();
+
+    int ClampedButtonsAlpha;
+
     for ( GamepadUIButton *pButton : currentButtons )
     {
 
-        m_flButtonsRealOffsetX = Lerp<float>(0.01, m_flButtonsRealOffsetX, m_flButtonsOffsetX);
-        m_flButtonsRealAlpha = Lerp<int>(0.01, m_flButtonsRealAlpha, m_flButtonsAlpha);
+        ClampedButtonsAlpha = m_flButtonsRealAlpha;
 
         nY += pButton->GetTall();
         pButton->SetPos( m_flButtonsRealOffsetX, GetTall() - nY );
-        pButton->SetAlpha(m_flButtonsRealAlpha);
+        pButton->SetAlpha(ClampedButtonsAlpha);
 
         //pButton->SetPos( m_flButtonsOffsetX, GetTall() - nY );
 
         nY += m_flButtonSpacing;
     }
+
+    m_flButtonsRealOffsetX = Lerp<float>(m_flButtonsLerp, m_flButtonsRealOffsetX, m_flButtonsOffsetX);
+    m_flButtonsRealAlpha = Lerp<float>(m_flButtonsLerp, m_flButtonsRealAlpha, m_flButtonsAlpha);
 
 #ifdef GAMEPADUI_GAME_EZ2
     if ( m_pSwitchToOldUIButton && m_pSwitchToOldUIButton->IsVisible() )
@@ -186,13 +232,17 @@ void GamepadUIMainMenu::PaintLogo()
     if ( m_LogoImage.IsValid() )
     {
         int nY1 = nLogoY;
-        int nY2 = nY1 + nLogoH[ 0 ];
-        int nX1 = m_flLogoOffsetX;
-        int nX2 = nX1 + ( nLogoH[ 0 ] * 3 );
-        vgui::surface()->DrawSetColor( Color( 255, 255, 255, 255 ) );
-        vgui::surface()->DrawSetTexture( m_LogoImage );
-        vgui::surface()->DrawTexturedRect( nX1, nY1, nX2, nY2 );
-        vgui::surface()->DrawSetTexture( 0 );
+        int nY2 = nY1 + /*nLogoH[0]*/ m_flLogoSizeY;
+        //int nX1 = m_flLogoOffsetX;
+        int nX1 = m_flLogoRealOffsetX;
+        int nX2 = nX1 + /*(nLogoH[0] * 3)*/ m_flLogoSizeX;
+
+        vgui::surface()->DrawSetColor(Color(255, 255, 255, 255));
+        vgui::surface()->DrawSetTexture(m_LogoImage);
+        vgui::surface()->DrawTexturedRect(nX1, nY1, nX2, nY2);
+        vgui::surface()->DrawSetTexture(0);
+
+        m_flLogoRealOffsetX = Lerp<float>(m_flLogoLerp, m_flLogoRealOffsetX, m_flLogoOffsetX);  
     }
     else
     {
@@ -229,6 +279,14 @@ void GamepadUIMainMenu::OnThink()
 void GamepadUIMainMenu::Paint()
 {
     BaseClass::Paint();
+
+    if (ResetFade)
+    {
+        m_flButtonsRealOffsetX = m_flButtonsStartOffsetX;
+        m_flButtonsRealAlpha = 0;
+        m_flLogoRealOffsetX = m_flLogoStartOffsetX;
+        ResetFade = false;
+    }
 
     PaintLogo();
 }

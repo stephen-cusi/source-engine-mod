@@ -17,6 +17,7 @@
 #include <vgui/ISystem.h>
 #include <vstdlib/IKeyValuesSystem.h>
 #include <vgui/IVGui.h>
+#include "../../game/gamepadui/igamepadui.h"
 
 #include "tier1/utlvector.h"
 #include "tier1/utlrbtree.h"
@@ -410,6 +411,9 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 	strncpy(name, fileName, MAX_PATH);
 	V_strrepchr(name, '/', '|')
 	data = m_pkTheme->FindKey(name);
+
+	bool ignore_tag = false;
+
 	if (!data)
 	{	
 		HScheme hScheme = FindLoadedScheme(fileName);
@@ -420,6 +424,7 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 			{
 				pScheme->ReloadFontGlyphs();
 			}
+			//GamepadUI_Log("Found loaded scheme: %s; ID: %u\n", fileName, hScheme);
 			return hScheme;
 		}
 		data = new KeyValues("Scheme");
@@ -427,20 +432,24 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 		data->UsesEscapeSequences(true);
 
 		bool result = data->LoadFromFile(g_pFullFileSystem, fileName, "GAME");
-		if (!result)
+		if (!result) // Not found
 		{
 			result = data->LoadFromFile(g_pFullFileSystem, fileName);
 			if (!result) {
 				data->deleteThis();
 				return 0;
 			}
+			//GamepadUI_Log("Loaded original scheme: %s; ID: %u\n", fileName, hScheme);
 		}
+		//else
+			//GamepadUI_Log("Loaded overriden scheme: %s; ID: %u\n", fileName, hScheme);
+		//ignore_tag = true;
 	}
 	
-	if ( IsX360() )
-	{
-		data->ProcessResolutionKeys( g_pSurface->GetResolutionKey() );
-	}
+	//if ( IsX360() )
+	//{
+	//	data->ProcessResolutionKeys( g_pSurface->GetResolutionKey() );
+	//}
 	if ( IsPC() )
 	{
 		ConVarRef cl_hud_minmode( "cl_hud_minmode", true );
@@ -453,7 +462,7 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 	{
 		data->ProcessResolutionKeys( "_vrmode" );
 	}
-	HScheme hScheme = GetSchemeNoDefault(tag);
+	HScheme hScheme = /*ignore_tag ? 0 : */GetSchemeNoDefault(tag);
 	if (hScheme != 0)
 	{
 		CScheme* pScheme = static_cast<CScheme*>(GetIScheme(hScheme));
@@ -465,7 +474,7 @@ HScheme  CSchemeManager::LoadSchemeFromFileEx( VPANEL sizingPanel, const char *f
 	{
 		CScheme* newScheme = new CScheme();
 		newScheme->LoadFromFile(sizingPanel, fileName, tag, data);
-
+		//GamepadUI_Log("Adding new scheme: %s\n", fileName);
 		return m_Schemes.AddToTail(newScheme);
 	}
 }

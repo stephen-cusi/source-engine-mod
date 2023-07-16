@@ -699,8 +699,8 @@ bool KeyValues::LoadFromFile( IBaseFileSystem *filesystem, const char *resourceN
 	FileHandle_t f = filesystem->Open(resourceName, "rb", pathID);
 	if ( !f )
 	{
-		COM_TimestampedLog("KeyValues::LoadFromFile(%s%s%s): End / FileNotFound", pathID ? pathID : "", pathID && resourceName ? "/" : "", resourceName ? resourceName : "");
-		return false;
+			COM_TimestampedLog("KeyValues::LoadFromFile(%s%s%s): End / FileNotFound", pathID ? pathID : "", pathID && resourceName ? "/" : "", resourceName ? resourceName : "");
+			return false;
 	}
 
 	s_LastFileLoadingFrom = (char*)resourceName;
