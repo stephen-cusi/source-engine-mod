@@ -1540,6 +1540,8 @@ GamepadUIOptionsPanel::GamepadUIOptionsPanel( vgui::Panel* pParent, const char* 
     s_pOptionsPanel = this;
 
     vgui::HScheme Scheme = vgui::scheme()->LoadSchemeFromFileEx( GamepadUI::GetInstance().GetSizingVPanel(), GAMEPADUI_DEFAULT_PANEL_SCHEME, "SchemePanel" );
+    GamepadUI_Log(" %x \n", Scheme);
+
     SetScheme( Scheme );
 
     GetFrameTitle() = GamepadUIString( "#GameUI_Options" );
@@ -2224,7 +2226,6 @@ void GamepadUIOptionsPanel::LoadOptionTabs( const char *pszOptionsFile )
                     buttonCmd,
                     pTabData->GetString( "title" ), "" );
                 button->SetZPos( 50 );
-                //button->SetFooterButton( true );
                 if ( m_nTabCount == gamepadui_last_options_tab.GetInt() )
                     button->ForceDepressed( true );
                 m_Tabs[ m_nTabCount ].pTabButton = button;

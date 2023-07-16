@@ -36,11 +36,12 @@ public:
 
 #define GAMEPADUI_INTERFACE_VERSION "GamepadUI001"
 
-// Lil easter egg :-)
+// Lil easter egg :-) 
+//SourceBox have Portal defines by default, so this "Lil easter egg" activated by default.
 #ifdef GAMEPADUI_GAME_PORTAL
-#define GamepadUI_Log(...) ConColorMsg( Color( 61, 189, 237, 255 ), "[GamepadUI] " __VA_ARGS__ )
+#define GamepadUI_Log(...) ConColorMsg( Color( 61, 189, 237, 255 ), "[GamepadUI] " __VA_ARGS__)
 #else
-#define GamepadUI_Log(...) ConColorMsg( Color( 255, 134, 44, 255 ), "[GamepadUI] " __VA_ARGS__ )
+#define GamepadUI_Log(...) ConColorMsg( Color( 255, 134, 44, 255 ), "[GamepadUI] " __VA_ARGS__)
 #endif
 
 #endif // IGAMEPADUI_H

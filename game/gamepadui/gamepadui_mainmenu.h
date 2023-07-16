@@ -63,6 +63,14 @@ private:
     GamepadUIString m_LogoText[ 2 ];
     GamepadUIImage  m_LogoImage;
 
+    /////// Animation stuff
+    GAMEPADUI_PANEL_PROPERTY(float, m_flButtonsStartOffsetX, "Buttons.OffsetX.Start", "-300", SchemeValueTypes::ProportionalFloat);
+    GAMEPADUI_PANEL_PROPERTY(float, m_flButtonsLerp, "Buttons.Lerp", "0.01", SchemeValueTypes::Float);
+
+    GAMEPADUI_PANEL_PROPERTY(float, m_flLogoStartOffsetX, "Logo.OffsetX.Start", "-300", SchemeValueTypes::ProportionalFloat);
+    GAMEPADUI_PANEL_PROPERTY(float, m_flLogoLerp, "Logo.Lerp", "0.01", SchemeValueTypes::Float);
+    ///////
+
     GAMEPADUI_PANEL_PROPERTY( float, m_flButtonSpacing,  "Buttons.Space",    "0", SchemeValueTypes::ProportionalFloat );
     GAMEPADUI_PANEL_PROPERTY(float, m_flButtonsOffsetX, "Buttons.OffsetX", "0", SchemeValueTypes::ProportionalFloat);
 
@@ -70,8 +78,11 @@ private:
     GAMEPADUI_PANEL_PROPERTY( float, m_flButtonsOffsetYInGame, "Buttons.OffsetY.InGame",    "0", SchemeValueTypes::ProportionalFloat );
 
     GAMEPADUI_PANEL_PROPERTY( float, m_flLogoOffsetX,       "Logo.OffsetX",          "0", SchemeValueTypes::ProportionalFloat );
+
     GAMEPADUI_PANEL_PROPERTY( float, m_flLogoOffsetYMenu,   "Logo.OffsetY.MainMenu", "0", SchemeValueTypes::ProportionalFloat );
     GAMEPADUI_PANEL_PROPERTY( float, m_flLogoOffsetYInGame, "Logo.OffsetY.InGame",   "0", SchemeValueTypes::ProportionalFloat );
+    GAMEPADUI_PANEL_PROPERTY(float, m_flLogoSizeX, "Logo.SizeX", "0", SchemeValueTypes::ProportionalFloat);
+    GAMEPADUI_PANEL_PROPERTY(float, m_flLogoSizeY, "Logo.SizeY", "0", SchemeValueTypes::ProportionalFloat);
 
     GAMEPADUI_PANEL_PROPERTY( Color, m_colLogoColor, "Logo", "255 255 255 255", SchemeValueTypes::Color );
 
