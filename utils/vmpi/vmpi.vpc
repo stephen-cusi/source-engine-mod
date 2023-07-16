@@ -55,8 +55,4 @@ $Project "Vmpi"
 		$File	"vmpi_filesystem.h"
 	}
 
-	$Folder "Link Libraries"
-	{
-		$File	"ZLib.lib"
-	}
 }

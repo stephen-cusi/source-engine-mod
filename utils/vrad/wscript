@@ -1,0 +1,81 @@
+#! /usr/bin/env python
+# encoding: utf-8
+
+from waflib import Utils
+import os
+import vpc_parser
+
+top = '.'
+PROJECT_NAME = 'vrad_dll'
+
+def options(opt):
+	return
+
+games = {
+	'hl2': ['vrad_dll.vpc'],
+	'hl2mp': ['vrad_dll.vpc'],
+	'hl1': ['vrad_dll.vpc'],
+	'episodic': ['vrad_dll.vpc'],
+	'hl1mp': ['vrad_dll.vpc'],
+	'cstrike': ['vrad_dll.vpc'],
+	'dod': ['vrad_dll.vpc']
+}
+
+def configure(conf):
+	game = conf.options.GAMES
+	conf.env.GAMES = game
+
+	conf.env.append_unique('DEFINES', ['DISABLE_STEAM=1'])
+
+	if game not in games.keys():
+		conf.fatal("Couldn't find game: ", game)
+
+def build(bld):
+	game = vpc_parser.parse_vpcs( bld.env, games[bld.env.GAMES], '../..' )
+   
+    
+	includes = [
+		'.',
+		'../common',
+		'../../public',
+		'../../public/tier0',
+		'../../public/tier1',
+		'../../public/mathlib'
+	]
+
+	libs = [
+		'bitmap',
+		'mathlib',
+		'vstdlib',
+		'tier2',
+		'tier0',
+		'tier1',
+		'vtf',
+        'lzma',
+        'USER32',
+        'SHELL32',
+		'utils/lzma',
+        'raytrace'
+	]
+	install_path = bld.env.LIBDIR
+	source = []
+	source += game["sources"] + ['../../public/tier0/memoverride.cpp']
+	includes += game["includes"]
+	defines = game["defines"]
+	source.remove('../../public/bspfile.h')
+	source.remove('./notes.txt')
+	source.remove('../../public/mathlib/anorms.h')
+	#defines.remove('PROTECTED_THINGS_ENABLE')
+	bld.shlib(
+		source   = source,
+		target   = PROJECT_NAME,
+		name	 = PROJECT_NAME,
+		features = 'c cxx',
+		includes = includes,
+		defines  = defines,
+		use	  = libs,
+		install_path = install_path,
+		subsystem = bld.env.MSVC_SUBSYSTEM,
+		idx	  = bld.get_taskgen_count()
+	)
+

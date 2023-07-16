@@ -1,0 +1,66 @@
+#! /usr/bin/env python
+# encoding: utf-8
+
+from waflib import Utils
+import os
+import vpc_parser
+
+top = '.'
+PROJECT_NAME = 'vmpi'
+
+def options(opt):
+	return
+
+games = {
+	'hl2': ['vmpi.vpc'],
+	'hl2mp': ['vmpi.vpc'],
+	'hl1': ['vmpi.vpc'],
+	'episodic': ['vmpi.vpc'],
+	'hl1mp': ['vmpi.vpc'],
+	'cstrike': ['vmpi.vpc'],
+	'dod': ['vmpi.vpc']
+}
+
+def configure(conf):
+	game = conf.options.GAMES
+	conf.env.GAMES = game
+
+	conf.env.append_unique('DEFINES', ['DISABLE_STEAM=1'])
+
+	if game not in games.keys():
+		conf.fatal("Couldn't find game: ", game)
+
+def build(bld):
+	game = vpc_parser.parse_vpcs( bld.env, games[bld.env.GAMES], '../..' )
+   
+    
+	includes = [
+		'.',
+		'../common',
+        '../../public',
+		'../../public/tier0',
+		'../../public/tier1',
+	]
+
+	libs = [
+	
+	]
+	install_path = bld.env.LIBDIR
+	source = []
+	source += game["sources"] + ['../../public/tier0/memoverride.cpp']
+	includes += game["includes"]
+	defines = game["defines"]
+	#defines.remove('PROTECTED_THINGS_ENABLE')
+	bld.stlib(
+		source   = source,
+		target   = PROJECT_NAME,
+		name	 = PROJECT_NAME,
+		features = 'c cxx',
+		includes = includes,
+		defines  = defines,
+		use	  = libs,
+		install_path = install_path,
+		subsystem = bld.env.MSVC_SUBSYSTEM,
+		idx	  = bld.get_taskgen_count()
+	)
+

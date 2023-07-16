@@ -7,11 +7,6 @@
 //=============================================================================//
 
 #include "vrad.h"
-#include "vmpi.h"
-#ifdef MPI
-#include "messbuf.h"
-static MessageBuffer mb;
-#endif
 
 #define	HALFBIT
 
@@ -467,14 +462,9 @@ BuildVisMatrix
 */
 void BuildVisMatrix (void)
 {
-	if ( g_bUseMPI )
-	{
-		RunMPIBuildVisLeafs();
-	}
-	else 
-	{
-		RunThreadsOn (dvis->numclusters, true, BuildVisLeafs);
-	}
+
+	RunThreadsOn (dvis->numclusters, true, BuildVisLeafs);
+
 }
 
 void FreeVisMatrix (void)

@@ -35,9 +35,6 @@
 #include "tier1/utlsymbol.h"
 #include "bitmap/tgawriter.h"
 
-#include "messbuf.h"
-#include "vmpi.h"
-#include "vmpi_distribute_work.h"
 
 
 #define ALIGN_TO_POW2(x,y) (((x)+(y-1))&~(y-1))
@@ -259,12 +256,7 @@ public:
 	void ComputeLighting( int iThread );
 
 private:
-	// VMPI stuff.
-	static void VMPI_ProcessStaticProp_Static( int iThread, uint64 iStaticProp, MessageBuffer *pBuf );
-	static void VMPI_ReceiveStaticPropResults_Static( uint64 iStaticProp, MessageBuffer *pBuf, int iWorker );
-	void VMPI_ProcessStaticProp( int iThread, int iStaticProp, MessageBuffer *pBuf );
-	void VMPI_ReceiveStaticPropResults( int iStaticProp, MessageBuffer *pBuf, int iWorker );
-	
+
 	// local thread version
 	static void ThreadComputeStaticPropLighting( int iThread, void *pUserData );
 	void ComputeLightingForProp( int iThread, int iStaticProp );
@@ -495,8 +487,8 @@ bool LoadStudioModel( char const* pModelName, CUtlBuffer& buf )
 	}
 
 	// ensure reset
-	pHdr->pVertexBase = NULL;
-	pHdr->pIndexBase  = NULL;
+	pHdr->unused_pVertexBase = NULL;
+	pHdr->unused_pIndexBase  = NULL;
 
 	return true;
 }
@@ -1110,9 +1102,9 @@ void CVradStaticPropMgr::Shutdown()
 		studiohdr_t *pStudioHdr = m_StaticPropDict[i].m_pStudioHdr;
 		if ( pStudioHdr )
 		{
-			if ( pStudioHdr->pVertexBase )
+			if ( pStudioHdr->unused_pVertexBase )
 			{
-				free( pStudioHdr->pVertexBase );
+				free( pStudioHdr->unused_pVertexBase );
 			}
 			free( pStudioHdr );
 		}
@@ -1329,7 +1321,6 @@ void CVradStaticPropMgr::ComputeLighting( CStaticProp &prop, int iThread, int pr
 	const int skip_prop = (g_bDisablePropSelfShadowing || (prop.m_Flags & STATIC_PROP_NO_SELF_SHADOWING)) ? prop_index : -1;
 	const int nFlags = ( prop.m_Flags & STATIC_PROP_IGNORE_NORMALS ) ? GATHERLFLAGS_IGNORE_NORMALS : 0;
 
-	VMPI_SetCurrentStage( "ComputeLighting" );
 
 	matrix3x4_t	matPos, matNormal;
 	AngleMatrix(prop.m_Angles, prop.m_Origin, matPos);
@@ -1655,90 +1646,6 @@ void CVradStaticPropMgr::SerializeLighting()
 	}
 }
 
-void CVradStaticPropMgr::VMPI_ProcessStaticProp_Static( int iThread, uint64 iStaticProp, MessageBuffer *pBuf )
-{
-	g_StaticPropMgr.VMPI_ProcessStaticProp( iThread, iStaticProp, pBuf );
-}
-
-void CVradStaticPropMgr::VMPI_ReceiveStaticPropResults_Static( uint64 iStaticProp, MessageBuffer *pBuf, int iWorker )
-{
-	g_StaticPropMgr.VMPI_ReceiveStaticPropResults( iStaticProp, pBuf, iWorker );
-}
-	
-//-----------------------------------------------------------------------------
-// Called on workers to do the computation for a static prop and send
-// it to the master.
-//-----------------------------------------------------------------------------
-void CVradStaticPropMgr::VMPI_ProcessStaticProp( int iThread, int iStaticProp, MessageBuffer *pBuf )
-{
-	// Compute the lighting.
-	CComputeStaticPropLightingResults results;
-	ComputeLighting( m_StaticProps[iStaticProp], iThread, iStaticProp, &results );
-
-	VMPI_SetCurrentStage( "EncodeLightingResults" );
-	
-	// Encode the results.
-	int nLists = results.m_ColorVertsArrays.Count();
-	pBuf->write( &nLists, sizeof( nLists ) );
-	
-	for ( int i=0; i < nLists; i++ )
-	{
-		CUtlVector<colorVertex_t> &curList = *results.m_ColorVertsArrays[i];
-		int count = curList.Count();
-		pBuf->write( &count, sizeof( count ) );
-		pBuf->write( curList.Base(), curList.Count() * sizeof( colorVertex_t ) );
-	}
-
-	nLists = results.m_ColorTexelsArrays.Count();
-	pBuf->write(&nLists, sizeof(nLists));
-
-	for (int i = 0; i < nLists; i++)
-	{
-		CUtlVector<colorTexel_t> &curList = *results.m_ColorTexelsArrays[i];
-		int count = curList.Count();
-		pBuf->write(&count, sizeof(count));
-		pBuf->write(curList.Base(), curList.Count() * sizeof(colorTexel_t));
-	}
-}
-
-//-----------------------------------------------------------------------------
-// Called on the master when a worker finishes processing a static prop.
-//-----------------------------------------------------------------------------
-void CVradStaticPropMgr::VMPI_ReceiveStaticPropResults( int iStaticProp, MessageBuffer *pBuf, int iWorker )
-{
-	// Read in the results.
-	CComputeStaticPropLightingResults results;
-	
-	int nLists;
-	pBuf->read( &nLists, sizeof( nLists ) );
-	
-	for ( int i=0; i < nLists; i++ )
-	{
-		CUtlVector<colorVertex_t> *pList = new CUtlVector<colorVertex_t>;
-		results.m_ColorVertsArrays.AddToTail( pList );
-		
-		int count;
-		pBuf->read( &count, sizeof( count ) );
-		pList->SetSize( count );
-		pBuf->read( pList->Base(), count * sizeof( colorVertex_t ) );
-	}
-
-	pBuf->read(&nLists, sizeof(nLists));
-
-	for (int i = 0; i < nLists; i++)
-	{
-		CUtlVector<colorTexel_t> *pList = new CUtlVector<colorTexel_t>;
-		results.m_ColorTexelsArrays.AddToTail(pList);
-
-		int count;
-		pBuf->read(&count, sizeof(count));
-		pList->SetSize(count);
-		pBuf->read(pList->Base(), count * sizeof(colorTexel_t));
-	}
-	
-	// Apply the results.
-	ApplyLightingToStaticProp( iStaticProp, m_StaticProps[iStaticProp], &results );
-}
 
 
 void CVradStaticPropMgr::ComputeLightingForProp( int iThread, int iStaticProp )
@@ -1780,21 +1687,7 @@ void CVradStaticPropMgr::ComputeLighting( int iThread )
 	// ensure any traces against us are ignored because we have no inherit lighting contribution
 	m_bIgnoreStaticPropTrace = true;
 
-	if ( g_bUseMPI )
-	{
-		// Distribute the work among the workers.
-		VMPI_SetCurrentStage( "CVradStaticPropMgr::ComputeLighting" );
-		
-		DistributeWork( 
-			count, 
-			VMPI_DISTRIBUTEWORK_PACKETID,
-			&CVradStaticPropMgr::VMPI_ProcessStaticProp_Static, 
-			&CVradStaticPropMgr::VMPI_ReceiveStaticPropResults_Static );
-	}
-	else
-	{
-		RunThreadsOn(count, true, ThreadComputeStaticPropLighting);
-	}
+	RunThreadsOn(count, true, ThreadComputeStaticPropLighting);
 
 	// restore default
 	m_bIgnoreStaticPropTrace = false;
@@ -2169,9 +2062,9 @@ const vertexFileHeader_t * mstudiomodel_t::CacheVertexData( void *pModelData )
 	studiohdr_t *pActiveStudioHdr = static_cast<studiohdr_t *>(pModelData);
 	Assert( pActiveStudioHdr );
 
-	if ( pActiveStudioHdr->pVertexBase )
+	if ( pActiveStudioHdr->unused_pVertexBase )
 	{
-		return (vertexFileHeader_t *)pActiveStudioHdr->pVertexBase;
+		return (vertexFileHeader_t *)pActiveStudioHdr->unused_pVertexBase;
 	}
 
 	// mandatory callback to make requested data resident
@@ -2230,7 +2123,7 @@ const vertexFileHeader_t * mstudiomodel_t::CacheVertexData( void *pModelData )
 	free( pVvdHdr );
 	pVvdHdr = pNewVvdHdr;
 
-	pActiveStudioHdr->pVertexBase = (void*)pVvdHdr;
+	pActiveStudioHdr->unused_pVertexBase = (void*)pVvdHdr;
 	return pVvdHdr;
 }
 

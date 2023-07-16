@@ -22,14 +22,7 @@
 #include "bsplib.h"
 #include "consolewnd.h"
 #include "vismat.h"
-#include "vmpi_filesystem.h"
-#include "vmpi_dispatch.h"
 #include "utllinkedlist.h"
-#include "vmpi.h"
-#include "mpi_stats.h"
-#include "vmpi_distribute_work.h"
-#include "vmpi_tools_shared.h"
-
 
 
 

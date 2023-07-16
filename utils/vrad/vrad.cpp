@@ -12,9 +12,7 @@
 #include "physdll.h"
 #include "lightmap.h"
 #include "tier1/strtools.h"
-#include "vmpi.h"
 #include "macro_texture.h"
-#include "vmpi_tools_shared.h"
 #include "leaf_ambient_lighting.h"
 #include "tools_minidump.h"
 #include "loadcmdline.h"
@@ -2019,16 +2017,8 @@ bool RadWorld_Go()
 		BuildFacesVisibleToLights( true );
 	}
 
-	// build initial facelights
-	if (g_bUseMPI) 
-	{
-		// RunThreadsOnIndividual (numfaces, true, BuildFacelights);
-		RunMPIBuildFacelights();
-	}
-	else 
-	{
-		RunThreadsOnIndividual (numfaces, true, BuildFacelights);
-	}
+
+	RunThreadsOnIndividual (numfaces, true, BuildFacelights);
 
 	// Was the process interrupted?
 	if( g_pIncremental && (g_iCurFace != numfaces) )
@@ -2080,12 +2070,8 @@ bool RadWorld_Go()
 		StaticDispMgr()->EndTimer();
 
 		// blend bounced light into direct light and save
-		VMPI_SetCurrentStage( "FinalLightFace" );
-		if ( !g_bUseMPI || g_bMPIMaster )
-			RunThreadsOnIndividual (numfaces, true, FinalLightFace);
+		RunThreadsOnIndividual (numfaces, true, FinalLightFace);
 		
-		// Distribute the lighting data to workers.
-		VMPI_DistributeLightData();
 			
 		Msg("FinalLightFace Done\n"); fflush(stdout);
 	}
@@ -2143,13 +2129,11 @@ void VRAD_LoadBSP( char const *pFilename )
 	// so we prepend qdir here.
 	strcpy( source, ExpandPath( source ) );
 
-	if ( !g_bUseMPI )
-	{
-		// Setup the logfile.
-		char logFile[512];
-		_snprintf( logFile, sizeof(logFile), "%s.log", source );
-		SetSpewFunctionLogFile( logFile );
-	}
+	// Setup the logfile.
+	char logFile[512];
+	_snprintf( logFile, sizeof(logFile), "%s.log", source );
+	SetSpewFunctionLogFile( logFile );
+	
 
 	LoadPhysicsDLL();
 
@@ -2181,22 +2165,13 @@ void VRAD_LoadBSP( char const *pFilename )
 	Q_DefaultExtension(source, ".bsp", sizeof( source ));
 
 	Msg( "Loading %s\n", source );
-	VMPI_SetCurrentStage( "LoadBSPFile" );
 	LoadBSPFile (source);
 
-	// Add this bsp to our search path so embedded resources can be found
-	if ( g_bUseMPI && g_bMPIMaster )
-	{
-		// MPI Master, MPI workers don't need to do anything
-		g_pOriginalPassThruFileSystem->AddSearchPath(source, "GAME", PATH_ADD_TO_HEAD);
-		g_pOriginalPassThruFileSystem->AddSearchPath(source, "MOD", PATH_ADD_TO_HEAD);
-	}
-	else if ( !g_bUseMPI )
-	{
+
+
 		// Non-MPI
-		g_pFullFileSystem->AddSearchPath(source, "GAME", PATH_ADD_TO_HEAD);
-		g_pFullFileSystem->AddSearchPath(source, "MOD", PATH_ADD_TO_HEAD);
-	}
+	g_pFullFileSystem->AddSearchPath(source, "GAME", PATH_ADD_TO_HEAD);
+	g_pFullFileSystem->AddSearchPath(source, "MOD", PATH_ADD_TO_HEAD);
 
 	// now, set whether or not static prop lighting is present
 	if (g_bStaticPropLighting)
@@ -2323,7 +2298,6 @@ void VRAD_Finish()
 	}
 
 	Msg( "Writing %s\n", source );
-	VMPI_SetCurrentStage( "WriteBSPFile" );
 	WriteBSPFile(source);
 
 	if ( g_bDumpPatches )
@@ -2751,18 +2725,6 @@ int ParseCommandLine( int argc, char **argv, bool *onlydetail )
 			}
 		}
 #endif
-		// NOTE: the -mpi checks must come last here because they allow the previous argument 
-		// to be -mpi as well. If it game before something else like -game, then if the previous
-		// argument was -mpi and the current argument was something valid like -game, it would skip it.
-		else if ( !Q_strncasecmp( argv[i], "-mpi", 4 ) || !Q_strncasecmp( argv[i-1], "-mpi", 4 ) )
-		{
-			if ( stricmp( argv[i], "-mpi" ) == 0 )
-				g_bUseMPI = true;
-		
-			// Any other args that start with -mpi are ok too.
-			if ( i == argc - 1 && V_stricmp( argv[i], "-mpi_ListParams" ) != 0 )
-				break;
-		}
 		else if ( mapArg == -1 )
 		{
 			mapArg = i;
@@ -2805,7 +2767,6 @@ void PrintUsage( int argc, char **argv )
 		"  -final          : High quality processing. equivalent to -extrasky 16.\n"
 		"  -extrasky n     : trace N times as many rays for indirect light and sky ambient.\n"
 		"  -low            : Run as an idle-priority process.\n"
-		"  -mpi            : Use VMPI to distribute computations.\n"
 		"  -rederror       : Show errors in red.\n"
 		"\n"
 		"  -vproject <directory> : Override the VPROJECT environment variable.\n"
@@ -2828,7 +2789,6 @@ void PrintUsage( int argc, char **argv )
 		"  -dlightmap      : Force direct lighting into different lightmap than\n"
 		"                    radiosity.\n"
 		"  -stoponexit	   : Wait for a keypress on exit.\n"
-		"  -mpi_pw <pw>    : Use a password to choose a specific set of VMPI workers.\n"
 		"  -nodetaillight  : Don't light detail props.\n"
 		"  -centersamples  : Move sample centers.\n"
 		"  -luxeldensity # : Rescale all luxels by the specified amount (default: 1.0).\n"
@@ -2922,8 +2882,6 @@ int RunVRAD( int argc, char **argv )
 
 	VRAD_Finish();
 
-	VMPI_SetCurrentStage( "master done" );
-
 	DeleteCmdLine( argc, argv );
 	CmdLib_Cleanup();
 	return 0;
@@ -2936,20 +2894,10 @@ int VRAD_Main(int argc, char **argv)
 
 	VRAD_Init();
 
-	// This must come first.
-	VRAD_SetupMPI( argc, argv );
 
-#if !defined( _DEBUG )
-	if ( g_bUseMPI && !g_bMPIMaster )
-	{
-		SetupToolsMinidumpHandler( VMPI_ExceptionFilter );
-	}
-	else
-#endif
-	{
-		LoadCmdLineFromFile( argc, argv, source, "vrad" ); // Don't do this if we're a VMPI worker..
-		SetupDefaultToolsMinidumpHandler();
-	}
+	LoadCmdLineFromFile( argc, argv, source, "vrad" ); // Don't do this if we're a VMPI worker..
+	SetupDefaultToolsMinidumpHandler();
+	
 	
 	return RunVRAD( argc, argv );
 }
