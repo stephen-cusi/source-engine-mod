@@ -490,11 +490,11 @@ struct dnode_t
 	DECLARE_BYTESWAP_DATADESC();
 	int			planenum;
 	int			children[2];	// negative numbers are -(leafs+1), not nodes
-	short		mins[3];		// for frustom culling
-	short		maxs[3];
+	BOUNDSTYPE		mins[3];		// for frustom culling
+	BOUNDSTYPE		maxs[3];
 	unsigned short	firstface;
 	unsigned short	numfaces;	// counting both sides
-	short			area;		// If all leaves below this node are in the same area, then
+	BOUNDSTYPE			area;		// If all leaves below this node are in the same area, then
 								// this is the area index. If not, this is -1.
 };
 
@@ -784,7 +784,7 @@ inline void dface_t::SetDynamicShadowsEnabled( bool bEnabled )
 struct dfaceid_t
 {
 	DECLARE_BYTESWAP_DATADESC();
-	unsigned short	hammerfaceid;
+	unsigned int	hammerfaceid;
 };
 
 
@@ -805,15 +805,15 @@ struct dleaf_version_0_t
 	DECLARE_BYTESWAP_DATADESC();
 	int				contents;			// OR of all brushes (not needed?)
 
-	short			cluster;
+	int			cluster;
 
 	BEGIN_BITFIELD( bf );
 	short			area:9;
 	short			flags:7;			// Per leaf flags.
 	END_BITFIELD();
 
-	short			mins[3];			// for frustum culling
-	short			maxs[3];
+	BOUNDSTYPE			mins[3];			// for frustum culling
+	BOUNDSTYPE			maxs[3];
 
 	unsigned short	firstleafface;
 	unsigned short	numleaffaces;
@@ -832,15 +832,15 @@ struct dleaf_t
 	DECLARE_BYTESWAP_DATADESC();
 	int				contents;			// OR of all brushes (not needed?)
 
-	short			cluster;
+	int			cluster;
 
 	BEGIN_BITFIELD( bf );
 	short			area:9;
 	short			flags:7;			// Per leaf flags.
 	END_BITFIELD();
 
-	short			mins[3];			// for frustum culling
-	short			maxs[3];
+	BOUNDSTYPE			mins[3];			// for frustum culling
+	BOUNDSTYPE			maxs[3];
 
 	unsigned short	firstleafface;
 	unsigned short	numleaffaces;

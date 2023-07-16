@@ -68,20 +68,20 @@ private:
 	struct HandleInfo_t
 	{
 		int					m_UserId;		// Client-defined id
-		unsigned short		m_LeafList;		// What leafs is it in?
+		unsigned int		m_LeafList;		// What leafs is it in?
 	};
 
 	// The leaf contains an index into a list of elements
 	struct Leaf_t
 	{
-		unsigned short	m_FirstElement;
+		unsigned int	m_FirstElement;
 	};
 
 	// The handle knows about the leaves it lies in
 	struct HandleInLeaf_t
 	{
 		int				m_Leaf;				// what leaf is the handle in?
-		unsigned short	m_LeafElementIndex;	// what's the m_LeafElements index of the entry?
+		unsigned int	m_LeafElementIndex;	// what's the m_LeafElements index of the entry?
 	};
 
 	// Stores data associated with each leaf.

@@ -434,6 +434,8 @@ enum Collision_Group_t
 #define MAX_USER_MSG_DATA 255
 #define MAX_ENTITY_MSG_DATA 255
 
+#define BOUNDSTYPE int
+
 #define SOURCE_MT
 #ifdef SOURCE_MT
 class CThreadMutex;

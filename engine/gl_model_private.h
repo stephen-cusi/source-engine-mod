@@ -93,7 +93,7 @@ struct mnode_t
 	int			visframe;		// node needs to be traversed if current
 
 	mnode_t		*parent;
-	short		area;			// If all leaves below this node are in the same area, then
+	int		area;			// If all leaves below this node are in the same area, then
 	// this is the area index. If not, this is -1.
 	short		flags;
 
@@ -104,8 +104,8 @@ struct mnode_t
 	cplane_t	*plane;
 	mnode_t		*children[2];	
 
-	unsigned short		firstsurface;
-	unsigned short		numsurfaces;
+	unsigned int		firstsurface;
+	unsigned int		numsurfaces;
 };
 
 
@@ -119,18 +119,18 @@ public:
 
 	mnode_t		*parent;
 
-	short		area;
+	int		area;
 	short		flags;
 	VectorAligned		m_vecCenter;
 	VectorAligned		m_vecHalfDiagonal;
 
 
 // leaf specific
-	short		cluster;
+	int		cluster;
 	short		leafWaterDataID;
 
-	unsigned short		firstmarksurface;
-	unsigned short		nummarksurfaces;
+	unsigned int		firstmarksurface;
+	unsigned int		nummarksurfaces;
 
 	short		nummarknodesurfaces;
 	short		unused;
