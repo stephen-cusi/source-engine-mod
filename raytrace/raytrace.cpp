@@ -256,7 +256,7 @@ int CacheOptimizedTriangle::ClassifyAgainstAxisSplit(int split_plane, float spli
 }
 
 #define MAILBOX_HASH_SIZE 256
-#define MAX_TREE_DEPTH 21
+#define MAX_TREE_DEPTH 23
 #define MAX_NODE_STACK_LEN (40*MAX_TREE_DEPTH)
 
 struct NodeToVisit {

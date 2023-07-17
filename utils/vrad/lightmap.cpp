@@ -1127,7 +1127,7 @@ static void ParseLightGeneric( entity_t *e, directlight_t *dl )
 	Vector	        dest;
 
 	dl->light.style = (int)FloatForKey (e, "style");
-	
+	//printf("floatforkey: %i\n", dl->light.style);
 	// get intenfsity
 	if( g_bHDR && LightForKey( e, "_lightHDR", dl->light.intensity ) ) 
 	{
@@ -1509,6 +1509,7 @@ static void ParseLightEnvironment( entity_t* e, directlight_t* dl )
 						 FloatForKeyWithDefault( e, "_AmbientScaleHDR", 1.0 ), 
 						 gAmbient->light.intensity );
 		}
+		//printf("===== %f %f %f\n", gAmbient->m_flCapDist, gAmbient->m_flStartFadeDistance, gAmbient->m_flEndFadeDistance);
 		
 		BuildVisForLightEnvironment();
  

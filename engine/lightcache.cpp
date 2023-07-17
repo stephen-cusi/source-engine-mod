@@ -1874,6 +1874,7 @@ static void AddStaticLighting(
 			{
 				int byte = wl->style >> 3;
 				int bit = wl->style & 0x7;
+	
 				if( !( pCache->m_pLightstyles[byte] & ( 1 << bit ) ) )
 				{
 					Vector mins, maxs;

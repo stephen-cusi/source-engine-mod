@@ -1156,6 +1156,7 @@ void Mod_LoadWorldlights( CMapLoadHelper &lh, bool bIsHDR )
 			lh.GetMap()->numworldlights = lh.LumpSize() / sizeof( dworldlight_t );
 			lh.GetMap()->worldlights = (dworldlight_t *)Hunk_AllocName( lh.LumpSize(), va( "%s [%s]", lh.GetLoadName(), "worldlights" ) );
 			memcpy( lh.GetMap()->worldlights, lh.LumpBase(), lh.LumpSize() );
+			
 			break;
 		}
 

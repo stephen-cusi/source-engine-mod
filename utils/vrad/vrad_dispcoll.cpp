@@ -15,7 +15,7 @@
 #define SAMPLE_BBOX_SLOP		5.0f
 #define TRIEDGE_EPSILON			0.001f
 
-float g_flMaxDispSampleSize = 512.0f;
+float g_flMaxDispSampleSize = 4096.0f;
 
 static FileHandle_t pDispFile = FILESYSTEM_INVALID_HANDLE;
 

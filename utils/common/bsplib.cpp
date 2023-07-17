@@ -2271,6 +2271,7 @@ void LoadBSPFile( const char *filename )
 	LoadLeafAmbientLighting( numleafs );
 
 	CopyLump( FIELD_CHARACTER, LUMP_ENTITIES, dentdata );
+
 	numworldlightsLDR = CopyLump( LUMP_WORLDLIGHTS, dworldlightsLDR );
 	numworldlightsHDR = CopyLump( LUMP_WORLDLIGHTS_HDR, dworldlightsHDR );
 	
@@ -2695,8 +2696,8 @@ void WriteBSPFile( const char *filename, char *pUnused )
 	AddLump( LUMP_LIGHTING_HDR, dlightdataHDR, LUMP_LIGHTING_VERSION );
 	AddLump( LUMP_VISIBILITY, dvisdata, visdatasize );
 	AddLump( LUMP_ENTITIES, dentdata );
-	AddLump( LUMP_WORLDLIGHTS, dworldlightsLDR, numworldlightsLDR );
-	AddLump( LUMP_WORLDLIGHTS_HDR, dworldlightsHDR, numworldlightsHDR );
+	AddLump( LUMP_WORLDLIGHTS, dworldlightsLDR, numworldlightsLDR, LUMP_WORLDLIGHTS_VERSION );
+	AddLump( LUMP_WORLDLIGHTS_HDR, dworldlightsHDR, numworldlightsHDR, LUMP_WORLDLIGHTS_VERSION );
 	AddLump( LUMP_LEAFWATERDATA, dleafwaterdata, numleafwaterdata );
 
 	AddOcclusionLump();
