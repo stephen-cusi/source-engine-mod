@@ -75,7 +75,7 @@ public:
 			return;
 		m_firstIndex[index] = m_dispList.Count();
 		m_leafCount[index] = 0;
-		const int MAX_NODES = 1024;
+		const int MAX_NODES = 16384;
 		int nodeList[MAX_NODES];
 		int listRead = 0;
 		int listWrite = 1;
@@ -141,6 +141,7 @@ public:
 			int leafIndex = m_dispList[i];
 			cleaf_t *pLeaf = &m_pBSPData->map_leafs[leafIndex];
 			pLeaf->dispCount++;
+			//Msg("i: %i , leafIndex: %i , pLeaf->dispCount: %i\n", i, leafIndex, pLeaf->dispCount);
 		}
 		// point each leaf at the start of it's output range in the output array
 		unsigned short firstDispIndex = 0;
@@ -166,6 +167,7 @@ public:
 				pLeafList[outListIndex] = i;							// write the reference there
 				Assert(outListIndex < GetDispListCount());
 				pLeaf->dispCount++;										// move this leaf's output pointer
+				//Msg("leafIndex: %i   %x\n", leafIndex, &pLeaf->dispCount);
 			}
 		}
 	}

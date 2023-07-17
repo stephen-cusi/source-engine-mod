@@ -308,6 +308,7 @@ void EmitInitialDispInfos( void )
 		pDisp = &g_dispinfo[i];
 		pMapDisp = &mapdispinfo[i];
 		
+		
 		CDispVert *pOutVerts = &g_DispVerts[iCurVert];
 		CDispTri *pOutTris = &g_DispTris[iCurTri];
 
@@ -558,11 +559,11 @@ void EmitDispLMAlphaAndNeighbors()
 			continue;
 
 		mapdispinfo_t *pMapDisp = &mapdispinfo[pFace->dispinfo];
-		
+		//printf("%i",g_MainMap->brushsides[g_MainMap->SideIDToIndex(pMapDisp->brushSideID)].contents);
+
 		// Set the displacement's face index.
 		ddispinfo_t *pDisp = &g_dispinfo[pFace->dispinfo];
 		pDisp->m_iMapFace = i;
-
 		// Get a CCoreDispInfo. All we need is the triangles and lightmap texture coordinates.
 		CCoreDispInfo *pCoreDispInfo = g_CoreDispInfos[pFace->dispinfo];
 		DispMapToCoreDispInfo( pMapDisp, pCoreDispInfo, pFace, pSwappedTexInfos );
@@ -605,7 +606,7 @@ void EmitDispLMAlphaAndNeighbors()
 
 		Assert( pFace->dispinfo == i );
 		ddispinfo_t *pDisp = &g_dispinfo[pFace->dispinfo];
-
+	
 		// Allocate space for the alpha values.
 		pDisp->m_iLightmapAlphaStart = 0; // not used anymore
 		

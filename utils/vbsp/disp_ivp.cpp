@@ -45,9 +45,9 @@ disp_grid_t &FindOrInsertGrid( int gridIndex )
 }
 
 // UNDONE: Tune these or adapt them to map size or triangle count?
-#define DISP_GRID_SIZEX	4096
-#define DISP_GRID_SIZEY	4096
-#define DISP_GRID_SIZEZ 8192
+#define DISP_GRID_SIZEX	32768
+#define DISP_GRID_SIZEY	32768
+#define DISP_GRID_SIZEZ 65536
 
 int Disp_GridIndex( CCoreDispInfo *pDispInfo )
 {

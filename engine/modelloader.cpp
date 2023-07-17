@@ -2586,6 +2586,7 @@ void Mod_LoadLeafs( void )
 	cleaf_t *pCLeaf = GetCollisionBSPData()->map_leafs.Base();
 	for ( int i = 0; i < pMap->numleafs; i++ )
 	{
+		//Msg("%i: %x\n", i, &pCLeaf[i].dispCount);
 		pMap->leafs[i].dispCount = pCLeaf[i].dispCount;
 		pMap->leafs[i].dispListStart = pCLeaf[i].dispListStart;
 	}

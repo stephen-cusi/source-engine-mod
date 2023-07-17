@@ -2582,6 +2582,7 @@ static void R_RecursiveWorldNodeNoCull( CWorldRenderList *pRenderList, mnode_t *
 		if (node->visframe != r_visframecount)
 			return;
 
+
 		// Cull against the screen frustum or the appropriate area's frustum.
 		if ( nCullMask != FRUSTUM_SUPPRESS_CLIPPING )
 		{
@@ -2606,6 +2607,7 @@ static void R_RecursiveWorldNodeNoCull( CWorldRenderList *pRenderList, mnode_t *
 		// if a leaf node, draw stuff
 		if (node->contents >= 0)
 		{
+			
 			R_DrawLeafNoCull( pRenderList, (mleaf_t *)node );
 			return;
 		}
