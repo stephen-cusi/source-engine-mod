@@ -46,6 +46,8 @@ projects={
         'utils/vbsp',
         'utils/vrad',
         'utils/vrad_launcher',
+        'utils/vvis',
+        'utils/vvis_launcher',
 		'gameui',
 		'inputsystem',
 		'ivp/havana',

@@ -13,8 +13,8 @@ $Configuration
 {
 	$Compiler
 	{
-		$AdditionalIncludeDirectories		"$BASE,..\common,..\vmpi,..\vmpi\mysql\include"
-		$PreprocessorDefinitions			"$BASE;MPI;PROTECTED_THINGS_DISABLE"
+		$AdditionalIncludeDirectories		"$BASE,..\common"
+		$PreprocessorDefinitions			"$BASE;PROTECTED_THINGS_DISABLE"
 	}
 
 	$Linker
@@ -36,9 +36,6 @@ $Project "Vvis_dll"
 		$File	"flow.cpp"
 		$File	"$SRCDIR\public\loadcmdline.cpp"
 		$File	"$SRCDIR\public\lumpfiles.cpp"
-		$File	"..\common\mpi_stats.cpp"
-		$File	"mpivis.cpp"
-		$File	"..\common\MySqlDatabase.cpp"
 		$File	"..\common\pacifier.cpp"
 		$File	"$SRCDIR\public\scratchpad3d.cpp"
 		$File	"..\common\scratchpad_helpers.cpp"
@@ -46,10 +43,11 @@ $Project "Vvis_dll"
 		$File	"..\common\threads.cpp"
 		$File	"..\common\tools_minidump.cpp"
 		$File	"..\common\tools_minidump.h"
-		$File	"..\common\vmpi_tools_shared.cpp"
 		$File	"vvis.cpp"
 		$File	"WaterDist.cpp"
 		$File	"$SRCDIR\public\zip_utils.cpp"
+		$File	"..\..\public\filesystem_init.cpp"
+		$File	"..\common\filesystem_tools.cpp"
 	}
 
 	$Folder	"Header Files"
@@ -70,8 +68,6 @@ $Project "Vvis_dll"
 		$File	"$SRCDIR\public\GameBSPFile.h"
 		$File	"..\common\ISQLDBReplyTarget.h"
 		$File	"$SRCDIR\public\mathlib\mathlib.h"
-		$File	"mpivis.h"
-		$File	"..\common\MySqlDatabase.h"
 		$File	"..\common\pacifier.h"
 		$File	"..\common\scriplib.h"
 		$File	"$SRCDIR\public\tier1\strtools.h"
@@ -96,7 +92,6 @@ $Project "Vvis_dll"
 	{
 		$Lib mathlib
 		$Lib tier2
-		$Lib vmpi
 		$Lib "$LIBCOMMON/lzma"
 	}
 }
