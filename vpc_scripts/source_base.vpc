@@ -31,8 +31,8 @@ $Configuration "Debug"
 // This line was added in the previous check-in, but had previously not been defined in this branch
 //		$PreprocessorDefinitions		"$BASE;_RETAIL"		[$RETAIL]
 
-		$PreprocessorDefinitions		"$BASE;GAMEPADUI"	[$GAMEPADUI]
-		$PreprocessorDefinitions		"$BASE;SOURCEBOX"	[$SOURCEBOX]
+		$PreprocessorDefinitions		"GAMEPADUI"	[$GAMEPADUI]
+		$PreprocessorDefinitions		"SOURCEBOX"	[$SOURCEBOX]
 	}
 }
 
@@ -49,7 +49,7 @@ $Configuration "Release"
 // This line was added in the previous check-in, but had previously not been defined in this branch
 //		$PreprocessorDefinitions		"$BASE;_RETAIL"		[$RETAIL]
 
-		$PreprocessorDefinitions		"$BASE;GAMEPADUI"	[$GAMEPADUI]
-		$PreprocessorDefinitions		"$BASE;SOURCEBOX"	[$SOURCEBOX]
+		$PreprocessorDefinitions		"GAMEPADUI"	[$GAMEPADUI]
+		$PreprocessorDefinitions		"SOURCEBOX"	[$SOURCEBOX]
 	}
 }
