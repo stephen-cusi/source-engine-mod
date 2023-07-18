@@ -19,7 +19,8 @@ games = {
 	'portal': ['vbsp.vpc'],
 	'hl1mp': ['vbsp.vpc'],
 	'cstrike': ['vbsp.vpc'],
-	'dod': ['vbsp.vpc']
+	'dod': ['vbsp.vpc'],
+	'sourcebox': ['vbsp.vpc']
 }
 
 def configure(conf):

@@ -18,7 +18,8 @@ games = {
 	'episodic': ['vrad_dll.vpc'],
 	'hl1mp': ['vrad_dll.vpc'],
 	'cstrike': ['vrad_dll.vpc'],
-	'dod': ['vrad_dll.vpc']
+	'dod': ['vrad_dll.vpc'],
+	'sourcebox': ['vrad_dll.vpc']
 }
 
 def configure(conf):

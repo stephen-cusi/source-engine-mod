@@ -163,8 +163,8 @@ CFogUIPanel::CFogUIPanel( vgui::Panel *parent ) : vgui::Frame( parent, "FogUIPan
 	m_pFarZOverride = new vgui::CheckButton( this, "FarZOverride", "FarZOverride" );
 	m_pFarZOverride->SetSelected( false );
 	m_pFarZ = new vgui::Slider( this, "FarZ" );
-	m_pFarZ->SetRange( 1, 30000 );
-	m_pFarZ->SetValue( 30000 );
+	m_pFarZ->SetRange( 1, 480000 );
+	m_pFarZ->SetValue( 480000 );
 	m_pFarZ->AddActionSignalTarget( this );
 	m_pFarZ->SetDragOnRepositionNob( true );
 	m_pFarZText = new vgui::TextEntry( this, "FarZText" );

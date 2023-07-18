@@ -68,6 +68,7 @@ char		outbase[32];
 
 char		g_szEmbedDir[MAX_PATH] = { 0 };
 
+
 // HLTOOLS: Introduce these calcs to make the block algorithm proportional to the proper 
 // world coordinate extents.  Assumes square spatial constraints.
 #define BLOCKS_SIZE		8192

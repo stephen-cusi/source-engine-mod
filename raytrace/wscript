@@ -18,7 +18,8 @@ games = {
 	'episodic': ['raytrace.vpc'],
 	'hl1mp': ['raytrace.vpc'],
 	'cstrike': ['raytrace.vpc'],
-	'dod': ['raytrace.vpc']
+	'dod': ['raytrace.vpc'],
+	'sourcebox': ['raytrace.vpc']
 }
 
 def configure(conf):
