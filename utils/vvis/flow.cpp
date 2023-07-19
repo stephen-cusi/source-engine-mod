@@ -766,7 +766,7 @@ void BasePortalVis (int iThread, int portalnum)
 		if( g_bUseRadius )
 		{
 			w = tp->winding;
-			minDist2 = 1024000000.0;			// 32000^2
+			minDist2 = 68719476736.0;			// 262144^2
 			for( k = 0; k < w->numpoints; k++ )
 			{
 				VectorSubtract( w->points[k], p->origin, segment );

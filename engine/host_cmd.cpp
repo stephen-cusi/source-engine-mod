@@ -1970,6 +1970,7 @@ void Host_VoiceRecordStop_f(void)
 		{
 			CL_SendVoicePacket( g_bUsingSteamVoice ? false : true );
 			Voice_UserDesiresStop();
+			Voice_RecordStop();
 		}
 #endif
 	}

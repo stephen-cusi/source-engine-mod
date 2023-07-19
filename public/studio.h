@@ -68,6 +68,7 @@ Studio models are position independent, so the cache manager can move them.
 */
 
 #define STUDIO_VERSION		49
+#define STUDIO_MIN_VERSION  44
 
 #ifndef _XBOX
 #define MAXSTUDIOTRIANGLES	65536	// TODO: tune this

@@ -641,16 +641,16 @@ static float CalcDistanceFromLeafToWater( int leafNum )
 
 	// If we know that this one doesn't see a water surface then don't bother doing anything.
 	if( ((dleafs[leafNum].contents & CONTENTS_TESTFOGVOLUME) == 0) && ( dleafs[leafNum].leafWaterDataID == -1 ) )
-		return 65535; // FIXME: make a define for this.
+		return 262140; // FIXME: make a define for this.
 	
 	// First get the vis data..
 	int cluster = dleafs[leafNum].cluster;
 	if (cluster < 0)
-		return 65535; // FIXME: make a define for this.
+		return 262140; // FIXME: make a define for this.
 	
 	DecompressVis( &dvisdata[dvis->bitofs[cluster][DVIS_PVS]], uncompressed );
 	
-	float minDist = 65535.0f; // FIXME: make a define for this.
+	float minDist = 262140.0f; // FIXME: make a define for this.
 	
 	Vector leafMin, leafMax;
 	

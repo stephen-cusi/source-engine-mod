@@ -1611,10 +1611,20 @@ void CMDLCache::ConvertFlexData( studiohdr_t *pStudioHdr )
 			for ( int k = 0; k < pModel->nummeshes; k++ )
 			{
 				mstudiomesh_t *pMesh = pModel->pMesh( k );
+				//Msg("")
 				for ( int l = 0; l < pMesh->numflexes; l++ )
 				{
 					mstudioflex_t *pFlex = pMesh->pFlex( l );
 					bool bIsWrinkleAnim = ( pFlex->vertanimtype == STUDIO_VERT_ANIM_WRINKLE );
+					/*Msg("flexdesc: %i\n", pFlex->flexdesc);
+					Msg("flexpair: %i\n", pFlex->flexpair);
+					Msg("numverts: %i\n", pFlex->numverts);
+					Msg("target0: %f\n", pFlex->target0);
+					Msg("target1: %f\n", pFlex->target1);
+					Msg("target2: %f\n", pFlex->target2);
+					Msg("target3: %f\n", pFlex->target3);
+					Msg("vertanimtype: %u\n", pFlex->vertanimtype);
+					Msg("vertindex: %i\n", pFlex->vertindex);*/
 					for ( int m = 0; m < pFlex->numverts; m++ )
 					{
 						mstudiovertanim_t *pVAnim = bIsWrinkleAnim ?

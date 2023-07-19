@@ -148,13 +148,16 @@ static int AddStaticPropDictLump( char const* pModelName )
 //-----------------------------------------------------------------------------
 bool LoadStudioModel( char const* pModelName, char const* pEntityType, CUtlBuffer& buf )
 {
-	if ( !g_pFullFileSystem->ReadFile( pModelName, NULL, buf ) )
+	if (!g_pFullFileSystem->ReadFile(pModelName, NULL, buf))
+	{
+		Warning("Can't find file: %s\n", pModelName);
 		return false;
-
+	}
 	// Check that it's valid
 	if (strncmp ((const char *) buf.PeekGet(), "IDST", 4) &&
 		strncmp ((const char *) buf.PeekGet(), "IDAG", 4))
 	{
+		Warning("%s is invalid!\n", pModelName);
 		return false;
 	}
 
@@ -162,8 +165,9 @@ bool LoadStudioModel( char const* pModelName, char const* pEntityType, CUtlBuffe
 
 	Studio_ConvertStudioHdrToNewVersion( pHdr );
 
-	if (pHdr->version != STUDIO_VERSION)
+	if (pHdr->version > STUDIO_VERSION || pHdr->version < STUDIO_MIN_VERSION)
 	{
+		Warning("%s has invalid studio version (%i) while the game uses %i to %i!\n", pModelName, pHdr->version, STUDIO_MIN_VERSION, STUDIO_VERSION);
 		return false;
 	}
 
