@@ -99,6 +99,8 @@ extern ConVar sv_sendtables;
 
 CGameServer	sv;
 
+CUtlVector<char*> CGameServer::m_BannedCommands;
+
 CGlobalVars g_ServerGlobalVariables( false );
 
 static int	current_skill;

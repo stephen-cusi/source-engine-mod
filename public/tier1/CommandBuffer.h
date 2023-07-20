@@ -88,6 +88,10 @@ public:
 
 	int m_nOutputBuffer;
 
+	void PrintCommandBuffer();
+	void ClearCommandBuffer();
+	void FindClear();
+
 private:
 	enum
 	{
@@ -128,6 +132,8 @@ private:
 
 	// Parses argv0 out of the buffer
 	bool ParseArgV0( CUtlBuffer &buf, char *pArgv0, int nMaxLen, const char **pArgs );
+
+	bool m_bClearBuffer;
 
 	char	m_pArgSBuffer[ ARGS_BUFFER_LENGTH ];
 	int		m_nArgSBufferSize;

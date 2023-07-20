@@ -615,6 +615,11 @@ void SkipSemicolon(char* str, int& skipped)
 //-----------------------------------------------------------------------------
 bool CCommandBuffer::DequeueNextCommand( )
 {
+	if (m_bClearBuffer)
+	{
+		m_Commands.Purge();
+		m_bClearBuffer = false;
+	}
 	Redo:
 	m_CurrentCommand.Reset();
 
@@ -790,6 +795,38 @@ ThereWasntAInnerCommandButThereWasASemicolonAndIDontWantToWaitTwentyMinutesForIt
 	return true;
 }
 
+void CCommandBuffer::PrintCommandBuffer()
+{
+
+	for (intp i = m_Commands.Head(); i != m_Commands.InvalidIndex(); i = m_Commands.Next(i))
+	{
+		Command_t& command = m_Commands[i];
+		Msg("TIME: %i | COMMAND: (%s) |\n", command.m_nTick - m_nLastTickToProcess, &m_pArgSBuffer[command.m_nFirstArgS]);
+	}
+}
+
+void CCommandBuffer::ClearCommandBuffer()
+{
+	m_bClearBuffer = true;
+}
+
+void CCommandBuffer::FindClear()
+{
+	for (intp i = m_Commands.Head(); i != m_Commands.InvalidIndex(); i = m_Commands.Next(i))
+	{
+		Command_t& command = m_Commands[i];
+		if (command.m_nTick > m_nLastTickToProcess)
+		{
+			continue;
+		}
+
+		if (strncmp(&m_pArgSBuffer[command.m_nFirstArgS],"cmd_clearcommandbuffer",22) == 0)
+		{
+			ClearCommandBuffer();
+			return;
+		}
+	}
+}
 
 //-----------------------------------------------------------------------------
 // Returns the next command
@@ -856,9 +893,10 @@ void CCommandBuffer::EndProcessingCommands()
 		if ( m_Commands[i].m_nTick >= m_nCurrentTick )
 			break;
 
-		AssertMsgOnce( false, "CCommandBuffer::EndProcessingCommands() called before all appropriate commands were dequeued.\n" );
-		Msg( "Warning: Skipping command %s\n", &m_pArgSBuffer[ m_Commands[i].m_nFirstArgS ] );
+		//AssertMsgOnce( false, "CCommandBuffer::EndProcessingCommands() called before all appropriate commands were dequeued.\n" );
+		//Msg( "Warning: Skipping command %s\n", &m_pArgSBuffer[ m_Commands[i].m_nFirstArgS ] );
 		m_Commands.Remove( i );
+		i = m_Commands.Head();
 	}
 
 	Compact();
