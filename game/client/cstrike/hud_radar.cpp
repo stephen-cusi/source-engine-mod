@@ -56,7 +56,7 @@ CHudRadar::CHudRadar( const char *pName ) :	vgui::Panel( NULL, "HudRadar" ), CHu
 
 	m_flNextHostageFlashTime = 0.0;
 	m_bHostageFlash = true;
-	m_bHideRadar = false;
+	m_bHideRadar = true;
 
 	s_Radar = this;
 

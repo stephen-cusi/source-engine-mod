@@ -7,7 +7,7 @@
 #include "client.h"
 #include "ModelInfo.h"
 using namespace vgui;
-ConVar sb_modelbrowser_button_width("sb_modelbrowser_button_width", "150",0,"",true,30.0,true,400.0);
+ConVar sb_modelbrowser_button_width("sb_modelbrowser_button_width", "350",0,"",true,30.0,true,500.0);
 ConVar sb_modelbrowser_button_height("sb_modelbrowser_button_height", "24", 0, "", true, 12.0, true, 100.0);
 
 class CModelButton : public Button

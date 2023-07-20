@@ -2073,6 +2073,10 @@ void CBaseCombatCharacter::SetLightingOriginRelative( CBaseEntity *pLightingOrig
 //-----------------------------------------------------------------------------
 void CBaseCombatCharacter::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 {
+
+	int pos = Weapon_GetLastPositionInSlot(pWeapon->GetSlot());
+	pWeapon->m_iActualPosition.Set(pos);
+
 	// Add the weapon to my weapon inventory
 	for (int i=0;i<MAX_WEAPONS;i++) 
 	{
@@ -2082,6 +2086,7 @@ void CBaseCombatCharacter::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 			break;
 		}
 	}
+	
 
 	// Weapon is now on my team
 	pWeapon->ChangeTeam( GetTeamNumber() );
@@ -2253,6 +2258,22 @@ CBaseCombatWeapon *CBaseCombatCharacter::Weapon_GetSlot( int slot ) const
 	}
 	
 	return NULL;
+}
+
+int CBaseCombatCharacter::Weapon_GetLastPositionInSlot(int slot)
+{
+	int maxpos = 0;
+	for (int i = 0; i < MAX_WEAPONS; i++)
+	{
+		if (m_hMyWeapons[i].Get() != NULL)
+		{
+			if (m_hMyWeapons[i]->GetSlot() == slot && m_hMyWeapons[i]->GetActualPosition() >= maxpos)
+			{
+				maxpos = m_hMyWeapons[i]->GetActualPosition()+1;
+			}
+		}
+	}
+	return maxpos;
 }
 
 //-----------------------------------------------------------------------------

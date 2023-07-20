@@ -1295,6 +1295,7 @@ CGameServer::CGameServer()
 	m_bLoadedPlugins = false;
 	V_memset( m_szMapname, 0, sizeof( m_szMapname ) );
 	V_memset( m_szMapFilename, 0, sizeof( m_szMapFilename ) );
+	m_pkvBannedCommands = new KeyValues("BannedCommands");
 }
 
 
@@ -1302,6 +1303,8 @@ CGameServer::~CGameServer()
 {
 	if ( m_pPureServerWhitelist )
 		m_pPureServerWhitelist->Release();
+	if (m_pkvBannedCommands)
+		m_pkvBannedCommands->deleteThis();
 }
 
 
@@ -1945,6 +1948,83 @@ void CGameServer::SetMaxClients( int number )
 	deathmatch.SetValue( m_nMaxclients > 1 );
 }
 
+bool MatchesPattern(const char* pszSource, const char* pszPattern)
+{
+	bool	bExact = true;
+	while (1)
+	{
+		if ((*pszPattern) == 0)
+		{
+			return ((*pszSource) == 0);
+		}
+
+		if ((*pszPattern) == '*')
+		{
+			pszPattern++;
+
+			if ((*pszPattern) == 0)
+			{
+				return true;
+			}
+
+			bExact = false;
+			continue;
+		}
+
+		int nLength = 0;
+
+		while ((*pszPattern) != '*' && (*pszPattern) != 0)
+		{
+			nLength++;
+			pszPattern++;
+		}
+
+		while (1)
+		{
+			const char* pszStartPattern = pszPattern - nLength;
+			const char* pszSearch = pszSource;
+
+			for (int i = 0; i < nLength; i++, pszSearch++, pszStartPattern++)
+			{
+				if ((*pszSearch) == 0)
+				{
+					return false;
+				}
+
+				if ((*pszSearch) != (*pszStartPattern))
+				{
+					break;
+				}
+			}
+
+			if (pszSearch - pszSource == nLength)
+			{
+				break;
+			}
+
+			if (bExact == true)
+			{
+				return false;
+			}
+
+			pszSource++;
+		}
+
+		pszSource += nLength;
+	}
+	
+}
+
+bool CGameServer::FilterCommand(const char* cmd)
+{
+	for (KeyValues* v = m_pkvBannedCommands->GetFirstSubKey(); v != NULL; v = v->GetNextKey())
+	{
+		if (MatchesPattern(cmd, v->GetString()))
+			return false;
+	}
+	return true;
+}
+
 //-----------------------------------------------------------------------------
 // A potential optimization of the client data sending; the optimization
 // is based around the fact that we think that we're spending all our time in
@@ -2158,6 +2238,8 @@ void SV_InitGameServerSteam()
 //-----------------------------------------------------------------------------
 bool SV_ActivateServer()
 {
+	sv.m_pkvBannedCommands->Clear();
+	sv.m_pkvBannedCommands->LoadFromFile(g_pFullFileSystem, "cfg/bannedcommands.txt");
 	COM_TimestampedLog( "SV_ActivateServer" );
 #ifndef SWDS
 	EngineVGui()->UpdateProgressBar(PROGRESS_ACTIVATESERVER);

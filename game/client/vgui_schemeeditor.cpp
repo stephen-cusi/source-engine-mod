@@ -47,7 +47,7 @@ private:
 
 Knob::Knob(Panel* pParent, const char* pName, int min, int max, int value, float speed) : BaseClass(pParent, pName)
 {
-	SetSize(12, 12);
+	SetSize(16, 16);
 	_dragging = false;
 	_min = min;
 	_max = max;
@@ -96,6 +96,18 @@ void Knob::Paint()
 	surface()->DrawSetColor(notchCol);
 	percent = (((float)_value - (float)_min) / ((float)_max - (float)_min) - 0.5)*M_PI_F*1.5;
 	surface()->DrawLine(radius, radius, radius+(int)(sinf(percent) * radius), radius-(int)(cosf(percent) * radius));
+	if (_dragging)
+	{
+		surface()->DrawSetTextFont(scheme()->GetIScheme(GetScheme())->GetFont("DefaultSmall"));
+		surface()->DrawSetTextPos(1, 1);
+		surface()->DrawSetTextColor(_darkcolor);
+		wchar_t value[16];
+		_itow(_value, value, 10);
+		surface()->DrawPrintText(value,V_wcslen(value));
+		surface()->DrawSetTextPos(0, 0);
+		surface()->DrawSetTextColor(_lightcolor);
+		surface()->DrawPrintText(value,V_wcslen(value));
+	}
 }
 
 void Knob::OnMousePressed(MouseCode code)
@@ -169,16 +181,22 @@ private:
 	Knob* m_pGreenKnob;
 	Knob* m_pBlueKnob;
 	Knob* m_pAlphaKnob;
+	Button* m_pCopyButton;
+	Button* m_pPasteButton;
 };
 
 //----------------------------------------------------------------------------------------
 
 CColorChangePanel::CColorChangePanel(Panel* pParent, const char* pName, const Color& color): Panel(pParent, pName)
 {
+	SetMinimumSize(64, 32);
 	m_pRedKnob = new Knob(this, "RedKnob",0,255,color.r());
 	m_pGreenKnob = new Knob(this, "GreenKnob", 0, 255, color.g());
 	m_pBlueKnob = new Knob(this, "BlueKnob", 0, 255, color.b());
 	m_pAlphaKnob = new Knob(this, "AlphaKnob", 0, 255, color.a());
+	m_pCopyButton = new Button(this, "RGBACopyButton", "Copy", this, "Copy");
+	m_pPasteButton = new Button(this, "RGBAPasteButton", "Paste", this, "Paste");
+	
 }
 
 
@@ -192,10 +210,15 @@ void CColorChangePanel::PerformLayout()
 {
 	int wide, tall;
 	GetSize(wide, tall);
-	m_pRedKnob->SetPos(wide / 5 - 6, 6);
-	m_pGreenKnob->SetPos(2*wide / 5 - 6, 6);
-	m_pBlueKnob->SetPos(3*wide / 5 - 6, 6);
-	m_pAlphaKnob->SetPos(4*wide / 5 - 6, 6);
+	//int ky = tall/2 - m_pRedKnob->GetTall()/2;
+	m_pRedKnob->SetPos(wide / 5 - 6, 0);
+	m_pGreenKnob->SetPos(2*wide / 5 - 6, 0);
+	m_pBlueKnob->SetPos(3*wide / 5 - 6, 0);
+	m_pAlphaKnob->SetPos(4*wide / 5 - 6, 0);
+	m_pCopyButton->SetPos(0, 16);
+	m_pPasteButton->SetPos(wide / 2, 16);
+	m_pCopyButton->SetSize(wide / 2, 16);
+	m_pPasteButton->SetSize(wide / 2, 16);
 }
 
 Color CColorChangePanel::GetColor()

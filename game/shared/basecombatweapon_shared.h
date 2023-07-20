@@ -350,6 +350,7 @@ public:
 	virtual bool			AllowsAutoSwitchFrom( void ) const;
 	virtual int				GetWeaponFlags( void ) const;
 	virtual int				GetSlot( void ) const;
+	virtual int				GetActualPosition( void );
 	virtual int				GetPosition( void ) const;
 	virtual char const		*GetName( void ) const;
 	virtual char const		*GetPrintName( void ) const;
@@ -561,7 +562,7 @@ public:
 
 	bool					SetIdealActivity( Activity ideal );
 	void					MaintainIdealActivity( void );
-
+	CNetworkVar( int, m_iActualPosition );
 private:
 	Activity				m_Activity;
 	int						m_nIdealSequence;

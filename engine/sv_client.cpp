@@ -1113,6 +1113,8 @@ bool CGameClient::SendNetMsg(INetMessage &msg, bool bForceReliable)
 	return CBaseClient::SendNetMsg( msg, bForceReliable);
 }
 
+
+
 bool CGameClient::ExecuteStringCommand( const char *pCommandString )
 {
 	// first let the baseclass handle it
@@ -1159,8 +1161,11 @@ bool CGameClient::ExecuteStringCommand( const char *pCommandString )
 		}
 
 		g_pServerPluginHandler->SetCommandClient( m_nClientSlot );
-		Msg("[%s]: %s\n", m_Name, args.GetCommandString());
-		Cmd_Dispatch( pCommand, args );
+		if (sv.FilterCommand(args.GetCommandString()))
+		{
+			Msg("[%s]: %s\n", m_Name, args.GetCommandString());
+			Cmd_Dispatch(pCommand, args);
+		}
 	}
 	else
 	{

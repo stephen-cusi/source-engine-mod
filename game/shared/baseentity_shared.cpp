@@ -436,6 +436,12 @@ bool CBaseEntity::KeyValue( const char *szKeyName, const char *szValue )
 		return true;
 	}
 
+	if (FStrEq(szKeyName, "modelindex"))
+	{
+		SetModelIndex(atoi(szValue));
+		return true;
+	}
+
 #ifdef GAME_DLL	
 	
 	if ( FStrEq( szKeyName, "targetname" ) )

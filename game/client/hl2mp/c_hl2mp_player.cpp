@@ -205,6 +205,8 @@ void C_HL2MP_Player::Initialize( void )
 	GetPoseParameterRange( m_headPitchPoseParam, m_headPitchMin, m_headPitchMax );
 
 	CStudioHdr *hdr = GetModelPtr();
+	if (!hdr)
+		return;
 	for ( int i = 0; i < hdr->GetNumPoseParameters() ; i++ )
 	{
 		SetPoseParameter( hdr, i, 0.0 );

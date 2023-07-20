@@ -59,6 +59,7 @@ public: // IServer implementation
 	void	Clear( void );
 	void	Shutdown( void );
 	void	SetMaxClients(int number);
+	bool	FilterCommand(const char* cmd);
 
 public: 
 	void	InitMaxClients( void );
@@ -151,7 +152,7 @@ public:
 
 	bool		IsHibernating() const;
 	void		UpdateHibernationState();
-
+	KeyValues* m_pkvBannedCommands;
 private:
 	void		SetHibernating( bool bHibernating );
 
@@ -169,6 +170,7 @@ private:
 
 	CPureServerWhitelist *m_pPureServerWhitelist;
 	bool m_bHibernating; 	// Are we hibernating.  Hibernation makes server process consume approx 0 CPU when no clients are connected
+	
 };
 
 //============================================================================

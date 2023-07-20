@@ -335,7 +335,7 @@ CWeaponHL2MPBase *GetWeaponInSlot( int iSlot, int iSlotPos )
 		if ( pWeapon == NULL )
 			continue;
 
-		if ( pWeapon->GetSlot() == iSlot && pWeapon->GetPosition() == iSlotPos )
+		if ( pWeapon->GetSlot() == iSlot && pWeapon->GetActualPosition() == iSlotPos )
 			return pWeapon;
 	}
 

@@ -16,6 +16,7 @@
 #include "vgui_controls/Label.h"
 #include "vgui_controls/TreeView.h"
 #include "vgui_controls/InputDialog.h"
+#include "vgui_controls/Tooltip.h"
 
 //----------------------------------------------------------------------------------------
 

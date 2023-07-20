@@ -5801,7 +5801,10 @@ CBaseEntity *FindPickerEntityClass( CBasePlayer *pPlayer, char *classname )
 CBaseEntity *FindPickerEntity( CBasePlayer *pPlayer )
 {
 	MDLCACHE_CRITICAL_SECTION();
-
+	if (!pPlayer)
+	{
+		return NULL;
+	}
 	// First try to trace a hull to an entity
 	CBaseEntity *pEntity = FindEntityForward( pPlayer, true );
 

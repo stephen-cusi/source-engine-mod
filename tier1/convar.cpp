@@ -504,6 +504,10 @@ bool CCommand::GetArgument(const char* pCommand, int maxlen, int& index, int i) 
 	{
 		index++;
 	}
+	if (index == maxlen)
+	{
+		return false;
+	}
 	if (pCommand[index] == '"')
 	{
 		index++;
