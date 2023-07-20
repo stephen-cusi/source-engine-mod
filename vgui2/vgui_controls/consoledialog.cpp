@@ -715,7 +715,7 @@ void CConsolePanel::OnTextChanged(Panel *panel)
 			kv->SetString("command",text);
 			m_pCompletionList->AddMenuItem(text, kv, this);
 		}
-
+		
 		UpdateCompletionListPosition();
 	}
 	

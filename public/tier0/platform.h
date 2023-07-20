@@ -1710,6 +1710,10 @@ RETURN_TYPE FASTCALL __Function_##NAME<nArgument>::Run ARGS
 		CODE;\
 	}
 
+#define DECLARE_GET_SET( type, varName, HumanName ) \
+	type Get##HumanName() { return varName; } \
+	void Set##HumanName( type val ) { varName = val; }
+
 //-----------------------------------------------------------------------------
 // Dynamic libs support
 //-----------------------------------------------------------------------------

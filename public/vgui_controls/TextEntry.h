@@ -229,6 +229,7 @@ public:
 	void SetSelectionUnfocusedBgColor( const Color& clr );
 
 	void SetUseFallbackFont( bool bState, HFont hFallback );
+	virtual void CursorToPixelSpace(int cursorPos, int &cx, int &cy);
 
 protected:
 	virtual void ResetCursorBlink();
@@ -244,7 +245,6 @@ protected:
 	virtual const char *GetDescription( void );
 	virtual void FireActionSignal();
 	virtual bool GetSelectedRange(int& cx0,int& cx1);
-	virtual void CursorToPixelSpace(int cursorPos, int &cx, int &cy);
 	virtual int  PixelToCursorSpace(int cx, int cy);
 	virtual void AddAnotherLine(int &cx, int &cy);
 	virtual int  GetYStart(); // works out ypixel position drawing started at
@@ -279,6 +279,8 @@ public:
 	// helper accessors for common gets
 	virtual float GetValueAsFloat();
 	virtual int GetValueAsInt();
+	// get index in buffer of the Start of the current line we are on
+	int GetCurrentLineStart();
 
 protected:
     void ScrollRight(); // scroll to right until cursor is visible
@@ -295,8 +297,6 @@ protected:
 
 private:
 	MESSAGE_FUNC_INT( OnSetState, "SetState", state );
-	// get index in buffer of the Start of the current line we are on
-	int GetCurrentLineStart();
 	// get index in buffer of the end of the current line we are on
 	int GetCurrentLineEnd();
 	bool IsLineBreak(int index);
@@ -307,6 +307,7 @@ private:
 
 public:
 	Menu *GetEditMenu(); // retrieve copy/cut/paste menu
+	DECLARE_GET_SET( int, _cursorPos, CursorPos )
 
 private:
 	void	FlipToLastIME();

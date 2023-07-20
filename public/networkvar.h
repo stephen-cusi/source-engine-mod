@@ -60,9 +60,7 @@ inline int CheckDeclareClass_Access( T *, const char *pShouldBe )
 #endif
 #endif
 
-#define DECLARE_GET_SET( type, varName, HumanName ) \
-	type Get##HumanName() { return varName; } \
-	void Set##HumanName( type val ) { varName = val; }
+
 
 #ifdef  VALIDATE_DECLARE_CLASS
 

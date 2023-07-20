@@ -3,14 +3,220 @@
 #include "vgui_controls/Button.h"
 #include "vgui_controls/InputDialog.h"
 #include "vgui_controls/TreeView.h"
+#include "vgui_controls/Menu.h"
 #include "vgui/IVGui.h"
 #include <KeyValues.h>
 #include "filesystem.h"
 #include "common.h"
 #include "cmd.h"
 #include "convar.h"
+#include "convar_serverbounded.h"
 
 using namespace vgui;
+
+//-----------------------------------------------------------------------------
+// Used by the autocompletion system
+//-----------------------------------------------------------------------------
+class CNonFocusableMenu : public Menu
+{
+	DECLARE_CLASS_SIMPLE(CNonFocusableMenu, Menu);
+
+public:
+	CNonFocusableMenu(Panel* parent, const char* panelName)
+		: BaseClass(parent, panelName),
+		m_pFocus(0)
+	{
+	}
+
+	void SetFocusPanel(Panel* panel)
+	{
+		m_pFocus = panel;
+	}
+
+	VPANEL GetCurrentKeyFocus()
+	{
+		if (!m_pFocus)
+			return GetVPanel();
+
+		return m_pFocus->GetVPanel();
+	}
+
+private:
+	Panel* m_pFocus;
+};
+
+
+
+// Things the user typed in and hit submit/return with
+CHistoryItem::CHistoryItem(void)
+{
+	m_text = NULL;
+	m_extraText = NULL;
+	m_bHasExtra = false;
+}
+
+CHistoryItem::CHistoryItem(const char* text, const char* extra)
+{
+	Assert(text);
+	m_text = NULL;
+	m_extraText = NULL;
+	m_bHasExtra = false;
+	SetText(text, extra);
+}
+
+CHistoryItem::CHistoryItem(const CHistoryItem& src)
+{
+	m_text = NULL;
+	m_extraText = NULL;
+	m_bHasExtra = false;
+	SetText(src.GetText(), src.GetExtra());
+}
+
+CHistoryItem::~CHistoryItem(void)
+{
+	delete[] m_text;
+	delete[] m_extraText;
+	m_text = NULL;
+}
+
+const char* CHistoryItem::GetText() const
+{
+	if (m_text)
+	{
+		return m_text;
+	}
+	else
+	{
+		return "";
+	}
+}
+
+const char* CHistoryItem::GetExtra() const
+{
+	if (m_extraText)
+	{
+		return m_extraText;
+	}
+	else
+	{
+		return NULL;
+	}
+}
+
+void CHistoryItem::SetText(const char* text, const char* extra)
+{
+	delete[] m_text;
+	int len = strlen(text) + 1;
+
+	m_text = new char[len];
+	Q_memset(m_text, 0x0, len);
+	Q_strncpy(m_text, text, len);
+
+	if (extra)
+	{
+		m_bHasExtra = true;
+		delete[] m_extraText;
+		int elen = strlen(extra) + 1;
+		m_extraText = new char[elen];
+		Q_memset(m_extraText, 0x0, elen);
+		Q_strncpy(m_extraText, extra, elen);
+	}
+	else
+	{
+		m_bHasExtra = false;
+	}
+}
+
+
+//-----------------------------------------------------------------------------
+//
+// Console page completion item starts here
+//
+//-----------------------------------------------------------------------------
+CConfigEditorDialog::CompletionItem::CompletionItem(void)
+{
+	m_bIsCommand = true;
+	m_pCommand = NULL;
+	m_pText = NULL;
+}
+
+CConfigEditorDialog::CompletionItem::CompletionItem(const CompletionItem& src)
+{
+	m_bIsCommand = src.m_bIsCommand;
+	m_pCommand = src.m_pCommand;
+	if (src.m_pText)
+	{
+		m_pText = new CHistoryItem((const CHistoryItem&)src.m_pText);
+	}
+	else
+	{
+		m_pText = NULL;
+	}
+}
+
+CConfigEditorDialog::CompletionItem& CConfigEditorDialog::CompletionItem::operator =(const CompletionItem& src)
+{
+	if (this == &src)
+		return *this;
+
+	m_bIsCommand = src.m_bIsCommand;
+	m_pCommand = src.m_pCommand;
+	if (src.m_pText)
+	{
+		m_pText = new CHistoryItem((const CHistoryItem&)*src.m_pText);
+	}
+	else
+	{
+		m_pText = NULL;
+	}
+
+	return *this;
+}
+
+CConfigEditorDialog::CompletionItem::~CompletionItem(void)
+{
+	if (m_pText)
+	{
+		delete m_pText;
+		m_pText = NULL;
+	}
+}
+
+const char* CConfigEditorDialog::CompletionItem::GetName() const
+{
+	if (m_bIsCommand)
+		return m_pCommand->GetName();
+	return m_pCommand ? m_pCommand->GetName() : GetCommand();
+}
+
+const char* CConfigEditorDialog::CompletionItem::GetItemText(void)
+{
+	static char text[256];
+	text[0] = 0;
+	if (m_pText)
+	{
+		if (m_pText->HasExtra())
+		{
+			Q_snprintf(text, sizeof(text), "%s %s", m_pText->GetText(), m_pText->GetExtra());
+		}
+		else
+		{
+			Q_strncpy(text, m_pText->GetText(), sizeof(text));
+		}
+	}
+	return text;
+}
+
+const char* CConfigEditorDialog::CompletionItem::GetCommand(void) const
+{
+	static char text[256];
+	text[0] = 0;
+	if (m_pText)
+	{
+		Q_strncpy(text, m_pText->GetText(), sizeof(text));
+	}
+	return text;
+}
 
 
 
@@ -25,11 +231,15 @@ CConfigEditorDialog::CConfigEditorDialog(vgui::Panel* parent) : BaseClass(parent
 	m_pTextEntry->SetCatchEnterKey(true);
 	m_pTextEntry->SetVerticalScrollbar(true);
 	m_pTextEntry->SetHorizontalScrolling(true);
+	m_pTextEntry->AddActionSignalTarget(this);
 	m_pNewButton = new Button(this, "ConfigNewButton", "New", this, "new");
 	m_pSaveButton = new Button(this, "ConfigSaveButton", "Save", this, "save");
 	m_pSaveAsButton = new Button(this, "ConfigSaveAsButton", "Save As", this, "saveas");
 	m_pExecuteButton = new Button(this, "ConfigExecuteButton", "Execute", this, "execute");
 	m_pFileList = new TreeView(this, "ConfigFileList");
+	CNonFocusableMenu* pCompletionList = new CNonFocusableMenu(this, "CompletionList");
+	m_pCompletionList = pCompletionList;
+	m_pCompletionList->SetVisible(false);
 	RepopulateFileList();
 	SetTitle("Untitled",true);
 	m_pDialog = NULL;
@@ -98,6 +308,195 @@ void CConfigEditorDialog::OnClosePrompt()
 	m_pDialog->MarkForDeletion();
 	m_pDialog = NULL;
 }
+
+static ConCommand* FindAutoCompleteCommmandFromPartial(const char* partial)
+{
+	char command[256];
+	Q_strncpy(command, partial, sizeof(command));
+
+	char* space = Q_strstr(command, " ");
+	if (space)
+	{
+		*space = 0;
+	}
+
+	ConCommand* cmd = g_pCVar->FindCommand(command);
+	if (!cmd)
+		return NULL;
+
+	if (!cmd->CanAutoComplete())
+		return NULL;
+
+	return cmd;
+}
+
+void CConfigEditorDialog::OnTextChanged()
+{
+	int length = m_pTextEntry->GetTextLength();
+	if (length == 0)
+		return;
+	//const wchar_t* text = m_pTextEntry->m_TextStream.Base();
+	int beginning = m_pTextEntry->GetCursorPos();
+	for (; m_pTextEntry->m_TextStream[beginning] != '\n' && beginning > 0; beginning--)
+	{
+		
+	}
+	int end = m_pTextEntry->GetCursorPos();
+	for (; m_pTextEntry->m_TextStream[end] != '\n' && end < length - 1; end++)
+	{
+		
+	}
+	int len = end - beginning;
+	char text[COMMAND_MAX_LENGTH];
+	V_wcstostr(&m_pTextEntry->m_TextStream.Base()[beginning], len, text, COMMAND_MAX_LENGTH);
+	
+	
+	int c = m_CompletionList.Count();
+	int i;
+	for (i = c - 1; i >= 0; i--)
+	{
+		delete m_CompletionList[i];
+	}
+	m_CompletionList.Purge();
+
+	bool bNormalBuild = true;
+
+	// if there is a space in the text, and the command isn't of the type to know how to autocomplet, then command completion is over
+	const char* space = strstr(text, " ");
+	if (space)
+	{
+		ConCommand* pCommand = FindAutoCompleteCommmandFromPartial(text);
+		if (!pCommand)
+			return;
+
+		bNormalBuild = false;
+
+		CUtlVector< CUtlString > commands;
+		int count = pCommand->AutoCompleteSuggest(text, commands);
+		Assert(count <= COMMAND_COMPLETION_MAXITEMS);
+		int i;
+
+		for (i = 0; i < count; i++)
+		{
+			// match found, add to list
+			CompletionItem* item = new CompletionItem();
+			m_CompletionList.AddToTail(item);
+			item->m_bIsCommand = false;
+			item->m_pCommand = NULL;
+			item->m_pText = new CHistoryItem(commands[i].String());
+		}
+	}
+
+	if (bNormalBuild)
+	{
+		// look through the command list for all matches
+		ConCommandBase const* cmd = (ConCommandBase const*)cvar->GetCommands();
+		while (cmd)
+		{
+			if (cmd->IsFlagSet(FCVAR_DEVELOPMENTONLY) || cmd->IsFlagSet(FCVAR_HIDDEN))
+			{
+				cmd = cmd->GetNext();
+				continue;
+			}
+
+			if (!strnicmp(text, cmd->GetName(), len))
+			{
+				// match found, add to list
+				CompletionItem* item = new CompletionItem();
+				m_CompletionList.AddToTail(item);
+				item->m_pCommand = (ConCommandBase*)cmd;
+				const char* tst = cmd->GetName();
+				if (!cmd->IsCommand())
+				{
+					item->m_bIsCommand = false;
+					ConVar* var = (ConVar*)cmd;
+					ConVar_ServerBounded* pBounded = dynamic_cast<ConVar_ServerBounded*>(var);
+					if (pBounded || var->IsFlagSet(FCVAR_NEVER_AS_STRING))
+					{
+						char strValue[512];
+
+						int intVal = pBounded ? pBounded->GetInt() : var->GetInt();
+						float floatVal = pBounded ? pBounded->GetFloat() : var->GetFloat();
+
+						if (floatVal == intVal)
+							Q_snprintf(strValue, sizeof(strValue), "%d", intVal);
+						else
+							Q_snprintf(strValue, sizeof(strValue), "%f", floatVal);
+
+						item->m_pText = new CHistoryItem(var->GetName(), strValue);
+					}
+					else
+					{
+						item->m_pText = new CHistoryItem(var->GetName(), var->GetString());
+					}
+				}
+				else
+				{
+					item->m_bIsCommand = true;
+					item->m_pText = new CHistoryItem(tst);
+				}
+			}
+
+			cmd = cmd->GetNext();
+		}
+
+		// Now sort the list by command name
+		if (m_CompletionList.Count() >= 2)
+		{
+			for (int i = 0; i < m_CompletionList.Count(); i++)
+			{
+				for (int j = i + 1; j < m_CompletionList.Count(); j++)
+				{
+					const CompletionItem* i1, * i2;
+					i1 = m_CompletionList[i];
+					i2 = m_CompletionList[j];
+
+					if (Q_stricmp(i1->GetName(), i2->GetName()) > 0)
+					{
+						CompletionItem* temp = m_CompletionList[i];
+						m_CompletionList[i] = m_CompletionList[j];
+						m_CompletionList[j] = temp;
+					}
+				}
+			}
+		}
+	}
+
+	if (m_CompletionList.Count() < 1)
+	{
+		m_pCompletionList->SetVisible(false);
+	}
+	else
+	{
+		m_pCompletionList->SetVisible(true);
+		m_pCompletionList->DeleteAllItems();
+		const int MAX_MENU_ITEMS = 10;
+
+		// add the first ten items to the list
+		for (int i = 0; i < m_CompletionList.Count() && i < MAX_MENU_ITEMS; i++)
+		{
+			char text[256];
+			text[0] = 0;
+			if (i == MAX_MENU_ITEMS - 1)
+			{
+				Q_strncpy(text, "...", sizeof(text));
+			}
+			else
+			{
+				Assert(m_CompletionList[i]);
+				Q_strncpy(text, m_CompletionList[i]->GetItemText(), sizeof(text));
+			}
+			KeyValues* kv = new KeyValues("CompletionCommand");
+			kv->SetString("command", text);
+			m_pCompletionList->AddMenuItem(text, kv, this);
+		}
+		int cx, cy;
+		m_pTextEntry->CursorToPixelSpace(end, cx, cy);
+		m_pCompletionList->SetPos(cx, cy);
+		m_pTextEntry->RequestFocus();
+	}
+}
+
 void CConfigEditorDialog::OnInputPrompt(KeyValues* kv)
 {
 	const char* filename = kv->GetString("text");

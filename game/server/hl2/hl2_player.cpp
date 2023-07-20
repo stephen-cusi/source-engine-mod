@@ -107,8 +107,8 @@ ConVar autoaim_unlock_target( "autoaim_unlock_target", "0.8666" );
 
 ConVar sv_stickysprint("sv_stickysprint", "0", FCVAR_ARCHIVE | FCVAR_ARCHIVE_XBOX);
 
-ConVar jb_suitpower_charge_rate("jb_suitpower_charge_rate", "12.5");
-ConVar jb_suitpower_recharge_delay("jb_suitpower_recharge_delay", "0.5");
+ConVar sb_suitpower_charge_rate("sb_suitpower_charge_rate", "12.5");
+ConVar sb_suitpower_recharge_delay("sb_suitpower_recharge_delay", "0.5");
 
 #define	FLASH_DRAIN_TIME	 1.1111	// 100 units / 90 secs
 #define	FLASH_CHARGE_TIME	 50.0f	// 100 units / 2 secs
@@ -397,7 +397,7 @@ CHL2_Player::CHL2_Player()
 //
 // SUIT POWER DEVICES
 //
-#define SUITPOWER_CHARGE_RATE	jb_suitpower_charge_rate.GetFloat()											// 100 units in 8 seconds
+#define SUITPOWER_CHARGE_RATE	sb_suitpower_charge_rate.GetFloat()											// 100 units in 8 seconds
 
 #ifdef HL2MP
 	CSuitPowerDevice SuitDeviceSprint( bits_SUIT_DEVICE_SPRINT, 25.0f );				// 100 units in 4 seconds
@@ -1952,7 +1952,7 @@ bool CHL2_Player::SuitPower_RemoveDevice( const CSuitPowerDevice &device )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-#define SUITPOWER_BEGIN_RECHARGE_DELAY	jb_suitpower_recharge_delay.GetFloat()
+#define SUITPOWER_BEGIN_RECHARGE_DELAY	sb_suitpower_recharge_delay.GetFloat()
 bool CHL2_Player::SuitPower_ShouldRecharge( void )
 {
 	// Make sure all devices are off.
