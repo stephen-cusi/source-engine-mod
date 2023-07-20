@@ -98,7 +98,7 @@ void Cmd_AddClientCmdCanExecuteVar( const char *pName )
 // These functions manage a list of execution markers that we use to verify
 // special commands in the command buffer.
 //=============================================================================
-
+static ConVar cl_maxcommandchain("cl_maxcommandchain", "128", 0, "Set the maximum command chain length, will delay infinite recursions to the next tick. (Default: 128)", true, 1, true, 1024);
 static CUtlVector<int> g_ExecutionMarkers;
 static CUniformRandomStream g_ExecutionMarkerStream;
 static bool g_bExecutionMarkerStreamInitialized = false;
@@ -416,7 +416,7 @@ void Cbuf_Execute()
 	// be the the number of times Cbuf_Execute is called.
 	LockOutputFunc(true);
 	s_CommandBuffer.BeginProcessingCommands( 1 );
-	while ( s_CommandBuffer.DequeueNextCommand( ) )
+	for (int i = 0; i < cl_maxcommandchain.GetInt() && s_CommandBuffer.DequeueNextCommand( ); i++ )
 	{
 		Cbuf_ExecuteCommand( s_CommandBuffer.GetCommand(), src_command, s_CommandBuffer.m_nOutputBuffer );
 	}

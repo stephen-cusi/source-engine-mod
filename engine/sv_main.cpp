@@ -1295,7 +1295,6 @@ CGameServer::CGameServer()
 	m_bLoadedPlugins = false;
 	V_memset( m_szMapname, 0, sizeof( m_szMapname ) );
 	V_memset( m_szMapFilename, 0, sizeof( m_szMapFilename ) );
-	m_pkvBannedCommands = new KeyValues("BannedCommands");
 }
 
 
@@ -1303,8 +1302,6 @@ CGameServer::~CGameServer()
 {
 	if ( m_pPureServerWhitelist )
 		m_pPureServerWhitelist->Release();
-	if (m_pkvBannedCommands)
-		m_pkvBannedCommands->deleteThis();
 }
 
 
@@ -2017,9 +2014,9 @@ bool MatchesPattern(const char* pszSource, const char* pszPattern)
 
 bool CGameServer::FilterCommand(const char* cmd)
 {
-	for (KeyValues* v = m_pkvBannedCommands->GetFirstSubKey(); v != NULL; v = v->GetNextKey())
+	for (int i = 0; i < m_BannedCommands.Count(); i++)
 	{
-		if (MatchesPattern(cmd, v->GetString()))
+		if (MatchesPattern(cmd, m_BannedCommands[i]))
 			return false;
 	}
 	return true;
@@ -2238,8 +2235,13 @@ void SV_InitGameServerSteam()
 //-----------------------------------------------------------------------------
 bool SV_ActivateServer()
 {
-	sv.m_pkvBannedCommands->Clear();
-	sv.m_pkvBannedCommands->LoadFromFile(g_pFullFileSystem, "cfg/bannedcommands.txt");
+	sv.m_BannedCommands.PurgeAndDeleteElementsArray();
+	CUtlBuffer buf;
+	if (!g_pFullFileSystem->ReadFile("cfg/bannedcommands.txt", "GAME", buf))
+	{
+		buf.PutChar(0);
+		V_SplitString((char*)buf.Base(), "\n", sv.m_BannedCommands);
+	}
 	COM_TimestampedLog( "SV_ActivateServer" );
 #ifndef SWDS
 	EngineVGui()->UpdateProgressBar(PROGRESS_ACTIVATESERVER);

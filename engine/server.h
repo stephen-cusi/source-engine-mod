@@ -152,7 +152,7 @@ public:
 
 	bool		IsHibernating() const;
 	void		UpdateHibernationState();
-	KeyValues* m_pkvBannedCommands;
+	static CUtlVector<char*> m_BannedCommands;
 private:
 	void		SetHibernating( bool bHibernating );
 
