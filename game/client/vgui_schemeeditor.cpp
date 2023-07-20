@@ -16,6 +16,7 @@
 
 using namespace vgui;
 
+static Color s_copiedColor;
 
 class Knob : public Panel
 {
@@ -27,6 +28,7 @@ public:
 	virtual void OnMousePressed(MouseCode code);
 	virtual void OnMouseReleased(MouseCode code);
 	virtual void Paint();
+	virtual void PaintBackground();
 	virtual void ApplySchemeSettings(IScheme* pScheme);
 	DECLARE_GET_SET(int, _min, Min)
 	DECLARE_GET_SET(int, _max, Max)
@@ -62,10 +64,7 @@ void Knob::Paint()
 	int wide, tall;
 	GetSize(wide, tall);
 	int radius = min(wide, tall)/2;
-	Color col = GetBgColor();
 	Color notchCol = GetFgColor();
-	surface()->DrawSetColor(col);
-	surface()->DrawOutlinedCircle(radius, radius, radius, 8);
 	float percent = 0.0;
 	surface()->DrawSetColor(_lightcolor);
 	percent = -0.25 * M_PI_F;
@@ -107,6 +106,23 @@ void Knob::Paint()
 		surface()->DrawSetTextPos(0, 0);
 		surface()->DrawSetTextColor(_lightcolor);
 		surface()->DrawPrintText(value,V_wcslen(value));
+	}
+}
+
+void Knob::PaintBackground()
+{
+	int wide, tall;
+	GetSize(wide, tall);
+	int radius = min(wide, tall) / 2;
+	Color col = GetBgColor();
+	surface()->DrawSetColor(col);
+	int point;
+	float percent;
+	for (int i = 0; i < tall; i++)
+	{
+		percent = (float)i / (float)radius - 1.0f;
+		point = (int)(sqrtf(1 - (float)(percent * percent)) * radius);
+		surface()->DrawLine(radius - point, i, radius + point, i);
 	}
 }
 
@@ -172,8 +188,10 @@ class CColorChangePanel : public Panel
 public:
 	CColorChangePanel(Panel* pParent, const char* pName, const Color& color);
 	Color GetColor();
+	void SetColor(Color color);
 	void GetColorString(char *color);
 	virtual void PerformLayout();
+	virtual void OnCommand(const char* cmd);
 private:
 	virtual void PaintBackground();
 
@@ -206,15 +224,31 @@ void CColorChangePanel::PaintBackground()
 	BaseClass::PaintBackground();
 }
 
+void CColorChangePanel::OnCommand(const char* cmd)
+{
+	if (strcmp(cmd, "Copy") == 0)
+	{
+		s_copiedColor = GetColor();
+	}
+	else if (strcmp(cmd, "Paste") == 0)
+	{
+		SetColor(s_copiedColor);
+	}
+	else
+	{
+		BaseClass::OnCommand(cmd);
+	}
+}
+
 void CColorChangePanel::PerformLayout()
 {
 	int wide, tall;
 	GetSize(wide, tall);
-	//int ky = tall/2 - m_pRedKnob->GetTall()/2;
-	m_pRedKnob->SetPos(wide / 5 - 6, 0);
-	m_pGreenKnob->SetPos(2*wide / 5 - 6, 0);
-	m_pBlueKnob->SetPos(3*wide / 5 - 6, 0);
-	m_pAlphaKnob->SetPos(4*wide / 5 - 6, 0);
+	int kx = m_pRedKnob->GetWide()/2;
+	m_pRedKnob->SetPos(wide / 5 - kx, 0);
+	m_pGreenKnob->SetPos(2*wide / 5 - kx, 0);
+	m_pBlueKnob->SetPos(3*wide / 5 - kx, 0);
+	m_pAlphaKnob->SetPos(4*wide / 5 - kx, 0);
 	m_pCopyButton->SetPos(0, 16);
 	m_pPasteButton->SetPos(wide / 2, 16);
 	m_pCopyButton->SetSize(wide / 2, 16);
@@ -224,6 +258,14 @@ void CColorChangePanel::PerformLayout()
 Color CColorChangePanel::GetColor()
 {
 	return Color(m_pRedKnob->GetValue(), m_pGreenKnob->GetValue(), m_pBlueKnob->GetValue(), m_pAlphaKnob->GetValue());
+}
+
+void CColorChangePanel::SetColor(Color color)
+{
+	m_pRedKnob->SetValue(color[0]);
+	m_pGreenKnob->SetValue(color[1]);
+	m_pBlueKnob->SetValue(color[2]);
+	m_pAlphaKnob->SetValue(color[3]);
 }
 
 void CColorChangePanel::GetColorString(char* color)
@@ -257,9 +299,9 @@ void CBorderLineChangePanel::PerformLayout()
 {
 	int wide, tall;
 	GetSize(wide, tall);
-	m_pColor->SetBounds(wide / 4 - 48, tall / 2 - 8, 96, 16);
-	m_pOffsetX->SetBounds(3 * wide / 4 - 8, tall / 2 - 6, 12, 12);
-	m_pOffsetY->SetBounds(3 * wide / 4 + 8, tall / 2 - 6, 12, 12);
+	m_pColor->SetBounds(wide / 4 - 48, tall / 2 - 16, 96, 32);
+	m_pOffsetX->SetBounds(3 * wide / 4 - 10, tall / 2 - 6, 14, 14);
+	m_pOffsetY->SetBounds(3 * wide / 4 + 10, tall / 2 - 6, 14, 14);
 }
 
 
@@ -287,14 +329,14 @@ CBorderSideChangePanel::CBorderSideChangePanel(Panel* pParent, const char* pName
 void CBorderSideChangePanel::PerformLayout()
 {
 	int count = m_vpBorders.Count();
-	SetTall(count * 24 + 24);
+	SetTall(count * 32 + 24);
 	int wide = GetWide();
 	for (int i = 0; i < count; i++)
 	{
-		m_vpBorders[i]->SetBounds(0, i * 24, wide, 24);
+		m_vpBorders[i]->SetBounds(0, i * 32, wide, 32);
 	}
-	m_pAddButton->SetBounds(0, count * 24, wide / 2, 24);
-	m_pRemoveButton->SetBounds(wide/2, count * 24, wide / 2, 24);
+	m_pAddButton->SetBounds(0, count * 32, wide / 2, 24);
+	m_pRemoveButton->SetBounds(wide/2, count * 32, wide / 2, 24);
 }
 
 void CBorderSideChangePanel::AddLine(Color color, int offsetx, int offsety)
@@ -534,11 +576,12 @@ void CSchemeEditor::ReloadTabs()
 	}
 	IScheme* sch = scheme()->GetIScheme(GetScheme());
 	KeyValues* colorData = sch->GetBaseSettings();
+	PanelListPanel* listpanel = reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(1));
 	for (KeyValues* pKey = colorData->GetFirstValue(); pKey; pKey = pKey->GetNextValue())
 	{
 		if (CheckColor(pKey->GetName(), sch))
 		{
-			reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(1))->AddItem(
+			listpanel->AddItem(
 				new Label(this, "SchemeEditorColorLabel", pKey->GetName()),
 				new CColorChangePanel(this, "SchemeEditorColorChange", GetSchemeColor(pKey->GetName(), Color(255, 0, 255, 255), sch))
 			);
@@ -647,6 +690,8 @@ void CSchemeEditor::PerformLayout()
 	m_pSaveAsButton->SetBounds(wide / 3 + 8 + 64 + 8, 32, 64, 24);
 	m_pApplyButton->SetBounds(wide / 3 + 8 + 64 + 8 + 64 + 8, 32, 64, 24);
 	m_pFileList->SetBounds(2 * wide / 3 + 8, 32, wide / 3 - 16, tall - 32 - 16);
+	PanelListPanel* listpanel = reinterpret_cast<PanelListPanel*>(m_pTabs->GetPage(1));
+	listpanel->SetFirstColumnWidth(max(16,listpanel->GetWide() - 128));
 }
 
 void ApplyBorderSide(KeyValues* borderside, CBorderSideChangePanel* sidepanel)

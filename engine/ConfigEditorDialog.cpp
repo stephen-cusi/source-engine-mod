@@ -137,6 +137,7 @@ void CConfigEditorDialog::OnInputPrompt(KeyValues* kv)
 			RepopulateFileList();
 		}
 	}
+	strcpy(m_sCurrentFile, fullname);
 	SetTitle(filename, true);
 	m_pDialog->MarkForDeletion();
 	m_pDialog = NULL;
@@ -228,11 +229,12 @@ void CConfigEditorDialog::OnCommand( const char *command )
 	else if (strcmp(command, "execute") == 0 && !m_pDialog)
 	{	
 		char command[COMMAND_MAX_LENGTH];
-		strcpy(command, "exec ");
+		strcpy(command, "exec \"");
 		strcat(command, m_sCurrentFile + 4);
+		strcat(command, "\"");
 		command[strlen(command) - 4] = '\x00';
 		Cbuf_AddText(command);
-		Msg("%s\n",command);
+		//Msg("%s\n",command);
 	}
 	else if (strcmp(command, "save") == 0 && !m_pDialog)
 	{

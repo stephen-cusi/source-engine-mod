@@ -98,7 +98,7 @@ void Cmd_AddClientCmdCanExecuteVar( const char *pName )
 // These functions manage a list of execution markers that we use to verify
 // special commands in the command buffer.
 //=============================================================================
-static ConVar cmd_maxcommandchain("cmd_maxcommandchain", "128", FCVAR_NEVER_AS_STRING | FCVAR_ARCHIVE, "Set the maximum command chain length, will delay infinite recursions to the next tick. (Default: 128)", true, 1, true, 1024);
+static ConVar cmd_maxcommandchain("cmd_maxcommandchain", "128", FCVAR_ARCHIVE, "Set the maximum command chain length, will delay infinite recursions to the next tick. (Default: 128)", true, 1, true, 1024);
 static CUtlVector<int> g_ExecutionMarkers;
 static CUniformRandomStream g_ExecutionMarkerStream;
 static bool g_bExecutionMarkerStreamInitialized = false;
