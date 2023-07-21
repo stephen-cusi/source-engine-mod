@@ -4,6 +4,9 @@
 #include "vgui_controls/InputDialog.h"
 #include "vgui_controls/TreeView.h"
 #include "vgui_controls/Menu.h"
+#include "vgui/IScheme.h"
+#include "vgui/IInput.h"
+#include "vgui_controls/Controls.h"
 #include "vgui/IVGui.h"
 #include <KeyValues.h>
 #include "filesystem.h"
@@ -220,13 +223,43 @@ const char* CConfigEditorDialog::CompletionItem::GetCommand(void) const
 
 
 
+//-----------------------------------------------------------------------------
+// Purpose: swallows tab key pressed
+//-----------------------------------------------------------------------------
+void CConfigEditorTextEntry::OnKeyCodeTyped(KeyCode code)
+{
+	if (!m_bAutoCompleting)
+	{
+		BaseClass::OnKeyCodeTyped(code);
+		return;
+	}
+	if (code == KEY_TAB || code == KEY_ENTER)
+	{
+		reinterpret_cast<CConfigEditorDialog*>(GetParent())->OnComplete();
+	}
+	else if (code == KEY_DOWN)
+	{
+		reinterpret_cast<CConfigEditorDialog*>(GetParent())->OnCycle(false);
+	}
+	else if (code == KEY_UP)
+	{
+		reinterpret_cast<CConfigEditorDialog*>(GetParent())->OnCycle(true);
+	}
+	else 
+	{
+		BaseClass::OnKeyCodeTyped(code);
+	}
+
+}
+
+
 CConfigEditorDialog::CConfigEditorDialog(vgui::Panel* parent) : BaseClass(parent, "CConfigEditorDialog")
 {
 	SetBounds(0, 0, 512 + 64 + 16, 340);
 	SetMinimumSize(512 + 64 + 16, 100);
 	SetSizeable(true);
 	SetVisible(false);
-	m_pTextEntry = new TextEntry(this,"CodeInput");
+	m_pTextEntry = new CConfigEditorTextEntry(this,"CodeInput");
 	m_pTextEntry->SetMultiline(true);
 	m_pTextEntry->SetCatchEnterKey(true);
 	m_pTextEntry->SetVerticalScrollbar(true);
@@ -238,14 +271,20 @@ CConfigEditorDialog::CConfigEditorDialog(vgui::Panel* parent) : BaseClass(parent
 	m_pExecuteButton = new Button(this, "ConfigExecuteButton", "Execute", this, "execute");
 	m_pFileList = new TreeView(this, "ConfigFileList");
 	CNonFocusableMenu* pCompletionList = new CNonFocusableMenu(this, "CompletionList");
+	pCompletionList->SetFocusPanel(m_pTextEntry);
 	m_pCompletionList = pCompletionList;
 	m_pCompletionList->SetVisible(false);
 	RepopulateFileList();
 	SetTitle("Untitled",true);
 	m_pDialog = NULL;
 	m_sFileBuffer = CUtlVector<char>(0,1);
+	m_bAutoCompleteMode = false;
 }
-
+void CConfigEditorDialog::ApplySchemeSettings(IScheme* pScheme)
+{
+	BaseClass::ApplySchemeSettings(pScheme);
+	m_pCompletionList->SetFont(pScheme->GetFont("DefaultSmall"));
+}
 void CConfigEditorDialog::RepopulateFileList()
 {
 	m_pFileList->RemoveAll();
@@ -257,6 +296,98 @@ void CConfigEditorDialog::RepopulateFileList()
 	m_pFileList->AddActionSignalTarget(this);
 	kv->deleteThis();
 	PopulateFileList("cfg/", rootindex);
+}
+
+void CConfigEditorDialog::CompleteText(const char* completion)
+{
+	int beginning = m_pTextEntry->GetCursorPos();
+	if (beginning == 0)
+		return;
+	for (; m_pTextEntry->m_TextStream[beginning-1] != '\n' && beginning > 0; beginning--)
+	{
+
+	}
+	m_pTextEntry->_select[0] = beginning;
+	m_pTextEntry->_select[1] = m_pTextEntry->GetCursorPos();
+	m_pTextEntry->DeleteSelected();
+	m_pTextEntry->InsertString(completion);
+	OnTextChanged();
+	
+}
+
+void CConfigEditorDialog::OnMenuItemSelected(const char* command)
+{
+	if (strstr(command, "...")) // stop the menu going away if you click on ...
+	{
+		m_pCompletionList->SetVisible(true);
+	}
+	else
+	{
+		CompleteText(command);
+	}
+}
+
+void CConfigEditorDialog::OnComplete()
+{
+	// match found, set text
+	char completedText[256];
+	CompletionItem* item = m_CompletionList[m_iNextCompletion-1];
+	Assert(item);
+
+	if (!item->m_bIsCommand && item->m_pCommand)
+	{
+		Q_strncpy(completedText, item->GetCommand(), sizeof(completedText) - 2);
+	}
+	else
+	{
+		Q_strncpy(completedText, item->GetItemText(), sizeof(completedText) - 2);
+	}
+
+	if (!Q_strstr(completedText, " "))
+	{
+		Q_strncat(completedText, " ", sizeof(completedText), COPY_ALL_CHARACTERS);
+	}
+
+	CompleteText(completedText);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: auto completes current text
+//-----------------------------------------------------------------------------
+void CConfigEditorDialog::OnCycle(bool reverse)
+{
+	if (!m_bAutoCompleteMode)
+	{
+		// we're not in auto-complete mode, Start
+		m_iNextCompletion = 0;
+		m_bAutoCompleteMode = true;
+	}
+
+	// if we're in reverse, move back to before the current
+	if (reverse)
+	{
+		m_iNextCompletion -= 2;
+		if (m_iNextCompletion < 0)
+		{
+			// loop around in reverse
+			m_iNextCompletion = m_CompletionList.Size() - 1;
+		}
+	}
+
+	// get the next completion
+	if (!m_CompletionList.IsValidIndex(m_iNextCompletion))
+	{
+		// loop completion list
+		m_iNextCompletion = 0;
+	}
+
+	// make sure everything is still valid
+	if (!m_CompletionList.IsValidIndex(m_iNextCompletion))
+		return;
+
+	m_iNextCompletion++;
+
+	FillCompletionMenu();
 }
 
 void CConfigEditorDialog::PopulateFileList(const char* startpath, int rootindex)
@@ -330,23 +461,70 @@ static ConCommand* FindAutoCompleteCommmandFromPartial(const char* partial)
 	return cmd;
 }
 
+
+void CConfigEditorDialog::FillCompletionMenu()
+{
+	m_pCompletionList->SetVisible(true);
+	m_pCompletionList->DeleteAllItems();
+	m_pTextEntry->m_bAutoCompleting = true;
+	const int MAX_MENU_ITEMS = 10;
+	int scrollOffset = min(max(1, m_CompletionList.Count() - MAX_MENU_ITEMS + 1), m_iNextCompletion);
+	// add the first ten items to the list
+	for (int i = 0; i < m_CompletionList.Count() && i < MAX_MENU_ITEMS; i++)
+	{
+		char text[256];
+		text[0] = 0;
+		int index = i + scrollOffset - 1;
+		if (i == MAX_MENU_ITEMS - 1 && index != m_CompletionList.Count() - 1)
+		{
+			Q_strncpy(text, "...", sizeof(text));
+		}
+		else
+		{
+			Q_strncpy(text, m_CompletionList[index]->GetItemText(), sizeof(text));
+		}
+		KeyValues* kv = new KeyValues("CompletionCommand");
+		kv->SetString("command", text);
+		int itemindex = m_pCompletionList->AddMenuItem(text, kv, this);
+		if (index == m_iNextCompletion - 1)
+		{
+			m_pCompletionList->SetCurrentlyHighlightedItem(itemindex);
+		}
+	}
+	int cx, cy;
+	m_pTextEntry->CursorToPixelSpace(m_pTextEntry->GetCursorPos(), cx, cy);
+	m_pTextEntry->LocalToScreen(cx, cy);
+	m_pCompletionList->SetPos(cx, cy);
+}
+
+
 void CConfigEditorDialog::OnTextChanged()
 {
+	m_bAutoCompleteMode = false;
+	m_pTextEntry->m_bAutoCompleting = false;
 	int length = m_pTextEntry->GetTextLength();
 	if (length == 0)
+	{
+		m_pCompletionList->SetVisible(false);
 		return;
+	}
 	//const wchar_t* text = m_pTextEntry->m_TextStream.Base();
 	int beginning = m_pTextEntry->GetCursorPos();
-	for (; m_pTextEntry->m_TextStream[beginning] != '\n' && beginning > 0; beginning--)
+	for (; (beginning > 0) && m_pTextEntry->m_TextStream[beginning-1] != '\n'; beginning--)
 	{
 		
 	}
 	int end = m_pTextEntry->GetCursorPos();
-	for (; m_pTextEntry->m_TextStream[end] != '\n' && end < length - 1; end++)
+	for (; (end < length - 1) && m_pTextEntry->m_TextStream[end+1] != '\n'; end++)
 	{
 		
 	}
 	int len = end - beginning;
+	if (len == 0)
+	{
+		m_pCompletionList->SetVisible(false);
+		return;
+	}
 	char text[COMMAND_MAX_LENGTH];
 	V_wcstostr(&m_pTextEntry->m_TextStream.Base()[beginning], len, text, COMMAND_MAX_LENGTH);
 	
@@ -367,8 +545,10 @@ void CConfigEditorDialog::OnTextChanged()
 	{
 		ConCommand* pCommand = FindAutoCompleteCommmandFromPartial(text);
 		if (!pCommand)
+		{
+			m_pCompletionList->SetVisible(false);
 			return;
-
+		}
 		bNormalBuild = false;
 
 		CUtlVector< CUtlString > commands;
@@ -465,36 +645,15 @@ void CConfigEditorDialog::OnTextChanged()
 	if (m_CompletionList.Count() < 1)
 	{
 		m_pCompletionList->SetVisible(false);
+		m_pTextEntry->m_bAutoCompleting = false;
 	}
 	else
 	{
-		m_pCompletionList->SetVisible(true);
-		m_pCompletionList->DeleteAllItems();
-		const int MAX_MENU_ITEMS = 10;
-
-		// add the first ten items to the list
-		for (int i = 0; i < m_CompletionList.Count() && i < MAX_MENU_ITEMS; i++)
-		{
-			char text[256];
-			text[0] = 0;
-			if (i == MAX_MENU_ITEMS - 1)
-			{
-				Q_strncpy(text, "...", sizeof(text));
-			}
-			else
-			{
-				Assert(m_CompletionList[i]);
-				Q_strncpy(text, m_CompletionList[i]->GetItemText(), sizeof(text));
-			}
-			KeyValues* kv = new KeyValues("CompletionCommand");
-			kv->SetString("command", text);
-			m_pCompletionList->AddMenuItem(text, kv, this);
-		}
-		int cx, cy;
-		m_pTextEntry->CursorToPixelSpace(end, cx, cy);
-		m_pCompletionList->SetPos(cx, cy);
-		m_pTextEntry->RequestFocus();
+		m_iNextCompletion = 1;
+		FillCompletionMenu();
 	}
+	RequestFocus();
+	m_pTextEntry->RequestFocus();
 }
 
 void CConfigEditorDialog::OnInputPrompt(KeyValues* kv)

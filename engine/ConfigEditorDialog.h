@@ -5,6 +5,7 @@
 #endif
 
 #include "vgui_controls/Frame.h"
+#include "vgui_controls/TextEntry.h"
 #include "vgui_controls/InputDialog.h"
 
 // Things the user typed in and hit submit/return with
@@ -27,6 +28,24 @@ private:
 	bool		m_bHasExtra;
 };
 
+
+class CConfigEditorTextEntry : public vgui::TextEntry
+{
+	DECLARE_CLASS_SIMPLE(CConfigEditorTextEntry, vgui::TextEntry);
+public:
+
+	CConfigEditorTextEntry(Panel* parent, char const* panelName) :
+		BaseClass(parent, panelName)
+	{
+		m_bAutoCompleting = false;
+	}
+
+	virtual void OnKeyCodeTyped(vgui::KeyCode code);
+
+	bool m_bAutoCompleting;
+};
+
+
 //-----------------------------------------------------------------------------
 // Purpose: Browses config files and edits them
 //-----------------------------------------------------------------------------
@@ -40,6 +59,9 @@ public:
 	virtual void PerformLayout();
 	virtual void OnCommand(const char *command);
 	static	void	InstallConfigEditor(vgui::Panel* parent);
+	virtual void ApplySchemeSettings(vgui::IScheme* pScheme);
+	virtual void OnComplete();
+	virtual void OnCycle(bool reverse);
 
 private:
 
@@ -60,16 +82,20 @@ private:
 	};
 
 	CUtlVector< CompletionItem* > m_CompletionList;
+	int m_iNextCompletion;
+	bool m_bAutoCompleteMode;
 
 	MESSAGE_FUNC_INT(OnFileSelected, "TreeViewItemSelected", itemIndex);
 	MESSAGE_FUNC_PARAMS(OnInputPrompt, "InputCompleted", kv);
 	MESSAGE_FUNC(OnClosePrompt, "InputCanceled");
 	MESSAGE_FUNC(OnTextChanged, "TextChanged");
+	MESSAGE_FUNC_CHARPTR(OnMenuItemSelected, "CompletionCommand", command);
 
 	virtual void PopulateFileList(const char* startpath, int rootindex);
 	virtual void RepopulateFileList();
-
-	vgui::TextEntry *m_pTextEntry;
+	virtual void CompleteText(const char* completion);
+	virtual void FillCompletionMenu();
+	CConfigEditorTextEntry *m_pTextEntry;
 	vgui::Button* m_pNewButton;
 	vgui::Button* m_pSaveButton;
 	vgui::Button* m_pSaveAsButton;
