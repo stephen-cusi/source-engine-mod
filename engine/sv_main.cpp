@@ -2239,10 +2239,11 @@ bool SV_ActivateServer()
 {
 	sv.m_BannedCommands.PurgeAndDeleteElementsArray();
 	CUtlBuffer buf;
-	if (!g_pFullFileSystem->ReadFile("cfg/bannedcommands.txt", "GAME", buf))
+	if (g_pFullFileSystem->ReadFile("cfg/bannedcommands.txt", 0, buf))
 	{
 		buf.PutChar(0);
-		V_SplitString((char*)buf.Base(), "\n", sv.m_BannedCommands);
+		const char* sep[2] = { "\n","\r\n" };
+		V_SplitString2((char*)buf.Base(), sep, 2, sv.m_BannedCommands);
 	}
 	COM_TimestampedLog( "SV_ActivateServer" );
 #ifndef SWDS
