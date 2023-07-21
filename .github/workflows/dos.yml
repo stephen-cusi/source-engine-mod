@@ -47,6 +47,6 @@ jobs:
         cat build/config.log > ./win/info.txt
     - uses: actions/upload-artifact@v3
       with:
-        name: cstrike-win32
+        name: hl2dm-win32
         path: ./win
         if-no-files-found: error
