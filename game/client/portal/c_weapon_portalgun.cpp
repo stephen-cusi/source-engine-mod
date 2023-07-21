@@ -206,12 +206,43 @@ void C_WeaponPortalgun::Spawn( void )
 //-----------------------------------------------------------------------------
 void C_WeaponPortalgun::StartEffects( void )
 {
+	CBaseEntity* pModelView = ((GetOwner()) ? (ToBasePlayer(GetOwner())->GetViewModel()) : (0));
+	CBaseEntity* pModelWorld = this;
 
+	if (!pModelView)
+	{
+		pModelView = pModelWorld;
+	}
+	// ------------------------------------------
+	// Beams
+	// ------------------------------------------
+
+	// Setup the beams
+	int iBeam = 0;
+
+	if (pModelView != pModelWorld)
+	{
+		m_Beams[iBeam++].Init(pModelView->LookupAttachment("Arm1_attach3"), pModelView->LookupAttachment("muzzle"), pModelView, true);
+		m_Beams[iBeam++].Init(pModelView->LookupAttachment("Arm2_attach3"), pModelView->LookupAttachment("muzzle"), pModelView, true);
+		m_Beams[iBeam++].Init(pModelView->LookupAttachment("Arm3_attach3"), pModelView->LookupAttachment("muzzle"), pModelView, true);
+	}
+	else
+	{
+		iBeam += 3;
+	}
+
+	m_Beams[iBeam++].Init(pModelWorld->LookupAttachment("Arm1_attach3"), pModelWorld->LookupAttachment("muzzle"), pModelWorld, false);
+	m_Beams[iBeam++].Init(pModelWorld->LookupAttachment("Arm2_attach3"), pModelWorld->LookupAttachment("muzzle"), pModelWorld, false);
+	m_Beams[iBeam++].Init(pModelWorld->LookupAttachment("Arm3_attach3"), pModelWorld->LookupAttachment("muzzle"), pModelWorld, false);
 }
 
 void C_WeaponPortalgun::DestroyEffects( void )
 {
-
+	// Free our beams
+	for (int i = 0; i < NUM_PORTALGUN_BEAMS; ++i)
+	{
+		m_Beams[i].Release();
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -219,7 +250,13 @@ void C_WeaponPortalgun::DestroyEffects( void )
 //-----------------------------------------------------------------------------
 void C_WeaponPortalgun::DoEffectReady( void )
 {
-
+	int i;
+	// Turn off beams off
+	for (i = 0; i < NUM_PORTALGUN_BEAMS; ++i)
+	{
+		m_Beams[i].SetVisibleViewModel(false);
+		m_Beams[i].SetVisible3rdPerson(false);
+	}
 }
 
 
@@ -228,7 +265,21 @@ void C_WeaponPortalgun::DoEffectReady( void )
 //-----------------------------------------------------------------------------
 void C_WeaponPortalgun::DoEffectHolding( void )
 {
-	
+	int i;
+	// Set beams them visible
+	for (i = 0; i < NUM_PORTALGUN_BEAMS / 2; ++i)
+	{
+		m_Beams[i].SetVisible3rdPerson(false);
+		m_Beams[i].SetVisibleViewModel();
+		m_Beams[i].SetBrightness(128.0f);
+	}
+
+	for (i; i < NUM_PORTALGUN_BEAMS; ++i)
+	{
+		m_Beams[i].SetVisibleViewModel(false);
+		m_Beams[i].SetVisible3rdPerson();
+		m_Beams[i].SetBrightness(128.0f);
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -236,7 +287,12 @@ void C_WeaponPortalgun::DoEffectHolding( void )
 //-----------------------------------------------------------------------------
 void C_WeaponPortalgun::DoEffectNone( void )
 {
-	
+	int i;
+	for (i = 0; i < NUM_PORTALGUN_BEAMS; ++i)
+	{
+		m_Beams[i].SetVisibleViewModel(false);
+		m_Beams[i].SetVisible3rdPerson(false);
+	}
 }
 
 void C_WeaponPortalgun::OnPreDataChanged( DataUpdateType_t updateType )

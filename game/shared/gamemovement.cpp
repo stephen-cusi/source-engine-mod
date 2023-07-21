@@ -4996,7 +4996,7 @@ void CGameMovement::TracePlayerBBox( const Vector& start, const Vector& end, uns
 	Ray_t ray;
 	ray.Init( start, end, GetPlayerMins(), GetPlayerMaxs() );
 	UTIL_TraceRay( ray, fMask, mv->m_nPlayerHandle.Get(), collisionGroup, &pm );
-
+	
 }
 
 

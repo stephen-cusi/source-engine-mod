@@ -103,7 +103,7 @@ $Project
 		
 		$File	"$SRCDIR\game\shared\replay_gamestats_shared.cpp"	[$BUILD_REPLAY]
 		$File	"$SRCDIR\game\shared\replay_gamestats_shared.h"	[$BUILD_REPLAY]
-		
+		{
 			$Configuration
 			{
 				$Compiler

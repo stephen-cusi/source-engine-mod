@@ -1528,7 +1528,7 @@ CPhysicsObject *CreatePhysicsObject( CPhysicsEnvironment *pEnvironment, const CP
 #if _WIN32
 	if ( !position.IsValid() || !angles.IsValid() )
 	{
-		DebuggerBreakIfDebugging();
+		//DebuggerBreakIfDebugging();
 		Warning("Invalid initial position on %s\n", pParams->pName );
 
 		Vector *pPos = (Vector *)&position;

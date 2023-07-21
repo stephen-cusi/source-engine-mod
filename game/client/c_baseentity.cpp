@@ -4392,7 +4392,7 @@ void C_BaseEntity::CalcAbsoluteVelocity()
 	if ((m_iEFlags & EFL_DIRTY_ABSVELOCITY ) == 0)
 		return;
 
-	AUTO_LOCK( m_CalcAbsoluteVelocityMutex );
+	//AUTO_LOCK( m_CalcAbsoluteVelocityMutex );
 
 	if ((m_iEFlags & EFL_DIRTY_ABSVELOCITY) == 0) // need second check in event another thread grabbed mutex and did the calculation
 	{

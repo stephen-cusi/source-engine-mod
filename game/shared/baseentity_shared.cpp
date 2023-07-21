@@ -1544,7 +1544,7 @@ void CBaseEntity::InvalidatePhysicsRecursive( int nChangeFlags )
 CBaseEntity *CBaseEntity::GetRootMoveParent()
 {
 	CBaseEntity *pEntity = this;
-	CBaseEntity *pParent = this->GetMoveParent();
+ 	CBaseEntity *pParent = this->GetMoveParent();
 	while ( pParent )
 	{
 		pEntity = pParent;

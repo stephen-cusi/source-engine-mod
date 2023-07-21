@@ -82,6 +82,7 @@ void TE_DispatchEffect( IRecipientFilter& filter, float delay, const Vector &pos
 void DispatchEffect( const char *pName, const CEffectData &data )
 {
 	CPASFilter filter( data.m_vOrigin );
+	//CBroadcastRecipientFilter filter;
 	DispatchEffect( pName, data, filter );
 }
 
