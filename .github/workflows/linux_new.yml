@@ -20,14 +20,14 @@ jobs:
         
         git submodule init;git submodule update
         sudo apt update;sudo apt upgrade;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
-        ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=hl2 
+        ./waf configure -T release -8 --prefix=./linux --disable-warns --build-game=hl2mp -d 
         sudo ./waf install -j4
         
         cat build/config.log >./linux/info.txt
         
     - uses: actions/upload-artifact@v3
       with:
-        name: linux-source-engine-64
+        name: linux-source-engine-64-d
         path: ./linux
         if-no-files-found: error
 
