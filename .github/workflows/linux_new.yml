@@ -75,7 +75,7 @@ jobs:
         path: ./linux
         if-no-files-found: error
 
-  build-srceng-linux-hl2dm:
+  build-srceng-linux-hl2dm-full:
     runs-on: ubuntu-latest
 
     steps:
