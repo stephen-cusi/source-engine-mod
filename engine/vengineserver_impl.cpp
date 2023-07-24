@@ -58,7 +58,7 @@
 
 void SV_DetermineMulticastRecipients( bool usepas, const Vector& origin, CBitVec< ABSOLUTE_PLAYER_LIMIT >& playerbits );
 
-int MapList_ListMaps( const char *pszSubString, bool listobsolete, bool verbose, int maxcount, int maxitemlength, char maplist[][ 64 ] );
+int MapList_ListMaps( const char *pszSubString, bool listobsolete, bool verbose, int maxcount, int maxitemlength, char maplist[][COMMAND_COMPLETION_ITEM_LENGTH] );
 
 extern CNetworkStringTableContainer *networkStringTableContainerServer;
 
@@ -644,7 +644,7 @@ public:
 		}
 
 		// Fuzzy match in map list and check file
-		char match[1][64] = { {0} };
+		char match[1][COMMAND_COMPLETION_ITEM_LENGTH] = { {0} };
 		if ( MapList_ListMaps( pMapName, false, false, 1, sizeof( match[0] ), match ) && *(match[0]) )
 		{
 			Host_DefaultMapFileName( match[0], szDiskName, sizeof( szDiskName ) );

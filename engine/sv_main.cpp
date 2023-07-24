@@ -2230,12 +2230,7 @@ void SV_InitGameServerSteam()
 		}
 	}
 }
-
-//-----------------------------------------------------------------------------
-// Purpose:
-// Input  : runPhysics -
-//-----------------------------------------------------------------------------
-bool SV_ActivateServer()
+void SV_RefreshBannedCommands()
 {
 	sv.m_BannedCommands.PurgeAndDeleteElementsArray();
 	CUtlBuffer buf;
@@ -2245,6 +2240,19 @@ bool SV_ActivateServer()
 		const char* sep[2] = { "\n","\r\n" };
 		V_SplitString2((char*)buf.Base(), sep, 2, sv.m_BannedCommands);
 	}
+}
+
+CON_COMMAND(mp_refreshbannedcommands, "Refresh the banned commands list")
+{
+	SV_RefreshBannedCommands();
+}
+//-----------------------------------------------------------------------------
+// Purpose:
+// Input  : runPhysics -
+//-----------------------------------------------------------------------------
+bool SV_ActivateServer()
+{
+	SV_RefreshBannedCommands();
 	COM_TimestampedLog( "SV_ActivateServer" );
 #ifndef SWDS
 	EngineVGui()->UpdateProgressBar(PROGRESS_ACTIVATESERVER);

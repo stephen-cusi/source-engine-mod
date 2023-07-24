@@ -20,7 +20,7 @@
 #define RADAR_IGNORE_Z			(1<<6)	//always draw this item as if it was at the same Z as the player
 #define RADAR_MAX_GHOST_ALPHA	25
 
-DECLARE_VGUI_SCREEN_FACTORY( CHudRadar, "jalopy_radar_panel" );
+DECLARE_VGUI_SCREEN_FACTORY( CHudRadarHL2, "jalopy_radar_panel" );
 
 #define RADAR_PANEL_MATERIAL			"vgui/screens/radar"
 #define RADAR_CONTACT_LAMBDA_MATERIAL	"vgui/icons/icon_lambda"	// Lambda cache
@@ -29,9 +29,9 @@ DECLARE_VGUI_SCREEN_FACTORY( CHudRadar, "jalopy_radar_panel" );
 #define RADAR_CONTACT_DOG_MATERIAL		"vgui/icons/icon_dog"		// Dog
 #define RADAR_CONTACT_BASE_MATERIAL		"vgui/icons/icon_base"		// Ally base
 
-static CHudRadar *s_Radar = NULL;
+static CHudRadarHL2 *s_Radar = NULL;
 
-CHudRadar *GetHudRadar()
+CHudRadarHL2 *GetHudRadar()
 {
 	return s_Radar;
 }
@@ -40,7 +40,7 @@ DECLARE_HUDELEMENT( CMapOverview );
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-CHudRadar::CHudRadar( vgui::Panel *parent, const char *panelName ) : BaseClass( parent, panelName )
+CHudRadarHL2::CHudRadarHL2( vgui::Panel *parent, const char *panelName ) : BaseClass( parent, panelName )
 {
 	m_pVehicle = NULL;
 	m_iImageID = -1;
@@ -53,7 +53,7 @@ CHudRadar::CHudRadar( vgui::Panel *parent, const char *panelName ) : BaseClass( 
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-CHudRadar::~CHudRadar()
+CHudRadarHL2::~CHudRadarHL2()
 {
 	s_Radar = NULL;
 
@@ -98,7 +98,7 @@ CHudRadar::~CHudRadar()
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-bool CHudRadar::Init( KeyValues* pKeyValues, VGuiScreenInitData_t* pInitData )
+bool CHudRadarHL2::Init( KeyValues* pKeyValues, VGuiScreenInitData_t* pInitData )
 {
 	bool result = BaseClass::Init( pKeyValues, pInitData );
 	ClearAllRadarContacts();
@@ -112,20 +112,20 @@ bool CHudRadar::Init( KeyValues* pKeyValues, VGuiScreenInitData_t* pInitData )
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-void CHudRadar::VidInit(void)
+void CHudRadarHL2::VidInit(void)
 {
 }
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-void CHudRadar::MsgFunc_UpdateRadar(bf_read &msg )
+void CHudRadarHL2::MsgFunc_UpdateRadar(bf_read &msg )
 {
 }
 
 //---------------------------------------------------------
 // Purpose: Register a radar contact in the list of contacts
 //---------------------------------------------------------
-void CHudRadar::AddRadarContact( const Vector &vecOrigin, int iType, float flTimeToLive )
+void CHudRadarHL2::AddRadarContact( const Vector &vecOrigin, int iType, float flTimeToLive )
 {
 	if( m_iNumRadarContacts == RADAR_MAX_CONTACTS )
 		return;
@@ -149,7 +149,7 @@ void CHudRadar::AddRadarContact( const Vector &vecOrigin, int iType, float flTim
 //---------------------------------------------------------
 // Purpose: Search the contact list for a specific contact
 //---------------------------------------------------------
-int CHudRadar::FindRadarContact( const Vector &vecOrigin )
+int CHudRadarHL2::FindRadarContact( const Vector &vecOrigin )
 {
 	for( int i = 0 ; i < m_iNumRadarContacts ; i++ )
 	{
@@ -165,7 +165,7 @@ int CHudRadar::FindRadarContact( const Vector &vecOrigin )
 //			have expired. If yes, remove them from the
 //			list.
 //---------------------------------------------------------
-void CHudRadar::MaintainRadarContacts()
+void CHudRadarHL2::MaintainRadarContacts()
 {
 	bool bKeepWorking = true;
 	while( bKeepWorking )
@@ -190,7 +190,7 @@ void CHudRadar::MaintainRadarContacts()
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-void CHudRadar::SetVisible(bool state)
+void CHudRadarHL2::SetVisible(bool state)
 {
 	BaseClass::SetVisible(state);
 
@@ -207,7 +207,7 @@ void CHudRadar::SetVisible(bool state)
 // Purpose: Draw the radar panel.
 //			We're probably doing too much other work in here
 //---------------------------------------------------------
-void CHudRadar::Paint()
+void CHudRadarHL2::Paint()
 {
 	if (m_iImageID == -1 )
 	{
@@ -311,7 +311,7 @@ ConVar radar_range("radar_range", "3000" ); // 180 feet
 //		0.25 = target at (radar_range * 0.25) units distance
 //		-etc-
 //---------------------------------------------------------
-bool CHudRadar::WorldToRadar( const Vector location, const Vector origin, const QAngle angles, float &x, float &y, float &z_delta, float &scale )
+bool CHudRadarHL2::WorldToRadar( const Vector location, const Vector origin, const QAngle angles, float &x, float &y, float &z_delta, float &scale )
 {
 	bool bInRange = true;
 
@@ -388,7 +388,7 @@ bool CHudRadar::WorldToRadar( const Vector location, const Vector origin, const 
 	return bInRange;
 }
 
-void CHudRadar::DrawPositionOnRadar( Vector vecPos, C_BasePlayer *pLocalPlayer, int type, int flags, int r, int g, int b, int a )
+void CHudRadarHL2::DrawPositionOnRadar( Vector vecPos, C_BasePlayer *pLocalPlayer, int type, int flags, int r, int g, int b, int a )
 {
 	float x, y, z_delta;
 	int iBaseDotSize = 3;
@@ -439,7 +439,7 @@ void CHudRadar::DrawPositionOnRadar( Vector vecPos, C_BasePlayer *pLocalPlayer, 
 //---------------------------------------------------------
 #define RADAR_ICON_MIN_SCALE	0.75f
 #define RADAR_ICON_MAX_SCALE	1.0f
-void CHudRadar::DrawIconOnRadar( Vector vecPos, C_BasePlayer *pLocalPlayer, int type, int flags, int r, int g, int b, int a )
+void CHudRadarHL2::DrawIconOnRadar( Vector vecPos, C_BasePlayer *pLocalPlayer, int type, int flags, int r, int g, int b, int a )
 {
 	float x, y, z_delta;
 	int wide, tall;
@@ -529,14 +529,14 @@ void CHudRadar::DrawIconOnRadar( Vector vecPos, C_BasePlayer *pLocalPlayer, int 
 	}
 }
 
-void CHudRadar::FillRect( int x, int y, int w, int h )
+void CHudRadarHL2::FillRect( int x, int y, int w, int h )
 {
 	int panel_x, panel_y, panel_w, panel_h;
 	GetBounds( panel_x, panel_y, panel_w, panel_h );
 	vgui::surface()->DrawFilledRect( x, y, x+w, y+h );
 }
 
-void CHudRadar::DrawRadarDot( int x, int y, float z_diff, int iBaseDotSize, int flags, int r, int g, int b, int a )
+void CHudRadarHL2::DrawRadarDot( int x, int y, float z_diff, int iBaseDotSize, int flags, int r, int g, int b, int a )
 {
 	vgui::surface()->DrawSetColor( r, g, b, a );
 

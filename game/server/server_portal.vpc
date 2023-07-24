@@ -11,8 +11,8 @@ $Configuration
 {
 	$Compiler
 	{
-		$AdditionalIncludeDirectories	"$BASE;$SRCDIR\game\shared\portal;.\hl2;.\episodic;$SRCDIR\game\shared\Multiplayer;$SRCDIR\game\shared\hl2;$SRCDIR\game\shared\portal;.\portal"
-		$PreprocessorDefinitions		"$BASE;PORTAL;HL2_DLL;HL2_EPISODIC;USES_SAVERESTORE"
+		$AdditionalIncludeDirectories	"$BASE;$SRCDIR\game\shared\portal;.\hl2;.\episodic;$SRCDIR\game\shared\Multiplayer;$SRCDIR\game\shared\hl2;$SRCDIR\game\shared\portal;.\portal;$SRCDIR\game\shared\cstrike\control,$SRCDIR\game\shared\cstrike,.\cstrike,.\cstrike\bot,.\cstrike\bot\states,$SRCDIR\game\shared\cstrike\bot,.\cstrike\hostage,.\cstrike\control"
+		$PreprocessorDefinitions		"$BASE;PORTAL;HL2_DLL;HL2_EPISODIC;USES_SAVERESTORE;BOTS;CSTRIKE_DLL;NEXT_BOT"
 	}
 }
 

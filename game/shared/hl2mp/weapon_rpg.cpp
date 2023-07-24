@@ -52,7 +52,7 @@ static ConVar sk_apc_missile_damage("sk_apc_missile_damage", "15");
 #ifdef CLIENT_DLL
 #define CLaserDot C_LaserDot
 #endif
-
+ConVar rpg_missle_use_custom_detonators("rpg_missle_use_custom_detonators", "1");
 //-----------------------------------------------------------------------------
 // Laser Dot
 //-----------------------------------------------------------------------------
@@ -589,6 +589,41 @@ void CMissile::SeekThink( void )
 		}
 	}
 
+	if (rpg_missle_use_custom_detonators.GetBool())
+	{
+		for (int i = gm_CustomDetonators.Count() - 1; i >= 0; --i)
+		{
+			CustomDetonator_t& detonator = gm_CustomDetonators[i];
+			if (!detonator.hEntity)
+			{
+				gm_CustomDetonators.FastRemove(i);
+			}
+			else
+			{
+				const Vector& vPos = detonator.hEntity->CollisionProp()->WorldSpaceCenter();
+				if (detonator.halfHeight > 0)
+				{
+					if (fabsf(vPos.z - GetAbsOrigin().z) < detonator.halfHeight)
+					{
+						if ((GetAbsOrigin().AsVector2D() - vPos.AsVector2D()).LengthSqr() < detonator.radiusSq)
+						{
+							Explode();
+							return;
+						}
+					}
+				}
+				else
+				{
+					if ((GetAbsOrigin() - vPos).LengthSqr() < detonator.radiusSq)
+					{
+						Explode();
+						return;
+					}
+				}
+			}
+		}
+	}
+
 	//If we have a dot target
 	if ( pBestDot == NULL )
 	{
@@ -676,7 +711,32 @@ CMissile *CMissile::Create( const Vector &vecOrigin, const QAngle &vecAngles, ed
 	return pMissile;
 }
 
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CUtlVector<CMissile::CustomDetonator_t> CMissile::gm_CustomDetonators;
 
+void CMissile::AddCustomDetonator(CBaseEntity* pEntity, float radius, float height)
+{
+	int i = gm_CustomDetonators.AddToTail();
+	gm_CustomDetonators[i].hEntity = pEntity;
+	gm_CustomDetonators[i].radiusSq = Square(radius);
+	gm_CustomDetonators[i].halfHeight = height * 0.5f;
+}
+
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+void CMissile::RemoveCustomDetonator(CBaseEntity* pEntity)
+{
+	for (int i = 0; i < gm_CustomDetonators.Count(); i++)
+	{
+		if (gm_CustomDetonators[i].hEntity == pEntity)
+		{
+			gm_CustomDetonators.FastRemove(i);
+			break;
+		}
+	}
+}
 
 //-----------------------------------------------------------------------------
 // This entity is used to create little force boxes that the helicopter

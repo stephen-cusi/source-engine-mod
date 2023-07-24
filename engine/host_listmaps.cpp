@@ -524,7 +524,7 @@ static int MapList_CountMaps( const char *pszSubString, bool listobsolete, int& 
 //  If the substring is empty, or "*", then lists all maps
 // Input  : *pszSubString - 
 //-----------------------------------------------------------------------------
-int MapList_ListMaps( const char *pszSubString, bool listobsolete, bool verbose, int maxcount, int maxitemlength, char maplist[][ 64 ] )
+int MapList_ListMaps( const char *pszSubString, bool listobsolete, bool verbose, int maxcount, int maxitemlength, char maplist[][COMMAND_COMPLETION_ITEM_LENGTH] )
 {
 	g_MapListMgr.RefreshList();
 	int substringlength = 0;

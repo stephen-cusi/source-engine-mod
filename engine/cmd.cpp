@@ -691,6 +691,7 @@ void Cmd_Exec_f( const CCommand &args )
 				break;
 			}
 		}
+
 	}
 
 	if ( f != buf )
@@ -1112,10 +1113,9 @@ const ConCommandBase *Cmd_ExecuteCommand( const CCommand &command, cmd_source_t 
 				Cmd_Dispatch(pCommand, command);
 				CompletelyLockOutputFunc(false);
 				SpewOutputFunc(Sys_SpewFunc);
-
-				
 			}
-			else {
+			else 
+			{
 				SpewOutputFunc(Sys_SpewFunc);
 				Cmd_Dispatch(pCommand, command);
 			}

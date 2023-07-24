@@ -72,25 +72,6 @@
 	};
 	LINK_ENTITY_TO_CLASS( handle_dummy, CHandleDummy );
 
-	CHandle<CHandleTest> g_HandleTest;
-
-	// The test runs this command.
-	void CC_Test_EHandle()
-	{
-		if ( g_HandleTest.Get() )
-		{
-			g_HandleTest->m_bSendHandle = !g_HandleTest->m_bSendHandle;
-		}
-		else
-		{
-			CHandleTest *pHolder = CREATE_ENTITY( CHandleTest, "handle_test" );
-			pHolder->m_Handle = CREATE_ENTITY( CHandleDummy, "handle_dummy" );
-			pHolder->Spawn();
-			g_HandleTest = pHolder;
-			Msg( "Created EHANDLE test entity. Run this command again to transmit the second ent.\n" );
-		}
-	}
-	ConCommand Test_EHandle( "Test_EHandle", CC_Test_EHandle, 0, FCVAR_CHEAT );
 	
 
 #else

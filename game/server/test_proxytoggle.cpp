@@ -74,37 +74,3 @@ IMPLEMENT_SERVERCLASS_ST( CTest_ProxyToggle_Networkable, DT_ProxyToggle )
 	SendPropDataTable( "blah", 0, &REFERENCE_SEND_TABLE( DT_ProxyToggle_ProxiedData ), SendProxy_TestProxyToggle )
 END_SEND_TABLE()
 
-
-
-// ---------------------------------------------------------------------------------------- //
-// Console commands for this test.
-// ---------------------------------------------------------------------------------------- //
-
-void Test_ProxyToggle_EnableProxy( const CCommand &args )
-{
-	if ( args.ArgC() < 2 )
-	{
-		Error( "Test_ProxyToggle_EnableProxy: requires parameter (0 or 1)." );
-	}
-
-	g_bEnableProxy = !!atoi( args[ 1 ] );
-}
-
-void Test_ProxyToggle_SetValue( const CCommand &args )
-{
-	if ( args.ArgC() < 2 )
-	{
-		Error( "Test_ProxyToggle_SetValue: requires value parameter." );
-	}
-	else if ( !g_pTestObj )
-	{
-		Error( "Test_ProxyToggle_SetValue: no entity present." );
-	}
-
-	g_pTestObj->m_WithProxy = atoi( args[ 1 ] );
-}
-
-ConCommand cc_Test_ProxyToggle_EnableProxy( "Test_ProxyToggle_EnableProxy", Test_ProxyToggle_EnableProxy, 0, FCVAR_CHEAT );
-ConCommand cc_Test_ProxyToggle_SetValue( "Test_ProxyToggle_SetValue", Test_ProxyToggle_SetValue, 0, FCVAR_CHEAT );
-
-

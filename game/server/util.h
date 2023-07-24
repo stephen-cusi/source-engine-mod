@@ -619,6 +619,7 @@ extern const char	*UTIL_FunctionToName( datamap_t *pMap, inputfunc_t function );
 
 int UTIL_GetCommandClientIndex( void );
 CBasePlayer *UTIL_GetCommandClient( void );
+void UTIL_CommandPrint(CBasePlayer* pPlayer, const char* fmt, ...);
 bool UTIL_GetModDir( char *lpszTextOut, unsigned int nSize );
 
 AngularImpulse WorldToLocalRotation( const VMatrix &localToWorld, const Vector &worldAxis, float rotation );

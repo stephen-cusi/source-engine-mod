@@ -23,7 +23,9 @@ public:
 	DECLARE_SERVERCLASS();
 
 	virtual int RequiredEdictIndex( void ) { return 0; }   // the world always needs to be in slot 0
-	
+
+	void InputKill(inputdata_t& inputdata) { return; }
+	void InputKillHierarchy(inputdata_t& inputdata) { return; }
 	static void RegisterSharedActivities( void );
 	static void RegisterSharedEvents( void );
 	virtual void Spawn( void );

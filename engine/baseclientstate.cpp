@@ -1023,7 +1023,7 @@ bool CBaseClientState::ProcessTick( NET_Tick *msg )
 
 void CBaseClientState::SendStringCmd(const char * command)
 {
-	if ( m_NetChannel) 
+	if ( m_NetChannel ) 
 	{
 		NET_StringCmd stringCmd( command );
 		m_NetChannel->SendNetMsg( stringCmd );

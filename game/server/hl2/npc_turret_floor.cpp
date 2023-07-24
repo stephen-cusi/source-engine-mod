@@ -1887,6 +1887,10 @@ void CNPC_FloorTurret::SpinUp( void )
 //-----------------------------------------------------------------------------
 QAngle CNPC_FloorTurret::PreferredCarryAngles( CBasePlayer *pPlayer )
 {
+	if (pPlayer == NULL)
+	{
+		return vec3_angle;
+	}
 	// FIXME: Embed this into the class
 	static QAngle g_prefAngles;
 

@@ -81,11 +81,7 @@
 #include "tier0/memdbgon.h"
 
 
-static void testfreezeframe_f( void )
-{
-	view->FreezeFrame( 3.0 );
-}
-static ConCommand test_freezeframe( "test_freezeframe", testfreezeframe_f, "Test the freeze frame code.", FCVAR_CHEAT );
+
 
 //-----------------------------------------------------------------------------
 

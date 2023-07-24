@@ -5066,7 +5066,8 @@ void CC_Ent_Remove( const CCommand& args )
 	// Found one?
 	if ( pEntity )
 	{
-		Msg( "Removed %s(%s)\n", STRING(pEntity->m_iClassname), pEntity->GetDebugName() );
+		CBasePlayer* player = UTIL_GetCommandClient();
+		UTIL_CommandPrint(player, "Removed %s(%s)\n", STRING(pEntity->m_iClassname), pEntity->GetDebugName() );
 		UTIL_Remove( pEntity );
 	}
 }
@@ -5075,10 +5076,11 @@ static ConCommand ent_remove("ent_remove", CC_Ent_Remove, "Removes the given ent
 //------------------------------------------------------------------------------
 void CC_Ent_RemoveAll( const CCommand& args )
 {
+	CBasePlayer* player = UTIL_GetCommandClient();
 	// If no name was given remove based on the picked
 	if (args.ArgC() < 2)
 	{
-		Msg( "Removes all entities of the specified type\n\tArguments:   	{entity_name} / {class_name}\n" );
+		UTIL_CommandPrint(player, "Removes all entities of the specified type\n\tArguments:   	{entity_name} / {class_name}\n" );
 	}
 	else 
 	{
@@ -5098,11 +5100,11 @@ void CC_Ent_RemoveAll( const CCommand& args )
 
 		if ( iCount )
 		{
-			Msg( "Removed %d %s's\n", iCount, args[1] );
+			UTIL_CommandPrint(player, "Removed %d %s's\n", iCount, args[1] );
 		}
 		else
 		{
-			Msg( "No %s found.\n", args[1] );
+			UTIL_CommandPrint(player, "No %s found.\n", args[1] );
 		}
 	}
 }
@@ -5112,17 +5114,18 @@ static ConCommand ent_remove_all("ent_remove_all", CC_Ent_RemoveAll, "Removes al
 void CC_Ent_SetName( const CCommand& args )
 {
 	CBaseEntity *pEntity = NULL;
-
+	
 	if ( args.ArgC() < 1 )
 	{
 		CBasePlayer *pPlayer = ToBasePlayer( UTIL_GetCommandClient() );
 		if (!pPlayer)
 			return;
 
-		ClientPrint( pPlayer, HUD_PRINTCONSOLE, "Usage:\n   ent_setname <new name> <entity name>\n" );
+		UTIL_CommandPrint( pPlayer, "Usage:\n   ent_setname <new name> <entity name>\n" );
 	}
 	else
 	{
+		CBasePlayer* player = UTIL_GetCommandClient();
 		// If no name was given set bits based on the picked
 		if ( FStrEq( args[2],"") ) 
 		{
@@ -5147,7 +5150,7 @@ void CC_Ent_SetName( const CCommand& args )
 		// Found one?
 		if ( pEntity )
 		{
-			Msg( "Set the name of %s to %s\n", STRING(pEntity->m_iClassname), args[1] );
+			UTIL_CommandPrint(player, "Set the name of %s to %s\n", STRING(pEntity->m_iClassname), args[1] );
 			pEntity->SetName( AllocPooledString( args[1] ) );
 		}
 	}
@@ -5157,16 +5160,17 @@ static ConCommand ent_setname("ent_setname", CC_Ent_SetName, "Sets the targetnam
 //------------------------------------------------------------------------------
 void CC_Find_Ent( const CCommand& args )
 {
+	CBasePlayer* player = UTIL_GetCommandClient();
 	if ( args.ArgC() < 2 )
 	{
-		Msg( "Total entities: %d (%d edicts)\n", gEntList.NumberOfEntities(), gEntList.NumberOfEdicts() );
-		Msg( "Format: find_ent <substring>\n" );
+		UTIL_CommandPrint(player, "Total entities: %d (%d edicts)\n", gEntList.NumberOfEntities(), gEntList.NumberOfEdicts() );
+		UTIL_CommandPrint(player, "Format: find_ent <substring>\n" );
 		return;
 	}
 
 	int iCount = 0;
  	const char *pszSubString = args[1];
-	Msg("Searching for entities with class/target name containing substring: '%s'\n", pszSubString );
+	UTIL_CommandPrint(player, "Searching for entities with class/target name containing substring: '%s'\n", pszSubString );
 
 	CBaseEntity *ent = NULL;
 	while ( (ent = gEntList.NextEnt(ent)) != NULL )
@@ -5194,20 +5198,21 @@ void CC_Find_Ent( const CCommand& args )
 		if ( bMatches )
 		{
  			iCount++;
-			Msg("   '%s' : '%s' (entindex %d) \n", ent->GetClassname(), ent->GetEntityName().ToCStr(), ent->entindex() );
+			UTIL_CommandPrint(player, "   '%s' : '%s' (entindex %d) \n", ent->GetClassname(), ent->GetEntityName().ToCStr(), ent->entindex() );
 		}
 	}
 
-	Msg("Found %d matches.\n", iCount);
+	UTIL_CommandPrint(player, "Found %d matches.\n", iCount);
 }
 static ConCommand find_ent("find_ent", CC_Find_Ent, "Find and list all entities with classnames or targetnames that contain the specified substring.\nFormat: find_ent <substring>\n", FCVAR_CHEAT);
 
 //------------------------------------------------------------------------------
 void CC_Find_Ent_Index( const CCommand& args )
 {
+	CBasePlayer* player = UTIL_GetCommandClient();
 	if ( args.ArgC() < 2 )
 	{
-		Msg( "Format: find_ent_index <index>\n" );
+		UTIL_CommandPrint(player, "Format: find_ent_index <index>\n" );
 		return;
 	}
 
@@ -5215,11 +5220,11 @@ void CC_Find_Ent_Index( const CCommand& args )
 	CBaseEntity	*pEnt = UTIL_EntityByIndex( iIndex );
 	if ( pEnt )
 	{
-		Msg("   '%s' : '%s' (entindex %d) \n", pEnt->GetClassname(), pEnt->GetEntityName().ToCStr(), iIndex );
+		UTIL_CommandPrint(player, "   '%s' : '%s' (entindex %d) \n", pEnt->GetClassname(), pEnt->GetEntityName().ToCStr(), iIndex );
 	}
 	else
 	{
-		Msg("Found no entity at %d.\n", iIndex);
+		UTIL_CommandPrint(player, "Found no entity at %d.\n", iIndex);
 	}
 }
 static ConCommand find_ent_index("find_ent_index", CC_Find_Ent_Index, "Display data for entity matching specified index.\nFormat: find_ent_index <index>\n", FCVAR_CHEAT);

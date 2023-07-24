@@ -2723,10 +2723,11 @@ void CServerGameClients::ClientSpawned( edict_t *pPlayer )
 void CServerGameClients::ClientDisconnect( edict_t *pEdict )
 {
 	extern bool	g_fGameOver;
-
 	CBasePlayer *player = ( CBasePlayer * )CBaseEntity::Instance( pEdict );
 	if ( player )
 	{
+		const char* sName = player->GetPlayerName();
+		UTIL_ClientPrintAll(HUD_PRINTNOTIFY, "#Game_disconnected", sName[0] != 0 ? sName : "<unconnected>");
 		if ( !g_fGameOver )
 		{
 			player->SetMaxSpeed( 0.0f );

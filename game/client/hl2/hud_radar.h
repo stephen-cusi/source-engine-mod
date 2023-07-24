@@ -23,14 +23,14 @@ public:
 	float	m_flTimeToRemove;
 };
 
-class CHudRadar : public CVGuiScreenPanel
+class CHudRadarHL2 : public CVGuiScreenPanel
 {
 public:
-	DECLARE_CLASS_SIMPLE( CHudRadar, CVGuiScreenPanel );
+	DECLARE_CLASS_SIMPLE( CHudRadarHL2, CVGuiScreenPanel );
 
 	
-	CHudRadar( vgui::Panel *parent, const char *panelName );
-	~CHudRadar();
+	CHudRadarHL2( vgui::Panel *parent, const char *panelName );
+	~CHudRadarHL2();
 
 	virtual void Paint();
 	void VidInit(void);
@@ -74,5 +74,5 @@ private:
 	int				m_textureID_IconBase;
 };
 
-extern CHudRadar *GetHudRadar();
+extern CHudRadarHL2 *GetHudRadar();
 #endif // HUD_RADAR_H

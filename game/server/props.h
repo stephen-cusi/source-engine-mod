@@ -89,7 +89,7 @@ public:
 		return false; 
 	}
 
-	virtual QAngle PreferredCarryAngles( CBasePlayer *pPlayer ) { return m_preferredCarryAngles; }
+	virtual QAngle PreferredCarryAngles( CBasePlayer *pPlayer = NULL ) { return m_preferredCarryAngles; }
 
 	virtual void Ignite( float flFlameLifetime, bool bNPCOnly, float flSize = 0.0f, bool bCalledByLevelDesigner = false );
 
