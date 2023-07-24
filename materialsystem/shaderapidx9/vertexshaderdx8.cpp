@@ -3601,7 +3601,7 @@ void CShaderManager::SpewVertexAndPixelShaders( void )
 		ShaderFileCache_t *pCache = &m_ShaderFileCache[cacheIndex];
 		Msg( "Total Combos:%9d Static:%9d Dynamic:%7d SeekTable:%7d Ver:%d '%s'\n", 
 			pCache->m_Header.m_nTotalCombos, 
-			pCache->m_Header.m_nTotalCombos/pCache->m_Header.m_nDynamicCombos,
+			pCache->m_Header.m_nTotalCombos/max(1,pCache->m_Header.m_nDynamicCombos),
 			pCache->m_Header.m_nDynamicCombos,
 			pCache->IsOldVersion() ? 0 : pCache->m_Header.m_nNumStaticCombos,
 			pCache->m_Header.m_nVersion,

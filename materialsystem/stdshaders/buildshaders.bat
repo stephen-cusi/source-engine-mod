@@ -30,6 +30,7 @@ set SDKArgs=-local
 if "%1" == "" goto usage
 set inputbase=%1
 
+set IS30=1
 REM ignore -dx9_30
 if /i "%6" == "-dx9_30" shift /6
 

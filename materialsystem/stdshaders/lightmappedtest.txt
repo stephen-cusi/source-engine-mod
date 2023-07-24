@@ -1,1 +1,4 @@
-lightmappedgeneric_ps2x.fxc
+pbr_vs20b.fxc
+pbr_ps20b.fxc
+pbr_vs30.fxc
+pbr_ps30.fxc
