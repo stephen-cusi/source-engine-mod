@@ -789,8 +789,8 @@ void CConfigEditorDialog::OnCommand( const char *command )
 		char command[COMMAND_MAX_LENGTH];
 		strcpy(command, "exec \"");
 		strcat(command, m_sCurrentFile + 4);
-		strcat(command, "\"");
 		command[strlen(command) - 4] = '\x00';
+		strcat(command, "\"");
 		Cbuf_AddText(command);
 		//Msg("%s\n",command);
 	}
