@@ -87,13 +87,24 @@ struct LightmappedGeneric_DX9_Vars_t
 	int m_nOutlineEnd0;
 	int m_nOutlineEnd1;
 
+	int baseColor;
+	int useParallax;
+	int parallaxDepth;
+	int parallaxCenter;
+	int alphaTestReference;
+	int emissionTexture;
+	int mraoTexture;
+	int useEnvAmbient;
+	int specularTexture;
+
 };
 
 void InitParamsLightmappedGeneric_DX9( CBaseVSShader *pShader, IMaterialVar** params, const char *pMaterialName, LightmappedGeneric_DX9_Vars_t &info );
 void InitLightmappedGeneric_DX9( CBaseVSShader *pShader, IMaterialVar** params, LightmappedGeneric_DX9_Vars_t &info );
 void DrawLightmappedGeneric_DX9( CBaseVSShader *pShader, IMaterialVar** params, 
 								 IShaderDynamicAPI *pShaderAPI, IShaderShadow* pShaderShadow, 
-								 LightmappedGeneric_DX9_Vars_t &info, CBasePerMaterialContextData **pContextDataPtr	 );
+								 LightmappedGeneric_DX9_Vars_t &info, CBasePerMaterialContextData **pContextDataPtr,
+										 VertexCompressionType_t vertexCompression);
 
 
 #endif // LIGHTMAPPEDGENERIC_DX9_HELPER_H

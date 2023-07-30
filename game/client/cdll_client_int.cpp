@@ -2374,19 +2374,16 @@ ConVar cl_viewbob_zoffset("cl_viewbob_zoffset", "100", 0, "Division xoffset");
 ConVar cl_viewbob_jump_scale("cl_viewbob_jump_scale", "2", 0, "Magnitude of jump Oscillation (float)");
 
 //extern static C_BasePlayer* s_pLocalPlayer;
-C_BasePlayer* player;
+//C_BasePlayer* player;
 
 extern IGameMovement* g_pGameMovement;
 float lastFallVelocity;
 
 void UpdateViewbob()
 {
-	if(player == nullptr)
-		player = C_BasePlayer::GetLocalPlayer();
-
-	if (player == nullptr)
+	C_BasePlayer* player = C_BasePlayer::GetLocalPlayer();
+	if (!player)
 		return;
-
 	//Msg("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \n");
 
 	CGameMovement* gm = dynamic_cast<CGameMovement*>(g_pGameMovement);

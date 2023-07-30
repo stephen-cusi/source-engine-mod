@@ -131,6 +131,13 @@ struct VertexLitGeneric_DX9_Vars_t
 
 	int m_nTintReplacesBaseColor;
 
+	int baseColor;
+	int useParallax;
+	int parallaxDepth;
+	int parallaxCenter;
+	int useEnvAmbient;
+	int specularTexture;
+
 };
 
 void InitParamsVertexLitGeneric_DX9( CBaseVSShader *pShader, IMaterialVar** params, const char *pMaterialName, bool bVertexLitGeneric, VertexLitGeneric_DX9_Vars_t &info );

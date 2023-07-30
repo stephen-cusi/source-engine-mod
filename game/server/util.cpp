@@ -1152,10 +1152,13 @@ void UTIL_CommandPrint(CBasePlayer* pPlayer, const char* fmt, ...)
 {
 	if (pPlayer)
 	{
-		char formatted[8192];
 		va_list args;
 		va_start(args, fmt);
-		sprintf(formatted, fmt, args);
+		char formatted[8192];
+		//sprintf(formatted, fmt, args);
+		int val = _vsntprintf(formatted, 8192, fmt, args);
+		if (val == -1)
+			return;
 		va_end(args);
 		ClientPrint(pPlayer, HUD_PRINTCONSOLE, formatted);
 	}

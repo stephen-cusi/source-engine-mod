@@ -588,23 +588,8 @@ HALF4 main( PS_INPUT i ) : COLOR
 		fresnel = pow( fresnel, 5.0 );
 		fresnel = fresnel * g_OneMinusFresnelReflection + g_FresnelReflection;
 		
-		float roughness = 1.0-specularFactor;
-		float3 roughNormal = mul( normalize(vNormal+float3(roughness,roughness,0)), i.tangentSpaceTranspose );
-		reflectVect = CalcReflectionVectorUnnormalized( roughNormal, worldVertToEyeVector );
-		specularLighting += texCUBE( EnvmapSampler, reflectVect )/4.0;
-		
-		roughNormal = mul( normalize(vNormal+float3(roughness,-roughness,0)), i.tangentSpaceTranspose );
-		reflectVect = CalcReflectionVectorUnnormalized( roughNormal, worldVertToEyeVector );
-		specularLighting += texCUBE( EnvmapSampler, reflectVect )/4.0;
-		
-		roughNormal = mul( normalize(vNormal+float3(-roughness,roughness,0)), i.tangentSpaceTranspose );
-		reflectVect = CalcReflectionVectorUnnormalized( roughNormal, worldVertToEyeVector );
-		specularLighting += texCUBE( EnvmapSampler, reflectVect )/4.0;
-		
-		roughNormal = mul( normalize(vNormal+float3(-roughness,-roughness,0)), i.tangentSpaceTranspose );
-		reflectVect = CalcReflectionVectorUnnormalized( roughNormal, worldVertToEyeVector );
-		specularLighting += texCUBE( EnvmapSampler, reflectVect )/4.0;
-		specularLighting *= 0.5;
+		specularLighting = ENV_MAP_SCALE * texCUBE( EnvmapSampler, reflectVect );
+		specularLighting *= specularFactor;
 								   
 		specularLighting *= g_EnvmapTint;
 #if FANCY_BLENDING == 0

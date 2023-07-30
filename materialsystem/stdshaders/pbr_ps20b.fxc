@@ -58,6 +58,11 @@ sampler SpecularTextureSampler      : register(s12);    // Specular F0 texture
 
 #define ENVMAPLOD (g_EyePos.a)
 
+float2 mod2(float2 a, float2 b)
+{
+	return float2(a.x - b.x * floor(a.x/b.x),a.y - b.y * floor(a.y/b.y));
+}
+
 struct PS_INPUT
 {
     float2 baseTexCoord             : TEXCOORD0;
@@ -68,6 +73,7 @@ struct PS_INPUT
     float3 projPos                  : TEXCOORD5;
     float4 lightmapTexCoord1And2    : TEXCOORD6;
     float4 lightmapTexCoord3        : TEXCOORD7;
+	float4 vertexColor				: COLOR;
 };
 
 // Entry point
@@ -89,7 +95,6 @@ float4 main(PS_INPUT i) : COLOR
     float3x3 normalBasis = float3x3(i.worldTangent, cross(i.worldNormal, i.worldTangent), i.worldNormal);
     float3 textureNormal = normalize((tex2D( NormalTextureSampler, correctedTexCoord).xyz - float3(0.5, 0.5, 0.5)) * 2);
     float3 normal = normalize(mul(textureNormal, normalBasis)); // World Normal
-
     float3 outgoingLightDirection = normalize(g_EyePos.xyz - i.worldPos); // Lo
     float lightDirectionAngle = max(0, dot(normal, outgoingLightDirection)); // cosLo
 
@@ -106,23 +111,26 @@ float4 main(PS_INPUT i) : COLOR
     float3 ambientLighting = 0.0;
     if (!FLASHLIGHT)
     {
-        float3 diffuseIrradiance = ambientLookup(normal, cAmbientCube, textureNormal, i.lightmapTexCoord1And2, i.lightmapTexCoord3, LightmapSampler, g_DiffuseModulation);
-        float3 ambientLightingFresnelTerm = fresnelSchlick(fresnelReflectance, lightDirectionAngle); // F
-#if SPECULAR
-        float3 diffuseContributionFactor = 1 - ambientLightingFresnelTerm; // kd
-#else
-        float3 diffuseContributionFactor = lerp(1 - ambientLightingFresnelTerm, 0, metalness); ; // kd
-#endif
-        float3 diffuseIBL = diffuseContributionFactor * albedo.rgb * diffuseIrradiance;
+		#if LIGHTMAPPED
+        float3 diffuseIrradiance = ambientLookup(normal, cAmbientCube, textureNormal, i.lightmapTexCoord1And2, i.lightmapTexCoord3, LightmapSampler, float4(2,2,2,1));
+		#else
+		float3 diffuseIrradiance = i.vertexColor.xyz*2;
+		#endif
+        float3 diffuseIBL = albedo.rgb * diffuseIrradiance * ambientOcclusion;
 
-        float4 specularUV = float4(specularReflectionVector, roughness * ENVMAPLOD);
-        float3 lookupHigh = ENV_MAP_SCALE * texCUBE(EnvmapSampler, specularUV).xyz;
+		float3 specularIrradiance = 0;
+		for(uint n = 0; n < 8; n++)
+		{
+			float2 offset = ((mod2(i.baseTexCoord+n,float2(0.0001451,0.00012049))/float2(0.0001451,0.00012049))-0.5)*roughness*2.0;
+			float3 roughNormal = normalize(mul(normalize(textureNormal+float3(offset,0)), normalBasis)); // World Normal
+			float roughLightDirectionAngle = max(0, dot(roughNormal, outgoingLightDirection)); // cosLo
+			float3 specularReflectionVector = 2.0 * roughLightDirectionAngle * roughNormal - outgoingLightDirection; // Lr
+			specularIrradiance += texCUBE(EnvmapSampler, specularReflectionVector).xyz;
+		}
+		
+        float3 specularIBL = specularIrradiance * EnvBRDFApprox(roughness, lightDirectionAngle);
 
-        float3 lookupLow = PixelShaderAmbientLight(specularReflectionVector, cAmbientCube);
-        float3 specularIrradiance = lerp(lookupHigh, lookupLow, roughness * roughness);
-        float3 specularIBL = specularIrradiance * EnvBRDFApprox(fresnelReflectance, roughness, lightDirectionAngle);
-
-        ambientLighting = (diffuseIBL + specularIBL) * ambientOcclusion;
+        ambientLighting = diffuseIBL + specularIBL;
     }
     // End ambient
 
@@ -188,6 +196,6 @@ float4 main(PS_INPUT i) : COLOR
 #if EMISSIVE && !FLASHLIGHT
     combinedLighting += emission;
 #endif
-
-    return FinalOutput(float4(combinedLighting, alpha), fogFactor, PIXELFOGTYPE, TONEMAP_SCALE_LINEAR, bWriteDepthToAlpha, i.projPos.z);
+	return float4(combinedLighting, alpha);
+    //return FinalOutput(float4(combinedLighting, alpha), fogFactor, PIXELFOGTYPE, TONEMAP_SCALE_LINEAR, bWriteDepthToAlpha, i.projPos.z);
 }

@@ -26,12 +26,14 @@ class pbr_vs30_Dynamic_Index
 	unsigned int m_nSKINNING : 2;
 	unsigned int m_nLIGHTING_PREVIEW : 2;
 	unsigned int m_nNUM_LIGHTS : 3;
+	unsigned int m_nFASTPATH : 2;
 #ifdef _DEBUG
 	bool m_bCOMPRESSED_VERTS : 1;
 	bool m_bDOWATERFOG : 1;
 	bool m_bSKINNING : 1;
 	bool m_bLIGHTING_PREVIEW : 1;
 	bool m_bNUM_LIGHTS : 1;
+	bool m_bFASTPATH : 1;
 #endif	// _DEBUG
 public:
 	void SetCOMPRESSED_VERTS( int i )
@@ -79,6 +81,15 @@ public:
 #endif	// _DEBUG
 	}
 
+	void SetFASTPATH( int i )
+	{
+		Assert( i >= 0 && i <= 1 );
+		m_nFASTPATH = i;
+#ifdef _DEBUG
+		m_bFASTPATH = true;
+#endif	// _DEBUG
+	}
+
 	pbr_vs30_Dynamic_Index( IShaderDynamicAPI* pShaderAPI )
 	{
 		m_nCOMPRESSED_VERTS = 0;
@@ -86,21 +97,24 @@ public:
 		m_nSKINNING = 0;
 		m_nLIGHTING_PREVIEW = 0;
 		m_nNUM_LIGHTS = 0;
+		m_nFASTPATH = 0;
 #ifdef _DEBUG
 		m_bCOMPRESSED_VERTS = false;
 		m_bDOWATERFOG = false;
 		m_bSKINNING = false;
 		m_bLIGHTING_PREVIEW = false;
 		m_bNUM_LIGHTS = false;
+		m_bFASTPATH = false;
 #endif	// _DEBUG
 	}
 
 	int GetIndex() const
 	{
-		Assert( m_bCOMPRESSED_VERTS && m_bDOWATERFOG && m_bSKINNING && m_bLIGHTING_PREVIEW && m_bNUM_LIGHTS );
-		return ( 1 * m_nCOMPRESSED_VERTS ) + ( 2 * m_nDOWATERFOG ) + ( 4 * m_nSKINNING ) + ( 8 * m_nLIGHTING_PREVIEW ) + ( 16 * m_nNUM_LIGHTS ) + 0;
+		Assert( m_bCOMPRESSED_VERTS && m_bDOWATERFOG && m_bSKINNING && m_bLIGHTING_PREVIEW && m_bNUM_LIGHTS && m_bFASTPATH );
+		AssertMsg( !( 1 && ( 1 && ( m_nLIGHTING_PREVIEW && m_nFASTPATH ) ) ), "Invalid combo combination ( 1 && ( 1 && ( LIGHTING_PREVIEW && FASTPATH ) ) )" );
+		return ( 1 * m_nCOMPRESSED_VERTS ) + ( 2 * m_nDOWATERFOG ) + ( 4 * m_nSKINNING ) + ( 8 * m_nLIGHTING_PREVIEW ) + ( 16 * m_nNUM_LIGHTS ) + ( 80 * m_nFASTPATH ) + 0;
 	}
 };
 
-#define shaderDynamicTest_pbr_vs30 vsh_forgot_to_set_dynamic_COMPRESSED_VERTS + vsh_forgot_to_set_dynamic_DOWATERFOG + vsh_forgot_to_set_dynamic_SKINNING + vsh_forgot_to_set_dynamic_LIGHTING_PREVIEW + vsh_forgot_to_set_dynamic_NUM_LIGHTS
+#define shaderDynamicTest_pbr_vs30 vsh_forgot_to_set_dynamic_COMPRESSED_VERTS + vsh_forgot_to_set_dynamic_DOWATERFOG + vsh_forgot_to_set_dynamic_SKINNING + vsh_forgot_to_set_dynamic_LIGHTING_PREVIEW + vsh_forgot_to_set_dynamic_NUM_LIGHTS + vsh_forgot_to_set_dynamic_FASTPATH
 

@@ -933,9 +933,9 @@ bool CHardwareConfig::HasFastVertexTextures() const
 	}
 
 	// JasonM - turned this off for Orange Box release...
-	return false;
+	//return false;
 
-//	return m_Caps.m_bDX10Card && ( GetDXSupportLevel() >= 95 ) && ( bEnableFastVertexTextures != 0 ) && ( !bDisableHWMorph );
+	return m_Caps.m_bDX10Card && ( GetDXSupportLevel() >= 95 ) && ( bEnableFastVertexTextures != 0 ) && ( !bDisableHWMorph );
 }
 
 int CHardwareConfig::MaxHWMorphBatchCount() const

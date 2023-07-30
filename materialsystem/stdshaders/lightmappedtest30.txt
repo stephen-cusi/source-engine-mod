@@ -1,0 +1,8 @@
+skin_pbr_ps20b.fxc
+pbr_ps30.fxc
+pbr_vs30.fxc
+vertexlit_and_unlit_generic_pbr_ps2x.fxc
+vertexlit_and_unlit_generic_pbr_bump_ps2x.fxc
+vertexlit_and_unlit_generic_pbr_vs20.fxc
+vertexlit_and_unlit_generic_bump_vs20.fxc
+skin_vs20.fxc

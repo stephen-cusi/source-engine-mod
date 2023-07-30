@@ -1,0 +1,246 @@
+//======= Copyright © 1996-2007, Valve Corporation, All rights reserved. ======
+// STATIC: "CONVERT_TO_SRGB"			"0..0"
+// STATIC: "CUBEMAP"					"0..1"
+// STATIC: "SELFILLUM"					"0..1"
+// STATIC: "SELFILLUMFRESNEL"			"0..1"
+// STATIC: "FLASHLIGHT"					"0..1"
+// STATIC: "LIGHTWARPTEXTURE"			"0..1"
+// STATIC: "PHONGWARPTEXTURE"			"0..1"
+// STATIC: "WRINKLEMAP"					"0..1"
+// STATIC: "DETAIL_BLEND_MODE"          "0..6"
+// STATIC: "DETAILTEXTURE"				"0..1"
+// STATIC: "FLASHLIGHTDEPTHFILTERMODE"	"0..2"	[ps20b] [PC]
+// STATIC: "FLASHLIGHTDEPTHFILTERMODE"	"0..2"	[ps30]  [PC]
+// STATIC: "FLASHLIGHTDEPTHFILTERMODE"	"0..0"	[ps20b] [XBOX]
+// STATIC: "FASTPATH_NOBUMP"            "0..1"
+// STATIC: "BLENDTINTBYBASEALPHA"       "0..1"
+
+// DYNAMIC: "WRITEWATERFOGTODESTALPHA"  "0..1"
+// DYNAMIC: "PIXELFOGTYPE"				"0..1"
+// DYNAMIC: "NUM_LIGHTS"				"0..4"
+// DYNAMIC: "WRITE_DEPTH_TO_DESTALPHA"	"0..1"	[ps20b] [PC]
+// DYNAMIC: "WRITE_DEPTH_TO_DESTALPHA"	"0..0"	[ps20b] [XBOX]
+// DYNAMIC: "WRITE_DEPTH_TO_DESTALPHA"	"0..1"	[ps30]
+// DYNAMIC: "FLASHLIGHTSHADOWS"			"0..1"	[ps20b]
+// DYNAMIC: "FLASHLIGHTSHADOWS"			"0..1"	[ps30]
+
+
+// SKIP: ($PIXELFOGTYPE == 0) && ($WRITEWATERFOGTODESTALPHA != 0)
+
+// blend mode doesn't matter if we only have one texture
+// SKIP: (! $DETAILTEXTURE) && ( $DETAIL_BLEND_MODE != 0 )
+
+// We don't care about flashlight depth unless the flashlight is on
+// SKIP: ( $FLASHLIGHT == 0 ) && ( $FLASHLIGHTSHADOWS == 1 )
+
+// Flashlight shadow filter mode is irrelevant if there is no flashlight
+// SKIP: ( $FLASHLIGHT == 0 ) && ( $FLASHLIGHTDEPTHFILTERMODE != 0 ) [ps20b]
+// SKIP: ( $FLASHLIGHT == 0 ) && ( $FLASHLIGHTDEPTHFILTERMODE != 0 ) [ps30]
+
+// Only need self illum fresnel when self illum enabled
+// SKIP: ( $SELFILLUM == 0 ) && ( $SELFILLUMFRESNEL == 1 )
+// SKIP: ( $FLASHLIGHT == 1 ) && ( $SELFILLUMFRESNEL == 1 )
+// SKIP: ( $FLASHLIGHT == 1 ) && ( $SELFILLUM == 1 )
+
+// BlendTintByBaseAlpha and self illum and are opposing meanings for alpha channel
+// SKIP: ( $BLENDTINTBYBASEALPHA ) && ( $SELFILLUM )
+
+// fastpath means:
+// no bumpmap
+// basealphaenvmapmask (not inverted)
+// no spec expmap
+// no spectint
+// no specwarp
+// no selfillum
+// no detail
+// no BlendTintByBaseAlpha
+
+// SKIP: $FASTPATH_NOBUMP && ( $DETAILTEXTURE || $PHONGWARPTEXTURE || $SELFILLUM || $BLENDTINTBYBASEALPHA )
+
+
+
+#include "common_flashlight_fxc.h"
+#include "shader_constant_register_map.h"
+#include "common_lightmappedgeneric_fxc.h"
+#include "pbr_common_ps2_3_x.h"
+
+const float4 g_SelfIllumTint_and_DetailBlendFactor	: register( PSREG_SELFILLUMTINT );
+#if ( SELFILLUMFRESNEL == 1 )
+const float4 g_SelfIllumScaleBiasExpBrightness		: register( PSREG_SELFILLUM_SCALE_BIAS_EXP );
+#endif
+const float4 g_DiffuseModulation					: register( PSREG_DIFFUSE_MODULATION );
+const float4 g_EnvmapTint_ShadowTweaks				: register( PSREG_ENVMAP_TINT__SHADOW_TWEAKS );		// w controls spec mask
+const float3 cAmbientCube[6]						: register( PSREG_AMBIENT_CUBE );
+const float4 g_EnvMapFresnel						: register( PSREG_ENVMAP_FRESNEL__SELFILLUMMASK );	// x is envmap fresnel ... w is selfillummask control
+const float4 g_EyePos_SpecExponent					: register( PSREG_EYEPOS_SPEC_EXPONENT );
+const float4 g_FogParams							: register( PSREG_FOG_PARAMS );
+const float4 g_FlashlightAttenuationFactors_RimMask	: register( PSREG_FLASHLIGHT_ATTENUATION );			// On non-flashlight pass, x has rim mask control
+const float4 g_FlashlightPos_RimBoost				: register( PSREG_FLASHLIGHT_POSITION_RIM_BOOST );
+const float4x4 g_FlashlightWorldToTexture			: register( PSREG_FLASHLIGHT_TO_WORLD_TEXTURE );
+const float4 g_FresnelSpecParams					: register( PSREG_FRESNEL_SPEC_PARAMS );			// xyz are fresnel, w is specular boost
+const float4 g_SpecularRimParams					: register( PSREG_SPEC_RIM_PARAMS );				// xyz are specular tint color, w is rim power
+PixelShaderLightInfo cLightInfo[3]					: register( PSREG_LIGHT_INFO_ARRAY );				// 2 registers each - 6 registers total (4th light spread across w's)
+
+// TODO: give this a better name.  For now, I don't want to touch shader_constant_register_map.h since I don't want to trigger a recompile of everything...
+const float4 g_ShaderControls						: register( PSREG_CONSTANT_27 );					// x is basemap alpgha phong mask, y is 1 - blendtintbybasealpha, z is tint overlay amount, w controls "INVERTPHONGMASK"
+#define g_FlashlightPos					g_FlashlightPos_RimBoost.xyz
+#define	g_fRimBoost						g_FlashlightPos_RimBoost.w
+#define g_FresnelRanges					g_FresnelSpecParams.xyz
+#define g_SpecularBoost					g_FresnelSpecParams.w
+#define g_SpecularTint					g_SpecularRimParams.xyz
+#define g_RimExponent					g_SpecularRimParams.w
+#define g_FlashlightAttenuationFactors	g_FlashlightAttenuationFactors_RimMask
+#define g_RimMaskControl				g_FlashlightAttenuationFactors_RimMask.x
+#define g_SelfIllumMaskControl			g_EnvMapFresnel.w
+#define g_fBaseMapAlphaPhongMask		g_ShaderControls.x
+#define g_fTintReplacementControl		g_ShaderControls.z
+#define g_fInvertPhongMask				g_ShaderControls.w
+
+sampler BaseTextureSampler		: register( s0 );	// Base map, selfillum in alpha
+sampler SpecularWarpSampler		: register( s1 );	// Specular warp sampler (for iridescence etc)
+sampler DiffuseWarpSampler		: register( s2 );	// Lighting warp sampler (1D texture for diffuse lighting modification)
+sampler NormalMapSampler		: register( s3 );	// Normal map, specular mask in alpha
+sampler ShadowDepthSampler		: register( s4 );	// Flashlight shadow depth map sampler
+sampler NormalizeRandRotSampler	: register( s5 );	// Normalization / RandomRotation samplers
+sampler FlashlightSampler		: register( s6 );	// Flashlight cookie
+sampler SpecExponentSampler		: register( s7 );	// Specular exponent map
+sampler EnvmapSampler			: register( s8 );	// Cubic environment map
+
+#if WRINKLEMAP
+sampler WrinkleSampler			: register( s9 );	// Compression base
+sampler StretchSampler			: register( s10 );	// Expansion base
+sampler NormalWrinkleSampler	: register( s11 );	// Compression base
+sampler NormalStretchSampler	: register( s12 );	// Expansion base
+#endif
+
+#if DETAILTEXTURE
+sampler DetailSampler			: register( s13 );	// detail texture
+#endif
+
+sampler SelfIllumMaskSampler	: register( s14 );	// selfillummask
+
+
+struct PS_INPUT
+{
+	float4 baseTexCoord							: TEXCOORD0; // xy=base zw=detail
+	float4 lightAtten											: TEXCOORD1; // Scalar light attenuation factors for FOUR lights
+	float3 worldVertToEyeVectorXYZ_tangentSpaceVertToEyeVectorZ	: TEXCOORD2;
+	float3x3 tangentSpaceTranspose								: TEXCOORD3;
+	//	     second row											: TEXCOORD4;
+	//	     third row											: TEXCOORD5;
+	float3 worldPos												: TEXCOORD6;
+	float4 projPos_fWrinkleWeight								: TEXCOORD7;
+};
+
+
+float2 mod2(float2 a, float2 b)
+{
+	return float2(a.x - b.x * floor(a.x/b.x),a.y - b.y * floor(a.y/b.y));
+}
+
+
+float4 main( PS_INPUT i ) : COLOR
+{
+	#define EnvAmbientCube cAmbientCube
+	float2 baseTexCoord = i.baseTexCoord.xy;
+	float4 albedo = tex2D(BaseTextureSampler,baseTexCoord);
+	
+	float4 normalTextureSampled = tex2D( NormalMapSampler, baseTexCoord )+float4(0,0,0,1);
+	normalTextureSampled -= float4(0,0,0,1);
+	float3 textureNormal = normalize((normalTextureSampled.xyz - float3(0.5, 0.5, 0.5)) * 2);
+	
+	float3 normal = normalize( mul( i.tangentSpaceTranspose, textureNormal ) );
+	
+	float3 diffuseIrradiance = albedo.rgb * PixelShaderAmbientLight(normal, EnvAmbientCube);
+	
+	
+	
+	
+	
+	float3 outgoingLightDirection = normalize(g_EyePos_SpecExponent.xyz - i.worldPos); // Lo
+    float lightDirectionAngle = max(0, dot(normal, outgoingLightDirection)); // cosLo
+	float3 ambientLighting = 0.0;
+	float roughness = 1.0 - (normalTextureSampled.w*normalTextureSampled.w);
+	//float3 BRDF = EnvBRDFApprox(roughness, lightDirectionAngle);
+	//return float4(BRDF,1);
+	if (!FLASHLIGHT)
+    {
+		
+		//float3 specularIrradiance = getSpecularIrradianceRough(i.worldSpaceNormal, lightDirectionAngle, outgoingLightDirection, EnvAmbientCube);
+		//float3 specularIrradiance = getSpecularIrradiance(i.worldSpaceNormal, lightDirectionAngle, outgoingLightDirection, roughness, 12, 0.04, EnvAmbientCube, EnvmapSampler);
+		float3 specularIrradiance = 0;
+		for(uint n = 0; n < 8; n++)
+		{
+			//float2 offset = ((mod2(baseTexCoord+n,float2(0.0001451+n/80000.0,0.00012049+n/60000.0))/float2(0.0001451+n/80000.0,0.00012049+n/60000.0))-0.5)*roughness*2.0;
+			float2 offset = mod2(baseTexCoord+n,float2(0.0001451+n/80000,0.00012049+n/60000));
+			offset /= float2(0.0001451+n/80000,0.00012049+n/60000);
+			offset -= 0.5;
+			offset *= roughness;
+			offset *= 2.0;
+			float3 offset3 = float3(offset,0);
+			offset3 += textureNormal;
+			offset3 = normalize(offset3);
+			float3 roughNormal = mul( i.tangentSpaceTranspose, offset3 ); // World Normal
+			float roughLightDirectionAngle = max(0, dot(roughNormal, outgoingLightDirection)); // cosLo
+			float3 specularReflectionVector = 2.0 * roughLightDirectionAngle * roughNormal - outgoingLightDirection; // Lr
+			specularIrradiance += texCUBE(EnvmapSampler, specularReflectionVector).xyz;
+		}
+		float3 specularIBL = ENV_MAP_SCALE * specularIrradiance * EnvBRDFApprox(roughness, lightDirectionAngle);
+		float3 diffuseIrradiance = albedo.rgb * PixelShaderAmbientLight(normal, cAmbientCube);
+		ambientLighting = diffuseIrradiance*2 + specularIBL;
+	}
+	float3 directLighting = 0.0;
+    if (!FLASHLIGHT) {
+        for (uint n = 0; n < NUM_LIGHTS; ++n)
+        {
+            float3 LightIn = normalize(PixelShaderGetLightVector(i.worldPos, cLightInfo, n));
+            float3 LightColor = PixelShaderGetLightColor(cLightInfo, n) * GetAttenForLight(i.lightAtten, n); // Li
+
+            directLighting += calculateLight(LightIn, LightColor, outgoingLightDirection,
+                    normal, 0.04, roughness, 0.0, lightDirectionAngle, albedo.rgb);
+        }
+    }
+	
+	// Start flashlight
+    if (FLASHLIGHT)
+    {
+        float4 flashlightSpacePosition = mul(float4(i.worldPos, 1.0), g_FlashlightWorldToTexture);
+        clip( flashlightSpacePosition.w ); // stop projected textures from projecting backwards (only really happens if they have a big FOV because they get frustum culled.)
+        float3 vProjCoords = flashlightSpacePosition.xyz / flashlightSpacePosition.w;
+
+        float3 delta = g_FlashlightPos.xyz - i.worldPos;
+        float distSquared = dot(delta, delta);
+        float dist = sqrt(distSquared);
+
+        float3 flashlightColor = tex2D(FlashlightSampler, vProjCoords.xy);
+        flashlightColor *= cFlashlightColor.xyz;
+
+#if FLASHLIGHTSHADOWS
+        float flashlightShadow = DoFlashlightShadow(ShadowDepthSampler, NormalizeRandRotSampler, vProjCoords, i.projPos_fWrinkleWeight.xyz, FLASHLIGHTDEPTHFILTERMODE, g_EnvmapTint_ShadowTweaks, true);
+        float flashlightAttenuated = lerp(flashlightShadow, 1.0, g_EnvmapTint_ShadowTweaks.y);         // Blend between fully attenuated and not attenuated
+        float fAtten = saturate(dot(g_FlashlightAttenuationFactors.xyz, float3(1.0, 1.0 / dist, 1.0 / distSquared)));
+        flashlightShadow = saturate(lerp(flashlightAttenuated, flashlightShadow, fAtten));  // Blend between shadow and above, according to light attenuation
+
+        flashlightColor *= flashlightShadow;
+#endif
+        float farZ = g_FlashlightAttenuationFactors.w;
+        float endFalloffFactor = RemapValClamped(dist, farZ, 0.6 * farZ, 0.0, 1.0);
+
+        float3 flashLightIntensity = flashlightColor * endFalloffFactor;
+        
+        float3 flashLightIn = normalize(g_FlashlightPos.xyz - i.worldPos);
+
+        directLighting += max(0, calculateLight(flashLightIn, flashLightIntensity, outgoingLightDirection,
+                normal, 0.04, roughness, 0.0, lightDirectionAngle, albedo.rgb));
+    }
+    // End flashlight
+	
+	float3 final = directLighting+ambientLighting;
+	#if SELFILLUM
+		float alpha = 1;
+		final += albedo.rgb*albedo.a;
+	#else
+		float alpha = albedo.a;
+	#endif
+	return float4(final,alpha);
+}
