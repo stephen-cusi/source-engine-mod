@@ -206,6 +206,7 @@ BEGIN_VS_SHADER(PBR, "PBR shader")
         bool bLightMapped = !IS_FLAG_SET(MATERIAL_VAR_MODEL);
         bool bUseEnvAmbient = (info.useEnvAmbient != -1) && (params[info.useEnvAmbient]->GetIntValue() == 1);
         bool bHasSpecularTexture = (info.specularTexture != -1) && params[info.specularTexture]->IsTexture();
+        bool hasNormalMapAlphaEnvmapMask = IS_FLAG_SET(MATERIAL_VAR_NORMALMAPALPHAENVMAPMASK);
 
         // Determining whether we're dealing with a fully opaque material
         BlendType_t nBlendType = EvaluateBlendRequirements(info.baseTexture, true);
@@ -324,6 +325,7 @@ BEGIN_VS_SHADER(PBR, "PBR shader")
                 SET_STATIC_PIXEL_SHADER_COMBO(EMISSIVE, bHasEmissionTexture);
                 SET_STATIC_PIXEL_SHADER_COMBO(SPECULAR, bHasSpecularTexture);
                 SET_STATIC_PIXEL_SHADER_COMBO(PARALLAXOCCLUSION, useParallax);
+                SET_STATIC_PIXEL_SHADER_COMBO(NORMALMAPALPHAENVMAPMASK, hasNormalMapAlphaEnvmapMask);
                 SET_STATIC_PIXEL_SHADER(pbr_ps30);
             }
 
@@ -498,6 +500,7 @@ BEGIN_VS_SHADER(PBR, "PBR shader")
                 SET_DYNAMIC_VERTEX_SHADER_COMBO(LIGHTING_PREVIEW, pShaderAPI->GetIntRenderingParameter(INT_RENDERPARM_ENABLE_FIXED_LIGHTING) != 0);
                 SET_DYNAMIC_VERTEX_SHADER_COMBO(COMPRESSED_VERTS, (int)vertexCompression);
                 SET_DYNAMIC_VERTEX_SHADER_COMBO(NUM_LIGHTS, lightState.m_nNumLights);
+                SET_DYNAMIC_VERTEX_SHADER_COMBO(FASTPATH, false);
                 SET_DYNAMIC_VERTEX_SHADER(pbr_vs20b);
 
                 // Setting up dynamic pixel shader
@@ -518,6 +521,7 @@ BEGIN_VS_SHADER(PBR, "PBR shader")
                 SET_DYNAMIC_VERTEX_SHADER_COMBO(LIGHTING_PREVIEW, pShaderAPI->GetIntRenderingParameter(INT_RENDERPARM_ENABLE_FIXED_LIGHTING) != 0);
                 SET_DYNAMIC_VERTEX_SHADER_COMBO(COMPRESSED_VERTS, (int)vertexCompression);
                 SET_DYNAMIC_VERTEX_SHADER_COMBO(NUM_LIGHTS, lightState.m_nNumLights);
+                SET_DYNAMIC_VERTEX_SHADER_COMBO(FASTPATH, false);
                 SET_DYNAMIC_VERTEX_SHADER(pbr_vs30);
 
                 // Setting up dynamic pixel shader

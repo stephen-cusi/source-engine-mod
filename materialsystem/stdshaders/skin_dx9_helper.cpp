@@ -15,7 +15,7 @@
 
 #ifndef _X360
 #include "skin_vs30.inc"
-#include "skin_ps30.inc"
+#include "skin_pbr_ps30.inc"
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -481,7 +481,7 @@ void DrawSkin_DX9_Internal( CBaseVSShader *pShader, IMaterialVar** params, IShad
 			SET_STATIC_VERTEX_SHADER_COMBO( DECAL, bIsDecal );
 			SET_STATIC_VERTEX_SHADER( skin_vs30 );
 
-			DECLARE_STATIC_PIXEL_SHADER( skin_ps30 );
+			DECLARE_STATIC_PIXEL_SHADER( skin_pbr_ps30 );
 			SET_STATIC_PIXEL_SHADER_COMBO( FLASHLIGHT, bHasFlashlight );
 			SET_STATIC_PIXEL_SHADER_COMBO( SELFILLUM,  bHasSelfIllum && !bHasFlashlight );
 			SET_STATIC_PIXEL_SHADER_COMBO( SELFILLUMFRESNEL,  bHasSelfIllumFresnel && !bHasFlashlight );
@@ -490,13 +490,12 @@ void DrawSkin_DX9_Internal( CBaseVSShader *pShader, IMaterialVar** params, IShad
 			SET_STATIC_PIXEL_SHADER_COMBO( WRINKLEMAP, bHasBaseTextureWrinkle || bHasBumpWrinkle );
 			SET_STATIC_PIXEL_SHADER_COMBO( DETAILTEXTURE,  hasDetailTexture );
 			SET_STATIC_PIXEL_SHADER_COMBO( DETAIL_BLEND_MODE, nDetailBlendMode );
-			SET_STATIC_PIXEL_SHADER_COMBO( RIMLIGHT, bHasRimLight );
 			SET_STATIC_PIXEL_SHADER_COMBO( CUBEMAP, bHasEnvmap );
 			SET_STATIC_PIXEL_SHADER_COMBO( FLASHLIGHTDEPTHFILTERMODE, nShadowFilterMode );
 			SET_STATIC_PIXEL_SHADER_COMBO( CONVERT_TO_SRGB, 0 );
 			SET_STATIC_PIXEL_SHADER_COMBO( FASTPATH_NOBUMP, pContextData->m_bFastPath );
 			SET_STATIC_PIXEL_SHADER_COMBO( BLENDTINTBYBASEALPHA, bBlendTintByBaseAlpha );
-			SET_STATIC_PIXEL_SHADER( skin_ps30 );
+			SET_STATIC_PIXEL_SHADER( skin_pbr_ps30 );
 		}
 #endif
 
@@ -691,13 +690,13 @@ void DrawSkin_DX9_Internal( CBaseVSShader *pShader, IMaterialVar** params, IShad
 			SET_DYNAMIC_VERTEX_SHADER_COMBO( COMPRESSED_VERTS, (int)vertexCompression );
 			SET_DYNAMIC_VERTEX_SHADER( skin_vs30 );
 
-			DECLARE_DYNAMIC_PIXEL_SHADER( skin_ps30 );
+			DECLARE_DYNAMIC_PIXEL_SHADER( skin_pbr_ps30 );
 			SET_DYNAMIC_PIXEL_SHADER_COMBO( NUM_LIGHTS,  lightState.m_nNumLights );
 			SET_DYNAMIC_PIXEL_SHADER_COMBO( WRITEWATERFOGTODESTALPHA, bWriteWaterFogToAlpha );
 			SET_DYNAMIC_PIXEL_SHADER_COMBO( WRITE_DEPTH_TO_DESTALPHA, bWriteDepthToAlpha );
 			SET_DYNAMIC_PIXEL_SHADER_COMBO( PIXELFOGTYPE, pShaderAPI->GetPixelFogCombo() );
 			SET_DYNAMIC_PIXEL_SHADER_COMBO( FLASHLIGHTSHADOWS, bFlashlightShadows );
-			SET_DYNAMIC_PIXEL_SHADER( skin_ps30 );
+			SET_DYNAMIC_PIXEL_SHADER( skin_pbr_ps30 );
 
 			bool bUnusedTexCoords[3] = { false, false, !pShaderAPI->IsHWMorphingEnabled() || !bIsDecal };
 			pShaderAPI->MarkUnusedVertexFields( 0, 3, bUnusedTexCoords );

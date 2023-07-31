@@ -10,7 +10,10 @@
 #include "convar.h"
 #include "lightmappedgeneric_dx9_helper.h"
 
+
+
 static LightmappedGeneric_DX9_Vars_t s_info;
+
 
 
 BEGIN_VS_SHADER( LightmappedGeneric,
@@ -73,6 +76,14 @@ BEGIN_VS_SHADER( LightmappedGeneric,
 		SHADER_PARAM( OUTLINESTART1, SHADER_PARAM_TYPE_FLOAT, "0.0", "inner start value for outline")
 		SHADER_PARAM( OUTLINEEND0, SHADER_PARAM_TYPE_FLOAT, "0.0", "inner end value for outline")
 		SHADER_PARAM( OUTLINEEND1, SHADER_PARAM_TYPE_FLOAT, "0.0", "outer end value for outline")
+
+		SHADER_PARAM(MRAOTEXTURE, SHADER_PARAM_TYPE_TEXTURE, "", "Texture with metalness in R, roughness in G, ambient occlusion in B.");
+		SHADER_PARAM(EMISSIONTEXTURE, SHADER_PARAM_TYPE_TEXTURE, "", "Emission texture");
+		SHADER_PARAM(USEENVAMBIENT, SHADER_PARAM_TYPE_BOOL, "1", "Use the cubemaps to compute ambient light.");
+		SHADER_PARAM(SPECULARTEXTURE, SHADER_PARAM_TYPE_TEXTURE, "", "Specular F0 RGB map");
+		SHADER_PARAM(PARALLAX, SHADER_PARAM_TYPE_BOOL, "0", "Use Parallax Occlusion Mapping.");
+		SHADER_PARAM(PARALLAXDEPTH, SHADER_PARAM_TYPE_FLOAT, "0.0030", "Depth of the Parallax Map");
+		SHADER_PARAM(PARALLAXCENTER, SHADER_PARAM_TYPE_FLOAT, "0.5", "Center depth of the Parallax Map");
 END_SHADER_PARAMS
 
 	void SetupVars( LightmappedGeneric_DX9_Vars_t& info )
@@ -134,6 +145,16 @@ END_SHADER_PARAMS
 		info.m_nOutlineStart1 = OUTLINESTART1;
 		info.m_nOutlineEnd0 = OUTLINEEND0;
 		info.m_nOutlineEnd1 = OUTLINEEND1;
+
+		info.baseColor = COLOR;
+		info.alphaTestReference = ALPHATESTREFERENCE;
+		info.emissionTexture = EMISSIONTEXTURE;
+		info.mraoTexture = MRAOTEXTURE;
+		info.useEnvAmbient = USEENVAMBIENT;
+		info.specularTexture = SPECULARTEXTURE;
+		info.useParallax = PARALLAX;
+		info.parallaxDepth = PARALLAXDEPTH;
+		info.parallaxCenter = PARALLAXCENTER;
 	}
 
 	SHADER_FALLBACK
@@ -159,6 +180,6 @@ END_SHADER_PARAMS
 
 	SHADER_DRAW
 	{
-		DrawLightmappedGeneric_DX9( this, params, pShaderAPI, pShaderShadow, s_info, pContextDataPtr );
+		DrawLightmappedGeneric_DX9(this, params, pShaderAPI, pShaderShadow, s_info, pContextDataPtr, vertexCompression);
 	}
 END_SHADER

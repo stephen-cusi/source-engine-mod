@@ -61,6 +61,17 @@ BEGIN_VS_SHADER( WorldVertexTransition_DX9, "Help for WorldVertexTransition" )
 		SHADER_PARAM( MASKEDBLENDING, SHADER_PARAM_TYPE_INTEGER, "0", "blend using texture with no vertex alpha. For using texture blending on non-displacements" )
 		SHADER_PARAM( SSBUMP, SHADER_PARAM_TYPE_INTEGER, "0", "whether or not to use alternate bumpmap format with height" )
 		SHADER_PARAM( SEAMLESS_SCALE, SHADER_PARAM_TYPE_FLOAT, "0", "Scale factor for 'seamless' texture mapping. 0 means to use ordinary mapping" )
+
+
+		SHADER_PARAM( ALPHATESTREFERENCE, SHADER_PARAM_TYPE_FLOAT, "0.0", "" )
+		SHADER_PARAM(MRAOTEXTURE, SHADER_PARAM_TYPE_TEXTURE, "", "Texture with metalness in R, roughness in G, ambient occlusion in B.");
+		SHADER_PARAM(EMISSIONTEXTURE, SHADER_PARAM_TYPE_TEXTURE, "", "Emission texture");
+		SHADER_PARAM(USEENVAMBIENT, SHADER_PARAM_TYPE_BOOL, "0", "Use the cubemaps to compute ambient light.");
+		SHADER_PARAM(SPECULARTEXTURE, SHADER_PARAM_TYPE_TEXTURE, "", "Specular F0 RGB map");
+		SHADER_PARAM(PARALLAX, SHADER_PARAM_TYPE_BOOL, "0", "Use Parallax Occlusion Mapping.");
+		SHADER_PARAM(PARALLAXDEPTH, SHADER_PARAM_TYPE_FLOAT, "0.0030", "Depth of the Parallax Map");
+		SHADER_PARAM(PARALLAXCENTER, SHADER_PARAM_TYPE_FLOAT, "0.5", "Center depth of the Parallax Map");
+
 	END_SHADER_PARAMS
 
 	void SetupVars( WorldVertexTransitionEditor_DX8_Vars_t& info )
@@ -119,6 +130,16 @@ BEGIN_VS_SHADER( WorldVertexTransition_DX9, "Help for WorldVertexTransition" )
 		info.m_nSelfShadowedBumpFlag = SSBUMP;
 		info.m_nSeamlessMappingScale = SEAMLESS_SCALE;
 		info.m_nAlphaTestReference = -1;
+
+		info.baseColor = COLOR;
+		info.alphaTestReference = ALPHATESTREFERENCE;
+		info.emissionTexture = EMISSIONTEXTURE;
+		info.mraoTexture = MRAOTEXTURE;
+		info.useEnvAmbient = USEENVAMBIENT;
+		info.specularTexture = SPECULARTEXTURE;
+		info.useParallax = PARALLAX;
+		info.parallaxDepth = PARALLAXDEPTH;
+		info.parallaxCenter = PARALLAXCENTER;
 	}
 
 	SHADER_FALLBACK
@@ -151,7 +172,7 @@ BEGIN_VS_SHADER( WorldVertexTransition_DX9, "Help for WorldVertexTransition" )
 			return;
 		}
 
-		DrawLightmappedGeneric_DX9( this, params, pShaderAPI, pShaderShadow, s_info, pContextDataPtr );
+		DrawLightmappedGeneric_DX9( this, params, pShaderAPI, pShaderShadow, s_info, pContextDataPtr, vertexCompression);
 	}
 END_SHADER
 

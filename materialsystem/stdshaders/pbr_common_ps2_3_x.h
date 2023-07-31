@@ -40,18 +40,21 @@ float gaSchlickGGX(float cosLi, float cosLo, float roughness)
     return gaSchlickG1(cosLi, k) * gaSchlickG1(cosLo, k);
 }
 
-// Monte Carlo integration, approximate analytic version based on Dimitar Lazarov's work
-// https://www.unrealengine.com/en-US/blog/physically-based-shading-on-mobile
-float3 EnvBRDFApprox(float3 SpecularColor, float Roughness, float NoV)
+// Relt's equation for approximating fresnel
+float3 EnvBRDFApprox(float r, float NoV)
 {
+	/*
     const float4 c0 = { -1, -0.0275, -0.572, 0.022 };
     const float4 c1 = { 1, 0.0425, 1.04, -0.04 };
     float4 r = Roughness * c0 + c1;
     float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
     float2 AB = float2(-1.04, 1.04) * a004 + r.zw;
     return SpecularColor * AB.x + AB.y;
+	*/
+	//float r = pow(Roughness,0.5);
+	return pow(2.0/(NoV+1.0)-1.0,3.0+r)*(0.4-r*0.19)+0.1-r*0.09;
 }
-
+#ifndef SHADER_MODEL_PS_2_B
 // Compute the matrix used to transform tangent space normals to world space
 // This expects DirectX normal maps in Mikk Tangent Space http://www.mikktspace.com
 float3x3 compute_tangent_frame(float3 N, float3 P, float2 uv, out float3 T, out float3 B, out float sign_det)
@@ -69,7 +72,7 @@ float3x3 compute_tangent_frame(float3 N, float3 P, float2 uv, out float3 T, out 
     B = normalize(mul(float2(duv1.y, duv2.y), inverseM));
     return float3x3(T, B, N);
 }
-
+#endif
 float GetAttenForLight(float4 lightAtten, int lightNum)
 {
 #if (NUM_LIGHTS > 1)
@@ -97,6 +100,7 @@ float3 calculateLight(float3 lightIn, float3 lightIntensity, float3 lightOut, fl
 
     // F - Calculate Fresnel term for direct lighting
     float3 F = fresnelSchlick(fresnelReflectance, max(0.0, dot(HalfAngle, lightOut)));
+
 
     // D - Calculate normal distribution for specular BRDF
     float D = ndfGGX(cosHalfAngle, roughness);
@@ -164,7 +168,7 @@ float3 ambientLookup(float3 normal, float3 EnvAmbientCube[6], float3 textureNorm
     return PixelShaderAmbientLight(normal, EnvAmbientCube);
 #endif
 }
-
+#ifndef SHADER_MODEL_PS_2_B
 // Create an ambient cube from the envmap
 void setupEnvMapAmbientCube(out float3 EnvAmbientCube[6], sampler EnvmapSampler)
 {
@@ -178,7 +182,20 @@ void setupEnvMapAmbientCube(out float3 EnvAmbientCube[6], sampler EnvmapSampler)
     EnvAmbientCube[4] = ENV_MAP_SCALE * texCUBElod(EnvmapSampler, directionPosZ).rgb;
     EnvAmbientCube[5] = ENV_MAP_SCALE * texCUBElod(EnvmapSampler, directionNegZ).rgb;
 }
-
+#else
+void setupEnvMapAmbientCube(out float3 EnvAmbientCube[6], sampler EnvmapSampler)
+{
+    float3 directionPosX = { 1, 0, 0 }; float3 directionNegX = {-1, 0, 0 };
+    float3 directionPosY = { 0, 1, 0 }; float3 directionNegY = { 0,-1, 0 };
+    float3 directionPosZ = { 0, 0, 1 }; float3 directionNegZ = { 0, 0,-1 };
+    EnvAmbientCube[0] = ENV_MAP_SCALE * texCUBE(EnvmapSampler, directionPosX).rgb;
+    EnvAmbientCube[1] = ENV_MAP_SCALE * texCUBE(EnvmapSampler, directionNegX).rgb;
+    EnvAmbientCube[2] = ENV_MAP_SCALE * texCUBE(EnvmapSampler, directionPosY).rgb;
+    EnvAmbientCube[3] = ENV_MAP_SCALE * texCUBE(EnvmapSampler, directionNegY).rgb;
+    EnvAmbientCube[4] = ENV_MAP_SCALE * texCUBE(EnvmapSampler, directionPosZ).rgb;
+    EnvAmbientCube[5] = ENV_MAP_SCALE * texCUBE(EnvmapSampler, directionNegZ).rgb;
+}
+#endif
 #if PARALLAXOCCLUSION
 float2 parallaxCorrect(float2 texCoord, float3 viewRelativeDir, sampler depthMap, float parallaxDepth, float parallaxCenter)
 {
@@ -255,3 +272,22 @@ float3 worldToRelative(float3 worldVector, float3 surfTangent, float3 surfBasis,
        dot(worldVector, surfNormal)
    );
 }
+/*
+float3 getSpecularIrradiance(float3 normal, float lightDirectionAngle, float3 outgoingLightDirection, float roughness, float ENVMAPLOD, float3 fresnelReflectance, float3 EnvAmbientCube[6], sampler EnvmapSampler)
+{
+	float3 specularReflectionVector = 2.0 * lightDirectionAngle * normal - outgoingLightDirection; // Lr
+    float4 specularUV = float4(specularReflectionVector, roughness * ENVMAPLOD);
+	float3 lookupHigh = ENV_MAP_SCALE * texCUBElod(EnvmapSampler, specularUV).xyz;
+	float3 lookupLow = PixelShaderAmbientLight(specularReflectionVector, EnvAmbientCube);
+	float3 specularIrradiance = lerp(lookupHigh, lookupLow, roughness * roughness);
+	//float3 specularIBL = specularIrradiance * EnvBRDF;
+	return specularIrradiance;
+}
+
+float3 getSpecularIrradianceRough(float3 normal, float lightDirectionAngle, float3 outgoingLightDirection, float3 EnvAmbientCube[6])
+{
+	float3 specularReflectionVector = 2.0 * lightDirectionAngle * normal - outgoingLightDirection; // Lr
+	float3 specularIrradiance = PixelShaderAmbientLight(specularReflectionVector, EnvAmbientCube);
+	return specularIrradiance;
+}
+*/
