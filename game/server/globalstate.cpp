@@ -142,6 +142,30 @@ public:
 	{
 		return m_list.Count();
 	}
+	
+#ifdef VSCRIPT
+#ifdef MAPBASE_VSCRIPT
+	virtual void RegisterVScript()
+	{
+		g_pScriptVM->RegisterInstance(this, "Globals");
+	}
+
+	int ScriptAddEntity(const char* pGlobalname, const char* pMapName, int state)
+	{
+		return AddEntity(pGlobalname, pMapName, (GLOBALESTATE)state);
+	}
+
+	void ScriptSetState(int globalIndex, int state)
+	{
+		SetState(globalIndex, (GLOBALESTATE)state);
+	}
+
+	int ScriptGetState(int globalIndex)
+	{
+		return (int)GetState(globalIndex);
+	}
+#endif
+#endif
 
 	void			Reset( void );
 	int				Save( ISave &save );

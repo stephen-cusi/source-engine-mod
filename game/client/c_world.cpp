@@ -75,6 +75,13 @@ bool C_World::Init( int entnum, int iSerialNum )
 	m_flWaveHeight = 0.0f;
 	ActivityList_Init();
 	EventList_Init();
+	
+#ifdef VSCRIPT
+#ifdef MAPBASE_VSCRIPT
+	m_iScriptLanguageServer = SL_SQUIRREL;
+	m_iScriptLanguageClient = SL_SQUIRREL;
+#endif
+#endif
 
 	return BaseClass::Init( entnum, iSerialNum );
 }

@@ -21,6 +21,12 @@
 #include "shareddefs.h"
 #include "engine/ivmodelinfo.h"
 
+#ifdef VSCRIPT
+#include "vscript/ivscript.h"
+#include "vscript_server.h"
+#endif // VSCRIPT
+
+
 class CDamageModifier;
 class CDmgAccumulator;
 
@@ -382,6 +388,12 @@ a list of all CBaseEntitys is kept in gEntList
 CBaseEntity *CreateEntityByName( const char *className, int iForceEdictIndex = -1 );
 CBaseNetworkable *CreateNetworkableByName( const char *className );
 
+
+#ifdef VSCRIPT
+CBaseEntity* ToEnt(HSCRIPT hScript);
+
+#endif // VSCRIPT
+
 // creates an entity and calls all the necessary spawn functions
 extern void SpawnEntityByName( const char *className, CEntityMapData *mapData = NULL );
 
@@ -402,6 +414,17 @@ struct thinkfunc_t
 
 	DECLARE_SIMPLE_DATADESC();
 };
+
+#ifdef VSCRIPT
+#ifdef MAPBASE_VSCRIPT
+struct scriptthinkfunc_t
+{
+	float		m_flNextThink;
+	HSCRIPT		m_hfnThink;
+	unsigned	m_iContextHash;
+};
+#endif
+#endif
 
 struct EmitSound_t;
 struct rotatingpushmove_t;
@@ -1911,6 +1934,164 @@ public:
 	{
 		return s_bAbsQueriesValid;
 	}
+	
+	#ifdef VSCRIPT
+	// VSCRIPT
+	HSCRIPT GetScriptInstance();
+	bool ValidateScriptScope();
+	virtual void RunVScripts();
+	bool CallScriptFunction(const char* pFunctionName, ScriptVariant_t* pFunctionReturn);
+	void ConnectOutputToScript(const char* pszOutput, const char* pszScriptFunc);
+	void DisconnectOutputFromScript(const char* pszOutput, const char* pszScriptFunc);
+	void ScriptThink();
+#ifdef MAPBASE_VSCRIPT
+	void ScriptSetThinkFunction(const char* szFunc, float time);
+	void ScriptStopThinkFunction();
+	void ScriptSetContextThink(const char* szContext, HSCRIPT hFunc, float time);
+	void ScriptSetThink(HSCRIPT hFunc, float time);
+	void ScriptStopThink();
+	void ScriptContextThink();
+private:
+#ifdef VSCRIPT
+	CUtlVector< scriptthinkfunc_t* > m_ScriptThinkFuncs;
+#endif // VSCRIPT
+public:
+#endif
+	const char* GetScriptId();
+	HSCRIPT GetScriptScope();
+#ifdef MAPBASE_VSCRIPT
+	HSCRIPT GetOrCreatePrivateScriptScope();
+#endif
+	void RunPrecacheScripts(void);
+	void RunOnPostSpawnScripts(void);
+
+#ifdef MAPBASE_VSCRIPT
+	HSCRIPT LookupScriptFunction(const char* pFunctionName);
+	bool CallScriptFunctionHandle(HSCRIPT hFunc, ScriptVariant_t* pFunctionReturn);
+#endif
+
+	HSCRIPT ScriptGetMoveParent(void);
+	HSCRIPT ScriptGetRootMoveParent();
+	HSCRIPT ScriptFirstMoveChild(void);
+	HSCRIPT ScriptNextMovePeer(void);
+
+	const Vector& ScriptEyePosition(void) { static Vector vec; vec = EyePosition(); return vec; }
+#ifdef MAPBASE_VSCRIPT
+	const QAngle& ScriptEyeAngles(void) { static QAngle ang; ang = EyeAngles(); return ang; }
+	void ScriptSetAngles(const QAngle angles) { Teleport(NULL, &angles, NULL); }
+	const QAngle& ScriptGetAngles(void) { return GetAbsAngles(); }
+#else
+	void ScriptSetAngles(float fPitch, float fYaw, float fRoll) { QAngle angles(fPitch, fYaw, fRoll); Teleport(NULL, &angles, NULL); }
+	const Vector& ScriptGetAngles(void) { static Vector vec; QAngle qa = GetAbsAngles(); vec.x = qa.x; vec.y = qa.y; vec.z = qa.z; return vec; }
+#endif
+
+#ifndef MAPBASE_VSCRIPT
+	void ScriptSetSize(const Vector& mins, const Vector& maxs) { UTIL_SetSize(this, mins, maxs); }
+	void ScriptUtilRemove(void) { UTIL_Remove(this); }
+#endif
+	void ScriptSetOwner(HSCRIPT hEntity) { SetOwnerEntity(ToEnt(hEntity)); }
+	void ScriptSetOrigin(const Vector& v) { Teleport(&v, NULL, NULL); }
+	void ScriptSetForward(const Vector& v) { QAngle angles; VectorAngles(v, angles); Teleport(NULL, &angles, NULL); }
+	const Vector& ScriptGetForward(void) { static Vector vecForward; GetVectors(&vecForward, NULL, NULL); return vecForward; }
+#ifdef MAPBASE_VSCRIPT
+	const Vector& ScriptGetRight(void) { static Vector vecRight; GetVectors(NULL, &vecRight, NULL); return vecRight; }
+#endif
+	const Vector& ScriptGetLeft(void) { static Vector vecRight; GetVectors(NULL, &vecRight, NULL); return vecRight; }
+
+	const Vector& ScriptGetUp(void) { static Vector vecUp; GetVectors(NULL, NULL, &vecUp); return vecUp; }
+
+#ifdef MAPBASE_VSCRIPT
+	void ScriptSetOriginAngles(const Vector& vecOrigin, const QAngle& angAngles) { Teleport(&vecOrigin, &angAngles, NULL); }
+	void ScriptSetOriginAnglesVelocity(const Vector& vecOrigin, const QAngle& angAngles, const Vector& vecVelocity) { Teleport(&vecOrigin, &angAngles, &vecVelocity); }
+
+	HSCRIPT ScriptEntityToWorldTransform(void);
+
+	HSCRIPT ScriptGetPhysicsObject(void);
+
+	void ScriptSetParent(HSCRIPT hParent, const char* szAttachment);
+#endif
+
+	const char* ScriptGetModelName(void) const;
+	HSCRIPT ScriptGetModelKeyValues(void);
+
+	void ScriptStopSound(const char* soundname);
+	void ScriptEmitSound(const char* soundname);
+	float ScriptSoundDuration(const char* soundname, const char* actormodel);
+
+	void VScriptPrecacheScriptSound(const char* soundname);
+
+	const Vector& ScriptGetLocalAngularVelocity(void);
+	void ScriptSetLocalAngularVelocity(float pitchVel, float yawVel, float rollVel);
+
+	const Vector& ScriptGetBoundingMins(void);
+	const Vector& ScriptGetBoundingMaxs(void);
+
+#ifdef MAPBASE_VSCRIPT
+	bool	ScriptIsVisible(const Vector& vecSpot) { return FVisible(vecSpot); }
+	bool	ScriptIsEntVisible(HSCRIPT pEntity) { return FVisible(ToEnt(pEntity)); }
+	bool	ScriptIsVisibleWithMask(const Vector& vecSpot, int traceMask) { return FVisible(vecSpot, traceMask); }
+
+	int		ScriptTakeDamage(HSCRIPT pInfo);
+	void	ScriptFireBullets(HSCRIPT pInfo);
+
+	void ScriptAddContext(const char* name, const char* value, float duration = 0.0f);
+	const char* ScriptGetContext(const char* name);
+	HSCRIPT ScriptGetContextIndex(int index);
+
+	int ScriptClassify(void);
+
+	bool ScriptAddOutput(const char* pszOutputName, const char* pszTarget, const char* pszAction, const char* pszParameter, float flDelay, int iMaxTimes);
+	const char* ScriptGetKeyValue(const char* pszKeyName);
+
+	const Vector& ScriptGetColorVector();
+	int ScriptGetColorR() { return m_clrRender.GetR(); }
+	int ScriptGetColorG() { return m_clrRender.GetG(); }
+	int ScriptGetColorB() { return m_clrRender.GetB(); }
+	int ScriptGetAlpha() { return m_clrRender.GetA(); }
+	void ScriptSetColorVector(const Vector& vecColor);
+	void ScriptSetColor(int r, int g, int b);
+	void ScriptSetColorR(int iVal) { SetRenderColorR(iVal); }
+	void ScriptSetColorG(int iVal) { SetRenderColorG(iVal); }
+	void ScriptSetColorB(int iVal) { SetRenderColorB(iVal); }
+	void ScriptSetAlpha(int iVal) { SetRenderColorA(iVal); }
+
+	int ScriptGetRenderMode() { return GetRenderMode(); }
+	void ScriptSetRenderMode(int nRenderMode) { SetRenderMode((RenderMode_t)nRenderMode); }
+
+	int ScriptGetMoveType() { return GetMoveType(); }
+	void ScriptSetMoveType(int iMoveType) { SetMoveType((MoveType_t)iMoveType); }
+
+	int ScriptGetSolid() { return GetSolid(); }
+	void ScriptSetSolid(int i) { SetSolid((SolidType_t)i); }
+
+	bool ScriptDispatchInteraction(int interactionType, HSCRIPT data, HSCRIPT sourceEnt);
+
+	int ScriptGetTakeDamage() { return m_takedamage; }
+	void ScriptSetTakeDamage(int val) { m_takedamage = val; }
+
+	static ScriptHook_t	g_Hook_UpdateOnRemove;
+	static ScriptHook_t	g_Hook_OnEntText;
+
+	static ScriptHook_t	g_Hook_VPhysicsCollision;
+	static ScriptHook_t	g_Hook_FireBullets;
+	static ScriptHook_t	g_Hook_OnDeath;
+	static ScriptHook_t	g_Hook_OnKilledOther;
+	static ScriptHook_t	g_Hook_HandleInteraction;
+	static ScriptHook_t	g_Hook_ModifyEmitSoundParams;
+	static ScriptHook_t	g_Hook_ModifySentenceParams;
+#endif
+
+	string_t		m_iszVScripts;
+	string_t		m_iszScriptThinkFunction;
+	CScriptScope	m_ScriptScope;
+	HSCRIPT			m_hScriptInstance;
+	string_t		m_iszScriptId;
+#ifdef MAPBASE_VSCRIPT
+	HSCRIPT			m_pScriptModelKeyValues;
+#else
+	CScriptKeyValues* m_pScriptModelKeyValues;
+#endif
+#endif
 };
 
 // Send tables exposed in this module.

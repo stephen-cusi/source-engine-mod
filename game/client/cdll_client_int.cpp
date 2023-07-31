@@ -147,6 +147,11 @@
 #include "fbxsystem/fbxsystem.h"
 #endif
 
+#ifdef VSCRIPT
+#include "vscript_client.h"
+#endif // VSCRIPT
+
+
 #include "touch.h"
 
 extern vgui::IInputInternal *g_InputInternal;

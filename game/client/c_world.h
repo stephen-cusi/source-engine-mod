@@ -40,6 +40,15 @@ public:
 
 	float GetWaveHeight() const;
 	const char *GetDetailSpriteMaterial() const;
+	
+#ifdef VSCRIPT
+#ifdef MAPBASE_VSCRIPT
+	void ClientThink() { ScriptContextThink(); }
+
+	// -2 = Use server language
+	ScriptLanguage_t GetScriptLanguage() { return (ScriptLanguage_t)(m_iScriptLanguageClient != -2 ? m_iScriptLanguageClient : m_iScriptLanguageServer); }
+#endif
+#endif
 
 public:
 	enum
@@ -56,6 +65,13 @@ public:
 	float	m_flMinPropScreenSpaceWidth;
 	float	m_flMaxPropScreenSpaceWidth;
 	bool	m_bColdWorld;
+	
+#ifdef VSCRIPT
+#ifdef MAPBASE_VSCRIPT
+	int		m_iScriptLanguageServer;
+	int		m_iScriptLanguageClient;
+#endif
+#endif
 
 private:
 	void	RegisterSharedActivities( void );

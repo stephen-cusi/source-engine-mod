@@ -2,7 +2,7 @@
 Developer Command Prompt for VS 2022:
 
 Configure a solution
-waf.bat configure -T release --prefix=..\build --build-games=hl2mp
+waf.bat configure -T release --prefix=..\build --build-games=sourcebox
 
 Create solution
 waf.bat msvs
