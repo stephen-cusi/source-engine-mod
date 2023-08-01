@@ -1,6 +1,6 @@
 # SourceBox
 - Discord: [![Discord Server](https://img.shields.io/discord/1093917978522812457.svg)](https://discord.gg/Rb7Aw5UXb3)
-- Guilded: [Guilded Server](https://www.guilded.gg/i/EAJRP752?cid=39ab75f2-722a-4447-9037-daf82ea19614&intent=undefined)
+- Guilded: [![Guilded Server](https://shields.yoki-labs.xyz/shields/i/EAJRP752)](https://www.guilded.gg/i/EAJRP752)
  
 SourceBox is a free and open source Source Engine sandbox game which features content from other Source games.
 SourceBox is based on the nillerusr fork of the 2018 engine leak.
