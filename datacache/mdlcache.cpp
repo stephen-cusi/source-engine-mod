@@ -1969,7 +1969,11 @@ bool CMDLCache::ReadFileNative( char *pFileName, const char *pPath, CUtlBuffer &
 		if( bOk && type == MDLCACHE_STUDIOHDR )
 		{
 			studiohdr_t* pStudioHdr = ( studiohdr_t* ) buf.PeekGet();
-
+			if (!pStudioHdr)
+			{
+				Warning("Something terrible went wrong when loading model '%s'\n", pFileName);
+				return false;
+			}
 			if ( pStudioHdr->studiohdr2index == 0 )
 			{
 				// We always need this now, so make room for it in the buffer now.

@@ -21,7 +21,7 @@
 #endif
 
 #include "gamerules.h"
-#include "hl2_gamerules.h"
+#include "hl2mp_gamerules.h"
 
 #ifdef CLIENT_DLL
 	#define CPortalGameRules C_PortalGameRules
@@ -41,10 +41,10 @@ public:
 };
 
 
-class CPortalGameRules : public CHalfLife2
+class CPortalGameRules : public CHL2MPRules
 {
 public:
-	DECLARE_CLASS( CPortalGameRules, CSingleplayRules );
+	DECLARE_CLASS( CPortalGameRules, CHL2MPRules );
 
 	virtual bool	Init();
 	

@@ -37,7 +37,7 @@
 #include "saverestore_utlvector.h"
 #include "prop_combine_ball.h"
 #include "physobj.h"
-#include "hl2_gamerules.h"
+#include "hl2mp_gamerules.h"
 #include "citadel_effects_shared.h"
 #include "eventqueue.h"
 #include "model_types.h"
@@ -1599,7 +1599,7 @@ enum
 //-----------------------------------------------------------------------------
 bool PlayerHasMegaPhysCannon()
 {
-	return ( HL2GameRules()->MegaPhyscannonActive() == true );
+	return ( HL2MPRules()->MegaPhyscannonActive() == true );
 }
 
 
@@ -2897,7 +2897,7 @@ bool CGrabController::UpdateObject( CBasePlayer *pPlayer, float flError )
 	}
 	AngleVectors( playerAngles, &forward, &right, &up );
 
-	if ( HL2GameRules()->MegaPhyscannonActive() )
+	if ( HL2MPRules()->MegaPhyscannonActive() )
 	{
 		Vector los = ( pEntity->WorldSpaceCenter() - pPlayer->Weapon_ShootPosition() );
 		VectorNormalize( los );

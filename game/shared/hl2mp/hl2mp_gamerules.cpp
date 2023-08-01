@@ -15,7 +15,7 @@
 #ifdef CLIENT_DLL
 	#include "c_hl2mp_player.h"
 #else
-
+	#include "globalstate.h"
 	#include "eventqueue.h"
 	#include "player.h"
 	#include "gamerules.h"
@@ -47,7 +47,13 @@ ConVar sv_hl2mp_weapon_respawn_time( "sv_hl2mp_weapon_respawn_time", "20", FCVAR
 ConVar sv_hl2mp_item_respawn_time( "sv_hl2mp_item_respawn_time", "30", FCVAR_GAMEDLL | FCVAR_NOTIFY );
 ConVar sv_report_client_settings("sv_report_client_settings", "0", FCVAR_GAMEDLL | FCVAR_NOTIFY );
 
+extern ConVar physcannon_mega_enabled;
+extern ConVar alyx_darkness_force;
+
 extern ConVar mp_chattime;
+
+extern ConVar	sk_plr_health_drop_time;
+extern ConVar	sk_plr_grenade_drop_time;
 
 extern CBaseEntity	 *g_pLastCombineSpawn;
 extern CBaseEntity	 *g_pLastRebelSpawn;
@@ -1338,6 +1344,16 @@ void CHL2MPRules::Think( void )
 		m_flRestartGameTime = gpGlobals->curtime + 5;
 		m_bAwaitingReadyRestart = false;
 	}
+	
+	if (physcannon_mega_enabled.GetBool() == true)
+	{
+		m_bMegaPhysgun = true;
+	}
+	else
+	{
+		// FIXME: Is there a better place for this?
+		m_bMegaPhysgun = (GlobalEntity_GetState("super_phys_gun") == GLOBAL_ON);
+	}
 
 	ManageObjectRelocation();
 
@@ -2038,6 +2054,69 @@ CAmmoDef* GetAmmoDef()
 
 #ifndef CLIENT_DLL
 
+bool CHL2MPRules::IsAlyxInDarknessMode()
+{
+#ifdef HL2_EPISODIC
+		if (alyx_darkness_force.GetBool())
+			return true;
+
+		return (GlobalEntity_GetState("ep_alyx_darknessmode") == GLOBAL_ON);
+#else
+		return false;
+#endif // HL2_EPISODIC
+}
+
+bool CHL2MPRules::NPC_ShouldDropHealth(CBasePlayer* pRecipient)
+{
+	// Can only do this every so often
+	if (m_flLastHealthDropTime > gpGlobals->curtime)
+		return false;
+
+	//Try to throw dynamic health
+	float healthPerc = ((float)pRecipient->m_iHealth / (float)pRecipient->m_iMaxHealth);
+
+	if (random->RandomFloat(0.0f, 1.0f) > healthPerc * 1.5f)
+		return true;
+
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Whether or not the NPC should drop a health vial
+// Output : Returns true on success, false on failure.
+//-----------------------------------------------------------------------------
+bool CHL2MPRules::NPC_ShouldDropGrenade(CBasePlayer* pRecipient)
+{
+	// Can only do this every so often
+	if (m_flLastGrenadeDropTime > gpGlobals->curtime)
+		return false;
+
+	int grenadeIndex = GetAmmoDef()->Index("grenade");
+	int numGrenades = pRecipient->GetAmmoCount(grenadeIndex);
+
+	// If we're not maxed out on grenades and we've randomly okay'd it
+	if ((numGrenades < GetAmmoDef()->MaxCarry(grenadeIndex)) && (random->RandomInt(0, 2) == 0))
+		return true;
+
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Update the drop counter for health
+//-----------------------------------------------------------------------------
+void CHL2MPRules::NPC_DroppedHealth(void)
+{
+	m_flLastHealthDropTime = gpGlobals->curtime + sk_plr_health_drop_time.GetFloat();
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Update the drop counter for grenades
+//-----------------------------------------------------------------------------
+void CHL2MPRules::NPC_DroppedGrenade(void)
+{
+	m_flLastGrenadeDropTime = gpGlobals->curtime + sk_plr_grenade_drop_time.GetFloat();
+}
+
 void CHL2MPRules::RestartGame()
 {
 	// bounds check
@@ -2319,5 +2398,7 @@ const char *CHL2MPRules::GetChatFormat( bool bTeamOnly, CBasePlayer *pPlayer )
 
 	return pszFormat;
 }
+
+
 
 #endif

@@ -1664,7 +1664,7 @@ void CSceneEntity::DispatchStartSpeak( CChoreoScene *scene, CBaseFlex *actor, CC
 	// Emit sound
 	if ( actor )
 	{
-		CPASAttenuationFilter filter( actor );
+		CBroadcastRecipientFilter filter;
 
 		if ( m_pRecipientFilter )
 		{

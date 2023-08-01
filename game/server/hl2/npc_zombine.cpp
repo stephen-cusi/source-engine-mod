@@ -27,7 +27,7 @@
 #include "props.h"
 #include "physics_npc_solver.h"
 #include "hl2_player.h"
-#include "hl2_gamerules.h"
+#include "hl2mp_gamerules.h"
 
 #include "basecombatweapon.h"
 #include "basegrenade_shared.h"
@@ -614,7 +614,7 @@ bool CNPC_Zombine::AllowedToSprint( void )
 
 	if ( pPlayer )
 	{
-		if ( HL2GameRules()->IsAlyxInDarknessMode() && pPlayer->FlashlightIsOn() == false )
+		if ( HL2MPRules()->IsAlyxInDarknessMode() && pPlayer->FlashlightIsOn() == false )
 		{
 			iChance = SPRINT_CHANCE_VALUE_DARKNESS;
 		}

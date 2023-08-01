@@ -139,6 +139,15 @@ public:
 	void    CheckChatForReadySignal( CHL2MP_Player *pPlayer, const char *chatmsg );
 	const char *GetChatFormat( bool bTeamOnly, CBasePlayer *pPlayer );
 	virtual bool FAllowNPCs(void) { return true; };
+	bool	MegaPhyscannonActive(void) { return m_bMegaPhysgun; }
+
+	virtual bool IsAlyxInDarknessMode();
+
+	bool	NPC_ShouldDropGrenade(CBasePlayer* pRecipient);
+	bool	NPC_ShouldDropHealth(CBasePlayer* pRecipient);
+	void	NPC_DroppedHealth(void);
+	void	NPC_DroppedGrenade(void);
+
 #endif
 	virtual void ClientDisconnected( edict_t *pClient );
 
@@ -153,8 +162,10 @@ public:
 
 	virtual bool IsConnectedUserInfoChangeAllowed( CBasePlayer *pPlayer );
 	
+	
 private:
 	
+	CNetworkVar(bool, m_bMegaPhysgun);
 	CNetworkVar( bool, m_bTeamPlayEnabled );
 	CNetworkVar( float, m_flGameStartTime );
 	CUtlVector<EHANDLE> m_hRespawnableItemsAndWeapons;
@@ -163,6 +174,8 @@ private:
 	bool m_bCompleteReset;
 	bool m_bAwaitingReadyRestart;
 	bool m_bHeardAllPlayersReady;
+	float	m_flLastHealthDropTime;
+	float	m_flLastGrenadeDropTime;
 
 #ifndef CLIENT_DLL
 	bool m_bChangelevelDone;

@@ -25,7 +25,7 @@
 
 #ifdef HL2_DLL
 #include "ai_interactions.h"
-#include "hl2_gamerules.h"
+#include "hl2mp_gamerules.h"
 #endif // HL2_DLL
 
 #include "ai_network.h"
@@ -13956,7 +13956,7 @@ void CAI_BaseNPC::PlayerHasIlluminatedNPC( CBasePlayer *pPlayer, float flDot )
 		if ( pInteraction->iLoopBreakTriggerMethod & SNPCINT_LOOPBREAK_ON_FLASHLIGHT_ILLUM )
 		{
 			// Only do this in alyx darkness mode
-			if ( HL2GameRules()->IsAlyxInDarknessMode() )
+			if ( HL2MPRules()->IsAlyxInDarknessMode() )
 			{
 				// Can only break when we're in the action anim
 				if ( m_hCine->IsPlayingAction() )

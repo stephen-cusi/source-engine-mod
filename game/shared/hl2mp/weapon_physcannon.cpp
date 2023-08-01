@@ -48,7 +48,7 @@
 #include "vphysics/friction.h"
 #include "debugoverlay_shared.h"
 #include "portal_util_shared.h"
-#include "hl2_gamerules.h"
+#include "hl2mp_gamerules.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -2568,7 +2568,7 @@ bool CGrabController::UpdateObject(CBasePlayer* pPlayer, float flError)
 	}
 	AngleVectors(playerAngles, &forward, &right, &up);
 #ifndef CLIENT_DLL
-	if (HL2GameRules()->MegaPhyscannonActive())
+	if (HL2MPRules()->MegaPhyscannonActive())
 	{
 		Vector los = (pEntity->WorldSpaceCenter() - pPlayer->Weapon_ShootPosition());
 		VectorNormalize(los);

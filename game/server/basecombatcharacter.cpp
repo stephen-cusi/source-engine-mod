@@ -45,7 +45,7 @@
 
 #ifdef HL2_DLL
 #include "weapon_physcannon.h"
-#include "hl2_gamerules.h"
+#include "hl2mp_gamerules.h"
 #endif
 
 #ifdef PORTAL
@@ -1534,7 +1534,7 @@ bool CBaseCombatCharacter::BecomeRagdoll( const CTakeDamageInfo &info, const Vec
 
 #ifdef HL2_EPISODIC
 	// Burning corpses are server-side in episodic, if we're in darkness mode
-	if ( IsOnFire() && HL2GameRules()->IsAlyxInDarknessMode() )
+	if ( IsOnFire() && HL2MPRules()->IsAlyxInDarknessMode() )
 	{
 		CBaseEntity *pRagdoll = CreateServerRagdoll( this, m_nForceBone, newinfo, COLLISION_GROUP_DEBRIS );
 		FixupBurningServerRagdoll( pRagdoll );
@@ -1547,7 +1547,7 @@ bool CBaseCombatCharacter::BecomeRagdoll( const CTakeDamageInfo &info, const Vec
 
 	bool bMegaPhyscannonActive = false;
 #if !defined( HL2MP )
-	bMegaPhyscannonActive = HL2GameRules()->MegaPhyscannonActive();
+	bMegaPhyscannonActive = HL2MPRules()->MegaPhyscannonActive();
 #endif // !HL2MP
 
 	// Mega physgun requires everything to be a server-side ragdoll
@@ -3127,7 +3127,7 @@ void CBaseCombatCharacter::VPhysicsShadowCollision( int index, gamevcollisioneve
 	float flOtherAttackerTime = 0.0f;
 
 #if defined( HL2_DLL ) && !defined( HL2MP )
-	if ( HL2GameRules()->MegaPhyscannonActive() == true )
+	if ( HL2MPRules()->MegaPhyscannonActive() == true )
 	{
 		flOtherAttackerTime = 1.0f;
 	}

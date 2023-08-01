@@ -3,7 +3,7 @@
 
 #ifdef HL2_EPISODIC
 
-#include "hl2_gamerules.h"
+#include "hl2mp_gamerules.h"
 #include "ammodef.h"
 #include "hl2_shareddefs.h"
 #include "filesystem.h"
@@ -63,10 +63,10 @@ CSurvivalSettings::CSurvivalSettings()
 	m_iSpawnHealth = 100;
 }
 
-class CHalfLife2Survival : public CHalfLife2
+class CHalfLife2Survival : public CHL2MPRules
 {
 public:
-	DECLARE_CLASS( CHalfLife2Survival, CHalfLife2 );
+	DECLARE_CLASS( CHalfLife2Survival, CHL2MPRules);
 
 #ifdef CLIENT_DLL
 
