@@ -1,5 +1,6 @@
 # SourceBox
 - Discord: [![Discord Server](https://img.shields.io/discord/1093917978522812457.svg)](https://discord.gg/Rb7Aw5UXb3)
+- Guilded: [Guilded Server](https://www.guilded.gg/i/EAJRP752?cid=39ab75f2-722a-4447-9037-daf82ea19614&intent=undefined)
  
 SourceBox is a free and open source Source Engine sandbox game which features content from other Source games.
 SourceBox is based on the nillerusr fork of the 2018 engine leak.
@@ -17,6 +18,7 @@ SourceBox is based on the nillerusr fork of the 2018 engine leak.
 - Add Squirrel
 
 # How to Build?
+- [Simple Guide](https://www.guilded.gg/SourceBox/groups/3Ow2j8e3/channels/ce475f6a-56a8-40a8-9638-a88c7222b148/docs/381643)
 - [Building instructions(EN)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
 - [Building instructions(RU)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(RU))\
 - Also there is IMPORTANT.txt with main steps for Developer Command Prompt for VS 2022.
