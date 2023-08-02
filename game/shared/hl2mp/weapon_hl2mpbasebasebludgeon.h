@@ -9,6 +9,9 @@
 //=============================================================================//
 
 #include "weapon_hl2mpbasehlmpcombatweapon.h"
+#ifndef CLIENT_DLL
+	#include "basecombatcharacter.h"
+#endif
 
 #ifndef BASEBLUDGEONWEAPON_H
 #define BASEBLUDGEONWEAPON_H
@@ -42,7 +45,9 @@ public:
 	virtual	void	SecondaryAttack( void );
 	
 	virtual void	ItemPostFrame( void );
-
+#ifndef CLIENT_DLL
+	virtual int CapabilitiesGet(void) { return bits_CAP_WEAPON_MELEE_ATTACK1; }
+#endif
 	//Functions to select animation sequences 
 	virtual Activity	GetPrimaryAttackActivity( void )	{	return	ACT_VM_HITCENTER;	}
 	virtual Activity	GetSecondaryAttackActivity( void )	{	return	ACT_VM_HITCENTER2;	}
