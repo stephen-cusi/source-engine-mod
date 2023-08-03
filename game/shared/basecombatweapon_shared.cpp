@@ -2601,6 +2601,7 @@ BEGIN_DATADESC( CBaseCombatWeapon )
 	DEFINE_FIELD( m_iSecondaryAmmoType, FIELD_INTEGER ),
 	DEFINE_FIELD( m_iClip1, FIELD_INTEGER ),
 	DEFINE_FIELD( m_iClip2, FIELD_INTEGER ),
+	DEFINE_FIELD( m_iActualPosition, FIELD_INTEGER ),
 	DEFINE_FIELD( m_bFiresUnderwater, FIELD_BOOLEAN ),
 	DEFINE_FIELD( m_bAltFiresUnderwater, FIELD_BOOLEAN ),
 	DEFINE_FIELD( m_fMinRange1, FIELD_FLOAT ),
@@ -2627,6 +2628,7 @@ BEGIN_DATADESC( CBaseCombatWeapon )
 
 	DEFINE_FIELD( m_flUnlockTime,		FIELD_TIME ),
 	DEFINE_FIELD( m_hLocker,			FIELD_EHANDLE ),
+	
 
 	//	DEFINE_FIELD( m_iViewModelIndex, FIELD_INTEGER ),
 	//	DEFINE_FIELD( m_iWorldModelIndex, FIELD_INTEGER ),

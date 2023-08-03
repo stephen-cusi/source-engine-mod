@@ -489,7 +489,8 @@ void CHL2MP_Player::Spawn(void)
 
 		RemoveEffects( EF_NODRAW );
 		
-		GiveDefaultItems();
+		if(gpGlobals->eLoadType != MapLoad_Transition || !gpGlobals->startspot)
+			GiveDefaultItems();
 	}
 
 	SetNumAnimOverlays( 3 );

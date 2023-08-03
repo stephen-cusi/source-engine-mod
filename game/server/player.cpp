@@ -4960,7 +4960,10 @@ void CBasePlayer::Spawn( void )
 	if ( !m_fGameHUDInitialized )
 		g_pGameRules->SetDefaultPlayerTeam( this );
 
-	g_pGameRules->GetPlayerSpawnSpot( this );
+	if (gpGlobals->eLoadType != MapLoad_Transition || !gpGlobals->startspot)
+	{
+		g_pGameRules->GetPlayerSpawnSpot(this);
+	}
 
 	m_Local.m_bDucked = false;// This will persist over round restart if you hold duck otherwise. 
 	m_Local.m_bDucking = false;
@@ -5020,9 +5023,10 @@ void CBasePlayer::Spawn( void )
 	// Clear any screenfade
 	color32 nothing = {0,0,0,255};
 	UTIL_ScreenFade( this, nothing, 0, 0, FFADE_IN | FFADE_PURGE );
-
-	g_pGameRules->PlayerSpawn( this );
-
+	if (gpGlobals->eLoadType != MapLoad_Transition || !gpGlobals->startspot)
+	{
+		g_pGameRules->PlayerSpawn(this);
+	}
 	m_flLaggedMovementValue = 1.0f;
 	m_vecSmoothedVelocity = vec3_origin;
 	InitVCollision( GetAbsOrigin(), GetAbsVelocity() );

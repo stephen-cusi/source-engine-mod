@@ -1214,7 +1214,13 @@ void CSave::WriteEHandle( const char *pname, const EHANDLE *pEHandle, int count 
 	int entityArray[MAX_ENTITYARRAY];
 	for ( int i = 0; i < count && i < MAX_ENTITYARRAY; i++ )
 	{
-		entityArray[i] = EntityIndex( (CBaseEntity *)(const_cast<EHANDLE *>(pEHandle)[i]) );
+		CBaseEntity* ent = (CBaseEntity*)(const_cast<EHANDLE*>(pEHandle)[i]);
+		entityArray[i] = EntityIndex(ent);
+		if (ent)
+		{
+			DevMsg(4, "Saving entity %s (%i)\n", ent->GetClassname(), ent->entindex());
+		}
+		
 	}
 	WriteInt( pname, entityArray, count );
 }
@@ -1994,6 +2000,12 @@ int CRestore::ReadEHandle( EHANDLE *pEHandle, int count, int nBytesAvailable )
 	for ( int i = 0; i < nRead; i++ ) // nRead is never greater than count
 	{
 		pEHandle[i] = EntityFromIndex( entityArray[i] );
+#ifndef CLIENT_DLL
+		if (pEHandle[i] != NULL)
+		{
+			DevMsg(4, "Reading EHandle %i: %i edict:%x index:%i\n", i, entityArray[i], pEHandle[i]->edict(), pEHandle[i]->entindex());
+		}
+#endif
 	}
 	
 	if ( nRead < count)
@@ -2887,10 +2899,12 @@ bool CEntitySaveRestoreBlockHandler::DoRestoreEntity( CBaseEntity *pEntity, IRes
 #if !defined( CLIENT_DLL )
 	if ( pEntity->ObjectCaps() & FCAP_MUST_SPAWN )
 	{
+		DevMsg(1, "Spawning restored entity %s (%i)\n", pEntity->GetClassname(), pEntity->entindex());
 		pEntity->Spawn();
 	}
 	else
 	{
+		DevMsg(1, "Precaching restored entity %s (%i) edict: (%x)\n", pEntity->GetClassname(), pEntity->entindex(), pEntity->edict());
 		pEntity->Precache( );
 	}
 #endif

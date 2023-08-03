@@ -897,10 +897,10 @@ void EndRestoreEntities()
 		{
 			MDLCACHE_CRITICAL_SECTION();
 			pEntity->OnRestore();
+			DevMsg(1, "Restoring entity %s (%i)\n", pEntity->GetClassname(), pEntity->entindex());
 		}
 	}
 
-	g_RestoredEntities.Purge();
 
 	IGameSystem::OnRestoreAllSystems();
 
@@ -2658,6 +2658,49 @@ bool CServerGameClients::ClientConnect( edict_t *pEdict, const char *pszName, co
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: 
+// Input  : *save - 
+//-----------------------------------------------------------------------------
+void FinishSaveRestoreData(CSaveRestoreData* save)
+{
+	char** pTokens = save->DetachSymbolTable();
+	if (pTokens)
+		engine->SaveFreeMemory(pTokens);
+
+	entitytable_t* pEntityTable = save->DetachEntityTable();
+	if (pEntityTable)
+		engine->SaveFreeMemory(pEntityTable);
+
+	save->PurgeEntityHash();
+	engine->SaveFreeMemory(save);
+
+	gpGlobals->pSaveData = NULL;
+}
+
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+// Input  : *pSaveData - 
+//			output - 
+//			*pLandmarkName - 
+//-----------------------------------------------------------------------------
+void LandmarkOrigin(CSaveRestoreData* pSaveData, Vector& output, const char* pLandmarkName)
+{
+	int i;
+
+	for (i = 0; i < pSaveData->levelInfo.connectionCount; i++)
+	{
+		if (!stricmp(pSaveData->levelInfo.levelList[i].landmarkName, pLandmarkName))
+		{
+			VectorCopy(pSaveData->levelInfo.levelList[i].vecLandmarkOrigin, output);
+			return;
+		}
+	}
+
+	VectorCopy(vec3_origin, output);
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Called when a player is fully active (i.e. ready to receive messages)
 // Input  : *pEntity - the player
 //-----------------------------------------------------------------------------
@@ -2665,7 +2708,50 @@ void CServerGameClients::ClientActive( edict_t *pEdict, bool bLoadGame )
 {
 	MDLCACHE_CRITICAL_SECTION();
 	
+	if (gpGlobals->eLoadType == MapLoad_Transition && g_RestoredEntities.Count() > 0)
+	{
+		Vector landmarkOrigin;
+		//CBaseEntity* playerEnt = pEntity->GetNetworkable()->GetBaseEntity();
+		for (int i = 0; i < g_RestoredEntities.Count(); i++)
+		{
+			CBaseEntity* pEnt = g_RestoredEntities[i].Get();
+			if (pEnt->edict()->m_EdictIndex == pEdict->m_EdictIndex)
+			{
+				DevMsg(1, "Restoring player from %x to %x\n", pEnt->edict(), pEdict);
+				//gpGlobals->pSaveData->Seek(gpGlobals->pSaveData->GetEntityIndex(g_RestoredEntities[i]));
+				CSaveRestoreData* entData = SaveInit(0);
+				entData->levelInfo.fUseLandmark = true;
+				strcpy(entData->levelInfo.szLandmarkName, gpGlobals->startspot.ToCStr());
+
+				g_pGameSaveRestoreBlockSet->PreSave(entData);
+
+				int beforesave = entData->GetCurPos();
+				CSave lmaoInput(entData);
+
+				entData->SetCurrentEntityContext(pEnt);
+				pEnt->Save(lmaoInput);
+				entData->SetCurrentEntityContext(NULL);
+
+				g_pGameSaveRestoreBlockSet->PostSave();
+
+				entData->Seek(beforesave);
+
+				g_pGameSaveRestoreBlockSet->PreRestore();
+
+				CRestore lmaoOutput(entData);
+				::RestorePlayer(pEdict, lmaoOutput);
+
+				g_pGameSaveRestoreBlockSet->PostRestore();
+				g_RestoredEntities.Remove(i);
+				FinishSaveRestoreData(entData);
+				break;
+			}
+		}
+	}
+
 	::ClientActive( pEdict, bLoadGame );
+
+	
 
 	// If we just loaded from a save file, call OnRestore on valid entities
 	EndRestoreEntities();
@@ -2789,6 +2875,7 @@ void CServerGameClients::ClientPutInServer( edict_t *pEntity, const char *player
 		g_pClientPutInServerOverride( pEntity, playername );
 	else
 		::ClientPutInServer( pEntity, playername );
+	
 }
 
 void CServerGameClients::ClientCommand( edict_t *pEntity, const CCommand &args )

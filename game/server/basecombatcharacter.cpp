@@ -2087,6 +2087,7 @@ void CBaseCombatCharacter::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 		}
 	}
 	
+	
 
 	// Weapon is now on my team
 	pWeapon->ChangeTeam( GetTeamNumber() );

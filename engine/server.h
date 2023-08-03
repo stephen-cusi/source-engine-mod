@@ -78,6 +78,7 @@ public:
 	
 	inline  CGameClient *Client( int i ) { return static_cast<CGameClient*>(m_Clients[i]); };
 
+
 protected :
 
 	// Reload the whitelist files for pure server mode.

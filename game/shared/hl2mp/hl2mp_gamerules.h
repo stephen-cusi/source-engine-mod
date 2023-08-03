@@ -148,6 +148,8 @@ public:
 	void	NPC_DroppedHealth(void);
 	void	NPC_DroppedGrenade(void);
 
+	virtual void PlayerSpawn(CBasePlayer* pPlayer);
+
 #endif
 	virtual void ClientDisconnected( edict_t *pClient );
 

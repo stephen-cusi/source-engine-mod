@@ -984,6 +984,7 @@ bool CGameClient::SendSignonData( void )
 
 void CGameClient::SpawnPlayer( void )
 {
+	
 	// run the entrance script
 	if ( sv.m_bLoadgame )
 	{	// loaded games are fully inited already
@@ -992,10 +993,13 @@ void CGameClient::SpawnPlayer( void )
 	}
 	else
 	{
-		// set up the edict
-		Assert( serverGameEnts );
-		serverGameEnts->FreeContainingEntity( edict );
-		InitializeEntityDLLFields( edict );
+		if (g_ServerGlobalVariables.eLoadType != MapLoad_Transition || !g_ServerGlobalVariables.startspot)
+		{
+			// set up the edict
+			Assert(serverGameEnts);
+			serverGameEnts->FreeContainingEntity(edict);
+			InitializeEntityDLLFields(edict);
+		}
 		
 	}
 
@@ -1008,7 +1012,7 @@ void CGameClient::SpawnPlayer( void )
 	SendNetMsg( setView );
 
 	
-
+	
 	CBaseClient::SpawnPlayer();
 
 	// notify that the player is spawning

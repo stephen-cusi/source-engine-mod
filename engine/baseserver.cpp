@@ -1974,8 +1974,13 @@ void CBaseServer::RunFrame( void )
 //-----------------------------------------------------------------------------
 CBaseClient * CBaseServer::GetFreeClient( netadr_t &adr )
 {
+
+	
+
 	CBaseClient *freeclient = NULL;
 	
+	
+
 	for ( int slot = 0 ; slot < m_Clients.Count() ; slot++ )
 	{
 		CBaseClient *client = m_Clients[slot];

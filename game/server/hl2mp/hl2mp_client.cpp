@@ -86,6 +86,7 @@ called each time a player is spawned into the game
 */
 void ClientPutInServer( edict_t *pEdict, const char *playername )
 {
+	
 	// Allocate a CBaseTFPlayer for pev, and call spawn
 	CHL2MP_Player *pPlayer = CHL2MP_Player::CreatePlayer( "player", pEdict );
 	pPlayer->SetPlayerName( playername );
@@ -99,6 +100,12 @@ void ClientActive( edict_t *pEdict, bool bLoadGame )
 
 	CHL2MP_Player *pPlayer = ToHL2MPPlayer( CBaseEntity::Instance( pEdict ) );
 	FinishClientPutInServer( pPlayer );
+}
+
+void RestorePlayer(edict_t* pEdict, IRestore &pRestore) 
+{
+	CHL2MP_Player* pPlayer = ToHL2MPPlayer(CBaseEntity::Instance(pEdict));
+	pPlayer->Restore(pRestore);
 }
 
 

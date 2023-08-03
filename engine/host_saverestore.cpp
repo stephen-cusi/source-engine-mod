@@ -84,7 +84,7 @@ extern CGlobalVars g_ServerGlobalVariables;
 extern CNetworkStringTableContainer *networkStringTableContainerServer;
 
 // Keep the last 1 autosave / quick saves
-ConVar save_history_count("save_history_count", "1", 0, "Keep this many old copies in history of autosaves and quicksaves." );
+ConVar save_history_count("save_history_count", "2", 0, "Keep this many old copies in history of autosaves and quicksaves." );
 ConVar sv_autosave( "sv_autosave", "1", 0, "Set to 1 to autosave game on level transition. Does not affect autosave triggers." );
 ConVar save_async( "save_async", "1" );
 ConVar save_disable( "save_disable", "0" );
@@ -320,6 +320,7 @@ public:
 	virtual bool			StorageDeviceValid( void );
 
 	virtual bool			IsSaveInProgress();
+	virtual int				GetEntIndexForIP(unsigned int IP);
 
 private:
 	bool					SaveClientState( const char *name );
@@ -425,6 +426,8 @@ private:
 	bool	m_bIsXSave;
 
 	int		m_nDeferredCommandFrames;
+
+	CUtlMap<unsigned int, int> m_IPToPlayerIndex;
 	CUtlVector< CUtlSymbol > m_sDeferredCommands;
 };
 
@@ -1367,6 +1370,11 @@ CSaveRestoreData *CSaveRestore::SaveGameStateInit( void )
 	return pSaveData;
 }
 
+int CSaveRestore::GetEntIndexForIP(unsigned int IP)
+{
+	return m_IPToPlayerIndex[IP];
+}
+
 bool CSaveRestore::SaveGameState( bool bTransition, CSaveRestoreData **ppReturnSaveData, bool bOpenContainer, bool bIsAutosaveOrDangerous )
 {
 	MDLCACHE_COARSE_LOCK_(g_pMDLCache);
@@ -1379,7 +1387,7 @@ bool CSaveRestore::SaveGameState( bool bTransition, CSaveRestoreData **ppReturnS
 	{
 		*ppReturnSaveData = NULL;
 	}
-
+	m_IPToPlayerIndex.Purge();
 	if ( bTransition )
 	{
 		if ( m_bClearSaveDir )
@@ -1387,7 +1395,14 @@ bool CSaveRestore::SaveGameState( bool bTransition, CSaveRestoreData **ppReturnS
 			m_bClearSaveDir = false;
 			DoClearSaveDir( IsXSave() );
 		}
+		for (int i = 0; i < sv.GetClientCount(); i++)
+		{
+			IClient *client = sv.GetClient(i);
+			unsigned int IP = client->GetNetChannel()->GetRemoteAddress().GetIPHostByteOrder();
+			m_IPToPlayerIndex.Insert(IP, client->GetPlayerSlot() + 1);
+		}
 	}
+
 
 	S_ExtraUpdate();
 	CSaveRestoreData *pSaveData = SaveGameStateInit();

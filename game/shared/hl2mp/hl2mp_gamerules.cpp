@@ -2117,6 +2117,13 @@ void CHL2MPRules::NPC_DroppedGrenade(void)
 	m_flLastGrenadeDropTime = gpGlobals->curtime + sk_plr_grenade_drop_time.GetFloat();
 }
 
+
+void CHL2MPRules::PlayerSpawn(CBasePlayer* pPlayer)
+{
+	BaseClass::PlayerSpawn(pPlayer);
+}
+
+
 void CHL2MPRules::RestartGame()
 {
 	// bounds check

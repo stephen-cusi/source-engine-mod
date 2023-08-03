@@ -22,6 +22,7 @@ void ClientActive( edict_t *pEdict, bool bLoadGame );
 void ClientPutInServer( edict_t *pEdict, const char *playername );
 void ClientCommand( CBasePlayer *pSender, const CCommand &args );
 void ClientPrecache( void );
+void RestorePlayer( edict_t* pEdict, IRestore &pRestore );
 // Game specific precaches
 void ClientGamePrecache( void );
 const char *GetGameDescription( void );

@@ -60,6 +60,7 @@ public:
 	virtual void					SetMostRecentSaveGame( const char *lpszFilename ) = 0;
 
 	virtual bool					IsSaveInProgress() = 0;
+	virtual int						GetEntIndexForIP(unsigned int IP) = 0;
 };
 
 void *SaveAllocMemory( size_t num, size_t size, bool bClear = false );
