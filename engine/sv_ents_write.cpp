@@ -639,7 +639,7 @@ static inline void SV_WriteEnterPVS( CEntityWriteInfo &u )
 	Assert( u.m_nNewEntity < u.m_pToSnapshot->m_nNumEntities );
 
 	CFrameSnapshotEntry *entry = &u.m_pToSnapshot->m_pEntities[u.m_nNewEntity];
-
+	
 	ServerClass *pClass = entry->m_pClass;
 
 	if ( !pClass )

@@ -134,12 +134,14 @@ CFrameSnapshot* CFrameSnapshotManager::TakeTickSnapshot( int tickcount )
 			continue;
 		
 		// We don't want entities from inactive clients in the fullpack,
+		/*
 		if ( i > 0 && i <= maxclients )
 		{
 			// this edict is a client
 			if ( !sv.GetClient(i-1)->IsActive() )
 				continue;
 		}
+		*/
 		
 		// entity exists and is not marked as 'free'
 		Assert( edict->m_NetworkSerialNumber != -1 );

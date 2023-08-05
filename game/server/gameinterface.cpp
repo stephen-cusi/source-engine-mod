@@ -868,7 +868,7 @@ void Game_SetOneWayTransition( void )
 	g_OneWayTransition = true;
 }
 
-static CUtlVector<EHANDLE> g_RestoredEntities;
+static CUtlVector<CBaseEntity*> g_RestoredEntities;
 // just for debugging, assert that this is the only time this function is called
 static bool g_InRestore = false;
 
@@ -877,8 +877,10 @@ void AddRestoredEntity( CBaseEntity *pEntity )
 	Assert(g_InRestore);
 	if ( !pEntity )
 		return;
-
-	g_RestoredEntities.AddToTail( EHANDLE(pEntity) );
+	DevMsg("FUCK %s (%i) %x\n", pEntity->GetClassname(), pEntity->entindex(), pEntity);
+	g_RestoredEntities.AddToTail( pEntity );
+	pEntity->entindex();
+	
 }
 
 void EndRestoreEntities()
@@ -892,12 +894,13 @@ void EndRestoreEntities()
 	// Call all entities' OnRestore handlers
 	for ( int i = g_RestoredEntities.Count()-1; i >=0; --i )
 	{
-		CBaseEntity *pEntity = g_RestoredEntities[i].Get();
-		if ( pEntity && !pEntity->IsDormant() )
+		CBaseEntity *pEntity = g_RestoredEntities[i];
+		if ( pEntity && !pEntity->IsDormant() && !(dynamic_cast<CBasePlayer*>(pEntity)) )
 		{
 			MDLCACHE_CRITICAL_SECTION();
 			pEntity->OnRestore();
 			DevMsg(1, "Restoring entity %s (%i)\n", pEntity->GetClassname(), pEntity->entindex());
+			g_RestoredEntities.Remove(i);
 		}
 	}
 
@@ -2707,17 +2710,25 @@ void LandmarkOrigin(CSaveRestoreData* pSaveData, Vector& output, const char* pLa
 void CServerGameClients::ClientActive( edict_t *pEdict, bool bLoadGame )
 {
 	MDLCACHE_CRITICAL_SECTION();
-	
+
+	MapLoadType_t OriginalLoadType = gpGlobals->eLoadType;
+
 	if (gpGlobals->eLoadType == MapLoad_Transition && g_RestoredEntities.Count() > 0)
 	{
+		gpGlobals->eLoadType = MapLoad_NewGame;
 		Vector landmarkOrigin;
 		//CBaseEntity* playerEnt = pEntity->GetNetworkable()->GetBaseEntity();
 		for (int i = 0; i < g_RestoredEntities.Count(); i++)
 		{
-			CBaseEntity* pEnt = g_RestoredEntities[i].Get();
-			if (pEnt->edict()->m_EdictIndex == pEdict->m_EdictIndex)
+			CBaseEntity* pEnt = g_RestoredEntities[i];
+			if (!pEnt)
+				continue;
+			if (!pEnt->NetworkProp()->edict()) // wtf??
+				continue;
+			DevMsg(3,"Checking ent: %s (%i)\n", pEnt->GetClassname(),pEnt->entindex());
+			if (pEnt->edict() && pEnt->edict()->m_EdictIndex == pEdict->m_EdictIndex)
 			{
-				DevMsg(1, "Restoring player from %x to %x\n", pEnt->edict(), pEdict);
+				DevMsg(1, "Restoring player from %x to %x with pointer %x\n", pEnt->edict(), pEdict, pEnt);
 				//gpGlobals->pSaveData->Seek(gpGlobals->pSaveData->GetEntityIndex(g_RestoredEntities[i]));
 				CSaveRestoreData* entData = SaveInit(0);
 				entData->levelInfo.fUseLandmark = true;
@@ -2732,6 +2743,14 @@ void CServerGameClients::ClientActive( edict_t *pEdict, bool bLoadGame )
 				pEnt->Save(lmaoInput);
 				entData->SetCurrentEntityContext(NULL);
 
+				//IServerUnknown* unk = pEdict->GetUnknown();
+
+				//pEnt->NetworkProp()->Init(pEnt);
+				//pEnt->VPhysicsDestroyObject();
+				//delete pEnt;
+
+				//pEdict->SetEdict(unk, true);
+
 				g_pGameSaveRestoreBlockSet->PostSave();
 
 				entData->Seek(beforesave);
@@ -2740,17 +2759,23 @@ void CServerGameClients::ClientActive( edict_t *pEdict, bool bLoadGame )
 
 				CRestore lmaoOutput(entData);
 				::RestorePlayer(pEdict, lmaoOutput);
-
+			
 				g_pGameSaveRestoreBlockSet->PostRestore();
 				g_RestoredEntities.Remove(i);
 				FinishSaveRestoreData(entData);
+				gpGlobals->eLoadType = MapLoad_Transition;
 				break;
 			}
 		}
 	}
+	else if(gpGlobals->eLoadType == MapLoad_Transition)
+	{
+		gpGlobals->eLoadType = MapLoad_NewGame;
+	}
 
 	::ClientActive( pEdict, bLoadGame );
 
+	gpGlobals->eLoadType = OriginalLoadType;
 	
 
 	// If we just loaded from a save file, call OnRestore on valid entities

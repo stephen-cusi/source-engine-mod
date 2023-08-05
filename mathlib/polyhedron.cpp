@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include "tier1/utlvector.h"
 #include "tier1/memhelpers.h"
+
 #ifdef COMPILER_MSVC
 #include <new>
 #endif
@@ -673,7 +674,7 @@ CPolyhedron *ConvertLinkedGeometryToPolyhedron( GeneratePolyhedronFromPlanes_Uno
 {
 	Assert( (pPolygons != NULL) && (pLines != NULL) && (pPoints != NULL) );
 	unsigned int iPolyCount = 0, iLineCount = 0, iPointCount = 0, iIndexCount = 0;
-
+	//_SpewMessage("8\n");
 	GeneratePolyhedronFromPlanes_UnorderedPolygonLL *pActivePolygonWalk = pPolygons;	
 	do
 	{
@@ -690,14 +691,14 @@ CPolyhedron *ConvertLinkedGeometryToPolyhedron( GeneratePolyhedronFromPlanes_Uno
 
 		pActivePolygonWalk = pActivePolygonWalk->pNext;
 	} while( pActivePolygonWalk );
-
+	//_SpewMessage("9\n");
 	GeneratePolyhedronFromPlanes_UnorderedLineLL *pActiveLineWalk = pLines;
 	do
 	{
 		++iLineCount;
 		pActiveLineWalk = pActiveLineWalk->pNext;
 	} while( pActiveLineWalk );
-
+	//("10\n");
 	GeneratePolyhedronFromPlanes_UnorderedPointLL *pActivePointWalk = pPoints;
 	do
 	{
@@ -719,7 +720,7 @@ CPolyhedron *ConvertLinkedGeometryToPolyhedron( GeneratePolyhedronFromPlanes_Uno
 	Polyhedron_IndexedLine_t *pLineArray = pReturn->pLines;
 	Polyhedron_IndexedLineReference_t *pIndexArray = pReturn->pIndices;
 	Polyhedron_IndexedPolygon_t *pPolyArray = pReturn->pPolygons;
-
+	//_SpewMessage("11\n");
 	//copy points
 	pActivePointWalk = pPoints;
 	for( unsigned int i = 0; i != iPointCount; ++i )
@@ -728,7 +729,7 @@ CPolyhedron *ConvertLinkedGeometryToPolyhedron( GeneratePolyhedronFromPlanes_Uno
 		pActivePointWalk->pPoint->iSaveIndices = i; //storing array indices
 		pActivePointWalk = pActivePointWalk->pNext;
 	}
-
+	//_SpewMessage("12\n");
 	//copy lines
 	pActiveLineWalk = pLines;
 	for( unsigned int i = 0; i != iLineCount; ++i )
@@ -740,7 +741,7 @@ CPolyhedron *ConvertLinkedGeometryToPolyhedron( GeneratePolyhedronFromPlanes_Uno
 
 		pActiveLineWalk = pActiveLineWalk->pNext;
 	}
-
+	//_SpewMessage("13\n");
 	//copy polygons and indices at the same time
 	pActivePolygonWalk = pPolygons;
 	iIndexCount = 0;
@@ -776,7 +777,7 @@ CPolyhedron *ConvertLinkedGeometryToPolyhedron( GeneratePolyhedronFromPlanes_Uno
 	DumpPolyhedronToGLView( pReturn, szCollisionFile, &s_matIdentity );
 	DumpPolyhedronToGLView( pReturn, "PolyhedronDumps/NewStyle_PolyhedronDump_All-Appended.txt", &s_matIdentity );
 #endif
-
+	//_SpewMessage("14\n");
 	return pReturn;
 }
 
@@ -859,7 +860,9 @@ const char * DumpPolyhedronCutHistory( const CUtlVector<CPolyhedron *> &DumpedHi
 #else
 
 #define AssertMsg_DumpPolyhedron(condition, message) NULL;
+//if ( !(condition) ) { _SpewMessage(message); _SpewMessage("\n"); }
 #define Assert_DumpPolyhedron(condition) NULL;
+//if ( !(condition) ) { __debugbreak(); }
 
 #endif
 
@@ -896,7 +899,7 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 	GeneratePolyhedronFromPlanes_UnorderedPolygonLL	*pDeadPolygonCollection = NULL;
 	GeneratePolyhedronFromPlanes_LineLL				*pDeadLineLinkCollection = NULL;
 
-
+	
 	for( int iCurrentPlane = 0; iCurrentPlane != iPlaneCount; ++iCurrentPlane )
 	{
 		//clear out line work variables
@@ -1407,10 +1410,10 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 			GeneratePolyhedronFromPlanes_Polygon *pWorkPolygon;			
 			GeneratePolyhedronFromPlanes_LineLL *pTestLine;
 
-#ifdef _DEBUG
+
 			GeneratePolyhedronFromPlanes_Polygon *pLastWorkPolygon = NULL;
 			GeneratePolyhedronFromPlanes_Point *pLastWorkPoint = NULL;
-#endif
+
 
 			if( pActivePolygonWalk )
 			{
@@ -1451,8 +1454,9 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 				//now pLines points at one side of the polygon, with pActivePointWalk
 				pLastLineLink = pLines;
 				pTestLine = pLines->pPrev;
+				pLastWorkPolygon = pWorkPolygon;
 				pWorkPolygon = pTestLine->pLine->pPolygons[1 - pTestLine->iReferenceIndex];
-
+				Assert_DumpPolyhedron( pWorkPolygon != pLastWorkPolygon )
 			}
 
 			//create the new polygon
@@ -1471,7 +1475,7 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 			}
 
 
-
+			//_SpewMessage("7\n");
 			//===================================================================================================================
 			// The general idea of the upcoming algorithm to put together a new polygon and patch broken polygons...
 			//	You have a point and a line the algorithm just jumped across.
@@ -1484,6 +1488,7 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 			{
 				if( pWorkPolygon->bMissingASide )
 				{
+					//_SpewMessage("a\n");
 					//during the cutting process we made sure that the head line link was going clockwise into the missing area
 					GeneratePolyhedronFromPlanes_LineLL *pGapLines[2];
 					pGapLines[1] = pTestLine->pLine->pPolygonLineLinks[pTestLine->iReferenceIndex]; //get the same line, but in the polygons linked list.
@@ -1518,7 +1523,7 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 						pJoinLine->bCut = false;
 					}
 
-
+					//_SpewMessage("b\n");
 					pJoinLine->pPoints[0] = pGapLines[0]->pLine->pPoints[pGapLines[0]->iReferenceIndex];
 					pJoinLine->pPoints[1] = pGapLines[1]->pLine->pPoints[1 - pGapLines[1]->iReferenceIndex];
 
@@ -1545,7 +1550,7 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 
 					pPointLinks[0]->iReferenceIndex = 1;
 					pPointLinks[1]->iReferenceIndex = 0;
-
+					//_SpewMessage("c\n");
 					//Insert before the link from point 0 to gap line 0 (counterclockwise rotation)
 					{
 						GeneratePolyhedronFromPlanes_LineLL *pWorkLink = pGapLines[0]->pLine->pPointLineLinks[pGapLines[0]->iReferenceIndex];
@@ -1571,7 +1576,7 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 					}
 
 
-
+					//_SpewMessage("d\n");
 
 					pPolygonLinks[0]->iReferenceIndex = 0;
 					pPolygonLinks[1]->iReferenceIndex = 1;
@@ -1607,13 +1612,13 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 						pWorkLink->pNext->pPrev = pPolygonLinks[1];
 						pWorkLink->pNext = pPolygonLinks[1];
 					}
-
+					//_SpewMessage("e\n");
 					pWorkPolygon->bMissingASide = false; //repairs are finished
 
-#ifdef _DEBUG
+
 					pLastWorkPolygon = pWorkPolygon;
 					pLastWorkPoint = pWorkPoint;
-#endif
+
 					//move to the next point
 					pWorkPoint = pJoinLine->pPoints[0];
 					pLastLineLink = pJoinLine->pPointLineLinks[0];
@@ -1629,9 +1634,11 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 					Assert_DumpPolyhedron( (pWorkPoint == pStartPoint) ||
 											(pGapLines[0]->pLine->bCut == false) || 
 											(pWorkPolygon->bMissingASide == true) ); //if we're not done fixing, and if the shared line was cut, the next polygon must be missing a side
+					//_SpewMessage("f\n");
 				}
 				else
 				{
+
 					//line is on the plane, meaning the polygon isn't broken and doesn't need patching
 					Assert_DumpPolyhedron( pTestLine->pLine->bCut == false );
 					Assert_DumpPolyhedron( (pTestLine->pLine->pPoints[0]->planarity == POINT_ONPLANE) && (pTestLine->pLine->pPoints[1]->planarity == POINT_ONPLANE) );
@@ -1670,10 +1677,10 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 					pTestLine->pLine->pPolygons[pTestLine->iReferenceIndex] = pNewPolygon;
 					pTestLine->pLine->pPolygonLineLinks[pTestLine->iReferenceIndex] = pNewLineLink;
 
-#ifdef _DEBUG
+
 					pLastWorkPolygon = pWorkPolygon;
 					pLastWorkPoint = pWorkPoint;
-#endif
+
 
 					pWorkPoint = pTestLine->pLine->pPoints[pTestLine->iReferenceIndex];
 					pLastLineLink = pTestLine->pLine->pPointLineLinks[pTestLine->iReferenceIndex];
@@ -1684,8 +1691,13 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 						pWorkPolygon = pTestLine->pLine->pPolygons[pTestLine->iReferenceIndex];
 					else
 						pWorkPolygon = pTestLine->pLine->pPolygons[1 - pTestLine->iReferenceIndex];
-
-					Assert_DumpPolyhedron( pWorkPolygon != pLastWorkPolygon );
+					//Assert_DumpPolyhedron( pWorkPolygon != pLastWorkPolygon );
+					if (pWorkPolygon == pLastWorkPolygon)
+					{
+						Warning("THIS MAP BREAKS POLYHEDRON.CPP!!!!!!!!\n");
+						break;
+					}
+					
 				}
 			} while( pWorkPoint != pStartPoint );
 		}
@@ -1724,7 +1736,7 @@ CPolyhedron *ClipLinkedGeometry( GeneratePolyhedronFromPlanes_UnorderedPolygonLL
 	}
 	DebugCutHistory.RemoveAll();
 #endif
-
+	
 	return ConvertLinkedGeometryToPolyhedron( pAllPolygons, pAllLines, pAllPoints, bUseTemporaryMemory );
 }
 

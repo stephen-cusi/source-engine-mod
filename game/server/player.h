@@ -362,6 +362,8 @@ public:
 	virtual bool			IsNetClient( void ) const { return true; }		// Bots should return FALSE for this, they can't receive NET messages
 																			// Spectators should return TRUE for this
 
+	virtual void			SetTransmit(CCheckTransmitInfo* pInfo, bool bAlways);
+
 	virtual bool			IsFakeClient( void ) const;
 
 	// Get the client index (entindex-1).

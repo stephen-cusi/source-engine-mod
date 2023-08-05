@@ -29,6 +29,7 @@
 
 #include "globalstate.h"
 #include "entitylist.h"
+#include "hl2mp/hl2mp_player.h"
 
 #else
 
@@ -2501,9 +2502,8 @@ void CEntitySaveRestoreBlockHandler::Save( ISave *pSave )
 										   FStrEq( STRING(pEnt->m_iClassname), pEnt->GetClassname()) ), 
 					   "Saving entity with invalid classname" );
 #endif
-
 			pSaveData->SetCurrentEntityContext( pEnt );
-			pEnt->Save( *pSave );
+			DevMsg(4,"Saving %s (%i) with status %i\n", pEnt->GetClassname(), pEnt->entindex(),pEnt->Save(*pSave));
 			pSaveData->SetCurrentEntityContext( NULL );
 
 			pEntInfo->size = pSave->GetWritePos() - pEntInfo->location;	// Size of entity block is data size written to block
@@ -2520,6 +2520,10 @@ void CEntitySaveRestoreBlockHandler::Save( ISave *pSave )
 				pEntInfo->flags |= FENTTABLE_PLAYER;
 			}
 #endif
+		}
+		else if(pEnt)
+		{
+			DevMsg(4, "==DIDNT SAVE: %s (%i)\n", pEnt->GetClassname(), pEnt->entindex());
 		}
 	}
 }
@@ -2607,6 +2611,7 @@ void CEntitySaveRestoreBlockHandler::Restore( IRestore *pRestore, bool createPla
 				else
 				{
 					// force the entity to be relinked
+					DevMsg(3, "First Restore AddRestoredEntity %s (%i)\n", pent->GetClassname(), pent->entindex());
 					AddRestoredEntity( pent );
 				}
 			}
@@ -2673,6 +2678,7 @@ void CEntitySaveRestoreBlockHandler::Restore( IRestore *pRestore, bool createPla
 				}
 				else
 				{
+					DevMsg(3, "Second Restore AddRestoredEntity %s (%i)\n", pent->GetClassname(), pent->entindex());
 					AddRestoredEntity( pent );
 				}
 			}
@@ -3345,7 +3351,7 @@ void CreateEntitiesInTransitionList( CSaveRestoreData *pSaveData, int levelMask 
 		}
 
 		bool active = (pEntInfo->flags & levelMask) ? 1 : 0;
-
+		DevMsg(4, "Spawning saved entity: %s (%i)\n", pEntInfo->classname, pEntInfo->edictindex);
 		// spawn players
 		pent = NULL;
 		if ( (pEntInfo->edictindex > 0) && (pEntInfo->edictindex <= gpGlobals->maxClients) )	
@@ -3360,7 +3366,7 @@ void CreateEntitiesInTransitionList( CSaveRestoreData *pSaveData, int levelMask 
 					Assert(0);
 				}
 
-				pent = CBasePlayer::CreatePlayer( STRING(pEntInfo->classname), ed );
+				pent = CHL2MP_Player::CreatePlayer( STRING(pEntInfo->classname), ed );
 			}
 		}
 		else if ( active )
@@ -3410,6 +3416,7 @@ int CreateEntityTransitionList( CSaveRestoreData *pSaveData, int levelMask )
 				{
 					movedCount++;
 					pEntInfo->restoreentityindex = pEntInfo->hEnt.Get()->entindex();
+					DevMsg(3, "CreateEntityTransitionList AddRestoredEntity %s (%i)\n", pent->GetClassname(), pEntInfo->restoreentityindex);
 					AddRestoredEntity( pEntInfo->hEnt.Get() );
 				}
 				else
@@ -3436,6 +3443,10 @@ int CreateEntityTransitionList( CSaveRestoreData *pSaveData, int levelMask )
 			// Remove any entities that were removed using UTIL_Remove() as a result of the above calls to UTIL_RemoveImmediate()
 			gEntList.CleanupDeleteList();
 		}
+		else if (pent)
+		{
+			DevMsg(2, "Didnt do anything for %s (%d)\n", STRING(pEntInfo->classname), pent->edict() ? ENTINDEX(pent->edict()) : -1);
+		}
 	}
 
 	for ( i = checkList.Count()-1; i >= 0; --i )
@@ -3459,10 +3470,13 @@ int CreateEntityTransitionList( CSaveRestoreData *pSaveData, int levelMask )
 		}
 		else
 		{
+			DevMsg(3, "Adding restored %s (%i)\n", pent->GetClassname(), pent->entindex());
 			movedCount++;
 			pEntInfo->flags = FENTTABLE_REMOVED;
 			pEntInfo->restoreentityindex = pent->entindex();
 			AddRestoredEntity( pent );
+			
+			
 		}
 	}
 

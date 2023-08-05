@@ -892,14 +892,12 @@ void CGameClient::ActivatePlayer( void )
 	COM_TimestampedLog( "CGameClient::ActivatePlayer -start" );
 
 	// call the spawn function
-	if ( !sv.m_bLoadgame )
-	{
-		g_ServerGlobalVariables.curtime = sv.GetTime();
+	
+	g_ServerGlobalVariables.curtime = sv.GetTime();
 
-		COM_TimestampedLog( "g_pServerPluginHandler->ClientPutInServer" );
+	COM_TimestampedLog( "g_pServerPluginHandler->ClientPutInServer" );
 
-		g_pServerPluginHandler->ClientPutInServer( edict, m_Name );
-	}
+	g_pServerPluginHandler->ClientPutInServer( edict, m_Name );	
 
     COM_TimestampedLog( "g_pServerPluginHandler->ClientActive" );
 

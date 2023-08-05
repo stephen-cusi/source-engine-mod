@@ -7490,13 +7490,23 @@ void CBasePlayer::PlayWearableAnimsForPlaybackEvent( wearableanimplayback_t iPla
 }
 #endif // USES_ECON_ITEMS
 
+void CBasePlayer::SetTransmit(CCheckTransmitInfo* pInfo, bool bAlways)
+{
+	if (!IsConnected())
+	{
+		pInfo->m_pTransmitEdict->Clear(entindex());
+		return;
+	}
+	BaseClass::SetTransmit(pInfo, bAlways);
+
+}
+
 //================================================================================
 // TEAM HANDLING
 //================================================================================
 //-----------------------------------------------------------------------------
 // Purpose: Put the player in the specified team
 //-----------------------------------------------------------------------------
-
 void CBasePlayer::ChangeTeam( int iTeamNum, bool bAutoTeam, bool bSilent)
 {
 	if ( !GetGlobalTeam( iTeamNum ) )

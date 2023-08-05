@@ -84,12 +84,16 @@ ClientPutInServer
 called each time a player is spawned into the game
 ============
 */
-void ClientPutInServer( edict_t *pEdict, const char *playername )
+void ClientPutInServer(edict_t* pEdict, const char* playername)
 {
-	
+
 	// Allocate a CBaseTFPlayer for pev, and call spawn
-	CHL2MP_Player *pPlayer = CHL2MP_Player::CreatePlayer( "player", pEdict );
-	pPlayer->SetPlayerName( playername );
+	CHL2MP_Player* pPlayer = dynamic_cast<CHL2MP_Player*>(pEdict->GetUnknown());
+	if (!pPlayer) {
+		pPlayer = CHL2MP_Player::CreatePlayer("player", pEdict);
+	}
+	pPlayer->SetPlayerName(playername);
+
 }
 
 

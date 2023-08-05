@@ -1387,7 +1387,7 @@ bool CSaveRestore::SaveGameState( bool bTransition, CSaveRestoreData **ppReturnS
 	{
 		*ppReturnSaveData = NULL;
 	}
-	m_IPToPlayerIndex.Purge();
+	//m_IPToPlayerIndex.Purge();
 	if ( bTransition )
 	{
 		if ( m_bClearSaveDir )
@@ -1395,12 +1395,12 @@ bool CSaveRestore::SaveGameState( bool bTransition, CSaveRestoreData **ppReturnS
 			m_bClearSaveDir = false;
 			DoClearSaveDir( IsXSave() );
 		}
-		for (int i = 0; i < sv.GetClientCount(); i++)
+		/*for (int i = 0; i < sv.GetClientCount(); i++)
 		{
 			IClient *client = sv.GetClient(i);
 			unsigned int IP = client->GetNetChannel()->GetRemoteAddress().GetIPHostByteOrder();
 			m_IPToPlayerIndex.Insert(IP, client->GetPlayerSlot() + 1);
-		}
+		}*/
 	}
 
 

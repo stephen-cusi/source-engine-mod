@@ -218,8 +218,8 @@ void CRagdollProp::OnSave( IEntitySaveUtils *pUtils )
 	Assert( m_ragdoll.list[0].pConstraint == NULL );
 	Assert( m_ragdoll.list[0].originParentSpace == vec3_origin );
 	Assert( m_ragdoll.list[0].pObject != NULL );
-	VPhysicsSetObject( NULL );	// squelch a warning message
-	VPhysicsSetObject( m_ragdoll.list[0].pObject );	// make sure object zero is saved by CBaseEntity
+	//VPhysicsSetObject( NULL );	// squelch a warning message
+	//VPhysicsSetObject( m_ragdoll.list[0].pObject );	// make sure object zero is saved by CBaseEntity
 	BaseClass::OnSave( pUtils );
 }
 
