@@ -8000,7 +8000,7 @@ void SendProxy_CropFlagsToPlayerFlagBitsLength( const SendProp *pProp, const voi
 #if PREDICTION_ERROR_CHECK_LEVEL > 1 
 		SendPropVector		( SENDINFO( m_vecBaseVelocity ), -1, SPROP_COORD ),
 #else
-		SendPropVector		( SENDINFO( m_vecBaseVelocity ), 20, 0, -1000, 1000 ),
+		SendPropVector		( SENDINFO( m_vecBaseVelocity ), 25, 0, -1000, 1000 ),
 #endif
 
 		SendPropEHandle		( SENDINFO( m_hConstraintEntity)),

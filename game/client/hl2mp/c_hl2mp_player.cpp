@@ -1501,7 +1501,11 @@ void C_HL2MP_Player::PlayerPortalled(C_Prop_Portal* pEnteredPortal)
 
 bool LocalPlayerIsCloseToPortal(void)
 {
-	return C_HL2MP_Player::GetLocalHL2MPPlayer()->IsCloseToPortal();
+	if (C_HL2MP_Player::GetLocalHL2MPPlayer())
+	{
+		return C_HL2MP_Player::GetLocalHL2MPPlayer()->IsCloseToPortal();
+	}
+	return false;
 }
 
 

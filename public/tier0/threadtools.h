@@ -297,7 +297,7 @@ PLATFORM_INTERFACE void ThreadSetAffinity( ThreadHandle_t hThread, int nAffinity
 //-----------------------------------------------------------------------------
 
 #ifdef _WIN32
-#define NOINLINE
+#define NOINLINE 
 #elif defined( _PS3 )
 #define NOINLINE __attribute__ ((noinline))
 #elif defined(POSIX)

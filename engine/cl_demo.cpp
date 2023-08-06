@@ -1814,7 +1814,7 @@ void CDemoPlayer::WriteTimeDemoResults( void )
 	g_pFileSystem->FPrintf( fileHandle, "0x%x,", info.m_DeviceID );
 
 //	g_pFileSystem->FPrintf( fileHandle, "%s,", CommandLine()->CheckParm( "-nosound" ) ? "off" : "on" );
-	g_pFileSystem->FPrintf( fileHandle, "%s,", mat_reducefillrate.GetBool() ? "on" : "off" );
+	g_pFileSystem->FPrintf( fileHandle, "%s,", mat_reducefillrate.GetInt() );
 	g_pFileSystem->FPrintf( fileHandle, "%s,", r_waterforcereflectentities.GetBool() ? "on" : "off" );
 	g_pFileSystem->FPrintf( fileHandle, "%s,", mat_motion_blur_enabled.GetBool() ? "on" : "off" );
 	g_pFileSystem->FPrintf( fileHandle, "%s,", r_flashlightdepthtexture.GetBool() ? "on" : "off" );

@@ -341,13 +341,18 @@ static void ScreenAlignBone( matrix3x4_t *pPoseToWorld, mstudiobone_t *pCurBone,
 //-----------------------------------------------------------------------------
 void ComputePoseToWorld( matrix3x4_t *pPoseToWorld, studiohdr_t *pStudioHdr, int boneMask, const Vector& vecViewOrigin, const matrix3x4_t *pBoneToWorld )
 { 
+	if (!pBoneToWorld)
+	{
+		Warning("INVALID BONETOWORLD!! FROM MODEL `%s`!!\n", pStudioHdr->name);
+		return;
+	}
 	if ( pStudioHdr->flags & STUDIOHDR_FLAGS_STATIC_PROP )
 	{
 		// by definition, these always have an identity poseToBone transform
 		MatrixCopy( pBoneToWorld[ 0 ], pPoseToWorld[ 0 ] );
 		return;
 	}
-
+	
 	if ( !pStudioHdr->pLinearBones() )
 	{
 		// convert bone to world transformations into pose to world transformations

@@ -431,7 +431,11 @@ void CStudioRender::DrawModel( const DrawModelInfo_t& info, const StudioRenderCo
 
 		return;
 	}
-
+	if (!pBoneToWorld)
+	{
+		Warning("INVALID pBoneToWorld IN MODEL %s, NOT DRAWING\n", info.m_pStudioHdr->name);
+		return;
+	}
 	VPROF( "CStudioRender::DrawModel");
 
 	m_pRC = const_cast< StudioRenderContext_t* >( &rc );

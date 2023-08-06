@@ -45,6 +45,7 @@ ConVar my_mat_fullbright( "mat_fullbright","0", FCVAR_CHEAT );
 static ConVar mat_pbr_force_20b("mat_pbr_force_20b", "0", FCVAR_CHEAT);
 static ConVar mat_pbr_parallaxmap("mat_pbr_parallaxmap", "1");
 static ConVar mat_specular("mat_specular", "1");
+static ConVar mat_reducefillrate("mat_reducefillrate","2");
 
 extern ConVar r_flashlight_version2;
 
@@ -169,23 +170,29 @@ void InitParamsLightmappedGeneric_DX9( CBaseVSShader *pShader, IMaterialVar** pa
 		CLEAR_FLAGS( MATERIAL_VAR_BASEALPHAENVMAPMASK );
 	}
 
-	if( params[info.m_nBumpmap]->IsDefined() )
-	{
-		params[info.m_nEnvmapMask]->SetUndefined();
-	}
-	else
-	{
-		params[info.m_nBumpmap]->SetStringValue("dev/flat_normal");
-	}
-
-	// Set a good default mrao texture
-	if (!params[info.mraoTexture]->IsDefined())
-		params[info.mraoTexture]->SetStringValue("dev/pbr_mraotexture");
-
-	// PBR relies heavily on envmaps
-	if (!params[info.m_nEnvmap]->IsDefined())
-		params[info.m_nEnvmap]->SetStringValue("env_cubemap");
 	
+	if (mat_reducefillrate.GetInt() > 1)
+	{
+		if (!params[info.m_nBumpmap]->IsDefined())
+		{
+			params[info.m_nBumpmap]->SetStringValue("dev/flat_normal");
+		}
+
+		// Set a good default mrao texture
+		if (!params[info.mraoTexture]->IsDefined())
+			params[info.mraoTexture]->SetStringValue("dev/pbr_mraotexture");
+
+		// PBR relies heavily on envmaps
+		if (!params[info.m_nEnvmap]->IsDefined())
+			params[info.m_nEnvmap]->SetStringValue("env_cubemap");
+	}
+	else 
+	{
+		if (params[info.m_nBumpmap]->IsDefined())
+		{
+			params[info.m_nEnvmapMask]->SetUndefined();
+		}
+	}
 	// If in decal mode, no debug override...
 	if (IS_FLAG_SET(MATERIAL_VAR_DECAL))
 	{
@@ -222,49 +229,141 @@ void InitParamsLightmappedGeneric_DX9( CBaseVSShader *pShader, IMaterialVar** pa
 
 void InitLightmappedGeneric_DX9( CBaseVSShader *pShader, IMaterialVar** params, LightmappedGeneric_DX9_Vars_t &info )
 {
-	Assert(info.m_nFlashlightTexture >= 0);
-	pShader->LoadTexture(info.m_nFlashlightTexture, TEXTUREFLAGS_SRGB);
-
-	Assert(info.m_nBumpmap >= 0);
-	pShader->LoadBumpMap(info.m_nBumpmap);
-
-	Assert(info.envMap >= 0);
-	int envMapFlags = g_pHardwareConfig->GetHDRType() == HDR_TYPE_NONE ? TEXTUREFLAGS_SRGB : 0;
-	envMapFlags |= TEXTUREFLAGS_ALL_MIPS;
-	pShader->LoadCubeMap(info.m_nEnvmap, envMapFlags);
-
-	if (info.emissionTexture >= 0 && params[info.emissionTexture]->IsDefined())
-		pShader->LoadTexture(info.emissionTexture, TEXTUREFLAGS_SRGB);
-
-	Assert(info.mraoTexture >= 0);
-	pShader->LoadTexture(info.mraoTexture, 0);
-
-	if (params[info.m_nBaseTexture]->IsDefined())
+	if (mat_reducefillrate.GetInt() > 1)
 	{
-		pShader->LoadTexture(info.m_nBaseTexture, TEXTUREFLAGS_SRGB);
+		Assert(info.m_nFlashlightTexture >= 0);
+		pShader->LoadTexture(info.m_nFlashlightTexture, TEXTUREFLAGS_SRGB);
+
+		Assert(info.m_nBumpmap >= 0);
+		pShader->LoadBumpMap(info.m_nBumpmap);
+
+		Assert(info.envMap >= 0);
+		int envMapFlags = g_pHardwareConfig->GetHDRType() == HDR_TYPE_NONE ? TEXTUREFLAGS_SRGB : 0;
+		envMapFlags |= TEXTUREFLAGS_ALL_MIPS;
+		pShader->LoadCubeMap(info.m_nEnvmap, envMapFlags);
+
+		if (info.emissionTexture >= 0 && params[info.emissionTexture]->IsDefined())
+			pShader->LoadTexture(info.emissionTexture, TEXTUREFLAGS_SRGB);
+
+		Assert(info.mraoTexture >= 0);
+		pShader->LoadTexture(info.mraoTexture, 0);
+
+		if (params[info.m_nBaseTexture]->IsDefined())
+		{
+			pShader->LoadTexture(info.m_nBaseTexture, TEXTUREFLAGS_SRGB);
+		}
+
+		if (params[info.specularTexture]->IsDefined())
+		{
+			pShader->LoadTexture(info.specularTexture, TEXTUREFLAGS_SRGB);
+		}
+
+		if (IS_FLAG_SET(MATERIAL_VAR_MODEL)) // Set material var2 flags specific to models
+		{
+			SET_FLAGS2(MATERIAL_VAR2_SUPPORTS_HW_SKINNING);             // Required for skinning
+			SET_FLAGS2(MATERIAL_VAR2_DIFFUSE_BUMPMAPPED_MODEL);         // Required for dynamic lighting
+			SET_FLAGS2(MATERIAL_VAR2_NEEDS_TANGENT_SPACES);             // Required for dynamic lighting
+			SET_FLAGS2(MATERIAL_VAR2_LIGHTING_VERTEX_LIT);              // Required for dynamic lighting
+			SET_FLAGS2(MATERIAL_VAR2_NEEDS_BAKED_LIGHTING_SNAPSHOTS);   // Required for ambient cube
+			SET_FLAGS2(MATERIAL_VAR2_SUPPORTS_FLASHLIGHT);              // Required for flashlight
+			SET_FLAGS2(MATERIAL_VAR2_USE_FLASHLIGHT);                   // Required for flashlight
+		}
+		else // Set material var2 flags specific to brushes
+		{
+			SET_FLAGS2(MATERIAL_VAR2_LIGHTING_LIGHTMAP);                // Required for lightmaps
+			SET_FLAGS2(MATERIAL_VAR2_LIGHTING_BUMPED_LIGHTMAP);         // Required for lightmaps
+			SET_FLAGS2(MATERIAL_VAR2_SUPPORTS_FLASHLIGHT);              // Required for flashlight
+			SET_FLAGS2(MATERIAL_VAR2_USE_FLASHLIGHT);                   // Required for flashlight
+		}
 	}
+	else
+	{
+		if (g_pConfig->UseBumpmapping() && params[info.m_nBumpmap]->IsDefined())
+		{
+			pShader->LoadBumpMap(info.m_nBumpmap);
+		}
 
-	if (params[info.specularTexture]->IsDefined())
-	{
-		pShader->LoadTexture(info.specularTexture, TEXTUREFLAGS_SRGB);
-	}
+		if (g_pConfig->UseBumpmapping() && params[info.m_nBumpmap2]->IsDefined())
+		{
+			pShader->LoadBumpMap(info.m_nBumpmap2);
+		}
 
-	if (IS_FLAG_SET(MATERIAL_VAR_MODEL)) // Set material var2 flags specific to models
-	{
-		SET_FLAGS2(MATERIAL_VAR2_SUPPORTS_HW_SKINNING);             // Required for skinning
-		SET_FLAGS2(MATERIAL_VAR2_DIFFUSE_BUMPMAPPED_MODEL);         // Required for dynamic lighting
-		SET_FLAGS2(MATERIAL_VAR2_NEEDS_TANGENT_SPACES);             // Required for dynamic lighting
-		SET_FLAGS2(MATERIAL_VAR2_LIGHTING_VERTEX_LIT);              // Required for dynamic lighting
-		SET_FLAGS2(MATERIAL_VAR2_NEEDS_BAKED_LIGHTING_SNAPSHOTS);   // Required for ambient cube
-		SET_FLAGS2(MATERIAL_VAR2_SUPPORTS_FLASHLIGHT);              // Required for flashlight
-		SET_FLAGS2(MATERIAL_VAR2_USE_FLASHLIGHT);                   // Required for flashlight
-	}
-	else // Set material var2 flags specific to brushes
-	{
-		SET_FLAGS2(MATERIAL_VAR2_LIGHTING_LIGHTMAP);                // Required for lightmaps
-		SET_FLAGS2(MATERIAL_VAR2_LIGHTING_BUMPED_LIGHTMAP);         // Required for lightmaps
-		SET_FLAGS2(MATERIAL_VAR2_SUPPORTS_FLASHLIGHT);              // Required for flashlight
-		SET_FLAGS2(MATERIAL_VAR2_USE_FLASHLIGHT);                   // Required for flashlight
+		if (g_pConfig->UseBumpmapping() && params[info.m_nBumpMask]->IsDefined())
+		{
+			pShader->LoadBumpMap(info.m_nBumpMask);
+		}
+
+		if (params[info.m_nBaseTexture]->IsDefined())
+		{
+			pShader->LoadTexture(info.m_nBaseTexture, TEXTUREFLAGS_SRGB);
+
+			if (!params[info.m_nBaseTexture]->GetTextureValue()->IsTranslucent())
+			{
+				CLEAR_FLAGS(MATERIAL_VAR_SELFILLUM);
+				CLEAR_FLAGS(MATERIAL_VAR_BASEALPHAENVMAPMASK);
+			}
+		}
+
+		if (params[info.m_nBaseTexture2]->IsDefined())
+		{
+			pShader->LoadTexture(info.m_nBaseTexture2, TEXTUREFLAGS_SRGB);
+		}
+
+		if (params[info.m_nLightWarpTexture]->IsDefined())
+		{
+			pShader->LoadTexture(info.m_nLightWarpTexture);
+		}
+
+		if ((info.m_nBlendModulateTexture != -1) &&
+			(params[info.m_nBlendModulateTexture]->IsDefined()))
+		{
+			pShader->LoadTexture(info.m_nBlendModulateTexture);
+		}
+
+		if (params[info.m_nDetail]->IsDefined())
+		{
+			int nDetailBlendMode = (info.m_nDetailTextureCombineMode == -1) ? 0 : params[info.m_nDetailTextureCombineMode]->GetIntValue();
+			nDetailBlendMode = nDetailBlendMode > 1 ? 1 : nDetailBlendMode;
+
+			pShader->LoadTexture(info.m_nDetail, nDetailBlendMode != 0 ? TEXTUREFLAGS_SRGB : 0);
+		}
+
+		pShader->LoadTexture(info.m_nFlashlightTexture, TEXTUREFLAGS_SRGB);
+
+		// Don't alpha test if the alpha channel is used for other purposes
+		if (IS_FLAG_SET(MATERIAL_VAR_SELFILLUM) || IS_FLAG_SET(MATERIAL_VAR_BASEALPHAENVMAPMASK))
+		{
+			CLEAR_FLAGS(MATERIAL_VAR_ALPHATEST);
+		}
+
+		if (params[info.m_nEnvmap]->IsDefined())
+		{
+			if (!IS_FLAG_SET(MATERIAL_VAR_ENVMAPSPHERE))
+			{
+				pShader->LoadCubeMap(info.m_nEnvmap, g_pHardwareConfig->GetHDRType() == HDR_TYPE_NONE ? TEXTUREFLAGS_SRGB : 0);
+			}
+			else
+			{
+				pShader->LoadTexture(info.m_nEnvmap);
+			}
+
+			if (!g_pHardwareConfig->SupportsCubeMaps())
+			{
+				SET_FLAGS(MATERIAL_VAR_ENVMAPSPHERE);
+			}
+
+			if (params[info.m_nEnvmapMask]->IsDefined())
+			{
+				pShader->LoadTexture(info.m_nEnvmapMask);
+			}
+		}
+		else
+		{
+			params[info.m_nEnvmapMask]->SetUndefined();
+		}
+
+		// We always need this because of the flashlight.
+		SET_FLAGS2(MATERIAL_VAR2_NEEDS_TANGENT_SPACES);
 	}
 }
 
@@ -1002,6 +1101,12 @@ void DrawLightmappedGeneric_DX9(CBaseVSShader *pShader, IMaterialVar** params,
 										 CBasePerMaterialContextData **pContextDataPtr,
 										 VertexCompressionType_t vertexCompression)
 {
+	if (mat_reducefillrate.GetInt() < 2)
+	{
+		bool hasFlashlight = pShader->UsingFlashlight(params);
+		DrawLightmappedGeneric_DX9_Internal(pShader, params, hasFlashlight, pShaderAPI, pShaderShadow, info, pContextDataPtr);
+		return;
+	}
 	// Setting up booleans
 	bool bHasBaseTexture = (info.m_nBaseTexture != -1) && params[info.m_nBaseTexture]->IsTexture();
 	bool bHasNormalTexture = (info.m_nBumpmap != -1) && params[info.m_nBumpmap]->IsTexture();

@@ -20,7 +20,7 @@
 //---------------------------------------------------------
 int ITEM_GiveAmmo( CBasePlayer *pPlayer, float flCount, const char *pszAmmoName, bool bSuppressSound = false )
 {
-	int iAmmoType = GetAmmoDef()->Index(pszAmmoName);
+ 	int iAmmoType = GetAmmoDef()->Index(pszAmmoName);
 	if (iAmmoType == -1)
 	{
 		Msg("ERROR: Attempting to give unknown ammo type (%s)\n",pszAmmoName);
@@ -588,6 +588,55 @@ public:
 };
 
 LINK_ENTITY_TO_CLASS( item_ammo_ar2_altfire, CItem_AR2AltFireRound );
+
+
+// ========================================================================
+//	>> CItem_GenericAmmo
+// ========================================================================
+class CItem_GenericAmmo : public CItem
+{
+public:
+	DECLARE_CLASS(CItem_GenericAmmo, CItem);
+
+
+	void Spawn(void)
+	{
+		Precache();
+		BaseClass::Spawn();
+		SetModel(STRING(GetModelName()));
+	}
+
+	bool MyTouch(CBasePlayer* pPlayer)
+	{
+		if (ITEM_GiveAmmo(pPlayer, m_nAmmoAmt, m_nAmmoType.ToCStr()))
+		{
+			if (g_pGameRules->ItemShouldRespawn(this) == GR_ITEM_RESPAWN_NO)
+			{
+				UTIL_Remove(this);
+			}
+			return true;
+		}
+		return false;
+	}
+	string_t m_nAmmoType;
+	int		m_nAmmoAmt;
+
+	COutputEvent	m_OnCollected;
+
+	DECLARE_DATADESC();
+};
+
+LINK_ENTITY_TO_CLASS(item_ammo_generic, CItem_GenericAmmo);
+
+
+BEGIN_DATADESC( CItem_GenericAmmo )
+
+	DEFINE_KEYFIELD( m_nAmmoType, FIELD_STRING, "AmmoName" ),	
+	DEFINE_KEYFIELD( m_nAmmoAmt, FIELD_INTEGER, "AmmoAmount" ),	
+
+	DEFINE_OUTPUT( m_OnCollected, "OnCollected" ),
+
+END_DATADESC()
 
 // ==================================================================
 // Ammo crate which will supply infinite ammo of the specified type

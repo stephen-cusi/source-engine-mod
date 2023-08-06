@@ -2082,10 +2082,6 @@ inline const Vector& C_BaseEntity::GetBaseVelocity() const
 	return m_vecBaseVelocity; 
 }
 
-inline void	C_BaseEntity::SetBaseVelocity( const Vector& v ) 
-{ 
-	m_vecBaseVelocity = v; 
-}
 
 inline void C_BaseEntity::SetFriction( float flFriction ) 
 { 

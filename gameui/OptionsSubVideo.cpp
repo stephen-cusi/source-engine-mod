@@ -417,6 +417,7 @@ public:
 		m_pShaderDetail = new ComboBox( this, "ShaderDetail", 6, false );
 		m_pShaderDetail->AddItem("#gameui_low", NULL);
 		m_pShaderDetail->AddItem("#gameui_high", NULL);
+		m_pShaderDetail->AddItem("#gameui_nuh_uh", NULL);
 
 		m_pColorCorrection = new ComboBox( this, "ColorCorrection", 2, false );
 		m_pColorCorrection->AddItem("#gameui_disabled", NULL);
@@ -568,7 +569,7 @@ public:
 		int nWaterUseEntityReflection = pKeyValues->GetInt( "ConVar.r_waterforcereflectentities", 0 );
 		int nMatVSync = pKeyValues->GetInt( "ConVar.mat_vsync", 1 );
 		int nRootLOD = pKeyValues->GetInt( "ConVar.r_rootlod", 0 );
-		int nReduceFillRate = pKeyValues->GetInt( "ConVar.mat_reducefillrate", 0 );
+		int nReduceFillRate = pKeyValues->GetInt( "ConVar.mat_reducefillrate", 2 );
 		int nDXLevel = pKeyValues->GetInt( "ConVar.mat_dxlevel", 0 );
 		int nColorCorrection = pKeyValues->GetInt( "ConVar.mat_colorcorrection", 0 );
 		int nMotionBlur = pKeyValues->GetInt( "ConVar.mat_motion_blur_enabled", 0 );
@@ -631,7 +632,7 @@ public:
 		else
 			SetComboItemAsRecommended( m_pShadowDetail, 0 );	// Blobbies
 
-		SetComboItemAsRecommended( m_pShaderDetail, nReduceFillRate ? 0 : 1 );
+		SetComboItemAsRecommended( m_pShaderDetail, clamp(nReduceFillRate,0,2));
 		
 #ifndef _X360
 		if ( nWaterUseRealtimeReflection )
@@ -744,7 +745,7 @@ public:
 			ApplyChangesToConVar( "r_flashlightdepthtexture", 1 );			// Turn on shadow depth textures
 		}
 
-		ApplyChangesToConVar( "mat_reducefillrate", ( m_pShaderDetail->GetActiveItem() > 0 ) ? 0 : 1 );
+		ApplyChangesToConVar( "mat_reducefillrate", clamp( m_pShaderDetail->GetActiveItem(),0,2 ));
 
 		switch ( m_pWaterDetail->GetActiveItem() )
 		{
@@ -826,7 +827,7 @@ public:
 			m_pShadowDetail->ActivateItem( 0 );
 		}
 
-		m_pShaderDetail->ActivateItem( mat_reducefillrate.GetBool() ? 0 : 1 );
+		m_pShaderDetail->ActivateItem(clamp(mat_reducefillrate.GetInt(),0,2));
 		m_pHDR->ActivateItem(clamp(mat_hdr_level.GetInt(), 0, 2));
 
 		switch (mat_forceaniso.GetInt())
