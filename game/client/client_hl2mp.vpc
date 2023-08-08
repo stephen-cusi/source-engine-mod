@@ -37,7 +37,6 @@ $Project "Client (HL2MP)"
 		$File	"vgui_schemeeditor.cpp"
 		$File	"episodic/c_weapon_hopwire.cpp"
 		$File	"sourcebox/sourcebox_client_cmds.cpp"
-		$File	"$SRCDIR/game/shared/func_ladder.cpp"
 
 		$Folder	"HL2 DLL"
 		{

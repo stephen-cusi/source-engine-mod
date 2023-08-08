@@ -62,7 +62,6 @@ $Project "Server (HL2MP)"
 		$File   "$SRCDIR\game\shared\teamplay_round_timer.h"
 		$File   "physgun.cpp"
 		$File	"sourcebox\sourcebox_server_cmds.cpp"
-		$File	"$SRCDIR/game/shared/func_ladder.cpp"
 		
 		$Folder	"HL2 DLL"
 		{
