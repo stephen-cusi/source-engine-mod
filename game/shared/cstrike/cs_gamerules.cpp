@@ -330,7 +330,7 @@ ConVar cl_autohelp(
 	// --------------------------------------------------------------------------------------------------- //
 
 	// NOTE: the indices here must match TEAM_TERRORIST, TEAM_CT, TEAM_SPECTATOR, etc.
-	const char *sTeamNames[] =
+	const char *sTeamNames2[] =
 	{
 		"Unassigned",
 		"Spectator",
@@ -671,10 +671,10 @@ ConVar cl_autohelp(
 		m_bDontUploadStats = false;
 
 		// Create the team managers
-		for ( int i = 0; i < ARRAYSIZE( sTeamNames ); i++ )
+		for ( int i = 0; i < ARRAYSIZE( sTeamNames2 ); i++ )
 		{
 			CTeam *pTeam = static_cast<CTeam*>(CreateEntityByName( "cs_team_manager" ));
-			pTeam->Init( sTeamNames[i], i );
+			pTeam->Init( sTeamNames2[i], i );
 
 			g_Teams.AddToTail( pTeam );
 		}

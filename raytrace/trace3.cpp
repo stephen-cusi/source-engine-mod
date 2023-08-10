@@ -1,6 +1,6 @@
 //========= Copyright Valve Corporation, All rights reserved. ============//
 
-#include "raytrace.h"
+#include "../public/raytrace.h"
 #include <bspfile.h>
 #include "bsplib.h"
 

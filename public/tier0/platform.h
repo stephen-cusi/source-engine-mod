@@ -276,6 +276,12 @@ typedef signed char int8;
 #else
 	#define IsAndroid()	false
 #endif
+
+#ifndef _WIN32
+#define itoa(value,str,len) Q_snprintf( str, len, "%d", value )
+#define itow(value,str,len) V_snwprintf( str, len, "%d", value )
+#define _itow(value,str,len) V_snwprintf( str, len, "%d", value )
+#endif
 // From steam/steamtypes.h
 // RTime32
 // We use this 32 bit time representing real world time.

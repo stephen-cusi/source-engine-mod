@@ -23,15 +23,15 @@ const float4 cBaseTexCoordTransform[2]  : register(SHADER_SPECIFIC_CONST_0);
 struct VS_INPUT
 {
     // This is all of the stuff that we ever use
-    float4 vPos                     : POSITION;
-    float4 vBoneWeights             : BLENDWEIGHT;
-    float4 vBoneIndices             : BLENDINDICES;
     float4 vNormal                  : NORMAL;
-    float4 vTangent                 : TANGENT;
+    float4 vPos                     : POSITION;
     float2 vTexCoord0               : TEXCOORD0;
     float4 vLightmapTexCoord        : TEXCOORD1;
     float4 vLightmapTexCoordOffset  : TEXCOORD2;
+    float4 vTangent                 : TANGENT;
 	float4 vColor					: COLOR0;
+    float4 vBoneWeights             : BLENDWEIGHT;
+    float4 vBoneIndices             : BLENDINDICES;
 };
 
 struct VS_OUTPUT

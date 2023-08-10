@@ -1,7 +1,7 @@
 //========= Copyright Valve Corporation, All rights reserved. ============//
 // $Id$
 
-#include "raytrace.h"
+#include "../public/raytrace.h"
 #include <filesystem_tools.h>
 #include <cmdlib.h>
 #include <stdio.h>

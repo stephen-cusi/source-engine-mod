@@ -262,6 +262,7 @@ HALF4 main( PS_INPUT i ) : COLOR
 	float4 vNormal = float4(0, 0, 1, 1);
 	float3 baseTexCoords = float3(0,0,0);
 
+
 #if SEAMLESS
 	baseTexCoords = i.SeamlessTexCoord.xyz;
 #else
@@ -524,6 +525,7 @@ HALF4 main( PS_INPUT i ) : COLOR
 		diffuseLighting = lightmapColor1 * g_TintValuesAndLightmapScale.rgb;
 	}
 
+
 #if WARPLIGHTING && ( SEAMLESS == 0 )
 	float len=0.5*length(diffuseLighting);
 	// FIXME: 8-bit lookup textures like this need a "nice filtering" VTF option, which converts
@@ -531,6 +533,8 @@ HALF4 main( PS_INPUT i ) : COLOR
 	//        included - interpolates 8-bit textures at 8-bit precision, which causes banding)
 	diffuseLighting *= 2.0*tex2D(WarpLightingSampler,float2(len,0));
 #endif
+
+
 
 #if CUBEMAP || LIGHTING_PREVIEW || ( defined( _X360 ) && FLASHLIGHT )
 	float3 worldSpaceNormal = mul( vNormal, i.tangentSpaceTranspose );
@@ -636,5 +640,6 @@ HALF4 main( PS_INPUT i ) : COLOR
 	return FinalOutput( float4( result.rgb, alpha ), fogFactor, PIXELFOGTYPE, TONEMAP_SCALE_LINEAR, bWriteDepthToAlpha, i.worldPos_projPosZ.w );
 
 #endif
+
 }
  

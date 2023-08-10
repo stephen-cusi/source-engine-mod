@@ -432,8 +432,8 @@ CGrabController::CGrabController(void)
 	m_errorTime = 0;
 	m_error = 0;
 	// make this controller really stiff!
-	m_shadow.maxSpeed = 1000;
-	m_shadow.maxAngular = DEFAULT_MAX_ANGULAR;
+	m_shadow.maxSpeed = 300.0f;
+	m_shadow.maxAngular = 384.0f;
 	m_shadow.maxDampSpeed = m_shadow.maxSpeed * 2;
 	m_shadow.maxDampAngular = m_shadow.maxAngular;
 	m_attachedEntity = NULL;

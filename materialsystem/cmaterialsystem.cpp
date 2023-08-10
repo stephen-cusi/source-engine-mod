@@ -2319,6 +2319,7 @@ bool CMaterialSystem::OverrideConfig( const MaterialSystem_Config_t &_config, bo
 				( int )config.ReduceFillrate(), ( int )g_config.ReduceFillrate() );
 		}
 		bReloadMaterials = true;
+		recomputeSnapshots = true;
 	}
 
 	// toggle reverse depth

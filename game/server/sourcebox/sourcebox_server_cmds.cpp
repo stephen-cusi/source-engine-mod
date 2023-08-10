@@ -44,7 +44,8 @@ void SB_ModelSpawn(const CCommand& args)
 		pPlayer, COLLISION_GROUP_NONE, &tr);
 	if (tr.fraction != 1.0)
 	{
-		model->Teleport(&(tr.endpos + tr.plane.normal*16), NULL, NULL);
+		forward = (tr.endpos + tr.plane.normal*16);
+		model->Teleport(&forward, NULL, NULL);
 	}
 
 	model->Activate();

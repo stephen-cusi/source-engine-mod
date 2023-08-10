@@ -3,6 +3,7 @@
 //=======================================================================================//
 
 #include "cbase.h"
+#include "strtools.h"
 #include "vgui_schemeeditor.h"
 #include "vgui/IBorder.h"
 #include "vgui/ISurface.h"
@@ -101,7 +102,8 @@ void Knob::Paint()
 		surface()->DrawSetTextPos(1, 1);
 		surface()->DrawSetTextColor(_darkcolor);
 		wchar_t value[16];
-		_itow(_value, value, 10);
+		//_itow(_value, value, 10);
+		V_snwprintf(value, 10, L"%d", _value);
 		surface()->DrawPrintText(value,V_wcslen(value));
 		surface()->DrawSetTextPos(0, 0);
 		surface()->DrawSetTextColor(_lightcolor);

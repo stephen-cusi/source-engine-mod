@@ -112,10 +112,11 @@ float4 main(PS_INPUT i) : COLOR
     if (!FLASHLIGHT)
     {
 		#if LIGHTMAPPED
-        float3 diffuseIrradiance = ambientLookup(normal, cAmbientCube, textureNormal, i.lightmapTexCoord1And2, i.lightmapTexCoord3, LightmapSampler, float4(2,2,2,1));
+        float3 diffuseIrradiance = ambientLookup(normal, cAmbientCube, textureNormal, i.lightmapTexCoord1And2, i.lightmapTexCoord3, LightmapSampler, g_DiffuseModulation);
 		#else
-		float3 diffuseIrradiance = i.vertexColor.xyz*2;
+		float3 diffuseIrradiance = i.vertexColor.xyz*g_DiffuseModulation.xyz;
 		#endif
+		
         float3 diffuseIBL = albedo.rgb * diffuseIrradiance * ambientOcclusion;
 
 		float3 specularIrradiance = 0;
@@ -196,6 +197,6 @@ float4 main(PS_INPUT i) : COLOR
 #if EMISSIVE && !FLASHLIGHT
     combinedLighting += emission;
 #endif
-	return float4(combinedLighting, alpha);
-    //return FinalOutput(float4(combinedLighting, alpha), fogFactor, PIXELFOGTYPE, TONEMAP_SCALE_LINEAR, bWriteDepthToAlpha, i.projPos.z);
+	//return float4(combinedLighting, alpha);
+    return FinalOutput(float4(combinedLighting, alpha), fogFactor, PIXELFOGTYPE, TONEMAP_SCALE_LINEAR, bWriteDepthToAlpha, i.projPos.z);
 }

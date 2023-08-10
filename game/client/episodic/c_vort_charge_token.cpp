@@ -28,10 +28,11 @@
 
 class C_NPC_Vortigaunt : public C_AI_BaseNPC
 {
+public:
+
 	DECLARE_CLASS( C_NPC_Vortigaunt, C_AI_BaseNPC );
 	DECLARE_CLIENTCLASS();
-
-public:
+	
 	virtual void	OnDataChanged( DataUpdateType_t updateType );
 	virtual void	ClientThink( void );
 	virtual void	ReceiveMessage( int classID, bf_read &msg );
@@ -43,6 +44,7 @@ public:
 	bool  m_bIsBlack;    ///< wants to fade to black (networked)
 	float m_flBlackFade; ///< [0.00 .. 1.00] where 1.00 is all black. Locally interpolated.
 };
+
 
 IMPLEMENT_CLIENTCLASS_DT( C_NPC_Vortigaunt, DT_NPC_Vortigaunt, CNPC_Vortigaunt )
 	RecvPropTime( RECVINFO(m_flBlueEndFadeTime ) ),
@@ -307,10 +309,11 @@ void C_VortigauntChargeToken::ClientThink( void )
 
 class C_VortigauntEffectDispel : public C_BaseEntity
 {
+public:
+
 	DECLARE_CLASS( C_VortigauntEffectDispel, C_BaseEntity );
 	DECLARE_CLIENTCLASS();
-
-public:
+	
 	virtual void	UpdateOnRemove( void );
 	virtual void	ClientThink( void );
 	virtual void	NotifyShouldTransmit( ShouldTransmitState_t state );

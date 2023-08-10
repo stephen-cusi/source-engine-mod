@@ -5,7 +5,7 @@
 // $NoKeywords: $
 //=============================================================================//
 
-
+#undef HAVE_FC
 #include "vgui_surfacelib/linuxfont.h"
 
 #include <assert.h>
@@ -186,18 +186,25 @@ static FcPattern* FontMatch(const char* type, ...)
         switch (fcvalue.type) {
             case FcTypeString:
                 fcvalue.u.s = va_arg(ap, const FcChar8 *);
+				Msg("fcvalue.u.s: %s\n",fcvalue.u.s);
                 break;
             case FcTypeInteger:
                 fcvalue.u.i = va_arg(ap, int);
+				Msg("fcvalue.u.i: %i\n",fcvalue.u.i);
                 break;
             default:
                 Assert(!"FontMatch unhandled type");
+				return NULL;
         }
         FcPatternAdd(pattern, type, fcvalue, FcFalse);
 
         type = va_arg(ap, const char *);
-        if (!type)
+		Msg("type: %x\n",type);
+        if (type == 0)
+		{
+			Msg("Breaking!\n");
             break;
+		}
     };
     va_end(ap);
 

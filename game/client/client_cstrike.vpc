@@ -30,8 +30,6 @@ $Project "Client (CStrike)"
 	{
 		-$File	"$SRCDIR\game\shared\weapon_parse_default.cpp"
 		
-		$File	"c_team_objectiveresource.cpp"
-		$File	"c_team_objectiveresource.h"
 		$File	"c_team_train_watcher.cpp"
 		$File	"c_team_train_watcher.h"
 		$File	"hud_base_account.cpp"
@@ -41,8 +39,7 @@ $Project "Client (CStrike)"
 		$File	"hud_baseachievement_tracker.h"
 		$File	"$SRCDIR\game\client\hud_vote.h"
 		$File	"$SRCDIR\game\client\hud_vote.cpp"
-		$File	"$SRCDIR\game\shared\predicted_viewmodel.cpp"
-		$File	"$SRCDIR\game\shared\predicted_viewmodel.h"
+
 		
 		$Folder	"CounterStrike DLL"
 		{

@@ -9,7 +9,7 @@
 #include "BaseVSShader.h"
 #include "cpp_shader_constant_register_map.h"
 
-#include "VertexLit_and_unlit_Generic_vs20.inc"
+#include "vertexlit_and_unlit_generic_vs20.inc"
 #include "decalmodulate_ps20.inc"
 #include "decalmodulate_ps20b.inc"
 

@@ -3255,10 +3255,7 @@ void C_BaseEntity::AddVisibleEntities()
 #endif
 }
 
-__declspec(noinline) void C_BaseEntity::SetBaseVelocity(const Vector& v)
-{
-	m_vecBaseVelocity = v;
-}
+
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Input  : type - 

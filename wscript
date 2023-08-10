@@ -42,12 +42,6 @@ projects={
 		'game/client',
 		'game/server',
         'game/gamepadui',
-        'utils/lzma',
-        'utils/vbsp',
-        'utils/vrad',
-        'utils/vrad_launcher',
-        'utils/vvis',
-        'utils/vvis_launcher',
 		'gameui',
 		'inputsystem',
 		'ivp/havana',
@@ -437,6 +431,7 @@ def configure(conf):
 	if conf.env.DEST_OS == 'win32':
 		projects['game'] += ['utils/bzip2']
 		projects['dedicated'] += ['utils/bzip2']
+		projects['game'] += ['utils/lzma','utils/vbsp','utils/vrad','utils/vrad_launcher','utils/vvis','utils/vvis_launcher']
 	if conf.options.OPUS or conf.env.DEST_OS == 'android':
 		projects['game'] += ['engine/voice_codecs/opus']
 

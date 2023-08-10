@@ -24,8 +24,8 @@
 #include "c_cs_playerresource.h"
 #include "cs_blackmarket.h"
 #include "hl2mp_player_shared.h"
-#include "vgui_controls/controls.h"
-#include "vgui/ischeme.h"
+#include "vgui_controls/Controls.h"
+#include "vgui/IScheme.h"
 #include "steam/steam_api.h"
 #include "c_basetempentity.h"
 

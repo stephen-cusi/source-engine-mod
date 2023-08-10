@@ -472,7 +472,8 @@ void CAI_ScriptConditions::EvaluationThink()
 		return;
 
 	int iActorsDone = 0;
-
+	if (!AI_GetSinglePlayer())
+		return;
 #ifdef HL2_DLL
 	if( AI_GetSinglePlayer()->GetFlags() & FL_NOTARGET )
 	{

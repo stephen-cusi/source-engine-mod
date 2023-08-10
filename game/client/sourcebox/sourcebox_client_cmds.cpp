@@ -1,5 +1,5 @@
 #include "cbase.h"
-#include "vstdlib/Random.h"
+#include "vstdlib/random.h"
 
 
 CON_COMMAND(sb_equal, "Returns 1 if the two values are equal, otherwise returns 0\nUSAGE: sb_equal <VALUE A> <VALUE B>")

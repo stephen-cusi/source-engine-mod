@@ -1,6 +1,6 @@
 //========= Copyright Valve Corporation, All rights reserved. ============//
 // $Id$
-#include "raytrace.h"
+#include "../public/raytrace.h"
 #include <mathlib/halton.h>
 
 static uint32 MapDistanceToPixel(float t)

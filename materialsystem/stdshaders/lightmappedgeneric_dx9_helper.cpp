@@ -953,6 +953,8 @@ void DrawLightmappedGeneric_DX9_Internal(CBaseVSShader *pShader, IMaterialVar** 
 	DYNAMIC_STATE
 	{
 		CCommandBufferBuilder< CFixedCommandStorageBuffer< 1000 > > DynamicCmdsOut;
+		if (!pContextData->m_pStaticCmds)
+			return;
 		DynamicCmdsOut.Call( pContextData->m_pStaticCmds );
 		DynamicCmdsOut.Call( pContextData->m_SemiStaticCmdsOut.Base() );
 
@@ -1116,7 +1118,7 @@ void DrawLightmappedGeneric_DX9(CBaseVSShader *pShader, IMaterialVar** params,
 	bool bIsAlphaTested = IS_FLAG_SET(MATERIAL_VAR_ALPHATEST) != 0;
 	bool bHasFlashlight = pShader->UsingFlashlight(params);
 	bool bHasColor = (info.baseColor != -1) && params[info.baseColor]->IsDefined();
-	bool bLightMapped = !IS_FLAG_SET(MATERIAL_VAR_MODEL) && !IS_FLAG_SET(MATERIAL_VAR_DECAL);
+	bool bLightMapped = !IS_FLAG_SET(MATERIAL_VAR_MODEL);
 	//bool bUseEnvAmbient = (info.useEnvAmbient != -1) && (params[info.useEnvAmbient]->GetIntValue() == 1);
 	bool bUseEnvAmbient = true;
 	bool bHasSpecularTexture = (info.specularTexture != -1) && params[info.specularTexture]->IsTexture();
@@ -1164,7 +1166,14 @@ void DrawLightmappedGeneric_DX9(CBaseVSShader *pShader, IMaterialVar** params,
 			pShaderShadow->EnableTexture(SAMPLER_EMISSIVE, true);       // Emission texture
 			pShaderShadow->EnableSRGBRead(SAMPLER_EMISSIVE, true);      // Emission is sRGB
 			pShaderShadow->EnableTexture(SAMPLER_LIGHTMAP, true);       // Lightmap texture
-			pShaderShadow->EnableSRGBRead(SAMPLER_LIGHTMAP, false);     // Lightmaps aren't sRGB
+			if (g_pHardwareConfig->GetHDRType() == HDR_TYPE_NONE)
+			{
+				pShaderShadow->EnableSRGBRead(SAMPLER_LIGHTMAP, true);
+			}
+			else
+			{
+				pShaderShadow->EnableSRGBRead(SAMPLER_LIGHTMAP, false);
+			}
 			pShaderShadow->EnableTexture(SAMPLER_MRAO, true);           // MRAO texture
 			pShaderShadow->EnableSRGBRead(SAMPLER_MRAO, false);         // MRAO isn't sRGB
 			pShaderShadow->EnableTexture(SAMPLER_NORMAL, true);         // Normal texture
@@ -1201,9 +1210,16 @@ void DrawLightmappedGeneric_DX9(CBaseVSShader *pShader, IMaterialVar** params,
 			if (IS_FLAG_SET(MATERIAL_VAR_MODEL))
 			{
 				// We only need the position and surface normal
-				unsigned int flags = VERTEX_POSITION | VERTEX_NORMAL | VERTEX_FORMAT_COMPRESSED | VERTEX_COLOR;
+				unsigned int flags = VERTEX_POSITION | VERTEX_NORMAL | VERTEX_TANGENT_S | VERTEX_FORMAT_COMPRESSED | VERTEX_COLOR;
 				// We need three texcoords, all in the default float2 size
-				pShaderShadow->VertexShaderVertexFormat(flags, 1, 0, 0);
+				pShaderShadow->VertexShaderVertexFormat(flags, 2, 0, 0);
+			}
+			else if (IS_FLAG_SET(MATERIAL_VAR_DECAL))
+			{
+				// We only need the position and surface normal
+				unsigned int flags = VERTEX_POSITION | VERTEX_NORMAL | VERTEX_TANGENT_S | VERTEX_COLOR;
+				// We need three texcoords, all in the default float2 size
+				pShaderShadow->VertexShaderVertexFormat(flags, 2, 0, 0);
 			}
 			else
 			{
