@@ -91,11 +91,11 @@ void CAK47::PrimaryAttack()
 	pPlayer = GetHL2MPPlayerOwner();
 	if ( !pPlayer )
 		return;
-
+	// KickBack isn't going to be exact. But will be perfected soon.
 	if (pPlayer->GetAbsVelocity().Length2D() > 5 )
-		pPlayer->KickBack ( 1.5, 0.45, 0.225, 0.05, 6.5, 2.5, 7 );
+		pPlayer->KickBack ( 1.5, 0.55, 0.235, 0.05, 6.5, 2.5, 7 );
 	else if ( !FBitSet( pPlayer->GetFlags(), FL_ONGROUND ) )
-		pPlayer->KickBack ( 2, 1.0, 0.5, 0.35, 9, 6, 5 );
+		pPlayer->KickBack ( 2, 1.1, 0.4, 0.45, 9, 6, 5 );
 	else if ( FBitSet( pPlayer->GetFlags(), FL_DUCKING ) )
 		pPlayer->KickBack ( 0.9, 0.35, 0.15, 0.025, 5.5, 1.5, 9 );
 	else
