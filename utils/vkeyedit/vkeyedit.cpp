@@ -40,6 +40,7 @@ bool FileSystem_LoadFileSystemModule( void )
 	char *sFileSystemModuleName = "filesystem_stdio.dll";
 
 	g_pFileSystemModule = Sys_LoadModule( sFileSystemModuleName );
+
 	Assert( g_pFileSystemModule );
 	if( !g_pFileSystemModule )
 	{

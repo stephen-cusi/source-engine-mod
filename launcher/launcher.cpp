@@ -91,7 +91,7 @@ int MessageBox( HWND hWnd, const char *message, const char *header, unsigned uTy
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
-#define DEFAULT_HL2_GAMEDIR	"sourcebox"
+#define DEFAULT_HL2_GAMEDIR	"sourcebox_" DEST_OS
 
 #if defined( USE_SDL )
 extern void* CreateSDLMgr();
@@ -419,7 +419,7 @@ void CLogAllFiles::Init()
 
 	// game directory has not been established yet, must derive ourselves
 	char path[MAX_PATH];
-	Q_snprintf( path, sizeof(path), "%s/%s", GetBaseDirectory(), CommandLine()->ParmValue( "-game", "hl2" ) );
+	Q_snprintf( path, sizeof(path), "%s/%s", GetBaseDirectory(), CommandLine()->ParmValue( "-game", DEFAULT_HL2_GAMEDIR ) );
 	Q_FixSlashes( path );
 #ifdef WIN32
 	Q_strlower( path );
@@ -818,7 +818,7 @@ bool CSourceAppSystemGroup::PreInit()
 	if ( IsPC() )
 	{
 		// This will get called multiple times due to being here, but only the first one will do anything
-		reslistgenerator->Init( GetBaseDirectory(), CommandLine()->ParmValue( "-game", "hl2" ) );
+		reslistgenerator->Init( GetBaseDirectory(), CommandLine()->ParmValue( "-game", DEFAULT_HL2_GAMEDIR ) );
 
 		// This will also get called each time, but will actually fix up the command line as needed
 		reslistgenerator->SetupCommandLine();
@@ -883,10 +883,12 @@ void CSourceAppSystemGroup::Destroy()
 //-----------------------------------------------------------------------------
 const char *CSourceAppSystemGroup::DetermineDefaultMod()
 {
+
 	if ( !m_bEditMode )
-	{   		 
-		return CommandLine()->ParmValue( "-game", DEFAULT_HL2_GAMEDIR );
+	{   	
+		return CommandLine()->ParmValue("-game", DEFAULT_HL2_GAMEDIR);
 	}
+
 	return g_pHammer->GetDefaultMod();
 }
 
@@ -894,7 +896,7 @@ const char *CSourceAppSystemGroup::DetermineDefaultGame()
 {
 	if ( !m_bEditMode )
 	{
-		return CommandLine()->ParmValue( "-defaultgamedir", DEFAULT_HL2_GAMEDIR );
+		return CommandLine()->ParmValue("-defaultgamedir", DEFAULT_HL2_GAMEDIR);
 	}
 	return g_pHammer->GetDefaultGame();
 }

@@ -1423,6 +1423,16 @@ inline bool Plat_IsInDebugSession( bool bForceRecheck = false ) { return false; 
 #define Plat_DebugString(s) ((void)0)
 #endif
 
+#if defined(_WIN32) 
+#define DEST_OS "win32"
+#elif defined(PLATFORM_BSD)
+#define DEST_OS "freebsd"
+#elif defined(LINUX)
+#define DEST_OS "linux"
+#else
+#define DEST_OS ""
+#endif
+
 //-----------------------------------------------------------------------------
 // Returns true if running on a 64 bit (windows) OS
 //-----------------------------------------------------------------------------

@@ -454,8 +454,9 @@ CSysModule *Sys_LoadModule( const char *pModuleName )
 		}
 		else
 		{
-			V_snprintf( szAbsoluteModuleName, sizeof(szAbsoluteModuleName), "%s/bin/%s", szCwd, pModuleName );
+			V_snprintf( szAbsoluteModuleName, sizeof(szAbsoluteModuleName), "%s/bin_%s/%s", szCwd, DEST_OS, pModuleName );
 		}
+
 		hDLL = Sys_LoadLibrary( szAbsoluteModuleName );
 #endif // _PS3
 	}

@@ -32,8 +32,8 @@ def build(bld):
 	install_path = bld.env.BINDIR
 	bld(
 		source   = source,
-		target   = PROJECT_NAME,
-		name     = PROJECT_NAME,
+		target   = PROJECT_NAME+'_'+bld.env.DEST_OS,
+		name     = PROJECT_NAME+'_'+bld.env.DEST_OS,
 		features = 'c cxx cxxprogram',
 		includes = includes,
 		defines  = defines,

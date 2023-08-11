@@ -199,8 +199,8 @@ bool CVPC::LoadPerforceInterface()
 	V_ExtractFilePath( szModuleBinPath, p4libdll, sizeof( p4libdll ) );
 	V_AppendSlash( p4libdll, sizeof( p4libdll ) );
 	V_strncpy( filesystemdll, p4libdll, sizeof( filesystemdll ) );
-	V_strncat( p4libdll, "..\\..\\..\\game\\bin\\p4lib.dll", sizeof( p4libdll ) );
-	V_strncat( filesystemdll, "..\\..\\..\\game\\bin\\filesystem_stdio.dll", sizeof( filesystemdll ) );
+	V_strncat( p4libdll, "..\\..\\..\\game\\bin_win32\\p4lib.dll", sizeof( p4libdll ) );
+	V_strncat( filesystemdll, "..\\..\\..\\game\\bin_win32\\filesystem_stdio.dll", sizeof( filesystemdll ) );
 #else
 	V_strncpy( p4libdll, "p4lib", sizeof( p4libdll ) );
 	V_strncpy( filesystemdll, "filesystem_stdio", sizeof( filesystemdll ) );

@@ -69,7 +69,7 @@ def build(bld):
 
 	install_path = bld.env.PREFIX
 	if bld.env.DEST_OS != 'android':
-		install_path += '/'+bld.env.GAMES+'/bin'
+		install_path += '/'+bld.env.GAMES+'_'+bld.env.DEST_OS+'/bin'
 
 	#source = [ 'in_touch.cpp' ]
 	if bld.env.DEST_OS == 'win32':

@@ -577,9 +577,10 @@ def configure(conf):
 
 	# indicate if we are packaging for Linux/BSD
 	if conf.env.DEST_OS != 'android':
-		conf.env.LIBDIR = conf.env.PREFIX+'/bin/'
+		conf.env.LIBDIR = conf.env.PREFIX+'/bin'+'_'+conf.env.DEST_OS+'/'
 		conf.env.TESTDIR = conf.env.PREFIX+'/tests/'
 		conf.env.BINDIR = conf.env.PREFIX
+		
 	else:
 		conf.env.LIBDIR = conf.env.BINDIR = conf.env.PREFIX
 
@@ -608,6 +609,7 @@ def build(bld):
 
 	if bld.env.OPUS or bld.env.DEST_OS == 'android':
 		projects['game'] += ['engine/voice_codecs/opus']
+    
 
 	if bld.env.TESTS:
 		bld.add_subproject(projects['tests'])

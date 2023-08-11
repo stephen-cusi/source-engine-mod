@@ -108,13 +108,13 @@ int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 #ifdef _DEBUG
 	int len = 
 #endif
-	_snprintf( szBuffer, sizeof( szBuffer ), "PATH=%s\\bin\\;%s", pRootDir, pPath );
+	_snprintf( szBuffer, sizeof( szBuffer ), "PATH=%s\\bin_win32\\;%s", pRootDir, pPath );
 	szBuffer[sizeof( szBuffer ) - 1] = '\0';
 	assert( len < sizeof( szBuffer ) );
 	_putenv( szBuffer );
 
 	// Assemble the full path to our "launcher.dll"
-	_snprintf( szBuffer, sizeof( szBuffer ), "%s\\bin\\launcher.dll", pRootDir );
+	_snprintf( szBuffer, sizeof( szBuffer ), "%s\\bin_win32\\launcher.dll", pRootDir );
 	szBuffer[sizeof( szBuffer ) - 1] = '\0';
 
 	// STEAM OK ... filesystem not mounted yet
@@ -222,7 +222,7 @@ int main( int argc, char *argv[] )
 
 	if( (ld_env = getenv("LD_LIBRARY_PATH")) != NULL )
 	{
-		snprintf(ld_path, sizeof(ld_path), "%s:bin/", ld_env);
+		snprintf(ld_path, sizeof(ld_path), "%s:bin_linux/", ld_env);
 		path = ld_path;
 	}
 
@@ -235,12 +235,12 @@ int main( int argc, char *argv[] )
 		execve(argv[0], argv, environ);
 	}
 
-	void *launcher = dlopen( "bin/liblauncher" DLL_EXT_STRING, RTLD_NOW );
+	void *launcher = dlopen( "bin_linux/liblauncher" DLL_EXT_STRING, RTLD_NOW );
 	if ( !launcher )
 		fprintf( stderr, "%s\nFailed to load the launcher\n", dlerror() );
 
 	if( !launcher )
-		launcher = dlopen( "bin/launcher" DLL_EXT_STRING, RTLD_NOW );
+		launcher = dlopen( "bin_linux/launcher" DLL_EXT_STRING, RTLD_NOW );
 
 	if ( !launcher )
 	{

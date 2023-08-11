@@ -373,7 +373,7 @@ CSysModule *Sys_LoadModule( const char *pModuleName, Sys_Flags flags /* = SYS_NO
 			return reinterpret_cast<CSysModule *>(hDLL);
 		}
 #else
-		Q_snprintf( szAbsoluteModuleName, sizeof(szAbsoluteModuleName), "%s/bin/%s", szCwd, pModuleName );
+		Q_snprintf( szAbsoluteModuleName, sizeof(szAbsoluteModuleName), "%s/bin_%s/%s", szCwd, DEST_OS, pModuleName );
 #endif
 		Msg("LoadLibrary: pModule: %s, path: %s\n", pModuleName, szAbsoluteModuleName);
 

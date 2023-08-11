@@ -128,10 +128,10 @@ defaultConfigInfo_t PortalInfo =
 defaultConfigInfo_t SourceBoxInfo =
 {
 	"SourceBox",
-	"sourcebox",
+	"sourcebox_" DEST_OS,
 	"sourcebox.fgd",
 	"info_player_start",
-	"sourcebox.exe",
+	"sourcebox_" DEST_OS ".exe",
 	GetAppSteamAppId(k_App_SOURCEBOX)
 };
 

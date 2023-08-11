@@ -410,7 +410,24 @@ void GamepadUIButton::FireActionSignal()
 {
     BaseClass::FireActionSignal();
 
-    PostMessageToAllSiblingsOfType< GamepadUIButton >( new KeyValues( "OnSiblingGamepadUIButtonOpened" ) );
+    KeyValues* msg = new KeyValues("OnSiblingGamepadUIButtonOpened");
+    Panel* parent = GetParent();
+    if (parent)
+    {
+        int nChildCount = parent->GetChildCount();
+        for (int i = 0; i < nChildCount; ++i)
+        {
+            Panel* sibling = parent->GetChild(i);
+            if (sibling == this)
+                continue;
+            if (dynamic_cast<GamepadUIButton*>(sibling))
+            {
+                PostMessage(sibling->GetVPanel(), msg->MakeCopy(), 0.0f);
+            }
+        }
+    }
+
+    msg->deleteThis();
 }
 
 void GamepadUIButton::OnSiblingGamepadUIButtonOpened()

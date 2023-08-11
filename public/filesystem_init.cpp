@@ -322,7 +322,7 @@ bool FileSystem_GetExecutableDir( char *exedir, int exeDirLen )
 		}
 		if ( pProject )
 		{
-			Q_snprintf( exedir, exeDirLen, "%s%c..%cbin", pProject, CORRECT_PATH_SEPARATOR, CORRECT_PATH_SEPARATOR );
+			Q_snprintf( exedir, exeDirLen, "%s%c..%cbin_" DEST_OS, pProject, CORRECT_PATH_SEPARATOR, CORRECT_PATH_SEPARATOR );
 			return true;
 		}
 		return false;
@@ -354,10 +354,10 @@ bool FileSystem_GetExecutableDir( char *exedir, int exeDirLen )
 	{
 		Q_strncat( exedir, CORRECT_PATH_SEPARATOR_S, exeDirLen, COPY_ALL_CHARACTERS );
 		Q_strncat( exedir, libDir, exeDirLen, COPY_ALL_CHARACTERS );
+		Q_strncat( exedir, "_" DEST_OS, exeDirLen, COPY_ALL_CHARACTERS);
 		Q_FixSlashes( exedir );
 	}
 #endif
-
 	return true;
 }
 
@@ -1146,7 +1146,7 @@ FSReturnCode_t FileSystem_GetFileSystemDLLName( char *pFileSystemDLL, int nMaxLe
 	char executablePath[MAX_PATH];
 	if ( !FileSystem_GetExecutableDir( executablePath, sizeof( executablePath ) )	)
 		return SetupFileSystemError( false, FS_INVALID_PARAMETERS, "FileSystem_GetExecutableDir failed." );
-
+	
 	// Assume we'll use local files
 	Q_snprintf( pFileSystemDLL, nMaxLen, "%s%clibfilesystem_stdio" DLL_EXT_STRING, executablePath, CORRECT_PATH_SEPARATOR );
 
