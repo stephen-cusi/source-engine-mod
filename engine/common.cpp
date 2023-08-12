@@ -427,7 +427,7 @@ bool COM_CheckGameDirectory( const char *gamedir )
 	{
 		// Changing game directories without restarting is not permitted any more
 		ConMsg( "COM_CheckGameDirectory: game directories don't match (%s / %s)\n", szGD, gamedir );
-		return false;
+		return true;
 	}
 
 	return true;
@@ -830,7 +830,7 @@ const char *COM_GetModDirectory()
 	static char modDir[MAX_PATH];
 	if ( Q_strlen( modDir ) == 0 )
 	{
-		const char *gamedir = CommandLine()->ParmValue("-game", CommandLine()->ParmValue( "-defaultgamedir", "hl2" ) );
+		const char *gamedir = CommandLine()->ParmValue("-game", CommandLine()->ParmValue( "-defaultgamedir", "sourcebox_" DEST_OS ) );
 		Q_strncpy( modDir, gamedir, sizeof(modDir) );
 		if ( strchr( modDir, '/' ) || strchr( modDir, '\\' ) )
 		{

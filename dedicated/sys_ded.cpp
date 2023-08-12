@@ -263,6 +263,7 @@ bool CDedicatedAppSystemGroup::PreInit( )
 	steamInfo.m_bSetSteamDLLPath = false;
 	steamInfo.m_bSteam = g_pFullFileSystem->IsSteam();
 	steamInfo.m_bNoGameInfo = steamInfo.m_bSteam;
+	setenv(GAMEDIR_TOKEN, "sourcebox_" DEST_OS, 1);
 	if ( FileSystem_SetupSteamEnvironment( steamInfo ) != FS_OK )
 		return false;
 
@@ -317,8 +318,8 @@ int CDedicatedAppSystemGroup::Main( )
 	ModInfo_t info;
 	info.m_pInstance = GetAppInstance();
 	info.m_pBaseDirectory = UTIL_GetBaseDir();
-	info.m_pInitialMod = CommandLine()->ParmValue( "-game", "hl2" );
-	info.m_pInitialGame = CommandLine()->ParmValue( "-defaultgamedir", "hl2" );
+	info.m_pInitialMod = CommandLine()->ParmValue( "-game", "sourcebox_" DEST_OS );
+	info.m_pInitialGame = CommandLine()->ParmValue( "-defaultgamedir", "sourcebox_" DEST_OS );
 	info.m_pParentAppSystemGroup = this;
 	info.m_bTextMode = CommandLine()->CheckParm( "-textmode" );
 

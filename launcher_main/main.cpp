@@ -217,12 +217,12 @@ static void WaitForDebuggerConnect( int argc, char *argv[], int time )
 int main( int argc, char *argv[] )
 {
 	char ld_path[4196];
-	char *path = "bin/";
+	char *path = "bin_" DEST_OS "/";
 	char *ld_env;
 
 	if( (ld_env = getenv("LD_LIBRARY_PATH")) != NULL )
 	{
-		snprintf(ld_path, sizeof(ld_path), "%s:bin_linux/", ld_env);
+		snprintf(ld_path, sizeof(ld_path), "%s:bin_" DEST_OS "/", ld_env);
 		path = ld_path;
 	}
 
@@ -235,12 +235,12 @@ int main( int argc, char *argv[] )
 		execve(argv[0], argv, environ);
 	}
 
-	void *launcher = dlopen( "bin_linux/liblauncher" DLL_EXT_STRING, RTLD_NOW );
+	void *launcher = dlopen( "bin_" DEST_OS "/liblauncher" DLL_EXT_STRING, RTLD_NOW );
 	if ( !launcher )
 		fprintf( stderr, "%s\nFailed to load the launcher\n", dlerror() );
 
 	if( !launcher )
-		launcher = dlopen( "bin_linux/launcher" DLL_EXT_STRING, RTLD_NOW );
+		launcher = dlopen( "bin_" DEST_OS "/launcher" DLL_EXT_STRING, RTLD_NOW );
 
 	if ( !launcher )
 	{

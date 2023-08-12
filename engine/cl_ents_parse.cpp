@@ -41,12 +41,12 @@ static ConVar cl_deltatrace( "cl_deltatrace", "0", 0, "For debugging, print enti
 //-----------------------------------------------------------------------------
 
 
-// #define DEBUG_NETWORKING 1
+//#define DEBUG_NETWORKING 1
 
 #if defined( DEBUG_NETWORKING )
 void SpewToFile( char const* pFmt, ... );
 static ConVar cl_packettrace( "cl_packettrace", "1", 0, "For debugging, massive spew to file." );
-#define TRACE_PACKET( text ) if ( cl_packettrace.GetInt() ) { SpewToFile text ; };
+#define TRACE_PACKET( text, ... ) Msg(text __VA_OPT__(,) __VA_ARGS__);
 #else
 #define TRACE_PACKET( text )
 #endif
@@ -81,6 +81,7 @@ static FileHandle_t OpenRecordingFile()
 
 void SpewToFile( char const* pFmt, ... )
 {
+	
 	static CUtlVector<unsigned char> s_RecordingBuffer;
 
 	char temp[2048];
@@ -90,7 +91,6 @@ void SpewToFile( char const* pFmt, ... )
 	int len = Q_vsnprintf( temp, sizeof( temp ), pFmt, args );
 	va_end( args );
 	assert( len < 2048 );
-
 	int idx = s_RecordingBuffer.AddMultipleToTail( len );
 	memcpy( &s_RecordingBuffer[idx], temp, len );
 	if ( 1 ) //s_RecordingBuffer.Size() > 8192)

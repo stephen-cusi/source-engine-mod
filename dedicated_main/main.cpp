@@ -90,12 +90,12 @@ int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 #ifdef _DEBUG
 	int len =
 #endif
-	_snprintf( szBuffer, sizeof( szBuffer ) - 1, "PATH=%s\\bin\\;%s", pRootDir, pPath );
+	_snprintf( szBuffer, sizeof( szBuffer ) - 1, "PATH=%s\\bin_" DEST_OS "\\;%s", pRootDir, pPath );
 	szBuffer[ ARRAYSIZE(szBuffer) - 1 ] = 0;
 	assert( len < 4096 );
 	_putenv( szBuffer );
 
-	HINSTANCE launcher = LoadLibrary("bin\\dedicated.dll"); // STEAM OK ... filesystem not mounted yet
+	HINSTANCE launcher = LoadLibrary("bin_" DEST_OS "\\dedicated.dll"); // STEAM OK ... filesystem not mounted yet
 	if (!launcher)
 	{
 		char *pszError;
@@ -197,20 +197,30 @@ int main( int argc, char *argv[] )
 		printf( "getcwd failed (%s)", strerror(errno));
 	}
 
-	snprintf( szBuffer, sizeof( szBuffer ) - 1, "LD_LIBRARY_PATH=%s/bin:%s", cwd, pPath );
+	snprintf( szBuffer, sizeof( szBuffer ) - 1, "LD_LIBRARY_PATH=%s/bin_" DEST_OS "/:%s", cwd,pPath );
+	
 	int ret = putenv( szBuffer );
 	if ( ret )	
 	{
 		printf( "%s\n", strerror(errno) );
 	}
-	void *tier0 = dlopen( "libtier0" DLL_EXT_STRING, RTLD_NOW );
-	void *vstdlib = dlopen( "libvstdlib" DLL_EXT_STRING, RTLD_NOW );
+	
+	extern char** environ;
+	if( getenv("NO_EXECVE_AGAIN") == NULL )
+	{
+		setenv("NO_EXECVE_AGAIN", "1", 1);
+		execve(argv[0], argv, environ);
+	}
+	
+	void *tier0 = dlopen( "bin_" DEST_OS "/libtier0" DLL_EXT_STRING, RTLD_NOW );
 
-	const char *pBinaryName = "bin/dedicated" DLL_EXT_STRING;
+	void *vstdlib = dlopen( "bin_" DEST_OS "/libvstdlib" DLL_EXT_STRING, RTLD_NOW );
+
+	const char *pBinaryName = "bin_" DEST_OS "/dedicated" DLL_EXT_STRING;
 
 	void *dedicated = dlopen( pBinaryName, RTLD_NOW );
 	if ( !dedicated )
-		dedicated = dlopen( "bin/libdedicated" DLL_EXT_STRING, RTLD_NOW );
+		dedicated = dlopen( "bin_" DEST_OS "/libdedicated" DLL_EXT_STRING, RTLD_NOW );
 
 	if ( !dedicated )
 	{

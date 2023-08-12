@@ -400,8 +400,8 @@ BITBUF_INLINE void bf_write::WriteUBitLong( unsigned int curData, int numbits, b
 	}
 	Assert( numbits >= 0 && numbits <= 32 );
 #endif
-
-	if ( GetNumBitsLeft() < numbits )
+	int left = GetNumBitsLeft();
+	if ( left < numbits )
 	{
 		m_iCurBit = m_nDataBits;
 		SetOverflowFlag();
@@ -769,7 +769,7 @@ BITBUF_INLINE unsigned int bf_read::ReadUBitVar()
 BITBUF_INLINE unsigned int bf_read::ReadUBitLong( int numbits ) RESTRICT
 {
 	Assert( numbits > 0 && numbits <= 32 );
-
+	
 	if ( GetNumBitsLeft() < numbits )
 	{
 		m_iCurBit = m_nDataBits;

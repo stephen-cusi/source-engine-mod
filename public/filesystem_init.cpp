@@ -357,6 +357,7 @@ bool FileSystem_GetExecutableDir( char *exedir, int exeDirLen )
 		Q_strncat( exedir, "_" DEST_OS, exeDirLen, COPY_ALL_CHARACTERS);
 		Q_FixSlashes( exedir );
 	}
+	Msg("Exedir: %s\n",exedir);
 #endif
 	return true;
 }
@@ -944,7 +945,7 @@ FSReturnCode_t LocateGameInfoFile( const CFSSteamSetupInfo &fsInfo, char *pOutDi
 			FS_OK == TryLocateGameInfoFile( pOutDir, outDirLen, bBubbleDir ) )
 			return FS_OK;
 	}
-
+	
 	// Try to use the environment variable / registry
 	if ( ( pProject = getenv( GAMEDIR_TOKEN ) ) != NULL &&
 		 ( Q_MakeAbsolutePath( pOutDir, outDirLen, pProject ), 1 ) &&

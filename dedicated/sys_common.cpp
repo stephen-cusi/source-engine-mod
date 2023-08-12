@@ -262,7 +262,7 @@ const char *UTIL_GetExecutableDir( )
 		exedir[exeLen-2] != 'i' || 
 		exedir[exeLen-1] != 'n' )
 	{
-		Q_strncat( exedir, "\\bin", sizeof( exedir ), COPY_ALL_CHARACTERS );
+		Q_strncat( exedir, "\\bin_" DEST_OS, sizeof( exedir ), COPY_ALL_CHARACTERS );
 		Q_FixSlashes( exedir );
 	}
 

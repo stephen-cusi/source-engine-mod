@@ -63,7 +63,7 @@ def build(bld):
 
 	install_path = bld.env.PREFIX
 	if bld.env.DEST_OS != 'android':
-		install_path += '/'+bld.env.GAMES+'_'+bld.env.DEST_OS+'/bin'
+		install_path += '/'+bld.env.GAMES+'_'+bld.env.DEST_OS+("_srcds/bin" if bld.env.DEDICATED else '/bin')
 
 	source = game["sources"] + ['../../public/tier0/memoverride.cpp']
 	includes += game["includes"]

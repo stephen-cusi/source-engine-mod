@@ -83,7 +83,7 @@ int StartVGUI( CreateInterfaceFn dedicatedFactory )
 	vgui::ivgui()->Start();
 
 	// load the module
-	g_pFullFileSystem->GetLocalCopy("bin/AdminServer.dll");
+	g_pFullFileSystem->GetLocalCopy("bin_" DEST_OS "/AdminServer.dll");
 	g_hAdminServerModule = g_pFullFileSystem->LoadModule("AdminServer");
 	Assert(g_hAdminServerModule != NULL);
 	CreateInterfaceFn adminFactory = NULL;

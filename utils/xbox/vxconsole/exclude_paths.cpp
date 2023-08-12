@@ -28,7 +28,7 @@ struct GamePath_t
 
 GameName_t g_GameNames[] = 
 {
-	{ "bin",		false },
+	{ "bin_" DEST_OS,		false },
 	{ "platform",	false },
 	{ "tf",			true },
 	{ "portal",		true },

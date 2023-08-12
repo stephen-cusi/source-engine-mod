@@ -1424,13 +1424,19 @@ inline bool Plat_IsInDebugSession( bool bForceRecheck = false ) { return false; 
 #endif
 
 #if defined(_WIN32) 
-#define DEST_OS "win32"
+	#define DEST_OS_BASE "win32"
 #elif defined(PLATFORM_BSD)
-#define DEST_OS "freebsd"
+	#define DEST_OS_BASE "freebsd"
 #elif defined(LINUX)
-#define DEST_OS "linux"
+	#define DEST_OS_BASE "linux"
 #else
-#define DEST_OS ""
+	#define DEST_OS_BASE ""
+#endif
+
+#if defined(DEDICATED)
+	#define DEST_OS DEST_OS_BASE "_srcds"
+#else
+	#define DEST_OS DEST_OS_BASE
 #endif
 
 //-----------------------------------------------------------------------------

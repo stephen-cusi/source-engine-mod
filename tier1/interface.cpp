@@ -272,7 +272,7 @@ static bool s_bRunningWithDebugModules = false;
 #ifdef ANDROID
 #define DEFAULT_LIB_PATH ""
 #else
-#define DEFAULT_LIB_PATH "bin/"
+#define DEFAULT_LIB_PATH "bin_" DEST_OS "/"
 #endif
 
 bool foundLibraryWithPrefix( char *pModuleAbsolutePath, size_t AbsolutePathSize, const char *pPath, const char *pModuleName )
