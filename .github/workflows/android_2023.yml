@@ -66,7 +66,7 @@ jobs:
         export NDK_HOME=$PWD/android-ndk-r10e/
         mkdir ./andriod
         git submodule init;git submodule update
-        ./waf configure -T hl1 -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns --build-game=hl1
+        ./waf configure -T debug -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns --build-game=hl1
         ./waf install -j4 --strip --target=client,server
         cat build/config.log > ./andriod/info.txt
     - uses: actions/upload-artifact@v3
