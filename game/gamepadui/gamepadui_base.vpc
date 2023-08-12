@@ -81,6 +81,7 @@ $Project
         {
             $File "$SRCDIR\public\vgui_controls\vgui_controls.cpp"
             $File "$SRCDIR\common\language.cpp"
+            $File "$SRCDIR\mathlib\mathlib_base.cpp"
         }
 
         $File "gamepadui_achievements.cpp"
