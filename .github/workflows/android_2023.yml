@@ -66,12 +66,12 @@ jobs:
         export NDK_HOME=$PWD/android-ndk-r10e/
         mkdir ./andriod
         git submodule init;git submodule update
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns 
-        ./waf install -j4 --strip
+        ./waf configure -T hl1 -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns --build-game=hl1
+        ./waf install -j4 --strip --target=client,server
         cat build/config.log > ./andriod/info.txt
     - uses: actions/upload-artifact@v3
       with:
-        name: 64bit-srceng
+        name: 64bit-srceng-bms
         path: ./andriod
         if-no-files-found: error
 
@@ -132,11 +132,11 @@ jobs:
         export NDK_HOME=$PWD/android-ndk-r10e/
         mkdir ./andriod
         git submodule init;git submodule update
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns 
-        ./waf install -j4 --strip
+        ./waf configure -T debug --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns --build-game=hl1
+        ./waf install -j4 --target=client,server
         cat build/config.log > ./andriod/info.txt
     - uses: actions/upload-artifact@v3
       with:
-        name: 32bit-srceng
+        name: 32bit-srceng-bms
         path: ./andriod
         if-no-files-found: error
