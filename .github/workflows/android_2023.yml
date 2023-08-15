@@ -9,48 +9,48 @@ on:
       - "*"
 
 jobs:
-  # build-mod-64bit:
-    # runs-on: ubuntu-20.04
+  build-mod-64bit:
+    runs-on: ubuntu-latest
 
-    # steps:
-    # - uses: actions/checkout@v3
-    # - name: Build-hl2mp_cstrike_hl1
-      # run: |
-        # wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        # sudo apt update;sudo apt upgrade;sudo apt install ccache
-        # unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        # wget https://apt.llvm.org/llvm.sh
-        # chmod +x llvm.sh
-        # sudo ./llvm.sh 11
-        # export PATH="/usr/lib/llvm-11/bin:$PATH"
-        # mv android-ndk-r10e ndk/
-        # export ANDROID_NDK_HOME=$(pwd)/ndk
-        # mkdir ./andriod
-        # mkdir ./andriod/hl2mp
-        # mkdir ./andriod/hl1
-        # mkdir ./andriod/hl1mp
-        # mkdir ./andriod/cstrike
-        # git submodule init;git submodule update
-        # ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
-        # ./waf install --target=client,server -j4
-        # ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
-        # ./waf install --target=client,server -j4
-        # ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
-        # ./waf install --target=client,server -j4
-        # ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
-        # #test hldms
-        # ./waf install --target=client,server -j4
-        # #mv ./andriod/lib ./andriod/cstrike
-        # cat build/config.log >./andriod/info.txt
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build-hl2mp_cstrike_hl1
+      run: |
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 11
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+        mkdir ./andriod
+        mkdir ./andriod/hl2mp
+        mkdir ./andriod/hl1
+        mkdir ./andriod/hl1mp
+        mkdir ./andriod/cstrike
+        git submodule init;git submodule update
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
+        #test hldms
+        ./waf install --target=client,server -j4 --strip
+        #mv ./andriod/lib ./andriod/cstrike
+        cat build/config.log >./andriod/info.txt
         
-    # - uses: actions/upload-artifact@v3
-      # with:
-        # name: 64bit-mod_x4
-        # path: ./andriod
-        # if-no-files-found: error
+    - uses: actions/upload-artifact@v3
+      with:
+        name: 64bit-mod_x4
+        path: ./andriod
+        if-no-files-found: error
 
   build-srceng-arm64:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
@@ -75,48 +75,48 @@ jobs:
         path: ./andriod
         if-no-files-found: error
 
-  # build-mod-32bit:
-    # runs-on: ubuntu-20.04
+  build-mod-32bit:
+    runs-on: ubuntu-latest
 
-    # steps:
-    # - uses: actions/checkout@v3
-    # - name: Build-hl2mp_cstrike_hl1
-      # run: |
-        # wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        # sudo apt update;sudo apt upgrade;sudo apt install ccache
-        # unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        # wget https://apt.llvm.org/llvm.sh
-        # chmod +x llvm.sh
-        # sudo ./llvm.sh 11
-        # export PATH="/usr/lib/llvm-11/bin:$PATH"
-        # mv android-ndk-r10e ndk/
-        # export ANDROID_NDK_HOME=$(pwd)/ndk
-        # mkdir ./andriod
-        # mkdir ./andriod/hl2mp
-        # mkdir ./andriod/hl1
-        # mkdir ./andriod/hl1mp
-        # mkdir ./andriod/cstrike
-        # git submodule init;git submodule update
-        # ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
-        # ./waf install --target=client,server -j4
-        # ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
-        # ./waf install --target=client,server -j4
-        # ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
-        # ./waf install --target=client,server -j4
-        # ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
-        # #test hldms
-        # ./waf install --target=client,server -j4
-        # #mv ./andriod/lib ./andriod/cstrike
-        # cat build/config.log >./andriod/info.txt
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build-hl2mp_cstrike_hl1
+      run: |
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 11
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+        mkdir ./andriod
+        mkdir ./andriod/hl2mp
+        mkdir ./andriod/hl1
+        mkdir ./andriod/hl1mp
+        mkdir ./andriod/cstrike
+        git submodule init;git submodule update
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
+        #test hldms
+        ./waf install --target=client,server -j4 --strip
+        #mv ./andriod/lib ./andriod/cstrike
+        cat build/config.log >./andriod/info.txt
         
-    # - uses: actions/upload-artifact@v3
-      # with:
-        # name: 32bit-mod_x4
-        # path: ./andriod
-        # if-no-files-found: error
+    - uses: actions/upload-artifact@v3
+      with:
+        name: 32bit-mod_x4
+        path: ./andriod
+        if-no-files-found: error
 
   build-srceng-arm32:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
@@ -138,5 +138,76 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: 32bit-srceng
+        path: ./andriod
+        if-no-files-found: error
+  
+  build-mod-64bit_extra:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build-hl2mp_cstrike_hl1
+      run: |
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 11
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+        mkdir ./andriod/dod
+        mkdir ./andriod/portal
+        mkdir ./andriod/episodic
+        git submodule init;git submodule update
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/dod --disable-warns --build-game=dod 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/portal --disable-warns --build-game=portal 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/episodic --disable-warns --build-game=episodic 
+        ./waf install --target=client,server -j4 --strip --strip
+    - uses: actions/upload-artifact@v3
+      with:
+        name: 64bit-modx3
+        path: ./andriod
+        if-no-files-found: error
+
+  build-mod-32bit_extra:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build-hl2mp_cstrike_hl1
+      run: |
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 11
+        export PATH="/usr/lib/llvm-11/bin:$PATH"
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+        mkdir ./andriod
+        mkdir ./andriod/portal
+        mkdir ./andriod/dod
+        mkdir ./andriod/episodic
+        git submodule init;git submodule update
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/portal --disable-warns --build-game=portal
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/dod --disable-warns --build-game=dod 
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/episodic --disable-warns --build-game=episodic
+        ./waf install --target=client,server -j4 --strip
+        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
+        #test hldms
+        ./waf install --target=client,server -j4 --strip
+        #mv ./andriod/lib ./andriod/cstrike
+        cat build/config.log >./andriod/info.txt
+        
+    - uses: actions/upload-artifact@v3
+      with:
+        name: 32bit-mod_x3
         path: ./andriod
         if-no-files-found: error
