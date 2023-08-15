@@ -157,8 +157,8 @@ jobs:
         export PATH="/usr/lib/llvm-11/bin:$PATH"
         mv android-ndk-r10e ndk/
         export ANDROID_NDK_HOME=$(pwd)/ndk
-        mkdir ./android
-        mkdir ./andriod/dod
+        #
+        mkdir -p andriod/dod
         mkdir ./andriod/portal
         mkdir ./andriod/episodic
         git submodule init;git submodule update
