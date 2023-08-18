@@ -86,6 +86,10 @@ extern IGameMovement *g_pGameMovement;
 
 #if defined( PLAYER_GETTING_STUCK_TESTING )
 
+ConVar cl_viewbob_enabled	( "cl_viewbob_enabled", "1", 0, "Oscillation Toggle" );
+ConVar cl_viewbob_timer		( "cl_viewbob_timer", "10", 0, "Speed of Oscillation" );
+ConVar cl_viewbob_scale		( "cl_viewbob_scale", "0.01", 0, "Magnitude of Oscillation" );
+
 // If you ever get stuck walking around, then you can run this code to find the code which would leave the player in a bad spot
 void CMoveData::SetAbsOrigin( const Vector &vec )
 {
@@ -1916,6 +1920,13 @@ void CGameMovement::WalkMove( void )
 	// Copy movement amounts
 	fmove = mv->m_flForwardMove;
 	smove = mv->m_flSideMove;
+
+	if ( cl_viewbob_enabled.GetBool() && !engine->IsPaused() )
+	{
+		float xoffset = sin( gpGlobals->curtime * cl_viewbob_timer.GetFloat() ) * player->GetAbsVelocity().Length() * cl_viewbob_scale.GetFloat() / 100;
+		float yoffset = sin( 2 * gpGlobals->curtime * cl_viewbob_timer.GetFloat() ) * player->GetAbsVelocity().Length() * cl_viewbob_scale.GetFloat() / 400;
+		player->ViewPunch( QAngle( xoffset, yoffset, 0 ) );
+	}
 
 	// Zero out z components of movement vectors
 	if ( g_bMovementOptimizations )
