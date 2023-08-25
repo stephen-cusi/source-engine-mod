@@ -11,7 +11,7 @@ on:
 
 jobs:
   build-srceng-server-win-32-hl2dm:
-    runs-on: windows-latest
+    runs-on: windows-2019
 
     steps:
     - uses: actions/checkout@v3
@@ -20,20 +20,20 @@ jobs:
         
         git submodule init;git submodule update
         #sudo apt update;sudo apt upgrade;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
-        ./waf.bat configure -T debug --prefix=./win --disable-warns -d
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=cstrike
         ./waf.bat install -j4
         
         cat build/config.log >./win/info.txt
         
     - uses: actions/upload-artifact@v3
       with:
-        name: win32-hl2dm-server
+        name: win64-cstrike
         path: ./win
         if-no-files-found: error
 
 
   build-srceng-win-hl2dm:
-    runs-on: windows-latest
+    runs-on: windows-2019
 
     steps:
     - uses: actions/checkout@v3
@@ -41,12 +41,12 @@ jobs:
       run: |
         #
         git submodule init;git submodule update
-        ./waf.bat configure -T debug -8 --prefix=./win --disable-warns --build-game=hl2mp 
+        ./waf.bat configure -T release -8 --prefix=./win --disable-warns --build-game=cstrike
         
         ./waf.bat install -j4
         cat build/config.log > ./win/info.txt
     - uses: actions/upload-artifact@v3
       with:
-        name: hl2dm-win32
+        name: cstrike-win32
         path: ./win
         if-no-files-found: error
