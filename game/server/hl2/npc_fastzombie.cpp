@@ -390,7 +390,7 @@ void CFastZombie::Precache( void )
 {
 	PrecacheModel("models/zombie/fast.mdl");
 #ifdef HL2_EPISODIC
-	PrecacheModel("models/zombie/Fast_torso.mdl");
+	PrecacheModel("models/zombie/fast_torso.mdl");
 	PrecacheScriptSound( "NPC_FastZombie.CarEnter1" );
 	PrecacheScriptSound( "NPC_FastZombie.CarEnter2" );
 	PrecacheScriptSound( "NPC_FastZombie.CarEnter3" );
