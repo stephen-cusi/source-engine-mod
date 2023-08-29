@@ -397,6 +397,11 @@ void CHL2MP_Player::SetPlayerTeamModel( void )
 
 	int modelIndex = modelinfo->GetModelIndex( szModelName );
 
+	if ( modelIndex == -1 )
+	{
+		PrecacheModel ( szModelName );
+	}
+
 	if ( modelIndex == -1 || ValidatePlayerModel( szModelName ) == false )
 	{
 		szModelName = "models/player/combine_soldier.mdl";
@@ -517,6 +522,11 @@ void CHL2MP_Player::SetPlayerModel( void )
 	}
 
 	int modelIndex = modelinfo->GetModelIndex( szModelName );
+
+	if ( modelIndex == -1 )
+	{
+		PrecacheModel ( szModelName );
+	}
 
 	if ( modelIndex == -1 )
 	{
