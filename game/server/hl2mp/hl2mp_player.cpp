@@ -385,7 +385,9 @@ bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )
 		}
 	}
 
-	return false;
+	//return false;
+	//Todo: add a server-side convar mp_allow_custom_model and check it
+	return true;
 }
 
 void CHL2MP_Player::SetPlayerTeamModel( void )
@@ -408,25 +410,25 @@ void CHL2MP_Player::SetPlayerTeamModel( void )
 
 	if ( GetTeamNumber() == TEAM_COMBINE )
 	{
-		if ( Q_stristr( szModelName, "models/player/human") )
+		/*if ( Q_stristr( szModelName, "models/player/human") )
 		{
 			int nHeads = ARRAYSIZE( g_ppszRandomCombineModels );
 		
 			g_iLastCombineModel = ( g_iLastCombineModel + 1 ) % nHeads;
 			szModelName = g_ppszRandomCombineModels[g_iLastCombineModel];
-		}
+		}*/
 
 		m_iModelType = TEAM_COMBINE;
 	}
 	else if ( GetTeamNumber() == TEAM_REBELS )
 	{
-		if ( !Q_stristr( szModelName, "models/player/human") )
+		/*if ( !Q_stristr( szModelName, "models/player/human") )
 		{
 			int nHeads = ARRAYSIZE( g_ppszRandomCitizenModels );
 
 			g_iLastCitizenModel = ( g_iLastCitizenModel + 1 ) % nHeads;
 			szModelName = g_ppszRandomCitizenModels[g_iLastCitizenModel];
-		}
+		}*/
 
 		m_iModelType = TEAM_REBELS;
 	}
@@ -481,19 +483,19 @@ void CHL2MP_Player::SetPlayerModel( void )
 
 	if ( GetTeamNumber() == TEAM_COMBINE )
 	{
-		int nHeads = ARRAYSIZE( g_ppszRandomCombineModels );
+		/*int nHeads = ARRAYSIZE( g_ppszRandomCombineModels );
 		
 		g_iLastCombineModel = ( g_iLastCombineModel + 1 ) % nHeads;
-		szModelName = g_ppszRandomCombineModels[g_iLastCombineModel];
+		szModelName = g_ppszRandomCombineModels[g_iLastCombineModel];*/
 
 		m_iModelType = TEAM_COMBINE;
 	}
 	else if ( GetTeamNumber() == TEAM_REBELS )
 	{
-		int nHeads = ARRAYSIZE( g_ppszRandomCitizenModels );
+		/*int nHeads = ARRAYSIZE( g_ppszRandomCitizenModels );
 
 		g_iLastCitizenModel = ( g_iLastCitizenModel + 1 ) % nHeads;
-		szModelName = g_ppszRandomCitizenModels[g_iLastCitizenModel];
+		szModelName = g_ppszRandomCitizenModels[g_iLastCitizenModel];*/
 
 		m_iModelType = TEAM_REBELS;
 	}
@@ -504,6 +506,7 @@ void CHL2MP_Player::SetPlayerModel( void )
 			szModelName = g_ppszRandomCitizenModels[0];
 		}
 		if ( Q_stristr( szModelName, "models/player/human") )
+		//if ( Q_stristr( szModelName, "models/player/human") || Q_stristr( szModelName, "models/player/human") )
 		{
 			m_iModelType = TEAM_REBELS;
 		}
@@ -534,7 +537,7 @@ void CHL2MP_Player::SetPlayerModel( void )
 
 void CHL2MP_Player::SetupPlayerSoundsByModel( const char *pModelName )
 {
-	if ( Q_stristr( pModelName, "models/player/human") )
+	/*if ( Q_stristr( pModelName, "models/player/human") )
 	{
 		m_iPlayerSoundType = (int)PLAYER_SOUNDS_CITIZEN;
 	}
@@ -545,6 +548,21 @@ void CHL2MP_Player::SetupPlayerSoundsByModel( const char *pModelName )
 	else if ( Q_stristr(pModelName, "combine" ) )
 	{
 		m_iPlayerSoundType = (int)PLAYER_SOUNDS_COMBINESOLDIER;
+	}*/
+	if ( Q_stristr(pModelName, "police") )
+	{
+		m_iPlayerSoundType = (int)PLAYER_SOUNDS_METROPOLICE;
+		m_iModelType = TEAM_COMBINE;
+	}
+	else if ( Q_stristr(pModelName, "combine" ) )
+	{
+		m_iPlayerSoundType = (int)PLAYER_SOUNDS_COMBINESOLDIER;
+		m_iModelType = TEAM_COMBINE;
+	}
+	else
+	{
+		m_iPlayerSoundType = (int)PLAYER_SOUNDS_CITIZEN;
+		m_iModelType = TEAM_REBELS;
 	}
 }
 
