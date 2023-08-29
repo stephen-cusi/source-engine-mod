@@ -1920,13 +1920,14 @@ void CGameMovement::WalkMove( void )
 	// Copy movement amounts
 	fmove = mv->m_flForwardMove;
 	smove = mv->m_flSideMove;
-
+#if defined( PLAYER_GETTING_STUCK_TESTING )
 	if ( cl_viewbob_enabled.GetBool() && !engine->IsPaused() )
 	{
 		float xoffset = sin( gpGlobals->curtime * cl_viewbob_timer.GetFloat() ) * player->GetAbsVelocity().Length() * cl_viewbob_scale.GetFloat() / 100;
 		float yoffset = sin( 2 * gpGlobals->curtime * cl_viewbob_timer.GetFloat() ) * player->GetAbsVelocity().Length() * cl_viewbob_scale.GetFloat() / 400;
 		player->ViewPunch( QAngle( xoffset, yoffset, 0 ) );
 	}
+#endif
 
 	// Zero out z components of movement vectors
 	if ( g_bMovementOptimizations )
