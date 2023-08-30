@@ -215,6 +215,7 @@ class Android:
 		# TODO: proper STL support
 		return [
 			#os.path.abspath(os.path.join(self.ndk_home, 'sources', 'cxx-stl', 'system', 'include')),
+			os.path.abspath(os.path.join(self.ndk_home, 'sources', 'cxx-stl', 'stlport', 'stlport')),
 			os.path.abspath(os.path.join(self.ndk_home, 'sources', 'android', 'support', 'include'))
 		]
 
@@ -345,12 +346,16 @@ def configure(conf):
 		conf.env.CXXFLAGS += android.cflags(True)
 		conf.env.LINKFLAGS += android.linkflags()
 		conf.env.LDFLAGS += android.ldflags()
-		conf.env.INCLUDES += [
-			os.path.abspath(os.path.join(android.ndk_home, 'sources', 'cxx-stl', 'gnu-libstdc++', '4.9', 'include')),
-			os.path.abspath(os.path.join(android.ndk_home, 'sources', 'cxx-stl', 'gnu-libstdc++', '4.9', 'libs', stlarch, 'include'))
-		]
-		conf.env.STLIBPATH += [os.path.abspath(os.path.join(android.ndk_home, 'sources','cxx-stl','gnu-libstdc++','4.9','libs',stlarch))]
-		conf.env.LDFLAGS += ['-lgnustl_static']
+		conf.env.STLIBPATH += [os.path.abspath(os.path.join(android.ndk_home, 'sources','cxx-stl','stlport','libs',stlarch))]
+		conf.env.LDFLAGS += ['-lstlport_static']
+		
+#		It is for 1.17 version
+#		conf.env.INCLUDES += [
+#			os.path.abspath(os.path.join(android.ndk_home, 'sources', 'cxx-stl', 'gnu-libstdc++', '4.9', 'include')),
+#			os.path.abspath(os.path.join(android.ndk_home, 'sources', 'cxx-stl', 'gnu-libstdc++', '4.9', 'libs', stlarch, 'include'))
+#		]
+#		conf.env.STLIBPATH += [os.path.abspath(os.path.join(android.ndk_home, 'sources','cxx-stl','gnu-libstdc++','4.9','libs',stlarch))]
+#		conf.env.LDFLAGS += ['-lgnustl_static']
 
 		conf.env.HAVE_M = True
 		if android.is_hardfp():

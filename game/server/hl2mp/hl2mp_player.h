@@ -70,7 +70,7 @@ public:
 	virtual bool BumpWeapon( CBaseCombatWeapon *pWeapon );
 	virtual void ChangeTeam( int iTeam );
 	virtual void PickupObject ( CBaseEntity *pObject, bool bLimitMassAndSize );
-	virtual void PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force );
+	//virtual void PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force );
 	virtual void Weapon_Drop( CBaseCombatWeapon *pWeapon, const Vector *pvecTarget = NULL, const Vector *pVelocity = NULL );
 	virtual void UpdateOnRemove( void );
 	virtual void DeathSound( const CTakeDamageInfo &info );
@@ -79,7 +79,7 @@ public:
 	int FlashlightIsOn( void );
 	void FlashlightTurnOn( void );
 	void FlashlightTurnOff( void );
-	void	PrecacheFootStepSounds( void );
+	//void	PrecacheFootStepSounds( void );
 	bool	ValidatePlayerModel( const char *pModel );
 
 	QAngle GetAnimEyeAngles( void ) { return m_angEyeAngles.Get(); }
@@ -134,6 +134,11 @@ public:
 
 	// Tracks our ragdoll entity.
 	CNetworkHandle( CBaseEntity, m_hRagdoll );	// networked entity handle 
+
+	CNetworkVar( float, m_flStartCharge );
+	CNetworkVar( float, m_flAmmoStartCharge );
+	CNetworkVar( float, m_flPlayAftershock );
+	CNetworkVar( float, m_flNextAmmoBurn );
 
 	virtual bool	CanHearAndReadChatFrom( CBasePlayer *pPlayer );
 

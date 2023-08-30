@@ -24,7 +24,7 @@
 
 
 #ifdef CLIENT_DLL
-#define CWeaponShotgun C_WeaponShotgun
+#define CWeaponShotgun_HL1 C_WeaponShotgun_HL1
 #endif
 
 // special deathmatch shotgun spreads
@@ -32,9 +32,9 @@
 #define VECTOR_CONE_DM_DOUBLESHOTGUN Vector( 0.17365, 0.04362, 0.00 ) // 20 degrees by 5 degrees
 
 
-class CWeaponShotgun : public CBaseHL1MPCombatWeapon
+class CWeaponShotgun_HL1 : public CBaseHL1MPCombatWeapon
 {
-	DECLARE_CLASS( CWeaponShotgun, CBaseHL1MPCombatWeapon );
+	DECLARE_CLASS( CWeaponShotgun_HL1, CBaseHL1MPCombatWeapon );
 
 	DECLARE_NETWORKCLASS(); 
 	DECLARE_PREDICTABLE();
@@ -59,17 +59,76 @@ public:
 //	DECLARE_SERVERCLASS();
 //	DECLARE_DATADESC();
 
-	CWeaponShotgun(void);
+	CWeaponShotgun_HL1(void);
 
-//#ifndef CLIENT_DLL
-//	DECLARE_ACTTABLE();
-//#endif
+#ifndef CLIENT_DLL
+	DECLARE_ACTTABLE();
+#endif
 };
 
+#ifndef CLIENT_DLL
+acttable_t	CWeaponShotgun_HL1::m_acttable[] =
+{
+	{ ACT_HL2MP_IDLE, ACT_HL2MP_IDLE_SHOTGUN, false },
+	{ ACT_HL2MP_RUN, ACT_HL2MP_RUN_SHOTGUN, false },
+	{ ACT_HL2MP_IDLE_CROUCH, ACT_HL2MP_IDLE_CROUCH_SHOTGUN, false },
+	{ ACT_HL2MP_WALK_CROUCH, ACT_HL2MP_WALK_CROUCH_SHOTGUN, false },
+	{ ACT_HL2MP_GESTURE_RANGE_ATTACK, ACT_HL2MP_GESTURE_RANGE_ATTACK_SHOTGUN, false },
+	{ ACT_HL2MP_GESTURE_RELOAD, ACT_HL2MP_GESTURE_RELOAD_SHOTGUN, false },
+	{ ACT_HL2MP_JUMP, ACT_HL2MP_JUMP_SHOTGUN, false },
+	{ ACT_RANGE_ATTACK1, ACT_RANGE_ATTACK_SHOTGUN, false },
+	{ ACT_IDLE, ACT_IDLE_SMG1, true },	// FIXME: hook to shotgun unique
+	{ ACT_RELOAD, ACT_RELOAD_SHOTGUN, false },
+	{ ACT_WALK, ACT_WALK_RIFLE, true },
+	{ ACT_IDLE_ANGRY, ACT_IDLE_ANGRY_SHOTGUN, true },
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponShotgun, DT_WeaponShotgun );
+	// Readiness activities (not aiming)
+	{ ACT_IDLE_RELAXED, ACT_IDLE_SHOTGUN_RELAXED, false },//never aims
+	{ ACT_IDLE_STIMULATED, ACT_IDLE_SHOTGUN_STIMULATED, false },
+	{ ACT_IDLE_AGITATED, ACT_IDLE_SHOTGUN_AGITATED, false },//always aims
 
-BEGIN_NETWORK_TABLE( CWeaponShotgun, DT_WeaponShotgun )
+	{ ACT_WALK_RELAXED, ACT_WALK_RIFLE_RELAXED, false },//never aims
+	{ ACT_WALK_STIMULATED, ACT_WALK_RIFLE_STIMULATED, false },
+	{ ACT_WALK_AGITATED, ACT_WALK_AIM_RIFLE, false },//always aims
+
+	{ ACT_RUN_RELAXED, ACT_RUN_RIFLE_RELAXED, false },//never aims
+	{ ACT_RUN_STIMULATED, ACT_RUN_RIFLE_STIMULATED, false },
+	{ ACT_RUN_AGITATED, ACT_RUN_AIM_RIFLE, false },//always aims
+
+	// Readiness activities (aiming)
+	{ ACT_IDLE_AIM_RELAXED, ACT_IDLE_SMG1_RELAXED, false },//never aims	
+	{ ACT_IDLE_AIM_STIMULATED, ACT_IDLE_AIM_RIFLE_STIMULATED, false },
+	{ ACT_IDLE_AIM_AGITATED, ACT_IDLE_ANGRY_SMG1, false },//always aims
+
+	{ ACT_WALK_AIM_RELAXED, ACT_WALK_RIFLE_RELAXED, false },//never aims
+	{ ACT_WALK_AIM_STIMULATED, ACT_WALK_AIM_RIFLE_STIMULATED, false },
+	{ ACT_WALK_AIM_AGITATED, ACT_WALK_AIM_RIFLE, false },//always aims
+
+	{ ACT_RUN_AIM_RELAXED, ACT_RUN_RIFLE_RELAXED, false },//never aims
+	{ ACT_RUN_AIM_STIMULATED, ACT_RUN_AIM_RIFLE_STIMULATED, false },
+	{ ACT_RUN_AIM_AGITATED, ACT_RUN_AIM_RIFLE, false },//always aims
+	//End readiness activities
+
+	{ ACT_WALK_AIM, ACT_WALK_AIM_SHOTGUN, true },
+	{ ACT_WALK_CROUCH, ACT_WALK_CROUCH_RIFLE, true },
+	{ ACT_WALK_CROUCH_AIM, ACT_WALK_CROUCH_AIM_RIFLE, true },
+	{ ACT_RUN, ACT_RUN_RIFLE, true },
+	{ ACT_RUN_AIM, ACT_RUN_AIM_SHOTGUN, true },
+	{ ACT_RUN_CROUCH, ACT_RUN_CROUCH_RIFLE, true },
+	{ ACT_RUN_CROUCH_AIM, ACT_RUN_CROUCH_AIM_RIFLE, true },
+	{ ACT_GESTURE_RANGE_ATTACK1, ACT_GESTURE_RANGE_ATTACK_SHOTGUN, true },
+	{ ACT_RANGE_ATTACK1_LOW, ACT_RANGE_ATTACK_SHOTGUN_LOW, true },
+	{ ACT_RELOAD_LOW, ACT_RELOAD_SHOTGUN_LOW, false },
+	{ ACT_GESTURE_RELOAD, ACT_GESTURE_RELOAD_SHOTGUN, false },
+};
+
+IMPLEMENT_ACTTABLE(CWeaponShotgun_HL1);
+
+#endif
+
+IMPLEMENT_NETWORKCLASS_ALIASED( WeaponShotgun_HL1, DT_WeaponShotgun_HL1 );
+
+BEGIN_NETWORK_TABLE( CWeaponShotgun_HL1, DT_WeaponShotgun_HL1 )
 #ifdef CLIENT_DLL
 	RecvPropFloat( RECVINFO( m_flPumpTime ) ),
 	RecvPropInt( RECVINFO( m_fInSpecialReload ) ),
@@ -79,26 +138,26 @@ BEGIN_NETWORK_TABLE( CWeaponShotgun, DT_WeaponShotgun )
 #endif
 END_NETWORK_TABLE()
 
-BEGIN_PREDICTION_DATA( CWeaponShotgun )
+BEGIN_PREDICTION_DATA( CWeaponShotgun_HL1 )
 #ifdef CLIENT_DLL
 	DEFINE_PRED_FIELD( m_flPumpTime, FIELD_FLOAT, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_fInSpecialReload, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 #endif
 END_PREDICTION_DATA()
 
-LINK_ENTITY_TO_CLASS( weapon_shotgun, CWeaponShotgun );
-PRECACHE_WEAPON_REGISTER(weapon_shotgun);
+LINK_ENTITY_TO_CLASS( weapon_shotgun_hl1, CWeaponShotgun_HL1 );
+PRECACHE_WEAPON_REGISTER(weapon_shotgun_hl1);
 
-//IMPLEMENT_SERVERCLASS_ST( CWeaponShotgun, DT_WeaponShotgun )
+//IMPLEMENT_SERVERCLASS_ST( CWeaponShotgun_HL1, DT_WeaponShotgun_HL1 )
 //END_SEND_TABLE()
 
-//BEGIN_DATADESC( CWeaponShotgun )
+//BEGIN_DATADESC( CWeaponShotgun_HL1 )
 //END_DATADESC()
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponShotgun::CWeaponShotgun( void )
+CWeaponShotgun_HL1::CWeaponShotgun_HL1( void )
 {
 	m_bReloadsSingly	= true;
 	m_bFiresUnderwater	= false;
@@ -107,12 +166,12 @@ CWeaponShotgun::CWeaponShotgun( void )
 }
 
 
-void CWeaponShotgun::Precache( void )
+void CWeaponShotgun_HL1::Precache( void )
 {
 	BaseClass::Precache();
 }
 
-void CWeaponShotgun::PrimaryAttack( void )
+void CWeaponShotgun_HL1::PrimaryAttack( void )
 {
 	// Only the player fires this way so we can cast
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -190,7 +249,7 @@ void CWeaponShotgun::PrimaryAttack( void )
 }
 
 
-void CWeaponShotgun::SecondaryAttack( void )
+void CWeaponShotgun_HL1::SecondaryAttack( void )
 {
 	// Only the player fires this way so we can cast
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -279,7 +338,7 @@ void CWeaponShotgun::SecondaryAttack( void )
 }
 
 
-bool CWeaponShotgun::Reload( void )
+bool CWeaponShotgun_HL1::Reload( void )
 {
 	CBaseCombatCharacter *pOwner  = GetOwner();
 	
@@ -333,7 +392,7 @@ bool CWeaponShotgun::Reload( void )
 }
 
 
-void CWeaponShotgun::FillClip( void )
+void CWeaponShotgun_HL1::FillClip( void )
 {
 	CBaseCombatCharacter *pOwner  = GetOwner();
 	
@@ -346,7 +405,7 @@ void CWeaponShotgun::FillClip( void )
 }
 
 
-void CWeaponShotgun::DryFire( void )
+void CWeaponShotgun_HL1::DryFire( void )
 {
 	WeaponSound( EMPTY );
 	m_flNextPrimaryAttack	= gpGlobals->curtime + 0.75;
@@ -354,7 +413,7 @@ void CWeaponShotgun::DryFire( void )
 }
 
 
-void CWeaponShotgun::WeaponIdle( void )
+void CWeaponShotgun_HL1::WeaponIdle( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 

@@ -51,17 +51,16 @@ public:
 
 	void		Drop( const Vector &vecVelocity );
 
+	CWeaponCrowbar(const CWeaponCrowbar &);
 
-	// Animation event
-#ifndef CLIENT_DLL
-	virtual void Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator );
-	void HandleAnimEventMeleeHit( animevent_t *pEvent, CBaseCombatCharacter *pOperator );
-	int WeaponMeleeAttack1Condition( float flDot, float flDist );
-#endif
-
-	CWeaponCrowbar( const CWeaponCrowbar & );
+#ifndef CLIENT_DLL //-lun4r
+	virtual void Operator_HandleAnimEvent(animevent_t *pEvent, CBaseCombatCharacter *pOperator);
+	virtual int WeaponMeleeAttack1Condition(float flDot, float flDist);
 
 private:
+	// Animation event handlers
+	void HandleAnimEventMeleeHit(animevent_t *pEvent, CBaseCombatCharacter *pOperator);
+#endif
 		
 };
 

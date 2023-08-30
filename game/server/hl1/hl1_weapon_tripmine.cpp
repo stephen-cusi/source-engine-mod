@@ -25,19 +25,19 @@ extern ConVar sk_plr_dmg_tripmine;
 
 
 //-----------------------------------------------------------------------------
-// CWeaponTripMine
+// CWeaponTripMine_HL1
 //-----------------------------------------------------------------------------
 
 
 #define TRIPMINE_MODEL "models/w_tripmine.mdl"
 
 
-class CWeaponTripMine : public CBaseHL1CombatWeapon
+class CWeaponTripMine_HL1 : public CBaseHL1CombatWeapon
 {
-	DECLARE_CLASS( CWeaponTripMine, CBaseHL1CombatWeapon );
+	DECLARE_CLASS( CWeaponTripMine_HL1, CBaseHL1CombatWeapon );
 public:
 
-	CWeaponTripMine( void );
+	CWeaponTripMine_HL1( void );
 
 	void	Spawn( void );
 	void	Precache( void );
@@ -54,26 +54,26 @@ private:
 	int		m_iPickedUpIndex;
 };
 
-LINK_ENTITY_TO_CLASS( weapon_tripmine, CWeaponTripMine );
+LINK_ENTITY_TO_CLASS( weapon_tripmine_hl1, CWeaponTripMine_HL1 );
 
-PRECACHE_WEAPON_REGISTER( weapon_tripmine );
+PRECACHE_WEAPON_REGISTER( weapon_tripmine_hl1 );
 
-IMPLEMENT_SERVERCLASS_ST( CWeaponTripMine, DT_WeaponTripMine )
+IMPLEMENT_SERVERCLASS_ST( CWeaponTripMine_HL1, DT_WeaponTripMine_HL1 )
 END_SEND_TABLE()
 
-BEGIN_DATADESC( CWeaponTripMine )
+BEGIN_DATADESC( CWeaponTripMine_HL1 )
 END_DATADESC()
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponTripMine::CWeaponTripMine( void )
+CWeaponTripMine_HL1::CWeaponTripMine_HL1( void )
 {
 	m_bReloadsSingly	= false;
 	m_bFiresUnderwater	= true;
 }
 
-void CWeaponTripMine::Spawn( void )
+void CWeaponTripMine_HL1::Spawn( void )
 {
 	BaseClass::Spawn();
 
@@ -93,7 +93,7 @@ void CWeaponTripMine::Spawn( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponTripMine::Precache( void )
+void CWeaponTripMine_HL1::Precache( void )
 {
 	BaseClass::Precache();
 
@@ -103,7 +103,7 @@ void CWeaponTripMine::Precache( void )
 	UTIL_PrecacheOther( "monster_tripmine" );
 }
 
-void CWeaponTripMine::Equip( CBaseCombatCharacter *pOwner )
+void CWeaponTripMine_HL1::Equip( CBaseCombatCharacter *pOwner )
 {
 	m_iWorldModelIndex = m_iPickedUpIndex;
 
@@ -113,7 +113,7 @@ void CWeaponTripMine::Equip( CBaseCombatCharacter *pOwner )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponTripMine::PrimaryAttack( void )
+void CWeaponTripMine_HL1::PrimaryAttack( void )
 {
 	CHL1_Player *pPlayer = ToHL1Player( GetOwner() );
 	if ( !pPlayer )
@@ -167,7 +167,7 @@ void CWeaponTripMine::PrimaryAttack( void )
 	}
 }
 
-void CWeaponTripMine::WeaponIdle( void )
+void CWeaponTripMine_HL1::WeaponIdle( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 
@@ -193,7 +193,7 @@ void CWeaponTripMine::WeaponIdle( void )
 	SendWeaponAnim( iAnim );
 }
 
-bool CWeaponTripMine::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CWeaponTripMine_HL1::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	if ( !pPlayer )
@@ -208,7 +208,7 @@ bool CWeaponTripMine::Holster( CBaseCombatWeapon *pSwitchingTo )
 
 	if ( pPlayer->GetAmmoCount( m_iPrimaryAmmoType ) <= 0 )
 	{
-		SetThink( &CWeaponTripMine::DestroyItem );
+		SetThink( &CWeaponTripMine_HL1::DestroyItem );
 		SetNextThink( gpGlobals->curtime + 0.1 );
 	}
 
@@ -219,16 +219,16 @@ bool CWeaponTripMine::Holster( CBaseCombatWeapon *pSwitchingTo )
 
 
 //-----------------------------------------------------------------------------
-// CTripmineGrenade
+// CTripmineGrenade_HL1
 //-----------------------------------------------------------------------------
 
 #define TRIPMINE_BEAM_SPRITE "sprites/laserbeam.vmt"
 
-class CTripmineGrenade : public CHL1BaseGrenade
+class CTripmineGrenade_HL1 : public CHL1BaseGrenade
 {
-	DECLARE_CLASS( CTripmineGrenade, CHL1BaseGrenade );
+	DECLARE_CLASS( CTripmineGrenade_HL1, CHL1BaseGrenade );
 public:
-	CTripmineGrenade();
+	CTripmineGrenade_HL1();
 	void		Spawn( void );
 	void		Precache( void );
 
@@ -262,9 +262,9 @@ private:
 	int						m_iLaserModel;
 };
 
-LINK_ENTITY_TO_CLASS( monster_tripmine, CTripmineGrenade );
+LINK_ENTITY_TO_CLASS( monster_tripmine, CTripmineGrenade_HL1 );
 
-BEGIN_DATADESC( CTripmineGrenade )
+BEGIN_DATADESC( CTripmineGrenade_HL1 )
 	DEFINE_FIELD( m_flPowerUp,	FIELD_TIME ),
 	DEFINE_FIELD( m_vecDir,		FIELD_VECTOR ),
 	DEFINE_FIELD( m_vecEnd,		FIELD_POSITION_VECTOR ),
@@ -284,13 +284,13 @@ BEGIN_DATADESC( CTripmineGrenade )
 END_DATADESC()
 
 
-CTripmineGrenade::CTripmineGrenade()
+CTripmineGrenade_HL1::CTripmineGrenade_HL1()
 {
 	m_vecDir.Init();
 	m_vecEnd.Init();
 }
 
-void CTripmineGrenade::Spawn( void )
+void CTripmineGrenade_HL1::Spawn( void )
 {
 	Precache( );
 	// motor
@@ -323,7 +323,7 @@ void CTripmineGrenade::Spawn( void )
 		m_flPowerUp = gpGlobals->curtime + 2.5;
 	}
 	
-	SetThink( &CTripmineGrenade::PowerupThink );
+	SetThink( &CTripmineGrenade_HL1::PowerupThink );
 	SetNextThink( gpGlobals->curtime + 0.2 );
 
 	m_takedamage = DAMAGE_YES;
@@ -333,8 +333,8 @@ void CTripmineGrenade::Spawn( void )
 	if ( GetOwnerEntity() != NULL )
 	{
 		// play deploy sound
-		EmitSound( "TripmineGrenade.Deploy" );
-		EmitSound( "TripmineGrenade.Charge" );
+		EmitSound( "TripmineGrenade_HL1.Deploy" );
+		EmitSound( "TripmineGrenade_HL1.Charge" );
 
 		m_hRealOwner = GetOwnerEntity();
 	}
@@ -343,27 +343,27 @@ void CTripmineGrenade::Spawn( void )
 }
 
 
-void CTripmineGrenade::Precache( void )
+void CTripmineGrenade_HL1::Precache( void )
 {
 	PrecacheModel( TRIPMINE_MODEL ); 
 	m_iLaserModel = PrecacheModel( TRIPMINE_BEAM_SPRITE );
 
-	PrecacheScriptSound( "TripmineGrenade.Deploy" );
-	PrecacheScriptSound( "TripmineGrenade.Charge" );
-	PrecacheScriptSound( "TripmineGrenade.Activate" );
+	PrecacheScriptSound( "TripmineGrenade_HL1.Deploy" );
+	PrecacheScriptSound( "TripmineGrenade_HL1.Charge" );
+	PrecacheScriptSound( "TripmineGrenade_HL1.Activate" );
 
 }
 
 
-void CTripmineGrenade::WarningThink( void  )
+void CTripmineGrenade_HL1::WarningThink( void  )
 {
 	// set to power up
-	SetThink( &CTripmineGrenade::PowerupThink );
+	SetThink( &CTripmineGrenade_HL1::PowerupThink );
 	SetNextThink( gpGlobals->curtime + 1.0f );
 }
 
 
-void CTripmineGrenade::PowerupThink( void  )
+void CTripmineGrenade_HL1::PowerupThink( void  )
 {
 	if ( m_hStuckOn == NULL )
 	{
@@ -405,8 +405,8 @@ void CTripmineGrenade::PowerupThink( void  )
 			// somehow we've been deployed on nothing, or something that was there, but now isn't.
 			// remove ourselves
 
-			StopSound( "TripmineGrenade.Deploy" );
-			StopSound( "TripmineGrenade.Charge" );
+			StopSound( "TripmineGrenade_HL1.Deploy" );
+			StopSound( "TripmineGrenade_HL1.Charge" );
 			SetThink( &CBaseEntity::SUB_Remove );
 			SetNextThink( gpGlobals->curtime + 0.1f );
 //			ALERT( at_console, "WARNING:Tripmine at %.0f, %.0f, %.0f removed\n", pev->origin.x, pev->origin.y, pev->origin.z );
@@ -418,8 +418,8 @@ void CTripmineGrenade::PowerupThink( void  )
 	{
 		// what we were stuck on has moved, or rotated. Create a tripmine weapon and drop to ground
 
-		StopSound( "TripmineGrenade.Deploy" );
-		StopSound( "TripmineGrenade.Charge" );
+		StopSound( "TripmineGrenade_HL1.Deploy" );
+		StopSound( "TripmineGrenade_HL1.Charge" );
 		CBaseEntity *pMine = Create( "weapon_tripmine", GetAbsOrigin() + m_vecDir * 24, GetAbsAngles() );
 		pMine->AddSpawnFlags( SF_NORESPAWN );
 
@@ -437,14 +437,14 @@ void CTripmineGrenade::PowerupThink( void  )
 		m_bIsLive = true;
 
 		// play enabled sound
-		EmitSound( "TripmineGrenade.Activate" );
+		EmitSound( "TripmineGrenade_HL1.Activate" );
 	}
 
 	SetNextThink( gpGlobals->curtime + 0.1f );
 }
 
 
-void CTripmineGrenade::KillBeam( void )
+void CTripmineGrenade_HL1::KillBeam( void )
 {
 	if ( m_hBeam )
 	{
@@ -454,7 +454,7 @@ void CTripmineGrenade::KillBeam( void )
 }
 
 
-void CTripmineGrenade::MakeBeam( void )
+void CTripmineGrenade_HL1::MakeBeam( void )
 {
 	trace_t tr;
 
@@ -463,7 +463,7 @@ void CTripmineGrenade::MakeBeam( void )
 	m_flBeamLength = tr.fraction;
 
 	// set to follow laser spot
-	SetThink( &CTripmineGrenade::BeamBreakThink );
+	SetThink( &CTripmineGrenade_HL1::BeamBreakThink );
 
 	SetNextThink( gpGlobals->curtime + 1.0f );
 
@@ -478,7 +478,7 @@ void CTripmineGrenade::MakeBeam( void )
 }
 
 
-void CTripmineGrenade::BeamBreakThink( void  )
+void CTripmineGrenade_HL1::BeamBreakThink( void  )
 {
 	bool bBlowup = false;
 	trace_t tr;
@@ -533,7 +533,7 @@ void CTripmineGrenade::BeamBreakThink( void  )
 	SetNextThink( gpGlobals->curtime + 0.1 );
 }
 /*
-int CTripmineGrenade::OnTakeDamage_Alive( const CTakeDamageInfo &info )
+int CTripmineGrenade_HL1::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 {
 	if (gpGlobals->curtime < m_flPowerUp && info.GetDamage() < m_iHealth)
 	{
@@ -547,7 +547,7 @@ int CTripmineGrenade::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 	return BaseClass::OnTakeDamage_Alive( info );
 }*/
 
-void CTripmineGrenade::Event_Killed( const CTakeDamageInfo &info )
+void CTripmineGrenade_HL1::Event_Killed( const CTakeDamageInfo &info )
 {
 	m_takedamage = DAMAGE_NO;
 
@@ -557,13 +557,13 @@ void CTripmineGrenade::Event_Killed( const CTakeDamageInfo &info )
 		SetOwnerEntity( info.GetAttacker() );
 	}
 
-	SetThink( &CTripmineGrenade::DelayDeathThink );
+	SetThink( &CTripmineGrenade_HL1::DelayDeathThink );
 	SetNextThink( gpGlobals->curtime + random->RandomFloat( 0.1, 0.3 ) );
 
-	StopSound( "TripmineGrenade.Charge" );
+	StopSound( "TripmineGrenade_HL1.Charge" );
 }
 
-void CTripmineGrenade::DelayDeathThink( void )
+void CTripmineGrenade_HL1::DelayDeathThink( void )
 {
 	KillBeam();
 	trace_t tr;

@@ -43,7 +43,11 @@ public:
         return p1.m_iPanelID == p2.m_iPanelID;
     }
 
+#ifdef LUA_SDK
+public:
+#else
 private:
+#endif
 	HPanel m_iPanelID;
 };
 

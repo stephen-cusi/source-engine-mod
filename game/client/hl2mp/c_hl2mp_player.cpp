@@ -15,6 +15,14 @@
 #include "r_efx.h"
 #include "dlight.h"
 
+#if defined( LUA_SDK )
+#include "luamanager.h"
+#include "lgametrace.h"
+#include "lhl2mp_player_shared.h"
+#include "ltakedamageinfo.h"
+#include "mathlib/lvector.h"
+#endif
+
 // Don't alias here
 #if defined( CHL2MP_Player )
 #undef CHL2MP_Player	
@@ -28,7 +36,10 @@ IMPLEMENT_CLIENTCLASS_DT(C_HL2MP_Player, DT_HL2MP_Player, CHL2MP_Player)
 	RecvPropEHandle( RECVINFO( m_hRagdoll ) ),
 	RecvPropInt( RECVINFO( m_iSpawnInterpCounter ) ),
 	RecvPropInt( RECVINFO( m_iPlayerSoundType) ),
-
+	RecvPropFloat( RECVINFO( m_flStartCharge ) ),
+	RecvPropFloat( RECVINFO( m_flAmmoStartCharge ) ),
+	RecvPropFloat( RECVINFO( m_flPlayAftershock ) ),
+	RecvPropFloat( RECVINFO( m_flNextAmmoBurn ) ),
 	RecvPropBool( RECVINFO( m_fIsWalking ) ),
 END_RECV_TABLE()
 
@@ -42,6 +53,9 @@ END_PREDICTION_DATA()
 
 static ConVar cl_playermodel( "cl_playermodel", "none", FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_SERVER_CAN_EXECUTE, "Default Player Model");
 static ConVar cl_defaultweapon( "cl_defaultweapon", "weapon_physcannon", FCVAR_USERINFO | FCVAR_ARCHIVE, "Default Spawn Weapon");
+//thx developer.valvesoftware.com
+static ConVar cl_fp_ragdoll ( "cl_fp_ragdoll", "1", FCVAR_ARCHIVE, "Allow first person ragdolls" );
+static ConVar cl_fp_ragdoll_auto ( "cl_fp_ragdoll_auto", "1", FCVAR_ARCHIVE, "Autoswitch to ragdoll thirdperson-view when necessary" );
 
 void SpawnBlood (Vector vecSpot, const Vector &vecDir, int bloodColor, float flDamage);
 
@@ -105,22 +119,56 @@ void C_HL2MP_Player::UpdateIDTarget()
 
 void C_HL2MP_Player::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
 {
+#if defined ( LUA_SDK )
+	// Andrew; push a copy of the damageinfo/vector, bring the changes back out
+	// of Lua and set info/vecDir to the new value if it's been modified.
+	CTakeDamageInfo lInfo = info;
+	Vector lvecDir = vecDir;
+
+	BEGIN_LUA_CALL_HOOK( "PlayerTraceAttack" );
+		lua_pushhl2mpplayer( L, this );
+		lua_pushdamageinfo( L, lInfo );
+		lua_pushvector( L, lvecDir );
+		lua_pushtrace( L, *ptr );
+	END_LUA_CALL_HOOK( 4, 1 );
+
+	RETURN_LUA_NONE();
+#endif
+
+#if defined ( LUA_SDK )
+	Vector vecOrigin = ptr->endpos - lvecDir * 4;
+#else
 	Vector vecOrigin = ptr->endpos - vecDir * 4;
+#endif
 
 	float flDistance = 0.0f;
-	
+
+#if defined ( LUA_SDK )
+	if ( lInfo.GetAttacker() )
+	{
+		flDistance = (ptr->endpos - lInfo.GetAttacker()->GetAbsOrigin()).Length();
+	}
+#else
 	if ( info.GetAttacker() )
 	{
 		flDistance = (ptr->endpos - info.GetAttacker()->GetAbsOrigin()).Length();
 	}
+#endif
 
 	if ( m_takedamage )
 	{
+#if defined ( LUA_SDK )
+		AddMultiDamage( lInfo, this );
+#else
 		AddMultiDamage( info, this );
-
+#endif
 		int blood = BloodColor();
 		
+#if defined ( LUA_SDK )
+		CBaseEntity *pAttacker = lInfo.GetAttacker();
+#else
 		CBaseEntity *pAttacker = info.GetAttacker();
+#endif
 
 		if ( pAttacker )
 		{
@@ -130,8 +178,13 @@ void C_HL2MP_Player::TraceAttack( const CTakeDamageInfo &info, const Vector &vec
 
 		if ( blood != DONT_BLEED )
 		{
+#if defined ( LUA_SDK )
+			SpawnBlood( vecOrigin, lvecDir, blood, flDistance );// a little surface blood.
+			TraceBleed( flDistance, lvecDir, ptr, lInfo.GetDamageType() );
+#else
 			SpawnBlood( vecOrigin, vecDir, blood, flDistance );// a little surface blood.
 			TraceBleed( flDistance, vecDir, ptr, info.GetDamageType() );
+#endif
 		}
 	}
 }
@@ -689,44 +742,62 @@ C_BaseAnimating *C_HL2MP_Player::BecomeRagdollOnClient()
 
 void C_HL2MP_Player::CalcView( Vector &eyeOrigin, QAngle &eyeAngles, float &zNear, float &zFar, float &fov )
 {
+	// if we're dead, we want to deal with first or third person ragdolls.
 	if ( m_lifeState != LIFE_ALIVE && !IsObserver() )
 	{
-		Vector origin = EyePosition();			
+		// First person ragdolls
+		if ( cl_fp_ragdoll.GetBool() && m_hRagdoll.Get() )
+		{
+			// pointer to the ragdoll
+			C_HL2MPRagdoll *pRagdoll = (C_HL2MPRagdoll*)m_hRagdoll.Get();
 
+			// gets its origin and angles
+			pRagdoll->GetAttachment( pRagdoll->LookupAttachment( "eyes" ), eyeOrigin, eyeAngles );
+			Vector vForward; 
+			AngleVectors( eyeAngles, &vForward );
+
+			if ( cl_fp_ragdoll_auto.GetBool() )
+			{
+				// DM: Don't use first person view when we are very close to something
+				trace_t tr;
+				UTIL_TraceLine( eyeOrigin, eyeOrigin + ( vForward * 10000 ), MASK_ALL, pRagdoll, COLLISION_GROUP_NONE, &tr );
+
+				if ( (!(tr.fraction < 1) || (tr.endpos.DistTo(eyeOrigin) > 25)) )
+					return;
+			}
+			else
+				return;
+		}
+
+		eyeOrigin = vec3_origin;
+		eyeAngles = vec3_angle;
+
+		Vector origin = EyePosition();
 		IRagdoll *pRagdoll = GetRepresentativeRagdoll();
-
 		if ( pRagdoll )
 		{
 			origin = pRagdoll->GetRagdollOrigin();
-			origin.z += VEC_DEAD_VIEWHEIGHT_SCALED( this ).z; // look over ragdoll, not through
+			origin.z += VEC_DEAD_VIEWHEIGHT.z; // look over ragdoll, not through
 		}
-
 		BaseClass::CalcView( eyeOrigin, eyeAngles, zNear, zFar, fov );
-
 		eyeOrigin = origin;
-		
 		Vector vForward; 
 		AngleVectors( eyeAngles, &vForward );
-
 		VectorNormalize( vForward );
 		VectorMA( origin, -CHASE_CAM_DISTANCE_MAX, vForward, eyeOrigin );
-
 		Vector WALL_MIN( -WALL_OFFSET, -WALL_OFFSET, -WALL_OFFSET );
 		Vector WALL_MAX( WALL_OFFSET, WALL_OFFSET, WALL_OFFSET );
-
 		trace_t trace; // clip against world
-		C_BaseEntity::PushEnableAbsRecomputations( false ); // HACK don't recompute positions while doing RayTrace
+		// HACK don't recompute positions while doing RayTrace
+		C_BaseEntity::EnableAbsRecomputations( false );
 		UTIL_TraceHull( origin, eyeOrigin, WALL_MIN, WALL_MAX, MASK_SOLID_BRUSHONLY, this, COLLISION_GROUP_NONE, &trace );
-		C_BaseEntity::PopEnableAbsRecomputations();
-
+		C_BaseEntity::EnableAbsRecomputations( true );
 		if (trace.fraction < 1.0)
 		{
 			eyeOrigin = trace.endpos;
 		}
-		
 		return;
 	}
-
 	BaseClass::CalcView( eyeOrigin, eyeAngles, zNear, zFar, fov );
 }
 

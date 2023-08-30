@@ -299,8 +299,11 @@ void CAI_PassengerBehaviorZombie::GatherConditions( void )
 		
 		// Determine if we can latch on to the vehicle (out of sight)
 		ClearCondition( COND_PASSENGER_ZOMBIE_CAN_ATTACH_TO_VEHICLE );
+#ifdef HL2SB
+		CBasePlayer *pPlayer = AI_GetNearestPlayer( GetOuter()->GetAbsOrigin() );		
+#else
 		CBasePlayer *pPlayer = AI_GetSinglePlayer();
-		
+#endif
 		if ( pPlayer != NULL && 
 			 GetOuter()->GetEnemy() == pPlayer && 
 			 pPlayer->GetVehicleEntity() == m_hVehicle )

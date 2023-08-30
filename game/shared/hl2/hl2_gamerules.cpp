@@ -119,10 +119,9 @@ ConVar	sk_plr_dmg_smg1			( "sk_plr_dmg_smg1","0", FCVAR_REPLICATED );
 ConVar	sk_npc_dmg_smg1			( "sk_npc_dmg_smg1","0", FCVAR_REPLICATED);
 ConVar	sk_max_smg1				( "sk_max_smg1","0", FCVAR_REPLICATED);
 
-// FIXME: remove these
 //ConVar	sk_plr_dmg_flare_round	( "sk_plr_dmg_flare_round","0", FCVAR_REPLICATED);
 //ConVar	sk_npc_dmg_flare_round	( "sk_npc_dmg_flare_round","0", FCVAR_REPLICATED);
-//ConVar	sk_max_flare_round		( "sk_max_flare_round","0", FCVAR_REPLICATED);
+ConVar	sk_max_flare_round		( "sk_max_flare_round","0", FCVAR_REPLICATED);
 
 ConVar	sk_plr_dmg_buckshot		( "sk_plr_dmg_buckshot","0", FCVAR_REPLICATED);	
 ConVar	sk_npc_dmg_buckshot		( "sk_npc_dmg_buckshot","0", FCVAR_REPLICATED);
@@ -180,6 +179,46 @@ ConVar	sk_max_gauss_round		( "sk_max_gauss_round", "0", FCVAR_REPLICATED );
 // Gunship & Dropship cannons
 ConVar	sk_npc_dmg_gunship			( "sk_npc_dmg_gunship", "0", FCVAR_REPLICATED );
 ConVar	sk_npc_dmg_gunship_to_plr	( "sk_npc_dmg_gunship_to_plr", "0", FCVAR_REPLICATED );
+
+ConVar  sk_max_sticky_bomb			("sk_max_sticky_bomb", "0", FCVAR_REPLICATED );
+
+ConVar sk_plr_dmg_crowbar			( "sk_plr_dmg_crowbar",			"0", FCVAR_REPLICATED );
+
+ConVar sk_npc_dmg_9mm_bullet		( "sk_npc_dmg_9mm_bullet",		"0", FCVAR_REPLICATED );
+ConVar sk_plr_dmg_9mm_bullet		( "sk_plr_dmg_9mm_bullet",		"0", FCVAR_REPLICATED );
+ConVar sk_max_9mm_bullet			( "sk_max_9mm_bullet",			"0", FCVAR_REPLICATED );
+
+ConVar sk_npc_dmg_9mmAR_bullet		( "sk_npc_dmg_9mmAR_bullet",	"0", FCVAR_REPLICATED );
+
+ConVar sk_plr_dmg_357_bullet		( "sk_plr_dmg_357_bullet",		"0", FCVAR_REPLICATED );
+ConVar sk_max_357_bullet			( "sk_max_357_bullet",			"0", FCVAR_REPLICATED );
+
+ConVar sk_plr_dmg_mp5_grenade		( "sk_plr_dmg_mp5_grenade",		"0", FCVAR_REPLICATED );
+ConVar sk_max_mp5_grenade			( "sk_max_mp5_grenade",			"0", FCVAR_REPLICATED );
+ConVar sk_mp5_grenade_radius		( "sk_mp5_grenade_radius",		"0", FCVAR_REPLICATED );
+
+ConVar sk_plr_dmg_rpg				( "sk_plr_dmg_rpg",				"0", FCVAR_REPLICATED );
+ConVar sk_max_rpg_rocket			( "sk_max_rpg_rocket",			"0", FCVAR_REPLICATED );
+
+ConVar sk_plr_dmg_xbow_bolt_plr		( "sk_plr_dmg_xbow_bolt_plr",	"0", FCVAR_REPLICATED );
+ConVar sk_plr_dmg_xbow_bolt_npc		( "sk_plr_dmg_xbow_bolt_npc",	"0", FCVAR_REPLICATED );
+ConVar sk_max_xbow_bolt				( "sk_max_xbow_bolt",			"0", FCVAR_REPLICATED );
+
+ConVar sk_plr_dmg_egon_narrow		( "sk_plr_dmg_egon_narrow",		"0", FCVAR_REPLICATED );
+ConVar sk_plr_dmg_egon_wide			( "sk_plr_dmg_egon_wide",		"0", FCVAR_REPLICATED );
+ConVar sk_max_uranium				( "sk_max_uranium",				"0", FCVAR_REPLICATED );
+
+ConVar sk_plr_dmg_gauss				( "sk_plr_dmg_gauss",			"0", FCVAR_REPLICATED );
+
+ConVar sk_plr_dmg_hornet			( "sk_plr_dmg_hornet",			"0", FCVAR_REPLICATED );
+ConVar sk_npc_dmg_hornet			( "sk_npc_dmg_hornet",			"0", FCVAR_REPLICATED );
+ConVar sk_max_hornet				( "sk_max_hornet",				"0", FCVAR_REPLICATED );
+
+ConVar sk_max_snark					( "sk_max_snark",				"0", FCVAR_REPLICATED );
+
+ConVar sk_npc_dmg_12mm_bullet		( "sk_npc_dmg_12mm_bullet",		"0", FCVAR_REPLICATED );
+
+ConVar sk_mp_dmg_multiplier ( "sk_mp_dmg_multiplier", "2.0" );
 
 //-----------------------------------------------------------------------------
 // Purpose: 
@@ -1314,6 +1353,15 @@ ConVar  alyx_darkness_force( "alyx_darkness_force", "0", FCVAR_CHEAT | FCVAR_REP
 			case CLASS_MISSILE:			return "CLASS_MISSILE";
 			case CLASS_FLARE:			return "CLASS_FLARE";
 			case CLASS_EARTH_FAUNA:		return "CLASS_EARTH_FAUNA";
+			case CLASS_ALIEN_PREY:		return "CLASS_ALIEN_PREY";
+			case CLASS_ALIEN_MILITARY:	return "CLASS_ALIEN_MILITARY";
+			case CLASS_ALIEN_MONSTER:	return "CLASS_ALIEN_MONSTER";
+			case CLASS_ALIEN_PREDATOR:	return "CLASS_ALIEN_PREDATOR";
+			case CLASS_HUMAN_MILITARY:	return "CLASS_HUMAN_MILITARY";
+			case CLASS_MACHINE:			return "CLASS_MACHINE";
+			case CLASS_ALIEN_BIOWEAPON:	return "CLASS_ALIEN_BIOWEAPON";
+			case CLASS_PLAYER_BIOWEAPON:return "CLASS_PLAYER_BIOWEAPON";
+
 
 			default:					return "MISSING CLASS in ClassifyText()";
 		}
@@ -1804,7 +1852,7 @@ CAmmoDef *GetAmmoDef()
 		def.AddAmmoType("SMG1",				DMG_BULLET,					TRACER_LINE_AND_WHIZ,	"sk_plr_dmg_smg1",			"sk_npc_dmg_smg1",			"sk_max_smg1",			BULLET_IMPULSE(200, 1225), 0 );
 		def.AddAmmoType("357",				DMG_BULLET,					TRACER_LINE_AND_WHIZ,	"sk_plr_dmg_357",			"sk_npc_dmg_357",			"sk_max_357",			BULLET_IMPULSE(800, 5000), 0 );
 		def.AddAmmoType("XBowBolt",			DMG_BULLET,					TRACER_LINE,			"sk_plr_dmg_crossbow",		"sk_npc_dmg_crossbow",		"sk_max_crossbow",		BULLET_IMPULSE(800, 8000), 0 );
-
+		def.AddAmmoType("FlareRound",		DMG_BURN,					TRACER_LINE, 			"sk_plr_dmg_flare_round",	"sk_npc_dmg_flare_round",	"sk_max_flare_round",	BULLET_IMPULSE(1500, 600), 0 );
 		def.AddAmmoType("Buckshot",			DMG_BULLET | DMG_BUCKSHOT,	TRACER_LINE,			"sk_plr_dmg_buckshot",		"sk_npc_dmg_buckshot",		"sk_max_buckshot",		BULLET_IMPULSE(400, 1200), 0 );
 		def.AddAmmoType("RPG_Round",		DMG_BURN,					TRACER_NONE,			"sk_plr_dmg_rpg_round",		"sk_npc_dmg_rpg_round",		"sk_max_rpg_round",		0, 0 );
 		def.AddAmmoType("SMG1_Grenade",		DMG_BURN,					TRACER_NONE,			"sk_plr_dmg_smg1_grenade",	"sk_npc_dmg_smg1_grenade",	"sk_max_smg1_grenade",	0, 0 );
@@ -1818,6 +1866,7 @@ CAmmoDef *GetAmmoDef()
 		def.AddAmmoType("GaussEnergy",		DMG_SHOCK,					TRACER_NONE,			"sk_jeep_gauss_damage",		"sk_jeep_gauss_damage", "sk_max_gauss_round", BULLET_IMPULSE(650, 8000), 0 ); // hit like a 10kg weight at 400 in/s
 		def.AddAmmoType("CombineCannon",	DMG_BULLET,					TRACER_LINE,			"sk_npc_dmg_gunship_to_plr", "sk_npc_dmg_gunship", NULL, 1.5 * 750 * 12, 0 ); // hit like a 1.5kg weight at 750 ft/s
 		def.AddAmmoType("AirboatGun",		DMG_AIRBOAT,				TRACER_LINE,			"sk_plr_dmg_airboat",		"sk_npc_dmg_airboat",		NULL,					BULLET_IMPULSE(10, 600), 0 );
+		def.AddAmmoType("StickyBomb", 	 	DMG_BULLET, 				TRACER_LINE,			0, 0, "sk_max_sticky_bomb", 0, 0 );
 
 		//=====================================================================
 		// STRIDER MINIGUN DAMAGE - Pull up a chair and I'll tell you a tale.

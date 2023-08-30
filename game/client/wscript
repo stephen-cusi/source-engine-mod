@@ -19,7 +19,8 @@ games = {
 	'portal': ['client_base.vpc', 'client_portal.vpc'],
 	'hl1mp': ['client_base.vpc', 'client_hl1mp.vpc'],
 	'cstrike': ['client_base.vpc', 'client_cstrike.vpc'],
-	'dod': ['client_base.vpc', 'client_dod.vpc']
+	'dod': ['client_base.vpc', 'client_dod.vpc'],
+	'hl2sb': ['client_base.vpc', 'client_hl2mp.vpc', 'client_lua.vpc'],
 }
 
 def configure(conf):
@@ -39,11 +40,17 @@ def build(bld):
 		'game_controls',
 		'../../common',
 		'../../public',
+		'../../public/lua',
 		'../../public/tier0',
 		'../../public/tier1',
+		'../../public/mathlib',
+		'../../public/vphysics',
 		'../../vgui2/include',
 		'../../vgui2/controls',
-		'../shared'
+		'../shared',
+		'../../lua/src',
+		'../../lua/etc',
+		'../shared/lua'
 	]
 
 	libs = [
@@ -62,7 +69,8 @@ def build(bld):
 		'bitmap',
 		'vtf',
 		'RT',
-		'ZLIB'
+		'ZLIB',
+		'lua',
 	]
 
 	install_path = bld.env.PREFIX

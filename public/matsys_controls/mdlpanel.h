@@ -43,7 +43,7 @@ class CMDLPanel : public CPotteryWheelPanel
 
 public:
 	// constructor, destructor
-	CMDLPanel( vgui::Panel *pParent, const char *pName );
+	CMDLPanel( vgui::Panel *pParent, const char *pName, const char *pCmd = NULL, bool bImagePanel = false );
 	virtual ~CMDLPanel();
 
 	// Overriden methods of vgui::Panel
@@ -56,6 +56,8 @@ public:
 	// Sets the current mdl
 	virtual void SetMDL( MDLHandle_t handle, void *pProxyData = NULL );
 	virtual void SetMDL( const char *pMDLName, void *pProxyData = NULL );
+
+	virtual void OnMousePressed( vgui::MouseCode code );
 
 	// Sets the camera to look at the model
 	void LookAtMDL( );
@@ -150,6 +152,11 @@ private:
 	bool	m_bLookAtCamera : 1;
 	bool	m_bIgnoreDoubleClick : 1;
 	bool	m_bThumbnailSafeZone : 1;
+
+	bool 	m_bImagePanel;
+
+	Panel* m_pParent;
+	char command[260];
 
 	float	m_PoseParameters[ MAXSTUDIOPOSEPARAM ];
 };

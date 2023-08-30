@@ -36,6 +36,9 @@
 #include "ai_interactions.h"
 #include "weapon_flaregun.h"
 #include "env_debughistory.h"
+#ifdef HL2SB
+#include "hl2mp_gamerules.h"
+#endif
 
 extern Vector PointOnLineNearestPoint(const Vector& vStartPos, const Vector& vEndPos, const Vector& vPoint);
 
@@ -332,10 +335,11 @@ void CNPC_Alyx::Spawn()
 		CreateEmpTool( );
 	}
 
-	AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL | EFL_NO_PHYSCANNON_INTERACTION );
+	// why we can't dissolve and kill her? :megarofl:
+	//AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL | EFL_NO_PHYSCANNON_INTERACTION );
 
 	m_iHealth			= 80;
-	m_bloodColor		= DONT_BLEED;
+	SetBloodColor( BLOOD_COLOR_RED );
 
 	NPCInit();
 
@@ -465,7 +469,8 @@ void CNPC_Alyx::SetupAlyxWithoutParent( void )
 	CapabilitiesAdd( bits_CAP_MOVE_GROUND | bits_CAP_DOORS_GROUP | bits_CAP_TURN_HEAD | bits_CAP_DUCK | bits_CAP_SQUAD );
 	CapabilitiesAdd( bits_CAP_USE_WEAPONS );
 	CapabilitiesAdd( bits_CAP_ANIMATEDFACE );
-	CapabilitiesAdd( bits_CAP_FRIENDLY_DMG_IMMUNE );
+	// FF - Friendly Fire
+	//CapabilitiesAdd( bits_CAP_FRIENDLY_DMG_IMMUNE );
 	CapabilitiesAdd( bits_CAP_AIM_GUN );
 	CapabilitiesAdd( bits_CAP_MOVE_SHOOT );
 	CapabilitiesAdd( bits_CAP_USE_SHOT_REGULATOR );
@@ -891,7 +896,11 @@ void CNPC_Alyx::AnalyzeGunfireSound( CSound *pSound )
 
 	CBaseEntity *pSoundTarget = pSound->m_hTarget.Get();
 
+#ifdef HL2SB
+	CBasePlayer *pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = AI_GetSinglePlayer();
+#endif
 
 	Assert( pPlayer != NULL );
 
@@ -914,7 +923,11 @@ void CNPC_Alyx::AnalyzeGunfireSound( CSound *pSound )
 //-----------------------------------------------------------------------------
 bool CNPC_Alyx::IsValidEnemy( CBaseEntity *pEnemy )
 {
+#ifndef HL2SB
 	if ( HL2GameRules()->IsAlyxInDarknessMode() )
+#else
+	if ( HL2MPRules()->IsAlyxInDarknessMode() )
+#endif
 	{
 		if ( !CanSeeEntityInDarkness( pEnemy ) )
 			return false;
@@ -1029,7 +1042,11 @@ void CNPC_Alyx::EnemyIgnited( CAI_BaseNPC *pVictim )
 //-----------------------------------------------------------------------------
 void CNPC_Alyx::CombineBallSocketed( int iNumBounces )
 {
+#ifdef HL2SB
+	CBasePlayer *pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = AI_GetSinglePlayer();
+#endif
 	
 	if ( !pPlayer || !FVisible(pPlayer) )
 	{
@@ -1175,7 +1192,11 @@ void CNPC_Alyx::DoCustomSpeechAI( void )
 {
 	BaseClass::DoCustomSpeechAI();
 
+#ifdef HL2SB
+	CBasePlayer *pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = AI_GetSinglePlayer();
+#endif
 
 	if ( HasCondition(COND_NEW_ENEMY) && GetEnemy() )
 	{
@@ -1206,7 +1227,11 @@ void CNPC_Alyx::DoCustomSpeechAI( void )
 
 	// Darkness mode speech
 	ClearCondition( COND_ALYX_IN_DARK );
+#ifndef HL2SB
  	if ( HL2GameRules()->IsAlyxInDarknessMode() )
+#else
+ 	if ( HL2MPRules()->IsAlyxInDarknessMode() )
+#endif
 	{
 		// Even though the darkness light system will take flares into account when Alyx
 		// says she's lost the player in the darkness, players still think she's silly
@@ -1299,7 +1324,11 @@ void CNPC_Alyx::DoCustomSpeechAI( void )
 			{
 				m_SpeechWatch_LostPlayer.Set( 5,8 );
 				m_SpeechWatch_LostPlayer.Start();
+#ifdef HL2SB
+				m_MoveMonitor.SetMark( AI_GetNearestPlayer( GetAbsOrigin() ), 48 );
+#else
 				m_MoveMonitor.SetMark( AI_GetSinglePlayer(), 48 );
+#endif
 			}
 			else if ( m_SpeechWatch_LostPlayer.Expired() )
 			{
@@ -1308,7 +1337,11 @@ void CNPC_Alyx::DoCustomSpeechAI( void )
 					( !pPlayer || pPlayer->GetAbsOrigin().DistToSqr(GetAbsOrigin()) > ALYX_DARKNESS_LOST_PLAYER_DIST ) )
 				{
 					// only speak if player hasn't moved.
+#ifdef HL2SB
+					if ( m_MoveMonitor.TargetMoved( AI_GetNearestPlayer( GetAbsOrigin() ) ) )
+#else
 					if ( m_MoveMonitor.TargetMoved( AI_GetSinglePlayer() ) )
+#endif
 					{
 						SpeakIfAllowed( "TLK_DARKNESS_LOSTPLAYER" );
 						m_SpeechWatch_LostPlayer.Set(10);
@@ -1388,7 +1421,11 @@ void CNPC_Alyx::DoCustomSpeechAI( void )
 	{
 		// If we've left darkness mode, or if the player has blinded me with 
 		// the flashlight, don't bother speaking the found player line.
+#ifndef HL2SB
 		if ( !m_bIsFlashlightBlind && HL2GameRules()->IsAlyxInDarknessMode() && m_bDarknessSpeechAllowed )
+#else
+		if ( !m_bIsFlashlightBlind && HL2MPRules()->IsAlyxInDarknessMode() && m_bDarknessSpeechAllowed )
+#endif
 		{
 			if ( HasCondition(COND_SEE_PLAYER) && !HasCondition( COND_TALKER_PLAYER_DEAD ) )
 			{
@@ -1537,7 +1574,11 @@ bool CNPC_Alyx::FInViewCone( CBaseEntity *pEntity )
 	}
 
 	// Else, fall through...
+#ifndef HL2SB
  	if ( HL2GameRules()->IsAlyxInDarknessMode() )
+#else
+ 	if ( HL2MPRules()->IsAlyxInDarknessMode() )
+#endif
 	{
 		if ( CanSeeEntityInDarkness( pEntity ) )
 			return true;
@@ -1576,7 +1617,11 @@ bool CNPC_Alyx::CanSeeEntityInDarkness( CBaseEntity *pEntity )
 //-----------------------------------------------------------------------------
 bool CNPC_Alyx::QuerySeeEntity( CBaseEntity *pEntity, bool bOnlyHateOrFearIfNPC)
 {
+#ifdef HL2SB
+	if ( HL2MPRules()->IsAlyxInDarknessMode() )
+#else
 	if ( HL2GameRules()->IsAlyxInDarknessMode() )
+#endif
 	{
 		if ( !CanSeeEntityInDarkness( pEntity ) )
 			return false;
@@ -1700,7 +1745,11 @@ int CNPC_Alyx::SelectSchedule( void )
 {
     // If we're in darkness mode, and the player has the flashlight off, and we hear a zombie footstep,
 	// and the player isn't nearby, deliberately turn away from the zombie to let the zombie grab me.
+#ifdef HL2SB
+	if ( HL2MPRules()->IsAlyxInDarknessMode() && m_NPCState == NPC_STATE_ALERT )
+#else
 	if ( HL2GameRules()->IsAlyxInDarknessMode() && m_NPCState == NPC_STATE_ALERT )
+#endif
 	{
 		if ( HasCondition ( COND_HEAR_COMBAT ) && !HasCondition(COND_SEE_PLAYER) )
 		{
@@ -1857,7 +1906,11 @@ int CNPC_Alyx::TranslateSchedule( int scheduleType )
 
 	case SCHED_HIDE_AND_RELOAD:
 		{
+#ifndef HL2SB
 			if ( HL2GameRules()->IsAlyxInDarknessMode() )
+#else
+			if ( HL2MPRules()->IsAlyxInDarknessMode() )
+#endif
 				return SCHED_RELOAD;
 
 			// If I don't have a ranged attacker as an enemy, don't try to hide
@@ -2263,7 +2316,11 @@ int CNPC_Alyx::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 
 	int taken = BaseClass::OnTakeDamage_Alive(info);
 
+#ifndef HL2SB
 	if ( taken && HL2GameRules()->IsAlyxInDarknessMode() && !HasCondition( COND_TALKER_PLAYER_DEAD ) )
+#else
+	if ( taken && HL2MPRules()->IsAlyxInDarknessMode() && !HasCondition( COND_TALKER_PLAYER_DEAD ) )
+#endif
 	{
 		if ( !HasCondition(COND_SEE_ENEMY) && (info.GetDamageType() & (DMG_SLASH | DMG_CLUB) ) )
 		{
@@ -2634,7 +2691,11 @@ bool CNPC_Alyx::CanBeBlindedByFlashlight( bool bCheckLightSources )
 {
 	// Can't be blinded if we're not in alyx darkness mode
  	/*
+#ifndef HL2SB
 	if ( !HL2GameRules()->IsAlyxInDarknessMode() )
+#else
+	if ( !HL2MPRules()->IsAlyxInDarknessMode() )
+#endif
 		return false;
 	*/
 
@@ -2687,7 +2748,11 @@ bool CNPC_Alyx::PlayerFlashlightOnMyEyes( CBasePlayer *pPlayer )
 	float flDist = VectorNormalize( vecToEyes ); 
 
 	// We can be blinded in daylight, but only at close range
+#ifndef HL2SB
 	if ( HL2GameRules()->IsAlyxInDarknessMode() == false )
+#else
+	if ( HL2MPRules()->IsAlyxInDarknessMode() == false )
+#endif
 	{
 		if ( flDist > (8*12.0f) )
 			return false;
@@ -3288,7 +3353,11 @@ void CNPC_Alyx::InputVehiclePunted( inputdata_t &inputdata )
 //-----------------------------------------------------------------------------
 void CNPC_Alyx::InputOutsideTransition( inputdata_t &inputdata )
 {
+#ifdef HL2SB
+	CBasePlayer *pPlayer = AI_GetNearestPlayer( GetAbsOrigin() );
+#else
 	CBasePlayer *pPlayer = AI_GetSinglePlayer();
+#endif
 	if ( pPlayer && pPlayer->IsInAVehicle() )
 	{
 		if ( ShouldAlwaysTransition() == false )

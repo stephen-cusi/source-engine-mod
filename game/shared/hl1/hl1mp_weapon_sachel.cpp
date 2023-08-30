@@ -29,7 +29,7 @@
 
 
 //-----------------------------------------------------------------------------
-// CWeaponSatchel
+// CWeaponSatchel_HL1
 //-----------------------------------------------------------------------------
 
 
@@ -38,9 +38,25 @@
 #define SATCHELRADIO_VIEW_MODEL		"models/v_satchel_radio.mdl"
 #define SATCHELRADIO_WORLD_MODEL	"models/w_satchel.mdl"	// this needs fixing if we do multiplayer
 
-IMPLEMENT_NETWORKCLASS_ALIASED( WeaponSatchel, DT_WeaponSatchel );
+#ifndef CLIENT_DLL
+acttable_t	CWeaponSatchel_HL1::m_acttable[] = 
+{
+	{ ACT_RANGE_ATTACK1, 				ACT_RANGE_ATTACK_SLAM, 					 true },
+	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_SLAM,					false },
+	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_SLAM,						false },
+	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_SLAM,				false },
+	{ ACT_HL2MP_WALK_CROUCH,			ACT_HL2MP_WALK_CROUCH_SLAM,				false },
+	{ ACT_HL2MP_GESTURE_RANGE_ATTACK,	ACT_HL2MP_GESTURE_RANGE_ATTACK_SLAM,	false },
+	{ ACT_HL2MP_GESTURE_RELOAD,			ACT_HL2MP_GESTURE_RELOAD_SLAM,			false },
+	{ ACT_HL2MP_JUMP,					ACT_HL2MP_JUMP_SLAM,					false },
+};
 
-BEGIN_NETWORK_TABLE( CWeaponSatchel, DT_WeaponSatchel )
+IMPLEMENT_ACTTABLE(CWeaponSatchel_HL1);
+#endif
+
+IMPLEMENT_NETWORKCLASS_ALIASED( WeaponSatchel_HL1, DT_WeaponSatchel_HL1 );
+
+BEGIN_NETWORK_TABLE( CWeaponSatchel_HL1, DT_WeaponSatchel_HL1 )
 #ifdef CLIENT_DLL
 	RecvPropInt( RECVINFO( m_iRadioViewIndex ) ),
 	RecvPropInt( RECVINFO( m_iRadioWorldIndex ) ),
@@ -56,15 +72,15 @@ BEGIN_NETWORK_TABLE( CWeaponSatchel, DT_WeaponSatchel )
 #endif
 END_NETWORK_TABLE()
 
-LINK_ENTITY_TO_CLASS( weapon_satchel, CWeaponSatchel );
+LINK_ENTITY_TO_CLASS( weapon_satchel_hl1, CWeaponSatchel_HL1 );
 
-PRECACHE_WEAPON_REGISTER( weapon_satchel );
+PRECACHE_WEAPON_REGISTER( weapon_satchel_hl1 );
 
-//IMPLEMENT_SERVERCLASS_ST( CWeaponSatchel, DT_WeaponSatchel )
+//IMPLEMENT_SERVERCLASS_ST( CWeaponSatchel_HL1, DT_WeaponSatchel_HL1 )
 //END_SEND_TABLE()
 
 
-BEGIN_PREDICTION_DATA( CWeaponSatchel )
+BEGIN_PREDICTION_DATA( CWeaponSatchel_HL1 )
 #ifdef CLIENT_DLL
 	DEFINE_PRED_FIELD( m_iRadioViewIndex, FIELD_INTEGER, FTYPEDESC_INSENDTABLE | FTYPEDESC_MODELINDEX ),
 	DEFINE_PRED_FIELD( m_iRadioWorldIndex, FIELD_INTEGER, FTYPEDESC_INSENDTABLE | FTYPEDESC_MODELINDEX ),
@@ -75,7 +91,7 @@ BEGIN_PREDICTION_DATA( CWeaponSatchel )
 END_PREDICTION_DATA()
 
 
-BEGIN_DATADESC( CWeaponSatchel )
+BEGIN_DATADESC( CWeaponSatchel_HL1 )
 	DEFINE_FIELD( m_iChargeReady, FIELD_INTEGER ),
 
 //	DEFINE_FIELD( m_iRadioViewIndex, FIELD_INTEGER ),
@@ -87,20 +103,20 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CWeaponSatchel::CWeaponSatchel( void )
+CWeaponSatchel_HL1::CWeaponSatchel_HL1( void )
 {
 	m_bReloadsSingly	= false;
 	m_bFiresUnderwater	= true;
 }
 
-void CWeaponSatchel::Equip( CBaseCombatCharacter *pOwner )
+void CWeaponSatchel_HL1::Equip( CBaseCombatCharacter *pOwner )
 {
 	BaseClass::Equip( pOwner );
 
 	m_iChargeReady = 0;	// this satchel charge weapon now forgets that any satchels are deployed by it.
 }
 
-bool CWeaponSatchel::HasAnyAmmo( void )
+bool CWeaponSatchel_HL1::HasAnyAmmo( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	if ( !pPlayer )
@@ -123,7 +139,7 @@ bool CWeaponSatchel::HasAnyAmmo( void )
 	return BaseClass::HasAnyAmmo();
 }
 
-bool CWeaponSatchel::CanDeploy( void )
+bool CWeaponSatchel_HL1::CanDeploy( void )
 {
 	if ( HasAnyAmmo() )
 	{
@@ -138,7 +154,7 @@ bool CWeaponSatchel::CanDeploy( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CWeaponSatchel::Precache( void )
+void CWeaponSatchel_HL1::Precache( void )
 {
 	m_iSatchelViewIndex		= PrecacheModel( SATCHEL_VIEW_MODEL );
 	m_iSatchelWorldIndex	= PrecacheModel( SATCHEL_WORLD_MODEL );
@@ -152,7 +168,7 @@ void CWeaponSatchel::Precache( void )
 	BaseClass::Precache();
 }
 
-void CWeaponSatchel::ItemPostFrame( void )
+void CWeaponSatchel_HL1::ItemPostFrame( void )
 {
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 	if (!pOwner)
@@ -177,7 +193,7 @@ void CWeaponSatchel::ItemPostFrame( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponSatchel::PrimaryAttack( void )
+void CWeaponSatchel_HL1::PrimaryAttack( void )
 {
 	switch ( m_iChargeReady )
 	{
@@ -224,7 +240,7 @@ void CWeaponSatchel::PrimaryAttack( void )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CWeaponSatchel::SecondaryAttack( void )
+void CWeaponSatchel_HL1::SecondaryAttack( void )
 {
 	if ( m_iChargeReady != 2 )
 	{
@@ -232,7 +248,7 @@ void CWeaponSatchel::SecondaryAttack( void )
 	}
 }
 
-void CWeaponSatchel::Throw( void )
+void CWeaponSatchel_HL1::Throw( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
 	if ( !pPlayer )
@@ -276,7 +292,7 @@ void CWeaponSatchel::Throw( void )
 	}
 }
 
-void CWeaponSatchel::WeaponIdle( void )
+void CWeaponSatchel_HL1::WeaponIdle( void )
 {
 	if ( !HasWeaponIdleTimeElapsed() )
 		return;
@@ -316,7 +332,7 @@ void CWeaponSatchel::WeaponIdle( void )
 	SetWeaponIdleTime( gpGlobals->curtime + random->RandomFloat( 10, 15 ) );// how long till we do this again.
 }
 
-bool CWeaponSatchel::Deploy( void )
+bool CWeaponSatchel_HL1::Deploy( void )
 {
 	SetWeaponIdleTime( gpGlobals->curtime + random->RandomFloat( 10, 15 ) );
 
@@ -344,7 +360,7 @@ bool CWeaponSatchel::Deploy( void )
 
 }
 
-bool CWeaponSatchel::Holster( CBaseCombatWeapon *pSwitchingTo )
+bool CWeaponSatchel_HL1::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
 	if ( !BaseClass::Holster( pSwitchingTo ) )
 	{
@@ -359,7 +375,7 @@ bool CWeaponSatchel::Holster( CBaseCombatWeapon *pSwitchingTo )
 		if ( (pPlayer->GetAmmoCount( m_iPrimaryAmmoType ) <= 0) && !HasChargeDeployed() )
 		{
 #ifndef CLIENT_DLL
-			SetThink( &CWeaponSatchel::DestroyItem );
+			SetThink( &CWeaponSatchel_HL1::DestroyItem );
 			SetNextThink( gpGlobals->curtime + 0.1 );
 #endif
 		}
@@ -368,21 +384,21 @@ bool CWeaponSatchel::Holster( CBaseCombatWeapon *pSwitchingTo )
 	return true;
 }
 
-void CWeaponSatchel::ActivateSatchelModel( void )
+void CWeaponSatchel_HL1::ActivateSatchelModel( void )
 {
 	m_iViewModelIndex	= m_iSatchelViewIndex;
 	m_iWorldModelIndex	= m_iSatchelWorldIndex;
 	SetModel( GetViewModel() );
 }
 
-void CWeaponSatchel::ActivateRadioModel( void )
+void CWeaponSatchel_HL1::ActivateRadioModel( void )
 {
 	m_iViewModelIndex	= m_iRadioViewIndex;
 	m_iWorldModelIndex	= m_iRadioWorldIndex;
 	SetModel( GetViewModel() );
 }
 
-const char *CWeaponSatchel::GetViewModel( int ) const
+const char *CWeaponSatchel_HL1::GetViewModel( int ) const
 {
 	if ( m_iViewModelIndex == m_iSatchelViewIndex )
 	{
@@ -397,7 +413,7 @@ const char *CWeaponSatchel::GetViewModel( int ) const
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-const char *CWeaponSatchel::GetWorldModel( void ) const
+const char *CWeaponSatchel_HL1::GetWorldModel( void ) const
 {
 	if ( m_iViewModelIndex == m_iSatchelViewIndex )
 	{
@@ -409,7 +425,7 @@ const char *CWeaponSatchel::GetWorldModel( void ) const
 	}
 }
 
-void CWeaponSatchel::OnRestore( void )
+void CWeaponSatchel_HL1::OnRestore( void )
 {
 	BaseClass::OnRestore();
 	if ( HasChargeDeployed() )
@@ -424,7 +440,7 @@ void CWeaponSatchel::OnRestore( void )
 
 #ifndef CLIENT_DLL
 //-----------------------------------------------------------------------------
-// CSatchelCharge
+// CSatchelCharge_HL1
 //-----------------------------------------------------------------------------
 
 #define SATCHEL_CHARGE_MODEL "models/w_satchel.mdl"
@@ -433,7 +449,7 @@ void CWeaponSatchel::OnRestore( void )
 extern ConVar sk_plr_dmg_satchel;
 
 
-BEGIN_DATADESC( CSatchelCharge )
+BEGIN_DATADESC( CSatchelCharge_HL1 )
 	DEFINE_FIELD( m_flNextBounceSoundTime, FIELD_TIME ),
 	DEFINE_FIELD( m_bInAir, FIELD_BOOLEAN ),
 	DEFINE_FIELD( m_vLastPosition, FIELD_POSITION_VECTOR ),
@@ -444,20 +460,20 @@ BEGIN_DATADESC( CSatchelCharge )
 	DEFINE_USEFUNC( SatchelUse ),
 END_DATADESC()
 
-LINK_ENTITY_TO_CLASS( monster_satchel, CSatchelCharge );
+LINK_ENTITY_TO_CLASS( monster_satchel, CSatchelCharge_HL1 );
 
 //=========================================================
 // Deactivate - do whatever it is we do to an orphaned 
 // satchel when we don't want it in the world anymore.
 //=========================================================
-void CSatchelCharge::Deactivate( void )
+void CSatchelCharge_HL1::Deactivate( void )
 {
 	AddSolidFlags( FSOLID_NOT_SOLID );
 	UTIL_Remove( this );
 }
 
 
-void CSatchelCharge::Spawn( void )
+void CSatchelCharge_HL1::Spawn( void )
 {
 	Precache( );
 	// motor
@@ -468,9 +484,9 @@ void CSatchelCharge::Spawn( void )
 
 	UTIL_SetSize( this, Vector( -4, -4, 0), Vector(4, 4, 8) );
 
-	SetTouch( &CSatchelCharge::SatchelTouch );
-	SetUse( &CSatchelCharge::SatchelUse );
-	SetThink( &CSatchelCharge::SatchelThink );
+	SetTouch( &CSatchelCharge_HL1::SatchelTouch );
+	SetUse( &CSatchelCharge_HL1::SatchelUse );
+	SetThink( &CSatchelCharge_HL1::SatchelThink );
 	SetNextThink( gpGlobals->curtime + 0.1f );
 
 	m_flDamage		= sk_plr_dmg_satchel.GetFloat();
@@ -493,7 +509,7 @@ void CSatchelCharge::Spawn( void )
 // Input  :
 // Output :
 //-----------------------------------------------------------------------------
-void CSatchelCharge::SatchelUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+void CSatchelCharge_HL1::SatchelUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
 {
 	SetThink( &CBaseGrenade::Detonate );
 	SetNextThink( gpGlobals->curtime );
@@ -504,7 +520,7 @@ void CSatchelCharge::SatchelUse( CBaseEntity *pActivator, CBaseEntity *pCaller, 
 // Input  :
 // Output :
 //-----------------------------------------------------------------------------
-void CSatchelCharge::SatchelTouch( CBaseEntity *pOther )
+void CSatchelCharge_HL1::SatchelTouch( CBaseEntity *pOther )
 {
 	Assert( pOther );
 	if ( pOther->IsSolidFlagSet(FSOLID_TRIGGER | FSOLID_VOLUME_CONTENTS) || GetWaterLevel() > 0 )
@@ -525,7 +541,7 @@ void CSatchelCharge::SatchelTouch( CBaseEntity *pOther )
 	SetLocalAngularVelocity( GetLocalAngularVelocity() * GetFriction() );
 }
 
-void CSatchelCharge::UpdateSlideSound( void )
+void CSatchelCharge_HL1::UpdateSlideSound( void )
 {	
 	// HACKHACK - On ground isn't always set, so look for ground underneath
 	trace_t tr;
@@ -537,7 +553,7 @@ void CSatchelCharge::UpdateSlideSound( void )
 	}
 }
 
-void CSatchelCharge::SatchelThink( void )
+void CSatchelCharge_HL1::SatchelThink( void )
 {
 	UpdateSlideSound();
 
@@ -571,17 +587,17 @@ void CSatchelCharge::SatchelThink( void )
 	SetAbsVelocity( vecNewVel );	
 }
 
-void CSatchelCharge::Precache( void )
+void CSatchelCharge_HL1::Precache( void )
 {
 	PrecacheModel( SATCHEL_CHARGE_MODEL );
-	PrecacheScriptSound( "SatchelCharge.Bounce" );
+	PrecacheScriptSound( "SatchelCharge_HL1.Bounce" );
 }
 
-void CSatchelCharge::BounceSound( void )
+void CSatchelCharge_HL1::BounceSound( void )
 {
 	if ( gpGlobals->curtime > m_flNextBounceSoundTime )
 	{
-		EmitSound( "SatchelCharge.Bounce" );
+		EmitSound( "SatchelCharge_HL1.Bounce" );
 
 		m_flNextBounceSoundTime = gpGlobals->curtime + 0.1;
 	}
@@ -592,7 +608,7 @@ void CSatchelCharge::BounceSound( void )
 // Input  :
 // Output :
 //-----------------------------------------------------------------------------
-CSatchelCharge::CSatchelCharge(void)
+CSatchelCharge_HL1::CSatchelCharge_HL1(void)
 {
 	m_vLastPosition.Init();
 }

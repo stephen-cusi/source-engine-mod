@@ -97,6 +97,7 @@
 #include "steamworks_gamestats.h"
 #include "tf/tf_gc_server.h"
 #include "tf_gamerules.h"
+#include "tf_lobby.h"
 #include "player_vs_environment/tf_population_manager.h"
 #include "workshop/maps_workshop.h"
 
@@ -115,6 +116,12 @@ extern ConVar tf_mm_servermode;
 #ifdef USES_ECON_ITEMS
 #include "econ_item_system.h"
 #endif // USES_ECON_ITEMS
+
+#ifdef LUA_SDK
+#include "luamanager.h"
+#include "luacachefile.h"
+#include "mountaddons.h"
+#endif
 
 #ifdef CSTRIKE_DLL // BOTPORT: TODO: move these ifdefs out
 #include "bot/bot.h"
@@ -633,6 +640,9 @@ bool CServerGameDLL::DLLInit( CreateInterfaceFn appSystemFactory,
 #endif
 	}
 
+#ifdef LUA_SDK
+	MountAddons();
+#endif
 	// Yes, both the client and game .dlls will try to Connect, the soundemittersystem.dll will handle this gracefully
 	if ( !soundemitterbase->Connect( appSystemFactory ) )
 		return false;
@@ -951,6 +961,34 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	}
 #endif // USES_ECON_ITEMS
 
+#ifdef LUA_SDK
+	//lcf_recursivedeletefile( LUA_PATH_CACHE );
+
+	// Add Lua environment
+	luasrc_init();
+
+	luasrc_dofolder( L, LUA_PATH_EXTENSIONS );
+	luasrc_dofolder( L, LUA_PATH_MODULES );
+	luasrc_dofolder( L, LUA_PATH_GAME_SHARED );
+	luasrc_dofolder( L, LUA_PATH_GAME_SERVER );
+
+	luasrc_LoadWeapons();
+	luasrc_LoadEntities();
+	//luasrc_LoadEffects();
+
+	//Andrew; loadup base gamemode.
+	luasrc_LoadGamemode( LUA_BASE_GAMEMODE );
+
+	luasrc_LoadGamemode( gamemode.GetString() );
+	luasrc_SetGamemode( gamemode.GetString() );
+
+	if ( gpGlobals->maxClients > 1 )
+	{
+		// load LCF into stringtable
+		//lcf_preparecachefile();
+	}
+#endif
+
 	ResetWindspeed();
 	UpdateChapterRestrictions( pMapName );
 
@@ -1042,7 +1080,7 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	PrecachePointTemplates();
 
 	// load MOTD from file into stringtable
-	LoadMessageOfTheDay();
+	//LoadMessageOfTheDay();
 
 	// Sometimes an ent will Remove() itself during its precache, so RemoveImmediate won't happen.
 	// This makes sure those ents get cleaned up.
@@ -1055,6 +1093,17 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	// clear any pending autosavedangerous
 	m_fAutoSaveDangerousTime = 0.0f;
 	m_fAutoSaveDangerousMinHealthToCommit = 0.0f;
+
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_HOOK( "LevelInit" );
+		lua_pushstring( L, pMapName );
+		lua_pushstring( L, pMapEntities );
+		lua_pushstring( L, pOldLevel );
+		lua_pushstring( L, pLandmarkName );
+		lua_pushboolean( L, loadGame );
+		lua_pushboolean( L, background );
+	END_LUA_CALL_HOOK( 6, 0 );
+#endif
 	return true;
 }
 
@@ -1150,6 +1199,14 @@ void CServerGameDLL::GameServerSteamAPIActivated( void )
 	GCClientSystem()->GameServerActivate();
 	InventoryManager()->GameServerSteamAPIActivated();
 	TFMapsWorkshop()->GameServerSteamAPIActivated();
+#endif
+
+//Andrew; call activate on the gamemode
+#if defined ( LUA_SDK )
+//	BEGIN_LUA_CALL_HOOK( "ServerActivate" );
+//		lua_pushinteger( L, edictCount );
+//		lua_pushinteger( L, clientMax );
+//	END_LUA_CALL_HOOK( 2, 0 );
 #endif
 }
 
@@ -1330,7 +1387,11 @@ void CServerGameDLL::Think( bool finalTick )
 	if ( m_fAutoSaveDangerousTime != 0.0f && m_fAutoSaveDangerousTime < gpGlobals->curtime )
 	{
 		// The safety timer for a dangerous auto save has expired
+#ifdef HL2SB
+		CBasePlayer *pPlayer = UTIL_GetLocalPlayer();
+#else
 		CBasePlayer *pPlayer = UTIL_PlayerByIndex( 1 );
+#endif
 
 		if ( pPlayer && ( pPlayer->GetDeathTime() == 0.0f || pPlayer->GetDeathTime() > gpGlobals->curtime )
 			&& !pPlayer->IsSinglePlayerGameEnding()
@@ -1356,6 +1417,14 @@ void CServerGameDLL::OnQueryCvarValueFinished( QueryCvarCookie_t iCookie, edict_
 // Called when a level is shutdown (including changing levels)
 void CServerGameDLL::LevelShutdown( void )
 {
+#if defined ( LUA_SDK )
+	if (g_bLuaInitialized)
+	{
+		BEGIN_LUA_CALL_HOOK( "LevelShutdown" );
+		END_LUA_CALL_HOOK( 0, 0 );
+	}
+#endif
+
 #ifndef NO_STEAM
 	IGameSystem::LevelShutdownPreClearSteamAPIContextAllSystems();
 
@@ -1390,6 +1459,10 @@ void CServerGameDLL::LevelShutdown( void )
 		TheNavMesh->Reset();
 	}
 #endif
+#endif
+
+#if defined ( LUA_SDK )
+	luasrc_shutdown();
 #endif
 }
 
@@ -1816,6 +1889,16 @@ void CServerGameDLL::PreSaveGameLoaded( char const *pSaveName, bool bInGame )
 //-----------------------------------------------------------------------------
 bool CServerGameDLL::ShouldHideServer( void )
 {
+#if defined ( LUA_SDK )
+	if ( g_bLuaInitialized )
+	{
+		BEGIN_LUA_CALL_HOOK( "ShouldHideServer" );
+		END_LUA_CALL_HOOK( 0, 1 );
+
+		RETURN_LUA_BOOLEAN();
+	}
+#endif
+
 	if ( g_pcv_commentary && g_pcv_commentary->GetBool() )
 		return true;
 
@@ -1897,19 +1980,18 @@ const char *CServerGameDLL::GetServerBrowserGameData()
 #ifdef TF_DLL
 	sResult.Format( "tf_mm_trusted:%d,tf_mm_servermode:%d", tf_mm_trusted.GetInt(), tf_mm_servermode.GetInt() );
 
-	CMatchInfo *pMatch = GTFGCClientSystem()->GetMatch();
-	if ( !pMatch )
+	CTFLobby *pLobby = GTFGCClientSystem()->GetLobby();
+	if ( pLobby == NULL )
 	{
 		sResult.Append( ",lobby:0" );
 	}
 	else
 	{
-		sResult.Append( CFmtStr( ",lobby:%016llx", pMatch->m_nLobbyID ) );
+		sResult.Append( CFmtStr( ",lobby:%016llx", pLobby->GetGroupID() ) );
 	}
 	if ( TFGameRules() && TFGameRules()->IsMannVsMachineMode() )
 	{
-		bool bMannup = pMatch && pMatch->m_eMatchGroup == k_nMatchGroup_MvM_MannUp;
-		sResult.Append( CFmtStr( ",mannup:%d", (int)bMannup ) );
+		sResult.Append( CFmtStr( ",mannup:%d", ( pLobby && pLobby->GetPlayingForBraggingRights() ) ? 1 : 0  ) );
 	}
 #endif
 
@@ -2681,8 +2763,16 @@ void CServerGameClients::ClientActive( edict_t *pEdict, bool bLoadGame )
 
 	// Tell the sound controller to check looping sounds
 	CBasePlayer *pPlayer = ( CBasePlayer * )CBaseEntity::Instance( pEdict );
-	CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
-	SceneManager_ClientActive( pPlayer );
+	#ifdef HL2SB
+		if( pPlayer )
+		{
+			CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
+			SceneManager_ClientActive( pPlayer );
+		}
+	#else
+		CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
+		SceneManager_ClientActive( pPlayer );
+	#endif
 
 	#if defined( TF_DLL )
 		Assert( pPlayer );
@@ -3217,6 +3307,12 @@ void CServerGameClients::GetBugReportInfo( char *buf, int buflen )
 //-----------------------------------------------------------------------------
 void CServerGameClients::NetworkIDValidated( const char *pszUserName, const char *pszNetworkID )
 {
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_HOOK( "NetworkIDValidated" );
+		lua_pushstring( L, pszUserName );
+		lua_pushstring( L, pszNetworkID );
+	END_LUA_CALL_HOOK( 2, 0 );
+#endif
 }
 
 // The client has submitted a keyvalues command
