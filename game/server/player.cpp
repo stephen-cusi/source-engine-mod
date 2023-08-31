@@ -593,6 +593,7 @@ CBasePlayer::CBasePlayer( )
 
 	m_bForceOrigin = false;
 	m_hVehicle = NULL;
+	m_hUseEntity = NULL;
 	m_pCurrentCommand = NULL;
 	
 	// Setup our default FOV
