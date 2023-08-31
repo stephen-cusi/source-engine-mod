@@ -60,6 +60,8 @@ ConVar tf_weapon_criticals_bucket_bottom( "tf_weapon_criticals_bucket_bottom", "
 ConVar tf_weapon_criticals_bucket_default( "tf_weapon_criticals_bucket_default", "300.0", FCVAR_REPLICATED | FCVAR_CHEAT );
 #endif // TF
 
+extern ConVar sv_infinite_ammo;
+
 CBaseCombatWeapon::CBaseCombatWeapon() : BASECOMBATWEAPON_DERIVED_FROM()
 {
 	// Constructor must call this
@@ -2012,6 +2014,10 @@ bool CBaseCombatWeapon::DefaultReload( int iClipSize1, int iClipSize2, int iActi
 
 	MDLCACHE_CRITICAL_SECTION();
 	float flSequenceEndTime = gpGlobals->curtime + SequenceDuration();
+	if (sv_infinite_ammo.GetBool())
+	{
+		flSequenceEndTime = gpGlobals->curtime;
+	}
 	pOwner->SetNextAttack( flSequenceEndTime );
 	m_flNextPrimaryAttack = m_flNextSecondaryAttack = flSequenceEndTime;
 
