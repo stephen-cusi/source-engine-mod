@@ -54,6 +54,8 @@ extern int g_interactionPlayerLaunchedRPG;
 #define CLaserDot C_LaserDot
 #endif
 
+ConVar sv_rpg_fastfire( "sv_rpg_fastfire", "0", 0, "Allow RPG to fast fire multiple missiles" );
+
 //-----------------------------------------------------------------------------
 // Laser Dot
 //-----------------------------------------------------------------------------
@@ -1614,17 +1616,22 @@ void CWeaponRPG::PrimaryAttack(void)
 		return;
 
 	// Can't have an active missile out
-	if (m_hMissile != NULL)
+	if ((m_hMissile != NULL) && (sv_rpg_fastfire.GetBool() == 0))
 		return;
 
 	// Can't be reloading
-	if (GetActivity() == ACT_VM_RELOAD)
+	if ((GetActivity() == ACT_VM_RELOAD) && (sv_rpg_fastfire.GetBool() == 0))
 		return;
 
 	Vector vecOrigin;
 	Vector vecForward;
 
-	m_flNextPrimaryAttack = gpGlobals->curtime + 0.5f;
+	if (sv_rpg_fastfire.GetBool() == 0)
+	{
+		m_flNextPrimaryAttack = gpGlobals->curtime + 0.5f;
+	} else {
+		m_flNextPrimaryAttack = gpGlobals->curtime + 0.2f;
+	}
 
 	CBasePlayer *pOwner = ToBasePlayer(GetOwner());
 
