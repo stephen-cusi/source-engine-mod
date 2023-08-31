@@ -2000,11 +2000,6 @@ bool CBaseCombatWeapon::DefaultReload( int iClipSize1, int iClipSize2, int iActi
 	if ( !bReload )
 		return false;
 
-	if (sv_infinite_ammo.GetBool())
-	{
-		return true;
-	}
-
 #ifdef CLIENT_DLL
 	// Play reload
 	WeaponSound( RELOAD );
@@ -2019,6 +2014,10 @@ bool CBaseCombatWeapon::DefaultReload( int iClipSize1, int iClipSize2, int iActi
 
 	MDLCACHE_CRITICAL_SECTION();
 	float flSequenceEndTime = gpGlobals->curtime + SequenceDuration();
+	if (sv_infinite_ammo.GetBool())
+	{
+		flSequenceEndTime = gpGlobals->curtime;
+	}
 	pOwner->SetNextAttack( flSequenceEndTime );
 	m_flNextPrimaryAttack = m_flNextSecondaryAttack = flSequenceEndTime;
 
