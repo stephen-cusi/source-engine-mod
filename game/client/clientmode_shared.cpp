@@ -148,6 +148,18 @@ CON_COMMAND( hud_reloadscheme, "Reloads hud layout and animation scripts." )
 	mode->ReloadScheme();
 }
 
+CON_COMMAND( message_mode, "Opens chat dialog" )
+{
+	ClientModeShared *mode = ( ClientModeShared * )GetClientModeNormal();
+	mode->StartMessageMode( MM_SAY );
+}
+
+CON_COMMAND( message_mode2, "Opens chat dialog" )
+{
+	ClientModeShared *mode = ( ClientModeShared * )GetClientModeNormal();
+	mode->StartMessageMode( MM_SAY_TEAM );
+}
+
 #ifdef _DEBUG
 CON_COMMAND_F( crash, "Crash the client. Optional parameter -- type of crash:\n 0: read from NULL\n 1: write to NULL\n 2: DmCrashDump() (xbox360 only)", FCVAR_CHEAT )
 {
