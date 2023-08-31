@@ -60,6 +60,8 @@ ConVar tf_weapon_criticals_bucket_bottom( "tf_weapon_criticals_bucket_bottom", "
 ConVar tf_weapon_criticals_bucket_default( "tf_weapon_criticals_bucket_default", "300.0", FCVAR_REPLICATED | FCVAR_CHEAT );
 #endif // TF
 
+extern ConVar sv_infinite_ammo;
+
 CBaseCombatWeapon::CBaseCombatWeapon() : BASECOMBATWEAPON_DERIVED_FROM()
 {
 	// Constructor must call this
@@ -1997,6 +1999,11 @@ bool CBaseCombatWeapon::DefaultReload( int iClipSize1, int iClipSize2, int iActi
 
 	if ( !bReload )
 		return false;
+
+	if (sv_infinite_ammo.GetBool())
+	{
+		return true;
+	}
 
 #ifdef CLIENT_DLL
 	// Play reload
