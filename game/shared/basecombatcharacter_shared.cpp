@@ -11,7 +11,7 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
-static ConVar sv_infinite_ammo( "sv_infinite_ammo", "0", 0, "Infinite ammo" );
+ConVar sv_infinite_ammo( "sv_infinite_ammo", "0", 0, "Infinite ammo" );
 
 //-----------------------------------------------------------------------------
 // Purpose: Switches to the best weapon that is also better than the given weapon.
