@@ -2776,6 +2776,11 @@ void CFuncTankLaser::Think( void )
 
 void CFuncTankLaser::Fire( int bulletCount, const Vector &barrelEnd, const Vector &forward, CBaseEntity *pAttacker, bool bIgnoreSpread )
 {
+
+	#ifdef HL2SB
+	IPredictionSystem::SuppressHostEvents( NULL );
+	#endif
+	
 	int i;
 	trace_t tr;
 
