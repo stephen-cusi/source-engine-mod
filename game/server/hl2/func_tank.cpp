@@ -3095,6 +3095,11 @@ void CFuncTankAirboatGun::DoImpactEffect( trace_t &tr, int nDamageType )
 
 void CFuncTankAirboatGun::Fire( int bulletCount, const Vector &barrelEnd, const Vector &forward, CBaseEntity *pAttacker, bool bIgnoreSpread )
 {
+
+#ifdef HL2SB
+	IPredictionSystem::SuppressHostEvents( NULL );
+#endif
+	
 	CAmmoDef *pAmmoDef = GetAmmoDef();
 	int ammoType = pAmmoDef->Index( "AirboatGun" );
 
