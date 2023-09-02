@@ -2937,6 +2937,7 @@ void CFuncTankAirboatGun::Activate()
 		if ( m_hAirboatGunModel )
 		{
 			m_nGunBarrelAttachment = m_hAirboatGunModel->LookupAttachment( "muzzle" );
+			m_hAirboatGunModel->m_bClientSideAnimation = false;
 		}
 	}
 }
