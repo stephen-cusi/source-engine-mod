@@ -1179,11 +1179,11 @@ void CC_God_f (void)
 #ifdef TF_DLL
    if ( TFGameRules() && ( TFGameRules()->IsPVEModeActive() == false ) )
    {
-	   if ( (gpGlobals->deathmatch) && (!sv_allow_godmode->GetBool()) )
+	   if ( (gpGlobals->deathmatch) && ( sv_allow_godmode.GetBool() == 0) )
 		   return;
    }
 #else
-	if ( (gpGlobals->deathmatch) && (!sv_allow_godmode->GetBool()) )
+	if ( (gpGlobals->deathmatch) && ( sv_allow_godmode.GetBool() == 0) )
 		return;
 #endif
 
@@ -1355,7 +1355,7 @@ void CC_Notarget_f (void)
 	if ( !pPlayer )
 		return;
 
-	if ( (gpGlobals->deathmatch) && (!sv_allow_notarget->GetBool()) )
+	if ( (gpGlobals->deathmatch) && ( sv_allow_notarget.GetBool() == 0 ) )
 		return;
 
 	pPlayer->ToggleFlag( FL_NOTARGET );
