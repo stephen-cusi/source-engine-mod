@@ -1164,6 +1164,9 @@ static ConCommand noclip("noclip", CC_Player_NoClip, "Toggle. Player becomes non
 //------------------------------------------------------------------------------
 // Sets client to godmode
 //------------------------------------------------------------------------------
+
+ConVar sv_allow_godmode("sv_allow_godmode", "1");
+
 void CC_God_f (void)
 {
 	if ( !sv_cheats->GetBool() )
@@ -1176,11 +1179,11 @@ void CC_God_f (void)
 #ifdef TF_DLL
    if ( TFGameRules() && ( TFGameRules()->IsPVEModeActive() == false ) )
    {
-	   if ( gpGlobals->deathmatch )
+	   if ( (gpGlobals->deathmatch) && (!sv_allow_godmode->GetBool()) )
 		   return;
    }
 #else
-	if ( gpGlobals->deathmatch )
+	if ( (gpGlobals->deathmatch) && (!sv_allow_godmode->GetBool()) )
 		return;
 #endif
 
@@ -1340,6 +1343,9 @@ CON_COMMAND_F( setang_exact, "Snap player eyes and orientation to specified pitc
 //------------------------------------------------------------------------------
 // Sets client to notarget mode.
 //------------------------------------------------------------------------------
+
+ConVar sv_allow_notarget("sv_allow_notarget", "1");
+
 void CC_Notarget_f (void)
 {
 	if ( !sv_cheats->GetBool() )
@@ -1349,7 +1355,7 @@ void CC_Notarget_f (void)
 	if ( !pPlayer )
 		return;
 
-	if ( gpGlobals->deathmatch )
+	if ( (gpGlobals->deathmatch) && (!sv_allow_notarget->GetBool()) )
 		return;
 
 	pPlayer->ToggleFlag( FL_NOTARGET );
