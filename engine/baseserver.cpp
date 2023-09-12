@@ -1536,7 +1536,8 @@ bool CBaseServer::CheckIPRestrictions( const netadr_t &adr, int nAuthProtocol )
 		return true;
 
 	// allow other users if they're on the same ip range
-	if ( Steam3Server().BLanOnly() )
+	//if ( Steam3Server().BLanOnly() )
+	if ( sv_lan.GetBool() )
 	{
 		// allow connection, if client is in the same subnet 
 		if ( adr.CompareClassBAdr( net_local_adr ) )
