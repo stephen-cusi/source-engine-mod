@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-mod-64bit:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v3
@@ -76,7 +76,7 @@ jobs:
         if-no-files-found: error
 
   build-mod-32bit:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v3
@@ -142,7 +142,7 @@ jobs:
         if-no-files-found: error
   
   build-mod-64bit_extra:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v3
@@ -175,7 +175,7 @@ jobs:
         if-no-files-found: error
 
   build-mod-32bit_extra:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v3
