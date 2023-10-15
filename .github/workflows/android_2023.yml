@@ -150,9 +150,9 @@ jobs:
         ./waf install --target=client,server -j4 --strip
         ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/episodic --disable-warns --build-game=episodic
         ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
-        #test hldms
-        ./waf install --target=client,server -j4 --strip
+        # ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
+        # #test hldms
+        # ./waf install --target=client,server -j4 --strip
         #mv ./andriod/lib ./andriod/cstrike
         cat build/config.log >./andriod/info.txt
         
