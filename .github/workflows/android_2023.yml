@@ -1,4 +1,4 @@
-name: andriod-2023-update
+name: andriod-2023
 
 on:
   push:
@@ -49,31 +49,6 @@ jobs:
         path: ./andriod
         if-no-files-found: error
 
-  build-srceng-arm64:
-    runs-on: ubuntu-20.04
-
-    steps:
-    - uses: actions/checkout@v3
-    - name: build
-      run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 11
-        export PATH="/usr/lib/llvm-11/bin:$PATH"
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        unzip android-ndk-r10e-linux-x86_64.zip
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-        export NDK_HOME=$PWD/android-ndk-r10e/
-        mkdir ./andriod
-        git submodule init;git submodule update
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod --disable-warns --build-game=hl2
-        ./waf install -j4 --strip 
-        cat build/config.log > ./andriod/info.txt
-    - uses: actions/upload-artifact@v3
-      with:
-        name: 64bit-srceng
-        path: ./andriod
-        if-no-files-found: error
 
   build-mod-32bit:
     runs-on: ubuntu-20.04
@@ -115,31 +90,6 @@ jobs:
         path: ./andriod
         if-no-files-found: error
 
-  build-srceng-arm32:
-    runs-on: ubuntu-20.04
-
-    steps:
-    - uses: actions/checkout@v3
-    - name: build
-      run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 11
-        export PATH="/usr/lib/llvm-11/bin:$PATH"
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        unzip android-ndk-r10e-linux-x86_64.zip
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-        export NDK_HOME=$PWD/android-ndk-r10e/
-        mkdir ./andriod
-        git submodule init;git submodule update
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod --disable-warns --build-game=hl2
-        ./waf install -j4 --strip
-        cat build/config.log > ./andriod/info.txt
-    - uses: actions/upload-artifact@v3
-      with:
-        name: 32bit-srceng
-        path: ./andriod
-        if-no-files-found: error
   
   build-mod-64bit_extra:
     runs-on: ubuntu-20.04
