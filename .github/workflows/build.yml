@@ -3,32 +3,32 @@ name: Build
 on: [push, pull_request]
 
 jobs:
-  build-linux-i386:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build Linux (32 bit)
-      run: |
-        scripts/build-ubuntu-i386.sh
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-linux-i386
-        path: ./to_upload
-        if-no-files-found: error
+  # build-linux-i386:
+    # runs-on: ubuntu-latest
+    # steps:
+    # - uses: actions/checkout@v2
+    # - name: Build Linux (32 bit)
+      # run: |
+        # scripts/build-ubuntu-i386.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-i386
+        # path: ./to_upload
+        # if-no-files-found: error
 
-  build-linux-amd64:
-    runs-on: ubuntu-20.04
+  # build-linux-amd64:
+    # runs-on: ubuntu-20.04
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build Linux (64 Bit)
-      run: |
-        scripts/build-ubuntu-amd64.sh
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-linux-amd64
-        path: ./to_upload
-        if-no-files-found: error
+    # steps:
+    # - uses: actions/checkout@v2
+    # - name: Build Linux (64 Bit)
+      # run: |
+        # scripts/build-ubuntu-amd64.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-amd64
+        # path: ./to_upload
+        # if-no-files-found: error
 
   Build-apk-for-android:
     runs-on: ubuntu-20.04
@@ -59,126 +59,126 @@ jobs:
         name: hl2sb-apk
         path: hl2sb-release.apk
 
-  build-windows-win-i386:
-    runs-on: windows-latest
+  # build-windows-win-i386:
+    # runs-on: windows-latest
 
-    steps:
-    - uses: actions/checkout@v3
-    - name: Build Windows (32 bit)
-      run: |
-        #
-        git submodule init;git submodule update
-        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Windows (32 bit)
+      # run: |
+        # #
+        # git submodule init;git submodule update
+        # ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb
         
-        ./waf.bat install
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-win-i386
-        path: ./win
-        if-no-files-found: error
+        # ./waf.bat install
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-win-i386
+        # path: ./win
+        # if-no-files-found: error
         
-  build-windows-win-amd64:
-    runs-on: windows-latest
+  # build-windows-win-amd64:
+    # runs-on: windows-latest
 
-    steps:
-    - uses: actions/checkout@v3
-    - name: Build Windows (64 bit)
-      run: |
-        #
-        git submodule init;git submodule update
-        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Windows (64 bit)
+      # run: |
+        # #
+        # git submodule init;git submodule update
+        # ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8
         
-        ./waf.bat install
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-win-amd64
-        path: ./win
-        if-no-files-found: error
+        # ./waf.bat install
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-win-amd64
+        # path: ./win
+        # if-no-files-found: error
 
-  build-dedicated-windows-i386:
-    runs-on: windows-2019
+  # build-dedicated-windows-i386:
+    # runs-on: windows-2019
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build Windows Dedicated (32 bit) 
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T debug -d --prefix=./win --build-game=hl2sb
-        ./waf.bat install
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-win-dedicated-i386
-        path: ./win
-        if-no-files-found: error
+    # steps:
+    # - uses: actions/checkout@v2
+    # - name: Build Windows Dedicated (32 bit) 
+      # run: |
+        # git submodule init && git submodule update
+        # ./waf.bat configure -T debug -d --prefix=./win --build-game=hl2sb
+        # ./waf.bat install
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-win-dedicated-i386
+        # path: ./win
+        # if-no-files-found: error
 
-  build-dedicated-windows-amd64:
-    runs-on: windows-2019
+  # build-dedicated-windows-amd64:
+    # runs-on: windows-2019
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build Windows Dedicated (64 bit)
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T debug -d -8 --prefix=./win --build-game=hl2sb
-        ./waf.bat install
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-win-dedicated-amd64
-        path: ./win
-        if-no-files-found: error
+    # steps:
+    # - uses: actions/checkout@v2
+    # - name: Build Windows Dedicated (64 bit)
+      # run: |
+        # git submodule init && git submodule update
+        # ./waf.bat configure -T debug -d -8 --prefix=./win --build-game=hl2sb
+        # ./waf.bat install
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-win-dedicated-amd64
+        # path: ./win
+        # if-no-files-found: error
 
-  build-dedicated-linux-i386:
-    runs-on: ubuntu-20.04
+  # build-dedicated-linux-i386:
+    # runs-on: ubuntu-20.04
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build Linux Dedicated (32 bit)
-      run: |
-        scripts/build-ubuntu-i386.sh -d
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-linux-dedicated-i386
-        path: ./to-upload
-        if-no-files-found: error
+    # steps:
+    # - uses: actions/checkout@v2
+    # - name: Build Linux Dedicated (32 bit)
+      # run: |
+        # scripts/build-ubuntu-i386.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-dedicated-i386
+        # path: ./to-upload
+        # if-no-files-found: error
 
-  build-dedicated-linux-amd64:
-    runs-on: ubuntu-20.04
+  # build-dedicated-linux-amd64:
+    # runs-on: ubuntu-20.04
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build Linux Dedicated (64 bit)
-      run: |
-        scripts/build-ubuntu-amd64.sh -d
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-linux-dedicated-amd64
-        path: ./to-upload
-        if-no-files-found: error
+    # steps:
+    # - uses: actions/checkout@v2
+    # - name: Build Linux Dedicated (64 bit)
+      # run: |
+        # scripts/build-ubuntu-amd64.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-dedicated-amd64
+        # path: ./to-upload
+        # if-no-files-found: error
 
-  build-macos-amd64:
-    runs-on: macos-latest
+  # build-macos-amd64:
+    # runs-on: macos-latest
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build MacOS (64 bit)
-      run: |
-        scripts/build-macos-amd64.sh
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-macos-amd64
-        path: ./to-upload
-        if-no-files-found: error
+    # steps:
+    # - uses: actions/checkout@v2
+    # - name: Build MacOS (64 bit)
+      # run: |
+        # scripts/build-macos-amd64.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-macos-amd64
+        # path: ./to-upload
+        # if-no-files-found: error
 
-  build-dedicated-macos-amd64:
-    runs-on: macos-latest
+  # build-dedicated-macos-amd64:
+    # runs-on: macos-latest
 
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build MacOS Dedicated (64 bit)
-      run: |
-        scripts/build-macos-amd64.sh -d
-    - uses: actions/upload-artifact@v3
-      with:
-        name: hl2sb-macos-dedicated-amd64
-        path: ./to-upload
-        if-no-files-found: error
+    # steps:
+    # - uses: actions/checkout@v2
+    # - name: Build MacOS Dedicated (64 bit)
+      # run: |
+        # scripts/build-macos-amd64.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-macos-dedicated-amd64
+        # path: ./to-upload
+        # if-no-files-found: error
