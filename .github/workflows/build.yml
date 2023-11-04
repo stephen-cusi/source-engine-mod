@@ -37,7 +37,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Cloning modlaucher repo and preparing for building
       run: |
-        git clone https://github.com/ItzVladik/modlauncher-waf
+        git clone https://github.com/stephen-cusi/modlauncher-waf-msif
         sudo apt-get update
         sudo apt-get install -f -y openjdk-8-jre zip apksigner
     - name: Build Android (32 bit)
@@ -51,7 +51,7 @@ jobs:
         scripts/build-apk.sh 
     - name: Rename APK
       run: |
-         mv modlauncher-waf/build/android/mod-signed.apk hl2sb-release.apk
+         mv modlauncher-waf-msif/build/android/mod-signed.apk hl2sb-release.apk
 
     - name: 'Upload Artifact'
       uses: actions/upload-artifact@v3
