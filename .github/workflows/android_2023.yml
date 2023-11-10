@@ -178,7 +178,7 @@ jobs:
         export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
         mv android-ndk-r10e ndk/
         export ANDROID_NDK_HOME=$(pwd)/ndk
-        mkdir ./andriod/engine
+        #mkdir ./andriod/engine
         git submodule init;git submodule update
         ./waf configure -T release --android=aarch64,host,21 --prefix=./andriod/engine --disable-warns
         ./waf install -j4 --strip
@@ -205,7 +205,7 @@ jobs:
         export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
         mv android-ndk-r10e ndk/
         export ANDROID_NDK_HOME=$(pwd)/ndk
-        mkdir ./andriod/engine
+        #mkdir ./andriod/engine
         git submodule init;git submodule update
         ./waf configure -T release -4 --android=armeabi-v7a-hard,host,21 --prefix=./andriod/engine --disable-warns
         ./waf install -j4 --strip
