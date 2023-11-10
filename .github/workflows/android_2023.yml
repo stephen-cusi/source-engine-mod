@@ -31,15 +31,15 @@ jobs:
         mkdir ./andriod/hl1mp
         mkdir ./andriod/cstrike
         git submodule init;git submodule update
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
+        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
         ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
+        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
         ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
+        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
         ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
+        #./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
         #test hldms
-        ./waf install --target=client,server -j4 --strip
+        #./waf install --target=client,server -j4 --strip
         #mv ./andriod/lib ./andriod/cstrike
         cat build/config.log >./andriod/info.txt
         
@@ -78,9 +78,9 @@ jobs:
         ./waf install --target=client,server -j4 --strip
         ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
         ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
+        #./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
         #test hldms
-        ./waf install --target=client,server -j4 --strip
+        #./waf install --target=client,server -j4 --strip
         #mv ./andriod/lib ./andriod/cstrike
         cat build/config.log >./andriod/info.txt
         
@@ -111,11 +111,11 @@ jobs:
         mkdir ./andriod/portal
         mkdir ./andriod/episodic
         git submodule init;git submodule update
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/dod --disable-warns --build-game=dod 
+        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/dod --disable-warns --build-game=dod 
         ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/portal --disable-warns --build-game=portal 
+        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/portal --disable-warns --build-game=portal 
         ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release -8 --togles --android=aarch64,host,21 --prefix=./andriod/episodic --disable-warns --build-game=episodic 
+        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/episodic --disable-warns --build-game=episodic 
         ./waf install --target=client,server -j4 --strip --strip
     - uses: actions/upload-artifact@v3
       with:
@@ -160,4 +160,58 @@ jobs:
       with:
         name: 32bit-mod_x3
         path: ./andriod
+        if-no-files-found: error
+
+  build-engine-64:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    - name: set-env+build
+      run: |
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://apt.llvm.org/llvm.sh
+        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
+        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+        export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+        mkdir ./andriod/engine
+        git submodule init;git submodule update
+        ./waf configure -T release --android=aarch64,host,21 --prefix=./andriod/engine --disable-warns
+        ./waf install -j4 --strip
+        
+    - uses: actions/upload-artifact@v3
+      with:
+        name: 64bit-engine
+        path: ./andriod/engine
+        if-no-files-found: error
+        
+  build-engine-32:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    - name: set-env+build
+      run: |
+        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
+        sudo apt update;sudo apt upgrade;sudo apt install ccache
+        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
+        wget https://apt.llvm.org/llvm.sh
+        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
+        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+        export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+        mv android-ndk-r10e ndk/
+        export ANDROID_NDK_HOME=$(pwd)/ndk
+        mkdir ./andriod/engine
+        git submodule init;git submodule update
+        ./waf configure -T release -4 --android=armeabi-v7a-hard,host,21 --prefix=./andriod/engine --disable-warns
+        ./waf install -j4 --strip
+        
+    - uses: actions/upload-artifact@v3
+      with:
+        name: 32bit-engine
+        path: ./andriod/engine
         if-no-files-found: error
