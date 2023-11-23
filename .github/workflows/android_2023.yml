@@ -68,7 +68,7 @@ jobs:
     - uses: actions/checkout@v3
     - name: Build Windows (32+64 bit)
       run: |
-        #
+        
         git clone https://github.com/stephen-cusi/modlauncher-waf -b hl2mp
         sudo apt-get update
         sudo apt-get install -f -y openjdk-8-jre zip apksigner
