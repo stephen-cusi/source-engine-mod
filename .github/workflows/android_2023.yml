@@ -1,4 +1,4 @@
-name: Build-lmod
+name: Build-Multi
 
 on: [push, pull_request]
 
