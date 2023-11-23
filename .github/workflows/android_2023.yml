@@ -1,217 +1,204 @@
-name: andriod-2023
-#
-on:
-  push:
-    branches:
-      - "*"
-  pull_request:
-    branches:
-      - "*"
+name: Build-lmod
+
+on: [push, pull_request]
 
 jobs:
-  build-mod-64bit:
-    runs-on: ubuntu-latest
+  # build-linux-i386:
+    # runs-on: ubuntu-latest
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Linux (32 bit)
+      # run: |
+        # scripts/build-ubuntu-i386.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-i386
+        # path: ./to_upload
+        # if-no-files-found: error
+
+  # build-linux-amd64:
+    # runs-on: ubuntu-20.04
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Linux (64 Bit)
+      # run: |
+        # scripts/build-ubuntu-amd64.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-amd64
+        # path: ./to_upload
+        # if-no-files-found: error
+
+  Build-apk-for-android:
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build-hl2mp_cstrike_hl1
+    - name: Cloning modlaucher repo and preparing for building 
       run: |
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        sudo apt update;sudo apt upgrade;sudo apt install ccache
-        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
-        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-        export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+        git clone https://github.com/stephen-cusi/modlauncher-waf -b lmod
+        sudo apt-get update
+        sudo apt-get install -f -y openjdk-8-jre zip apksigner
+    - name: Build Android (32 bit)
+      run: |
+        scripts/build-android-armv7a.sh
+    - name: Build Android (64 bit)
+      run: |
+        sudo chmod +x scripts/build-android-arm64.sh
+        scripts/build-android-arm64.sh   
+    - name: Build APK
+      run: |
+        chmod +x scripts/sbuild-apk.sh
+        scripts/sbuild-apk.sh 
+    - name: Rename APK
+      run: |
+         mv modlauncher-waf/build/android/mod-signed.apk lmod-release.apk
 
-        mv android-ndk-r10e ndk/
-        export ANDROID_NDK_HOME=$(pwd)/ndk
-        mkdir ./andriod
-        mkdir ./andriod/hl2mp
-        mkdir ./andriod/hl1
-        mkdir ./andriod/hl1mp
-        mkdir ./andriod/cstrike
-        git submodule init;git submodule update
-        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
-        ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
-        ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
-        ./waf install --target=client,server -j4 --strip
-        #./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
-        #test hldms
-        #./waf install --target=client,server -j4 --strip
-        #mv ./andriod/lib ./andriod/cstrike
-        cat build/config.log >./andriod/info.txt
-        
-    - uses: actions/upload-artifact@v3
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
       with:
-        name: 64bit-mod_x4
-        path: ./andriod
-        if-no-files-found: error
+        name: lmod-apk
+        path: lmod-release.apk
 
-
-  build-mod-32bit:
-    runs-on: ubuntu-latest
+  build-android-hl2mp-apk:
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build-hl2mp_cstrike_hl1
+    - name: Build Windows (32+64 bit)
       run: |
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        sudo apt update;sudo apt upgrade;sudo apt install ccache
-        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        wget https://apt.llvm.org/llvm.sh
-        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
-        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-        export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-        mv android-ndk-r10e ndk/
-        export ANDROID_NDK_HOME=$(pwd)/ndk
-        mkdir ./andriod
-        mkdir ./andriod/hl2mp
-        mkdir ./andriod/hl1
-        mkdir ./andriod/hl1mp
-        mkdir ./andriod/cstrike
-        git submodule init;git submodule update
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/cstrike --disable-warns --build-game=cstrike 
-        ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl2mp --disable-warns --build-game=hl2mp 
-        ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1 --disable-warns --build-game=hl1 
-        ./waf install --target=client,server -j4 --strip
-        #./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
-        #test hldms
-        #./waf install --target=client,server -j4 --strip
-        #mv ./andriod/lib ./andriod/cstrike
-        cat build/config.log >./andriod/info.txt
-        
-    - uses: actions/upload-artifact@v3
-      with:
-        name: 32bit-mod_x4
-        path: ./andriod
-        if-no-files-found: error
-
-  
-  build-mod-64bit_extra:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-    - name: Build-hl2mp_cstrike_hl1
-      run: |
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        sudo apt update;sudo apt upgrade;sudo apt install ccache
-        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
-        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-        export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-        mv android-ndk-r10e ndk/
-        export ANDROID_NDK_HOME=$(pwd)/ndk
         #
-        mkdir -p andriod/dod
-        mkdir ./andriod/portal
-        mkdir ./andriod/episodic
-        git submodule init;git submodule update
-        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/dod --disable-warns --build-game=dod 
-        ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/portal --disable-warns --build-game=portal 
-        ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release  --togles --android=aarch64,host,21 --prefix=./andriod/episodic --disable-warns --build-game=episodic 
-        ./waf install --target=client,server -j4 --strip --strip
-    - uses: actions/upload-artifact@v3
-      with:
-        name: 64bit-modx3
-        path: ./andriod
-        if-no-files-found: error
+        git clone https://github.com/stephen-cusi/modlauncher-waf -b hl2mp
+        sudo apt-get update
+        sudo apt-get install -f -y openjdk-8-jre zip apksigner
+    - name: Build Android (32 bit)
+      run: |
+        scripts/build-android-armv7a_hl2mp.sh
+    - name: Build Android (64 bit)
+      run: |
+        sudo chmod +x scripts/build-android-arm64_hl2mp.sh
+        scripts/build-android-arm64.sh   
+    - name: Build APK
+      run: |
+        chmod +x scripts/sbuild-apk.sh
+        scripts/sbuild-apk_hl2mp.sh 
+    - name: Rename APK
+      run: |
+         mv modlauncher-waf/build/android/mod-signed.apk hl2mp-release.apk
 
-  build-mod-32bit_extra:
-    runs-on: ubuntu-latest
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: hl2mp-apk
+        path: hl2mp-release.apk
+        
+  build-windows-win-amd64:
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build-hl2mp_cstrike_hl1
+    - name: Build Windows (64 bit)
       run: |
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        sudo apt update;sudo apt upgrade;sudo apt install ccache
-        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        wget https://apt.llvm.org/llvm.sh
-        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
-        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-        export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-        mv android-ndk-r10e ndk/
-        export ANDROID_NDK_HOME=$(pwd)/ndk
-        mkdir ./andriod
-        mkdir ./andriod/portal
-        mkdir ./andriod/dod
-        mkdir ./andriod/episodic
-        git submodule init;git submodule update
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/portal --disable-warns --build-game=portal
-        ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/dod --disable-warns --build-game=dod 
-        ./waf install --target=client,server -j4 --strip
-        ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/episodic --disable-warns --build-game=episodic
-        ./waf install --target=client,server -j4 --strip
-        # ./waf configure -T release --togles --android=armeabi-v7a-hard,host,21 --prefix=./andriod/hl1mp --disable-warns --build-game=hl1mp
-        # #test hldms
-        # ./waf install --target=client,server -j4 --strip
-        #mv ./andriod/lib ./andriod/cstrike
-        cat build/config.log >./andriod/info.txt
-        
+        #
+        git clone 
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=lmod
+        ./waf.bat install
+        echo Running delete_file.cmd
+        scripts\delete_file.cmd
+
+
+
     - uses: actions/upload-artifact@v3
       with:
-        name: 32bit-mod_x3
-        path: ./andriod
+        name: lmod-win-amd64
+        path: ./win
         if-no-files-found: error
 
-  build-engine-64:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    - name: set-env+build
-      run: |
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        sudo apt update;sudo apt upgrade;sudo apt install ccache
-        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        wget https://apt.llvm.org/llvm.sh
-        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
-        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-        export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-        mv android-ndk-r10e ndk/
-        export ANDROID_NDK_HOME=$(pwd)/ndk
-        #mkdir ./andriod/engine
-        git submodule init;git submodule update
-        ./waf configure -T release --android=aarch64,host,21 --prefix=./andriod/engine --disable-warns
-        ./waf install -j4 --strip
-        
-    - uses: actions/upload-artifact@v3
-      with:
-        name: 64bit-engine
-        path: ./andriod/engine
-        if-no-files-found: error
-        
-  build-engine-32:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    - name: set-env+build
-      run: |
-        wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -o /dev/null
-        sudo apt update;sudo apt upgrade;sudo apt install ccache
-        unzip android-ndk-r10e-linux-x86_64.zip > /dev/null
-        wget https://apt.llvm.org/llvm.sh
-        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -o /dev/null
-        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-        export PATH="$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-        mv android-ndk-r10e ndk/
-        export ANDROID_NDK_HOME=$(pwd)/ndk
-        #mkdir ./andriod/engine
-        git submodule init;git submodule update
-        ./waf configure -T release -4 --android=armeabi-v7a-hard,host,21 --prefix=./andriod/engine --disable-warns
-        ./waf install -j4 --strip
-        
-    - uses: actions/upload-artifact@v3
-      with:
-        name: 32bit-engine
-        path: ./andriod/engine
-        if-no-files-found: error
+  # build-dedicated-windows-i386:
+    # runs-on: windows-2019
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Windows Dedicated (32 bit) 
+      # run: |
+        # git submodule init && git submodule update
+        # ./waf.bat configure -T debug -d --prefix=./win --build-game=hl2sb
+        # ./waf.bat install
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-win-dedicated-i386
+        # path: ./win
+        # if-no-files-found: error
+
+  # build-dedicated-windows-amd64:
+    # runs-on: windows-2019
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Windows Dedicated (64 bit)
+      # run: |
+        # git submodule init && git submodule update
+        # ./waf.bat configure -T debug -d -8 --prefix=./win --build-game=hl2sb
+        # ./waf.bat install
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-win-dedicated-amd64
+        # path: ./win
+        # if-no-files-found: error
+
+  # build-dedicated-linux-i386:
+    # runs-on: ubuntu-20.04
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Linux Dedicated (32 bit)
+      # run: |
+        # scripts/build-ubuntu-i386.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-dedicated-i386
+        # path: ./to-upload
+        # if-no-files-found: error
+
+  # build-dedicated-linux-amd64:
+    # runs-on: ubuntu-20.04
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Linux Dedicated (64 bit)
+      # run: |
+        # scripts/build-ubuntu-amd64.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-dedicated-amd64
+        # path: ./to-upload
+        # if-no-files-found: error
+
+  # build-macos-amd64:
+    # runs-on: macos-latest
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build MacOS (64 bit)
+      # run: |
+        # scripts/build-macos-amd64.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-macos-amd64
+        # path: ./to-upload
+        # if-no-files-found: error
+
+  # build-dedicated-macos-amd64:
+    # runs-on: macos-latest
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build MacOS Dedicated (64 bit)
+      # run: |
+        # scripts/build-macos-amd64.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-macos-dedicated-amd64
+        # path: ./to-upload
+        # if-no-files-found: error
