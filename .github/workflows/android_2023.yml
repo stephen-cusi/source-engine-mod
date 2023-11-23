@@ -78,7 +78,7 @@ jobs:
     - name: Build Android (64 bit)
       run: |
         sudo chmod +x scripts/build-android-arm64_hl2mp.sh
-        scripts/build-android-arm64.sh   
+        scripts/build-android-arm64_hl2mp.sh   
     - name: Build APK
       run: |
         chmod +x scripts/sbuild-apk.sh
