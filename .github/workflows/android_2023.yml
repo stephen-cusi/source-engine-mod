@@ -30,68 +30,38 @@ jobs:
         # path: ./to_upload
         # if-no-files-found: error
 
-  Build-apk-for-android:
-    runs-on: ubuntu-20.04
+  # Build-apk-for-android:
+    # runs-on: ubuntu-20.04
 
-    steps:
-    - uses: actions/checkout@v3
-    - name: Cloning modlaucher repo and preparing for building 
-      run: |
-        git clone https://github.com/stephen-cusi/modlauncher-waf -b lmod
-        sudo apt-get update
-        sudo apt-get install -f -y openjdk-8-jre zip apksigner
-    - name: Build Android (32 bit)
-      run: |
-        scripts/build-android-armv7a.sh
-    - name: Build Android (64 bit)
-      run: |
-        sudo chmod +x scripts/build-android-arm64.sh
-        scripts/build-android-arm64.sh   
-    - name: Build APK
-      run: |
-        chmod +x scripts/sbuild-apk.sh
-        scripts/sbuild-apk.sh 
-    - name: Rename APK
-      run: |
-         mv modlauncher-waf/build/android/mod-signed.apk lmod-release.apk
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Cloning modlaucher repo and preparing for building 
+      # run: |
+        # git clone https://github.com/stephen-cusi/modlauncher-waf -b lmod
+        # sudo apt-get update
+        # sudo apt-get install -f -y openjdk-8-jre zip apksigner
+    # - name: Build Android (32 bit)
+      # run: |
+        # scripts/build-android-armv7a.sh
+    # - name: Build Android (64 bit)
+      # run: |
+        # sudo chmod +x scripts/build-android-arm64.sh
+        # scripts/build-android-arm64.sh   
+    # - name: Build APK
+      # run: |
+        # chmod +x scripts/sbuild-apk.sh
+        # scripts/sbuild-apk.sh 
+    # - name: Rename APK
+      # run: |
+         # mv modlauncher-waf/build/android/mod-signed.apk lmod-release.apk
 
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v3
-      with:
-        name: lmod-apk
-        path: lmod-release.apk
+    # - name: 'Upload Artifact'
+      # uses: actions/upload-artifact@v3
+      # with:
+        # name: lmod-apk
+        # path: lmod-release.apk
+        # android TODO
 
-  build-android-hl2mp-apk:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-    - name: Build Windows (32+64 bit)
-      run: |
-        
-        git clone https://github.com/stephen-cusi/modlauncher-waf -b hl2mp
-        sudo apt-get update
-        sudo apt-get install -f -y openjdk-8-jre zip apksigner
-    - name: Build Android (32 bit)
-      run: |
-        scripts/build-android-armv7a_hl2mp.sh
-    - name: Build Android (64 bit)
-      run: |
-        sudo chmod +x scripts/build-android-arm64_hl2mp.sh
-        scripts/build-android-arm64_hl2mp.sh   
-    - name: Build APK
-      run: |
-        chmod +x scripts/sbuild-apk.sh
-        scripts/sbuild-apk_hl2mp.sh 
-    - name: Rename APK
-      run: |
-         mv modlauncher-waf/build/android/mod-signed.apk hl2mp-release.apk
-
-    - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v3
-      with:
-        name: hl2mp-apk
-        path: hl2mp-release.apk
         
   build-windows-win-amd64:
     runs-on: windows-latest
@@ -102,7 +72,7 @@ jobs:
       run: |
         #
         git clone 
-        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=lmod
+        ./waf.bat configure -T release --prefix=./win --disable-warns
         ./waf.bat install
         echo Running delete_file.cmd
         scripts\delete_file.cmd
@@ -111,7 +81,7 @@ jobs:
 
     - uses: actions/upload-artifact@v3
       with:
-        name: lmod-win-amd64
+        name: NightmareHouse2-win-amd64
         path: ./win
         if-no-files-found: error
 
