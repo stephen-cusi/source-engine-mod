@@ -761,6 +761,9 @@ bool CNPC_BaseZombie::ShouldBecomeTorso( const CTakeDamageInfo &info, float flDa
 //-----------------------------------------------------------------------------
 HeadcrabRelease_t CNPC_BaseZombie::ShouldReleaseHeadcrab( const CTakeDamageInfo &info, float flDamageThreshold )
 {
+#ifdef NH2
+	return RELEASE_NO;
+#endif
 	if ( m_iHealth <= 0 )
 	{
 		if ( info.GetDamageType() & DMG_REMOVENORAGDOLL )
@@ -1676,6 +1679,11 @@ void CNPC_BaseZombie::HandleAnimEvent( animevent_t *pEvent )
 //-----------------------------------------------------------------------------
 void CNPC_BaseZombie::Spawn( void )
 {
+#ifdef NH2
+	m_fIsHeadless = true;
+	SetBloodColor( BLOOD_COLOR_RED );
+#endif
+
 	SetSolid( SOLID_BBOX );
 	SetMoveType( MOVETYPE_STEP );
 
@@ -1705,6 +1713,11 @@ void CNPC_BaseZombie::Spawn( void )
 	GetEnemies()->SetFreeKnowledgeDuration( 6.0 );
 
 	m_ActBusyBehavior.SetUseRenderBounds(true);
+
+#ifdef NH2
+	m_fIsHeadless = true;
+	SetBloodColor( BLOOD_COLOR_RED );
+#endif
 }
 
 
@@ -2215,8 +2228,9 @@ void CNPC_BaseZombie::BecomeTorso( const Vector &vecTorsoForce, const Vector &ve
 		Extinguish();
 		Ignite( 30 );
 	}
-
+#ifndef NH2
 	if ( !m_fIsHeadless )
+#endif
 	{
 		m_iMaxHealth = ZOMBIE_TORSO_HEALTH_FACTOR * m_iMaxHealth;
 		m_iHealth = m_iMaxHealth;

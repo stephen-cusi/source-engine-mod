@@ -280,6 +280,7 @@ void CHudHistoryResource::CheckClearHistory( void )
 //-----------------------------------------------------------------------------
 bool CHudHistoryResource::ShouldDraw( void )
 {
+	return false; // NH2
 #ifdef TF_CLIENT_DLL
 	return false;
 #else

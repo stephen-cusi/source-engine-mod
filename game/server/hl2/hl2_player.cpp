@@ -1312,6 +1312,9 @@ void CHL2_Player::ToggleZoom(void)
 //-----------------------------------------------------------------------------
 void CHL2_Player::StartZooming( void )
 {
+#ifdef NH2
+	return;
+#endif
 	int iFOV = 25;
 	if ( SetFOV( this, iFOV, 0.4f ) )
 	{
@@ -1598,6 +1601,9 @@ bool CHL2_Player::CommanderExecuteOne( CAI_BaseNPC *pNpc, const commandgoal_t &g
 //---------------------------------------------------------
 void CHL2_Player::CommanderExecute( CommanderCommand_t command )
 {
+#ifdef NH2
+	return;
+#endif
 	CAI_BaseNPC *pPlayerSquadLeader = GetSquadCommandRepresentative();
 
 	if ( !pPlayerSquadLeader )
@@ -2597,16 +2603,6 @@ int CHL2_Player::GiveAmmo( int nCount, int nAmmoIndex, bool bSuppressSound)
 	}
 
 	int nAdd = BaseClass::GiveAmmo(nCount, nAmmoIndex, bSuppressSound);
-
-	if ( nCount > 0 && nAdd == 0 )
-	{
-		// we've been denied the pickup, display a hud icon to show that
-		CSingleUserRecipientFilter user( this );
-		user.MakeReliable();
-		UserMessageBegin( user, "AmmoDenied" );
-			WRITE_SHORT( nAmmoIndex );
-		MessageEnd();
-	}
 
 	//
 	// If I was dry on ammo for my best weapon and justed picked up ammo for it,

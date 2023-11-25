@@ -50,8 +50,16 @@ static ConVar r_flashlightshadowatten( "r_flashlightshadowatten", "0.35", FCVAR_
 static ConVar r_flashlightladderdist( "r_flashlightladderdist", "40.0", FCVAR_CHEAT );
 static ConVar mat_slopescaledepthbias_shadowmap( "mat_slopescaledepthbias_shadowmap", "16", FCVAR_CHEAT );
 static ConVar mat_depthbias_shadowmap(	"mat_depthbias_shadowmap", "0.0005", FCVAR_CHEAT  );
+#ifdef NH2
+void cb_flashlightflicker( IConVar *pConVar, const char *pOldString, float flOldValue );
+ConVar r_flashlightforceflicker( "r_flashlightforceflicker","0", FCVAR_NONE, "Force flashlight flicker", false, 0, true, 1, cb_flashlightflicker);
+int flashlight_lastactive;
 
-
+void cb_flashlightflicker( IConVar *pConVar, const char *pOldString, float flOldValue )
+{
+	flashlight_lastactive = gpGlobals->curtime + 2.0; //the time at which point we stop flickering
+}
+#endif
 void r_newflashlightCallback_f( IConVar *pConVar, const char *pOldString, float flOldValue )
 {
 	if( engine->GetDXSupportLevel() < 70 )
@@ -270,6 +278,51 @@ void CFlashlightEffect::UpdateLightNew(const Vector &vecPos, const Vector &vecFo
 	if ( pPlayer )
 	{
 		float flBatteryPower = ( pPlayer->m_HL2Local.m_flFlashBattery >= 0.0f ) ? ( pPlayer->m_HL2Local.m_flFlashBattery ) : pPlayer->m_HL2Local.m_flSuitPower;
+#ifdef NH2
+		if ( (flBatteryPower <= 25.0f) || (r_flashlightforceflicker.GetBool() == true) )
+		{
+			if ( gpGlobals->curtime > flashlight_lastactive )
+				r_flashlightforceflicker.SetValue( 0 );
+
+			float flScale;
+
+			if ( flBatteryPower >= 0.0f )
+			{
+				flScale = ( flBatteryPower <= 10.0f ) ? SimpleSplineRemapVal( flBatteryPower, 10.0f, 0.0f, 1.0f, 0.0f ) : 1.0f;
+			}
+			else
+			{
+				flScale = SimpleSplineRemapVal( flBatteryPower, 10.0f, 4.8f, 1.0f, 0.0f );
+			}
+
+			// scale is size of flashlight (1 = full power, 0 = off)
+			flScale = clamp( flScale, 0.0f, 1.0f );
+
+			if ( (flBatteryPower <= 10.0) || (r_flashlightforceflicker.GetBool() == true) )
+			{
+				float flFlicker = cosf( gpGlobals->curtime * 6.0f ) * sinf( gpGlobals->curtime * 15.0f );
+
+				if ( flFlicker > 0.25f && flFlicker < 0.50f )
+				{
+					// On
+					state.m_fLinearAtten = r_flashlightlinear.GetFloat() * flScale;
+				}
+				else
+				{
+					// Off
+					state.m_fLinearAtten = 0.0f;
+				}
+			}
+			else
+			{
+				float flNoise = cosf( gpGlobals->curtime * 7.0f ) * sinf( gpGlobals->curtime * 25.0f );
+				state.m_fLinearAtten = r_flashlightlinear.GetFloat() * flScale + 1.5f * flNoise;
+			}
+			state.m_fHorizontalFOVDegrees = r_flashlightfov.GetFloat() - ( 16.0f * (1.0f-flScale) );
+			state.m_fVerticalFOVDegrees = r_flashlightfov.GetFloat() - ( 16.0f * (1.0f-flScale) );
+			bFlicker = true;
+		}
+#else
 		if ( flBatteryPower <= 10.0f )
 		{
 			float flScale;
@@ -310,6 +363,7 @@ void CFlashlightEffect::UpdateLightNew(const Vector &vecPos, const Vector &vecFo
 			
 			bFlicker = true;
 		}
+#endif
 	}
 #endif // HL2_EPISODIC
 

@@ -167,7 +167,7 @@ $Project
 	{
 		$File	"hl2\C_Func_Monitor.cpp"
 		$File	"geiger.cpp"
-		$File	"history_resource.cpp"
+//		$File	"history_resource.cpp"
 		$File	"hud_weapon.cpp"
 		$File	"train.cpp"
 		$File	"$SRCDIR\game\shared\weapon_parse_default.cpp"
@@ -760,7 +760,7 @@ $Project
 		$File	"glow_overlay.h"
 		$File	"$SRCDIR\game\shared\hintmessage.h"
 		$File	"$SRCDIR\game\shared\hintsystem.h"
-		$File	"history_resource.h"
+//		$File	"history_resource.h"
 		$File	"hltvcamera.h"
 		$File	"hud.h"
 		$File	"hud_basechat.h"

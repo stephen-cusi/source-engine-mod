@@ -284,7 +284,7 @@ void CNPC_PoisonZombie::Precache( void )
 void CNPC_PoisonZombie::Spawn( void )
 {
 	Precache();
-
+#ifndef NH2
 	m_fIsTorso = m_fIsHeadless = false;
 
 #ifdef HL2_EPISODIC
@@ -292,7 +292,9 @@ void CNPC_PoisonZombie::Spawn( void )
 #else
 	SetBloodColor( BLOOD_COLOR_YELLOW );
 #endif // HL2_EPISODIC
-
+#else
+	m_fIsTorso = false;
+#endif
 	m_iHealth = sk_zombie_poison_health.GetFloat();
 	m_flFieldOfView = 0.2;
 
@@ -315,7 +317,7 @@ void CNPC_PoisonZombie::Spawn( void )
 		nCrabs = MAX_CRABS;
 	}
 	m_nCrabCount = 0;
-
+#ifndef NH2
 	//
 	// Generate a random set of crabs based on the crab count
 	// specified by the level designer.
@@ -347,6 +349,7 @@ void CNPC_PoisonZombie::Spawn( void )
 	{
 		EnableCrab( i, ( nBitMask & ( 1 << i ) ) != 0 );
 	}
+#endif
 }
 
 

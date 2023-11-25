@@ -184,6 +184,20 @@ void C_World::Spawn( void )
 	Precache();
 }
 
+char const *C_World::DamageDecal( int bitsDamageType, int gameMaterial )
+{
+	if (bitsDamageType == DMG_SLASH)
+	{
+		switch(gameMaterial)
+		{
+			case CHAR_TEX_CONCRETE:
+			case CHAR_TEX_TILE:
+				return "ManhackCut";
+			default: break;
+		}
+	}
+	return BaseClass::DamageDecal(bitsDamageType, gameMaterial);
+}
 
 
 C_World *GetClientWorldEntity()

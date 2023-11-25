@@ -261,7 +261,6 @@ BEGIN_DATADESC( CBasePlayer )
 
 	DEFINE_FIELD( m_StuckLast, FIELD_INTEGER ),
 
-	DEFINE_FIELD( m_nButtons, FIELD_INTEGER ),
 	DEFINE_FIELD( m_afButtonLast, FIELD_INTEGER ),
 	DEFINE_FIELD( m_afButtonPressed, FIELD_INTEGER ),
 	DEFINE_FIELD( m_afButtonReleased, FIELD_INTEGER ),
@@ -7942,6 +7941,7 @@ void SendProxy_CropFlagsToPlayerFlagBitsLength( const SendProp *pProp, const voi
 			
 		SendPropInt			( SENDINFO( m_fOnTarget ), 2, SPROP_UNSIGNED ),
 
+		SendPropInt			( SENDINFO( m_nButtons ), -1, SPROP_CHANGES_OFTEN ),
 		SendPropInt			( SENDINFO( m_nTickBase ), -1, SPROP_CHANGES_OFTEN ),
 		SendPropInt			( SENDINFO( m_nNextThinkTick ) ),
 

@@ -60,6 +60,8 @@ void CHudSuitPower::Reset( void )
 //-----------------------------------------------------------------------------
 bool CHudSuitPower::ShouldDraw()
 {
+  // Editing hudlayout.res isn't killing this blighter, so let's use an ugly hack
+  return false;
 	bool bNeedsDraw = false;
 
 	C_BaseHLPlayer *pPlayer = (C_BaseHLPlayer *)C_BasePlayer::GetLocalPlayer();

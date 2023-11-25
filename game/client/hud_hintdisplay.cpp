@@ -454,6 +454,8 @@ void CHudHintKeyDisplay::OnThink()
 //-----------------------------------------------------------------------------
 bool CHudHintKeyDisplay::SetHintText( const char *text )
 {
+	return false; //NH2
+
 	if ( text == NULL || text[0] == L'\0' )
 		return false;
 

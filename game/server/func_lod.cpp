@@ -28,6 +28,7 @@ public:
 	//												(waits until it's out of the view frustrum or until there's a lot of motion)
 	// (m_fDisappearDist+):							the bmodel is forced to be invisible
 	CNetworkVar( float, m_fDisappearDist );
+	CNetworkVar( bool, m_bInvertAlpha );
 
 // CBaseEntity overrides.
 public:
@@ -41,6 +42,7 @@ public:
 
 IMPLEMENT_SERVERCLASS_ST(CFunc_LOD, DT_Func_LOD)
 	SendPropFloat(SENDINFO(m_fDisappearDist), 0, SPROP_NOSCALE),
+	SendPropBool(SENDINFO(m_bInvertAlpha)),
 END_SEND_TABLE()
 
 
@@ -53,6 +55,7 @@ LINK_ENTITY_TO_CLASS(func_lod, CFunc_LOD);
 BEGIN_DATADESC( CFunc_LOD )
 
 	DEFINE_FIELD( m_fDisappearDist,	FIELD_FLOAT ),
+	DEFINE_FIELD( m_bInvertAlpha,	FIELD_BOOLEAN ),
 
 END_DATADESC()
 
@@ -104,6 +107,13 @@ bool CFunc_LOD::KeyValue( const char *szKeyName, const char *szValue )
 		{
 			AddSolidFlags( FSOLID_NOT_SOLID );
 		}
+	}
+	else if (FStrEq(szKeyName, "InvertAlpha"))
+	{
+		if (atoi(szValue) != 0)
+			m_bInvertAlpha = true;
+		else
+			m_bInvertAlpha = false;
 	}
 	else
 	{

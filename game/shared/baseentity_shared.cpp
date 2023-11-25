@@ -706,9 +706,6 @@ char const *CBaseEntity::DamageDecal( int bitsDamageType, int gameMaterial )
 	if ( m_nRenderMode != kRenderNormal && gameMaterial == 'G' )
 		return "BulletProof";
 
-	if ( bitsDamageType == DMG_SLASH )
-		return "ManhackCut";
-
 	// This will get translated at a lower layer based on game material
 	return "Impact.Concrete";
 }

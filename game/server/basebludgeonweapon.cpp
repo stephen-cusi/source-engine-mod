@@ -154,7 +154,11 @@ void CBaseHLBludgeonWeapon::Hit( trace_t &traceHit, Activity nHitActivity, bool 
 		pPlayer->EyeVectors( &hitDirection, NULL, NULL );
 		VectorNormalize( hitDirection );
 
-		CTakeDamageInfo info( GetOwner(), GetOwner(), GetDamageForActivity( nHitActivity ), DMG_CLUB );
+		//for secondary attack of hatchet we'll actually hit them to the side
+		if(bIsSecondary && strcmp(GetClassname(), "weapon_nh_hatchet") == 0)
+			VectorYawRotate(hitDirection, 90.0, hitDirection);
+
+		CTakeDamageInfo info( GetOwner(), GetOwner(), GetDamageForActivity( nHitActivity ), DMG_SLASH );
 
 		if( pPlayer && pHitEntity->IsNPC() )
 		{
@@ -178,6 +182,8 @@ void CBaseHLBludgeonWeapon::Hit( trace_t &traceHit, Activity nHitActivity, bool 
 
 	// Apply an impact effect
 	ImpactEffect( traceHit );
+
+	EmitImpactSound();
 }
 
 Activity CBaseHLBludgeonWeapon::ChooseIntersectionPointAndActivity( trace_t &hitTrace, const Vector &mins, const Vector &maxs, CBasePlayer *pOwner )
@@ -280,8 +286,10 @@ void CBaseHLBludgeonWeapon::ImpactEffect( trace_t &traceHit )
 	if ( ImpactWater( traceHit.startpos, traceHit.endpos ) )
 		return;
 
-	//FIXME: need new decals
-	UTIL_ImpactTrace( &traceHit, DMG_CLUB );
+	if(strcmp(GetClassname(), "weapon_nh_hatchet") == 0)
+		UTIL_ImpactTrace( &traceHit, DMG_SLASH );
+	else
+		UTIL_ImpactTrace( &traceHit, DMG_CLUB );
 }
 
 
@@ -306,8 +314,8 @@ void CBaseHLBludgeonWeapon::Swing( int bIsSecondary )
 	forward = pOwner->GetAutoaimVector( AUTOAIM_SCALE_DEFAULT, GetRange() );
 
 	Vector swingEnd = swingStart + forward * GetRange();
-	UTIL_TraceLine( swingStart, swingEnd, MASK_SHOT_HULL, pOwner, COLLISION_GROUP_NONE, &traceHit );
-	Activity nHitActivity = ACT_VM_HITCENTER;
+	UTIL_TraceLine( swingStart, swingEnd, MASK_SHOT|CONTENTS_GRATE, pOwner, COLLISION_GROUP_NONE, &traceHit );
+	Activity nHitActivity = !bIsSecondary ? ACT_VM_HITCENTER : ACT_VM_HITCENTER2;
 
 	// Like bullets, bludgeon traces have to trace against triggers.
 	CTakeDamageInfo triggerInfo( GetOwner(), GetOwner(), GetDamageForActivity( nHitActivity ), DMG_CLUB );
@@ -322,7 +330,7 @@ void CBaseHLBludgeonWeapon::Swing( int bIsSecondary )
 		// Back off by hull "radius"
 		swingEnd -= forward * bludgeonHullRadius;
 
-		UTIL_TraceHull( swingStart, swingEnd, g_bludgeonMins, g_bludgeonMaxs, MASK_SHOT_HULL, pOwner, COLLISION_GROUP_NONE, &traceHit );
+		UTIL_TraceHull( swingStart, swingEnd, g_bludgeonMins, g_bludgeonMaxs, MASK_SHOT|CONTENTS_GRATE, pOwner, COLLISION_GROUP_NONE, &traceHit );
 		if ( traceHit.fraction < 1.0 && traceHit.m_pEnt )
 		{
 			Vector vecToTarget = traceHit.m_pEnt->GetAbsOrigin() - swingStart;
@@ -352,6 +360,15 @@ void CBaseHLBludgeonWeapon::Swing( int bIsSecondary )
 		m_iSecondaryAttacks++;
 	}
 
+	//Only send if we're not the hatchet (I know, hacky)
+	if(strcmp(GetClassname(), "weapon_nh_hatchet") != 0)
+	{
+		SendWeaponAnim( nHitActivity );
+		//Play swing sound
+		WeaponSound( SINGLE );
+	}
+
+
 	gamestats->Event_WeaponFired( pOwner, !bIsSecondary, GetClassname() );
 
 	// -------------------------
@@ -369,16 +386,18 @@ void CBaseHLBludgeonWeapon::Swing( int bIsSecondary )
 	}
 	else
 	{
-		Hit( traceHit, nHitActivity, bIsSecondary ? true : false );
+		Hit( traceHit, nHitActivity, bIsSecondary ? true : false);
 	}
 
-	// Send the anim
-	SendWeaponAnim( nHitActivity );
-
 	//Setup our next attack times
-	m_flNextPrimaryAttack = gpGlobals->curtime + GetFireRate();
-	m_flNextSecondaryAttack = gpGlobals->curtime + SequenceDuration();
-
-	//Play swing sound
-	WeaponSound( SINGLE );
+	if(strcmp(GetClassname(), "weapon_nh_hatchet") == 0 && bIsSecondary)
+	{
+		m_flNextPrimaryAttack = gpGlobals->curtime + GetFireRate() * 2;
+		m_flNextSecondaryAttack = gpGlobals->curtime + GetFireRate() * 2;
+	}
+	else
+	{
+		m_flNextPrimaryAttack = gpGlobals->curtime + GetFireRate();
+		m_flNextSecondaryAttack = gpGlobals->curtime + GetFireRate();
+	}
 }

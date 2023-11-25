@@ -116,6 +116,13 @@ private:
 	void FadeOutThink();
 
 	bool				m_bStartDisabled;
+#ifdef NH2
+	int					m_nSubmodelOne;
+	int					m_nSubmodelTwo;
+	int					m_nSubmodelThree;
+	int					m_nSubmodelFour;
+	int					m_nSubmodelFive;
+#endif
 
 	CNetworkArray( Vector, m_ragPos, RAGDOLL_MAX_ELEMENTS );
 	CNetworkArray( QAngle, m_ragAngles, RAGDOLL_MAX_ELEMENTS );

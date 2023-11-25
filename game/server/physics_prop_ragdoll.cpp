@@ -82,6 +82,13 @@ BEGIN_DATADESC(CRagdollProp)
 	DEFINE_FIELD( m_hKiller, FIELD_EHANDLE ),
 
 	DEFINE_KEYFIELD( m_bStartDisabled, FIELD_BOOLEAN, "StartDisabled" ),
+#ifdef NH2
+	DEFINE_KEYFIELD( m_nSubmodelOne, FIELD_INTEGER, "submodelone" ),
+	DEFINE_KEYFIELD( m_nSubmodelTwo, FIELD_INTEGER, "submodeltwo" ),
+	DEFINE_KEYFIELD( m_nSubmodelThree, FIELD_INTEGER, "submodelthree" ),
+	DEFINE_KEYFIELD( m_nSubmodelFour, FIELD_INTEGER, "submodelfour" ),
+	DEFINE_KEYFIELD( m_nSubmodelFive, FIELD_INTEGER, "submodelfive" ),
+#endif
 
 	DEFINE_INPUTFUNC( FIELD_VOID, "StartRagdollBoogie", InputStartRadgollBoogie ),
 	DEFINE_INPUTFUNC( FIELD_VOID, "EnableMotion", InputEnableMotion ),
@@ -162,7 +169,13 @@ void CRagdollProp::Spawn( void )
 	Assert( RAGDOLL_MAX_ELEMENTS == 24 );
 	Precache();
 	SetModel( STRING( GetModelName() ) );
-
+#ifdef NH2
+	SetBodygroup( 0, m_nSubmodelOne );
+	SetBodygroup( 1, m_nSubmodelTwo );
+	SetBodygroup( 2, m_nSubmodelThree );
+	SetBodygroup( 3, m_nSubmodelFour );
+	SetBodygroup( 4, m_nSubmodelFive );
+#endif
 	CStudioHdr *pStudioHdr = GetModelPtr( );
 	if ( pStudioHdr->flags() & STUDIOHDR_FLAGS_NO_FORCED_FADE )
 	{

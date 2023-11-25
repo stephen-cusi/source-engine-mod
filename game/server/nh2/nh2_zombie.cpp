@@ -1,4 +1,4 @@
-//========= Copyright Valve Corporation, All rights reserved. ============//
+//========= Copyright © 1996-2005, Valve Corporation, All rights reserved. ============//
 //
 // Purpose: A slow-moving, once-human headcrab victim with only melee attacks.
 //
@@ -17,16 +17,21 @@
 #include "soundenvelope.h"
 #include "engine/IEngineSound.h"
 #include "ammodef.h"
+#include "particle_parse.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
 // ACT_FLINCH_PHYSICS
 
+#define RANDOM_BODYGROUP -1
 
-ConVar	sk_zombie_health( "sk_zombie_health","0");
+ConVar	sk_nh_zombie_health( "sk_nh_zombie_health","50");
+ConVar	sk_nh_torso_damage_threshold("sk_nh_torso_damage_threshold","30");
+ConVar	sk_nh_zombie_head_height("sk_nh_zombie_head_height","50");
+extern ConVar sk_plr_dmg_hatchet;
 
-envelopePoint_t envZombieMoanVolumeFast[] =
+envelopePoint_t envNHZombieMoanVolumeFast[] =
 {
 	{	7.0f, 7.0f,
 		0.1f, 0.1f,
@@ -36,7 +41,7 @@ envelopePoint_t envZombieMoanVolumeFast[] =
 	},
 };
 
-envelopePoint_t envZombieMoanVolume[] =
+envelopePoint_t envNHZombieMoanVolume[] =
 {
 	{	1.0f, 1.0f,
 		0.1f, 0.1f,
@@ -49,7 +54,7 @@ envelopePoint_t envZombieMoanVolume[] =
 	},
 };
 
-envelopePoint_t envZombieMoanVolumeLong[] =
+envelopePoint_t envNHZombieMoanVolumeLong[] =
 {
 	{	1.0f, 1.0f,
 		0.3f, 0.5f,
@@ -62,7 +67,7 @@ envelopePoint_t envZombieMoanVolumeLong[] =
 	},
 };
 
-envelopePoint_t envZombieMoanIgnited[] =
+envelopePoint_t envNHZombieMoanIgnited[] =
 {
 	{	1.0f, 1.0f,
 		0.5f, 1.0f,
@@ -79,15 +84,15 @@ envelopePoint_t envZombieMoanIgnited[] =
 //=============================================================================
 //=============================================================================
 
-class CZombie : public CAI_BlendingHost<CNPC_BaseZombie>
+class CNH_Zombie : public CAI_BlendingHost<CNPC_BaseZombie>
 {
 	DECLARE_DATADESC();
-	DECLARE_CLASS( CZombie, CAI_BlendingHost<CNPC_BaseZombie> );
+	DECLARE_CLASS( CNH_Zombie, CAI_BlendingHost<CNPC_BaseZombie> );
 
 public:
-	CZombie()
+	CNH_Zombie()
 	 : m_DurationDoorBash( 2, 6),
-	   m_NextTimeToStartDoorBash( 3.0 )
+	   m_NextTimeToStartDoorBash( 3.0 ), m_nHeadModel(RANDOM_BODYGROUP), m_bCanBeTorso(true)
 	{
 	}
 
@@ -97,7 +102,7 @@ public:
 	void SetZombieModel( void );
 	void MoanSound( envelopePoint_t *pEnvelope, int iEnvelopeSize );
 	bool ShouldBecomeTorso( const CTakeDamageInfo &info, float flDamageThreshold );
-	bool CanBecomeLiveTorso() { return !m_fIsHeadless; }
+	bool CanBecomeLiveTorso() { return true; }
 
 	void GatherConditions( void );
 
@@ -119,6 +124,7 @@ public:
 	virtual const char *GetTorsoModel( void );
 	virtual const char *GetHeadcrabClassname( void );
 	virtual const char *GetHeadcrabModel( void );
+	virtual void ReleaseHeadcrab( const Vector &vecOrigin, const Vector &vecVelocity, bool fRemoveHead, bool fRagdollBody, bool fRagdollCrab = false ) {};
 
 	virtual bool OnObstructingDoor( AILocalMoveGoal_t *pMoveGoal, 
 								 CBaseDoor *pDoor,
@@ -130,9 +136,14 @@ public:
 	void Ignite( float flFlameLifetime, bool bNPCOnly = true, float flSize = 0.0f, bool bCalledByLevelDesigner = false );
 	void Extinguish();
 	int OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo );
+	int OnTakeDamage_Dead( const CTakeDamageInfo &inputInfo );
 	bool IsHeavyDamage( const CTakeDamageInfo &info );
 	bool IsSquashed( const CTakeDamageInfo &info );
 	void BuildScheduleTestBits( void );
+	
+	HeadcrabRelease_t ShouldReleaseHeadcrab( const CTakeDamageInfo &info, float flDamageThreshold );
+
+	float GetHitgroupDamageMultiplier( int iHitGroup, const CTakeDamageInfo &info );
 
 	void PrescheduleThink( void );
 	int SelectSchedule ( void );
@@ -146,6 +157,7 @@ public:
 	void AttackMissSound( void );
 	void FootstepSound( bool fRightFoot );
 	void FootscuffSound( bool fRightFoot );
+	Vector HeadTarget( const Vector &posSrc );
 
 	const char *GetMoanSound( int nSound );
 	
@@ -164,19 +176,33 @@ private:
 	CSimTimer 	  		 m_NextTimeToStartDoorBash;
 
 	Vector				 m_vPositionCharged;
+
+	int					m_nHeadModel;
+	int					m_nBodyModel;
+	bool				m_bCanBeTorso;
 };
 
-LINK_ENTITY_TO_CLASS( npc_zombie, CZombie );
-LINK_ENTITY_TO_CLASS( npc_zombie_torso, CZombie );
+//LINK_ENTITY_TO_CLASS( npc_nh_zombie, CNH_Zombie );
+//LINK_ENTITY_TO_CLASS( npc_nh_zombie_torso, CNH_Zombie );
+LINK_ENTITY_TO_CLASS( npc_nh_doctor, CNH_Zombie );
+LINK_ENTITY_TO_CLASS( npc_nh_janitor, CNH_Zombie );
+LINK_ENTITY_TO_CLASS( npc_nh_patient, CNH_Zombie );
+LINK_ENTITY_TO_CLASS( npc_nh_surgeon, CNH_Zombie );
+LINK_ENTITY_TO_CLASS( npc_nh_worker, CNH_Zombie );
+LINK_ENTITY_TO_CLASS( npc_nh_cook, CNH_Zombie );
+
+LINK_ENTITY_TO_CLASS( npc_nh_doctor_torso, CNH_Zombie );
+LINK_ENTITY_TO_CLASS( npc_nh_janitor_torso, CNH_Zombie );
+LINK_ENTITY_TO_CLASS( npc_nh_patient_torso, CNH_Zombie );
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-const char *CZombie::pMoanSounds[] =
+const char *CNH_Zombie::pMoanSounds[] =
 {
-	 "NPC_BaseZombie.Moan1",
-	 "NPC_BaseZombie.Moan2",
-	 "NPC_BaseZombie.Moan3",
-	 "NPC_BaseZombie.Moan4",
+	 "NPC_Basenhzombie.Moan1",
+	 "NPC_Basenhzombie.Moan2",
+	 "NPC_Basenhzombie.Moan3",
+	 "NPC_Basenhzombie.Moan4",
 };
 
 //=========================================================
@@ -213,16 +239,19 @@ enum
 
 //-----------------------------------------------------------------------------
 
-int ACT_ZOMBIE_TANTRUM;
-int ACT_ZOMBIE_WALLPOUND;
+int ACT_NH_ZOMBIE_TANTRUM;
+int ACT_NH_ZOMBIE_WALLPOUND;
 
-BEGIN_DATADESC( CZombie )
+BEGIN_DATADESC( CNH_Zombie )
 
 	DEFINE_FIELD( m_hBlockingDoor, FIELD_EHANDLE ),
 	DEFINE_FIELD( m_flDoorBashYaw, FIELD_FLOAT ),
 	DEFINE_EMBEDDED( m_DurationDoorBash ),
 	DEFINE_EMBEDDED( m_NextTimeToStartDoorBash ),
 	DEFINE_FIELD( m_vPositionCharged, FIELD_POSITION_VECTOR ),
+	DEFINE_KEYFIELD( m_nHeadModel, FIELD_INTEGER, "headmodel"),
+	DEFINE_KEYFIELD( m_nBodyModel, FIELD_INTEGER, "bodymodel"),
+	DEFINE_KEYFIELD( m_bCanBeTorso, FIELD_BOOLEAN, "canbetorso"),
 
 END_DATADESC()
 
@@ -230,14 +259,15 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CZombie::Precache( void )
+void CNH_Zombie::Precache( void )
 {
 	BaseClass::Precache();
 
-	PrecacheModel( "models/zombie/classic.mdl" );
-	PrecacheModel( "models/zombie/classic_torso.mdl" );
-	PrecacheModel( "models/zombie/classic_legs.mdl" );
+	//PrecacheModel( "models/zombie/classic.mdl" );
+	//PrecacheModel( "models/zombie/classic_torso.mdl" );
+	//PrecacheModel( "models/zombie/classic_legs.mdl" );
 
+	/*
 	PrecacheScriptSound( "Zombie.FootstepRight" );
 	PrecacheScriptSound( "Zombie.FootstepLeft" );
 	PrecacheScriptSound( "Zombie.FootstepLeft" );
@@ -255,34 +285,97 @@ void CZombie::Precache( void )
 	PrecacheScriptSound( "NPC_BaseZombie.Moan2" );
 	PrecacheScriptSound( "NPC_BaseZombie.Moan3" );
 	PrecacheScriptSound( "NPC_BaseZombie.Moan4" );
+	*/
+
+	PrecacheScriptSound( "nhzombie.headexplode" );
+	PrecacheScriptSound( "nhzombie.headexplode_jet" );
+	PrecacheScriptSound( "nhzombie.FootstepRight" );
+	PrecacheScriptSound( "nhzombie.FootstepLeft" );
+	PrecacheScriptSound( "nhzombie.FootstepLeft" );
+	PrecacheScriptSound( "nhzombie.ScuffRight" );
+	PrecacheScriptSound( "nhzombie.ScuffLeft" );
+	PrecacheScriptSound( "nhzombie.AttackHit" );
+	PrecacheScriptSound( "nhzombie.AttackMiss" );
+	PrecacheScriptSound( "nhzombie.Pain" );
+	PrecacheScriptSound( "nhzombie.Die" );
+	PrecacheScriptSound( "nhzombie.Alert" );
+	PrecacheScriptSound( "nhzombie.Idle" );
+	PrecacheScriptSound( "nhzombie.Attack" );
+
+	PrecacheScriptSound( "NPC_Basenhzombie.Moan1" );
+	PrecacheScriptSound( "NPC_Basenhzombie.Moan2" );
+	PrecacheScriptSound( "NPC_Basenhzombie.Moan3" );
+	PrecacheScriptSound( "NPC_Basenhzombie.Moan4" );
+
+
+	//PrecacheScriptSound( "General.BurningFlesh" );
+
+	PrecacheModel( "models/NH2Zombies/doctor01.mdl" );
+
+	PrecacheModel( "models/NH2Zombies/janitor01.mdl" );
+	PrecacheModel( "models/NH2Zombies/janitor02.mdl" );
+
+	PrecacheModel( "models/NH2Zombies/patient01.mdl" );
+	PrecacheModel( "models/NH2Zombies/patient02.mdl" );
+	PrecacheModel( "models/NH2Zombies/patient03.mdl" );
+
+	PrecacheModel( "models/NH2Zombies/surgeon01.mdl" );
+	PrecacheModel( "models/NH2Zombies/surgeon02.mdl" );
+
+	PrecacheModel( "models/NH2Zombies/worker01.mdl" );
+	
+	PrecacheModel( "models/NH2Zombies/cook.mdl" );
+
+	PrecacheModel( "models/NH2Zombies/gibs/doctor_torso.mdl" );
+	PrecacheModel( "models/NH2Zombies/gibs/janitor_torso.mdl" );
+	PrecacheModel( "models/NH2Zombies/gibs/patient_torso.mdl" );
+
+	PrecacheModel( "models/NH2Zombies/gibs/doctor_legs.mdl" );
+	PrecacheModel( "models/NH2Zombies/gibs/janitor_legs.mdl" );
+	PrecacheModel( "models/NH2Zombies/gibs/patient_legs.mdl" );
+
+	PrecacheParticleSystem( "blood_advisor_puncture_withdraw" );
 }
+
+
+Vector CNH_Zombie::HeadTarget( const Vector &posSrc )
+{
+	int iCrabAttachment = LookupAttachment( "mouth" );
+	Assert( iCrabAttachment > 0 );
+
+	Vector vecPosition;
+
+	GetAttachment( iCrabAttachment, vecPosition );
+
+	return vecPosition;
+}
+
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CZombie::Spawn( void )
+void CNH_Zombie::Spawn( void )
 {
 	Precache();
 
-	if( FClassnameIs( this, "npc_zombie" ) )
-	{
-		m_fIsTorso = false;
-	}
-	else
-	{
-		// This was placed as an npc_zombie_torso
+	//models/NH2Zombies/gibs/doctor_torso.mdl
+
+	m_fIsTorso = false;
+	
+	if( FClassnameIs( this, "npc_nh_doctor_torso" ) )
 		m_fIsTorso = true;
-	}
-#ifndef NH2
-	m_fIsHeadless = false;
+
+	if( FClassnameIs( this, "npc_nh_janitor_torso" ) )
+		m_fIsTorso = true;
+
+	if( FClassnameIs( this, "npc_nh_patient_torso" ) )
+		m_fIsTorso = true;
 
 
-#ifdef HL2_EPISODIC
-	SetBloodColor( BLOOD_COLOR_ZOMBIE );
-#else
-	SetBloodColor( BLOOD_COLOR_GREEN );
-#endif // HL2_EPISODIC
-#endif
-	m_iHealth			= sk_zombie_health.GetFloat();
+	m_fIsHeadless = true; // No headcrab
+
+	SetBloodColor( BLOOD_COLOR_RED );
+
+	m_iHealth			= sk_nh_zombie_health.GetFloat();
 	m_flFieldOfView		= 0.2;
 
 	CapabilitiesClear();
@@ -296,7 +389,7 @@ void CZombie::Spawn( void )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CZombie::PrescheduleThink( void )
+void CNH_Zombie::PrescheduleThink( void )
 {
   	if( gpGlobals->curtime > m_flNextMoanSound )
   	{
@@ -318,7 +411,7 @@ void CZombie::PrescheduleThink( void )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-int CZombie::SelectSchedule ( void )
+int CNH_Zombie::SelectSchedule ( void )
 {
 	if( HasCondition( COND_PHYSICS_DAMAGE ) && !m_ActBusyBehavior.IsActive() )
 	{
@@ -331,54 +424,54 @@ int CZombie::SelectSchedule ( void )
 //-----------------------------------------------------------------------------
 // Purpose: Sound of a footstep
 //-----------------------------------------------------------------------------
-void CZombie::FootstepSound( bool fRightFoot )
+void CNH_Zombie::FootstepSound( bool fRightFoot )
 {
 	if( fRightFoot )
 	{
-		EmitSound(  "Zombie.FootstepRight" );
+		EmitSound(  "nhzombie.FootstepRight" );
 	}
 	else
 	{
-		EmitSound( "Zombie.FootstepLeft" );
+		EmitSound( "nhzombie.FootstepLeft" );
 	}
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Sound of a foot sliding/scraping
 //-----------------------------------------------------------------------------
-void CZombie::FootscuffSound( bool fRightFoot )
+void CNH_Zombie::FootscuffSound( bool fRightFoot )
 {
 	if( fRightFoot )
 	{
-		EmitSound( "Zombie.ScuffRight" );
+		EmitSound( "nhzombie.ScuffRight" );
 	}
 	else
 	{
-		EmitSound( "Zombie.ScuffLeft" );
+		EmitSound( "nhzombie.ScuffLeft" );
 	}
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Play a random attack hit sound
 //-----------------------------------------------------------------------------
-void CZombie::AttackHitSound( void )
+void CNH_Zombie::AttackHitSound( void )
 {
-	EmitSound( "Zombie.AttackHit" );
+	EmitSound( "nhzombie.AttackHit" );
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Play a random attack miss sound
 //-----------------------------------------------------------------------------
-void CZombie::AttackMissSound( void )
+void CNH_Zombie::AttackMissSound( void )
 {
 	// Play a random attack miss sound
-	EmitSound( "Zombie.AttackMiss" );
+	EmitSound( "nhzombie.AttackMiss" );
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CZombie::PainSound( const CTakeDamageInfo &info )
+void CNH_Zombie::PainSound( const CTakeDamageInfo &info )
 {
 	// We're constantly taking damage when we are on fire. Don't make all those noises!
 	if ( IsOnFire() )
@@ -386,22 +479,22 @@ void CZombie::PainSound( const CTakeDamageInfo &info )
 		return;
 	}
 
-	EmitSound( "Zombie.Pain" );
+	EmitSound( "nhzombie.Pain" );
 }
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-void CZombie::DeathSound( const CTakeDamageInfo &info ) 
+void CNH_Zombie::DeathSound( const CTakeDamageInfo &info ) 
 {
-	EmitSound( "Zombie.Die" );
+	EmitSound( "nhzombie.Die" );
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CZombie::AlertSound( void )
+void CNH_Zombie::AlertSound( void )
 {
-	EmitSound( "Zombie.Alert" );
+	EmitSound( "nhzombie.Alert" );
 
 	// Don't let a moan sound cut off the alert sound.
 	m_flNextMoanSound += random->RandomFloat( 2.0, 4.0 );
@@ -410,7 +503,7 @@ void CZombie::AlertSound( void )
 //-----------------------------------------------------------------------------
 // Purpose: Returns a moan sound for this class of zombie.
 //-----------------------------------------------------------------------------
-const char *CZombie::GetMoanSound( int nSound )
+const char *CNH_Zombie::GetMoanSound( int nSound )
 {
 	return pMoanSounds[ nSound % ARRAYSIZE( pMoanSounds ) ];
 }
@@ -418,7 +511,7 @@ const char *CZombie::GetMoanSound( int nSound )
 //-----------------------------------------------------------------------------
 // Purpose: Play a random idle sound.
 //-----------------------------------------------------------------------------
-void CZombie::IdleSound( void )
+void CNH_Zombie::IdleSound( void )
 {
 	if( GetState() == NPC_STATE_IDLE && random->RandomFloat( 0, 1 ) == 0 )
 	{
@@ -432,29 +525,29 @@ void CZombie::IdleSound( void )
 		return;
 	}
 
-	EmitSound( "Zombie.Idle" );
+	EmitSound( "nhzombie.Idle" );
 	MakeAISpookySound( 360.0f );
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Play a random attack sound.
 //-----------------------------------------------------------------------------
-void CZombie::AttackSound( void )
+void CNH_Zombie::AttackSound( void )
 {
-	EmitSound( "Zombie.Attack" );
+	EmitSound( "nhzombie.Attack" );
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Returns the classname (ie "npc_headcrab") to spawn when our headcrab bails.
 //-----------------------------------------------------------------------------
-const char *CZombie::GetHeadcrabClassname( void )
+const char *CNH_Zombie::GetHeadcrabClassname( void )
 {
 	return "npc_headcrab";
 }
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-const char *CZombie::GetHeadcrabModel( void )
+const char *CNH_Zombie::GetHeadcrabModel( void )
 {
 	return "models/headcrabclassic.mdl";
 }
@@ -462,37 +555,261 @@ const char *CZombie::GetHeadcrabModel( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-const char *CZombie::GetLegsModel( void )
+const char *CNH_Zombie::GetLegsModel( void )
 {
-	return "models/zombie/classic_legs.mdl";
+	//return "models/zombie/classic_legs.mdl";
+	if( FClassnameIs( this, "npc_nh_doctor" ) )
+		return "models/NH2Zombies/gibs/doctor_legs.mdl"; 
+
+	if( FClassnameIs( this, "npc_nh_patient" ) )
+		return "models/NH2Zombies/gibs/patient_legs.mdl"; 
+
+	if( FClassnameIs( this, "npc_nh_janitor" ) )
+		return "models/NH2Zombies/gibs/janitor_legs.mdl";
+
+	return "models/NH2Zombies/gibs/doctor_legs.mdl";
 }
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-const char *CZombie::GetTorsoModel( void )
+const char *CNH_Zombie::GetTorsoModel( void )
 {
-	return "models/zombie/classic_torso.mdl";
+	if( FClassnameIs( this, "npc_nh_doctor" ) || FClassnameIs( this, "npc_nh_doctor_torso" ) )
+		return "models/NH2Zombies/gibs/doctor_torso.mdl"; 
+
+	if( FClassnameIs( this, "npc_nh_patient" ) || FClassnameIs( this, "npc_nh_patient_torso" )  )
+		return "models/NH2Zombies/gibs/patient_torso.mdl"; 
+
+	if( FClassnameIs( this, "npc_nh_janitor" ) || FClassnameIs( this, "npc_nh_janitor_torso" )  )
+		return "models/NH2Zombies/gibs/janitor_torso.mdl";
+
+	return "models/NH2Zombies/gibs/doctor_torso.mdl";
 }
 
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-void CZombie::SetZombieModel( void )
+void CNH_Zombie::SetZombieModel( void )
 {
 	Hull_t lastHull = GetHullType();
 
+	if ( !m_fIsTorso )
+	{
+
+		if ( FClassnameIs( this, "npc_nh_doctor" ) )
+		{
+			SetModel( "models/NH2Zombies/doctor01.mdl" );
+	
+			if ( m_nHeadModel == RANDOM_BODYGROUP || m_nHeadModel == 13 )
+				m_nHeadModel = random->RandomInt( 2, 12 );
+			SetBodygroup ( 1, m_nHeadModel );
+	
+			// Random neck tags
+			SetBodygroup ( 2, random->RandomInt( 0, 2 ) );
+
+
+		}
+
+		if ( FClassnameIs( this, "npc_nh_cook" ) )
+		{
+			SetModel( "models/NH2Zombies/cook.mdl" );
+			SetBodygroup ( 1, 2 );
+		}
+
+		if ( FClassnameIs( this, "npc_nh_worker" ) )
+		{
+			SetModel( "models/NH2Zombies/worker01.mdl" );
+	
+			if ( m_nHeadModel == RANDOM_BODYGROUP || m_nHeadModel == 16 )
+				m_nHeadModel = random->RandomInt( 2, 15 );
+			SetBodygroup ( 1, m_nHeadModel );
+			
+			// Random gloves
+			int gloves = random->RandomInt( 0, 2 );
+			if (gloves == 2)
+			{
+				SetBodygroup ( 2, random->RandomInt( 0, 1 ));
+				SetBodygroup ( 3, random->RandomInt( 0, 1 ));
+			}
+			else
+			{
+				SetBodygroup ( 2, gloves);
+				SetBodygroup ( 3, gloves);
+			}
+			
+			//random watch
+			int watch = random->RandomInt( 0, 1 );
+			SetBodygroup ( 4, watch );
+
+			//random radio
+			int radio = random->RandomInt( 0, 1 );
+			SetBodygroup ( 5, radio );
+
+			//random skin
+			m_nSkin = random->RandomInt( 0, 1 );
+			
+
+		}
+
+		if ( FClassnameIs( this, "npc_nh_janitor" ) )
+		{
+			if ( m_nBodyModel == 0 )
+				m_nBodyModel = random->RandomInt( 1, 2 );
+	
+			if ( m_nBodyModel == 1 )
+				SetModel( "models/NH2Zombies/janitor01.mdl" );
+			if ( m_nBodyModel == 2 )
+				SetModel( "models/NH2Zombies/janitor02.mdl" );
+			
+			if ( m_nHeadModel == RANDOM_BODYGROUP || m_nHeadModel == 15 )
+				m_nHeadModel = random->RandomInt( 2, 14 );
+	
+			SetBodygroup ( 1, m_nHeadModel );
+	
+			// Random tag
+			SetBodygroup ( 2, random->RandomInt( 0, 1 ) );
+	
+			// Random rag
+			SetBodygroup ( 3, random->RandomInt( 0, 1 ) );
+	
+			// If head is black, the hands should be black too!
+			if ( m_nHeadModel == 2 || m_nHeadModel == 3 ) 
+				SetBodygroup ( 4, 0 );
+			else
+				SetBodygroup( 4, 1 );
+	
+		}
+	
+		if ( FClassnameIs( this, "npc_nh_patient" ) )
+		{
+			
+			if ( m_nBodyModel == 1 )
+				SetModel( "models/NH2Zombies/patient01.mdl" );
+			if ( m_nBodyModel == 2 )
+				SetModel( "models/NH2Zombies/patient02.mdl" );
+			if ( m_nBodyModel == 3 )
+				SetModel( "models/NH2Zombies/patient03.mdl" );
+	
+			if ( m_nBodyModel == 0 )
+			{
+				m_nBodyModel = random->RandomInt( 1, 11 );
+				if ( m_nBodyModel == 10 )
+				{
+					SetModel( "models/NH2Zombies/patient03.mdl" ); // 1/11 times
+					m_nBodyModel = 3;
+				}
+				else if ( m_nBodyModel > 5 )
+				{
+					SetModel( "models/NH2Zombies/patient02.mdl" ); // 5/11 times
+					m_nBodyModel = 2;
+				}
+				else
+				{
+					SetModel( "models/NH2Zombies/patient01.mdl" ); // 5/11 times
+					m_nBodyModel = 3;
+				}
+			}
+
+
+		
+			if ( m_nHeadModel == RANDOM_BODYGROUP || m_nHeadModel == 15 )
+				m_nHeadModel = random->RandomInt( 2, 14 );
+			SetBodygroup ( 1, m_nHeadModel );
+			
+			// If head is black, the hands should be black too!
+			if ( m_nHeadModel == 2 || m_nHeadModel == 9 ) 
+				SetBodygroup ( 2, 0 );
+			else //If head is white, hands should be white!
+				SetBodygroup ( 2, 1 );
+				
+			//Random cast on right arm.
+			if ( random->RandomInt( 0, 9 ) == 9 )
+				SetBodygroup( 3, 0 );
+			else
+				SetBodygroup( 3, 1 );
+	
+			//Random cast on left arm for patients who have a left arm
+			if ( random->RandomInt( 0, 9 ) == 9 && m_nBodyModel != 3 )
+				SetBodygroup( 4, 0 );
+			else
+				SetBodygroup( 4, 1 );
+		}
+	
+		if ( FClassnameIs( this, "npc_nh_surgeon" ) )
+		{
+			if ( m_nBodyModel == 0 )
+				m_nBodyModel = random->RandomInt( 1, 2 );
+	
+			if ( m_nBodyModel == 1 )
+				SetModel( "models/NH2Zombies/surgeon01.mdl" );
+			if ( m_nBodyModel == 2 )
+				SetModel( "models/NH2Zombies/surgeon02.mdl" );
+
+			//Random head
+			if ( m_nHeadModel == RANDOM_BODYGROUP || m_nHeadModel == 15 )
+				m_nHeadModel = random->RandomInt( 2, 12 );
+
+			SetBodygroup ( 1, m_nHeadModel );
+
+			// Random neck tags
+			SetBodygroup ( 2, random->RandomInt( 0, 2 ) );
+		}
+
+	}
+
+
 	if ( m_fIsTorso )
 	{
-		SetModel( "models/zombie/classic_torso.mdl" );
+		SetModel( this->GetTorsoModel() );
+
+		if ( /*FClassnameIs( this, "npc_nh_patient" ) ||*/ FClassnameIs( this, "npc_nh_patient_torso" ) )
+		{
+			if ( m_nHeadModel == RANDOM_BODYGROUP || m_nHeadModel == 15 )
+				m_nHeadModel = random->RandomInt( 2, 14 );
+	
+			// If head is black, the hands should be black too!
+			if ( m_nHeadModel == 2 ) 
+				SetBodygroup ( 2, 0 );
+			else //If head is white, hands should be white!
+				SetBodygroup ( 2, 1 );
+	
+			//Random cast on right arm.
+			if ( random->RandomInt( 0, 9 ) == 9 )
+				SetBodygroup( 3, 0 );
+			else
+				SetBodygroup( 3, 1 );
+	
+			//Random cast on left arm
+			if ( random->RandomInt( 0, 9 ) == 9 )
+				SetBodygroup( 4, 0 );
+			else
+				SetBodygroup( 4, 1 );
+		}
+
+		if ( FClassnameIs( this, "npc_nh_doctor" ) || FClassnameIs( this, "npc_nh_doctor_torso" ) )
+		{
+			if ( m_nHeadModel == RANDOM_BODYGROUP || m_nHeadModel == 13 )
+				m_nHeadModel = random->RandomInt( 2, 12 );
+		}
+
+		if ( FClassnameIs( this, "npc_nh_janitor" ) || FClassnameIs( this, "npc_nh_janitor_torso" ) )
+		{
+			if ( m_nHeadModel == RANDOM_BODYGROUP || m_nHeadModel == 15 )
+				m_nHeadModel = random->RandomInt( 2, 14 );
+		}
+
+		SetBodygroup ( 1, m_nHeadModel );			
+
+
 		SetHullType( HULL_TINY );
 	}
 	else
 	{
-		SetModel( "models/zombie/classic.mdl" );
 		SetHullType( HULL_HUMAN );
 	}
 
-	SetBodygroup( ZOMBIE_BODYGROUP_HEADCRAB, !m_fIsHeadless );
+	
+	
 
 	SetHullSizeNormal( true );
 	SetDefaultEyeOffset();
@@ -513,7 +830,7 @@ void CZombie::SetZombieModel( void )
 //---------------------------------------------------------
 // Classic zombie only uses moan sound if on fire.
 //---------------------------------------------------------
-void CZombie::MoanSound( envelopePoint_t *pEnvelope, int iEnvelopeSize )
+void CNH_Zombie::MoanSound( envelopePoint_t *pEnvelope, int iEnvelopeSize )
 {
 	if( IsOnFire() )
 	{
@@ -523,8 +840,27 @@ void CZombie::MoanSound( envelopePoint_t *pEnvelope, int iEnvelopeSize )
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-bool CZombie::ShouldBecomeTorso( const CTakeDamageInfo &info, float flDamageThreshold )
+bool CNH_Zombie::ShouldBecomeTorso( const CTakeDamageInfo &info, float flDamageThreshold )
 {
+	 if ( FClassnameIs( this, "npc_nh_surgeon" ) )
+		 return false;
+
+	 if ( FClassnameIs( this, "npc_nh_worker" ) )
+		 return false;
+
+	 if ( FClassnameIs( this, "npc_nh_cook" ) )
+		 return false;
+
+	 if ( FClassnameIs( this, "npc_nh_patient" ) && m_nBodyModel == 3 )
+		 return false;
+
+	 if ( GetBodygroup( 1 ) == 0 || GetBodygroup( 1 ) == 1 )
+		 return false; // headless zombies shouldn't become torsos, it's bad for their health ;) (nh2)
+
+	 if ( !m_bCanBeTorso )
+		 return false;
+
+
 	if( IsSlumped() ) 
 	{
 		// Never break apart a slouched zombie. This is because the most fun
@@ -535,12 +871,20 @@ bool CZombie::ShouldBecomeTorso( const CTakeDamageInfo &info, float flDamageThre
 		return false;
 	}
 
+	if (!m_bHeadShot && info.GetDamageType() == DMG_SLASH)
+	{
+		if(info.GetDamage() < sk_nh_torso_damage_threshold.GetFloat())
+			return random->RandomInt(1, 100) <= 25;
+		else
+			return random->RandomInt(1, 100) <= 35;
+	}
+
 	return BaseClass::ShouldBecomeTorso( info, flDamageThreshold );
 }
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-void CZombie::GatherConditions( void )
+void CNH_Zombie::GatherConditions( void )
 {
 	BaseClass::GatherConditions();
 
@@ -585,7 +929,7 @@ void CZombie::GatherConditions( void )
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-int CZombie::SelectFailSchedule( int failedSchedule, int failedTask, AI_TaskFailureCode_t taskFailCode )
+int CNH_Zombie::SelectFailSchedule( int failedSchedule, int failedTask, AI_TaskFailureCode_t taskFailCode )
 {
 	if ( HasCondition( COND_BLOCKED_BY_DOOR ) && m_hBlockingDoor != NULL )
 	{
@@ -615,7 +959,7 @@ int CZombie::SelectFailSchedule( int failedSchedule, int failedTask, AI_TaskFail
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-int CZombie::TranslateSchedule( int scheduleType )
+int CNH_Zombie::TranslateSchedule( int scheduleType )
 {
 	if ( scheduleType == SCHED_COMBAT_FACE && IsUnreachable( GetEnemy() ) )
 		return SCHED_TAKE_COVER_FROM_ENEMY;
@@ -628,14 +972,14 @@ int CZombie::TranslateSchedule( int scheduleType )
 
 //---------------------------------------------------------
 
-Activity CZombie::NPC_TranslateActivity( Activity newActivity )
+Activity CNH_Zombie::NPC_TranslateActivity( Activity newActivity )
 {
 	newActivity = BaseClass::NPC_TranslateActivity( newActivity );
 
 	if ( newActivity == ACT_RUN )
 		return ACT_WALK;
 		
-	if ( m_fIsTorso && ( newActivity == ACT_ZOMBIE_TANTRUM ) )
+	if ( newActivity == ACT_NH_ZOMBIE_TANTRUM )
 		return ACT_IDLE;
 
 	return newActivity;
@@ -643,7 +987,7 @@ Activity CZombie::NPC_TranslateActivity( Activity newActivity )
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-void CZombie::OnStateChange( NPC_STATE OldState, NPC_STATE NewState )
+void CNH_Zombie::OnStateChange( NPC_STATE OldState, NPC_STATE NewState )
 {
 	BaseClass::OnStateChange( OldState, NewState );
 }
@@ -651,7 +995,7 @@ void CZombie::OnStateChange( NPC_STATE OldState, NPC_STATE NewState )
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-void CZombie::StartTask( const Task_t *pTask )
+void CNH_Zombie::StartTask( const Task_t *pTask )
 {
 	switch( pTask->iTask )
 	{
@@ -659,7 +1003,7 @@ void CZombie::StartTask( const Task_t *pTask )
 		{
 			if ( random->RandomInt( 1, 4 ) == 2 )
 			{
-				SetIdealActivity( (Activity)ACT_ZOMBIE_TANTRUM );
+				SetIdealActivity( (Activity)ACT_NH_ZOMBIE_TANTRUM );
 			}
 			else
 			{
@@ -710,7 +1054,7 @@ void CZombie::StartTask( const Task_t *pTask )
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-void CZombie::RunTask( const Task_t *pTask )
+void CNH_Zombie::RunTask( const Task_t *pTask )
 {
 	switch( pTask->iTask )
 	{
@@ -752,7 +1096,7 @@ void CZombie::RunTask( const Task_t *pTask )
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-bool CZombie::OnObstructingDoor( AILocalMoveGoal_t *pMoveGoal, CBaseDoor *pDoor, 
+bool CNH_Zombie::OnObstructingDoor( AILocalMoveGoal_t *pMoveGoal, CBaseDoor *pDoor, 
 							  float distClear, AIMoveResult_t *pResult )
 {
 	if ( BaseClass::OnObstructingDoor( pMoveGoal, pDoor, distClear, pResult ) )
@@ -771,18 +1115,18 @@ bool CZombie::OnObstructingDoor( AILocalMoveGoal_t *pMoveGoal, CBaseDoor *pDoor,
 //---------------------------------------------------------
 //---------------------------------------------------------
 
-Activity CZombie::SelectDoorBash()
+Activity CNH_Zombie::SelectDoorBash()
 {
 	if ( random->RandomInt( 1, 3 ) == 1 )
 		return ACT_MELEE_ATTACK1;
-	return (Activity)ACT_ZOMBIE_WALLPOUND;
+	return (Activity)ACT_NH_ZOMBIE_WALLPOUND;
 }
 
 //---------------------------------------------------------
 // Zombies should scream continuously while burning, so long
 // as they are alive... but NOT IN GERMANY!
 //---------------------------------------------------------
-void CZombie::Ignite( float flFlameLifetime, bool bNPCOnly, float flSize, bool bCalledByLevelDesigner )
+void CNH_Zombie::Ignite( float flFlameLifetime, bool bNPCOnly, float flSize, bool bCalledByLevelDesigner )
 {
  	if( !IsOnFire() && IsAlive() )
 	{
@@ -792,7 +1136,7 @@ void CZombie::Ignite( float flFlameLifetime, bool bNPCOnly, float flSize, bool b
 		{
 			RemoveSpawnFlags( SF_NPC_GAG );
 
-			MoanSound( envZombieMoanIgnited, ARRAYSIZE( envZombieMoanIgnited ) );
+			MoanSound( envNHZombieMoanIgnited, ARRAYSIZE( envNHZombieMoanIgnited ) );
 
 			if ( m_pMoanSound )
 			{
@@ -806,7 +1150,7 @@ void CZombie::Ignite( float flFlameLifetime, bool bNPCOnly, float flSize, bool b
 //---------------------------------------------------------
 // If a zombie stops burning and hasn't died, quiet him down
 //---------------------------------------------------------
-void CZombie::Extinguish()
+void CNH_Zombie::Extinguish()
 {
 	if( m_pMoanSound )
 	{
@@ -820,7 +1164,7 @@ void CZombie::Extinguish()
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-int CZombie::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
+int CNH_Zombie::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 {
 #ifndef HL2_EPISODIC
 	if ( inputInfo.GetDamageType() & DMG_BUCKSHOT )
@@ -836,12 +1180,96 @@ int CZombie::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 	}
 #endif // HL2_EPISODIC
 
+	float dmgPos = inputInfo.GetDamagePosition().z - GetAbsOrigin().z;
+	if (m_bHeadShot || dmgPos > sk_nh_zombie_head_height.GetFloat())
+	{
+		bool bShouldExplode = false;
+
+		if (GetBodygroup(1) > 1 && inputInfo.GetDamage() < GetHealth())
+		{
+			if( inputInfo.GetDamageType() & DMG_SLASH)
+			{
+				if (inputInfo.GetDamage() < 40)
+					bShouldExplode = random->RandomInt( 1, 10 ) == 9;
+				else
+					bShouldExplode = true;
+			}
+			else if (inputInfo.GetDamageType() & (DMG_BULLET|DMG_BUCKSHOT))
+			{
+				if (inputInfo.GetDamage() < 10)
+					bShouldExplode = random->RandomInt( 1, 10 ) == 1;
+				else if (inputInfo.GetDamage() < 30)
+					bShouldExplode = random->RandomInt( 1, 8 ) == 1;
+				else
+					bShouldExplode = random->RandomInt( 1, 3 ) == 1;
+			}
+		}
+		
+		if(bShouldExplode)
+		{
+			SetBodygroup( 1, random->RandomInt( 0, 1 ) ); // half a head left
+			
+			EmitSound_t params;
+			params.m_pSoundName = "nhzombie.headexplode_jet";
+			//params.m_flSoundTime = 0.0;
+			CPASAttenuationFilter filter( this, params.m_pSoundName );
+			filter.AddAllPlayers();
+			EmitSound( filter, entindex(), params );
+
+			DispatchParticleEffect( "blood_advisor_puncture_withdraw", PATTACH_POINT_FOLLOW, dynamic_cast<CBaseEntity*>(this), "eyes" );
+			
+		}
+
+
+	}
+
+	if ( inputInfo.GetDamage() >= GetHealth() )
+	{
+		StopParticleEffects(this);
+
+		if ( m_bHeadShot )
+		{
+			if (GetBodygroup( 1 ) <= 1) //has lost the head
+				SetBodygroup( 1, 1 ); //no head left
+			else
+				SetBodygroup( 1, random->RandomInt( 0, 1 ) );
+			
+			EmitSound( "nhzombie.headexplode" );
+
+			//SpawnBlood( Vector vecSpot, const Vector &vecDir, int bloodColor, float flDamage)
+			Vector vecSpot, vecDir;
+			QAngle absAngles;
+			GetAttachment( "eyes", vecSpot, absAngles );
+			//vecDir = /// absAngles to vector?
+
+			SpawnBlood( vecSpot, Vector( 0, 0, 0 ), BLOOD_COLOR_RED, inputInfo.GetDamage() );
+		}
+
+	}
+
 	return BaseClass::OnTakeDamage_Alive( inputInfo );
 }
 
+int CNH_Zombie::OnTakeDamage_Dead( const CTakeDamageInfo &inputInfo )
+{
+	if ( m_bHeadShot )
+	{
+		if ( random->RandomInt( 1, 15 ) == 9 )
+			{
+				if (GetBodygroup( 1 ) <= 1) //has lost the head
+					SetBodygroup( 1, 1 ); //no head left
+				else
+					SetBodygroup( 1, random->RandomInt( 0, 1 ) );
+			
+				EmitSound( "nhzombie.headexplode" );
+			}
+	}
+
+	return BaseClass::OnTakeDamage_Dead( inputInfo );
+}
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-bool CZombie::IsHeavyDamage( const CTakeDamageInfo &info )
+bool CNH_Zombie::IsHeavyDamage( const CTakeDamageInfo &info )
 {
 #ifdef HL2_EPISODIC
 	if ( info.GetDamageType() & DMG_BUCKSHOT )
@@ -874,7 +1302,7 @@ bool CZombie::IsHeavyDamage( const CTakeDamageInfo &info )
 //---------------------------------------------------------
 //---------------------------------------------------------
 #define ZOMBIE_SQUASH_MASS	300.0f  // Anything this heavy or heavier squashes a zombie good. (show special fx)
-bool CZombie::IsSquashed( const CTakeDamageInfo &info )
+bool CNH_Zombie::IsSquashed( const CTakeDamageInfo &info )
 {
 	if( GetHealth() > 0 )
 	{
@@ -898,7 +1326,7 @@ bool CZombie::IsSquashed( const CTakeDamageInfo &info )
 
 //---------------------------------------------------------
 //---------------------------------------------------------
-void CZombie::BuildScheduleTestBits( void )
+void CNH_Zombie::BuildScheduleTestBits( void )
 {
 	BaseClass::BuildScheduleTestBits();
 
@@ -908,10 +1336,19 @@ void CZombie::BuildScheduleTestBits( void )
 	}
 }
 
-	
+HeadcrabRelease_t CNH_Zombie::ShouldReleaseHeadcrab( const CTakeDamageInfo &info, float flDamageThreshold )
+{
+	return RELEASE_NO;
+}
+
+float CNH_Zombie::GetHitgroupDamageMultiplier( int iHitGroup, const CTakeDamageInfo &info )
+{
+	return BaseClass::GetHitgroupDamageMultiplier(iHitGroup, info);
+}
+
 //=============================================================================
 
-AI_BEGIN_CUSTOM_NPC( npc_zombie, CZombie )
+AI_BEGIN_CUSTOM_NPC( npc_nh_zombie, CNH_Zombie )
 
 	DECLARE_CONDITION( COND_BLOCKED_BY_DOOR )
 	DECLARE_CONDITION( COND_DOOR_OPENED )
@@ -922,15 +1359,15 @@ AI_BEGIN_CUSTOM_NPC( npc_zombie, CZombie )
 	DECLARE_TASK( TASK_ZOMBIE_ATTACK_DOOR )
 	DECLARE_TASK( TASK_ZOMBIE_CHARGE_ENEMY )
 	
-	DECLARE_ACTIVITY( ACT_ZOMBIE_TANTRUM );
-	DECLARE_ACTIVITY( ACT_ZOMBIE_WALLPOUND );
+	DECLARE_ACTIVITY( ACT_NH_ZOMBIE_TANTRUM );
+	DECLARE_ACTIVITY( ACT_NH_ZOMBIE_WALLPOUND );
 
 	DEFINE_SCHEDULE
 	( 
 		SCHED_ZOMBIE_BASH_DOOR,
 
 		"	Tasks"
-		"		TASK_SET_ACTIVITY				ACTIVITY:ACT_ZOMBIE_TANTRUM"
+		"		TASK_SET_ACTIVITY				ACTIVITY:ACT_NH_ZOMBIE_TANTRUM"
 		"		TASK_SET_FAIL_SCHEDULE			SCHEDULE:SCHED_TAKE_COVER_FROM_ENEMY"
 		"		TASK_ZOMBIE_YAW_TO_DOOR			0"
 		"		TASK_FACE_IDEAL					0"
@@ -968,7 +1405,7 @@ AI_BEGIN_CUSTOM_NPC( npc_zombie, CZombie )
 		"		TASK_ZOMBIE_CHARGE_ENEMY		0"
 		"		TASK_WALK_PATH					0"
 		"		TASK_WAIT_FOR_MOVEMENT			0"
-		"		TASK_PLAY_SEQUENCE				ACTIVITY:ACT_ZOMBIE_TANTRUM" /* placeholder until frustration/rage/fence shake animation available */
+		"		TASK_PLAY_SEQUENCE				ACTIVITY:ACT_NH_ZOMBIE_TANTRUM" /* placeholder until frustration/rage/fence shake animation available */
 		""
 		"	Interrupts"
 		"		COND_ZOMBIE_RELEASECRAB"
@@ -984,7 +1421,7 @@ AI_BEGIN_CUSTOM_NPC( npc_zombie, CZombie )
 
 		"	Tasks"
 		"		TASK_STOP_MOVING		0"
-		"		TASK_SET_ACTIVITY		ACTIVITY:ACT_ZOMBIE_TANTRUM"
+		"		TASK_SET_ACTIVITY		ACTIVITY:ACT_NH_ZOMBIE_TANTRUM"
 		"		TASK_WAIT				1"
 		"		TASK_WAIT_PVS			0"
 		""

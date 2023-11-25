@@ -2257,6 +2257,15 @@ bool CNPC_Citizen::ShouldLookForBetterWeapon()
 //-----------------------------------------------------------------------------
 int CNPC_Citizen::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 {
+
+#ifdef NH2
+
+	if ( IsCurSchedule(SCHED_RELOAD) || IsCurSchedule(SCHED_HIDE_AND_RELOAD) )
+	{
+		return 0; //invincible while reloading
+	}
+
+#endif
 	if( (info.GetDamageType() & DMG_BURN) && (info.GetDamageType() & DMG_DIRECT) )
 	{
 #define CITIZEN_SCORCH_RATE		6

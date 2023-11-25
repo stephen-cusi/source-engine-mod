@@ -9,7 +9,6 @@
 #include "c_baseplayer.h"
 #include "flashlighteffect.h"
 #include "weapon_selection.h"
-#include "history_resource.h"
 #include "iinput.h"
 #include "input.h"
 #include "view.h"
@@ -38,6 +37,7 @@
 #include "datacache/imdlcache.h"
 #include "vgui/ISurface.h"
 #include "voice_status.h"
+#include "nh2/hud_pickups.h"
 #include "fx.h"
 #include "dt_utlvector_recv.h"
 #include "cam_thirdperson.h"
@@ -222,6 +222,7 @@ END_RECV_TABLE()
 		
 		RecvPropInt			( RECVINFO(m_fOnTarget) ),
 
+		RecvPropInt			( RECVINFO(m_nButtons) ),
 		RecvPropInt			( RECVINFO( m_nTickBase ) ),
 		RecvPropInt			( RECVINFO( m_nNextThinkTick ) ),
 
@@ -365,7 +366,6 @@ BEGIN_PREDICTION_DATA( C_BasePlayer )
 	
 	DEFINE_PRED_FIELD_TOL( m_vecBaseVelocity, FIELD_VECTOR, FTYPEDESC_INSENDTABLE, 0.05 ),
 
-	DEFINE_FIELD( m_nButtons, FIELD_INTEGER ),
 	DEFINE_FIELD( m_flWaterJumpTime, FIELD_FLOAT ),
 	DEFINE_FIELD( m_nImpulse, FIELD_INTEGER ),
 	DEFINE_FIELD( m_flStepSoundTime, FIELD_FLOAT ),
@@ -386,6 +386,7 @@ BEGIN_PREDICTION_DATA( C_BasePlayer )
 	// DEFINE_FIELD( m_pBrightLight, dlight_t* ),
 	DEFINE_PRED_FIELD( m_hLastWeapon, FIELD_EHANDLE, FTYPEDESC_INSENDTABLE ),
 
+	DEFINE_PRED_FIELD( m_nButtons, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_nTickBase, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 
 	DEFINE_PRED_FIELD( m_hGroundEntity, FIELD_EHANDLE, FTYPEDESC_INSENDTABLE ),
@@ -985,10 +986,10 @@ void C_BasePlayer::OnDataChanged( DataUpdateType_t updateType )
 				if ( !pWeaponData || !( pWeaponData->iFlags & ITEM_FLAG_NOAMMOPICKUPS ) )
 				{
 					// We got more ammo for this ammo index. Add it to the ammo history
-					CHudHistoryResource *pHudHR = GET_HUDELEMENT( CHudHistoryResource );
-					if( pHudHR )
+					CHudPickups *pHudPU = GET_HUDELEMENT( CHudPickups );
+					if( pHudPU )
 					{
-						pHudHR->AddToHistory( HISTSLOT_AMMO, i, abs(GetAmmoCount(i) - m_iOldAmmo[i]) );
+						pHudPU->ShowAmmo(i,abs(GetAmmoCount(i) - m_iOldAmmo[i]));
 					}
 				}
 			}
