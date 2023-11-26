@@ -30,37 +30,36 @@ jobs:
         # path: ./to_upload
         # if-no-files-found: error
 
-  # Build-apk-for-android:
-    # runs-on: ubuntu-20.04
+  Build-apk-for-android:
+    runs-on: ubuntu-20.04
 
-    # steps:
-    # - uses: actions/checkout@v3
-    # - name: Cloning modlaucher repo and preparing for building 
-      # run: |
-        # git clone https://github.com/stephen-cusi/modlauncher-waf -b lmod
-        # sudo apt-get update
-        # sudo apt-get install -f -y openjdk-8-jre zip apksigner
-    # - name: Build Android (32 bit)
-      # run: |
-        # scripts/build-android-armv7a.sh
-    # - name: Build Android (64 bit)
-      # run: |
-        # sudo chmod +x scripts/build-android-arm64.sh
-        # scripts/build-android-arm64.sh   
-    # - name: Build APK
-      # run: |
-        # chmod +x scripts/sbuild-apk.sh
-        # scripts/sbuild-apk.sh 
-    # - name: Rename APK
-      # run: |
-         # mv modlauncher-waf/build/android/mod-signed.apk lmod-release.apk
+    steps:
+    - uses: actions/checkout@v3
+    - name: Cloning modlaucher repo and preparing for building 
+      run: |
+        git clone https://github.com/stephen-cusi/modlauncher-waf -b nh2
+        sudo apt-get update
+        sudo apt-get install -f -y openjdk-8-jre zip apksigner
+    - name: Build Android (32 bit)
+      run: |
+        scripts/build-android-armv7a.sh
+    - name: Build Android (64 bit)
+      run: |
+        sudo chmod +x scripts/build-android-arm64.sh
+        scripts/build-android-arm64.sh   
+    - name: Build APK
+      run: |
+        chmod +x scripts/sbuild-apk.sh
+        scripts/sbuild-apk.sh 
+    - name: Rename APK
+      run: |
+         mv modlauncher-waf/build/android/mod-signed.apk nh2-release.apk
 
-    # - name: 'Upload Artifact'
-      # uses: actions/upload-artifact@v3
-      # with:
-        # name: lmod-apk
-        # path: lmod-release.apk
-        # android TODO
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: nh2-apk
+        path: nh2-release.apk
 
         
   build-windows-win-amd64:
