@@ -51,7 +51,7 @@ projects={
 		'datacache',
 		'datamodel',
 		'dmxloader',
-#		'engine',
+		'engine',
 		'engine/voice_codecs/minimp3',
 		'filesystem',
 		'game/client',
@@ -140,6 +140,7 @@ projects={
 		'tier1',
 		'tier2',
 		'tier3',
+		'vgui2/vgui_controls',
 		'vphysics',
 		'vpklib',
 		'vstdlib',
@@ -331,7 +332,7 @@ def options(opt):
 def check_deps(conf):
 	if conf.env.DEST_OS != 'win32':
 		conf.check_cc(lib='dl', mandatory=False)
-		conf.check_cc(lib='bz2', mandatory=False)
+		conf.check_cc(lib='bz2', mandatory=True)
 		conf.check_cc(lib='rt', mandatory=False)
 
 		if not conf.env.LIB_M: # HACK: already added in xcompile!
@@ -433,7 +434,7 @@ def check_deps(conf):
 		# conf.multicheck(*a, run_all_tests = True, mandatory = True)
 
 def configure(conf):
-	conf.load('fwgslib reconfigure compiler_c compiler_cxx compiler_optimizations gccdeps msvcdeps')
+	conf.load('fwgslib reconfigure compiler_optimizations')
 
 	# Force XP compability, all build targets should add
 	# subsystem=bld.env.MSVC_SUBSYSTEM
@@ -444,8 +445,8 @@ def configure(conf):
 		conf.env.MSVC_TARGETS = ['x86']
 
 	if sys.platform == 'win32':
-		conf.load('msvc_pdb_ext msdev msvs')
-	conf.load('subproject xcompile compiler_c compiler_cxx gitversion clang_compilation_database strip_on_install_v2 waf_unit_test enforce_pic')
+		conf.load('msvc_pdb_ext msdev msvs msvcdeps')
+	conf.load('subproject xcompile compiler_c compiler_cxx gccdeps gitversion clang_compilation_database strip_on_install_v2 waf_unit_test enforce_pic')
 	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'amd64':
 		conf.load('masm')
 	elif conf.env.DEST_OS == 'darwin':
@@ -495,7 +496,7 @@ def configure(conf):
 	cflags, linkflags = conf.get_optimization_flags()
 
 
-	flags = [] #'-M -MT']
+	flags = []
 
 	if conf.options.SANITIZE:
 		flags += ['-fsanitize=%s'%conf.options.SANITIZE, '-fno-sanitize=vptr']
@@ -526,7 +527,7 @@ def configure(conf):
 		flags += ['-fsigned-char']
 
 	if conf.env.DEST_CPU == 'arm':
-		flags += ['-mfpu=neon-vfpv4']
+		flags += ['-march=armv7-a', '-mfpu=neon-vfpv4']
 
 	if conf.env.DEST_OS == 'freebsd':
 		linkflags += ['-lexecinfo']
@@ -550,11 +551,11 @@ def configure(conf):
 
 		if conf.options.BUILD_TYPE == 'debug':
 			linkflags += [
+				'/FORCE:MULTIPLE',
 				'/INCREMENTAL:NO',
 				'/NODEFAULTLIB:libc',
 				'/NODEFAULTLIB:libcd',
 				'/NODEFAULTLIB:libcmt',
-				'/FORCE',
 				'/LARGEADDRESSAWARE'
 			]
 		else:
