@@ -82,6 +82,11 @@ jobs:
     - name: Build dedicated linux-i386
       run: |
         scripts/build-ubuntu-i386.sh -d
+    - uses: actions/upload-artifact@v3
+      with:
+        name: linux-source-engine-64-d
+        path: ./linux
+        if-no-files-found: error
 
   build-dedicated-linux-amd64:
     runs-on: ubuntu-20.04
