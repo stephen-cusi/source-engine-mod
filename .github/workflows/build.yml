@@ -60,7 +60,7 @@ jobs:
     - name: Build dedicated windows-i386
       run: |
         git submodule init && git submodule update
-        ./waf.bat configure -T debug -d --prefix=./win --build-game=hl2mp
+        ./waf.bat configure -T release -d --prefix=./win --build-game=hl2mp -4
         ./waf.bat install
     - uses: actions/upload-artifact@v3
       with:
