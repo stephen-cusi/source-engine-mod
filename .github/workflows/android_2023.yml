@@ -102,7 +102,7 @@ jobs:
       run: |
         #
         git clone 
-        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=lmod
+        ./waf.bat configure -T release --prefix=./win --disable-warns
         ./waf.bat install
         echo Running delete_file.cmd
         scripts\delete_file.cmd
@@ -111,7 +111,7 @@ jobs:
 
     - uses: actions/upload-artifact@v3
       with:
-        name: lmod-win-amd64
+        name: hl2-win-amd64
         path: ./win
         if-no-files-found: error
 
@@ -127,7 +127,7 @@ jobs:
         # ./waf.bat install
     # - uses: actions/upload-artifact@v3
       # with:
-        # name: hl2sb-win-dedicated-i386
+        # name: win-dedicated-i386
         # path: ./win
         # if-no-files-found: error
 
