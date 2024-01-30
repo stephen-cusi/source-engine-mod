@@ -13,11 +13,12 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: hl2sb-linux-i386
-        path: ./to_upload
+        path: ./to-upload
         if-no-files-found: error
 
   build-linux-amd64:
     runs-on: ubuntu-20.04
+
     steps:
     - uses: actions/checkout@v2
     - name: Build Linux (64 Bit)
@@ -26,16 +27,17 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: hl2sb-linux-amd64
-        path: ./to_upload
+        path: ./to-upload
         if-no-files-found: error
 
   Build-apk-for-android:
     runs-on: ubuntu-20.04
+
     steps:
     - uses: actions/checkout@v2
     - name: Cloning modlaucher repo and preparing for building
       run: |
-        git clone https://github.com/stephen-cusi/modlauncher-waf
+        git clone https://github.com/ItzVladik/modlauncher-waf
         sudo apt-get update
         sudo apt-get install -f -y openjdk-8-jre zip apksigner
     - name: Build Android (32 bit)
@@ -57,42 +59,45 @@ jobs:
         name: hl2sb-apk
         path: hl2sb-release.apk
 
-    build-windows-i386:
-     runs-on: windows-latest
-     steps:
-     - uses: actions/checkout@v3
-     - name: Build Windows (32 bit)
-       run: |
-         
-         git submodule init;git submodule update
-         ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb
+  build-windows-win-i386:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build Windows (32 bit)
+      run: |
+        #
+        git submodule init;git submodule update
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb
         
-         ./waf.bat install
-     - uses: actions/upload-artifact@v3
-       with:
-         name: hl2sb-win-i386
-         path: ./win
-         if-no-files-found: error
+        ./waf.bat install
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb-win-i386
+        path: ./win
+        if-no-files-found: error
         
-    build-windows-amd64:
-     runs-on: windows-latest
-     steps:
-     - uses: actions/checkout@v3
-     - name: Build Windows (64 bit)
-       run: |
-         
-         git submodule init;git submodule update
-         ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8
+  build-windows-win-amd64:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build Windows (64 bit)
+      run: |
+        #
+        git submodule init;git submodule update
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8
         
-         ./waf.bat install
-     - uses: actions/upload-artifact@v3
-       with:
-         name: hl2sb-win-amd64
-         path: ./win
-         if-no-files-found: error
+        ./waf.bat install
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2sb-win-amd64
+        path: ./win
+        if-no-files-found: error
 
   build-dedicated-windows-i386:
     runs-on: windows-2019
+
     steps:
     - uses: actions/checkout@v2
     - name: Build Windows Dedicated (32 bit) 
@@ -108,6 +113,7 @@ jobs:
 
   build-dedicated-windows-amd64:
     runs-on: windows-2019
+
     steps:
     - uses: actions/checkout@v2
     - name: Build Windows Dedicated (64 bit)
@@ -123,6 +129,7 @@ jobs:
 
   build-dedicated-linux-i386:
     runs-on: ubuntu-20.04
+
     steps:
     - uses: actions/checkout@v2
     - name: Build Linux Dedicated (32 bit)
@@ -136,6 +143,7 @@ jobs:
 
   build-dedicated-linux-amd64:
     runs-on: ubuntu-20.04
+
     steps:
     - uses: actions/checkout@v2
     - name: Build Linux Dedicated (64 bit)
@@ -149,6 +157,7 @@ jobs:
 
   build-macos-amd64:
     runs-on: macos-latest
+
     steps:
     - uses: actions/checkout@v2
     - name: Build MacOS (64 bit)
@@ -162,6 +171,7 @@ jobs:
 
   build-dedicated-macos-amd64:
     runs-on: macos-latest
+
     steps:
     - uses: actions/checkout@v2
     - name: Build MacOS Dedicated (64 bit)
