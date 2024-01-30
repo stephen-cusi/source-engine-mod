@@ -1839,7 +1839,7 @@ void COptionsSubMultiplayer::OnApplyChanges()
 		Q_StripExtension( m_ModelName, m_ModelName, sizeof ( m_ModelName ) );
 		
 		// save the player model name
-		Q_snprintf(cmd, sizeof(cmd), "cl_playermodel models/%s.mdl\n", m_ModelName );
+		Q_snprintf(cmd, sizeof(cmd), "sv_change_playermodel %s.mdl\n", m_ModelName );
 		engine->ClientCmd_Unrestricted(cmd);
 	}
 	else

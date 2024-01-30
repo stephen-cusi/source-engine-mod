@@ -43,6 +43,18 @@ ConVar spawnpoint("spawnpoint", "ct");
 
 extern ConVar mode;
 
+static void change_playermodel( const char *pModel )
+{
+	const char pModelPath[220];
+	Q_snprintf( pModelPath, sizeof (pModelPath), "models/player/%s.mdl", pModel );
+	PrecacheModel( pModelPath );
+	char szReturnString[256];
+	Q_snprintf( szReturnString, sizeof (szReturnString), "cl_playermodel %s\n", pModelPath );
+	engine->ClientCommand( edict(), szReturnString );
+}
+
+ConVar sv_change_playermodel("sv_change_playermodel", "null", change_playermodel);
+
 #define HL2MP_COMMAND_MAX_RATE 0.3
 
 void DropPrimedFragGrenade( CHL2MP_Player *pPlayer, CBaseCombatWeapon *pGrenade );
@@ -397,11 +409,6 @@ void CHL2MP_Player::SetPlayerTeamModel( void )
 
 	int modelIndex = modelinfo->GetModelIndex( szModelName );
 
-	if ( modelIndex == -1 )
-	{
-		PrecacheModel ( szModelName );
-	}
-
 	if ( modelIndex == -1 || ValidatePlayerModel( szModelName ) == false )
 	{
 		szModelName = "models/player/combine_soldier.mdl";
@@ -522,11 +529,6 @@ void CHL2MP_Player::SetPlayerModel( void )
 	}
 
 	int modelIndex = modelinfo->GetModelIndex( szModelName );
-
-	if ( modelIndex == -1 )
-	{
-		PrecacheModel ( szModelName );
-	}
 
 	if ( modelIndex == -1 )
 	{
