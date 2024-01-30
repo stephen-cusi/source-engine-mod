@@ -57,7 +57,7 @@ jobs:
         name: hl2sb-apk
         path: hl2sb-release.apk
 
-    build-windows-32:
+    build-windows-i386:
      runs-on: windows-latest
      steps:
      - uses: actions/checkout@v3
@@ -70,11 +70,11 @@ jobs:
          ./waf.bat install
      - uses: actions/upload-artifact@v3
        with:
-         name: hl2sb-win-32
+         name: hl2sb-win-i386
          path: ./win
          if-no-files-found: error
         
-    build-windows-64:
+    build-windows-amd64:
      runs-on: windows-latest
      steps:
      - uses: actions/checkout@v3
@@ -87,7 +87,7 @@ jobs:
          ./waf.bat install
      - uses: actions/upload-artifact@v3
        with:
-         name: hl2sb-win-64
+         name: hl2sb-win-amd64
          path: ./win
          if-no-files-found: error
 
@@ -157,7 +157,7 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: hl2sb-macos-amd64
-        path: ./to_upload
+        path: ./to-upload
         if-no-files-found: error
 
   build-dedicated-macos-amd64:
@@ -170,5 +170,5 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: hl2sb-macos-dedicated-amd64
-        path: ./to_upload
+        path: ./to-upload
         if-no-files-found: error
