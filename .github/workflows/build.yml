@@ -59,41 +59,41 @@ jobs:
         name: hl2sb-apk
         path: hl2sb-release.apk
 
-  # build-windows-win-i386:
-    # runs-on: windows-latest
+   build-windows-win-i386:
+     runs-on: windows-latest
 
-    # steps:
-    # - uses: actions/checkout@v3
-    # - name: Build Windows (32 bit)
-      # run: |
-        # #
-        # git submodule init;git submodule update
-        # ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb
+     steps:
+     - uses: actions/checkout@v3
+     - name: Build Windows (32 bit)
+       run: |
+         
+         git submodule init;git submodule update
+         ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb
         
-        # ./waf.bat install
-    # - uses: actions/upload-artifact@v3
-      # with:
-        # name: hl2sb-win-i386
-        # path: ./win
-        # if-no-files-found: error
+         ./waf.bat install
+     - uses: actions/upload-artifact@v3
+       with:
+         name: hl2sb-win-i386
+         path: ./win
+         if-no-files-found: error
         
-  # build-windows-win-amd64:
-    # runs-on: windows-latest
+   build-windows-win-amd64:
+     runs-on: windows-latest
 
-    # steps:
-    # - uses: actions/checkout@v3
-    # - name: Build Windows (64 bit)
-      # run: |
-        # #
-        # git submodule init;git submodule update
-        # ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8
+     steps:
+     - uses: actions/checkout@v3
+     - name: Build Windows (64 bit)
+       run: |
+         
+         git submodule init;git submodule update
+         ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8
         
-        # ./waf.bat install
-    # - uses: actions/upload-artifact@v3
-      # with:
-        # name: hl2sb-win-amd64
-        # path: ./win
-        # if-no-files-found: error
+         ./waf.bat install
+     - uses: actions/upload-artifact@v3
+       with:
+         name: hl2sb-win-amd64
+         path: ./win
+         if-no-files-found: error
 
   # build-dedicated-windows-i386:
     # runs-on: windows-2019
