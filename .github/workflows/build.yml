@@ -68,7 +68,7 @@ jobs:
       run: |
         #
         git submodule init;git submodule update
-        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb --enable-opus
         
         ./waf.bat install
     - uses: actions/upload-artifact@v3
@@ -86,7 +86,7 @@ jobs:
       run: |
         #
         git submodule init;git submodule update
-        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8
+        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2sb -8 --enable-opus
         
         ./waf.bat install
     - uses: actions/upload-artifact@v3
