@@ -27,7 +27,7 @@ jobs:
         
     - uses: actions/upload-artifact@v3
       with:
-        name: hl2dm-win32
+        name: hl2dm-win64
         path: ./win
         if-no-files-found: error
 
@@ -41,7 +41,7 @@ jobs:
       run: |
         #
         git submodule init;git submodule update
-        ./waf.bat configure -T release -8 --prefix=./win --disable-warns --build-game=hl2mp --enable-opus
+        ./waf.bat configure -T release -4 --prefix=./win --disable-warns --build-game=hl2mp --enable-opus
         
         ./waf.bat install -j4
         cat build/config.log > ./win/info.txt
