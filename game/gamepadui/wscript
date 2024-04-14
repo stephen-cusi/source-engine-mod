@@ -62,7 +62,8 @@ def build(bld):
 		'bitmap',
 		'vtf',
 		'RT',
-		'ZLIB'
+		'ZLIB',
+		'SDL2'
 	]
 
 	install_path = bld.env.PREFIX
