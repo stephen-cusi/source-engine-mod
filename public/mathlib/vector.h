@@ -2226,7 +2226,7 @@ FORCEINLINE float VectorNormalize( Vector& vec )
 
 	float radius = 0.0f;
 	{
-		float radius = sqrtf(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
+		radius = sqrtf(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
 
 		// FLT_EPSILON is added to the radius to eliminate the possibility of divide by zero.
 		float iradius = 1.f / ( radius + FLT_EPSILON );
