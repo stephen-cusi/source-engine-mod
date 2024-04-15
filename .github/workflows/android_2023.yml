@@ -1,0 +1,204 @@
+name: Build-Multi
+
+on: [push, pull_request]
+
+jobs:
+  # build-linux-i386:
+    # runs-on: ubuntu-latest
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Linux (32 bit)
+      # run: |
+        # scripts/build-ubuntu-i386.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-i386
+        # path: ./to_upload
+        # if-no-files-found: error
+
+  # build-linux-amd64:
+    # runs-on: ubuntu-20.04
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Linux (64 Bit)
+      # run: |
+        # scripts/build-ubuntu-amd64.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-amd64
+        # path: ./to_upload
+        # if-no-files-found: error
+
+  Build-apk-for-android:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Cloning modlaucher repo and preparing for building 
+      run: |
+        git clone https://github.com/stephen-cusi/modlauncher-waf -b lmod
+        sudo apt-get update
+        sudo apt-get install -f -y openjdk-8-jre zip apksigner
+    - name: Build Android (32 bit)
+      run: |
+        scripts/build-android-armv7a.sh
+    - name: Build Android (64 bit)
+      run: |
+        sudo chmod +x scripts/build-android-arm64.sh
+        scripts/build-android-arm64.sh   
+    - name: Build APK
+      run: |
+        chmod +x scripts/sbuild-apk.sh
+        scripts/sbuild-apk.sh 
+    - name: Rename APK
+      run: |
+         mv modlauncher-waf/build/android/mod-signed.apk lmod-release.apk
+
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: lmod-apk
+        path: lmod-release.apk
+
+  build-android-hl2mp-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build Windows (32+64 bit)
+      run: |
+        
+        git clone https://github.com/stephen-cusi/modlauncher-waf -b hl2mp
+        sudo apt-get update
+        sudo apt-get install -f -y openjdk-8-jre zip apksigner
+    - name: Build Android (32 bit)
+      run: |
+        scripts/build-android-armv7a_hl2mp.sh
+    - name: Build Android (64 bit)
+      run: |
+        sudo chmod +x scripts/build-android-arm64_hl2mp.sh
+        scripts/build-android-arm64_hl2mp.sh   
+    - name: Build APK
+      run: |
+        chmod +x scripts/sbuild-apk.sh
+        scripts/sbuild-apk_hl2mp.sh 
+    - name: Rename APK
+      run: |
+         mv modlauncher-waf/build/android/mod-signed.apk hl2mp-release.apk
+
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: hl2mp-apk
+        path: hl2mp-release.apk
+        
+  build-windows-win-amd64:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build Windows (64 bit)
+      run: |
+        #
+        git clone 
+        ./waf.bat configure -T release --prefix=./win --disable-warns
+        ./waf.bat install
+        echo Running delete_file.cmd
+        scripts\delete_file.cmd
+
+
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hl2-win-amd64
+        path: ./win
+        if-no-files-found: error
+
+  # build-dedicated-windows-i386:
+    # runs-on: windows-2019
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Windows Dedicated (32 bit) 
+      # run: |
+        # git submodule init && git submodule update
+        # ./waf.bat configure -T debug -d --prefix=./win --build-game=hl2sb
+        # ./waf.bat install
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: win-dedicated-i386
+        # path: ./win
+        # if-no-files-found: error
+
+  # build-dedicated-windows-amd64:
+    # runs-on: windows-2019
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Windows Dedicated (64 bit)
+      # run: |
+        # git submodule init && git submodule update
+        # ./waf.bat configure -T debug -d -8 --prefix=./win --build-game=hl2sb
+        # ./waf.bat install
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-win-dedicated-amd64
+        # path: ./win
+        # if-no-files-found: error
+
+  # build-dedicated-linux-i386:
+    # runs-on: ubuntu-20.04
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Linux Dedicated (32 bit)
+      # run: |
+        # scripts/build-ubuntu-i386.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-dedicated-i386
+        # path: ./to-upload
+        # if-no-files-found: error
+
+  # build-dedicated-linux-amd64:
+    # runs-on: ubuntu-20.04
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build Linux Dedicated (64 bit)
+      # run: |
+        # scripts/build-ubuntu-amd64.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-linux-dedicated-amd64
+        # path: ./to-upload
+        # if-no-files-found: error
+
+  # build-macos-amd64:
+    # runs-on: macos-latest
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build MacOS (64 bit)
+      # run: |
+        # scripts/build-macos-amd64.sh
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-macos-amd64
+        # path: ./to-upload
+        # if-no-files-found: error
+
+  # build-dedicated-macos-amd64:
+    # runs-on: macos-latest
+
+    # steps:
+    # - uses: actions/checkout@v3
+    # - name: Build MacOS Dedicated (64 bit)
+      # run: |
+        # scripts/build-macos-amd64.sh -d
+    # - uses: actions/upload-artifact@v3
+      # with:
+        # name: hl2sb-macos-dedicated-amd64
+        # path: ./to-upload
+        # if-no-files-found: error

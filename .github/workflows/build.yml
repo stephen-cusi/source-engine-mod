@@ -60,8 +60,13 @@ jobs:
     - name: Build dedicated windows-i386
       run: |
         git submodule init && git submodule update
-        ./waf.bat configure -T debug -d
-        ./waf.bat build
+        ./waf.bat configure -T release -d --prefix=./win --build-game=hl2mp -4
+        ./waf.bat install
+    - uses: actions/upload-artifact@v3
+      with:
+        name: win-source-engine-d-hl2mp
+        path: ./win
+        if-no-files-found: error
 
   build-dedicated-windows-amd64:
     runs-on: windows-2019
@@ -82,6 +87,11 @@ jobs:
     - name: Build dedicated linux-i386
       run: |
         scripts/build-ubuntu-i386.sh -d
+    - uses: actions/upload-artifact@v3
+      with:
+        name: linux-source-engine-64-d
+        path: ./linux
+        if-no-files-found: error
 
   build-dedicated-linux-amd64:
     runs-on: ubuntu-20.04
