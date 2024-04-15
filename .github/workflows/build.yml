@@ -25,12 +25,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Build android-armv7a
-      run: |
-        scripts/build-android-armv7a.sh
-      with: 
-        path: ../android_build
+      - name: Build android-armv7a
+        uses: actions/checkout@v2
+        run: |
+          scripts/build-android-armv7a.sh
+        with: 
+          name: android-arm32-lib
+          path: ../android_build
 
   build-android-aarch64:
     runs-on: ubuntu-latest
