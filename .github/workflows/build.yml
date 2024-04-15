@@ -26,13 +26,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-      - name: Build android-armv7a
+    - name: Build android-armv7a
         run: |
           scripts/build-android-armv7a.sh
     - uses: actions/upload-artifact@v3
-        with:
-          name: build-android-armv7a
-          path: ../android_build
+      with:
+        name: build-android-armv7a
+        path: ../android_build
 
   build-android-aarch64:
     runs-on: ubuntu-latest
@@ -43,9 +43,9 @@ jobs:
       run: |
         scripts/build-android-arm64.sh
     - uses: actions/upload-artifact@v3
-        with:
-          name: build-android-aarch64
-          path: ../android_build
+      with:
+        name: build-android-aarch64
+        path: ../android_build
 
   build-windows-i386:
     runs-on: windows-2019
