@@ -25,25 +25,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - uses: actions/checkout@v2
       - name: Build android-armv7a
-        uses: actions/checkout@v2
         run: |
           scripts/build-android-armv7a.sh
-        with: 
-          name: android-arm32-lib
+    - uses: actions/upload-artifact@v3
+        with:
+          name: build-android-armv7a
           path: ../android_build
 
   build-android-aarch64:
     runs-on: ubuntu-latest
 
     steps:
+    - uses: actions/checkout@v2
     - name: Build android-aarch64
-      uses: actions/checkout@v2
       run: |
         scripts/build-android-arm64.sh
-      with: 
-        name: android-arm64-lib
-        path: ../android_build
+    - uses: actions/upload-artifact@v3
+        with:
+          name: build-android-aarch64
+          path: ../android_build
 
   build-windows-i386:
     runs-on: windows-2019
