@@ -27,7 +27,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Build android-armv7a
-        run: |
+      run: |
           scripts/build-android-armv7a.sh
     - uses: actions/upload-artifact@v3
       with:
