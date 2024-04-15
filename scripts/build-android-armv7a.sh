@@ -7,7 +7,7 @@ sudo apt-get install -f -y libopenal-dev g++-multilib gcc-multilib libpng-dev li
 wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -nc    
 wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -nc
 
-unzip android-ndk-r10e-linux-x86_64.zip
+unzip -q android-ndk-r10e-linux-x86_64.zip
 tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
 
 export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
