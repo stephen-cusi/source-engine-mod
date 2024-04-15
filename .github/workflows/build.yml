@@ -30,6 +30,15 @@ jobs:
       run: |
         scripts/build-android-armv7a.sh
 
+  build-android-aarch64:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build android-aarch64
+      run: |
+        scripts/build-android-arm64.sh
+
   build-windows-i386:
     runs-on: windows-2019
 
