@@ -37,11 +37,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
     - name: Build android-aarch64
+      uses: actions/checkout@v2
       run: |
         scripts/build-android-arm64.sh
       with: 
+        name: android-arm64-lib
         path: ../android_build
 
   build-windows-i386:
