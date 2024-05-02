@@ -22,13 +22,30 @@ jobs:
         scripts/build-ubuntu-amd64.sh
 
   build-android-armv7a:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
     - name: Build android-armv7a
       run: |
-        scripts/build-android-armv7a.sh
+          scripts/build-android-armv7a.sh
+    - uses: actions/upload-artifact@v3
+      with:
+        name: build-android-armv7a
+        path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
+
+  build-android-aarch64:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build android-aarch64
+      run: |
+        scripts/build-android-arm64.sh
+    - uses: actions/upload-artifact@v3
+      with:
+        name: build-android-aarch64
+        path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
 
   build-windows-i386:
     runs-on: windows-2019

@@ -37,3 +37,8 @@ waf3*/
 .vscode/
 .depproj/
 source-engine.sln
+
+android-ndk-r10e
+android-ndk-r10e-linux-x86_64.zip
+
+clang+llvm-*
