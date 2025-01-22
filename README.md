@@ -1,7 +1,8 @@
 # Source Engine
 [![GitHub Actions Status](https://github.com/nillerusr/source-engine/actions/workflows/build.yml/badge.svg)](https://github.com/nillerusr/source-engine/actions/workflows/build.yml) [![GitHub Actions Status](https://github.com/nillerusr/source-engine/actions/workflows/tests.yml/badge.svg)](https://github.com/nillerusr/source-engine/actions/workflows/tests.yml)
  Discord: [![Discord Server](https://img.shields.io/discord/672055862608658432.svg)](https://discord.gg/hZRB7WMgGw)
- 
+
+# zzh fork the repo
 
 Information from [wikipedia](https://wikipedia.org/wiki/Source_(game_engine)):
 
@@ -35,10 +36,13 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - dxvk-native support
 - Elbrus port
 - Bink audio support( for video_bink )
-
+- 
+# WARNING
+- GAMEPADUI DOESNT WOEK WITH portal cstrike dod hl1mp hl1
+- Can work with hl2 and episodic
+- 
 # How to Build?
 - [Building instructions(EN)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
-- [Building instructions(RU)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(RU))
 
 # Support me
 BTC: `bc1qnjq92jj9uqjtafcx2zvnwd48q89hgtd6w8a6na`
