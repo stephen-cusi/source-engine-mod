@@ -1,7 +1,8 @@
 # Source Engine
 [![GitHub Actions Status](https://github.com/nillerusr/source-engine/actions/workflows/build.yml/badge.svg)](https://github.com/nillerusr/source-engine/actions/workflows/build.yml) [![GitHub Actions Status](https://github.com/nillerusr/source-engine/actions/workflows/tests.yml/badge.svg)](https://github.com/nillerusr/source-engine/actions/workflows/tests.yml)
- Discord: [![Discord Server](https://img.shields.io/discord/672055862608658432.svg)](https://discord.gg/hZRB7WMgGw)
 
+ # QQ group 
+ - nember: 768616259
 # zzh fork the repo
 
 Information from [wikipedia](https://wikipedia.org/wiki/Source_(game_engine)):
@@ -16,9 +17,6 @@ Source code is based on TF2 2018 leak. Don't use it for commercial purposes.
 This project is using waf buildsystem. If you have waf-related questions look https://waf.io/book
 
 # Features:
-- Android, OSX, FreeBSD, Windows, Linux( glibc, musl ) support
-- Arm support( except windows )
-- 64bit support
 - Modern toolchains support
 - Fixed many undefined behaviours
 - Touch support( even on windows/linux/osx )
@@ -29,24 +27,17 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - Removed useless/unnecessary dependencies
 - Achivement system working without steam
 - Fixed many bugs
-- Serverbrowser works without steam
 
 # Current tasks
 - Rewrite materialsystem for OpenGL render
 - dxvk-native support
 - Elbrus port
 - Bink audio support( for video_bink )
-- 
+- fix gamepadui s bug
+  
 # WARNING
 - GAMEPADUI DOESNT WOEK WITH portal cstrike dod hl1mp hl1
 - Can work with hl2 and episodic
-- 
+  
 # How to Build?
 - [Building instructions(EN)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
-
-# Support me
-BTC: `bc1qnjq92jj9uqjtafcx2zvnwd48q89hgtd6w8a6na`
-
-ETH: `0x5d0D561146Ed758D266E59B56e85Af0b03ABAF46`
-
-XMR: `48iXvX61MU24m5VGc77rXQYKmoww3dZh6hn7mEwDaLVTfGhyBKq2teoPpeBq6xvqj4itsGh6EzNTzBty6ZDDevApCFNpsJ`
