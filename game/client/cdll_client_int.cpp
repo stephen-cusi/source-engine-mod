@@ -1168,50 +1168,91 @@ void CHLClient::PostInit()
 
 #ifndef PORTAL
 #if defined(GAMEPADUI)
-	if (IsGamepadUI())
-	{
-		CSysModule* pGamepadUIModule = g_pFullFileSystem->LoadModule("gamepadui", "GAMEBIN", false);
-		if (pGamepadUIModule != nullptr)
-		{
-			GamepadUI_Log("Loaded gamepadui module.\n");
+    if (IsGamepadUI())
+    {
+        GamepadUI_Log("Attempting to load gamepadui module...\n");
+        CSysModule* pGamepadUIModule = g_pFullFileSystem->LoadModule("gamepadui", "GAMEBIN", false);
+        if (pGamepadUIModule != nullptr)
+        {
+            GamepadUI_Log("Loaded gamepadui module.\n");
 
-			CreateInterfaceFn gamepaduiFactory = Sys_GetFactory(pGamepadUIModule);
-			if (gamepaduiFactory != nullptr)
-			{
-				g_pGamepadUI = (IGamepadUI*)gamepaduiFactory(GAMEPADUI_INTERFACE_VERSION, NULL);
-				if (g_pGamepadUI != nullptr)
-				{
-					GamepadUI_Log("Initializing IGamepadUI interface...\n");
+            CreateInterfaceFn gamepaduiFactory = Sys_GetFactory(pGamepadUIModule);
+            if (gamepaduiFactory != nullptr)
+            {
+                g_pGamepadUI = (IGamepadUI*)gamepaduiFactory(GAMEPADUI_INTERFACE_VERSION, NULL);
+                if (g_pGamepadUI != nullptr)
+                {
+                    GamepadUI_Log("Initializing IGamepadUI interface...\n");
 
-					factorylist_t factories;
-					FactoryList_Retrieve(factories);
-					g_pGamepadUI->Initialize(factories.appSystemFactory);
+                    factorylist_t factories;
+                    FactoryList_Retrieve(factories);
+                    g_pGamepadUI->Initialize(factories.appSystemFactory);
 
 #ifdef STEAM_INPUT
-					g_pSteamInput->SetGamepadUI(true);
-					g_pGamepadUI->SetSteamInput(g_pSteamInput);
+                    g_pSteamInput->SetGamepadUI(true);
+                    g_pGamepadUI->SetSteamInput(g_pSteamInput);
 #endif
-				}
-				else
-				{
-					GamepadUI_Log("Unable to pull IGamepadUI interface.\n");
-			}
-		}
-			else
-			{
-				GamepadUI_Log("Unable to get gamepadui factory.\n");
-			}
-	}
-		else
-		{
-			GamepadUI_Log("Unable to load gamepadui module\n");
-		}
-}
+                }
+                else
+                {
+                    GamepadUI_Log("Unable to pull IGamepadUI interface.\n");
+                }
+            }
+            else
+            {
+                GamepadUI_Log("Unable to get gamepadui factory.\n");
+            }
+        }
+        else
+        {
+            GamepadUI_Log("Unable to load gamepadui module\n");
+        }
+    }
 #endif // GAMEPADUI
 #else
-	if (IsGamepadUI())
-		GamepadUI_Log("This version of GamepadUI doesnt work with portal 1. Idk why.");
-#endif // !PORTAL
+#if defined(GAMEPADUI)
+    if (IsGamepadUI())
+    {
+        GamepadUI_Log("Attempting to load gamepadui module for Portal...\n");
+        CSysModule* pGamepadUIModule = g_pFullFileSystem->LoadModule("gamepadui", "GAMEBIN", false);
+        if (pGamepadUIModule != nullptr)
+        {
+            GamepadUI_Log("Loaded gamepadui module for Portal.\n");
+
+            CreateInterfaceFn gamepaduiFactory = Sys_GetFactory(pGamepadUIModule);
+            if (gamepaduiFactory != nullptr)
+            {
+                g_pGamepadUI = (IGamepadUI*)gamepaduiFactory(GAMEPADUI_INTERFACE_VERSION, NULL);
+                if (g_pGamepadUI != nullptr)
+                {
+                    GamepadUI_Log("Initializing IGamepadUI interface for Portal...\n");
+
+                    factorylist_t factories;
+                    FactoryList_Retrieve(factories);
+                    g_pGamepadUI->Initialize(factories.appSystemFactory);
+
+#ifdef STEAM_INPUT
+                    g_pSteamInput->SetGamepadUI(true);
+                    g_pGamepadUI->SetSteamInput(g_pSteamInput);
+#endif
+                }
+                else
+                {
+                    GamepadUI_Log("Unable to pull IGamepadUI interface for Portal.\n");
+                }
+            }
+            else
+            {
+                GamepadUI_Log("Unable to get gamepadui factory for Portal.\n");
+            }
+        }
+        else
+        {
+            GamepadUI_Log("Unable to load gamepadui module for Portal\n");
+        }
+    }
+#endif // GAMEPADUI
+#endif
 
 }
 
