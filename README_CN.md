@@ -36,7 +36,7 @@ Source 引擎没有明确的版本号，而是以增量更新的方式发布。
 - 修复 GamepadUI 的 bug
 
 # 警告
-- **GamepadUI 不支持以下模块：** portal、cstrike、dod、hl1mp、hl1  
+- **GamepadUI 不支持以下模块：** dod、hl1mp、hl1  
 - **可以与以下模块一起工作：** hl2 和 episodic  
 
 # 如何构建？
