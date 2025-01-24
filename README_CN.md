@@ -42,3 +42,5 @@ Source 引擎没有明确的版本号，而是以增量更新的方式发布。
 # 如何构建？
 - [构建说明（英文）](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
 - [构建说明 (简体中文)](https://github.com/2376780283/source-engine-mod-gamepadui/wiki/Source‐Engine‐(CN))
+
+ <img src="https://github.com/2376780283/source-engine-mod-gamepadui/blob/default/.github/workflows/BG_CS_Hyakkiyako_02_kr.jpg" width="500">
