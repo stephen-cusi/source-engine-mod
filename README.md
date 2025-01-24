@@ -43,4 +43,4 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - [Building instructions(EN)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
 - [Building introduction(CN)](https://github.com/2376780283/source-engine-mod-gamepadui/wiki/Source‐Engine‐(CN))
 
-  <img src="https://github.com/2376780283/source-engine-mod-gamepadui/blob/default/.github/workflows/bg_cs_s1final_84.jpg" width="200">
+  <img src="https://github.com/2376780283/source-engine-mod-gamepadui/blob/default/.github/workflows/bg_cs_s1final_84.jpg" width="500">
