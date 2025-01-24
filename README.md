@@ -4,7 +4,7 @@
  # QQ group 
  - nember: 768616259
 # zzh fork the repo
-
+- [Readme CN](https://github.com/2376780283/source-engine-mod-gamepadui/blob/default/README_CN.md)
 Information from [wikipedia](https://wikipedia.org/wiki/Source_(game_engine)):
 
 Source is a 3D game engine developed by Valve.
