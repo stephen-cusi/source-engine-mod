@@ -16,7 +16,6 @@
 #include "wndTex.h"
 #include "MapFace.h"
 #include "materialdlg.h"
-
 class CMapSolid;
 
 
@@ -28,12 +27,10 @@ class CMapSolid;
 #define FACE_APPLY_CONTENTS_DATA	0x10
 #define FACE_APPLY_ALL				FACE_APPLY_MATERIAL | FACE_APPLY_MAPPING | FACE_APPLY_LIGHTMAP_SCALE
 
-
 class CFaceEditMaterialPage : public CPropertyPage
 {
 	
 	DECLARE_DYNAMIC( CFaceEditMaterialPage );
-
 public:
 
 	enum
@@ -98,7 +95,6 @@ public:
 
 	static unsigned int m_FaceContents;
 	static unsigned int m_FaceSurface;
-
 protected:
 
 	CEdit				m_shiftX;

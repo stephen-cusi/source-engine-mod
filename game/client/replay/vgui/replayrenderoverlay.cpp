@@ -74,8 +74,8 @@ CReplayRenderOverlay::CReplayRenderOverlay( Panel *pParent )
 	{
 		vgui::HScheme scheme = vgui::scheme()->LoadSchemeFromFileEx( enginevgui->GetPanel( PANEL_CLIENTDLL ), "resource/ClientScheme.res", "ClientScheme");
 		SetScheme(scheme);
-		SetProportional( true );
-	}
+	    SetProportional( true );
+	}	// 如果需要
 
 	ivgui()->AddTickSignal( GetVPanel(), 10 );
 

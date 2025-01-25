@@ -33,8 +33,7 @@
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor.
-//-----------------------------------------------------------------------------
-Cordon3D::Cordon3D(void)
+//-----------------------------------------------------------------------------Cordon3D::Cordon3D(void)
 {
 	SetDrawColors(RGB(0, 255, 255), RGB(255, 0, 0));
 }
@@ -43,8 +42,7 @@ Cordon3D::Cordon3D(void)
 //-----------------------------------------------------------------------------
 // Purpose: Called when the tool is activated.
 // Input  : eOldTool - The ID of the previously active tool.
-//-----------------------------------------------------------------------------
-void Cordon3D::OnActivate()
+//-----------------------------------------------------------------------------void Cordon3D::OnActivate()
 {
 	if (!IsActiveTool())
 	{
@@ -61,8 +59,7 @@ void Cordon3D::OnActivate()
 // Purpose: Handles left mouse button down events in the 2D view.
 // Input  : Per CWnd::OnLButtonDown.
 // Output : Returns true if the message was handled, false if not.
-//-----------------------------------------------------------------------------
-bool Cordon3D::OnLMouseDown2D(CMapView2D *pView, UINT nFlags, const Vector2D &vPoint)
+//-----------------------------------------------------------------------------bool Cordon3D::OnLMouseDown2D(CMapView2D *pView, UINT nFlags, const Vector2D &vPoint)
 {
 	Tool3D::OnLMouseDown2D(pView, nFlags, vPoint);
 
@@ -96,8 +93,7 @@ bool Cordon3D::OnLMouseDown2D(CMapView2D *pView, UINT nFlags, const Vector2D &vP
 // Purpose: Handles left mouse button up events in the 2D view.
 // Input  : Per CWnd::OnLButtonUp.
 // Output : Returns true if the message was handled, false if not.
-//-----------------------------------------------------------------------------
-bool Cordon3D::OnLMouseUp2D(CMapView2D *pView, UINT nFlags, const Vector2D &vPoint) 
+//-----------------------------------------------------------------------------bool Cordon3D::OnLMouseUp2D(CMapView2D *pView, UINT nFlags, const Vector2D &vPoint) 
 {
 	Tool3D::OnLMouseUp2D(pView, nFlags, vPoint) ;
 
@@ -117,8 +113,7 @@ bool Cordon3D::OnLMouseUp2D(CMapView2D *pView, UINT nFlags, const Vector2D &vPoi
 // Purpose: Handles mouse move events in the 2D view.
 // Input  : Per CWnd::OnMouseMove.
 // Output : Returns true if the message was handled, false if not.
-//-----------------------------------------------------------------------------
-bool Cordon3D::OnMouseMove2D(CMapView2D *pView, UINT nFlags, const Vector2D &vPoint) 
+//-----------------------------------------------------------------------------bool Cordon3D::OnMouseMove2D(CMapView2D *pView, UINT nFlags, const Vector2D &vPoint) 
 {
 	vgui::HCursor hCursor = vgui::dc_arrow;
 
@@ -160,8 +155,7 @@ bool Cordon3D::OnMouseMove2D(CMapView2D *pView, UINT nFlags, const Vector2D &vPo
 
 //-----------------------------------------------------------------------------
 // Purpose: Handles the escape key in the 2D or 3D views.
-//-----------------------------------------------------------------------------
-void Cordon3D::OnEscape(void)
+//-----------------------------------------------------------------------------void Cordon3D::OnEscape(void)
 {
 	if ( IsTranslating() )
 	{
@@ -177,8 +171,7 @@ void Cordon3D::OnEscape(void)
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Output :
-//-----------------------------------------------------------------------------
-bool Cordon3D::OnKeyDown2D(CMapView2D *pView, UINT nChar, UINT nRepCnt, UINT nFlags) 
+//-----------------------------------------------------------------------------bool Cordon3D::OnKeyDown2D(CMapView2D *pView, UINT nChar, UINT nRepCnt, UINT nFlags) 
 {
 	if (nChar == VK_ESCAPE)
 	{
@@ -193,8 +186,7 @@ bool Cordon3D::OnKeyDown2D(CMapView2D *pView, UINT nChar, UINT nRepCnt, UINT nFl
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Output :
-//-----------------------------------------------------------------------------
-bool Cordon3D::OnKeyDown3D(CMapView3D *pView, UINT nChar, UINT nRepCnt, UINT nFlags) 
+//-----------------------------------------------------------------------------bool Cordon3D::OnKeyDown3D(CMapView3D *pView, UINT nChar, UINT nRepCnt, UINT nFlags) 
 {
 	if (nChar == VK_ESCAPE)
 	{

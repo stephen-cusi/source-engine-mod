@@ -46,8 +46,8 @@ void CReplayConfirmQuitDialog::ApplySchemeSettings( vgui::IScheme *pScheme )
 	extern IEngineVGui *enginevgui;
 	vgui::HScheme pTFScheme = vgui::scheme()->LoadSchemeFromFileEx( enginevgui->GetPanel( PANEL_CLIENTDLL ), "resource/ClientScheme.res", "ClientScheme" );
 	SetScheme( pTFScheme );
-	SetProportional( true );
-
+    SetProportional( true );
+	// 如果 need
 	BaseClass::ApplySchemeSettings( vgui::scheme()->GetIScheme( pTFScheme ) );
 
 	LoadControlSettings( "Resource/UI/replaybrowser/confirmquitdlg.res", "GAME" );

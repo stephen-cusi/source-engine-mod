@@ -34,6 +34,8 @@ Source 引擎没有明确的版本号，而是以增量更新的方式发布。
 - 移植到 Elbrus  
 - 支持 Bink 音频（用于 video_bink）  
 - 修复 GamepadUI 的 bug
+- 修复 SetProportional() 方法造成的 缩放问题 
+
 
 # 警告
 - **GamepadUI 不支持以下模块：** dod、hl1mp、hl1  

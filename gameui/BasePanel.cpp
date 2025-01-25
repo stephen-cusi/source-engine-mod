@@ -773,8 +773,9 @@ bool g_bIsCreatingNewGameMenuForPreFetching = false;
 //-----------------------------------------------------------------------------
 CBasePanel::CBasePanel() : Panel(NULL, "BaseGameUIPanel")
 {
-	if( NeedProportional() )
-		SetProportional( true );
+	//不需要缩放比例
+	//if( NeedProportional() )
+	//	SetProportional( true );
 
 	g_pBasePanel = this;
 	m_bLevelLoading = false;
@@ -925,10 +926,8 @@ CBasePanel::CBasePanel() : Panel(NULL, "BaseGameUIPanel")
 
 	if( IsAndroid() )
 	{
-		// AddUrlButton( this, "vgui/\x64\x69\x73\x63\x6f\x72\x64\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x64\x69\x73\x63\x6f\x72\x64\x2e\x67\x67\x2f\x68\x5a\x52\x42\x37\x57\x4d\x67\x47\x77" );
-		// AddUrlButton( this, "vgui/\x74\x77\x69\x74\x74\x65\x72\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x74\x77\x69\x74\x74\x65\x72\x2e\x63\x6f\x6d\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72" );
-		// AddUrlButton( this, "vgui/\x74\x65\x6c\x65\x67\x72\x61\x6d\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x74\x2e\x6d\x65\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72\x5f\x73\x6f\x75\x72\x63\x65" );
-		// AddUrlButton( this, "vgui/\x67\x69\x74\x68\x75\x62\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x67\x69\x74\x68\x75\x62\x2e\x63\x6f\x6d\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72\x2f\x73\x6f\x75\x72\x63\x65\x2d\x65\x6e\x67\x69\x6e\x65" );
+		// add log wiew android log out 
+		// GamepadUI_log (" is Android module Default \n");
 	}
 }
 
@@ -1384,6 +1383,7 @@ void CBasePanel::OnLevelLoadingStarted()
 	m_bLevelLoading = true;
 
 	ConVarRef("cl_gamepadui_mainmenu_draw").SetValue(false);
+	// about to start loading a new level
 
 	//Msg("%d\n", GameUI().IsLoading());
 	//GameUI().SetLoadingState(m_bLevelLoading);
@@ -1646,17 +1646,23 @@ void CBasePanel::UpdateGameMenus()
 //-----------------------------------------------------------------------------
 // Purpose: sets up the game menu from the keyvalues
 //			the game menu is hierarchial, so this is recursive
+// 是递归的 但是只有一层  菜单命令行
 //-----------------------------------------------------------------------------
 CGameMenu *CBasePanel::RecursiveLoadGameMenu(KeyValues *datafile)
 {
 	CGameMenu *menu = new CGameMenu(this, datafile->GetName());
 
-	wchar_t *pString = g_pVGuiLocalize->Find( "#GameUI_Console" );
-
-	if( pString )
-		menu->AddMenuItem("Console", V_wcsupr(pString), "OpenConsole", this);
-	else
-		menu->AddMenuItem("Console", "CONSOLE", "OpenConsole", this);
+      if (!CommandLine()->FindParm( "-console" ))
+	   {
+           ConMsg( "GameStarting \n" ); // 元神 启动
+	   } else { //////////////////////////////////
+		   ConMsg( "GameStarting with console \n" ); // 元神启动 with console
+           wchar_t *pString = g_pVGuiLocalize->Find( "#GameUI_Console" );
+	       if( pString )
+		      menu->AddMenuItem("Console", V_wcsupr(pString), "OpenConsole", this); // 没用的
+           else
+		      menu->AddMenuItem("Console", "CONSOLE", "OpenConsole", this); // snms
+	   }
 
 	bool bFoundServerBrowser = false;
 

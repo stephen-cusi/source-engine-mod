@@ -18,15 +18,10 @@
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
-
 static bool s_bRunsCommands = false;
-
 bool IsRunningCommands() { return s_bRunsCommands; }
-
 static char *pszDocPath, *pszDocName, *pszDocExt;
-
 CProcessWnd procWnd;
-
 void FixGameVars(char *pszSrc, char *pszDst, BOOL bUseQuotes)
 {
 	// run through the parms list and substitute $variable strings for
@@ -137,7 +132,6 @@ void FixGameVars(char *pszSrc, char *pszDst, BOOL bUseQuotes)
 
 	pDst[0] = 0;
 }
-
 static void RemoveQuotes(char *pBuf)
 {
 	if(pBuf[0] == '\"')
@@ -145,7 +139,6 @@ static void RemoveQuotes(char *pBuf)
 	if(pBuf[strlen(pBuf)-1] == '\"')
 		pBuf[strlen(pBuf)-1] = 0;
 }
-
 LPCTSTR GetErrorString()
 {
 	static char szBuf[200];
@@ -155,7 +148,6 @@ LPCTSTR GetErrorString()
 	if(p) p[0] = 0;
 	return szBuf;
 }
-
 bool RunCommands(CCommandArray& Commands, LPCTSTR pszOrigDocName)
 {
 	s_bRunsCommands = true;

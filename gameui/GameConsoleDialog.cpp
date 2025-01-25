@@ -25,7 +25,8 @@ using namespace vgui;
 //-----------------------------------------------------------------------------
 CGameConsoleDialog::CGameConsoleDialog() : BaseClass( NULL, "GameConsole", false )
 {
-	if( NeedProportional() ) SetProportional(true);
+//	if( NeedProportional() ) SetProportional(true);
+	// 是否 需要所放比例
 	AddActionSignalTarget( this );
 }
 

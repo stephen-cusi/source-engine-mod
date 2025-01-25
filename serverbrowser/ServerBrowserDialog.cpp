@@ -59,7 +59,8 @@ void GetMostCommonQueryPorts( CUtlVector<uint16> &ports )
 //-----------------------------------------------------------------------------
 CServerBrowserDialog::CServerBrowserDialog(vgui::Panel *parent) : Frame(parent, "CServerBrowserDialog")
 {
-	SetProportional( NeedProportional() );
+	//如果需要
+	//SetProportional( NeedProportional() );
 	s_InternetDlg = this;
 
 	m_szGameName[0] = 0;

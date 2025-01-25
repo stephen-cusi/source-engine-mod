@@ -29,7 +29,8 @@ int iLastArgs = 0;
 
 extern void InitCrashHandler();
 DLL_EXPORT int LauncherMain( int argc, char **argv ); // from launcher.cpp
-
+// 方法固定 
+// 参数
 DLL_EXPORT int Java_com_valvesoftware_ValveActivity2_setenv(JNIEnv *jenv, jclass *jclass, jstring env, jstring value, jint over)
 {
 	Msg( "Java_com_valvesoftware_ValveActivity2_setenv %s=%s\n", jenv->GetStringUTFChars(env, NULL), jenv->GetStringUTFChars(value, NULL) );
@@ -68,7 +69,7 @@ void SetLauncherArgs()
 	}
 
 	D("-fullscreen");
-	D("-nosteam");
+	// D("-nosteam");
 	D("-insecure");
 
 #undef A
@@ -128,6 +129,7 @@ DLL_EXPORT int LauncherMainAndroid( int argc, char **argv )
 	android_property_print("ro.product.manufacturer");
 	android_property_print("ro.product.model");
 	android_property_print("ro.product.name");
+	android_property_print("Inltlized Args");
 
 	SetLauncherArgs();
 

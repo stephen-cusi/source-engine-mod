@@ -35,7 +35,7 @@ VideoPanel::VideoPanel( unsigned int nXPos, unsigned int nYPos, unsigned int nHe
 
 	SetKeyBoardInputEnabled( true );
 	SetMouseInputEnabled( false );
-
+	// 如果需要
 	SetProportional( false );
 	SetVisible( true );
 	SetPaintBackgroundEnabled( false );

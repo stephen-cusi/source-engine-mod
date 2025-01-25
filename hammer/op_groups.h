@@ -16,11 +16,9 @@
 #include "ObjectPage.h"
 #include "AnchorMgr.h"
 
-
 class COP_Groups : public CObjectPage
 {
 	DECLARE_DYNCREATE(COP_Groups)
-
 public:
 	COP_Groups();
 	~COP_Groups();
@@ -46,7 +44,6 @@ public:
 	virtual void DoDataExchange(CDataExchange* pDX);
 	virtual BOOL OnInitDialog();
 	//}}AFX_VIRTUAL
-
 protected:
 
 	// Generated message map functions

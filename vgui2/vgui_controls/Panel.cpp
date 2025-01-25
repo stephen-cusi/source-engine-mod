@@ -1463,7 +1463,8 @@ void Panel::SetParent(VPANEL newParent)
 	if (GetVParent() )
 	{
 		if( ipanel()->IsProportional(GetVParent()) )
-			SetProportional(true);
+			 SetProportional(true);
+			// 如果需要
 
 		if( !IsPopup() )
 		{

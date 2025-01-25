@@ -24,18 +24,8 @@
 
 #define NUM_HASHED_ENTITY_BUCKETS	200
 
-
-class BoundBox;
-class CChunkFile;
-class CVisGroup;
-class CCullTreeNode;
-class IEditorTexture;
-class CMapGroup;
-class CMapDoc;
-class CMapInstance;
-
+class BoundBox;class CChunkFile;class CVisGroup;class CCullTreeNode;class IEditorTexture;class CMapGroup;class CMapDoc;class CMapInstance;
 struct SaveLists_t;
-
 
 struct UsedTexture_t
 {
@@ -43,10 +33,8 @@ struct UsedTexture_t
 	int nUsageCount;
 };
 
-
 class CUsedTextureList : public CUtlVector<UsedTexture_t>
-{
-public:
+{public:
 
 	inline int Find(IEditorTexture *pTex)
 	{
@@ -61,7 +49,6 @@ public:
 		return -1;	
 	}
 };
-
 
 class CMapWorld : public CMapClass, public CEditGameClass
 {
@@ -201,8 +188,7 @@ class CMapWorld : public CMapClass, public CEditGameClass
 
 //-----------------------------------------------------------------------------
 // Purpose: Returns the next unique face ID for this world.
-//-----------------------------------------------------------------------------
-inline int CMapWorld::FaceID_GetNext(void)
+//-----------------------------------------------------------------------------inline int CMapWorld::FaceID_GetNext(void)
 {
 	return(m_nNextFaceID++);
 }
@@ -211,18 +197,15 @@ inline int CMapWorld::FaceID_GetNext(void)
 //-----------------------------------------------------------------------------
 // Purpose: Sets the unique face ID to assign to the next face that is added
 //			to this world.
-//-----------------------------------------------------------------------------
-inline void CMapWorld::FaceID_SetNext(int nNextFaceID)
+//-----------------------------------------------------------------------------inline void CMapWorld::FaceID_SetNext(int nNextFaceID)
 {
 	m_nNextFaceID = nNextFaceID;
 }
-
 
 inline int CMapWorld::EntityList_GetCount()
 {
 	return m_EntityList.Count();
 }
-
 
 inline CMapEntity *CMapWorld::EntityList_GetEntity( int nIndex )
 {

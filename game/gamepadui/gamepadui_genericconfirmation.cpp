@@ -148,10 +148,11 @@ CON_COMMAND( gamepadui_opengenericconfirmdialog, "Opens a generic confirmation d
     }
 
     // TODO: Parent to current frame
+    // 是否执行命令
     const char *pCmd = args.Arg( 4 );
     new GamepadUIGenericConfirmationPanel( GamepadUI::GetInstance().GetBasePanel(), "GenericConfirmationPanel", args.Arg(1), args.Arg(2),
     [pCmd]()
-    {
+    { 
         // Replace '' with quotes
         char szCmd[512];
         V_StrSubst( pCmd, "''", "\"", szCmd, sizeof(szCmd) );

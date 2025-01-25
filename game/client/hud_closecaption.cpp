@@ -820,8 +820,8 @@ CHudCloseCaption::CHudCloseCaption( const char *pElementName )
 	vgui::Panel *pParent = g_pClientMode->GetViewport();
 	SetParent( pParent );
 
-	SetProportional( true );
-
+	 SetProportional( true );
+	// 如果需要 但是 need 不然 字幕会错位
 	m_nGoalHeight = 0;
 	m_nCurrentHeight = 0;
 	m_flGoalAlpha = 1.0f;

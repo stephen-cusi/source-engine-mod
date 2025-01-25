@@ -5,7 +5,7 @@
 //-----------------------------------------------------------------------------
 
 $Macro SRCDIR		"..\.."
-$Macro GAMENAME 	"portal"
+$Macro GAMENAME 	"mod_portal" // hl2sdk oso we need mod 
 
 $Include "$SRCDIR\game\client\client_base.vpc"
 

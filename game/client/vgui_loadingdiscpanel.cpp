@@ -77,7 +77,8 @@ CLoadingDiscPanel::CLoadingDiscPanel( vgui::VPANEL parent ) : BaseClass( NULL, "
 	h = ScreenHeight();
 
 	SetParent( parent );
-	SetProportional( true );
+	//SetProportional( true );
+	// 如果需要
 	SetScheme( "ClientScheme" );
 	SetVisible( false );
 	SetCursor( NULL );

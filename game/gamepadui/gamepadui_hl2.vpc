@@ -20,4 +20,8 @@ $Configuration
 
 $Project "GamepadUI (HL2)"
 {
+	$Folder	"Source Files"
+	{
+		$File	"gamepadui_bonusmaps.cpp" // if needed 
+	}
 }

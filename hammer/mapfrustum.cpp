@@ -20,7 +20,6 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
 
-
 IMPLEMENT_MAPCLASS(CMapFrustum)
 
 
@@ -30,8 +29,7 @@ IMPLEMENT_MAPCLASS(CMapFrustum)
 // Input  : *pInfo - Pointer to helper info class which gives us information
 //				about how to create the helper.
 // Output : Returns a pointer to the helper, NULL if an error occurs.
-//-----------------------------------------------------------------------------
-CMapClass *CMapFrustum::Create(CHelperInfo *pHelperInfo, CMapEntity *pParent)
+//-----------------------------------------------------------------------------CMapClass *CMapFrustum::Create(CHelperInfo *pHelperInfo, CMapEntity *pParent)
 {
 	CMapFrustum *new1 = new CMapFrustum;
 	if( new1 != NULL )
@@ -76,8 +74,7 @@ CMapClass *CMapFrustum::Create(CHelperInfo *pHelperInfo, CMapEntity *pParent)
 
 //-----------------------------------------------------------------------------
 // Purpose: 
-//-----------------------------------------------------------------------------
-CMapFrustum::CMapFrustum(void)
+//-----------------------------------------------------------------------------CMapFrustum::CMapFrustum(void)
 {
 	// Set default parameter names.
 	V_strncpy( m_szFOVKeyName, "_fov", sizeof( m_szFOVKeyName ) );
@@ -94,8 +91,7 @@ CMapFrustum::CMapFrustum(void)
 
 //-----------------------------------------------------------------------------
 // Purpose: Destructor. Deletes faces allocated by BuildCone.
-//-----------------------------------------------------------------------------
-CMapFrustum::~CMapFrustum(void)
+//-----------------------------------------------------------------------------CMapFrustum::~CMapFrustum(void)
 {
 	for (int i = 0; i < m_Faces.Count(); i++)
 	{
@@ -103,7 +99,6 @@ CMapFrustum::~CMapFrustum(void)
 		delete pFace;
 	}
 }
-
 
 CMapFace* CMapFrustum::CreateMapFace( const Vector &v1, const Vector &v2, const Vector &v3, const Vector &v4, float flAlpha )
 {
@@ -124,8 +119,7 @@ CMapFace* CMapFrustum::CreateMapFace( const Vector &v1, const Vector &v2, const 
 // Purpose: Builds the light cone faces in local space. Does NOT call CalcBounds,
 //			because that CalcBounds updates the parent, which causes problems
 //			in the undo system.
-//-----------------------------------------------------------------------------
-void CMapFrustum::BuildFrustumFaces(void)
+//-----------------------------------------------------------------------------void CMapFrustum::BuildFrustumFaces(void)
 {
 	//
 	// Delete the current face list.
@@ -179,8 +173,7 @@ void CMapFrustum::BuildFrustumFaces(void)
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Input  : bFullUpdate - 
-//-----------------------------------------------------------------------------
-void CMapFrustum::CalcBounds(BOOL bFullUpdate)
+//-----------------------------------------------------------------------------void CMapFrustum::CalcBounds(BOOL bFullUpdate)
 {
 	CMapClass::CalcBounds(bFullUpdate);
 
@@ -205,8 +198,7 @@ void CMapFrustum::CalcBounds(BOOL bFullUpdate)
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Output : CMapClass
-//-----------------------------------------------------------------------------
-CMapClass *CMapFrustum::Copy(bool bUpdateDependencies)
+//-----------------------------------------------------------------------------CMapClass *CMapFrustum::Copy(bool bUpdateDependencies)
 {
 	CMapFrustum *pCopy = new CMapFrustum;
 
@@ -223,8 +215,7 @@ CMapClass *CMapFrustum::Copy(bool bUpdateDependencies)
 // Purpose: 
 // Input  : pObject - 
 // Output : CMapClass
-//-----------------------------------------------------------------------------
-CMapClass *CMapFrustum::CopyFrom(CMapClass *pObject, bool bUpdateDependencies)
+//-----------------------------------------------------------------------------CMapClass *CMapFrustum::CopyFrom(CMapClass *pObject, bool bUpdateDependencies)
 {
 	Assert(pObject->IsMapClass(MAPCLASS_TYPE(CMapFrustum)));
 	CMapFrustum *pFrom = (CMapFrustum *)pObject;
@@ -252,8 +243,7 @@ CMapClass *CMapFrustum::CopyFrom(CMapClass *pObject, bool bUpdateDependencies)
 // Purpose: Notifies that this object's parent entity has had a key value change.
 // Input  : szKey - The key that changed.
 //			szValue - The new value of the key.
-//-----------------------------------------------------------------------------
-void CMapFrustum::OnParentKeyChanged(const char *szKey, const char *szValue)
+//-----------------------------------------------------------------------------void CMapFrustum::OnParentKeyChanged(const char *szKey, const char *szValue)
 {
 	bool bRebuild = true;
 
@@ -302,8 +292,7 @@ void CMapFrustum::OnParentKeyChanged(const char *szKey, const char *szValue)
 //			to perform any linking with other map objects or to do other operations
 //			that require all world objects to be present.
 // Input  : pWorld - The world that we are in.
-//-----------------------------------------------------------------------------
-void CMapFrustum::PostloadWorld(CMapWorld *pWorld)
+//-----------------------------------------------------------------------------void CMapFrustum::PostloadWorld(CMapWorld *pWorld)
 {
 	CMapClass::PostloadWorld(pWorld);
 
@@ -315,8 +304,7 @@ void CMapFrustum::PostloadWorld(CMapWorld *pWorld)
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Input  : pRender - 
-//-----------------------------------------------------------------------------
-void CMapFrustum::Render3D(CRender3D *pRender)
+//-----------------------------------------------------------------------------void CMapFrustum::Render3D(CRender3D *pRender)
 {
 	if (m_pParent->IsSelected())
 	{
@@ -377,8 +365,7 @@ void CMapFrustum::Render3D(CRender3D *pRender)
 // Input  : File - 
 //			bRMF - 
 // Output : int
-//-----------------------------------------------------------------------------
-int CMapFrustum::SerializeRMF(std::fstream &File, BOOL bRMF)
+//-----------------------------------------------------------------------------int CMapFrustum::SerializeRMF(std::fstream &File, BOOL bRMF)
 {
 	return(0);
 }
@@ -389,12 +376,10 @@ int CMapFrustum::SerializeRMF(std::fstream &File, BOOL bRMF)
 // Input  : File - 
 //			bRMF - 
 // Output : int
-//-----------------------------------------------------------------------------
-int CMapFrustum::SerializeMAP(std::fstream &File, BOOL bRMF)
+//-----------------------------------------------------------------------------int CMapFrustum::SerializeMAP(std::fstream &File, BOOL bRMF)
 {
 	return(0);
 }
-
 
 void CMapFrustum::GetAngles(QAngle& Angles)
 {

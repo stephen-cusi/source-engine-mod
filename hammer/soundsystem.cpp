@@ -25,23 +25,19 @@
 #define SOUNDGENDER_MACRO_LENGTH 7		// Length of above including $
 
 
-// Sounds we're playing are loaded into here for Windows to access while playing them.
-CUtlVector<char> g_SoundPlayData;
+// Sounds we're playing are loaded into here for Windows to access while playing them.CUtlVector<char> g_SoundPlayData;
 
 
 //-----------------------------------------------------------------------------
 // Singleton sound system
-//-----------------------------------------------------------------------------
-CSoundSystem g_Sounds;
+//-----------------------------------------------------------------------------CSoundSystem g_Sounds;
 
 
 //-----------------------------------------------------------------------------
 // Constructor, destructor
-//-----------------------------------------------------------------------------
-CSoundSystem::CSoundSystem()
+//-----------------------------------------------------------------------------CSoundSystem::CSoundSystem()
 {
 }
-
 CSoundSystem::~CSoundSystem()
 {
 	ShutDown();
@@ -50,8 +46,7 @@ CSoundSystem::~CSoundSystem()
 
 //-----------------------------------------------------------------------------
 // Initialization, shutdown
-//-----------------------------------------------------------------------------
-bool CSoundSystem::Initialize( )
+//-----------------------------------------------------------------------------bool CSoundSystem::Initialize( )
 {
 	for ( int i = 0; i < SOUND_TYPE_COUNT; ++i )
 	{
@@ -64,7 +59,6 @@ bool CSoundSystem::Initialize( )
 
 	return true;
 }
-
 void CSoundSystem::ShutDown(void)
 {
 	for ( int i = 0; i < SOUND_TYPE_COUNT; ++i )
@@ -76,8 +70,7 @@ void CSoundSystem::ShutDown(void)
 
 //-----------------------------------------------------------------------------
 // Build the list of sounds
-//-----------------------------------------------------------------------------
-bool CSoundSystem::BuildSoundList( SoundType_t type )
+//-----------------------------------------------------------------------------bool CSoundSystem::BuildSoundList( SoundType_t type )
 {
 	CleanupSoundList( type );
 
@@ -99,8 +92,7 @@ bool CSoundSystem::BuildSoundList( SoundType_t type )
 
 //-----------------------------------------------------------------------------
 // Cleans up the sound list
-//-----------------------------------------------------------------------------
-void CSoundSystem::CleanupSoundList( SoundType_t type )
+//-----------------------------------------------------------------------------void CSoundSystem::CleanupSoundList( SoundType_t type )
 {
 	m_SoundList[type].m_Sounds.RemoveAll();
 	DestroyStringCache( m_SoundList[type].m_pStrings );
@@ -110,15 +102,13 @@ void CSoundSystem::CleanupSoundList( SoundType_t type )
 
 //-----------------------------------------------------------------------------
 // Allocate, deallocate a string cache
-//-----------------------------------------------------------------------------
-CSoundSystem::StringCache_t *CSoundSystem::CreateStringCache( CSoundSystem::StringCache_t* pPrevious )
+//-----------------------------------------------------------------------------CSoundSystem::StringCache_t *CSoundSystem::CreateStringCache( CSoundSystem::StringCache_t* pPrevious )
 {
 	StringCache_t *pCache = new StringCache_t;
 	pCache->m_nTailIndex = 0;
 	pCache->m_pNext = pPrevious;
 	return pCache; 
 }
-
 void CSoundSystem::DestroyStringCache( CSoundSystem::StringCache_t *pCache )
 {
 	if ( pCache )
@@ -131,8 +121,7 @@ void CSoundSystem::DestroyStringCache( CSoundSystem::StringCache_t *pCache )
 
 //-----------------------------------------------------------------------------
 // Adds a string to the string cache
-//-----------------------------------------------------------------------------
-char *CSoundSystem::AddStringToCache( SoundType_t type, const char *pString )
+//-----------------------------------------------------------------------------char *CSoundSystem::AddStringToCache( SoundType_t type, const char *pString )
 {
 	int copyLen = V_strlen( pString ) + 1;
 
@@ -158,8 +147,7 @@ char *CSoundSystem::AddStringToCache( SoundType_t type, const char *pString )
 	
 //-----------------------------------------------------------------------------
 // Adds a sound to a sound list
-//-----------------------------------------------------------------------------
-void CSoundSystem::AddSoundToList( SoundType_t type, const char *pSoundName, const char *pActualFile, const char *pSourceFile )
+//-----------------------------------------------------------------------------void CSoundSystem::AddSoundToList( SoundType_t type, const char *pSoundName, const char *pActualFile, const char *pSourceFile )
 {
 	// FIXME: Optimize the allocation pattern?
 	int i = m_SoundList[type].m_Sounds.AddToTail();
@@ -182,8 +170,7 @@ void CSoundSystem::AddSoundToList( SoundType_t type, const char *pSoundName, con
 
 //-----------------------------------------------------------------------------
 // Add all sounds that lie within a single directory
-//-----------------------------------------------------------------------------
-void CSoundSystem::BuildFileListInDirectory( char const* pDirectoryName, const char *pExt, SoundType_t soundType )
+//-----------------------------------------------------------------------------void CSoundSystem::BuildFileListInDirectory( char const* pDirectoryName, const char *pExt, SoundType_t soundType )
 {
 	Assert( Q_strlen( pExt ) <= 3 );
 
@@ -217,8 +204,7 @@ void CSoundSystem::BuildFileListInDirectory( char const* pDirectoryName, const c
 
 //-----------------------------------------------------------------------------
 // Populate the list of .WAV files
-//-----------------------------------------------------------------------------
-bool CSoundSystem::RecurseIntoDirectories( char const* pDirectoryName, pDirCallbackFn fn )
+//-----------------------------------------------------------------------------bool CSoundSystem::RecurseIntoDirectories( char const* pDirectoryName, pDirCallbackFn fn )
 {
 	// Have the callback process the directory.
 	if ( !(this->*fn)( pDirectoryName ) )
@@ -256,8 +242,7 @@ bool CSoundSystem::RecurseIntoDirectories( char const* pDirectoryName, pDirCallb
 
 //-----------------------------------------------------------------------------
 // Populate the list of .WAV files
-//-----------------------------------------------------------------------------
-bool CSoundSystem::ProcessDirectory_RawFileList( char const* pDirectoryName )
+//-----------------------------------------------------------------------------bool CSoundSystem::ProcessDirectory_RawFileList( char const* pDirectoryName )
 {
 	if ( !g_pFileSystem )
 		return false;
@@ -274,8 +259,7 @@ bool CSoundSystem::ProcessDirectory_RawFileList( char const* pDirectoryName )
 
 //-----------------------------------------------------------------------------
 // Populate the list of .VCD files
-//-----------------------------------------------------------------------------
-bool CSoundSystem::ProcessDirectory_SceneFileList( char const* pDirectoryName )
+//-----------------------------------------------------------------------------bool CSoundSystem::ProcessDirectory_SceneFileList( char const* pDirectoryName )
 {
 	if ( !g_pFileSystem )
 		return false;
@@ -289,8 +273,7 @@ bool CSoundSystem::ProcessDirectory_SceneFileList( char const* pDirectoryName )
 
 //-----------------------------------------------------------------------------
 // Splits a name into 2
-//-----------------------------------------------------------------------------
-static void SplitName( char const *input, int splitchar, int splitlen, char *before, int beforelen, char *after, int afterlen )
+//-----------------------------------------------------------------------------static void SplitName( char const *input, int splitchar, int splitlen, char *before, int beforelen, char *after, int afterlen )
 {
 	char const *in = input;
 	char *out = before;
@@ -332,8 +315,7 @@ static void SplitName( char const *input, int splitchar, int splitlen, char *bef
 
 //-----------------------------------------------------------------------------
 // Gamesounds may have macros embedded in them
-//-----------------------------------------------------------------------------
-void CSoundSystem::AddGameSoundToList( const char *pGameSound, char const *pFileName, const char *pSourceFile )
+//-----------------------------------------------------------------------------void CSoundSystem::AddGameSoundToList( const char *pGameSound, char const *pFileName, const char *pSourceFile )
 {
 	char const *p = Q_stristr( pFileName, SOUNDGENDER_MACRO );
 	if ( !p )
@@ -363,8 +345,7 @@ void CSoundSystem::AddGameSoundToList( const char *pGameSound, char const *pFile
 
 //-----------------------------------------------------------------------------
 // Load all game sounds from a particular file 
-//-----------------------------------------------------------------------------
-void CSoundSystem::AddGameSoundsFromFile( const char *pFileName )
+//-----------------------------------------------------------------------------void CSoundSystem::AddGameSoundsFromFile( const char *pFileName )
 {
 	KeyValues *kv = new KeyValues( pFileName );
 	if ( !kv->LoadFromFile( g_pFileSystem, pFileName, "GAME" ) )
@@ -409,8 +390,7 @@ void CSoundSystem::AddGameSoundsFromFile( const char *pFileName )
 
 //-----------------------------------------------------------------------------
 // Populate the list of game sounds
-//-----------------------------------------------------------------------------
-bool CSoundSystem::BuildGameSoundList()
+//-----------------------------------------------------------------------------bool CSoundSystem::BuildGameSoundList()
 {
 	KeyValues *manifest = new KeyValues( MANIFEST_FILE );
 	if ( !manifest->LoadFromFile( g_pFileSystem, MANIFEST_FILE, "GAME" ) )
@@ -437,7 +417,6 @@ bool CSoundSystem::BuildGameSoundList()
 //-----------------------------------------------------------------------------
 // Plays a sound
 //-----------------------------------------------------------------------------
-
 bool CSoundSystem::FindSoundByName( const char *pFilename, SoundType_t *type, int *nIndex )
 {
 	char searchStr[MAX_PATH];
@@ -460,7 +439,6 @@ bool CSoundSystem::FindSoundByName( const char *pFilename, SoundType_t *type, in
 	return false;
 }
 
-
 bool CSoundSystem::PlayScene( const char *pFileName )
 {
 	char fullFilename[MAX_PATH];
@@ -478,7 +456,6 @@ bool CSoundSystem::PlayScene( const char *pFileName )
 //-----------------------------------------------------------------------------
 // Plays a sound
 //-----------------------------------------------------------------------------
-
 bool CSoundSystem::Play( SoundType_t type, int nIndex )
 {
  	const char *pFileName = SoundFile( type, nIndex );
@@ -517,8 +494,7 @@ bool CSoundSystem::Play( SoundType_t type, int nIndex )
 
 //-----------------------------------------------------------------------------
 // Stops any playing sound.
-//-----------------------------------------------------------------------------
-void CSoundSystem::StopSound()
+//-----------------------------------------------------------------------------void CSoundSystem::StopSound()
 {
 	PlaySound( NULL, NULL, SND_ASYNC | SND_MEMORY );
 }
@@ -526,8 +502,7 @@ void CSoundSystem::StopSound()
 
 //-----------------------------------------------------------------------------
 // Opens the source file associated with a sound
-//-----------------------------------------------------------------------------
-void CSoundSystem::OpenSource( SoundType_t type, int nIndex )
+//-----------------------------------------------------------------------------void CSoundSystem::OpenSource( SoundType_t type, int nIndex )
 {
 	if ( type == SOUND_TYPE_RAW )
 		return;

@@ -19,8 +19,7 @@
 //			merges them with same-name .txt files, and creates a prefab library
 //			as specified in pszName.
 // Input  : pszName - 
-//-----------------------------------------------------------------------------
-void MakePrefabLibrary(LPCTSTR pszName)
+//-----------------------------------------------------------------------------void MakePrefabLibrary(LPCTSTR pszName)
 {
 	CPrefabLibrary *pLibrary = new CPrefabLibraryRMF;
 	int nPrefabs = 0;
@@ -33,8 +32,7 @@ void MakePrefabLibrary(LPCTSTR pszName)
 	CPrefab::EnableCaching(FALSE);
 
 	// get files
-	static BOOL bFirst = TRUE;
-Again:
+	static BOOL bFirst = TRUE;Again:
 	WIN32_FIND_DATA fd;
 	HANDLE hnd = FindFirstFile(bFirst ? "*.rmf" : "*.map", &fd);
 

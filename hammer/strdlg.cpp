@@ -17,7 +17,6 @@
 
 /////////////////////////////////////////////////////////////////////////////
 // CStrDlg dialog
-
 CStrDlg::CStrDlg(DWORD dwFlags, LPCTSTR pszString, LPCTSTR pszPrompt, 
 				 LPCTSTR pszTitle)
 	: CDialog(CStrDlg::IDD, NULL)
@@ -35,7 +34,6 @@ CStrDlg::CStrDlg(DWORD dwFlags, LPCTSTR pszString, LPCTSTR pszPrompt,
 	m_strPrompt = pszPrompt;
 	m_strTitle = pszTitle;
 }
-
 void CStrDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialog::DoDataExchange(pDX);
@@ -46,22 +44,18 @@ void CStrDlg::DoDataExchange(CDataExchange* pDX)
 	//{{AFX_DATA_MAP(CStrDlg)
 	//}}AFX_DATA_MAP
 }
-
 BEGIN_MESSAGE_MAP(CStrDlg, CDialog)
 	//{{AFX_MSG_MAP(CStrDlg)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+	//}}AFX_MSG_MAPEND_MESSAGE_MAP()
 
 /////////////////////////////////////////////////////////////////////////////
 // CStrDlg message handlers
-
 void CStrDlg::SetRange(int iLow, int iHigh, int iIncrement_)
 {
 	iRangeLow = iLow;
 	iRangeHigh = iHigh;
 	this->iIncrement = 1;
 }
-
 BOOL CStrDlg::OnInitDialog() 
 {
 	CDialog::OnInitDialog();

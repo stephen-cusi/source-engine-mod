@@ -22,18 +22,14 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
 #include ".\mapdiffdlg.h"
-
-CMapDiffDlg *s_pDlg = NULL;
-CMapDoc *s_pCurrentMap = NULL;
+CMapDiffDlg *s_pDlg = NULL;CMapDoc *s_pCurrentMap = NULL;
 
 // MapDiffDlg dialog
-
 CMapDiffDlg::CMapDiffDlg(CWnd* pParent )
 	: CDialog(CMapDiffDlg::IDD, pParent)
 {
 	m_bCheckSimilar = true;
 }
-
 void CMapDiffDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialog::DoDataExchange(pDX);
@@ -42,15 +38,12 @@ void CMapDiffDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_MAPNAME, m_mapName);
 }
 
-
 BEGIN_MESSAGE_MAP(CMapDiffDlg, CDialog)
 	ON_BN_CLICKED(IDC_SIMILARCHECK, OnBnClickedSimilarcheck)
 	ON_BN_CLICKED(IDC_MAPBROWSE, OnBnClickedMapbrowse)
 	ON_BN_CLICKED(IDOK, OnBnClickedOk)
 	ON_BN_CLICKED(IDCANCEL, OnBnClickedCancel)
-	ON_WM_DESTROY()
-END_MESSAGE_MAP()
-
+	ON_WM_DESTROY()END_MESSAGE_MAP()
 void CMapDiffDlg::MapDiff(CWnd *pwndParent, CMapDoc *pCurrentMapDoc)
 {
 	if (!s_pDlg)
@@ -63,13 +56,11 @@ void CMapDiffDlg::MapDiff(CWnd *pwndParent, CMapDoc *pCurrentMapDoc)
 }
 
 // MapDiffDlg message handlers
-
 void CMapDiffDlg::OnBnClickedSimilarcheck()
 {
 	// TODO: Add your control notification handler code here
 	m_bCheckSimilar = !m_bCheckSimilar;
 }
-
 void CMapDiffDlg::OnBnClickedMapbrowse()
 {
 	CString	m_pszFilename;
@@ -97,7 +88,6 @@ void CMapDiffDlg::OnBnClickedMapbrowse()
 	m_pszFilename = dlg.GetPathName();
 	m_mapName.SetWindowText( m_pszFilename );
 }
-
 void CMapDiffDlg::OnBnClickedOk()
 {
 	// TODO: Add your control notification handler code here
@@ -107,8 +97,7 @@ void CMapDiffDlg::OnBnClickedOk()
 
 //-----------------------------------------------------------------------------
 // Purpose: 
-//-----------------------------------------------------------------------------
-void CMapDiffDlg::OnOK()
+//-----------------------------------------------------------------------------void CMapDiffDlg::OnOK()
 {
 	CString strFilename;
 	m_mapName.GetWindowText( strFilename );
@@ -156,14 +145,12 @@ void CMapDiffDlg::OnOK()
 
 //-----------------------------------------------------------------------------
 // Purpose: Called when our window is being destroyed.
-//-----------------------------------------------------------------------------
-void CMapDiffDlg::OnDestroy()
+//-----------------------------------------------------------------------------void CMapDiffDlg::OnDestroy()
 {
 	delete this;
 	s_pDlg = NULL;
 	s_pCurrentMap = NULL;
 }
-
 
 void CMapDiffDlg::OnBnClickedCancel()
 {

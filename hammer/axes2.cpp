@@ -11,7 +11,6 @@
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
-
 void Axes2::SetAxes(int h, bool bInvertH, int v, bool bInvertV)
 {
 	bInvertHorz = bInvertH;
@@ -27,7 +26,6 @@ void Axes2::SetAxes(int h, bool bInvertH, int v, bool bInvertV)
 	if(h != AXIS_Z && v != AXIS_Z)
 		axThird = AXIS_Z;
 }
-
 void Axes2::SetAxes(Axes2 &axes)
 {
 	*this = axes;

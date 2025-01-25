@@ -1767,7 +1767,8 @@ public:
 		int h = 200;
 		if (ipanel()->IsProportional(hParent))
 		{
-			SetProportional(true);
+			// 如果需要
+			//SetProportional(true);
 			w = scheme()->GetProportionalScaledValueEx(GetScheme(), w);
 			h = scheme()->GetProportionalScaledValueEx(GetScheme(), h);
 		}

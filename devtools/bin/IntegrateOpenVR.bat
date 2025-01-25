@@ -9,16 +9,9 @@
 ::
 :: Set source paths
 ::
-
-SET VRP4Path=%1
-SET IntegDate=%2
-set BINS_ONLY=0
-
-if !%IntegDate%!==!/bins! (
-SET IntegDate=
-SET BINS_ONLY=1
+SET VRP4Path=%1SET IntegDate=%2set BINS_ONLY=0
+if !%IntegDate%!==!/bins! (SET IntegDate=SET BINS_ONLY=1
 )
-
 
 if !%VRP4Path%!==!! (
 	echo Usage: %0 VRP4Path
@@ -28,42 +21,24 @@ if !%VRP4Path%!==!! (
 	goto :end
 )
 
-:: Use this when copying from official distribution.
-SET DestRoot=..\..\..
-set P4Root=%VRP4Path%
-set SRCDIR_HEADERS=headers/...
-set SRCDIR_DLL=bin
-set SRCDIR_LIB=lib
+:: Use this when copying from official distribution.SET DestRoot=..\..\..set P4Root=%VRP4Path%set SRCDIR_HEADERS=headers/...set SRCDIR_DLL=binset SRCDIR_LIB=lib
 
 ::
 :: Copy files
 ::
 
-:: Client Win32 binaries
-call :CopyOneFile %SRCDIR_DLL%/win32 openvr_api.dll game\bin
-call :CopyOneFile %SRCDIR_LIB%/win32 openvr_api.lib src\lib\public
+:: Client Win32 binariescall :CopyOneFile %SRCDIR_DLL%/win32 openvr_api.dll game\bincall :CopyOneFile %SRCDIR_LIB%/win32 openvr_api.lib src\lib\public
 
-:: Client Linux binaries
-call :CopyOneFile %SRCDIR_DLL%/linux32 libopenvr_api.so game\bin
-call :CopyOneFile %SRCDIR_LIB%/linux32 libopenvr_api.so src\lib\public\linux32
+:: Client Linux binariescall :CopyOneFile %SRCDIR_DLL%/linux32 libopenvr_api.so game\bincall :CopyOneFile %SRCDIR_LIB%/linux32 libopenvr_api.so src\lib\public\linux32
 
 :: Client Mac binaries.  Note that there's no dedicated server on the Mac,
-:: so we can ship a smaller set
-call :CopyOneFile %SRCDIR_DLL%/osx32 libopenvr_api.dylib game\bin
-call :CopyOneFile %SRCDIR_LIB%/osx32 libopenvr_api.dylib src\lib\public\osx32
-
+:: so we can ship a smaller setcall :CopyOneFile %SRCDIR_DLL%/osx32 libopenvr_api.dylib game\bincall :CopyOneFile %SRCDIR_LIB%/osx32 libopenvr_api.dylib src\lib\public\osx32
 if !%BINS_ONLY%!==!1! (
  goto :end
 )
 
-:: Headers
-ECHO ---------------------------------------------
-ECHO Integrating Steam Headers from %P4Root%/%SRCDIR_HEADERS%
-ECHO                             to %DestRoot%\src\public\steam\...
-
-p4 integrate -d -i %P4Root%/%SRCDIR_HEADERS%%IntegDate% %DestRoot%\src\public\openvr\...
-p4 resolve -at %DestRoot%\src\public\openvr\...
-
+:: HeadersECHO ---------------------------------------------ECHO Integrating Steam Headers from %P4Root%/%SRCDIR_HEADERS%ECHO                             to %DestRoot%\src\public\steam\...
+p4 integrate -d -i %P4Root%/%SRCDIR_HEADERS%%IntegDate% %DestRoot%\src\public\openvr\...p4 resolve -at %DestRoot%\src\public\openvr\...
 goto :end
 
 :CopyOneFile

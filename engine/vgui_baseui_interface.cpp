@@ -696,9 +696,9 @@ void CEngineVGui::Init()
 	COM_TimestampedLog( "Building Panels (staticGameUIPanel)" );
 
 	staticGameUIPanel = new CEnginePanel( staticPanel, "GameUI Panel" );
-
-	if(NeedProportional())
-		staticGameUIPanel->SetProportional(true);
+    // 如果是PC平台，设置面板的大小为屏幕的大小，否则设置为UI的大小
+	//if(NeedProportional())
+	//	staticGameUIPanel->SetProportional(true);
 
 	staticGameUIPanel->SetBounds( 0, 0, videomode->GetModeUIWidth(), videomode->GetModeUIHeight() );
 	staticGameUIPanel->SetPaintBorderEnabled(false);

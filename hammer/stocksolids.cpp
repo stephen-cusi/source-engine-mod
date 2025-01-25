@@ -18,13 +18,11 @@
 #pragma warning(disable:4244)
 
 //Vector pmPoints[64];
-
 StockSolid::StockSolid(int nFields)
 {
 	AllocateDataFields(nFields);
 	cofs.Init();
 }
-
 
 StockSolid::~StockSolid()
 {
@@ -35,7 +33,6 @@ StockSolid::~StockSolid()
 	}
 }
 
-
 void StockSolid::AllocateDataFields(int nFields_)
 {
 	pFields = new STSDATAFIELD[nFields_];
@@ -44,17 +41,14 @@ void StockSolid::AllocateDataFields(int nFields_)
 	this->nFields = 0;	// none yet
 }
 
-
 void StockSolid::Serialize(std::fstream& file, BOOL bIsStoring)
 {
 }
-
 
 int StockSolid::GetFieldCount() const
 {
 	return nFields;
 }
-
 
 void StockSolid::SetFieldData(int iIndex, int iData)
 {
@@ -68,7 +62,6 @@ void StockSolid::SetFieldData(int iIndex, int iData)
 		Assert(!(iData < field.iRangeLower || iData > field.iRangeUpper));
 	}
 }
-
 
 int StockSolid::GetFieldData(int iIndex, int *piData) const
 {
@@ -85,8 +78,7 @@ int StockSolid::GetFieldData(int iIndex, int *piData) const
 
 //-----------------------------------------------------------------------------
 // Purpose: 
-//-----------------------------------------------------------------------------
-void StockSolid::SetOrigin(const Vector &o)
+//-----------------------------------------------------------------------------void StockSolid::SetOrigin(const Vector &o)
 {
 	origin = o;
 }
@@ -94,12 +86,10 @@ void StockSolid::SetOrigin(const Vector &o)
 
 //-----------------------------------------------------------------------------
 // Purpose: 
-//-----------------------------------------------------------------------------
-void StockSolid::SetCenterOffset(const Vector &ofs)
+//-----------------------------------------------------------------------------void StockSolid::SetCenterOffset(const Vector &ofs)
 {
 	cofs = ofs;
 }
-
 
 void StockSolid::AddDataField(STSDF_TYPE type, const char *pszName, int iRangeLower, int iRangeUpper)
 {
@@ -122,15 +112,13 @@ void StockSolid::AddDataField(STSDF_TYPE type, const char *pszName, int iRangeLo
 
 // ----------------------------------------------------------------------------
 // StockBlock()
-// ----------------------------------------------------------------------------
-StockBlock::StockBlock() :
+// ----------------------------------------------------------------------------StockBlock::StockBlock() :
 	StockSolid(3)
 {
 	AddDataField(DFTYPE_INTEGER, "Width (X)");
 	AddDataField(DFTYPE_INTEGER, "Depth (Y)");
 	AddDataField(DFTYPE_INTEGER, "Height (Z)");
 }
-
 
 void StockBlock::SetFromBox(BoundBox *pBox)
 {
@@ -144,7 +132,6 @@ void StockBlock::SetFromBox(BoundBox *pBox)
 
 	SetOrigin(o);
 }
-
 
 void StockBlock::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eAlignment)
 {
@@ -260,15 +247,13 @@ void StockBlock::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eAlignment
 
 // ----------------------------------------------------------------------------
 // StockWedge()
-// ----------------------------------------------------------------------------
-StockWedge::StockWedge() :
+// ----------------------------------------------------------------------------StockWedge::StockWedge() :
 	StockSolid(3)
 {
 	AddDataField(DFTYPE_INTEGER, "Width (X)");
 	AddDataField(DFTYPE_INTEGER, "Depth (Y)");
 	AddDataField(DFTYPE_INTEGER, "Height (Z)");
 }
-
 
 void StockWedge::SetFromBox(BoundBox *pBox)
 {
@@ -281,7 +266,6 @@ void StockWedge::SetFromBox(BoundBox *pBox)
 
 	SetOrigin(o);
 }
-
 
 void StockWedge::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eTextureAlignment)
 {
@@ -385,8 +369,7 @@ void StockWedge::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eTextureAl
 
 // ----------------------------------------------------------------------------
 // StockCylinder()
-// ----------------------------------------------------------------------------
-StockCylinder::StockCylinder()
+// ----------------------------------------------------------------------------StockCylinder::StockCylinder()
 	: StockSolid(4)
 {
 	AddDataField(DFTYPE_INTEGER, "Width (X)");
@@ -396,7 +379,6 @@ StockCylinder::StockCylinder()
 
 	SetFieldData(fieldSideCount, 8);
 }
-
 
 void StockCylinder::SetFromBox(BoundBox *pBox)
 {
@@ -409,7 +391,6 @@ void StockCylinder::SetFromBox(BoundBox *pBox)
 
 	SetOrigin(o);
 }
-
 
 void StockCylinder::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eTextureAlignment)
 {
@@ -474,8 +455,7 @@ void StockCylinder::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eTextur
 
 // ----------------------------------------------------------------------------
 // StockSpike()
-// ----------------------------------------------------------------------------
-StockSpike::StockSpike()
+// ----------------------------------------------------------------------------StockSpike::StockSpike()
 	: StockSolid(4)
 {
 	AddDataField(DFTYPE_INTEGER, "Width (X)");
@@ -485,7 +465,6 @@ StockSpike::StockSpike()
 
 	SetFieldData(fieldSideCount, 8);
 }
-
 
 void StockSpike::SetFromBox(BoundBox *pBox)
 {
@@ -498,7 +477,6 @@ void StockSpike::SetFromBox(BoundBox *pBox)
 
 	SetOrigin(o);
 }
-
 
 void StockSpike::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eTextureAlignment)
 {
@@ -549,7 +527,6 @@ void StockSpike::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eTextureAl
 	pSolid->InitializeTextureAxes(eTextureAlignment, INIT_TEXTURE_ALL | INIT_TEXTURE_FORCE);
 }
 
-
 StockSphere::StockSphere()
 	: StockSolid(4)
 {
@@ -560,7 +537,6 @@ StockSphere::StockSphere()
 
 	SetFieldData(fieldSideCount, 8);
 }
-
 
 void StockSphere::SetFromBox(BoundBox *pBox)
 {
@@ -578,8 +554,7 @@ void StockSphere::SetFromBox(BoundBox *pBox)
 //-----------------------------------------------------------------------------
 // Purpose: Builds a tesselated sphere.
 // Input  : pSolid - Pointer to a solid that will become a sphere.
-//-----------------------------------------------------------------------------
-void StockSphere::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eTextureAlignment)
+//-----------------------------------------------------------------------------void StockSphere::CreateMapSolid(CMapSolid *pSolid, TextureAlignment_t eTextureAlignment)
 {
 	CMapFace Face;
 
