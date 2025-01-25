@@ -103,8 +103,14 @@ void GamepadUIMainMenu::SetConsoleButtonVisibility(bool bVisible)
         m_pSwitchToOldUIButton = new GamepadUIButton(this, this,GAMEPADUI_RESOURCE_FOLDER "schememainmenu_olduibutton.res", "cmd gamemenucommand openconsole","#GameUI_Console", "");
         m_pSwitchToOldUIButton->SetPriority(0); // 优先级
     }
+<<<<<<< HEAD
      m_pSwitchToOldUIButton = new GamepadUIButton(this, this,GAMEPADUI_RESOURCE_FOLDER "schememainmenu_olduibutton.res","cmd gamemenucommand openconsole","#GameUI_Console", "");
      m_pSwitchToOldUIButton->SetVisible(bVisible); // 设置可见性
+=======
+      // 无论如和都要设置可见性 不然闪退 空指针
+        m_pSwitchToOldUIButton = new GamepadUIButton(this, this,GAMEPADUI_RESOURCE_FOLDER "schememainmenu_olduibutton.res","cmd toggleconsole","#GameUI_Console", "");
+    m_pSwitchToOldUIButton->SetVisible(bVisible); // 设置可见性
+>>>>>>> a8287370bfe089a79299e927201f3d2d4a8588b1
 }
 
 void GamepadUIMainMenu::ApplySchemeSettings( vgui::IScheme* pScheme )
