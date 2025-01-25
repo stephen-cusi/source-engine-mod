@@ -15,6 +15,7 @@
 #include "gamepadui_interface.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
+// memdbgon.h 必须`是.cpp文件中的最后一个include文件 !!!
 #include "tier0/memdbgon.h"
 
 ConVar gamepadui_background_music_duck( "gamepadui_background_music_duck", "0.35", FCVAR_ARCHIVE );
@@ -40,6 +41,7 @@ void GamepadUIBasePanel::ApplySchemeSettings( vgui::IScheme* pScheme )
     BaseClass::ApplySchemeSettings( pScheme );
 
     // Josh: Need to use GetVParent because this is across
+    // josh: 需要使用GetVParent，因为这是跨越的
     // a DLL boundary.
 	int nVParentW, nVParentH;
     vgui::ipanel()->GetSize( GetVParent(), nVParentW, nVParentH );
@@ -47,7 +49,9 @@ void GamepadUIBasePanel::ApplySchemeSettings( vgui::IScheme* pScheme )
 
     // Josh:
     // Force the main menu to invalidate itself.
+    // 这里强制主菜单使其无效。
     // There is a weird ordering bug in VGUI we need to workaround.
+    // 这里有一个奇怪的VGUI排序错误，我们需要解决。
     m_pMainMenu->InvalidateLayout( false, true );
 
     m_pSizingPanel->InvalidateLayout( false, true );
@@ -73,6 +77,7 @@ void GamepadUIBasePanel::SetCurrentFrame( GamepadUIFrame *pFrame )
     if (pFrame != NULL && m_pCurrentFrame != NULL)
     {
         // If there's already a frame, close it
+        // 如果 这里 
         m_pCurrentFrame->Close();
     }
 

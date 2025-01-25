@@ -7,3 +7,4 @@
 [submodule "lib"]
 	path = lib
 	url = https://gitee.com/zzh_life/source-engine-libs.git
+# 1. 初始化子模块 2. 更新子模块 3. 删除子模块 dont forget --recursive

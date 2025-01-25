@@ -35,11 +35,13 @@ Source 引擎没有明确的版本号，而是以增量更新的方式发布。
 - 支持 Bink 音频（用于 video_bink）  
 - 修复 GamepadUI 的 bug
 - 修复 SetProportional() 方法造成的 缩放问题 
+- 支持 ndk 新版本 Android api 版本提升至 28 (android 9)
+- 尝试 添加 lua 模块
 
 
 # 警告
 - **GamepadUI 不支持以下模块：** dod、hl1mp、hl1  
-- **可以与以下模块一起工作：** hl2 和 episodic  
+- **可以与以下模块一起工作：** hl2 和 episodic , portal 
 
 # 如何构建？
 - [构建说明（英文）](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))

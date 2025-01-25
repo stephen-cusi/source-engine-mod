@@ -35,7 +35,8 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - Bink audio support( for video_bink )
 - fix gamepadui s bug
 - fix SetProportiona() s bug
-
+- change the Android api to 28 (android 9)
+- try to add lua module
   
 # WARNING
 - GAMEPADUI DOESNT WOEK WITH dod hl1mp hl1

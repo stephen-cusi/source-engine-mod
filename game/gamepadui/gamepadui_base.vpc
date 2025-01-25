@@ -92,6 +92,7 @@ $Project
         $File "gamepadui_interface.cpp"
         $File "gamepadui_mainmenu.cpp"
         $File "gamepadui_newgame.cpp"
+        $File "gamepadui_bonusmaps.cpp" // warning this cpp file 
         $File "gamepadui_savegame.cpp"
         $File "gamepadui_options.cpp"
         $File "gamepadui_scrollbar.cpp"
