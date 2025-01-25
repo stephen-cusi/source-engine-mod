@@ -90,7 +90,7 @@ void GamepadUIMainMenu::LoadMenuButtons()
     }
 
  
-        // 判断是否显示控制台按钮 pwd ZZHlife
+    // 判断是否显示控制台按钮 pwd ZZHlife
     bool bShowConsoleButton = CommandLine()->FindParm("-console");
     SetConsoleButtonVisibility(bShowConsoleButton);
     UpdateButtonVisibility();
@@ -105,7 +105,6 @@ void GamepadUIMainMenu::SetConsoleButtonVisibility(bool bVisible)
        
     }
       // 无论如和都要设置可见性 不然闪退 空指针
-       
      m_pSwitchToOldUIButton = new GamepadUIButton(this, this,GAMEPADUI_RESOURCE_FOLDER "schememainmenu_olduibutton.res","cmd gamemenucommand openconsole","#GameUI_Console", "");
      m_pSwitchToOldUIButton->SetVisible(bVisible); // 设置可见性
 }
@@ -134,7 +133,7 @@ void GamepadUIMainMenu::ApplySchemeSettings( vgui::IScheme* pScheme )
 void GamepadUIMainMenu::LayoutMainMenu()
 {
     m_flOldUIButtonOffsetX = 20.0f; // 根据需要设置默认值
-    m_flOldUIButtonOffsetY = 20.0f; // 左下角按钮的偏移量 (X, Y) 从左上角开始计算 (0, 0) 为左上角 (1, 1) 为右下角 (0.5, 0.5) 为中心 (0, 1) 为左下角 (1, 0) 为右上角 (0.5, 1) 为左上角 (0, 0.5) 为左中 (1, 0.5) 为右中
+    m_flOldUIButtonOffsetY = 20.0f; // 左下角按钮的偏移量
     int nY = GetCurrentButtonOffset();
     CUtlVector<GamepadUIButton*>& currentButtons = GetCurrentButtons();
     for ( GamepadUIButton *pButton : currentButtons )
@@ -143,11 +142,9 @@ void GamepadUIMainMenu::LayoutMainMenu()
         pButton->SetPos( m_flButtonsOffsetX, GetTall() - nY );
         nY += m_flButtonSpacing;
     }
-    
-        // 无论如何都会调整 button 位置
-        int nParentW, nParentH;
-        GetParent()->GetSize( nParentW, nParentH );
-        m_pSwitchToOldUIButton->SetPos( m_flOldUIButtonOffsetX, nParentH - m_pSwitchToOldUIButton->m_flHeight - m_flOldUIButtonOffsetY );
+     int nParentW, nParentH;
+     GetParent()->GetSize( nParentW, nParentH );
+     m_pSwitchToOldUIButton->SetPos( m_flOldUIButtonOffsetX, nParentH - m_pSwitchToOldUIButton->m_flHeight - m_flOldUIButtonOffsetY );
     
 }
 
