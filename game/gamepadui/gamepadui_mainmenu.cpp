@@ -108,7 +108,7 @@ void GamepadUIMainMenu::SetConsoleButtonVisibility(bool bVisible)
         m_pSwitchToOldUIButton = new GamepadUIButton(this, this,GAMEPADUI_RESOURCE_FOLDER "schememainmenu_olduibutton.res", "cmd toggleconsole","#GameUI_Console", "");
     m_pSwitchToOldUIButton->SetPriority(0); // 优先级
     }
-      /0/ 无论如和都要设置可见性 不然闪退 空指针
+      // 无论如和都要设置可见性 不然闪退 空指针
         m_pSwitchToOldUIButton = new GamepadUIButton(this, this,GAMEPADUI_RESOURCE_FOLDER "schememainmenu_olduibutton.res","cmd toggleconsole","#GameUI_Console", "");
     m_pSwitchToOldUIButton->SetVisible(bVisible); // 设置可见性
 }
