@@ -102,9 +102,7 @@ void GamepadUIMainMenu::SetConsoleButtonVisibility(bool bVisible)
     {
         m_pSwitchToOldUIButton = new GamepadUIButton(this, this,GAMEPADUI_RESOURCE_FOLDER "schememainmenu_olduibutton.res", "cmd gamemenucommand openconsole","#GameUI_Console", "");
         m_pSwitchToOldUIButton->SetPriority(0); // 优先级
-       
     }
-      // 无论如和都要设置可见性 不然闪退 空指针
      m_pSwitchToOldUIButton = new GamepadUIButton(this, this,GAMEPADUI_RESOURCE_FOLDER "schememainmenu_olduibutton.res","cmd gamemenucommand openconsole","#GameUI_Console", "");
      m_pSwitchToOldUIButton->SetVisible(bVisible); // 设置可见性
 }
@@ -112,7 +110,6 @@ void GamepadUIMainMenu::SetConsoleButtonVisibility(bool bVisible)
 void GamepadUIMainMenu::ApplySchemeSettings( vgui::IScheme* pScheme )
 {
     BaseClass::ApplySchemeSettings( pScheme );
-
     int nParentW, nParentH;
 	GetParent()->GetSize( nParentW, nParentH );
     SetBounds( 0, 0, nParentW, nParentH );
@@ -132,8 +129,8 @@ void GamepadUIMainMenu::ApplySchemeSettings( vgui::IScheme* pScheme )
 
 void GamepadUIMainMenu::LayoutMainMenu()
 {
-    m_flOldUIButtonOffsetX = 20.0f; // 根据需要设置默认值
-    m_flOldUIButtonOffsetY = 20.0f; // 左下角按钮的偏移量
+    m_flOldUIButtonOffsetX = 20.0f; 
+    m_flOldUIButtonOffsetY = 20.0f; 
     int nY = GetCurrentButtonOffset();
     CUtlVector<GamepadUIButton*>& currentButtons = GetCurrentButtons();
     for ( GamepadUIButton *pButton : currentButtons )
