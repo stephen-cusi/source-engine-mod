@@ -40,8 +40,8 @@ GamepadUIMainMenu::GamepadUIMainMenu( vgui::Panel* pParent )
     }
 
     LoadMenuButtons();
-
-    SetFooterButtons( FooterButtons::Select, FooterButtons::Select );
+    // we don t need this funtions
+    // SetFooterButtons( FooterButtons::Select, FooterButtons::Select );
 }
 
 void GamepadUIMainMenu::UpdateGradients()
@@ -56,7 +56,7 @@ void GamepadUIMainMenu::UpdateGradients()
 #endif
 
     // In case a controller is added mid-game
-    SetFooterButtons( FooterButtons::Select, FooterButtons::Select );
+    // SetFooterButtons( FooterButtons::Select, FooterButtons::Select );
 }
 
 void GamepadUIMainMenu::LoadMenuButtons()
