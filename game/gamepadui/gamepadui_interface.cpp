@@ -174,7 +174,7 @@ bool GamepadUI::IsInMultiplayer() const
 {
     return IsInLevel() && m_pEngineClient->GetMaxClients() > 1;
 }
-
+ // 判断 是否 在 level 中
 bool GamepadUI::IsGamepadUIVisible() const
 {
     return !IsInLevel() || IsInBackgroundLevel();
