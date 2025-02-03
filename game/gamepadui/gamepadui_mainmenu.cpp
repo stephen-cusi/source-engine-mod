@@ -17,11 +17,6 @@
 #define GAMEPADUI_MAINMENU_SCHEME GAMEPADUI_RESOURCE_FOLDER "schememainmenu.res"
 #define GAMEPADUI_MAINMENU_FILE GAMEPADUI_RESOURCE_FOLDER "mainmenu.res"
 
-#ifdef GAMEPADUI_GAME_EZ2
-ConVar gamepadui_show_ez2_version( "gamepadui_show_ez2_version", "1", FCVAR_NONE, "Show E:Z2 version in menu" );
-ConVar gamepadui_show_old_ui_button( "gamepadui_show_old_ui_button", "1", FCVAR_NONE, "Show button explaining how to switch to the old UI (Changes may not take effect until changing level)" );
-#endif
-
 GamepadUIMainMenu::GamepadUIMainMenu( vgui::Panel* pParent )
     : BaseClass( pParent, "MainMenu" )
 {
@@ -75,13 +70,17 @@ void GamepadUIMainMenu::LoadMenuButtons()
                     pData->GetString( "text", "Sample Text" ),
                     pData->GetString( "description", "" ) );
                 pButton->SetName( pData->GetName() );
-                pButton->SetPriority( V_atoi( pData->GetString( "priority", "0" ) ) );
+                pButton->SetPriority( V_atoi( pData->GetString( "priority", "1" ) ) );
                 pButton->SetVisible( true );
 
                 const char* pFamily = pData->GetString( "family", "all" );
+                
                 if ( !V_strcmp( pFamily, "ingame" ) || !V_strcmp( pFamily, "all" ) )
+
                     m_Buttons[ GamepadUIMenuStates::InGame ].AddToTail( pButton );
+
                 if ( !V_strcmp( pFamily, "mainmenu" ) || !V_strcmp( pFamily, "all" ) )
+
                     m_Buttons[ GamepadUIMenuStates::MainMenu ].AddToTail( pButton );
             }
         }
@@ -98,6 +97,7 @@ void GamepadUIMainMenu::LoadMenuButtons()
 // fun 判断是否显示控制台按钮 pwd ZZHlife
 // 注意 无论是否显示控制台按钮，都会创建一个控制台按钮，只是设置可见性
 // 否则 会 有内存泄漏 导致崩溃 
+// add .
 void GamepadUIMainMenu::SetConsoleButtonVisibility(bool bVisible)
 {
     if (!m_pSwitchToOldUIButton)
@@ -122,12 +122,7 @@ void GamepadUIMainMenu::ApplySchemeSettings( vgui::IScheme* pScheme )
         m_LogoImage.SetImage( pImage );
     m_hLogoFont = pScheme->GetFont( "Logo.Font", true );
 
-#ifdef GAMEPADUI_GAME_EZ2
-    m_hVersionFont = pScheme->GetFont( "Version.Font", true );
 
-    ConVarRef ez2_version( "ez2_version" );
-    m_strEZ2Version = ez2_version.GetString();
-#endif
 }
 
 void GamepadUIMainMenu::LayoutMainMenu()
@@ -188,19 +183,6 @@ void GamepadUIMainMenu::PaintLogo()
             nLogoY -= nLogoH[ i ];
         }
     }
-
-#ifdef GAMEPADUI_GAME_EZ2
-    if (gamepadui_show_ez2_version.GetBool() && !m_strEZ2Version.IsEmpty())
-    {
-        int nVersionW, nVersionH;
-        vgui::surface()->GetTextSize( m_hVersionFont, m_strEZ2Version.String(), nVersionW, nVersionH );
-
-        vgui::surface()->DrawSetTextColor( m_colVersionColor );
-        vgui::surface()->DrawSetTextFont( m_hVersionFont );
-        vgui::surface()->DrawSetTextPos( m_flLogoOffsetX + m_flVersionOffsetX + nLogoW[0], nLogoY + (nLogoH[0] * 2) - nVersionH);
-        vgui::surface()->DrawPrintText( m_strEZ2Version.String(), m_strEZ2Version.Length() );
-    }
-#endif
 }
 
 void GamepadUIMainMenu::OnThink()
@@ -282,26 +264,6 @@ void GamepadUIMainMenu::UpdateButtonVisibility()
 
     if ( !currentButtons.IsEmpty() )
         currentButtons[ currentButtons.Count() - 1 ]->NavigateTo();
-
-#ifdef GAMEPADUI_GAME_EZ2
-    if ( m_pSwitchToOldUIButton )
-    {
-        if ( (!GamepadUI::GetInstance().GetSteamInput() || !GamepadUI::GetInstance().GetSteamInput()->IsSteamRunningOnSteamDeck()) && gamepadui_show_old_ui_button.GetBool() )
-        {
-            m_pSwitchToOldUIButton->SetVisible( true );
-
-            if (!currentButtons.IsEmpty())
-            {
-                currentButtons[ 0 ]->SetNavDown( m_pSwitchToOldUIButton );
-                m_pSwitchToOldUIButton->SetNavUp( currentButtons[0] );
-            }
-        }
-        else
-        {
-            m_pSwitchToOldUIButton->SetVisible( false );
-        }
-    }
-#endif
 }
 
 void GamepadUIMainMenu::OnKeyCodeReleased( vgui::KeyCode code )
