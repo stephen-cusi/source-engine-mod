@@ -24,7 +24,6 @@ GamepadUIMainMenu::GamepadUIMainMenu( vgui::Panel* pParent )
 {
     vgui::HScheme hScheme = vgui::scheme()->LoadSchemeFromFileEx( GamepadUI::GetInstance().GetSizingVPanel(), GAMEPADUI_MAINMENU_SCHEME, "SchemeMainMenu" );
     SetScheme( hScheme );
-
     KeyValues* pModData = new KeyValues( "ModData" );
     if ( pModData )
     {
@@ -35,7 +34,6 @@ GamepadUIMainMenu::GamepadUIMainMenu( vgui::Panel* pParent )
         }
         pModData->deleteThis();
     }
-
     LoadMenuButtons();
     // we don t need this funtions
     // SetFooterButtons( FooterButtons::Select, FooterButtons::Select );
