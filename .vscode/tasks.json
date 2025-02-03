@@ -2,18 +2,6 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Configure Waf for Debug 32-bit",
-            "type": "shell",
-            "command": "./waf configure -T debug --prefix=build/out/",
-            "problemMatcher": [],
-            "windows": {
-                "command": "./waf.bat configure -T debug --prefix=build/out/"
-            },
-            "osx": {
-                "command": "python3 waf configure -T debug --prefix=build/out/"
-            }
-        },
-        {
             "label": "Configure Waf for Debug 64-bit",
             "type": "shell",
             "command": "./waf configure -T debug --64bits --prefix=build/out/",
@@ -22,19 +10,19 @@
                 "command": "./waf.bat configure -T debug --64bits --prefix=build/out/"
             },
             "osx": {
-                "command": "python3 waf configure -T debug --64bits --prefix=build/out/"
+                "command": "python3 ./waf configure -T debug --64bits --prefix=build/out/"
             }
         },
         {
             "label": "Configure Waf for Debug on Android (NDK r10e)",
             "type": "shell",
-            "command": "./waf configure -T debug --android=armeabi-v7a-hard,4.9,21",
+            "command": "./waf configure -T release --prefix=../android_build --android=aarch64,host,28 --target=../android_build/aarch64 --disable-warns --togles",
             "problemMatcher": [],
             "windows": {
-                "command": "./waf.bat configure -T debug --android=armeabi-v7a-hard,4.9,21"
+                "command": "./waf.bat configure -T release --prefix=../android_build --android=aarch64,host,28 --target=../android_build/aarch64 --disable-warns --togles"
             },
             "osx": {
-                "command": "python3 waf configure -T debug --android=armeabi-v7a-hard,4.9,21"
+                "command": "python3 ./waf configure -T release --prefix=../android_build --android=aarch64,host,28 --target=../android_build/aarch64 --disable-warns --togles"
             }
         },
         {
@@ -58,6 +46,29 @@
             },
             "osx": {
                 "command": "python3 waf install"
+            }
+        },
+        {
+            "label": "Build with android config",
+            "type": "shell",
+            "command": "./waf install --strip",
+            "problemMatcher": {
+                "base": "$gcc",
+                "fileLocation": ["relative", "${workspaceFolder}/build"]
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "windows": {
+                "command": "./waf.bat install --strip",
+                "problemMatcher": {
+                    "base": "$msCompile",
+                    "fileLocation": ["relative", "${workspaceFolder}/build"]
+                }
+            },
+            "osx": {
+                "command": "python3 ./waf install --strip"
             }
         }
     ]

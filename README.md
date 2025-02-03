@@ -42,11 +42,7 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 # WARNING
 - GAMEPADUI DOESNT WOEK WITH dod hl1mp hl1
 - Can work with hl2 and episodic portal
-
-# github ssh key's problems 
-- no way to kill this problem  
-- 卍 okay
-  
+ 
 # How to Build?
 - [Building instructions(EN)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
 - [Building introduction(CN)](https://github.com/2376780283/source-engine-mod-gamepadui/wiki/Source‐Engine‐(CN))

@@ -47,8 +47,4 @@ Source 引擎没有明确的版本号，而是以增量更新的方式发布。
 - [构建说明（英文）](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
 - [构建说明 (简体中文)](https://github.com/2376780283/source-engine-mod-gamepadui/wiki/Source‐Engine‐(CN))
 
-# github ssh 密钥问题 
-- 没有解决方法 除非你是 犹太入 
-- 或者是 耶稣泵入 
-
  <img src="https://github.com/2376780283/source-engine-mod-gamepadui/blob/default/.github/workflows/BG_CS_Hyakkiyako_02_kr.jpg" width="500">

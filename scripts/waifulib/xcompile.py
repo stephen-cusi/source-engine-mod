@@ -10,7 +10,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-
+# 支持 r15 
 try: from fwgslib import get_flags_by_compiler
 except: from waflib.extras.fwgslib import get_flags_by_compiler
 from waflib import Logs, TaskGen
@@ -20,12 +20,12 @@ import os
 import sys
 
 ANDROID_NDK_ENVVARS = ['ANDROID_NDK_HOME', 'ANDROID_NDK']
-ANDROID_NDK_SUPPORTED = [10, 19, 20]
+ANDROID_NDK_SUPPORTED = [10, 19, 20, 16]
 ANDROID_NDK_HARDFP_MAX = 11 # latest version that supports hardfp
 ANDROID_NDK_GCC_MAX = 17 # latest NDK that ships with GCC
 ANDROID_NDK_UNIFIED_SYSROOT_MIN = 15
 ANDROID_NDK_SYSROOT_FLAG_MAX = 19 # latest NDK that need --sysroot flag
-ANDROID_NDK_API_MIN = { 10: 3, 19: 16, 20: 16 } # minimal API level ndk revision supports
+ANDROID_NDK_API_MIN = { 10: 3, 16: 9, 19: 16, 20: 16 } # minimal API level ndk revision supports
 ANDROID_64BIT_API_MIN = 21 # minimal API level that supports 64-bit targets
 
 # This class does support ONLY r10e and r19c/r20 NDK
