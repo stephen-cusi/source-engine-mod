@@ -9,10 +9,12 @@
 #include "KeyValues.h"
 #include "filesystem.h"
 
-#include "tier0/memdbgon.h"
+// #include "tier0/memdbgon.h"
 
 // command line
 #include "tier0/icommandline.h"
+
+#include "tier0/memdbgon.h"
 
 #define GAMEPADUI_MAINMENU_SCHEME GAMEPADUI_RESOURCE_FOLDER "schememainmenu.res"
 #define GAMEPADUI_MAINMENU_FILE GAMEPADUI_RESOURCE_FOLDER "mainmenu.res"
@@ -44,7 +46,7 @@ void GamepadUIMainMenu::UpdateGradients()
     const float flTime = GamepadUI::GetInstance().GetTime();
     GamepadUI::GetInstance().GetGradientHelper()->ResetTargets( flTime );
 #ifdef GAMEPADUI_GAME_EZ2
-    // E:Z2 reduces the gradient so that the background map can be more easily seen
+         // E:Z2 reduces the gradient so that the background map can be more easily seen
     GamepadUI::GetInstance().GetGradientHelper()->SetTargetGradient( GradientSide::Left, { 1.0f, GamepadUI::GetInstance().IsInBackgroundLevel() ? 0.333f : 0.666f }, flTime );
 #else
     GamepadUI::GetInstance().GetGradientHelper()->SetTargetGradient( GradientSide::Left, { 1.0f, 0.666f }, flTime );
