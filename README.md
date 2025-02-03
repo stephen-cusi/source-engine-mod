@@ -37,10 +37,15 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - fix SetProportiona() s bug
 - change the Android api to 28 (android 9)
 - try to add lua module
+
   
 # WARNING
 - GAMEPADUI DOESNT WOEK WITH dod hl1mp hl1
 - Can work with hl2 and episodic portal
+
+# github ssh key's problems 
+- no way to kill this problem  
+- 卍 okay
   
 # How to Build?
 - [Building instructions(EN)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
