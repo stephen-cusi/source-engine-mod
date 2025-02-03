@@ -3,26 +3,16 @@ name: Build
 on: [push, pull_request]
 
 jobs:
-
   build-android-aarch64:
-
     runs-on: ubuntu-latest
-
     steps:
-
     - uses: actions/checkout@v2
-
     - name: Build android-aarch64
-
       run: |
+        chmod +x scripts/build-android-arm64.sh
         scripts/build-android-arm64.sh
-
-    - uses: actions/upload-artifact@v3
-    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
       with:
-        
         name: build-android-aarch64
-
-        path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
-
- 
+        path: android_build/lib/arm64-v8a/*.*

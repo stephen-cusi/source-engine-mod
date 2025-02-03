@@ -13,8 +13,7 @@ jobs:
     - uses: actions/checkout@v2
     
     - name: Run tests linux-amd64
-
       run: |
-
+        chmod +x scripts/tests-ubuntu-amd64.sh
         scripts/tests-ubuntu-amd64.sh
 
