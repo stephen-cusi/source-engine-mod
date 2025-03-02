@@ -1,9 +1,7 @@
 # Source Engine
 [![GitHub Actions Status](https://github.com/nillerusr/source-engine/actions/workflows/build.yml/badge.svg)](https://github.com/nillerusr/source-engine/actions/workflows/build.yml) [![GitHub Actions Status](https://github.com/nillerusr/source-engine/actions/workflows/tests.yml/badge.svg)](https://github.com/nillerusr/source-engine/actions/workflows/tests.yml)
 
- # QQ group 
- - nember: 768616259
-# zzh fork the repo
+ # ZZHfork
 - [Readme CN](https://github.com/2376780283/source-engine-mod-gamepadui/blob/default/README_CN.md):
 - Information from [wikipedia](https://wikipedia.org/wiki/Source_(game_engine)):
 
@@ -37,6 +35,8 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - fix SetProportiona() s bug
 - change the Android api to 28 (android 9)
 - try to add lua module
+- add mapbase mod with source engine
+  
 
   
 # WARNING
