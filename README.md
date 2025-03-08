@@ -25,6 +25,7 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - Removed useless/unnecessary dependencies
 - Achivement system working without steam
 - Fixed many bugs
+- add mapbase and gamepadui
 
 # Current tasks
 - Rewrite materialsystem for OpenGL render
@@ -35,7 +36,7 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - fix SetProportiona() s bug
 - change the Android api to 28 (android 9)
 - try to add lua module
-- add mapbase mod with source engine
+
   
 
   
