@@ -83,8 +83,8 @@ CReplayPerformanceSaveDlg::CReplayPerformanceSaveDlg( Panel *pParent, const char
 	Assert( m_pContext );
 
 	SetScheme( "ClientScheme" );
-	 SetProportional( true );
-}	// 如果需要
+	SetProportional( true );
+}
 
 CReplayPerformanceSaveDlg::~CReplayPerformanceSaveDlg()
 {

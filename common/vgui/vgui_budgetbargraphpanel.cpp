@@ -25,7 +25,7 @@ CBudgetBarGraphPanel::CBudgetBarGraphPanel( CBaseBudgetPanel *pParent, const cha
 	BaseClass( pParent, pPanelName )
 {
 	m_pBudgetPanel = pParent;
-	// 如果需要
+
 	SetProportional( false );
 	SetKeyBoardInputEnabled( false );
 	SetMouseInputEnabled( false );

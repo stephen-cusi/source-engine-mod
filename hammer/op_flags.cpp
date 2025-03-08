@@ -15,7 +15,9 @@
 
 /////////////////////////////////////////////////////////////////////////////
 // COP_Flags property page
+
 IMPLEMENT_DYNCREATE(COP_Flags, CObjectPage)
+
 COP_Flags::COP_Flags() : CObjectPage(COP_Flags::IDD)
 {
 	//{{AFX_DATA_INIT(COP_Flags)
@@ -25,13 +27,16 @@ COP_Flags::COP_Flags() : CObjectPage(COP_Flags::IDD)
 	m_nNumSelectedObjects = 0;
 	m_pEntityPage = NULL;
 }
+
 COP_Flags::~COP_Flags()
 {
 }
+
 void COP_Flags::SetEntityPage( COP_Entity *pPage )
 {
 	m_pEntityPage = pPage;
 }
+
 void COP_Flags::DoDataExchange(CDataExchange* pDX)
 {
 	CObjectPage::DoDataExchange(pDX);
@@ -39,14 +44,17 @@ void COP_Flags::DoDataExchange(CDataExchange* pDX)
 		// NOTE: the ClassWizard will add DDX and DDV calls here
 	//}}AFX_DATA_MAP
 }
+
 BEGIN_MESSAGE_MAP(COP_Flags, CObjectPage)
 	//{{AFX_MSG_MAP(COP_Flags)
 	ON_CLBN_CHKCHANGE(IDC_CHECKLIST, OnCheckListChange)
 	ON_WM_SIZE()
-	//}}AFX_MSG_MAPEND_MESSAGE_MAP()
+	//}}AFX_MSG_MAP
+END_MESSAGE_MAP()
 
 /////////////////////////////////////////////////////////////////////////////
 // COP_Flags message handlers
+
 void COP_Flags::UpdateData( int Mode, PVOID pData, bool bCanEdit )
 {
 	__super::UpdateData( Mode, pData, bCanEdit );
@@ -76,7 +84,8 @@ void COP_Flags::UpdateData( int Mode, PVOID pData, bool bCanEdit )
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Output : Returns true on success, false on failure.
-//-----------------------------------------------------------------------------bool COP_Flags::SaveData(void)
+//-----------------------------------------------------------------------------
+bool COP_Flags::SaveData(void)
 {
 	if (!IsWindow(m_hWnd))
 	{
@@ -114,6 +123,7 @@ void COP_Flags::UpdateData( int Mode, PVOID pData, bool bCanEdit )
 //			It is called to place all the flags belonging to the first
 //			selected object into the temporary CheckListItems vector
 //-----------------------------------------------------------------------------
+
 void COP_Flags::UpdateForClass(CEditGameClass* pObj)
 {
 	extern GameData *pGD;
@@ -178,7 +188,8 @@ void COP_Flags::UpdateForClass(CEditGameClass* pObj)
 //-----------------------------------------------------------------------------
 // Purpose: This function is called to combine flags when multiple objects are selected
 //			It removes flags from the CheckListItem vector that are not present in all selected objects
-//-----------------------------------------------------------------------------void COP_Flags::MergeForClass(CEditGameClass* pObj)
+//-----------------------------------------------------------------------------
+void COP_Flags::MergeForClass(CEditGameClass* pObj)
 {
 	extern GameData *pGD;
 	GDclass * pClass = pGD->ClassForName(pObj->GetClassName());
@@ -227,7 +238,8 @@ void COP_Flags::UpdateForClass(CEditGameClass* pObj)
 //-----------------------------------------------------------------------------
 // Purpose: Creates the checklist by stepping through the CheckListItems vector that
 //			was created during Update/MergeForClass
-//-----------------------------------------------------------------------------void COP_Flags::CreateCheckList()
+//-----------------------------------------------------------------------------
+void COP_Flags::CreateCheckList()
 {
 	m_CheckList.ResetContent();
 	
@@ -243,6 +255,7 @@ void COP_Flags::UpdateForClass(CEditGameClass* pObj)
 		m_CheckList.SetCheck(i, newItem.state);
 	}
 }
+
 void COP_Flags::OnUpdateSpawnFlags( unsigned long value )
 {
 	for ( int i=0; i < m_CheckListItems.Count(); i++ )
@@ -251,6 +264,7 @@ void COP_Flags::OnUpdateSpawnFlags( unsigned long value )
 		m_CheckList.SetCheck( i, (value & item.nItemBit) != 0 );
 	}
 }
+
 BOOL COP_Flags::OnInitDialog() 
 {	
 	CObjectPage::OnInitDialog();
@@ -270,6 +284,7 @@ BOOL COP_Flags::OnInitDialog()
 	
 	return TRUE;	             
 }
+
 void COP_Flags::OnCheckListChange() 
 {
 	if ( !m_pEntityPage )
@@ -294,6 +309,7 @@ void COP_Flags::OnCheckListChange()
 
 	m_pEntityPage->OnUpdateSpawnFlags( triStateMask, bitsSet );    
 }
+
 void COP_Flags::OnSize( UINT nType, int cx, int cy )
 {
 	m_AnchorMgr.OnSize();

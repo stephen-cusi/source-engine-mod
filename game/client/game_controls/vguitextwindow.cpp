@@ -96,8 +96,8 @@ CTextWindow::CTextWindow(IViewPort *pViewPort) : Frame(NULL, PANEL_INFO	)
 	SetScheme("ClientScheme");
 	SetMoveable(false);
 	SetSizeable(false);
-    SetProportional(true);
-	//如果需要
+	SetProportional(true);
+
 	// hide the system buttons
 	SetTitleBarVisible( false );
 

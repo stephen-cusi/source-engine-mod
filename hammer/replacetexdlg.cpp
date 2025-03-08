@@ -24,6 +24,7 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
 
+
 CReplaceTexDlg::CReplaceTexDlg(int nSelected, CWnd* pParent /*=NULL*/)
 	: CDialog(CReplaceTexDlg::IDD, pParent)
 {
@@ -39,6 +40,7 @@ CReplaceTexDlg::CReplaceTexDlg(int nSelected, CWnd* pParent /*=NULL*/)
 
 	m_nSelected = nSelected;
 }
+
 
 void CReplaceTexDlg::DoDataExchange(CDataExchange* pDX)
 {
@@ -58,16 +60,19 @@ void CReplaceTexDlg::DoDataExchange(CDataExchange* pDX)
 	//}}AFX_DATA_MAP
 }
 
+
 BEGIN_MESSAGE_MAP(CReplaceTexDlg, CDialog)
 	//{{AFX_MSG_MAP(CReplaceTexDlg)
 	ON_BN_CLICKED(IDC_BROWSEREPLACE, OnBrowsereplace)
 	ON_BN_CLICKED(IDC_BROWSEFIND, OnBrowsefind)
 	ON_EN_UPDATE(IDC_FIND, OnUpdateFind)
 	ON_EN_UPDATE(IDC_REPLACE, OnUpdateReplace)
-	//}}AFX_MSG_MAPEND_MESSAGE_MAP()
+	//}}AFX_MSG_MAP
+END_MESSAGE_MAP()
 
 /////////////////////////////////////////////////////////////////////////////
 // CReplaceTexDlg message handlers
+
 
 void CReplaceTexDlg::BrowseTex(int iEdit)
 {
@@ -97,10 +102,12 @@ void CReplaceTexDlg::BrowseTex(int iEdit)
 
 	delete pBrowser;
 }
+
 void CReplaceTexDlg::OnBrowsereplace() 
 {
 	BrowseTex(IDC_REPLACE);
 }
+
 void CReplaceTexDlg::OnBrowsefind() 
 {
 	BrowseTex(IDC_FIND);
@@ -109,6 +116,7 @@ void CReplaceTexDlg::OnBrowsefind()
 //
 // find/replace text string updates:
 //
+
 void CReplaceTexDlg::OnUpdateFind() 
 {
 	// get texture window and set texture in there
@@ -117,6 +125,7 @@ void CReplaceTexDlg::OnUpdateFind()
 	IEditorTexture *pTex = g_Textures.FindActiveTexture(strTex);
 	m_cFindPic.SetTexture(pTex);
 }
+
 void CReplaceTexDlg::OnUpdateReplace() 
 {
 	// get texture window and set texture in there
@@ -125,6 +134,7 @@ void CReplaceTexDlg::OnUpdateReplace()
 	IEditorTexture *pTex = g_Textures.FindActiveTexture(strTex);
 	m_cReplacePic.SetTexture(pTex);
 }
+
 BOOL CReplaceTexDlg::OnInitDialog() 
 {
 	CDialog::OnInitDialog();
@@ -139,6 +149,7 @@ BOOL CReplaceTexDlg::OnInitDialog()
 
 	return TRUE;
 }
+
 
 void CReplaceTexDlg::DoReplaceTextures()
 {

@@ -41,15 +41,12 @@ public:
     void OnMenuStateChanged();
 
     void OnKeyCodeReleased( vgui::KeyCode code );
-
-// console button for episodic games by ZZHlife
+    
+    static int __cdecl CompareButtons(GamepadUIButton* const* a, GamepadUIButton* const* b);
 private:
      GamepadUIButton* m_pSwitchToOldUIButton;
-// fun for episodic games console button
-// void CreateConsoleButton();
-// void unCreateConsoleButton();
-void SetConsoleButtonVisibility(bool bVisible);
 
+void SetConsoleButtonVisibility(bool bVisible);
 
 private:
     float m_flOldUIButtonOffsetX;

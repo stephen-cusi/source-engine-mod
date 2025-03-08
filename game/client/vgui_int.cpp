@@ -29,6 +29,8 @@
 #include "sixense/in_sixense.h"
 #endif
 
+#include "menu/sm_menu.h"
+
 #if defined( TF_CLIENT_DLL )
 #include "tf_gamerules.h"
 #endif
@@ -200,6 +202,8 @@ void VGui_CreateGlobalPanels( void )
 {
 	VPANEL gameToolParent = enginevgui->GetPanel( PANEL_CLIENTDLL_TOOLS );
 	VPANEL toolParent = enginevgui->GetPanel( PANEL_TOOLS );
+	// 我猜应该是要添加
+//	VPANEL gameParent = enginevgui->GetPanel( PANEL_CLIENTDLL );
 #if defined( TRACK_BLOCKING_IO )
 	VPANEL gameDLLPanel = enginevgui->GetPanel( PANEL_GAMEDLL );
 #endif
@@ -211,6 +215,7 @@ void VGui_CreateGlobalPanels( void )
 	// Debugging or related tool
 	fps->Create( toolParent );
 	touch_panel->Create( toolParent );
+	smenu->Create( toolParent );
 
 #if defined( TRACK_BLOCKING_IO )
 	iopanel->Create( gameDLLPanel );
@@ -242,7 +247,7 @@ void VGui_Shutdown()
 #endif
 	fps->Destroy();
 	touch_panel->Destroy();
-
+    smenu->Destroy(); // menu hahahah
 	messagechars->Destroy();
 	loadingdisc->Destroy();
 	internalCenterPrint->Destroy();

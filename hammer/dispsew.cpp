@@ -45,6 +45,7 @@
 #define DISPSEW_FACES_AT_EDGE	3
 #define DISPSEW_FACES_AT_CORNER	16
 #define DISPSEW_FACES_AT_TJUNC	8
+
 struct SewEdgeData_t
 {
 	int			faceCount;								// number of faces contributing to the edge sew
@@ -52,12 +53,14 @@ struct SewEdgeData_t
 	int			ndxEdges[DISPSEW_FACES_AT_EDGE];		// the faces' edge indices contributing to the edge sew
 	int			type[DISPSEW_FACES_AT_EDGE];			// the type of edge t-junction, match t-junction start, etc....
 };
+
 struct SewCornerData_t
 {
 	int			faceCount;								// number of faces contributing to the corner sew
 	CMapFace	*pFaces[DISPSEW_FACES_AT_CORNER];		// the faces contributing to the corner sew
 	int			ndxCorners[DISPSEW_FACES_AT_CORNER];	// the faces' corner indices contributing to the corner sew
 };
+
 struct SewTJuncData_t
 {
 	int			faceCount;								// number of faces contributing to the t-junction sew
@@ -65,15 +68,30 @@ struct SewTJuncData_t
 	int			ndxCorners[DISPSEW_FACES_AT_TJUNC];		// the faces' corner indices contributing to the t-junction sew
 	int			ndxEdges[DISPSEW_FACES_AT_TJUNC];		// the faces' edge (midpoint) indices contributing to the t-junction sew
 };
-static CUtlVector<SewEdgeData_t*> s_EdgeData;static CUtlVector<SewCornerData_t*> s_CornerData;static CUtlVector<SewTJuncData_t*> s_TJData;static CUtlVector<CCoreDispInfo*> m_aCoreDispInfos;
 
-// local functionsvoid SewCorner_Build( void );void SewCorner_Resolve( void );void SewCorner_Destroy( SewCornerData_t *pCornerData );void SewTJunc_Build( void );void SewTJunc_Resolve( void );void SewTJunc_Destroy( SewTJuncData_t *pTJData );void SewEdge_Build( void );void SewEdge_Resolve( void );void SewEdge_Destroy( SewEdgeData_t *pEdgeData );
+static CUtlVector<SewEdgeData_t*> s_EdgeData;
+static CUtlVector<SewCornerData_t*> s_CornerData;
+static CUtlVector<SewTJuncData_t*> s_TJData;
+static CUtlVector<CCoreDispInfo*> m_aCoreDispInfos;
+
+// local functions
+void SewCorner_Build( void );
+void SewCorner_Resolve( void );
+void SewCorner_Destroy( SewCornerData_t *pCornerData );
+void SewTJunc_Build( void );
+void SewTJunc_Resolve( void );
+void SewTJunc_Destroy( SewTJuncData_t *pTJData );
+void SewEdge_Build( void );
+void SewEdge_Resolve( void );
+void SewEdge_Destroy( SewEdgeData_t *pEdgeData );
+
 void PlanarizeDependentVerts( void );
 
 //-----------------------------------------------------------------------------
 // Purpose: compare two point positions to see if they are equivolent given a
 //          tolerance
-//-----------------------------------------------------------------------------bool PointCompareWithTolerance( Vector const& pt1, Vector const& pt2, float tolerance )
+//-----------------------------------------------------------------------------
+bool PointCompareWithTolerance( Vector const& pt1, Vector const& pt2, float tolerance )
 {
 	for( int i = 0 ; i < 3 ; i++ )
 	{
@@ -86,7 +104,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------bool EdgeCompare( Vector *pEdgePts1, Vector *pEdgePts2, int &edgeType1, int &edgeType2 )
+//-----------------------------------------------------------------------------
+bool EdgeCompare( Vector *pEdgePts1, Vector *pEdgePts2, int &edgeType1, int &edgeType2 )
 {
 	Vector edge1[3];
 	Vector edge2[3];
@@ -203,7 +222,8 @@ void PlanarizeDependentVerts( void );
 // Purpose: get a point from the surface at the given index, will get the point
 //          from the displacement surface if it exists, it will get it from the
 //          base face otherwise
-//-----------------------------------------------------------------------------inline void GetPointFromSurface( CMapFace *pFace, int ndxPt, Vector &pt )
+//-----------------------------------------------------------------------------
+inline void GetPointFromSurface( CMapFace *pFace, int ndxPt, Vector &pt )
 {
 	EditDispHandle_t dispHandle = pFace->GetDisp();
 	if( dispHandle != EDITDISPHANDLE_INVALID )
@@ -219,7 +239,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------int GetEdgePointIndex( CMapDisp *pDisp, int edgeIndex, int edgePtIndex, bool bCCW )
+//-----------------------------------------------------------------------------
+int GetEdgePointIndex( CMapDisp *pDisp, int edgeIndex, int edgePtIndex, bool bCCW )
 {
 	int height = pDisp->GetHeight();
 	int width = pDisp->GetWidth();
@@ -250,7 +271,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------int GetCornerPointIndex( CMapDisp *pDisp, int cornerIndex )
+//-----------------------------------------------------------------------------
+int GetCornerPointIndex( CMapDisp *pDisp, int cornerIndex )
 {
 	int width = pDisp->GetWidth();
 	int height = pDisp->GetHeight();
@@ -267,7 +289,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------int GetTJuncIndex( CMapDisp *pDisp, int ndxEdge )
+//-----------------------------------------------------------------------------
+int GetTJuncIndex( CMapDisp *pDisp, int ndxEdge )
 {
 	int width = pDisp->GetWidth();
 	int height = pDisp->GetHeight();
@@ -284,7 +307,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void AverageVectorFieldData( CMapDisp *pDisp1, int ndx1, CMapDisp *pDisp2, int ndx2 )
+//-----------------------------------------------------------------------------
+void AverageVectorFieldData( CMapDisp *pDisp1, int ndx1, CMapDisp *pDisp2, int ndx2 )
 {
 	//
 	// average the positions at each index
@@ -347,7 +371,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void BlendVectorFieldData( CMapDisp *pDisp1, int ndxSrc1, int ndxDst1, 
+//-----------------------------------------------------------------------------
+void BlendVectorFieldData( CMapDisp *pDisp1, int ndxSrc1, int ndxDst1, 
 						   CMapDisp *pDisp2, int ndxSrc2, int ndxDst2,
 						   float blendFactor )
 {
@@ -413,14 +438,16 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------inline bool Face_IsSolid( CMapFace *pFace )
+//-----------------------------------------------------------------------------
+inline bool Face_IsSolid( CMapFace *pFace )
 {
 	return ( pFace->GetDisp() == EDITDISPHANDLE_INVALID );
 }
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void Faces_Update( void )
+//-----------------------------------------------------------------------------
+void Faces_Update( void )
 {
 	//
 	// get the "faces" selection list (contains displaced and non-displaced faces)
@@ -453,7 +480,8 @@ void PlanarizeDependentVerts( void );
 
 //-----------------------------------------------------------------------------
 // Purpose: Build temporary edge/midpoint/corner info for sewing.
-//-----------------------------------------------------------------------------void PreFaceListSew( void )
+//-----------------------------------------------------------------------------
+void PreFaceListSew( void )
 {
 	// Build edge/midpoint/corner data.
 	SewCorner_Build();
@@ -464,7 +492,8 @@ void PlanarizeDependentVerts( void );
 //-----------------------------------------------------------------------------
 // Purpose: Destroy temporary edge/midpoint/corner info for sewing and
 //          update the effected displacements.
-//-----------------------------------------------------------------------------void PostFaceListSew( void )
+//-----------------------------------------------------------------------------
+void PostFaceListSew( void )
 {
 	// Destroy all corners, midpoint, edges.
 	int count = s_CornerData.Size();
@@ -498,7 +527,8 @@ void PlanarizeDependentVerts( void );
 // Purpose: given a face with a displacement surface, "sew" all edges to all
 //          neighboring displacement and non-displacement surfaces 
 //          found in the selection set
-//-----------------------------------------------------------------------------void FaceListSewEdges( void )
+//-----------------------------------------------------------------------------
+void FaceListSewEdges( void )
 {
 	// Setup.
 	PreFaceListSew();
@@ -516,7 +546,8 @@ void PlanarizeDependentVerts( void );
 }
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------SewCornerData_t *SewCorner_Create( void )
+//-----------------------------------------------------------------------------
+SewCornerData_t *SewCorner_Create( void )
 {
 	SewCornerData_t *pCornerData = new SewCornerData_t;
 	if( pCornerData )
@@ -531,7 +562,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewCorner_Destroy( SewCornerData_t *pCornerData )
+//-----------------------------------------------------------------------------
+void SewCorner_Destroy( SewCornerData_t *pCornerData )
 {
 	if( pCornerData )
 	{
@@ -542,7 +574,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------bool SewCorner_IsSolid( SewCornerData_t *pCornerData )
+//-----------------------------------------------------------------------------
+bool SewCorner_IsSolid( SewCornerData_t *pCornerData )
 {
 	for( int i = 0; i < pCornerData->faceCount; i++ )
 	{
@@ -555,7 +588,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewCorner_Add( SewCornerData_t *pCornerData, CMapFace *pFace, int ndx )
+//-----------------------------------------------------------------------------
+void SewCorner_Add( SewCornerData_t *pCornerData, CMapFace *pFace, int ndx )
 {
 	if ( pCornerData->faceCount >= DISPSEW_FACES_AT_CORNER )
 	{
@@ -570,7 +604,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewCorner_AddToList( SewCornerData_t *pCornerData )
+//-----------------------------------------------------------------------------
+void SewCorner_AddToList( SewCornerData_t *pCornerData )
 {
 	// get the current corner point
 	Vector pt;
@@ -607,7 +642,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewCorner_Build( void )
+//-----------------------------------------------------------------------------
+void SewCorner_Build( void )
 {
 	//
 	// get the "faces" selection list (contains displaced and non-displaced faces)
@@ -692,7 +728,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewCorner_ResolveDisp( SewCornerData_t *pCornerData )
+//-----------------------------------------------------------------------------
+void SewCorner_ResolveDisp( SewCornerData_t *pCornerData )
 {
 	// the field data accumulators
 	float avgDist = 0.0f;
@@ -820,7 +857,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewCorner_ResolveSolid( SewCornerData_t *pCornerData )
+//-----------------------------------------------------------------------------
+void SewCorner_ResolveSolid( SewCornerData_t *pCornerData )
 {
 	// create a clear vector - to reset the offset vector
 	Vector vClear( 0.0f, 0.0f, 0.0f );
@@ -862,7 +900,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewCorner_Resolve( void )
+//-----------------------------------------------------------------------------
+void SewCorner_Resolve( void )
 {
 	// get the number of corners in the corner list
 	int cornerCount = s_CornerData.Size();
@@ -893,7 +932,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------SewTJuncData_t *SewTJunc_Create( void )
+//-----------------------------------------------------------------------------
+SewTJuncData_t *SewTJunc_Create( void )
 {
 	SewTJuncData_t *pTJData = new SewTJuncData_t;
 	if( pTJData )
@@ -908,7 +948,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewTJunc_Destroy( SewTJuncData_t *pTJData )
+//-----------------------------------------------------------------------------
+void SewTJunc_Destroy( SewTJuncData_t *pTJData )
 {
 	if( pTJData )
 	{
@@ -919,7 +960,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------bool SewTJunc_IsSolid( SewTJuncData_t *pTJData )
+//-----------------------------------------------------------------------------
+bool SewTJunc_IsSolid( SewTJuncData_t *pTJData )
 {
 	for( int i = 0; i < pTJData->faceCount; i++ )
 	{
@@ -932,7 +974,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewTJunc_Add( SewTJuncData_t *pTJData, CMapFace *pFace, int ndxCorner, int ndxEdge )
+//-----------------------------------------------------------------------------
+void SewTJunc_Add( SewTJuncData_t *pTJData, CMapFace *pFace, int ndxCorner, int ndxEdge )
 {
 	if ( pTJData->faceCount >= DISPSEW_FACES_AT_TJUNC )
 	{
@@ -948,7 +991,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewTJunc_AddToList( SewTJuncData_t *pTJData )
+//-----------------------------------------------------------------------------
+void SewTJunc_AddToList( SewTJuncData_t *pTJData )
 {
 	// get the current t-junction point
 	Vector pt;
@@ -982,7 +1026,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewTJunc_Build( void )
+//-----------------------------------------------------------------------------
+void SewTJunc_Build( void )
 {
 	//
 	// get the "faces" selection list (contains displaced and non-displaced faces)
@@ -1069,7 +1114,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewTJunc_ResolveDisp( SewTJuncData_t *pTJData )
+//-----------------------------------------------------------------------------
+void SewTJunc_ResolveDisp( SewTJuncData_t *pTJData )
 {
 	// the field data accumulators
 	float avgDist = 0.0f;
@@ -1171,7 +1217,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewTJunc_ResolveSolid( SewTJuncData_t *pTJData )
+//-----------------------------------------------------------------------------
+void SewTJunc_ResolveSolid( SewTJuncData_t *pTJData )
 {
 	// create a clear vector - to reset the offset vector
 	Vector vClear( 0.0f, 0.0f, 0.0f );
@@ -1224,7 +1271,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewTJunc_Resolve( void )
+//-----------------------------------------------------------------------------
+void SewTJunc_Resolve( void )
 {
 	// get the number of t-junctions in the t-junction list
 	int tjCount = s_TJData.Size();
@@ -1255,7 +1303,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------SewEdgeData_t *SewEdge_Create( void )
+//-----------------------------------------------------------------------------
+SewEdgeData_t *SewEdge_Create( void )
 {
 	SewEdgeData_t *pEdgeData = new SewEdgeData_t;
 	if( pEdgeData )
@@ -1270,7 +1319,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewEdge_Destroy( SewEdgeData_t *pEdgeData )
+//-----------------------------------------------------------------------------
+void SewEdge_Destroy( SewEdgeData_t *pEdgeData )
 {
 	if( pEdgeData )
 	{
@@ -1281,7 +1331,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------inline bool SewEdge_IsSolidNormal( SewEdgeData_t *pEdgeData )
+//-----------------------------------------------------------------------------
+inline bool SewEdge_IsSolidNormal( SewEdgeData_t *pEdgeData )
 {
 	for( int i = 0; i < pEdgeData->faceCount; i++ )
 	{
@@ -1294,7 +1345,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------inline int SewEdge_TJIndex( SewEdgeData_t *pEdgeData, int type )
+//-----------------------------------------------------------------------------
+inline int SewEdge_TJIndex( SewEdgeData_t *pEdgeData, int type )
 {
 	for( int i = 0; i < pEdgeData->faceCount; i++ )
 	{
@@ -1307,7 +1359,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------inline bool SewEdge_IsSolidTJunc( SewEdgeData_t *pEdgeData, int type )
+//-----------------------------------------------------------------------------
+inline bool SewEdge_IsSolidTJunc( SewEdgeData_t *pEdgeData, int type )
 {
 	for( int i = 0; i < pEdgeData->faceCount; i++ )
 	{	
@@ -1323,7 +1376,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------bool SewEdge_Add( SewEdgeData_t *pEdgeData, CMapFace *pFace, int ndxEdge, int type )
+//-----------------------------------------------------------------------------
+bool SewEdge_Add( SewEdgeData_t *pEdgeData, CMapFace *pFace, int ndxEdge, int type )
 {
 	if ( pEdgeData->faceCount >= DISPSEW_FACES_AT_EDGE )
 	{
@@ -1341,7 +1395,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------bool SewEdge_AddToListMerge( SewEdgeData_t *pEdgeData, SewEdgeData_t *pCmpData )
+//-----------------------------------------------------------------------------
+bool SewEdge_AddToListMerge( SewEdgeData_t *pEdgeData, SewEdgeData_t *pCmpData )
 {
 	bool bReturn = true;
 
@@ -1377,7 +1432,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------bool SewEdge_AddToListTJunc( SewEdgeData_t *pEdgeData )
+//-----------------------------------------------------------------------------
+bool SewEdge_AddToListTJunc( SewEdgeData_t *pEdgeData )
 {
 	// find the t-junction edge
 	int ndxTJ = SewEdge_TJIndex( pEdgeData, DISPSEW_EDGE_TJ );
@@ -1432,7 +1488,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewEdge_AddToListNormal( SewEdgeData_t *pEdgeData )
+//-----------------------------------------------------------------------------
+void SewEdge_AddToListNormal( SewEdgeData_t *pEdgeData )
 {
 	// get the face point count
 	int ptCount = pEdgeData->pFaces[0]->GetPointCount();
@@ -1479,7 +1536,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------bool SewEdge_AddToList( SewEdgeData_t *pEdgeData )
+//-----------------------------------------------------------------------------
+bool SewEdge_AddToList( SewEdgeData_t *pEdgeData )
 {
 	// if this is a "normal" edge - handle it
 	if( pEdgeData->type[0] == DISPSEW_EDGE_NORMAL )
@@ -1494,7 +1552,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewEdge_Build( void )
+//-----------------------------------------------------------------------------
+void SewEdge_Build( void )
 {
 	//
 	// get the "faces" selection list (contains displaced and non-displaced faces)
@@ -1601,7 +1660,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewEdge_ResolveDispTJunc( SewEdgeData_t *pEdgeData, int ndxTJ, int ndxTJNeighbor, bool bStart )
+//-----------------------------------------------------------------------------
+void SewEdge_ResolveDispTJunc( SewEdgeData_t *pEdgeData, int ndxTJ, int ndxTJNeighbor, bool bStart )
 {
 	//
 	// handle displacement sewing to displacement t-junction edge
@@ -1742,7 +1802,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewEdge_ResolveSolidTJunc( SewEdgeData_t *pEdgeData, int type, bool bStart )
+//-----------------------------------------------------------------------------
+void SewEdge_ResolveSolidTJunc( SewEdgeData_t *pEdgeData, int type, bool bStart )
 {
 	// create an empty vector to reset the offset with
 	Vector vClear( 0.0f, 0.0f, 0.0f );
@@ -1840,7 +1901,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewEdge_ResolveDispNormal( SewEdgeData_t *pEdgeData )
+//-----------------------------------------------------------------------------
+void SewEdge_ResolveDispNormal( SewEdgeData_t *pEdgeData )
 {
 	//
 	// get displacement surfaces -- if any
@@ -1923,7 +1985,8 @@ void PlanarizeDependentVerts( void );
 }
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewEdge_ResolveSolidNormal( SewEdgeData_t *pEdgeData )
+//-----------------------------------------------------------------------------
+void SewEdge_ResolveSolidNormal( SewEdgeData_t *pEdgeData )
 {
 	// create an empty vector to reset the offset with
 	Vector vClear( 0.0f, 0.0f, 0.0f );
@@ -1966,7 +2029,8 @@ void PlanarizeDependentVerts( void );
 
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SewEdge_Resolve( void )
+//-----------------------------------------------------------------------------
+void SewEdge_Resolve( void )
 {
 	// get the number of edges in the edge list
 	int edgeCount = s_EdgeData.Size();
@@ -2047,7 +2111,8 @@ void PlanarizeDependentVerts( void );
 
 //-----------------------------------------------------------------------------
 // Purpose: Convert the edge/midpoint/corner data for shared code,
-//-----------------------------------------------------------------------------bool PrePlanarizeDependentVerts( void )
+//-----------------------------------------------------------------------------
+bool PrePlanarizeDependentVerts( void )
 {
 	// Create a list of all the selected displacement cores.
 	CFaceEditSheet *pSheet = GetMainWnd()->GetFaceEditSheet();
@@ -2082,8 +2147,10 @@ void PlanarizeDependentVerts( void );
 }
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------class CHammerTesselateHelper : public CBaseTesselateHelper
-{public:
+//-----------------------------------------------------------------------------
+class CHammerTesselateHelper : public CBaseTesselateHelper
+{
+public:
 
 	void EndTriangle()
 	{
@@ -2098,13 +2165,15 @@ void PlanarizeDependentVerts( void );
 		static DispNodeInfo_t dummy;
 		return dummy;
 	}
-	public:
+	
+public:
 
 	CUtlVector<unsigned short> *m_pIndices;
 };
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------bool FindEnclosingTri( const Vector2D &vert, CUtlVector<Vector2D> &vertCoords,
+//-----------------------------------------------------------------------------
+bool FindEnclosingTri( const Vector2D &vert, CUtlVector<Vector2D> &vertCoords,
 	                   CUtlVector<unsigned short> &indices, int *pStartVert,
 					   float bcCoords[3] )
 {
@@ -2128,7 +2197,8 @@ void PlanarizeDependentVerts( void );
 }
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------void SnapDependentVertsToSurface( CCoreDispInfo *pCoreDisp )
+//-----------------------------------------------------------------------------
+void SnapDependentVertsToSurface( CCoreDispInfo *pCoreDisp )
 {
 	// Don't really want to do this, but.......
 	CUtlVector<unsigned short> indices;
@@ -2197,7 +2267,8 @@ void PlanarizeDependentVerts( void );
 //-----------------------------------------------------------------------------
 // Purpose: Get allowed verts bits and planarize cleared verts and purge disp
 //          infos.
-//-----------------------------------------------------------------------------void PostPlanarizeDependentVerts( void )
+//-----------------------------------------------------------------------------
+void PostPlanarizeDependentVerts( void )
 {
 	// Snap dependents verts to the displacement surface.
 	for ( int iDispCore = 0; iDispCore < m_aCoreDispInfos.Count(); ++iDispCore )
@@ -2212,7 +2283,8 @@ void PlanarizeDependentVerts( void );
 //-----------------------------------------------------------------------------
 // Purpose: Planarize vertices that are removed because of dependencies with
 //          neighboring displacements.
-//-----------------------------------------------------------------------------void PlanarizeDependentVerts( void )
+//-----------------------------------------------------------------------------
+void PlanarizeDependentVerts( void )
 {
 	// Setup.
 	if ( !PrePlanarizeDependentVerts() )

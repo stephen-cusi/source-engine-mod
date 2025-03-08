@@ -24,13 +24,16 @@
 
 //-----------------------------------------------------------------------------
 // Purpose: Dialog for displaying information about a game server
-//-----------------------------------------------------------------------------class CBanPanel : public vgui::PropertyPage, public IServerDataResponse
+//-----------------------------------------------------------------------------
+class CBanPanel : public vgui::PropertyPage, public IServerDataResponse
 {
-	DECLARE_CLASS_SIMPLE( CBanPanel, vgui::PropertyPage );public:
+	DECLARE_CLASS_SIMPLE( CBanPanel, vgui::PropertyPage );
+public:
 	CBanPanel(vgui::Panel *parent, const char *name);
 	~CBanPanel();
 
 	virtual void OnResetData();
+
 protected:
 	// property page handlers
 	virtual void OnPageShow();
@@ -40,6 +43,7 @@ protected:
 	// server response on user data
 	virtual void OnServerDataResponse(const char *value, const char *response);
 	virtual void OnKeyCodeTyped(vgui::KeyCode code);
+
 private:
 	MESSAGE_FUNC( AddBan, "addban" );
 	MESSAGE_FUNC( RemoveBan, "removeban" );

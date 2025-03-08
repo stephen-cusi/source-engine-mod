@@ -6,8 +6,6 @@
 // $Date:         $
 // $NoKeywords: $
 //=============================================================================//
-
-// 加载界面 特征 中心 loading 文字 透明背景 位置居中 无边框 无关闭按钮 无拖动 无最小化 无最大化 无任务栏图标 无任务栏闪烁 无任务栏右键菜单
 #include "cbase.h"
 #include "iloadingdisc.h"
 #include "vgui_controls/Frame.h"
@@ -79,8 +77,7 @@ CLoadingDiscPanel::CLoadingDiscPanel( vgui::VPANEL parent ) : BaseClass( NULL, "
 	h = ScreenHeight();
 
 	SetParent( parent );
-	SetProportional( true );
-	// 如果需要
+//	SetProportional( true );
 	SetScheme( "ClientScheme" );
 	SetVisible( false );
 	SetCursor( NULL );

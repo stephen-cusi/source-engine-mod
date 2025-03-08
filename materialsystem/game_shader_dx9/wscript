@@ -1,0 +1,105 @@
+#! /usr/bin/env python
+# encoding: utf-8
+
+from waflib import Utils
+import os
+
+top = '.'
+PROJECT_NAME = 'game_shader_dx9'
+
+def options(opt):
+	# stub
+	return
+
+def configure(conf):
+	conf.env.append_unique('DEFINES',[
+		'STDSHADER_DX9_DLL_EXPORT',
+		'FAST_MATERIALVAR_ACCESS',
+		'PARALLAX_CORRECTED_CUBEMAPS',
+		'MAPBASE',
+	])
+
+	game = conf.options.GAMES
+	conf.env.GAMES = game
+
+def build(bld):
+	source = [
+		'BaseVSShader.cpp',
+		'example_model_dx9.cpp',
+		'example_model_dx9_helper.cpp',
+		'Bloom.cpp',
+		'screenspace_general.cpp',
+		'cloak_blended_pass_helper.cpp',
+		'emissive_scroll_blended_pass_helper.cpp',
+		'flesh_interior_blended_pass_helper.cpp',
+		'lightmappedgeneric_dx9.cpp',
+		'lightmappedgeneric_dx9_helper.cpp',
+		'lightmappedreflective.cpp',
+		'skin_dx9_helper.cpp',
+		'unlitgeneric_dx9.cpp',
+		'vertexlitgeneric_dx9.cpp',
+		'vertexlitgeneric_dx9_helper.cpp',
+		'worldtwotextureblend.cpp',
+		'worldvertextransition.cpp',
+		'worldvertextransition_dx8_helper.cpp',
+		'refract.cpp',
+		'refract_dx9_helper.cpp',
+		'water.cpp',
+		'depthwrite.cpp',
+#		'cable_dx9.cpp',
+		'splinerope.cpp',
+#		'eyes.cpp',
+		'eyes_dx9.cpp',
+		'eyes_dx8_dx9_helper.cpp',
+		'eyeball.cpp',
+		'eyeglint_dx9.cpp',
+		'eye_refract.cpp',
+		'eye_refract_helper.cpp',
+		'teeth.cpp',
+#		'sprite.cpp',
+		'sprite_dx9.cpp',
+		'decalmodulate_dx9.cpp',
+		'unlittwotexture_dx9.cpp',
+		'MonitorScreen_dx9.cpp',
+		'shatteredglass.cpp',
+		'windowimposter_dx90.cpp',
+		'engine_post_dx9.cpp',
+		'depthoffield_dx9.cpp',
+		'core_dx9.cpp',
+		'weapon_sheen_pass_helper.cpp',
+	]
+
+	includes = [
+		'.',
+		'../../public',
+		'../../public/tier0',
+		'../../public/tier1',
+		'fxctmp9',
+		'fxctmp9_tmp',
+		'vshtmp9'
+	] + bld.env.INCLUDES_SDL2
+
+	defines = []
+
+	libs = ['tier0','shaderlib','tier1','mathlib']
+
+	if bld.env.DEST_OS == 'android':
+		libs += ['ANDROID_SUPPORT']
+
+	install_path = bld.env.PREFIX
+	if bld.env.DEST_OS != 'android':
+		install_path += '/'+bld.env.GAMES+'/bin'
+
+	bld.shlib(
+		source   = source,
+		target   = PROJECT_NAME,
+		name     = PROJECT_NAME,
+		features = 'c cxx',
+		includes = includes,
+		defines  = defines,
+		use      = libs,
+		install_path = install_path,
+		subsystem = bld.env.MSVC_SUBSYSTEM,
+		idx      = bld.get_taskgen_count()
+	)
+

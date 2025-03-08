@@ -1,7 +1,9 @@
 
 # This script sets up VMPI.
 
-$pathToExes = "..\\..\\..\\game\\bin"; # assuming we're under hl2\src\devtools\bin.my $baseNetworkPath = @ARGV[0];
+$pathToExes = "..\\..\\..\\game\\bin"; # assuming we're under hl2\src\devtools\bin.
+my $baseNetworkPath = @ARGV[0];
+
 if ( $baseNetworkPath )
 {
 	my @filesToCopy = ( 
@@ -48,7 +50,8 @@ if ( $baseNetworkPath )
 	print "Have all available worker machines run:\n";
 	print "    $baseNetworkPath\\services\\vmpi_service_install.exe\n";
 	print "to setup the worker service.\n";
-}else
+}
+else
 {
 	print "setup_vmpi.pl <UNC path to a server all machines can access>\n";
 	print "example: setup_vmpi.pl \\\\ftknox\\scratch\\vmpi\n";

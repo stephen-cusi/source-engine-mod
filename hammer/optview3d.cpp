@@ -18,12 +18,16 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
 
+
 IMPLEMENT_DYNCREATE(COPTView3D, CPropertyPage)
+
 
 BEGIN_MESSAGE_MAP(COPTView3D, CPropertyPage)
 	//{{AFX_MSG_MAP(COPTView3D)
 	ON_WM_HSCROLL()
-	//}}AFX_MSG_MAPEND_MESSAGE_MAP()
+	//}}AFX_MSG_MAP
+END_MESSAGE_MAP()
+
 
 COPTView3D::COPTView3D(void)
 	: CPropertyPage(COPTView3D::IDD)
@@ -32,9 +36,11 @@ COPTView3D::COPTView3D(void)
 	//}}AFX_DATA_INIT
 }
 
+
 COPTView3D::~COPTView3D(void)
 {
 }
+
 void PASCAL DDV_FOVRange(CDataExchange *pDX, int value)
 {
 	if ( ( value > 100 ) | ( value < 30 ) )
@@ -48,7 +54,8 @@ void PASCAL DDV_FOVRange(CDataExchange *pDX, int value)
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Input  : pDX - 
-//-----------------------------------------------------------------------------void COPTView3D::DoDataExchange(CDataExchange* pDX)
+//-----------------------------------------------------------------------------
+void COPTView3D::DoDataExchange(CDataExchange* pDX)
 {
 	CPropertyPage::DoDataExchange(pDX);
 	//{{AFX_DATA_MAP(COPTView3D)
@@ -143,7 +150,8 @@ void PASCAL DDV_FOVRange(CDataExchange *pDX, int value)
 //-----------------------------------------------------------------------------
 // Purpose: Called before the dialog is displayed.
 // Output : Returns FALSE when setting focus to a control, TRUE otherwise.
-//-----------------------------------------------------------------------------BOOL COPTView3D::OnInitDialog(void)
+//-----------------------------------------------------------------------------
+BOOL COPTView3D::OnInitDialog(void)
 {
 	m_bOldFilterTextures = Options.view3d.bFilterTextures;
 
@@ -155,7 +163,8 @@ void PASCAL DDV_FOVRange(CDataExchange *pDX, int value)
 //-----------------------------------------------------------------------------
 // Purpose: Called by the framework when the user chooses the OK or the Apply Now button.
 // Output : Nonzero if the changes are accepted; otherwise zero.
-//-----------------------------------------------------------------------------BOOL COPTView3D::OnApply(void)
+//-----------------------------------------------------------------------------
+BOOL COPTView3D::OnApply(void)
 {
 	if (Options.view3d.bFilterTextures != m_bOldFilterTextures)
 	{
@@ -170,7 +179,8 @@ void PASCAL DDV_FOVRange(CDataExchange *pDX, int value)
 //-----------------------------------------------------------------------------
 // Purpose: Handles all the sliders in the property page.
 // Input  : Per MFC OnHScroll.
-//-----------------------------------------------------------------------------void COPTView3D::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar *pScrollBar) 
+//-----------------------------------------------------------------------------
+void COPTView3D::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar *pScrollBar) 
 {
 	//
 	// If it is the back plane scroll bar, update the back plane text.

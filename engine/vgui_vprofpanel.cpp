@@ -255,7 +255,7 @@ CProfileHierarchyPanel::~CProfileHierarchyPanel()
 
 void CProfileHierarchyPanel::ApplySchemeSettings( vgui::IScheme *pScheme )
 {
-	SetProportional( true );
+	//SetProportional( true );
 	BaseClass::ApplySchemeSettings( pScheme );
 	m_itemFont = pScheme->GetFont( PROF_FONT );
 	SetTitleBarInfo( m_itemFont, 20 );

@@ -66,7 +66,7 @@ projects={
 		'launcher',
 		'launcher_main',
 		'materialsystem',
-#		'materialsystem/shaderapiempty',
+		'materialsystem/game_shader_dx9',
 		'materialsystem/shaderapidx9',
 		'materialsystem/shaderlib',
 		'materialsystem/stdshaders',
@@ -94,7 +94,9 @@ projects={
 		'utils/vtex',
 		'unicode',
 		'video',
-        'game/gamepadui',
+		'vscript',
+		'raytrace',
+		'game/gamepadui',
 	],
 	'tests': [
 		'appframework',
@@ -304,7 +306,7 @@ def options(opt):
 	grp.add_option('--use-togl', action = 'store', dest = 'GL', type = 'int', default = sys.platform != 'win32',
 		help = 'build engine with ToGL [default: %default]')
 
-	grp.add_option('--build-games', action = 'store', dest = 'GAMES', type = 'string', default = 'hl2',
+	grp.add_option('--build-games', action = 'store', dest = 'GAMES', type = 'string', default = 'mapbase_hl2',
 		help = 'build games [default: %default]')
 
 	grp.add_option('--use-ccache', action = 'store_true', dest = 'CCACHE', default = False,

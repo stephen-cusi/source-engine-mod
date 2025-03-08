@@ -23,12 +23,14 @@
 
 //
 // Return values from BoxIsVisible.
-//enum Visibility_t
+//
+enum Visibility_t
 {
 	VIS_NONE = 0,		// The box is completely outside the view frustum.
 	VIS_PARTIAL,		// The box is partially inside the view frustum.
 	VIS_TOTAL			// The box is completely inside the view frustum.
 };
+
 
 class CCamera  
 {
@@ -88,6 +90,7 @@ class CCamera
 		void	WorldToView( const Vector& vWorld, Vector2D &vView);
 		void	ViewToWorld( const Vector2D &vView, Vector& vWorld);
 		void	BuildRay( const Vector2D &vView, Vector& vStart, Vector& vEnd );
+
 protected:
 
 		void BuildViewMatrix();

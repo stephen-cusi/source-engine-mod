@@ -14,7 +14,13 @@
 #include "materialsystem/imaterialvar.h"
 #include "materialsystem/imaterial.h"
 
-class IMaterial;class CMaterialCache;class IMaterialSystem;class IMaterialSystemHardwareConfig;struct MaterialSystem_Config_t;struct MaterialCacheEntry_t;
+
+class IMaterial;
+class CMaterialCache;
+class IMaterialSystem;
+class IMaterialSystemHardwareConfig;
+struct MaterialSystem_Config_t;
+struct MaterialCacheEntry_t;
 
 
 #define INCLUDE_MODEL_MATERIALS		0x01
@@ -24,16 +30,20 @@ class IMaterial;class CMaterialCache;class IMaterialSystem;class IMaterialSystem
 
 //-----------------------------------------------------------------------------
 // Inherit from this to enumerate materials 
-//-----------------------------------------------------------------------------class IMaterialEnumerator
-{public:
+//-----------------------------------------------------------------------------
+class IMaterialEnumerator
+{
+public:
 	virtual bool EnumMaterial( const char *pMaterialName, int nContext ) = 0;
 };
 
 
 //-----------------------------------------------------------------------------
 // Purpose: 
-//-----------------------------------------------------------------------------class CMaterial : public IEditorTexture
-{public:
+//-----------------------------------------------------------------------------
+class CMaterial : public IEditorTexture
+{
+public:
 	static bool Initialize( HWND hwnd );
 	static void ShutDown(void);
 	static void	EnumerateMaterials( IMaterialEnumerator *pEnum, const char *szRoot, int nContext, int nFlags = INCLUDE_ALL_MATERIALS );
@@ -134,6 +144,7 @@ class IMaterial;class CMaterialCache;class IMaterialSystem;class IMaterialSystem
 	bool IsWater( void ) const;
 
 	virtual IMaterial* GetMaterial( bool bForceLoad=true );
+
 protected:
 	// Used to draw the bitmap for the texture browser
 	void DrawBitmap( CDC *pDC, RECT& srcRect, RECT& dstRect );
@@ -178,12 +189,14 @@ protected:
 	friend class CMaterialImageCache;
 };
 
+
 typedef CMaterial *CMaterialPtr;
 
 
 //-----------------------------------------------------------------------------
 // Purpose: 
-//-----------------------------------------------------------------------------class CMaterialCache
+//-----------------------------------------------------------------------------
+class CMaterialCache
 {
 	public:
 
@@ -210,7 +223,8 @@ typedef CMaterial *CMaterialPtr;
 
 //-----------------------------------------------------------------------------
 // Purpose: Returns true if the cache has been allocated, false if not.
-//-----------------------------------------------------------------------------inline bool CMaterialCache::CacheExists(void)
+//-----------------------------------------------------------------------------
+inline bool CMaterialCache::CacheExists(void)
 {
 	return((m_pCache != NULL) && (m_nMaxEntries > 0));
 }
@@ -219,15 +233,18 @@ typedef CMaterial *CMaterialPtr;
 //-----------------------------------------------------------------------------
 // returns the material system interface + config
 //-----------------------------------------------------------------------------
+
 inline IMaterialSystem *MaterialSystemInterface()
 {
 	return materials;
 }
+
 inline MaterialSystem_Config_t& MaterialSystemConfig()
 {
 	extern MaterialSystem_Config_t g_materialSystemConfig;
 	return g_materialSystemConfig;
 }
+
 inline IMaterialSystemHardwareConfig* MaterialSystemHardwareConfig()
 {
 	extern IMaterialSystemHardwareConfig* g_pMaterialSystemHardwareConfig;
@@ -236,6 +253,7 @@ inline IMaterialSystemHardwareConfig* MaterialSystemHardwareConfig()
 
 //--------------------------------------------------------------------------------
 // call AllocateLightingPreviewtextures to make sure necessary rts are allocated
-//--------------------------------------------------------------------------------void AllocateLightingPreviewtextures(void);
+//--------------------------------------------------------------------------------
+void AllocateLightingPreviewtextures(void);
 
 #endif // MATERIAL_H

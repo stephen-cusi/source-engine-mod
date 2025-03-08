@@ -1,8 +1,11 @@
+
 import sys, re, vsdotnetxmlparser
+
 
 
 class EZXMLError:
 	pass
+
 
 class EZXMLElement:
 	"""
@@ -31,6 +34,7 @@ class EZXMLElement:
 			raise EZXMLError
 
 		self.Parent.Children.remove( self )
+
 
 class EZXMLFile:
 	#

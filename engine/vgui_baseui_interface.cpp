@@ -613,7 +613,9 @@ void CEngineVGui::Init()
 		return;
 	}
 
-	if ( IsX360() || IsGamepadUI() )
+//	if ( IsX360() || IsSteamDeck() )
+
+  	if ( IsX360() || IsGamepadUI() )
 	{
 		CCommand ccommand;
 		if ( CL_ShouldLoadBackgroundLevel( ccommand ) )
@@ -696,9 +698,9 @@ void CEngineVGui::Init()
 	COM_TimestampedLog( "Building Panels (staticGameUIPanel)" );
 
 	staticGameUIPanel = new CEnginePanel( staticPanel, "GameUI Panel" );
-    // 如果是PC平台，设置面板的大小为屏幕的大小，否则设置为UI的大小
-	//if(NeedProportional())
-	//	staticGameUIPanel->SetProportional(true);
+
+//	if(NeedProportional())
+//		staticGameUIPanel->SetProportional(true);
 
 	staticGameUIPanel->SetBounds( 0, 0, videomode->GetModeUIWidth(), videomode->GetModeUIHeight() );
 	staticGameUIPanel->SetPaintBorderEnabled(false);
@@ -1271,19 +1273,20 @@ void CEngineVGui::OnLevelLoadingStarted()
 		{
 			pSyncReportConVar->SetValue( 0 );
 		}
-	}
-	
+	}	
+//	if ( IsX360() || IsSteamDeck() )
 	if ( IsX360() || !IsGamepadUI() )
 	{
 		// TCR requirement, always!!!
 		m_bShowProgressDialog = true;
 	}
-
 	// i dont want gamepadui menu while loading
+	// 不想在                 加载....
 	//if (IsGamepadUI())
 	//{
 	//	m_bShowProgressDialog = false;
 	//}
+
 
 	// we've starting loading a level/connecting to a server
 	staticGameUIFuncs->OnLevelLoadingStarted( m_bShowProgressDialog );

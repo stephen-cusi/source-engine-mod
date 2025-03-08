@@ -1554,6 +1554,11 @@ public:
 
 	inline void Init(vec_t ix=0.0f, vec_t iy=0.0f, vec_t iz=0.0f, vec_t iw=0.0f)	{ x = ix; y = iy; z = iz; w = iw; }
 
+#ifdef MAPBASE_VSCRIPT
+	// Needed to get around vec_t recognition and inlining
+	void ScriptInit( float ix, float iy, float iz, float iw ) { Init( ix, iy, iz, iw ); }
+#endif
+
 	bool IsValid() const;
 	void Invalidate();
 
@@ -2221,22 +2226,8 @@ FORCEINLINE float VectorNormalize( Vector& vec )
 	vec.z *= invlen;
 	return sqrlen * invlen;
 #else
-	// extern float (FASTCALL *pfVectorNormalize)(Vector& v);
-	// return (*pfVectorNormalize)(vec);
-
-	float radius = 0.0f;
-	{
-		radius = sqrtf(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z);
-
-		// FLT_EPSILON is added to the radius to eliminate the possibility of divide by zero.
-		float iradius = 1.f / ( radius + FLT_EPSILON );
-		
-		vec.x *= iradius;
-		vec.y *= iradius;
-		vec.z *= iradius;
-	}
-
-	return radius;
+	extern float (FASTCALL *pfVectorNormalize)(Vector& v);
+	return (*pfVectorNormalize)(vec);
 #endif
 }
 

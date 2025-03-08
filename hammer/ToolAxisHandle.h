@@ -13,10 +13,14 @@
 
 #include "ToolInterface.h"
 
-class CMapAxisHandle;class CMapPointHandle;
+
+class CMapAxisHandle;
+class CMapPointHandle;
+
 
 class CToolAxisHandle : public CBaseTool
 {
+
 public:
 
 	CToolAxisHandle(void);
@@ -33,6 +37,7 @@ public:
 
 	virtual void RenderTool2D(CRender2D *pRender);
 	//virtual void RenderTool3D(CRender3D *pRender);
+
 private:
 
 	CMapAxisHandle *m_pAxis;		// The axis we are manipulating.

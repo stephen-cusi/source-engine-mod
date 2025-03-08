@@ -1,8 +1,11 @@
 #! perl
 
 # scan all .o files for illegal instructions from passing aggregates to varargs functions.
+
 use File::Find;
+
 find( \&CheckFile, "." );
+
 sub CheckFile
   {
 	return unless (/\.o$/ );

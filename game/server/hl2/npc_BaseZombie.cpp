@@ -159,6 +159,10 @@ ConVar zombie_decaymax( "zombie_decaymax", "0.4" );
 
 ConVar zombie_ambushdist( "zombie_ambushdist", "16000" );
 
+#ifdef MAPBASE
+ConVar	zombie_no_flinch_during_unique_anim( "zombie_no_flinch_during_unique_anim", "1", FCVAR_NONE, "Prevents zombies from flinching during actbusies and scripted sequences." );
+#endif
+
 //=========================================================
 // For a couple of reasons, we keep a running count of how
 // many zombies in the world are angry at any given time.
@@ -205,7 +209,11 @@ BEGIN_DATADESC( CNPC_BaseZombie )
 
 	DEFINE_SOUNDPATCH( m_pMoanSound ),
 	DEFINE_FIELD( m_fIsTorso, FIELD_BOOLEAN ),
+#ifdef MAPBASE
+	DEFINE_KEYFIELD( m_fIsHeadless, FIELD_BOOLEAN, "Headless" ),
+#else
 	DEFINE_FIELD( m_fIsHeadless, FIELD_BOOLEAN ),
+#endif
 	DEFINE_FIELD( m_flNextFlinch, FIELD_TIME ),
 	DEFINE_FIELD( m_bHeadShot, FIELD_BOOLEAN ),
 	DEFINE_FIELD( m_flBurnDamage, FIELD_FLOAT ),
@@ -219,6 +227,11 @@ BEGIN_DATADESC( CNPC_BaseZombie )
 	DEFINE_FIELD( m_iMoanSound, FIELD_INTEGER ),
 	DEFINE_FIELD( m_hObstructor, FIELD_EHANDLE ),
 	DEFINE_FIELD( m_bIsSlumped, FIELD_BOOLEAN ),
+
+#ifdef MAPBASE
+	DEFINE_OUTPUT( m_OnSwattedProp, "OnSwattedProp" ),
+	DEFINE_OUTPUT( m_OnCrab, "OnCrab" ),
+#endif
 
 END_DATADESC()
 
@@ -311,6 +324,12 @@ bool CNPC_BaseZombie::FindNearestPhysicsObject( int iMaxMass )
 				 pEntity->VPhysicsGetObject()->IsAsleep() && 
 				 pEntity->VPhysicsGetObject()->IsMoveable() )
 			{
+#ifdef MAPBASE
+				// Don't swat props that don't want to be swatted
+				if (pEntity->HasSpawnFlags(SF_PHYSPROP_NO_ZOMBIE_SWAT) && dynamic_cast<CPhysicsProp*>(pEntity))
+					return ITERATION_CONTINUE;
+#endif
+
 				return CFlaggedEntitiesEnum::EnumElement( pHandleEntity );
 			}
 			return ITERATION_CONTINUE;
@@ -716,6 +735,11 @@ bool CNPC_BaseZombie::ShouldBecomeTorso( const CTakeDamageInfo &info, float flDa
 	if ( info.GetDamageType() & DMG_REMOVENORAGDOLL )
 		return false;
 
+#ifdef MAPBASE
+	if ( HasSpawnFlags(SF_ZOMBIE_NO_TORSO) )
+		return false;
+#endif
+
 	if ( m_fIsTorso )
 	{
 		// Already split.
@@ -761,7 +785,11 @@ bool CNPC_BaseZombie::ShouldBecomeTorso( const CTakeDamageInfo &info, float flDa
 //-----------------------------------------------------------------------------
 HeadcrabRelease_t CNPC_BaseZombie::ShouldReleaseHeadcrab( const CTakeDamageInfo &info, float flDamageThreshold )
 {
+#ifdef MAPBASE
+	if ( m_iHealth <= 0 && !m_fIsHeadless )
+#else
 	if ( m_iHealth <= 0 )
+#endif
 	{
 		if ( info.GetDamageType() & DMG_REMOVENORAGDOLL )
 			return RELEASE_NO;
@@ -853,7 +881,11 @@ int CNPC_BaseZombie::OnTakeDamage_Alive( const CTakeDamageInfo &inputInfo )
 	bool bSquashed = IsSquashed(info);
 	bool bKilledByVehicle = ( ( info.GetDamageType() & DMG_VEHICLE ) != 0 );
 
+#ifdef MAPBASE
+	if ( !m_fIsTorso && (bChopped || bSquashed) && !bKilledByVehicle && !(info.GetDamageType() & DMG_REMOVENORAGDOLL) && !HasSpawnFlags(SF_ZOMBIE_NO_TORSO) )
+#else
 	if( !m_fIsTorso && (bChopped || bSquashed) && !bKilledByVehicle && !(info.GetDamageType() & DMG_REMOVENORAGDOLL) )
+#endif
 	{
 		if( bChopped )
 		{
@@ -1062,6 +1094,10 @@ bool CNPC_BaseZombie::ShouldIgniteZombieGib( void )
 #endif 
 }
 
+#ifdef MAPBASE
+extern CBaseAnimating *CreateServerRagdollSubmodel( CBaseAnimating *pOwner, const char *pModelName, const Vector &position, const QAngle &angles, int collisionGroup );
+#endif
+
 //-----------------------------------------------------------------------------
 // Purpose: Handle the special case of a zombie killed by a physics chopper.
 //-----------------------------------------------------------------------------
@@ -1081,6 +1117,14 @@ void CNPC_BaseZombie::DieChopped( const CTakeDamageInfo &info )
 			ReleaseHeadcrab( EyePosition(), forceVector * 0.005, true, false, false );
 		}
 	}
+
+#ifdef MAPBASE
+	// Hack for fast zombies using base torso rules.
+	if (m_iHealth > 0)
+	{
+		SetHealth( 0 );
+	}
+#endif
 
 	float flFadeTime = 0.0;
 
@@ -1103,9 +1147,32 @@ void CNPC_BaseZombie::DieChopped( const CTakeDamageInfo &info )
 		vecLegsForce.z *= -10;
 	}
 
+#ifdef MAPBASE
+	CBaseEntity *pLegGib = NULL;
+	if ( m_bForceServerRagdoll )
+	{
+		pLegGib = CreateServerRagdollSubmodel( this, GetLegsModel(), GetAbsOrigin(), GetAbsAngles(), COLLISION_GROUP_INTERACTIVE_DEBRIS );
+		pLegGib->VPhysicsGetObject()->AddVelocity(&vecLegsForce, NULL);
+		if (ShouldIgniteZombieGib())
+			static_cast<CBaseAnimating*>(pLegGib)->Ignite( random->RandomFloat( 8.0, 12.0 ), false );
+
+		if ( flFadeTime > 0.0 )
+		{
+			pLegGib->SUB_StartFadeOut( flFadeTime, false );
+		}
+	}
+	else
+		pLegGib = CreateRagGib( GetLegsModel(), GetAbsOrigin(), GetAbsAngles(), vecLegsForce, flFadeTime, ShouldIgniteZombieGib() );
+#else
 	CBaseEntity *pLegGib = CreateRagGib( GetLegsModel(), GetAbsOrigin(), GetAbsAngles(), vecLegsForce, flFadeTime, ShouldIgniteZombieGib() );
+#endif
 	if ( pLegGib )
 	{
+#ifdef MAPBASE
+		// Inherit some misc. properties
+		pLegGib->m_iViewHideFlags = m_iViewHideFlags;
+#endif
+
 		CopyRenderColorTo( pLegGib );
 	}
 
@@ -1122,14 +1189,41 @@ void CNPC_BaseZombie::DieChopped( const CTakeDamageInfo &info )
 	QAngle TorsoAngles;
 	TorsoAngles = GetAbsAngles();
 	TorsoAngles.x -= 90.0f;
+#ifdef MAPBASE
+	CBaseEntity *pTorsoGib = NULL;
+	if ( m_bForceServerRagdoll )
+	{
+		pTorsoGib = CreateServerRagdollSubmodel( this, GetTorsoModel(), GetAbsOrigin() + Vector( 0, 0, 64 ), TorsoAngles, COLLISION_GROUP_INTERACTIVE_DEBRIS );
+		pTorsoGib->VPhysicsGetObject()->AddVelocity(&forceVector, NULL);
+		if (ShouldIgniteZombieGib())
+			static_cast<CBaseAnimating*>(pLegGib)->Ignite( random->RandomFloat( 8.0, 12.0 ), false );
+
+		if ( flFadeTime > 0.0 )
+		{
+			pTorsoGib->SUB_StartFadeOut( flFadeTime, false );
+		}
+	}
+	else
+		pTorsoGib = CreateRagGib( GetTorsoModel(), GetAbsOrigin() + Vector( 0, 0, 64 ), TorsoAngles, forceVector, flFadeTime, ShouldIgniteZombieGib() );
+#else
 	CBaseEntity *pTorsoGib = CreateRagGib( GetTorsoModel(), GetAbsOrigin() + Vector( 0, 0, 64 ), TorsoAngles, forceVector, flFadeTime, ShouldIgniteZombieGib() );
+#endif
 	if ( pTorsoGib )
 	{
 		CBaseAnimating *pAnimating = dynamic_cast<CBaseAnimating*>(pTorsoGib);
 		if( pAnimating )
 		{
 			pAnimating->SetBodygroup( ZOMBIE_BODYGROUP_HEADCRAB, !m_fIsHeadless );
+#ifdef MAPBASE
+			// Inherit some animating properties
+			pAnimating->m_nSkin = m_nSkin;
+#endif
 		}
+
+#ifdef MAPBASE
+		// Inherit some misc. properties
+		pTorsoGib->m_iViewHideFlags = m_iViewHideFlags;
+#endif
 
 		pTorsoGib->SetOwnerEntity( this );
 		CopyRenderColorTo( pTorsoGib );
@@ -1559,6 +1653,10 @@ void CNPC_BaseZombie::HandleAnimEvent( animevent_t *pEvent )
 
 			pPhysObj->AddVelocity( &v, &angVelocity );
 
+#ifdef MAPBASE
+			m_OnSwattedProp.Set(pPhysicsEntity, pPhysicsEntity, this);
+#endif
+
 			// If we don't put the object scan time well into the future, the zombie
 			// will re-select the object he just hit as it is flying away from him.
 			// It will likely always be the nearest object because the zombie moved
@@ -1651,7 +1749,11 @@ void CNPC_BaseZombie::HandleAnimEvent( animevent_t *pEvent )
 
 		dmgInfo.SetDamagePosition( vecHeadCrabPosition );
 
+#ifdef MAPBASE
+		ReleaseHeadcrab( vecHeadCrabPosition, vVelocity *iSpeed, true, false, true );
+#else
 		ReleaseHeadcrab( EyePosition(), vVelocity * iSpeed, true, false, true );
+#endif
 
 		GuessDamageForce( &dmgInfo, vVelocity, vecHeadCrabPosition, 0.5f );
 		TakeDamage( dmgInfo );
@@ -1830,6 +1932,31 @@ void CNPC_BaseZombie::OnScheduleChange( void )
 	} 
 
 	BaseClass::OnScheduleChange();
+}
+
+
+//---------------------------------------------------------
+//---------------------------------------------------------
+
+bool CNPC_BaseZombie::CanFlinch( void )
+{
+	if (!BaseClass::CanFlinch())
+		return false;
+
+#ifdef MAPBASE
+	if (zombie_no_flinch_during_unique_anim.GetBool())
+	{
+		// Don't flinch if currently playing actbusy animation (navigating to or from one is fine)
+		if (m_ActBusyBehavior.IsInsideActBusy())
+			return false;
+
+		// Don't flinch if currently playing scripted sequence (navigating to or from one is fine)
+		if (m_NPCState == NPC_STATE_SCRIPT && (IsCurSchedule( SCHED_SCRIPTED_WAIT, false ) || IsCurSchedule( SCHED_SCRIPTED_FACE, false )))
+			return false;
+	}
+#endif
+
+	return true;
 }
 
 
@@ -2255,7 +2382,26 @@ void CNPC_BaseZombie::BecomeTorso( const Vector &vecTorsoForce, const Vector &ve
 	if ( m_fIsTorso == true )
 	{
 		// -40 on Z to make up for the +40 on Z that we did above. This stops legs spawning above the head.
+#ifdef MAPBASE
+		CBaseEntity *pGib = NULL;
+		if ( m_bForceServerRagdoll )
+		{
+			pGib = CreateServerRagdollSubmodel( this, GetLegsModel(), GetAbsOrigin() - Vector(0, 0, 40), GetAbsAngles(), COLLISION_GROUP_INTERACTIVE_DEBRIS );
+			if (pGib && pGib->VPhysicsGetObject())
+			{
+				pGib->VPhysicsGetObject()->AddVelocity( &vecLegsForce, NULL );
+
+				if (flFadeTime > 0.0)
+				{
+					pGib->SUB_StartFadeOut( flFadeTime, false );
+				}
+			}
+		}
+		else
+			pGib = CreateRagGib( GetLegsModel(), GetAbsOrigin() - Vector(0, 0, 40), GetAbsAngles(), vecLegsForce, flFadeTime );
+#else
 		CBaseEntity *pGib = CreateRagGib( GetLegsModel(), GetAbsOrigin() - Vector(0, 0, 40), GetAbsAngles(), vecLegsForce, flFadeTime );
+#endif
 
 		// don't collide with this thing ever
 		if ( pGib )
@@ -2322,6 +2468,20 @@ void CNPC_BaseZombie::RemoveHead( void )
 }
 
 
+//---------------------------------------------------------
+//---------------------------------------------------------
+void CNPC_BaseZombie::SetModel( const char *szModelName )
+{
+#ifdef MAPBASE
+	// Zombies setting the same model again is a problem when they should maintain their current sequence (e.g. during dynamic interactions)
+	if ( IsRunningDynamicInteraction() && GetModelIndex() != 0 && FStrEq( szModelName, STRING(GetModelName()) ) )
+		return;
+#endif
+
+	BaseClass::SetModel( szModelName );
+}
+
+
 bool CNPC_BaseZombie::ShouldPlayFootstepMoan( void )
 {
 	if( random->RandomInt( 1, zombie_stepfreq.GetInt() * s_iAngryZombies ) == 1 )
@@ -2337,9 +2497,15 @@ bool CNPC_BaseZombie::ShouldPlayFootstepMoan( void )
 #define CRAB_HULL_EXPAND	1.1f
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-bool CNPC_BaseZombie::HeadcrabFits( CBaseAnimating *pCrab )
+bool CNPC_BaseZombie::HeadcrabFits( CBaseAnimating *pCrab, const Vector *vecOrigin )
 {
-	Vector vecSpawnLoc = pCrab->GetAbsOrigin();
+	Vector vecSpawnLoc;
+#ifdef MAPBASE
+	if (vecOrigin)
+		vecSpawnLoc = *vecOrigin;
+	else
+#endif
+	vecSpawnLoc = pCrab->GetAbsOrigin();
 
 	CTraceFilterSimpleList traceFilter( COLLISION_GROUP_NONE );
 	traceFilter.AddEntityToIgnore( pCrab );
@@ -2391,7 +2557,25 @@ void CNPC_BaseZombie::ReleaseHeadcrab( const Vector &vecOrigin, const Vector &ve
 	if( fRagdollCrab )
 	{
 		//Vector vecForce = Vector( 0, 0, random->RandomFloat( 700, 1100 ) );
+#ifdef MAPBASE
+		CBaseEntity *pGib = NULL;
+		if ( m_bForceServerRagdoll )
+		{
+			pGib = CreateServerRagdollSubmodel( this, GetHeadcrabModel(), vecOrigin, GetLocalAngles(), COLLISION_GROUP_INTERACTIVE_DEBRIS );
+			if (pGib && pGib->VPhysicsGetObject())
+			{
+				pGib->VPhysicsGetObject()->AddVelocity(&vecVelocity, NULL);
+				if (ShouldIgniteZombieGib())
+					static_cast<CBaseAnimating*>(pGib)->Ignite( random->RandomFloat( 8.0, 12.0 ), false );
+
+				pGib->SUB_StartFadeOut( 15, false );
+			}
+		}
+		else
+			pGib = CreateRagGib( GetHeadcrabModel(), vecOrigin, GetLocalAngles(), vecVelocity, 15, ShouldIgniteZombieGib() );
+#else
 		CBaseEntity *pGib = CreateRagGib( GetHeadcrabModel(), vecOrigin, GetLocalAngles(), vecVelocity, 15, ShouldIgniteZombieGib() );
+#endif
 
 		if ( pGib )
 		{
@@ -2404,11 +2588,21 @@ void CNPC_BaseZombie::ReleaseHeadcrab( const Vector &vecOrigin, const Vector &ve
 				SetHeadcrabSpawnLocation( iCrabAttachment, pAnimatingGib );
 			}
 
+#ifdef MAPBASE
+			// Server ragdolls don't have a valid origin on spawn, so we have to use the origin originally passed
+			if( !HeadcrabFits( pAnimatingGib, m_bForceServerRagdoll ? &vecOrigin : NULL ) )
+#else
 			if( !HeadcrabFits(pAnimatingGib) )
+#endif
 			{
 				UTIL_Remove(pGib);
 				return;
 			}
+
+#ifdef MAPBASE
+			// Inherit some misc. properties
+			pGib->m_iViewHideFlags = m_iViewHideFlags;
+#endif
 
 			pGib->SetOwnerEntity( this );
 			CopyRenderColorTo( pGib );
@@ -2416,11 +2610,20 @@ void CNPC_BaseZombie::ReleaseHeadcrab( const Vector &vecOrigin, const Vector &ve
 			
 			if( UTIL_ShouldShowBlood(BLOOD_COLOR_YELLOW) )
 			{
-				UTIL_BloodImpact( pGib->WorldSpaceCenter(), Vector(0,0,1), BLOOD_COLOR_YELLOW, 1 );
+				Vector vecGibCenter;
+#ifdef MAPBASE
+				// Server ragdolls don't have a valid origin on spawn, so we have to use the origin originally passed
+				if (m_bForceServerRagdoll)
+					vecGibCenter = vecOrigin;
+				else
+#endif
+				vecGibCenter = pGib->WorldSpaceCenter();
+
+				UTIL_BloodImpact( vecGibCenter, Vector(0,0,1), BLOOD_COLOR_YELLOW, 1 );
 
 				for ( int i = 0 ; i < 3 ; i++ )
 				{
-					Vector vecSpot = pGib->WorldSpaceCenter();
+					Vector vecSpot = vecGibCenter;
 					
 					vecSpot.x += random->RandomFloat( -8, 8 ); 
 					vecSpot.y += random->RandomFloat( -8, 8 ); 
@@ -2449,6 +2652,15 @@ void CNPC_BaseZombie::ReleaseHeadcrab( const Vector &vecOrigin, const Vector &ve
 		
 		// add on the parent flags
 		pCrab->AddSpawnFlags( m_spawnflags & ZOMBIE_CRAB_INHERITED_SPAWNFLAGS );
+
+#ifdef MAPBASE
+		// Inherit some misc. properties
+		pCrab->m_bForceServerRagdoll = m_bForceServerRagdoll;
+		pCrab->m_iViewHideFlags = m_iViewHideFlags;
+
+		// Add response context for companion response (more reliable than checking for post-death zombie entity)
+		pCrab->AddContext( "from_zombie", "1", 2.0f );
+#endif
 		
 		// make me the crab's owner to avoid collision issues
 		pCrab->SetOwnerEntity( this );
@@ -2502,6 +2714,10 @@ void CNPC_BaseZombie::ReleaseHeadcrab( const Vector &vecOrigin, const Vector &ve
 		CopyRenderColorTo( pCrab );
 
 		pCrab->Activate();
+
+#ifdef MAPBASE
+		m_OnCrab.Set( pCrab, pCrab, this );
+#endif
 	}
 
 	if( fRemoveHead )

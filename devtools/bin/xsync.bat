@@ -73,24 +73,91 @@ makegamedata -q -z %ZIPDIR%\platform\zip0.360.zip
 if not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\platform\zip0.360.zip xe:\valve\platform\zip0.360.zip
 popd.
 
-:HL2if not .%do_hl2%.==.yes. goto EPISODIC
-REMREM HL2REMecho Builing hl2 zip...pushd.cd hl2if not exist %ZIPDIR%\hl2 mkdir %ZIPDIR%\hl2if .%no_build%.==.yes. goto HL2COPYif exist %ZIPDIR%\hl2\zip0.360.zip del %ZIPDIR%\hl2\zip0.360.zipmakegamedata -q -z %ZIPDIR%\hl2\zip0.360.zip
-:HL2COPYif not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\hl2\zip0.360.zip xe:\valve\hl2\zip0.360.zippopd.
+:HL2
+if not .%do_hl2%.==.yes. goto EPISODIC
 
-:EPISODICif not .%do_episodic%.==.yes. goto EP2
-REMREM EPISODICREMecho Builing episodic zip...pushd.cd episodicif not exist %ZIPDIR%\episodic mkdir %ZIPDIR%\episodicif .%no_build%.==.yes. goto EPISODICCOPYif exist %ZIPDIR%\episodic\zip0.360.zip del %ZIPDIR%\episodic\zip0.360.zipmakegamedata -q -z %ZIPDIR%\episodic\zip0.360.zip
-:EPISODICCOPYif not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\episodic\zip0.360.zip xe:\valve\episodic\zip0.360.zippopd.
+REM
+REM HL2
+REM
+echo Builing hl2 zip...
+pushd.
+cd hl2
+if not exist %ZIPDIR%\hl2 mkdir %ZIPDIR%\hl2
+if .%no_build%.==.yes. goto HL2COPY
+if exist %ZIPDIR%\hl2\zip0.360.zip del %ZIPDIR%\hl2\zip0.360.zip
+makegamedata -q -z %ZIPDIR%\hl2\zip0.360.zip
+:HL2COPY
+if not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\hl2\zip0.360.zip xe:\valve\hl2\zip0.360.zip
+popd.
 
-:EP2if not .%do_ep2%.==.yes. goto TF
-  REMREM EP2REMecho Builing ep2 zip...pushd.cd ep2if not exist %ZIPDIR%\ep2 mkdir %ZIPDIR%\ep2if .%no_build%.==.yes. goto EP2COPYif exist %ZIPDIR%\ep2\zip0.360.zip del %ZIPDIR%\ep2\zip0.360.zipmakegamedata -q -z %ZIPDIR%\ep2\zip0.360.zip
-:EP2COPYif not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\ep2\zip0.360.zip xe:\valve\ep2\zip0.360.zippopd.
+:EPISODIC
+if not .%do_episodic%.==.yes. goto EP2
 
-:TFif not .%do_tf%.==.yes. goto PORTAL
-REMREM TFREMecho Builing tf2 zip...pushd.cd tfif not exist %ZIPDIR%\tf mkdir %ZIPDIR%\tfif .%no_build%.==.yes. goto TFCOPYif exist %ZIPDIR%\tf\zip0.360.zip del %ZIPDIR%\tf\zip0.360.zipmakegamedata -q -z %ZIPDIR%\tf\zip0.360.zip
-:TFCOPYif not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\tf\zip0.360.zip xe:\valve\tf\zip0.360.zippopd.
+REM
+REM EPISODIC
+REM
+echo Builing episodic zip...
+pushd.
+cd episodic
+if not exist %ZIPDIR%\episodic mkdir %ZIPDIR%\episodic
+if .%no_build%.==.yes. goto EPISODICCOPY
+if exist %ZIPDIR%\episodic\zip0.360.zip del %ZIPDIR%\episodic\zip0.360.zip
+makegamedata -q -z %ZIPDIR%\episodic\zip0.360.zip
+:EPISODICCOPY
+if not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\episodic\zip0.360.zip xe:\valve\episodic\zip0.360.zip
+popd.
 
-:PORTALif not .%do_portal%.==.yes. goto END
-REMREM PORTALREMecho Builing portal zip...pushd.cd portalif not exist %ZIPDIR%\portal mkdir %ZIPDIR%\portalif .%no_build%.==.yes. goto PORTALCOPYif exist %ZIPDIR%\portal\zip0.360.zip del %ZIPDIR%\portal\zip0.360.zipmakegamedata -q -z %ZIPDIR%\portal\zip0.360.zip
-:PORTALCOPYif not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\portal\zip0.360.zip xe:\valve\portal\zip0.360.zippopd.
+:EP2
+if not .%do_ep2%.==.yes. goto TF
+  
+REM
+REM EP2
+REM
+echo Builing ep2 zip...
+pushd.
+cd ep2
+if not exist %ZIPDIR%\ep2 mkdir %ZIPDIR%\ep2
+if .%no_build%.==.yes. goto EP2COPY
+if exist %ZIPDIR%\ep2\zip0.360.zip del %ZIPDIR%\ep2\zip0.360.zip
+makegamedata -q -z %ZIPDIR%\ep2\zip0.360.zip
+:EP2COPY
+if not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\ep2\zip0.360.zip xe:\valve\ep2\zip0.360.zip
+popd.
 
-:ENDpopd.endlocal
+:TF
+if not .%do_tf%.==.yes. goto PORTAL
+
+REM
+REM TF
+REM
+echo Builing tf2 zip...
+pushd.
+cd tf
+if not exist %ZIPDIR%\tf mkdir %ZIPDIR%\tf
+if .%no_build%.==.yes. goto TFCOPY
+if exist %ZIPDIR%\tf\zip0.360.zip del %ZIPDIR%\tf\zip0.360.zip
+makegamedata -q -z %ZIPDIR%\tf\zip0.360.zip
+:TFCOPY
+if not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\tf\zip0.360.zip xe:\valve\tf\zip0.360.zip
+popd.
+
+:PORTAL
+if not .%do_portal%.==.yes. goto END
+
+REM
+REM PORTAL
+REM
+echo Builing portal zip...
+pushd.
+cd portal
+if not exist %ZIPDIR%\portal mkdir %ZIPDIR%\portal
+if .%no_build%.==.yes. goto PORTALCOPY
+if exist %ZIPDIR%\portal\zip0.360.zip del %ZIPDIR%\portal\zip0.360.zip
+makegamedata -q -z %ZIPDIR%\portal\zip0.360.zip
+:PORTALCOPY
+if not .%no_copy%.==.yes. %XBCP% /Y %ZIPDIR%\portal\zip0.360.zip xe:\valve\portal\zip0.360.zip
+popd.
+
+:END
+popd.
+endlocal

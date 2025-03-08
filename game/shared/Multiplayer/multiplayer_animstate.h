@@ -334,6 +334,14 @@ protected:
 	// movement playback options
 	int m_nMovementSequence;
 	LegAnimType_t m_LegAnimType;
+
+	//Tony; moved debuganim data to a private block and made the 2 sdk animstates friendly. I override the base classes
+	//but want complete functionality.
+private:
+	friend class CSDKPlayerAnimState;
+	friend class CHL2MPPlayerAnimState;
+	DebugPlayerAnimData_t		m_DebugAnimData;
+
 };
 
 // If this is set, then the game code needs to make sure to send player animation events

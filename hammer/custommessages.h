@@ -9,6 +9,7 @@
 #define CUSTOMMESSAGES_H
 #pragma once
 
+
 enum 
 {
 	CUSTOMMESSAGESSTART = WM_USER + 1,

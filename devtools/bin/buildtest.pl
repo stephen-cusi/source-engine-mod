@@ -1,4 +1,5 @@
 use strict;
+
 sub DoBuild
 {
 	my @output;
@@ -51,6 +52,7 @@ sub DoBuild
 #		system "devtools\\bin\\smtpmail.exe -to gary\@valvesoftware.com -from srcdev\@valvesoftware.com -subject \"FIX THE BUILD\! ($buildtype)\" -verbose email.txt";
 	}
 }
+
 while( 1 )
 {
 	$ENV{"USE_INCREDIBUILD"} = "1";

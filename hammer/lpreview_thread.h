@@ -19,8 +19,10 @@
 
 
 
+
 class CLightingPreviewLightDescription : public LightDesc_t
-{public:
+{
+public:
 	int m_nObjectID;
 	class CIncrementalLightInfo *m_pIncrementalInfo;
 	void Init( int obj_id )
@@ -29,6 +31,7 @@ class CLightingPreviewLightDescription : public LightDesc_t
 		m_nObjectID = obj_id;
 	}
 };
+
 enum HammerToLightingPreviewMessageType
 {
 	// messages from hammer to preview task
@@ -38,11 +41,13 @@ enum HammerToLightingPreviewMessageType
 	LPREVIEW_MSG_G_BUFFERS,							 // we have new g buffer data from the renderer
 	LPREVIEW_MSG_LIGHT_DATA,								// new light data in m_pLightList
 };
+
 enum LightingPreviewToHammerMessageType
 {
 	// messages from preview task to hammer
 	LPREVIEW_MSG_DISPLAY_RESULT,							// we have a result image
 };
+
 
 struct MessageToLPreview
 {
@@ -65,6 +70,7 @@ struct MessageToLPreview
 	int m_nBitmapGenerationCounter;							// for LPREVIEW_MSG_G_BUFFERS
 
 };
+
 struct MessageFromLPreview
 {
 	LightingPreviewToHammerMessageType m_MsgType;
@@ -79,14 +85,22 @@ struct MessageFromLPreview
 	}
 
 };
-extern CMessageQueue<MessageToLPreview> g_HammerToLPreviewMsgQueue;extern CMessageQueue<MessageFromLPreview> g_LPreviewToHammerMsgQueue;extern ThreadHandle_t g_LPreviewThread;
-extern CInterlockedInt n_gbufs_queued;extern CInterlockedInt n_result_bms_queued;
+
+extern CMessageQueue<MessageToLPreview> g_HammerToLPreviewMsgQueue;
+extern CMessageQueue<MessageFromLPreview> g_LPreviewToHammerMsgQueue;
+extern ThreadHandle_t g_LPreviewThread;
+
+extern CInterlockedInt n_gbufs_queued;
+extern CInterlockedInt n_result_bms_queued;
+
 extern Bitmap_t *g_pLPreviewOutputBitmap;
 
 // the lighting preview thread entry point
+
 unsigned LightingPreviewThreadFN( void *thread_start_arg );
 
-// the lighting preview handler. call oftenvoid HandleLightingPreview( void );
+// the lighting preview handler. call often
+void HandleLightingPreview( void );
 
 #endif
 

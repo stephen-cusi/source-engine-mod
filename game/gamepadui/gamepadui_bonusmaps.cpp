@@ -387,6 +387,7 @@ private:
     BonusMapDescription_t m_BonusMapDesc = {};
 
     GAMEPADUI_PANEL_PROPERTY( Color, m_colProgressColor, "Button.Background.Progress", "255 0 0 255", SchemeValueTypes::Color );
+    GAMEPADUI_PANEL_PROPERTY( float, m_flProgressHeight, "Button.Progress.Height",     "1", SchemeValueTypes::ProportionalFloat );
 
     GAMEPADUI_PANEL_PROPERTY( float, m_flMedalSize, "Button.Medal.Size", "64", SchemeValueTypes::ProportionalFloat );
     GAMEPADUI_PANEL_PROPERTY( float, m_flMedalOffsetX, "Button.Medal.OffsetX", "8", SchemeValueTypes::ProportionalFloat );

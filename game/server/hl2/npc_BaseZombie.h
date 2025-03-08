@@ -42,6 +42,10 @@ extern int AE_ZOMBIE_POUND;
 #define ZOMBIE_BLOOD_RIGHT_HAND		1
 #define ZOMBIE_BLOOD_BOTH_HANDS		2
 #define ZOMBIE_BLOOD_BITE			3
+
+#ifdef MAPBASE
+#define SF_ZOMBIE_NO_TORSO ( 1 << 15 )
+#endif
 	
 
 enum HeadcrabRelease_t
@@ -147,6 +151,8 @@ public:
 	int OnTakeDamage_Alive( const CTakeDamageInfo &info );
 	virtual float	GetReactionDelay( CBaseEntity *pEnemy ) { return 0.0; }
 
+	bool CanFlinch( void );
+
 	virtual int SelectSchedule ( void );
 	virtual int	SelectFailSchedule( int failedSchedule, int failedTask, AI_TaskFailureCode_t taskFailCode );
 	virtual void BuildScheduleTestBits( void );
@@ -182,9 +188,10 @@ public:
 	// Headcrab releasing/breaking apart
 	void RemoveHead( void );
 	virtual void SetZombieModel( void ) { };
+	virtual void SetModel( const char *szModelName );
 	virtual void BecomeTorso( const Vector &vecTorsoForce, const Vector &vecLegsForce );
 	virtual bool CanBecomeLiveTorso() { return false; }
-	virtual bool HeadcrabFits( CBaseAnimating *pCrab );
+	virtual bool HeadcrabFits( CBaseAnimating *pCrab, const Vector *vecOrigin = NULL );
 	void ReleaseHeadcrab( const Vector &vecOrigin, const Vector &vecVelocity, bool fRemoveHead, bool fRagdollBody, bool fRagdollCrab = false );
 	void SetHeadcrabSpawnLocation( int iCrabAttachment, CBaseAnimating *pCrab );
 
@@ -259,6 +266,10 @@ protected:
 	float	m_flBurnDamageResetTime;	// Time at which we reset the burn damage.
 
 	EHANDLE m_hPhysicsEnt;
+#ifdef MAPBASE
+	COutputEHANDLE m_OnSwattedProp;
+	COutputEHANDLE m_OnCrab;
+#endif
 
 	float m_flNextMoanSound;
 	float m_flNextSwat;

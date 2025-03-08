@@ -13,8 +13,13 @@
 #include "materialsystem/materialsystem_config.h"
 #include "tier1/callqueue.h"
 #include "colorcorrectionmgr.h"
+#include "postprocess_shared.h"
 #include "view_scene.h"
 #include "c_world.h"
+
+//Tony; new
+#include "c_baseplayer.h"
+
 #include "bitmap/tgawriter.h"
 #include "filesystem.h"
 #include "tier0/vprof.h"
@@ -33,6 +38,15 @@ float g_flCustomAutoExposureMin = 0;
 float g_flCustomAutoExposureMax = 0;
 float g_flCustomBloomScale = 0.0f;
 float g_flCustomBloomScaleMinimum = 0.0f;
+
+// mapmaker controlled depth of field
+bool  g_bDOFEnabled = false;
+float g_flDOFNearBlurDepth = 20.0f;
+float g_flDOFNearFocusDepth = 100.0f;
+float g_flDOFFarFocusDepth = 250.0f;
+float g_flDOFFarBlurDepth = 1000.0f;
+float g_flDOFNearBlurRadius = 0.0f;
+float g_flDOFFarBlurRadius = 10.0f;
 
 bool g_bFlashlightIsOn = false;
 
@@ -778,6 +792,17 @@ static float GetCurrentBloomScale( void )
 
 static void GetExposureRange( float *flAutoExposureMin, float *flAutoExposureMax )
 {
+	//Tony; get the local player first..
+	C_BasePlayer *pLocalPlayer = NULL;
+
+	if ( ( gpGlobals->maxClients > 1 ) )
+		pLocalPlayer = (C_BasePlayer*)C_BasePlayer::GetLocalPlayer();
+
+	//Tony; in multiplayer, get the local player etc.
+	if ( (pLocalPlayer != NULL && pLocalPlayer->m_Local.m_TonemapParams.m_flAutoExposureMin > 0.0f) )
+	{
+		*flAutoExposureMin = pLocalPlayer->m_Local.m_TonemapParams.m_flAutoExposureMin;
+	}
 	// Get min
 	if ( ( g_bUseCustomAutoExposureMin ) && ( g_flCustomAutoExposureMin > 0.0f ) )
 	{
@@ -788,6 +813,11 @@ static void GetExposureRange( float *flAutoExposureMin, float *flAutoExposureMax
 		*flAutoExposureMin = mat_autoexposure_min.GetFloat();
 	}
 
+	//Tony; in multiplayer, get the value from the local player, if it's set.
+	if ( (pLocalPlayer != NULL && pLocalPlayer->m_Local.m_TonemapParams.m_flAutoExposureMax > 0.0f) )
+	{
+		*flAutoExposureMax = pLocalPlayer->m_Local.m_TonemapParams.m_flAutoExposureMax;
+	}
 	// Get max
 	if ( ( g_bUseCustomAutoExposureMax ) && ( g_flCustomAutoExposureMax > 0.0f ) )
 	{
@@ -1113,6 +1143,32 @@ void CLuminanceHistogramSystem::DisplayHistogram( void )
 	pRenderContext->PopRenderTargetAndViewport();
 }
 
+// Local contrast setting
+PostProcessParameters_t s_LocalPostProcessParameters;
+
+// view fade param settings
+static Vector4D s_viewFadeColor;
+static bool  s_bViewFadeModulate;
+
+static bool s_bOverridePostProcessParams = false;
+
+void SetPostProcessParams( const PostProcessParameters_t* pPostProcessParameters )
+{
+    if (!s_bOverridePostProcessParams)
+	    s_LocalPostProcessParameters = *pPostProcessParameters;
+}
+
+void SetPostProcessParams( const PostProcessParameters_t* pPostProcessParameters, bool bOverride )
+{
+    s_bOverridePostProcessParams = bOverride;
+    s_LocalPostProcessParameters = *pPostProcessParameters;
+}
+
+void SetViewFadeParams( byte r, byte g, byte b, byte a, bool bModulate )
+{
+	s_viewFadeColor.Init( float( r ) / 255.0f, float( g ) / 255.0f, float( b ) / 255.0f, float( a ) / 255.0f );
+	s_bViewFadeModulate = bModulate;
+}
 
 static CLuminanceHistogramSystem g_HDR_HistogramSystem;
 
@@ -1208,11 +1264,28 @@ private:
 	IMaterialVar *m_pMaterialParam_AAValues;
 	IMaterialVar *m_pMaterialParam_AAValues2;
 	IMaterialVar *m_pMaterialParam_BloomEnable;
+	IMaterialVar *m_pMaterialParam_BloomAmount;
 	IMaterialVar *m_pMaterialParam_BloomUVTransform;
 	IMaterialVar *m_pMaterialParam_ColCorrectEnable;
 	IMaterialVar *m_pMaterialParam_ColCorrectNumLookups;
 	IMaterialVar *m_pMaterialParam_ColCorrectDefaultWeight;
 	IMaterialVar *m_pMaterialParam_ColCorrectLookupWeights;
+	IMaterialVar *m_pMaterialParam_LocalContrastStrength;
+	IMaterialVar *m_pMaterialParam_LocalContrastEdgeStrength;
+	IMaterialVar *m_pMaterialParam_VignetteStart;
+	IMaterialVar *m_pMaterialParam_VignetteEnd;
+	IMaterialVar *m_pMaterialParam_VignetteBlurEnable;
+	IMaterialVar *m_pMaterialParam_VignetteBlurStrength;
+	IMaterialVar *m_pMaterialParam_FadeToBlackStrength;
+	IMaterialVar *m_pMaterialParam_DepthBlurFocalDistance;
+	IMaterialVar *m_pMaterialParam_DepthBlurStrength;
+	IMaterialVar *m_pMaterialParam_ScreenBlurStrength;
+	IMaterialVar *m_pMaterialParam_FilmGrainStrength;
+	IMaterialVar *m_pMaterialParam_VomitEnable;
+	IMaterialVar *m_pMaterialParam_VomitColor1;
+	IMaterialVar *m_pMaterialParam_VomitColor2;
+	IMaterialVar *m_pMaterialParam_FadeColor;
+	IMaterialVar *m_pMaterialParam_FadeType;
 
 public:
 	static IMaterial * SetupEnginePostMaterial( const Vector4D & fullViewportBloomUVs, const Vector4D & fullViewportFBUVs, const Vector2D & destTexSize,
@@ -1225,12 +1298,14 @@ private:
 	static float s_vBloomAAValues2[4];
 	static float s_vBloomUVTransform[4];
 	static int   s_PostBloomEnable;
+	static float s_PostBloomAmount;
 };
 
 float CEnginePostMaterialProxy::s_vBloomAAValues[4]					= { 0.0f, 0.0f, 0.0f, 0.0f };
 float CEnginePostMaterialProxy::s_vBloomAAValues2[4]				= { 0.0f, 0.0f, 0.0f, 0.0f };
 float CEnginePostMaterialProxy::s_vBloomUVTransform[4]				= { 0.0f, 0.0f, 0.0f, 0.0f };
 int   CEnginePostMaterialProxy::s_PostBloomEnable					= 1;
+float CEnginePostMaterialProxy::s_PostBloomAmount					= 1.0f;
 
 CEnginePostMaterialProxy::CEnginePostMaterialProxy()
 {
@@ -1238,10 +1313,22 @@ CEnginePostMaterialProxy::CEnginePostMaterialProxy()
 	m_pMaterialParam_AAValues2					= NULL;
 	m_pMaterialParam_BloomUVTransform			= NULL;
 	m_pMaterialParam_BloomEnable				= NULL;
+	m_pMaterialParam_BloomAmount				= NULL;
 	m_pMaterialParam_ColCorrectEnable			= NULL;
 	m_pMaterialParam_ColCorrectNumLookups		= NULL;
 	m_pMaterialParam_ColCorrectDefaultWeight	= NULL;
 	m_pMaterialParam_ColCorrectLookupWeights	= NULL;
+	m_pMaterialParam_LocalContrastStrength		= NULL;
+	m_pMaterialParam_LocalContrastEdgeStrength	= NULL;
+	m_pMaterialParam_VignetteStart				= NULL;
+	m_pMaterialParam_VignetteEnd				= NULL;
+	m_pMaterialParam_VignetteBlurEnable			= NULL;
+	m_pMaterialParam_VignetteBlurStrength		= NULL;
+	m_pMaterialParam_FadeToBlackStrength		= NULL;
+	m_pMaterialParam_DepthBlurFocalDistance		= NULL;
+	m_pMaterialParam_DepthBlurStrength			= NULL;
+	m_pMaterialParam_ScreenBlurStrength			= NULL;
+	m_pMaterialParam_FilmGrainStrength			= NULL;
 }
 
 CEnginePostMaterialProxy::~CEnginePostMaterialProxy()
@@ -1257,10 +1344,27 @@ bool CEnginePostMaterialProxy::Init( IMaterial *pMaterial, KeyValues *pKeyValues
 	m_pMaterialParam_AAValues2 = pMaterial->FindVar( "$AAInternal3", &bFoundVar, false );
 	m_pMaterialParam_BloomUVTransform = pMaterial->FindVar( "$AAInternal2", &bFoundVar, false );
 	m_pMaterialParam_BloomEnable = pMaterial->FindVar( "$bloomEnable", &bFoundVar, false );
+	m_pMaterialParam_BloomAmount = pMaterial->FindVar( "$bloomAmount", &bFoundVar, false );
 	m_pMaterialParam_ColCorrectEnable = pMaterial->FindVar( "$colCorrectEnable", &bFoundVar, false );
 	m_pMaterialParam_ColCorrectNumLookups = pMaterial->FindVar( "$colCorrect_NumLookups", &bFoundVar, false );
 	m_pMaterialParam_ColCorrectDefaultWeight = pMaterial->FindVar( "$colCorrect_DefaultWeight", &bFoundVar, false );
 	m_pMaterialParam_ColCorrectLookupWeights = pMaterial->FindVar( "$colCorrect_LookupWeights", &bFoundVar, false );
+	m_pMaterialParam_LocalContrastStrength = pMaterial->FindVar( "$localContrastScale", &bFoundVar, false );
+	m_pMaterialParam_LocalContrastEdgeStrength = pMaterial->FindVar( "$localContrastEdgeScale", &bFoundVar, false );
+	m_pMaterialParam_VignetteStart = pMaterial->FindVar( "$localContrastVignetteStart", &bFoundVar, false );
+	m_pMaterialParam_VignetteEnd = pMaterial->FindVar( "$localContrastVignetteEnd", &bFoundVar, false );
+	m_pMaterialParam_VignetteBlurEnable = pMaterial->FindVar( "$blurredVignetteEnable", &bFoundVar, false );
+	m_pMaterialParam_VignetteBlurStrength = pMaterial->FindVar( "$blurredVignetteScale", &bFoundVar, false );
+	m_pMaterialParam_FadeToBlackStrength = pMaterial->FindVar( "$fadeToBlackScale", &bFoundVar, false );
+	m_pMaterialParam_DepthBlurFocalDistance = pMaterial->FindVar( "$depthBlurFocalDistance", &bFoundVar, false );
+	m_pMaterialParam_DepthBlurStrength = pMaterial->FindVar( "$depthBlurStrength", &bFoundVar, false );
+	m_pMaterialParam_ScreenBlurStrength = pMaterial->FindVar( "$screenBlurStrength", &bFoundVar, false );
+	m_pMaterialParam_FilmGrainStrength = pMaterial->FindVar( "$noiseScale", &bFoundVar, false );
+	m_pMaterialParam_VomitEnable = pMaterial->FindVar( "$vomitEnable", &bFoundVar, false );
+	m_pMaterialParam_VomitColor1 = pMaterial->FindVar( "$vomitColor1", &bFoundVar, false );
+	m_pMaterialParam_VomitColor2 = pMaterial->FindVar( "$vomitColor2", &bFoundVar, false );
+	m_pMaterialParam_FadeColor = pMaterial->FindVar( "$fadeColor", &bFoundVar, false );
+	m_pMaterialParam_FadeType = pMaterial->FindVar( "$fade", &bFoundVar, false );
 
 	return true;
 }
@@ -1278,6 +1382,56 @@ void CEnginePostMaterialProxy::OnBind( C_BaseEntity *pEnt )
 
 	if ( m_pMaterialParam_BloomEnable )
 		m_pMaterialParam_BloomEnable->SetIntValue( s_PostBloomEnable );
+
+	if ( m_pMaterialParam_BloomAmount )
+		m_pMaterialParam_BloomAmount->SetFloatValue( s_PostBloomAmount );
+
+	if ( m_pMaterialParam_LocalContrastStrength )
+		m_pMaterialParam_LocalContrastStrength->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_LOCAL_CONTRAST_STRENGTH ] );
+
+	if ( m_pMaterialParam_LocalContrastEdgeStrength )
+		m_pMaterialParam_LocalContrastEdgeStrength->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_LOCAL_CONTRAST_EDGE_STRENGTH ] );
+
+	if ( m_pMaterialParam_VignetteStart )
+		m_pMaterialParam_VignetteStart->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_VIGNETTE_START ] );
+
+	if ( m_pMaterialParam_VignetteEnd )
+		m_pMaterialParam_VignetteEnd->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_VIGNETTE_END ] );
+
+	if ( m_pMaterialParam_VignetteBlurEnable )
+		m_pMaterialParam_VignetteBlurEnable->SetIntValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_VIGNETTE_BLUR_STRENGTH ] > 0.0f ? 1 : 0 );
+
+	if ( m_pMaterialParam_VignetteBlurStrength )
+		m_pMaterialParam_VignetteBlurStrength->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_VIGNETTE_BLUR_STRENGTH ] );
+
+	if ( m_pMaterialParam_FadeToBlackStrength )
+		m_pMaterialParam_FadeToBlackStrength->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_FADE_TO_BLACK_STRENGTH ] );
+
+	if ( m_pMaterialParam_DepthBlurFocalDistance )
+		m_pMaterialParam_DepthBlurFocalDistance->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_DEPTH_BLUR_FOCAL_DISTANCE ] );
+
+	if ( m_pMaterialParam_DepthBlurStrength )
+		m_pMaterialParam_DepthBlurStrength->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_DEPTH_BLUR_STRENGTH ] );
+
+	if ( m_pMaterialParam_ScreenBlurStrength )
+		m_pMaterialParam_ScreenBlurStrength->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_SCREEN_BLUR_STRENGTH ] );
+
+	if ( m_pMaterialParam_FilmGrainStrength )
+		m_pMaterialParam_FilmGrainStrength->SetFloatValue( s_LocalPostProcessParameters.m_flParameters[ PPPN_FILM_GRAIN_STRENGTH ] );
+
+
+
+	if ( m_pMaterialParam_FadeType )
+	{
+		int nFadeType = ( s_bViewFadeModulate ) ? 2 : 1;
+		nFadeType = ( s_viewFadeColor[3] > 0.0f ) ? nFadeType : 0;
+		m_pMaterialParam_FadeType->SetIntValue( nFadeType );
+	}
+
+	if ( m_pMaterialParam_FadeColor )
+	{
+		m_pMaterialParam_FadeColor->SetVecValue( s_viewFadeColor.Base(), 4 );
+	}
 }
 
 IMaterial *CEnginePostMaterialProxy::GetMaterial()
@@ -1364,12 +1518,14 @@ IMaterial * CEnginePostMaterialProxy::SetupEnginePostMaterial(	const Vector4D & 
 		SetupEnginePostMaterialTextureTransform( fullViewportBloomUVs, fullViewportFBUVs, destTexSize );
 		return materials->FindMaterial( "dev/engine_post", TEXTURE_GROUP_OTHER, true);
 	}
+	/*
 	else
 	{
 		// Just use the old bloomadd material (which uses additive blending, unlike engine_post)
 		// NOTE: this path is what gets used for DX8 (which cannot enable AA or col-correction)
 		return materials->FindMaterial( "dev/bloomadd", TEXTURE_GROUP_OTHER, true);
 	}
+	*/
 }
 
 EXPOSE_INTERFACE( CEnginePostMaterialProxy, IMaterialProxy, "engine_post" IMATERIAL_PROXY_INTERFACE_VERSION );
@@ -1519,6 +1675,28 @@ void DumpTGAofRenderTarget( const int width, const int height, const char *pFile
 
 
 static bool s_bScreenEffectTextureIsUpdated = false;
+
+// WARNING: This function sets rendertarget and viewport. Save and restore is left to the caller.
+static void DownsampleFBQuarterSize( IMatRenderContext *pRenderContext, int nSrcWidth, int nSrcHeight, ITexture* pDest,
+									 bool bFloatHDR = false )
+{
+	Assert( pRenderContext );
+	Assert( pDest );
+
+	IMaterial *downsample_mat = materials->FindMaterial( bFloatHDR ? "dev/downsample" : "dev/downsample_non_hdr", TEXTURE_GROUP_OTHER, true );
+
+	// *Everything* in here relies on the small RTs being exactly 1/4 the full FB res
+	Assert( pDest->GetActualWidth()  == nSrcWidth  / 4 );
+	Assert( pDest->GetActualHeight() == nSrcHeight / 4 );
+
+	// downsample fb to rt0
+	SetRenderTargetAndViewPort( pDest );
+	// note the -2's below. Thats because we are downsampling on each axis and the shader
+	// accesses pixels on both sides of the source coord
+	pRenderContext->DrawScreenSpaceRectangle(	downsample_mat, 0, 0, nSrcWidth/4, nSrcHeight/4,
+												0, 0, nSrcWidth-2, nSrcHeight-2,
+												nSrcWidth, nSrcHeight );
+}
 
 static void Generate8BitBloomTexture( IMatRenderContext *pRenderContext, float flBloomScale,
 										int x, int y, int w, int h )
@@ -2635,6 +2813,7 @@ void DoEnginePostProcessing( int x, int y, int w, int h, bool bFlashlightIsOn, b
 
 // Motion Blur Material Proxy =========================================================================================
 static float g_vMotionBlurValues[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+static float g_vMotionBlurViewportValues[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
 class CMotionBlurMaterialProxy : public CEntityMaterialProxy
 {
 public:
@@ -2646,6 +2825,7 @@ public:
 
 private:
 	IMaterialVar *m_pMaterialParam;
+	IMaterialVar *m_pMaterialParamViewport;
 };
 
 CMotionBlurMaterialProxy::CMotionBlurMaterialProxy()
@@ -2666,6 +2846,10 @@ bool CMotionBlurMaterialProxy::Init( IMaterial *pMaterial, KeyValues *pKeyValues
 	if ( bFoundVar == false)
 		return false;
 
+	m_pMaterialParamViewport = pMaterial->FindVar( "$MotionBlurViewportInternal", &bFoundVar, false );
+	if ( bFoundVar == false)
+		return false;
+
 	return true;
 }
 
@@ -2674,6 +2858,11 @@ void CMotionBlurMaterialProxy::OnBind( C_BaseEntity *pEnt )
 	if ( m_pMaterialParam != NULL )
 	{
 		m_pMaterialParam->SetVecValue( g_vMotionBlurValues, 4 );
+	}
+
+	if ( m_pMaterialParamViewport != NULL )
+	{
+		m_pMaterialParamViewport->SetVecValue( g_vMotionBlurViewportValues, 4 );
 	}
 }
 
@@ -2691,8 +2880,10 @@ EXPOSE_INTERFACE( CMotionBlurMaterialProxy, IMaterialProxy, "MotionBlur" IMATERI
 // Image-space Motion Blur ============================================================================================
 //=====================================================================================================================
 ConVar mat_motion_blur_enabled( "mat_motion_blur_enabled", "1", FCVAR_ARCHIVE );
+
 ConVar mat_motion_blur_forward_enabled( "mat_motion_blur_forward_enabled", "0" );
 ConVar mat_motion_blur_falling_min( "mat_motion_blur_falling_min", "10.0" );
+
 ConVar mat_motion_blur_falling_max( "mat_motion_blur_falling_max", "20.0" );
 ConVar mat_motion_blur_falling_intensity( "mat_motion_blur_falling_intensity", "1.0" );
 //ConVar mat_motion_blur_roll_intensity( "mat_motion_blur_roll_intensity", "1.0" );
@@ -2996,4 +3187,195 @@ void DoImageSpaceMotionBlur( const CViewSetup &view, int x, int y, int w, int h 
 			}
 		}
 	}
+}
+
+//=====================================================================================================================
+// Depth of field =====================================================================================================
+//=====================================================================================================================
+ConVar mat_dof_enabled( "mat_dof_enabled", "1" );
+ConVar mat_dof_override( "mat_dof_override", "0" );
+ConVar mat_dof_near_blur_depth( "mat_dof_near_blur_depth", "20.0" );
+ConVar mat_dof_near_focus_depth( "mat_dof_near_focus_depth", "100.0" );
+ConVar mat_dof_far_focus_depth( "mat_dof_far_focus_depth", "250.0" );
+ConVar mat_dof_far_blur_depth( "mat_dof_far_blur_depth", "1000.0" );
+ConVar mat_dof_near_blur_radius( "mat_dof_near_blur_radius", "0.0" );
+ConVar mat_dof_far_blur_radius( "mat_dof_far_blur_radius", "10.0" );
+ConVar mat_dof_quality( "mat_dof_quality", "3" );
+
+static float GetNearBlurDepth()
+{
+	return mat_dof_override.GetBool() ? mat_dof_near_blur_depth.GetFloat() : g_flDOFNearBlurDepth;
+}
+
+static float GetNearFocusDepth()
+{
+	return mat_dof_override.GetBool() ? mat_dof_near_focus_depth.GetFloat() : g_flDOFNearFocusDepth;
+}
+
+static float GetFarFocusDepth()
+{
+	return mat_dof_override.GetBool() ? mat_dof_far_focus_depth.GetFloat() : g_flDOFFarFocusDepth;
+}
+
+static float GetFarBlurDepth()
+{
+	return mat_dof_override.GetBool() ? mat_dof_far_blur_depth.GetFloat() : g_flDOFFarBlurDepth;
+}
+
+static float GetNearBlurRadius()
+{
+	return mat_dof_override.GetBool() ? mat_dof_near_blur_radius.GetFloat() : g_flDOFNearBlurRadius;
+}
+
+static float GetFarBlurRadius()
+{
+	return mat_dof_override.GetBool() ? mat_dof_far_blur_radius.GetFloat() : g_flDOFFarBlurRadius;
+}
+
+bool IsDepthOfFieldEnabled()
+{
+	const CViewSetup *pViewSetup = view->GetViewSetup();
+	if ( !pViewSetup )
+		return false;
+
+	if ( g_pMaterialSystemHardwareConfig->GetDXSupportLevel() < 92 )
+		return false;
+
+	if ( !mat_dof_enabled.GetBool() )
+		return false;
+
+	if ( mat_dof_override.GetBool() == true )
+	{
+		return mat_dof_enabled.GetBool();
+	}
+	else
+	{
+		return g_bDOFEnabled;
+	}
+}
+
+static inline bool SetMaterialVarFloat( IMaterial* pMat, const char* pVarName, float flValue )
+{
+	Assert( pMat != NULL );
+	Assert( pVarName != NULL );
+	if ( pMat == NULL || pVarName == NULL )
+	{
+		return false;
+	}
+
+	bool bFound = false;
+	IMaterialVar* pVar = pMat->FindVar( pVarName, &bFound );
+	if ( bFound )
+	{
+		pVar->SetFloatValue( flValue );
+	}
+
+	return bFound;
+}
+
+static inline bool SetMaterialVarInt( IMaterial* pMat, const char* pVarName, int nValue )
+{
+	Assert( pMat != NULL );
+	Assert( pVarName != NULL );
+	if ( pMat == NULL || pVarName == NULL )
+	{
+		return false;
+	}
+
+	bool bFound = false;
+	IMaterialVar* pVar = pMat->FindVar( pVarName, &bFound );
+	if ( bFound )
+	{
+		pVar->SetIntValue( nValue );
+	}
+	
+	return bFound;
+}
+
+void DoDepthOfField( const CViewSetup &viewSetup )
+{
+	if ( !IsDepthOfFieldEnabled() )
+	{
+		return;
+	}
+
+	// Copy from backbuffer to _rt_FullFrameFB
+	UpdateScreenEffectTexture( 0, viewSetup.x, viewSetup.y, viewSetup.width, viewSetup.height, false ); // Do we need to check if we already did this?
+
+	CMatRenderContextPtr pRenderContext( materials );
+
+	ITexture *pSrc = materials->FindTexture( "_rt_FullFrameFB", TEXTURE_GROUP_RENDER_TARGET );
+	int nSrcWidth = pSrc->GetActualWidth();
+	int nSrcHeight = pSrc->GetActualHeight();
+
+	int nViewportWidth = 0;
+	int nViewportHeight = 0;
+	int nDummy = 0;
+	pRenderContext->GetViewport( nDummy, nDummy, nViewportWidth, nViewportHeight );
+
+	if ( mat_dof_quality.GetInt() < 2 )
+	{
+		/////////////////////////////////////
+		// Downsample backbuffer to 1/4 size
+		/////////////////////////////////////
+
+		// Update downsampled framebuffer. TODO: Don't do this again for the bloom if we already did it here...
+		pRenderContext->PushRenderTargetAndViewport();
+		ITexture *dest_rt0 = materials->FindTexture( "_rt_SmallFB0", TEXTURE_GROUP_RENDER_TARGET );
+
+		// *Everything* in here relies on the small RTs being exactly 1/4 the full FB res
+		Assert( dest_rt0->GetActualWidth()  == pSrc->GetActualWidth()  / 4 );
+		Assert( dest_rt0->GetActualHeight() == pSrc->GetActualHeight() / 4 );
+
+		// Downsample fb to rt0
+		DownsampleFBQuarterSize( pRenderContext, nSrcWidth, nSrcHeight, dest_rt0, true );
+		
+		//////////////////////////////////////
+		// Additional blur using 3x3 gaussian
+		//////////////////////////////////////
+
+		IMaterial *pMat = materials->FindMaterial( "dev/blurgaussian_3x3", TEXTURE_GROUP_OTHER, true );
+
+		if ( pMat == NULL )
+			return;
+
+		SetMaterialVarFloat( pMat, "$c0_x", 0.5f / (float)dest_rt0->GetActualWidth() );
+		SetMaterialVarFloat( pMat, "$c0_y", 0.5f / (float)dest_rt0->GetActualHeight() );
+		SetMaterialVarFloat( pMat, "$c1_x", -0.5f / (float)dest_rt0->GetActualWidth() );
+		SetMaterialVarFloat( pMat, "$c1_y", 0.5f / (float)dest_rt0->GetActualHeight() );
+
+		ITexture *dest_rt1 = materials->FindTexture( "_rt_SmallFB1", TEXTURE_GROUP_RENDER_TARGET );
+		SetRenderTargetAndViewPort( dest_rt1 );
+
+		pRenderContext->DrawScreenSpaceRectangle(
+			pMat, 0, 0, nSrcWidth/4, nSrcHeight/4,
+			0, 0, dest_rt0->GetActualWidth()-1, dest_rt0->GetActualHeight()-1,
+			dest_rt0->GetActualWidth(), dest_rt0->GetActualHeight() );
+
+		pRenderContext->PopRenderTargetAndViewport();
+	}
+
+	// Render depth-of-field quad 
+	IMaterial *pMatDOF = materials->FindMaterial( "dev/depth_of_field", TEXTURE_GROUP_OTHER, true );
+
+	if ( pMatDOF == NULL )
+		return;
+
+	SetMaterialVarFloat( pMatDOF, "$nearPlane", viewSetup.zNear );
+	SetMaterialVarFloat( pMatDOF, "$farPlane", viewSetup.zFar );
+
+	// pull from convars/globals
+	SetMaterialVarFloat( pMatDOF, "$nearBlurDepth", GetNearBlurDepth() );
+	SetMaterialVarFloat( pMatDOF, "$nearFocusDepth", GetNearFocusDepth() );
+	SetMaterialVarFloat( pMatDOF, "$farFocusDepth", GetFarFocusDepth() );
+	SetMaterialVarFloat( pMatDOF, "$farBlurDepth", GetFarBlurDepth() );
+	SetMaterialVarFloat( pMatDOF, "$nearBlurRadius", GetNearBlurRadius() );
+	SetMaterialVarFloat( pMatDOF, "$farBlurRadius", GetFarBlurRadius() );
+	SetMaterialVarInt( pMatDOF, "$quality", mat_dof_quality.GetInt() );
+
+	pRenderContext->DrawScreenSpaceRectangle(
+		pMatDOF,
+		0, 0, nViewportWidth, nViewportHeight,
+		0, 0, nSrcWidth-1, nSrcHeight-1,
+		nSrcWidth, nSrcHeight, GetClientWorldEntity()->GetClientRenderable() );
 }

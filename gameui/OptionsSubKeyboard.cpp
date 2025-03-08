@@ -760,7 +760,7 @@ public:
 	COptionsSubKeyboardAdvancedDlg( vgui::VPANEL hParent ) : BaseClass( NULL, NULL )
 	{
 		// parent is ignored, since we want look like we're steal focus from the parent (we'll become modal below)
-		// 如果 need
+
 		//if( NeedProportional() )
 		//	SetProportional(true);
 

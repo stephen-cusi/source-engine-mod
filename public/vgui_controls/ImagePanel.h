@@ -61,7 +61,11 @@ public:
 	int GetNumFrames();
 	void SetFrame( int nFrame );
 
+#ifdef MAPBASE
+	void SetRotation( int iRotation );
+#else
 	void SetRotation( int iRotation ) { m_iRotation = iRotation; }
+#endif
 
 protected:
 	virtual void PaintBackground();
@@ -69,7 +73,7 @@ protected:
 	virtual const char *GetDescription();
 	virtual void OnSizeChanged(int newWide, int newTall);
 	virtual void ApplySchemeSettings( IScheme *pScheme );
-
+    bool m_bScaleImage;
 private:
 	IImage *m_pImage;
 	char *m_pszImageName;
@@ -77,7 +81,7 @@ private:
 	char *m_pszDrawColorName;
 	bool m_bPositionImage;
 	bool m_bCenterImage;
-	bool m_bScaleImage;
+//	bool m_bScaleImage;
 	bool m_bTileImage;
 	bool m_bTileHorizontally;
 	bool m_bTileVertically;

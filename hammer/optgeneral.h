@@ -17,11 +17,13 @@
 
 #include "Resource.h"
 
+
 class COPTGeneral : public CPropertyPage
 {
 	DECLARE_DYNCREATE(COPTGeneral)
 
-// Constructionpublic:
+// Construction
+public:
 	COPTGeneral();
 	~COPTGeneral();
 
@@ -55,7 +57,8 @@ class COPTGeneral : public CPropertyPage
 	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
-// Implementationprotected:
+// Implementation
+protected:
 
 	// Generated message map functions
 	//{{AFX_MSG(COPTGeneral)

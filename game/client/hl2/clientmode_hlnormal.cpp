@@ -19,12 +19,12 @@
 
 extern bool g_bRollingCredits;
 
+// ConVar fov_desired( "fov_desired", "75", FCVAR_ARCHIVE | FCVAR_USERINFO, "Sets the base field-of-view.", true, 75.0, true, 110.0 );
 #ifdef GAMEPADUI
-ConVar fov_desired("fov_desired", "90", FCVAR_ARCHIVE | FCVAR_USERINFO, "Sets the base field-of-view.", true, 75.0, true, 120.0);
+ConVar fov_desired("fov_desired", "80", FCVAR_ARCHIVE | FCVAR_USERINFO, "Sets the base field-of-view.", true, 75.0, true, 120.0);
 #else
-ConVar fov_desired( "fov_desired", "90", FCVAR_ARCHIVE | FCVAR_USERINFO, "Sets the base field-of-view.", true,75.0, true, 110.0 );
+ConVar fov_desired( "fov_desired", "85", FCVAR_ARCHIVE | FCVAR_USERINFO, "Sets the base field-of-view.", true, 80.0, true, 120.0 );
 #endif // GAMEPADUI
-
 //-----------------------------------------------------------------------------
 // Globals
 //-----------------------------------------------------------------------------
