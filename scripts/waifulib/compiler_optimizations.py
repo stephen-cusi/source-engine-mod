@@ -73,7 +73,7 @@ CFLAGS = {
 	'debug': {
 		'msvc':    ['/Od', '/MTd'],
 		'owcc':    ['-g', '-O0', '-fno-omit-frame-pointer', '-funwind-tables', '-fno-omit-leaf-frame-pointer'],
-		'default': ['-ggdb', '-O0'] #, '-ftree-vectorize', '-ffast-math']
+		'default': ['-g', '-O0'] #, '-ftree-vectorize', '-ffast-math']
 	},
 	'sanitize': {
 		'msvc':    ['/Od', '/RTC1', '/MT'],
@@ -112,10 +112,10 @@ def options(opt):
 		help = 'build type: debug, release or none(custom flags)')
 
 	grp.add_option('--enable-lto', action = 'store_true', dest = 'LTO', default = False,
-		help = 'enable Link Time Optimization if possible [default: %default]')
+		help = 'enable Link Time Optimization if possible [default: False]')
 
 	grp.add_option('--enable-poly-opt', action = 'store_true', dest = 'POLLY', default = False,
-		help = 'enable polyhedral optimization if possible [default: %default]')
+		help = 'enable polyhedral optimization if possible [default: False]')
 
 def configure(conf):
 	conf.start_msg('Build type')

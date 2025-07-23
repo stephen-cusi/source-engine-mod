@@ -81,8 +81,8 @@ void GamepadUI::Initialize( CreateInterfaceFn factory )
 
     m_pAnimationController = new vgui::AnimationController( m_pBasePanel );
     m_pAnimationController->SetProportional( false );
-    // fixed gamepadui crash 
-    GetMainMenu()->Activate();
+    
+    GetMainMenu()->Activate(); // idk why gamepadui cant work before console
 }
 
 void GamepadUI::Shutdown()

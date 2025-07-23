@@ -86,7 +86,7 @@ using namespace vgui;
 #include "../engine/imatchmaking.h"
 #include "tier1/utlstring.h"
 #include "steam/steam_api.h"
-// gamepadui需要?
+
 #include "materialsystem/imaterial.h"
 #include "tier2/renderutils.h"
 
@@ -288,14 +288,6 @@ private:
 	const char *m_szUrl;
 };
 
-void AddUrlButton(vgui::Panel *parent, const char *imgName, const char *url )
-{
-	static int i = 0;
-	ImageButton *panel = new ImageButton( parent, imgName );
-	panel->SetUrl( url );
-	panel->SetBounds( 15+i*52, 10, 48, 48 );
-	i++;
-}
 
 //-----------------------------------------------------------------------------
 // Purpose: General purpose 1 of N menu
@@ -734,12 +726,11 @@ public:
 	}
 
     MESSAGE_FUNC_HANDLE( OnCursorEnteredMenuItem, "CursorEnteredMenuItem", menuItem);
-    vgui::VPANEL	m_hMainMenuOverridePanel;
-    // 将函数移到外面
+
+	vgui::VPANEL	m_hMainMenuOverridePanel;
 private:
 	CFooterPanel *m_pConsoleFooter;
 	vgui::CKeyRepeatHandler	m_KeyRepeat;
-	// vgui::VPANEL	m_hMainMenuOverridePanel;
 };
 
 //-----------------------------------------------------------------------------
@@ -774,11 +765,10 @@ bool g_bIsCreatingNewGameMenuForPreFetching = false;
 //-----------------------------------------------------------------------------
 CBasePanel::CBasePanel() : Panel(NULL, "BaseGameUIPanel")
 {
-	   if (CommandLine()->FindParm( "-autoscaleui" ))
-	   {
-         if( NeedProportional() )
-	     SetProportional( true );
-	   } 
+	
+	if( NeedProportional() )
+		SetProportional( true );
+
 	g_pBasePanel = this;
 	m_bLevelLoading = false;
 	m_eBackgroundState = BACKGROUND_INITIAL;
@@ -817,10 +807,9 @@ CBasePanel::CBasePanel() : Panel(NULL, "BaseGameUIPanel")
 	m_iBackgroundImageID = -1;
 	m_iProductImageID = -1;
 	m_iLoadingImageID = -1;
-	// 添加gamepad UI函数
-    m_iLoadingSpinnerImageID = -1;
+	m_iLoadingSpinnerImageID = -1;
 	m_fLoadingSpinnerFrame = 0;
-	// 函数上
+
 	if ( GameUI().IsConsoleUI() )
 	{
 		m_pConsoleAnimationController = new AnimationController( this );
@@ -841,10 +830,8 @@ CBasePanel::CBasePanel() : Panel(NULL, "BaseGameUIPanel")
 		x360_audio_english.SetValue( XboxLaunch()->GetForceEnglish() );
 #endif
 	}
-// 移除相关方法
-//	m_pGameMenuButtons.AddToTail( CreateMenuButton( this, "GameMenuButton", ModInfo().GetGameTitle() ) );
-//	m_pGameMenuButtons.AddToTail( CreateMenuButton( this, "GameMenuButton2", ModInfo().GetGameTitle2() ) );
-    if (!IsGamepadUI())
+
+	if (!IsGamepadUI())
 	{
 		m_pGameMenuButtons.AddToTail(CreateMenuButton(this, "GameMenuButton", ModInfo().GetGameTitle()));
 		m_pGameMenuButtons.AddToTail(CreateMenuButton(this, "GameMenuButton2", ModInfo().GetGameTitle2()));
@@ -985,13 +972,12 @@ CBasePanel::~CBasePanel()
 			vgui::surface()->DestroyTextureID( m_iLoadingImageID );
 			m_iLoadingImageID = -1;
 		}
-		// 添加相关方法
+
 		if (m_iLoadingSpinnerImageID != -1 )
 		{
 			vgui::surface()->DestroyTextureID(m_iLoadingSpinnerImageID);
 			m_iLoadingSpinnerImageID = -1;
 		}
-		// gamepadui
 	}
 }
 
@@ -1307,15 +1293,13 @@ void CBasePanel::SetBackgroundRenderState(EBackgroundState state)
 		// make the menus visible
 		m_bFadingInMenus = true;
 		m_flFadeMenuStartTime = frametime;
-		 m_flFadeMenuEndTime = frametime + 3.0f; // 移除相关方法
-            
+		m_flFadeMenuEndTime = frametime + 3.0f;
+
 		if ( state == BACKGROUND_MAINMENU )
 		{
 			// fade background into main menu
 			m_bRenderingBackgroundTransition = true;
 			m_flTransitionStartTime = frametime;
-			// m_flTransitionEndTime = frametime + 3.0f;
-			// gamepadui need
 			if (IsGamepadUI())
 			{
 				m_flTransitionEndTime = frametime + 1.0f;
@@ -1324,7 +1308,6 @@ void CBasePanel::SetBackgroundRenderState(EBackgroundState state)
 			{
 				m_flTransitionEndTime = frametime + 3.0f;
 			}
-			// gamepadui
 		}
 	}
 	else if ( state == BACKGROUND_LOADING )
@@ -1384,9 +1367,14 @@ void CBasePanel::OnSizeChanged( int newWide, int newTall )
 void CBasePanel::OnLevelLoadingStarted()
 {
 	m_bLevelLoading = true;
-	
-    ConVarRef("cl_gamepadui_mainmenu_draw").SetValue(false);
-    //gamepadui
+
+	ConVarRef("cl_gamepadui_mainmenu_draw").SetValue(false);
+	// about to start loading a new level
+
+	//Msg("%d\n", GameUI().IsLoading());
+	//GameUI().SetLoadingState(m_bLevelLoading);
+	//Msg("%d\n", GameUI().IsLoading());
+
 	m_pGameMenu->ShowFooter( false );
 
 	if ( m_hMatchmakingBasePanel.Get() )
@@ -1408,8 +1396,9 @@ void CBasePanel::OnLevelLoadingStarted()
 void CBasePanel::OnLevelLoadingFinished()
 {
 	m_bLevelLoading = false;
-	//gamepadui
-    ConVarRef("cl_gamepadui_mainmenu_draw").SetValue(true);
+
+	ConVarRef("cl_gamepadui_mainmenu_draw").SetValue(true);
+
 	if ( m_hMatchmakingBasePanel.Get() )
 	{
 		m_hMatchmakingBasePanel->OnCommand( "LevelLoadingFinished" );
@@ -1501,8 +1490,6 @@ void CBasePanel::DrawBackgroundImage()
 		surface()->DrawSetTexture(m_iLoadingImageID);
 		int twide, ttall;
 		surface()->DrawGetTextureSize(m_iLoadingImageID, twide, ttall);
-	//	surface()->DrawTexturedRect(wide - twide, tall - ttall, wide, tall);
-		//gamepadui
 		if (IsGamepadUI())
 		{
 			surface()->DrawTexturedRect(wide - ((twide / 512.f) * twide) - 30, 30, wide - 30, (ttall / 512.f) * ttall + 30);
@@ -1526,7 +1513,6 @@ void CBasePanel::DrawBackgroundImage()
 		{
 			surface()->DrawTexturedRect(wide - twide, tall - ttall, wide, tall);
 		}
-  // gamepadui
 	}
 
 	// update the menu alpha
@@ -1646,20 +1632,19 @@ void CBasePanel::UpdateGameMenus()
 //-----------------------------------------------------------------------------
 // Purpose: sets up the game menu from the keyvalues
 //			the game menu is hierarchial, so this is recursive
+// 是递归的 但是只有一层  菜单命令行
 //-----------------------------------------------------------------------------
 CGameMenu *CBasePanel::RecursiveLoadGameMenu(KeyValues *datafile)
 {
 	CGameMenu *menu = new CGameMenu(this, datafile->GetName());
 
-	if (CommandLine()->FindParm( "-console" ))
-	   {
-           ConMsg( "GameStarting with console \n" ); 
+      if (CommandLine()->FindParm( "-console" )){	     		
            wchar_t *pString = g_pVGuiLocalize->Find( "#GameUI_Console" );
 	       if( pString )
-		      menu->AddMenuItem("Console", V_wcsupr(pString), "OpenConsole", this); // 没用的
+		      menu->AddMenuItem("Console", V_wcsupr(pString), "OpenConsole", this); 
            else
-		      menu->AddMenuItem("Console", "CONSOLE", "OpenConsole", this); // snms 
-	   } 
+		      menu->AddMenuItem("Console", "CONSOLE", "OpenConsole", this); 
+	   }
 
 	bool bFoundServerBrowser = false;
 
@@ -1856,6 +1841,7 @@ void CBasePanel::PerformLayout()
 //-----------------------------------------------------------------------------
 void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 {
+	
 	int i;
 	BaseClass::ApplySchemeSettings(pScheme);
 
@@ -1918,7 +1904,7 @@ void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 	SetBgColor(Color(0, 0, 0, 0));
 
 	m_BackdropColor = pScheme->GetColor("mainmenu.backdrop", Color(0, 0, 0, 128));
-
+	
 	char filename[MAX_PATH];
 	if ( IsX360() )
 	{
@@ -1956,6 +1942,7 @@ void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 	{
 		m_iBackgroundImageID = surface()->CreateNewTextureID();
 	}
+
 	surface()->DrawSetTextureFile( m_iBackgroundImageID, filename, false, false );
 
 	if ( IsX360() )
@@ -1969,18 +1956,13 @@ void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 		}
 		surface()->DrawSetTextureFile( m_iProductImageID, filename, false, false );
 	}
-
+	
+	
 	if ( IsPC() )
 	{
 		// load the loading icon
 		if ( m_iLoadingImageID == -1 )
 		{
-		/*
-			const char* loading = "console/startup_loading";
-			if ( IsGamepadUI() )
-				loading = "gamepadui/game_logo";
-			m_iLoadingImageID = surface()->CreateNewTextureID();
-			surface()->DrawSetTextureFile( m_iLoadingImageID, loading, false, false );*/
 			if (IsGamepadUI())
 			{
 				const char* loading = "gamepadui/game_logo.vtf";
@@ -2005,9 +1987,9 @@ void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 				m_iLoadingSpinnerImageID = surface()->CreateNewTextureID();
 				surface()->DrawSetTextureFile(m_iLoadingSpinnerImageID, loadingCircle, true, false);
 			}
-			// gamepadui
 		}
 	}
+	
 }
 
 //-----------------------------------------------------------------------------

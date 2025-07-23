@@ -399,7 +399,6 @@ private:
 	int							m_iBackgroundImageID;
 	int							m_iRenderTargetImageID;
 	int							m_iLoadingImageID;
-	// int							m_iProductImageID;
 	int							m_iLoadingSpinnerImageID; float m_fLoadingSpinnerFrame;
 	int							m_iProductImageID;
 	bool						m_bLevelLoading;

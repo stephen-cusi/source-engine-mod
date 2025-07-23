@@ -388,7 +388,8 @@ public:
 		int h = 200;
 		if (ipanel()->IsProportional(hParent))
 		{
-			//SetProportional(true);
+	
+			SetProportional(true);
 			w = scheme()->GetProportionalScaledValueEx(GetScheme(), w);
 			h = scheme()->GetProportionalScaledValueEx(GetScheme(), h);
 		}

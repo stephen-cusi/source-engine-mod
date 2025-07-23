@@ -761,8 +761,8 @@ public:
 	{
 		// parent is ignored, since we want look like we're steal focus from the parent (we'll become modal below)
 
-		//if( NeedProportional() )
-		//	SetProportional(true);
+		if( NeedProportional() )
+			SetProportional(true);
 
 		SetTitle("#GameUI_KeyboardAdvanced_Title", true);
 		if( IsProportional() )

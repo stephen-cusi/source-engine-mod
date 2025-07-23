@@ -10,12 +10,12 @@ import shutil, os
 from waflib import Build, Utils, Context, Errors, Logs
 
 def options(opt):
-	grp = opt.option_groups['install/uninstall options']
+	grp = opt.add_option_group('Build and installation options')
 	grp.add_option('--strip', dest='strip', action='store_true', default=False,
-		help='strip binaries. You must pass this flag to install command [default: %default]')
+		help='strip binaries. You must pass this flag to install command [default: False]')
 	
 	grp.add_option('--strip-to-file', dest='strip_to_file', action='store_true', default=False,
-		help='strip debug information to file *.debug. Implies --strip. You must pass this flag to install command [default: %default]')
+		help='strip debug information to file *.debug. Implies --strip. You must pass this flag to install command [default: False]')
 
 def configure(conf):
 	if conf.env.DEST_BINFMT in ['elf', 'mac-o']:

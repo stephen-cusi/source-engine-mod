@@ -60,7 +60,7 @@ void CGameConsole::Initialize()
 	int swide, stall;
 	vgui::surface()->GetScreenSize(swide, stall);
 	int offsetx = vgui::scheme()->GetProportionalScaledValue(16);
-	int offsety = vgui::scheme()->GetProportionalScaledValue(16);
+	int offsety = vgui::scheme()->GetProportionalScaledValue(64);
 
 	m_pConsole->SetBounds(
 		swide / 2 - offsetx,
@@ -152,7 +152,7 @@ void CGameConsole::SetParent( intp parent )
 	// apply proportionality from parent
 	if (vgui::ipanel()->IsProportional(static_cast<vgui::VPANEL>(parent)))
 	{
-		// m_pConsole->SetProportional(true);
+		m_pConsole->SetProportional(true);
 		m_pConsole->InvalidateLayout(true, true);
 	}
 #endif

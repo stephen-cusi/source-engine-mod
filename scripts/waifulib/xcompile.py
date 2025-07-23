@@ -20,12 +20,12 @@ import os
 import sys
 
 ANDROID_NDK_ENVVARS = ['ANDROID_NDK_HOME', 'ANDROID_NDK']
-ANDROID_NDK_SUPPORTED = [10, 19, 20]
+ANDROID_NDK_SUPPORTED = [10, 16, 19, 20]
 ANDROID_NDK_HARDFP_MAX = 11 # latest version that supports hardfp
 ANDROID_NDK_GCC_MAX = 17 # latest NDK that ships with GCC
 ANDROID_NDK_UNIFIED_SYSROOT_MIN = 15
 ANDROID_NDK_SYSROOT_FLAG_MAX = 19 # latest NDK that need --sysroot flag
-ANDROID_NDK_API_MIN = { 10: 3, 19: 16, 20: 16 } # minimal API level ndk revision supports
+ANDROID_NDK_API_MIN = { 10: 3, 16: 16, 19: 16, 20: 16 } # minimal API level ndk revision supports
 ANDROID_64BIT_API_MIN = 21 # minimal API level that supports 64-bit targets
 
 # This class does support ONLY r10e and r19c/r20 NDK
@@ -315,6 +315,10 @@ class Android:
 					ldflags += ['-Wl,--no-warn-mismatch', '-lm_hard']
 			else:
 				ldflags += ['-march=armv5te']
+		elif self.is_arm64():
+			ldflags += ['-L' + (os.path.join(self.ndk_home, 'toolchains', 'aarch64-linux-android-4.9', 'prebuilt', self.gen_host_toolchain(), 'lib', 'gcc', 'aarch64-linux-android', '4.9.x'))]
+			ldflags += ['-L' + (os.path.join(self.ndk_home, 'platforms', 'android-%d' % (self.api), 'arch-arm64', 'usr', 'lib'))]
+			ldflags += ['-B' + (os.path.join(self.ndk_home, 'platforms', 'android-%d' % (self.api), 'arch-arm64', 'usr', 'lib'))]
 		return ldflags
 
 def options(opt):
