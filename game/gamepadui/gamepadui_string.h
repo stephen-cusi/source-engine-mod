@@ -31,7 +31,7 @@ public:
         SetText( pszText, nLength );
     }
 
-    const wchar_t*String() const
+    const wchar_t *String() const
     {
         if ( m_ManagedText.Count() )
             return m_ManagedText.Base();
@@ -42,7 +42,7 @@ public:
     int Length() const
     {
         if ( m_ManagedText.Count() )
-            return m_ManagedText.Count()-1;
+            return m_ManagedText.Count() - 1;
 
         return 0;
     }
@@ -102,11 +102,9 @@ public:
         wchar_t szUnicode[ 4096 ];
 		memset( szUnicode, 0, sizeof( wchar_t ) * 4096 );
         
-		V_UTF8ToUnicode( pszText, szUnicode, sizeof( szUnicode ) );
-
-        int nChars = V_strlen(pszText);
+		int nChars = V_UTF8ToUnicode( pszText, szUnicode, sizeof( szUnicode ) );
         if ( nChars > 1 )
-            SetText( szUnicode, nChars );
+            SetText( szUnicode, nChars - 1 );
     }
 private:
     CCopyableUtlVector< wchar_t > m_ManagedText;
