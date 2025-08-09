@@ -35,6 +35,7 @@ class GamepadUIMainMenu;
 
 class GamepadUIBasePanel;
 class GamepadUISizingPanel;
+class GamepadUIFrame;
 
 class GamepadUI : public IGamepadUI
 {
@@ -79,8 +80,6 @@ public:
     ISource2013SteamInput   *GetSteamInput()             const { return m_pSteamInput; }
 #endif
 
-    GamepadUIMainMenu* GetMainMenu() const;
-
     vgui::AnimationController *GetAnimationController() const { return m_pAnimationController; }
     float GetTime() const { return Plat_FloatTime(); }
     GradientHelper *GetGradientHelper() { return &m_GradientHelper; }
@@ -93,6 +92,9 @@ public:
 
     void GetSizingPanelScale( float &flX, float &flY ) const;
     void GetSizingPanelOffset( int &nX, int &nY ) const;
+
+    GamepadUIFrame *GetCurrentFrame() const;
+    vgui::VPANEL GetCurrentFrameVPanel() const;
 
 #ifdef MAPBASE
 	void BonusMapChallengeNames( char *pchFileName, char *pchMapName, char *pchChallengeName ) OVERRIDE;
@@ -131,6 +133,8 @@ private:
     GradientHelper m_GradientHelper;
     CSteamAPIContext m_SteamAPIContext;
 
+    GamepadUIMainMenu* GetMainMenu() const;
+
     float   m_flScreenXRatio = 1.0f;
     float   m_flScreenYRatio = 1.0f;
 
@@ -143,9 +147,6 @@ private:
 #endif
 
     static GamepadUI *s_pGamepadUI;
-
-public:
-    float GetTimeDelta() const;
 };
 
 #endif // GAMEPADUI_INTERFACE_H

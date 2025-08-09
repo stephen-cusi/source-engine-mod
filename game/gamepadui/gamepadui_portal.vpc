@@ -14,7 +14,7 @@ $Configuration
 {
 	$Compiler
 	{
-		$PreprocessorDefinitions			"$BASE;GAMEPADUI_GAME_PORTAL"
+		$PreprocessorDefinitions			"$BASE;GAMEPADUI_GAME_PORTAL;GAMEPADUI_GAME_HL2;GAMEPADUI_GAME_EPISODIC"
 	}
 }
 

@@ -564,15 +564,6 @@ bool GamepadUISaveGamePanel::ParseSaveData( char const* pFileName, char const* p
 		return false;
 	}
 
-#ifdef GAMEPADUI_GAME_EZ2
-	char szEZ2Version[8];
-	char szPlatform[16];
-	int nMapVersion = 0;
-	bool bDeck = false;
-	bool bWilson = false;
-	SaveReadCustomMetadata( pFileName, szEZ2Version, sizeof(szEZ2Version), szPlatform, sizeof(szPlatform), nMapVersion, bDeck, bWilson );
-#endif
-
 	Q_strncpy( save.szMapName, szMapName, sizeof( save.szMapName ) );
 
 	// Elapsed time is the last 6 characters in comment. ( mmm:ss )
