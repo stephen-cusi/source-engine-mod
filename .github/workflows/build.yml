@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build linux-i386
       run: |
         scripts/build-ubuntu-i386.sh
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh
@@ -25,11 +25,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build android-armv7a
       run: |
           scripts/build-android-armv7a.sh
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: build-android-armv7a
         path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
@@ -38,11 +38,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build android-aarch64
       run: |
         scripts/build-android-arm64.sh
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: build-android-aarch64
         path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
@@ -51,7 +51,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build windows-i386
       run: |
         git submodule init && git submodule update
@@ -62,7 +62,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build windows-amd64
       run: |
         git submodule init && git submodule update
@@ -73,13 +73,13 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated windows-i386
       run: |
         git submodule init && git submodule update
         ./waf.bat configure -T release -d --prefix=./win --build-game=hl2mp -4
         ./waf.bat install
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: win-source-engine-d-hl2mp
         path: ./win
@@ -89,7 +89,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated windows-amd64
       run: |
         git submodule init && git submodule update
@@ -100,11 +100,11 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated linux-i386
       run: |
         scripts/build-ubuntu-i386.sh -d
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: linux-source-engine-64-d
         path: ./linux
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh -d
@@ -123,7 +123,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build macos-amd64
       run: |
         scripts/build-macos-amd64.sh
@@ -132,7 +132,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated macos-amd64
       run: |
         scripts/build-macos-amd64.sh -d

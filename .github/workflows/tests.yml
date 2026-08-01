@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Run tests linux-i386
       run: |
         scripts/tests-ubuntu-i386.sh
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Run tests linux-amd64
       run: |
         scripts/tests-ubuntu-amd64.sh
@@ -25,7 +25,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Run tests macos-amd64
       run: |
         scripts/tests-macos-amd64.sh
@@ -34,7 +34,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Run tests windows-i386
       run: |
         git submodule init && git submodule update
@@ -48,7 +48,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Run tests windows-amd64
       run: |
         git submodule init && git submodule update
