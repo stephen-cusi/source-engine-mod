@@ -6,11 +6,11 @@ jobs:
   # build-linux-i386:
     # runs-on: ubuntu-latest
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build Linux (32 bit)
       # run: |
         # scripts/build-ubuntu-i386.sh
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: hl2sb-linux-i386
         # path: ./to_upload
@@ -20,11 +20,11 @@ jobs:
     # runs-on: ubuntu-20.04
 
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build Linux (64 Bit)
       # run: |
         # scripts/build-ubuntu-amd64.sh
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: hl2sb-linux-amd64
         # path: ./to_upload
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - name: Cloning modlaucher repo and preparing for building 
       run: |
         git clone https://github.com/stephen-cusi/modlauncher-waf -b lmod
@@ -56,7 +56,7 @@ jobs:
          mv modlauncher-waf/build/android/mod-signed.apk lmod-release.apk
 
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: lmod-apk
         path: lmod-release.apk
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - name: Build Windows (32+64 bit)
       run: |
         
@@ -88,7 +88,7 @@ jobs:
          mv modlauncher-waf/build/android/mod-signed.apk hl2mp-release.apk
 
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: hl2mp-apk
         path: hl2mp-release.apk
@@ -97,7 +97,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - name: Build Windows (64 bit)
       run: |
         #
@@ -109,7 +109,7 @@ jobs:
 
 
 
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: hl2-win-amd64
         path: ./win
@@ -119,13 +119,13 @@ jobs:
     # runs-on: windows-2019
 
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build Windows Dedicated (32 bit) 
       # run: |
         # git submodule init && git submodule update
         # ./waf.bat configure -T debug -d --prefix=./win --build-game=hl2sb
         # ./waf.bat install
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: win-dedicated-i386
         # path: ./win
@@ -135,13 +135,13 @@ jobs:
     # runs-on: windows-2019
 
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build Windows Dedicated (64 bit)
       # run: |
         # git submodule init && git submodule update
         # ./waf.bat configure -T debug -d -8 --prefix=./win --build-game=hl2sb
         # ./waf.bat install
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: hl2sb-win-dedicated-amd64
         # path: ./win
@@ -151,11 +151,11 @@ jobs:
     # runs-on: ubuntu-20.04
 
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build Linux Dedicated (32 bit)
       # run: |
         # scripts/build-ubuntu-i386.sh -d
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: hl2sb-linux-dedicated-i386
         # path: ./to-upload
@@ -165,11 +165,11 @@ jobs:
     # runs-on: ubuntu-20.04
 
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build Linux Dedicated (64 bit)
       # run: |
         # scripts/build-ubuntu-amd64.sh -d
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: hl2sb-linux-dedicated-amd64
         # path: ./to-upload
@@ -179,11 +179,11 @@ jobs:
     # runs-on: macos-latest
 
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build MacOS (64 bit)
       # run: |
         # scripts/build-macos-amd64.sh
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: hl2sb-macos-amd64
         # path: ./to-upload
@@ -193,11 +193,11 @@ jobs:
     # runs-on: macos-latest
 
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build MacOS Dedicated (64 bit)
       # run: |
         # scripts/build-macos-amd64.sh -d
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: hl2sb-macos-dedicated-amd64
         # path: ./to-upload

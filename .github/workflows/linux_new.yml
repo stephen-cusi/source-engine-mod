@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - name: Build
       run: |
         
@@ -25,7 +25,7 @@ jobs:
         
         cat build/config.log >./linux/info.txt
         
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: linux-source-engine-64-d
         path: ./linux
@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - name: Build
       run: |
         sudo apt update
@@ -47,7 +47,7 @@ jobs:
         
         sudo ./waf install --target=client,server -j4
         cat build/config.log > ./linux/info.txt
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: hl2mp-linux-64
         path: ./linux
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - name: Build
       run: |
         sudo dpkg --add-architecture i386
@@ -69,7 +69,7 @@ jobs:
         ./waf configure -T release --prefix=./linux --disable-warns --build-game=hl2mp -d
         ./waf install -j4
         cat build/config.log > ./linux/info.txt
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: linux-source-engine-32-d
         path: ./linux
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - name: Build
       run: |
         sudo dpkg --add-architecture i386
@@ -90,7 +90,7 @@ jobs:
         ./waf configure -T release --prefix=./linux --disable-warns --build-game=hl2mp
         sudo ./waf install -j4
         cat build/config.log > ./linux/info.txt
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: linux-hl2mp-32
         path: ./linux
@@ -100,7 +100,7 @@ jobs:
     # runs-on: ubuntu-latest
 
     # steps:
-    # - uses: actions/checkout@v3
+    # - uses: actions/checkout@v5
     # - name: Build
       # run: |
         # sudo apt update
@@ -111,7 +111,7 @@ jobs:
         
         # sudo ./waf install --target=togl -j4
         # cat build/config.log > ./linux/info.txt
-    # - uses: actions/upload-artifact@v3
+    # - uses: actions/upload-artifact@v4
       # with:
         # name: source-linux-64-togles
         # path: ./linux
