@@ -143,6 +143,6 @@ fi
 	--incdir="$PREFIX/include"
 
 make -j$(nproc)
-make install-libs
+make install-libs install-headers
 
 echo "FFmpeg $FFVER built for $libcpu into $PREFIX"
