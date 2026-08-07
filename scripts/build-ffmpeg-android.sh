@@ -129,13 +129,16 @@ fi
 	--disable-network \
 	--disable-autodetect \
 	--disable-asm \
-	--disable-encoders \
-	--disable-muxers \
+	--disable-everything \
 	--enable-avcodec \
 	--enable-avformat \
 	--enable-avutil \
 	--enable-swresample \
 	--enable-demuxer=avi,bink \
+	--enable-decoder=bink,binkaudio_dct,binkaudio_rdft \
+	--enable-decoder=cinepak,indeo3,indeo4,indeo5,mpeg1video,mpeg2video,mpeg4,msmpeg4v3,mjpeg,rawvideo,h263,wmv1,wmv2,msrle,msvideo1,qtrle,vc1,huffyuv,ffv1,png \
+	--enable-decoder=mp3,mp2,aac,ac3,vorbis,flac,wmav2,pcm_s16le,pcm_s16be,pcm_u8,pcm_s8,pcm_alaw,pcm_mulaw,pcm_s24le,pcm_f32le,adpcm_ima_wav,adpcm_ms,adpcm_ima_qt,adpcm_swf,adpcm_yamaha \
+	--enable-parser=bink,mpeg4video,h263,mpegvideo,mjpeg,aac,mp3,mpegaudio,vorbis,flac,vc1 \
 	--enable-protocol=file \
 	--libdir="$PREFIX" \
 	--incdir="$PREFIX/include"
