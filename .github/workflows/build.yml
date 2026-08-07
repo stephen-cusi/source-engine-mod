@@ -85,8 +85,16 @@ jobs:
     - name: Build windows-i386
       run: |
         git submodule init && git submodule update
-        ./waf.bat configure -T debug --32bits
-        ./waf.bat build
+        ./waf.bat configure -T release --prefix=./win --disable-warns --32bits
+        ./waf.bat install
+    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+      run: |
+        Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+    - uses: actions/upload-artifact@v5
+      with:
+        name: win-source-engine-i386
+        path: ./win
+        if-no-files-found: error
 
   build-windows-amd64:
     runs-on: windows-2019
@@ -96,8 +104,16 @@ jobs:
     - name: Build windows-amd64
       run: |
         git submodule init && git submodule update
-        ./waf.bat configure -T debug
-        ./waf.bat build
+        ./waf.bat configure -T release --prefix=./win --disable-warns
+        ./waf.bat install
+    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+      run: |
+        Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+    - uses: actions/upload-artifact@v5
+      with:
+        name: win-source-engine-amd64
+        path: ./win
+        if-no-files-found: error
 
   build-dedicated-windows-i386:
     runs-on: windows-2019
@@ -123,8 +139,16 @@ jobs:
     - name: Build dedicated windows-amd64
       run: |
         git submodule init && git submodule update
-        ./waf.bat configure -T debug -d
-        ./waf.bat build
+        ./waf.bat configure -T release -d --prefix=./win --disable-warns
+        ./waf.bat install
+    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+      run: |
+        Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+    - uses: actions/upload-artifact@v5
+      with:
+        name: win-source-engine-d-amd64
+        path: ./win
+        if-no-files-found: error
 
   build-macos-amd64:
     runs-on: macos-latest
@@ -134,6 +158,12 @@ jobs:
     - name: Build macos-amd64
       run: |
         scripts/build-macos-amd64.sh
+        ./waf install --prefix=./macos
+    - uses: actions/upload-artifact@v5
+      with:
+        name: source-engine-macos-amd64
+        path: ./macos
+        if-no-files-found: error
 
   build-dedicated-macos-amd64:
     runs-on: macos-latest
@@ -143,3 +173,9 @@ jobs:
     - name: Build dedicated macos-amd64
       run: |
         scripts/build-macos-amd64.sh -d
+        ./waf install --prefix=./macos
+    - uses: actions/upload-artifact@v5
+      with:
+        name: source-engine-dedicated-macos-amd64
+        path: ./macos
+        if-no-files-found: error

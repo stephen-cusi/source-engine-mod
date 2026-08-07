@@ -6,5 +6,5 @@ brew untap aws/tap || true
 
 brew install sdl2 pkg-config ffmpeg
 
-./waf configure -T debug --disable-warns $* &&
+./waf configure -T release --disable-warns $* &&
 ./waf build
