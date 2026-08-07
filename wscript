@@ -204,7 +204,7 @@ def define_platform(conf):
 			'GL_GLEXT_PROTOTYPES',
 			'BINK_VIDEO'
 		])
-	elif conf.env.DEST_OS == 'android':
+	elif conf.env.DEST_OS in ('android', 'darwin'):
 		conf.env.append_unique('DEFINES', ['BINK_VIDEO'])
 
 	if conf.options.TOGLES:
@@ -403,7 +403,7 @@ def check_deps(conf):
 				conf.check_cfg(package='libjpeg', uselib_store='JPEG', args=['--cflags', '--libs'])
 				conf.check_cfg(package='libpng', uselib_store='PNG', args=['--cflags', '--libs'])
 				conf.check_cfg(package='libcurl', uselib_store='CURL', args=['--cflags', '--libs'])
-				if conf.env.DEST_OS == 'linux':
+				if conf.env.DEST_OS in ('linux', 'darwin'):
 					conf.check_cfg(package='libavcodec', uselib_store='AVCODEC', args=['--cflags', '--libs'])
 					conf.check_cfg(package='libavformat', uselib_store='AVFORMAT', args=['--cflags', '--libs'])
 					conf.check_cfg(package='libavutil', uselib_store='AVUTIL', args=['--cflags', '--libs'])

@@ -4,7 +4,7 @@ git submodule init && git submodule update
 
 brew untap aws/tap || true
 
-brew install sdl2
+brew install sdl2 pkg-config ffmpeg
 
 ./waf configure -T debug --disable-warns $* &&
 ./waf build
