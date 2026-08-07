@@ -1359,7 +1359,10 @@ void CGame::PlayStartupVideos( void )
 		COM_CloseFile( hFile );
 	}
 
-	if (!bNeedHealthWarning && !bEndGame && !bRecap && (CommandLine()->CheckParm("-dev") || CommandLine()->CheckParm("-novid") || CommandLine()->CheckParm("-allowdebug")))
+	// -dev, -novid and -allowdebug disable the startup videos even when a
+	// health warning is present (the Chinese depot ships media/HealthWarning.txt,
+	// which used to bypass this check entirely).
+	if (!bEndGame && !bRecap && (CommandLine()->CheckParm("-dev") || CommandLine()->CheckParm("-novid") || CommandLine()->CheckParm("-allowdebug")))
 		return;
 
 	const char *pszFile = "media/StartupVids.txt";
