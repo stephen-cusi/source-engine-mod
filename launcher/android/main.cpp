@@ -132,9 +132,6 @@ DLL_EXPORT int LauncherMainAndroid( int argc, char **argv )
 	SetLauncherArgs();
 
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
-	// Make the Android back button generate a key event instead of quitting,
-	// so the startup video can treat it as "skip".
-	SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
 	DeclareCurrentThreadIsMainThread(); // Init thread propertly on Android
 
 	return LauncherMain(iLastArgs, LauncherArgv);

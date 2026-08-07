@@ -522,13 +522,6 @@ InitReturnVal_t CSDLMgr::Init()
 	if (m_Window != NULL)
 		return INIT_OK;  // already initialized.
 
-#if defined( ANDROID )
-	// Trap the Android back button so it produces a key event instead of
-	// quitting the app; the startup video input handler treats it as skip.
-	SDL_SetHint( SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1" );
-	Msg( "Bink dbg: back button trapped\n" );
-#endif
-
 	if (!SDL_WasInit(SDL_INIT_VIDEO))
 	{
 		if (SDL_Init(SDL_INIT_VIDEO) == -1)
@@ -1056,15 +1049,9 @@ int CSDLMgr::PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbS
 				switch ( pEvent->m_VirtualKeyCode )
 				{
 			case SDL_SCANCODE_ESCAPE:
-#if defined( ANDROID )
-			case SDL_SCANCODE_AC_BACK:
-#endif
 				nRead++;
 				*pbEsc = true;
 				pEvent->m_EventType = CocoaEvent_Deleted;
-#if defined( ANDROID )
-				Msg( "Bink dbg: back key treated as escape\n" );
-#endif
 				break;
 				case SDL_SCANCODE_RETURN:
 				case SDL_SCANCODE_KP_ENTER:
@@ -1643,14 +1630,6 @@ void CSDLMgr::handleKeyInput( const SDL_Event &event )
 
 	const bool bPressed = ( event.type == SDL_KEYDOWN );
 
-#if defined( ANDROID )
-	if ( bPressed &&
-		 ( event.key.keysym.scancode == SDL_SCANCODE_ESCAPE || event.key.keysym.scancode == SDL_SCANCODE_AC_BACK ) )
-	{
-		Msg( "Bink dbg: keydown escape/back scancode=%d\n", (int)event.key.keysym.scancode );
-	}
-#endif
-
 	// !!! FIXME: we should be getting text input from a different event...
 	CCocoaEvent theEvent;
 	theEvent.m_EventType = ( bPressed ) ? CocoaEvent_KeyDown : CocoaEvent_KeyUp;
@@ -1945,7 +1924,6 @@ void CSDLMgr::PumpWindowsMessageLoop()
 				{
 					m_bGotFingerDown = false;
 					m_bGotDoubleTap = true;
-					Msg( "Bink dbg: double tap detected\n" );
 				}
 				else
 				{
@@ -1953,7 +1931,6 @@ void CSDLMgr::PumpWindowsMessageLoop()
 					m_FingerDownX = event.tfinger.x;
 					m_FingerDownY = event.tfinger.y;
 					m_bGotFingerDown = true;
-					Msg( "Bink dbg: fingerdown\n" );
 				}
 				break;
 			}
@@ -2064,7 +2041,6 @@ void CSDLMgr::PumpWindowsMessageLoop()
 			}
 			case SDL_QUIT:
 			{
-				Msg( "Bink dbg: SDL_QUIT\n" );
 				CCocoaEvent theEvent;
 				theEvent.m_EventType = CocoaEvent_AppQuit;
 				PostEvent( theEvent );
