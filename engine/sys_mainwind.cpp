@@ -1257,6 +1257,27 @@ void CGame::InputDetachFromGameWindow()
 	DetachFromWindow();
 }
 
+//-----------------------------------------------------------------------------
+// Returns true if the given path is a real, directly accessible loose file.
+// Files packed inside VPKs resolve to pack paths and are not directly playable,
+// so they are skipped (e.g. valve.bik inside a VPK on Android).
+//-----------------------------------------------------------------------------
+static bool IsLooseMediaFile( const char *path )
+{
+	if ( !path || !path[0] )
+		return false;
+
+	FILE *f = fopen( path, "rb" );
+	if ( !f )
+		return false;
+	fclose( f );
+	return true;
+}
+
+
+//-----------------------------------------------------------------------------
+// Purpose: Play startup videos
+//-----------------------------------------------------------------------------
 void CGame::PlayStartupVideos( void )
 {
 	if ( IsX360() || Plat_IsInBenchmarkMode() )
@@ -1313,7 +1334,12 @@ void CGame::PlayStartupVideos( void )
 	
 	if ((buffer == NULL) || (vidFileLength == 0))
 	{
-		if ( bEndGame || bRecap || !g_pFileSystem->FileExists( "media/valve.bik", "GAME" ) )
+		if ( bEndGame || bRecap )
+			return;
+
+		char valvePath[MAX_PATH];
+		g_pFileSystem->GetLocalPath( "media/valve.bik", valvePath, sizeof(valvePath) );
+		if ( !IsLooseMediaFile( valvePath ) )
 			return;
 
 		const char *fallbackVideo = "media/valve.bik";
@@ -1352,7 +1378,15 @@ void CGame::PlayStartupVideos( void )
 		char localPath[MAX_PATH];
 
  		    g_pFileSystem->GetLocalPath( com_token, localPath, sizeof(localPath) );
- 		
+
+		// Only play videos that are real loose files; skip anything that only
+		// lives inside a pack (VPK) since it can't be opened for playback.
+		if ( !IsLooseMediaFile( localPath ) )
+		{
+			localPath[0] = 0;
+			continue;
+		}
+
 		PlayVideoAndWait( localPath, bNeedHealthWarning );
 		localPath[0] = 0; // just to make sure we don't play the same avi file twice in the case that one movie is there but another isn't.
 	}
