@@ -1372,12 +1372,20 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 		TranslateMessage( &msg );
 		DispatchMessage( &msg );
 	}
+#if defined( USE_SDL )
+	g_pLauncherMgr->PumpWindowsMessageLoop();
+	bool bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
+#else
+	bool bDoubleTapPressed = false;
+#endif
 	// Escape, return, or space stops or pauses the playback
 	bool bEscPressed	= ( m_bScanEsc )    ? ( s_pfnGetAsyncKeyState( VK_ESCAPE ) & 0x8000 ) != 0 : false;
 	bool bReturnPressed	= ( m_bScanReturn ) ? ( s_pfnGetAsyncKeyState( VK_RETURN ) & 0x8000 ) != 0 : false;
 	bool bSpacePressed	= ( m_bScanSpace )  ? ( s_pfnGetAsyncKeyState( VK_SPACE ) & 0x8000 ) != 0  : false;
 #elif defined(OSX)
 	g_pLauncherMgr->PumpWindowsMessageLoop();
+	// Double click on the mouse also skips the video
+	bool bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
 	// Escape, return, or space stops or pauses the playback
 	bool bEscPressed    = ( m_bScanEsc )    ? CGEventSourceKeyState( kCGEventSourceStateCombinedSessionState, kVK_Escape ) : false;
 	bool bReturnPressed = ( m_bScanReturn ) ? CGEventSourceKeyState( kCGEventSourceStateCombinedSessionState, kVK_Return ) : false;
@@ -1385,16 +1393,13 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 #elif defined(LINUX) || defined(PLATFORM_BSD)
 	g_pLauncherMgr->PumpWindowsMessageLoop();
 
+	// Double tap/click (and the Android back button) skips the startup video
+	bool bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
+
 	// Escape, return, or space stops or pauses the playback
 	bool bEscPressed	= false;
 	bool bReturnPressed	= false;
 	bool bSpacePressed	= false;
-#if defined( ANDROID )
-	// Double tap on the touchscreen skips the startup video
-	bool bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
-#else
-	bool bDoubleTapPressed = false;
-#endif
 
 	g_pLauncherMgr->PeekAndRemoveKeyboardEvents( &bEscPressed, &bReturnPressed, &bSpacePressed );
 #endif
