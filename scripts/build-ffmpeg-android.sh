@@ -129,15 +129,13 @@ fi
 	--disable-network \
 	--disable-autodetect \
 	--disable-asm \
-	--disable-everything \
+	--disable-encoders \
+	--disable-muxers \
 	--enable-avcodec \
 	--enable-avformat \
 	--enable-avutil \
 	--enable-swresample \
-	--enable-demuxer=bink \
-	--enable-decoder=bink \
-	--enable-decoder=binkaudio_dct \
-	--enable-decoder=binkaudio_rdft \
+	--enable-demuxer=avi,bink \
 	--enable-protocol=file \
 	--libdir="$PREFIX" \
 	--incdir="$PREFIX/include"
