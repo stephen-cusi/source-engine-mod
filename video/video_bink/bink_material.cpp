@@ -540,8 +540,10 @@ bool CBinkMaterial::QueueAudioFrame( const AVFrame *pFrame )
 
 	std::vector<uint8_t> converted( outputBytes );
 	uint8_t *outputData[] = { converted.data() };
+	// swr_convert() input pointer constness differs between FFmpeg 5.x/6.x and
+	// distro-patched headers; const_cast so it compiles against both signatures.
 	const int convertedSamples = swr_convert( m_SwrContext, outputData, outputSamples,
-		reinterpret_cast<const uint8_t * const *>( pFrame->extended_data ), pFrame->nb_samples );
+		const_cast<const uint8_t **>( pFrame->extended_data ), pFrame->nb_samples );
 	if ( convertedSamples < 0 )
 		return false;
 
