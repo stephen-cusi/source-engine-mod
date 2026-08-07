@@ -406,6 +406,13 @@ private:
 	int m_MouseButtonDownY;
 	bool m_bGotDoubleTap;
 
+#if defined( ANDROID )
+	bool m_bGotFingerDown;
+	Uint32 m_FingerDownTimeStamp;
+	float m_FingerDownX;
+	float m_FingerDownY;
+#endif
+
 	bool m_bResetVsync;
 	int m_nFramesToSkip;
 
@@ -515,6 +522,12 @@ InitReturnVal_t CSDLMgr::Init()
 	if (m_Window != NULL)
 		return INIT_OK;  // already initialized.
 
+#if defined( ANDROID )
+	// Trap the Android back button so it produces a key event instead of
+	// quitting the app; the startup video input handler treats it as skip.
+	SDL_SetHint( SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1" );
+#endif
+
 	if (!SDL_WasInit(SDL_INIT_VIDEO))
 	{
 		if (SDL_Init(SDL_INIT_VIDEO) == -1)
@@ -583,6 +596,12 @@ InitReturnVal_t CSDLMgr::Init()
 	m_MouseButtonDownX = 0;
 	m_MouseButtonDownY = 0;
 	m_bGotDoubleTap = false;
+#if defined( ANDROID )
+	m_bGotFingerDown = false;
+	m_FingerDownTimeStamp = 0;
+	m_FingerDownX = 0;
+	m_FingerDownY = 0;
+#endif
 
 	m_bExpectSyntheticMouseMotion = false;
 	m_nMouseTargetX = 0;
@@ -1035,11 +1054,14 @@ int CSDLMgr::PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbS
 			{
 				switch ( pEvent->m_VirtualKeyCode )
 				{
-				case SDL_SCANCODE_ESCAPE:
-					nRead++;
-					*pbEsc = true;
-					pEvent->m_EventType = CocoaEvent_Deleted;
-					break;
+			case SDL_SCANCODE_ESCAPE:
+#if defined( ANDROID )
+			case SDL_SCANCODE_AC_BACK:
+#endif
+				nRead++;
+				*pbEsc = true;
+				pEvent->m_EventType = CocoaEvent_Deleted;
+				break;
 				case SDL_SCANCODE_RETURN:
 				case SDL_SCANCODE_KP_ENTER:
 					nRead++;
@@ -1895,6 +1917,31 @@ void CSDLMgr::PumpWindowsMessageLoop()
 
 				break;
 			}
+
+#if defined( ANDROID )
+			case SDL_FINGERDOWN:
+			{
+				// Android touches may not be converted to mouse button events,
+				// so detect the double-tap used to skip the startup video from
+				// finger events directly. Coordinates are normalized 0..1.
+				if ( m_bGotFingerDown &&
+					 ( (int)( event.touch.timestamp - m_FingerDownTimeStamp ) <= sdl_double_click_time.GetInt() ) &&
+					 ( fabs( event.touch.x - m_FingerDownX ) <= 0.1f ) &&
+					 ( fabs( event.touch.y - m_FingerDownY ) <= 0.1f ) )
+				{
+					m_bGotFingerDown = false;
+					m_bGotDoubleTap = true;
+				}
+				else
+				{
+					m_FingerDownTimeStamp = event.touch.timestamp;
+					m_FingerDownX = event.touch.x;
+					m_FingerDownY = event.touch.y;
+					m_bGotFingerDown = true;
+				}
+				break;
+			}
+#endif
 
 			case SDL_MOUSEWHEEL:
 			{
