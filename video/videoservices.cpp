@@ -1392,6 +1392,8 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 #if defined( ANDROID )
 	// Double tap on the touchscreen skips the startup video
 	bool bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
+	if ( bDoubleTapPressed )
+		Msg( "Bink dbg: double tap -> abort\n" );
 #else
 	bool bDoubleTapPressed = false;
 #endif
