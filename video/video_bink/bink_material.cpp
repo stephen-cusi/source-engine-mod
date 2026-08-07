@@ -161,9 +161,17 @@ void CBinkMaterialRGBTextureRegenerator::RegenerateTextureBits( ITexture *pTextu
 		const BYTE *pSrcData = m_SrcImage + y * m_nSourceWidth * 3;
 		for ( int x = 0; x < m_nSourceWidth; ++x )
 		{
+#if defined( ANDROID )
+			// The YUV->RGB conversion writes BGR bytes, and GLES uploads
+			// RGBA8888 verbatim, so swap R and B for correct colors.
+			pImageData[x * 4 + 0] = pSrcData[x * 3 + 2];
+			pImageData[x * 4 + 1] = pSrcData[x * 3 + 1];
+			pImageData[x * 4 + 2] = pSrcData[x * 3 + 0];
+#else
 			pImageData[x * 4 + 0] = pSrcData[x * 3 + 0];
 			pImageData[x * 4 + 1] = pSrcData[x * 3 + 1];
 			pImageData[x * 4 + 2] = pSrcData[x * 3 + 2];
+#endif
 			pImageData[x * 4 + 3] = 255;
 		}
 
