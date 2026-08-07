@@ -261,6 +261,11 @@ def define_platform(conf):
 			'NO_HOOK_MALLOC',
 			'_DLL_EXT=.dylib'
 		])
+		# ivp sources use alloca but only include <alloca.h> for LINUX/SUN;
+		# Apple's stdlib.h does not declare it under strict ANSI. Force the
+		# header in so those files compile on macOS.
+		conf.env.append_unique('CFLAGS', ['-include', 'alloca.h'])
+		conf.env.append_unique('CXXFLAGS', ['-include', 'alloca.h'])
 
 	elif conf.env.DEST_OS in ['freebsd', 'openbsd', 'netbsd', 'dragonflybsd']: # Tested only in freebsd
 		conf.env.append_unique('DEFINES', [
