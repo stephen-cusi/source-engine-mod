@@ -1356,6 +1356,7 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 
 
 	// Pump OS Messages
+	bool bDoubleTapPressed = false;
 #if defined( WIN32 )
 	MSG msg;
 	while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
@@ -1391,9 +1392,7 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 	bool bSpacePressed	= false;
 #if defined( ANDROID )
 	// Double tap on the touchscreen skips the startup video
-	bool bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
-#else
-	bool bDoubleTapPressed = false;
+	bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
 #endif
 
 	g_pLauncherMgr->PeekAndRemoveKeyboardEvents( &bEscPressed, &bReturnPressed, &bSpacePressed );

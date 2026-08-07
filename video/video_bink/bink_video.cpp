@@ -23,8 +23,8 @@
 #include "platform.h"
 
 
-#include "tier0/memdbgon.h"
 #include "bink_material.h"
+#include "tier0/memdbgon.h"
 
 // ===========================================================================
 // Singleton to expose Bink video subsystem

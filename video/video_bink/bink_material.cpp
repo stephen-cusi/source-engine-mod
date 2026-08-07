@@ -424,23 +424,15 @@ VideoResult_t CBinkMaterial::SoundDeviceCommand( VideoSoundDeviceOperation_t ope
 		// On win32, we try and create an audio context from a GUID
 		case VideoSoundDeviceOperation::SET_DIRECT_SOUND_DEVICE:
 		{
-#if defined ( WIN32 )
-			SAFE_RELEASE_AUDIOCONTEXT( m_AudioContext );
-			return ( CreateMovieAudioContext( m_bHasAudio, m_QTMovie, &m_AudioContext ) ? SetResult( VideoResult::SUCCESS ) : SetResult( VideoResult::AUDIO_ERROR_OCCURED ) );
-#else
-			// On any other OS, we don't support this operation
+			// Audio playback goes through the SDL audio path; the legacy
+			// QuickTime audio context no longer exists.
 			return SetResult( VideoResult::OPERATION_NOT_SUPPORTED );
-#endif
 		}
 		case VideoSoundDeviceOperation::SET_SOUND_MANAGER_DEVICE:
 		{
-#if defined ( OSX )
-			SAFE_RELEASE_AUDIOCONTEXT( m_AudioContext );
-			return ( CreateMovieAudioContext( m_bHasAudio, m_QTMovie, &m_AudioContext ) ? SetResult( VideoResult::SUCCESS ) : SetResult( VideoResult::AUDIO_ERROR_OCCURED ) );
-#else
-			// On any other OS, we don't support this operation
+			// Audio playback goes through the SDL audio path; the legacy
+			// QuickTime audio context no longer exists.
 			return SetResult( VideoResult::OPERATION_NOT_SUPPORTED );
-#endif
 		}
 		case VideoSoundDeviceOperation::SET_LIB_AUDIO_DEVICE:
 		case VideoSoundDeviceOperation::HOOK_X_AUDIO:
