@@ -78,7 +78,7 @@ jobs:
         path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
 
   build-windows-i386:
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v5
@@ -97,7 +97,7 @@ jobs:
         if-no-files-found: error
 
   build-windows-amd64:
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v5
@@ -116,7 +116,7 @@ jobs:
         if-no-files-found: error
 
   build-dedicated-windows-i386:
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v5
@@ -132,7 +132,7 @@ jobs:
         if-no-files-found: error
 
   build-dedicated-windows-amd64:
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v5
