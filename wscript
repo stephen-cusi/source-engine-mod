@@ -87,6 +87,7 @@ projects={
 		'vgui2/vgui_surfacelib',
 		'vguimatsurface',
 		'video',
+		'video/video_bink',
 		'vphysics',
 		'vpklib',
 		'vstdlib',
@@ -400,6 +401,11 @@ def check_deps(conf):
 				conf.check_cfg(package='libjpeg', uselib_store='JPEG', args=['--cflags', '--libs'])
 				conf.check_cfg(package='libpng', uselib_store='PNG', args=['--cflags', '--libs'])
 				conf.check_cfg(package='libcurl', uselib_store='CURL', args=['--cflags', '--libs'])
+				if conf.env.DEST_OS == 'linux':
+					conf.check_cfg(package='libavcodec', uselib_store='AVCODEC', args=['--cflags', '--libs'])
+					conf.check_cfg(package='libavformat', uselib_store='AVFORMAT', args=['--cflags', '--libs'])
+					conf.check_cfg(package='libavutil', uselib_store='AVUTIL', args=['--cflags', '--libs'])
+					conf.check_cfg(package='libswresample', uselib_store='SWRESAMPLE', args=['--cflags', '--libs'])
 			conf.check_cfg(package='zlib', uselib_store='ZLIB', args=['--cflags', '--libs'])
 
 			if conf.options.OPUS:

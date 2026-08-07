@@ -19,6 +19,7 @@
 #include "vtf/vtf.h"
 #include "pixelwriter.h"
 #include "tier2/tier2.h"
+#include "tier0/threadtools.h"
 #include "platform.h"
 
 
@@ -37,11 +38,11 @@ EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CBinkVideoSubSystem, IVideoSubSystem, VIDEO_S
 // ===========================================================================
 VideoFileExtensionInfo_t s_BinkExtensions[] = 
 {
-	{ ".bik", VideoSystem::BINK,  VideoSystemFeature::PLAY_VIDEO_FILE_IN_MATERIAL },
+	{ ".bik", VideoSystem::BINK,  VideoSystemFeature::FULL_PLAYBACK },
 };
 
 const int s_BinkExtensionCount = ARRAYSIZE( s_BinkExtensions );
-const VideoSystemFeature_t	CBinkVideoSubSystem::DEFAULT_FEATURE_SET = VideoSystemFeature::PLAY_VIDEO_FILE_IN_MATERIAL;
+const VideoSystemFeature_t	CBinkVideoSubSystem::DEFAULT_FEATURE_SET = VideoSystemFeature::FULL_PLAYBACK;
 
 // ===========================================================================
 // CBinkVideoSubSystem class
@@ -51,9 +52,10 @@ CBinkVideoSubSystem::CBinkVideoSubSystem() :
 	m_LastResult( VideoResult::SUCCESS ),
 	m_CurrentStatus( VideoSystemStatus::NOT_INITIALIZED ),
 	m_AvailableFeatures( CBinkVideoSubSystem::DEFAULT_FEATURE_SET ),
-	m_pCommonServices( nullptr )
+	m_pCommonServices( nullptr ),
+	m_bAudioConfigured( false )
 {
-
+	memset( &m_AudioSpec, 0, sizeof(m_AudioSpec) );
 }
 
 CBinkVideoSubSystem::~CBinkVideoSubSystem()
@@ -171,6 +173,38 @@ VideoResult_t CBinkVideoSubSystem::VideoSoundDeviceCMD( VideoSoundDeviceOperatio
 {
 	switch ( operation ) 
 	{
+		case VideoSoundDeviceOperation::SET_SDL_PARAMS:
+		{
+			if ( !pData )
+				return SetResult( VideoResult::BAD_INPUT_PARAMETERS );
+			const SDL_AudioSpec &audioSpec = *static_cast<const SDL_AudioSpec *>( pData );
+			if ( audioSpec.freq <= 0 || audioSpec.channels == 0 )
+				return SetResult( VideoResult::BAD_INPUT_PARAMETERS );
+
+			AUTO_LOCK( m_AudioMaterialMutex );
+			m_AudioSpec = audioSpec;
+			m_bAudioConfigured = true;
+			for ( int i = 0; i < m_AudioMaterialList.Count(); ++i )
+			{
+				if ( !m_AudioMaterialList[i]->ConfigureAudioOutput( m_AudioSpec ) )
+					return SetResult( VideoResult::AUDIO_ERROR_OCCURED );
+			}
+			return SetResult( VideoResult::SUCCESS );
+		}
+
+		case VideoSoundDeviceOperation::SDLMIXER_CALLBACK:
+		{
+			if ( !pDevice || !pData )
+				return VideoResult::SUCCESS;
+			const int outputBytes = *static_cast<const int *>( pData );
+			AUTO_LOCK( m_AudioMaterialMutex );
+			if ( !m_bAudioConfigured )
+				return VideoResult::SUCCESS;
+			for ( int i = 0; i < m_AudioMaterialList.Count(); ++i )
+				m_AudioMaterialList[i]->MixAudio( static_cast<uint8_t *>( pDevice ), outputBytes );
+			return VideoResult::SUCCESS;
+		}
+
 		case VideoSoundDeviceOperation::SET_DIRECT_SOUND_DEVICE:
 		{
 			return SetResult( VideoResult::OPERATION_NOT_SUPPORTED );
@@ -187,6 +221,27 @@ VideoResult_t CBinkVideoSubSystem::VideoSoundDeviceCMD( VideoSoundDeviceOperatio
 			return SetResult( VideoResult::UNKNOWN_OPERATION );
 		}
 	}
+}
+
+
+void CBinkVideoSubSystem::RegisterAudioMaterial( CBinkMaterial *pMaterial )
+{
+	if ( !pMaterial || !pMaterial->HasAudio() )
+		return;
+	AUTO_LOCK( m_AudioMaterialMutex );
+	if ( m_AudioMaterialList.Find( pMaterial ) == -1 )
+		m_AudioMaterialList.AddToTail( pMaterial );
+	if ( m_bAudioConfigured )
+		pMaterial->ConfigureAudioOutput( m_AudioSpec );
+}
+
+
+void CBinkVideoSubSystem::UnregisterAudioMaterial( CBinkMaterial *pMaterial )
+{
+	AUTO_LOCK( m_AudioMaterialMutex );
+	int index = m_AudioMaterialList.Find( pMaterial );
+	if ( index != -1 )
+		m_AudioMaterialList.FindAndFastRemove( pMaterial );
 }
 
 
@@ -216,7 +271,93 @@ VideoSystemFeature_t CBinkVideoSubSystem::GetSupportedFileExtensionFeatures( int
 // ===========================================================================
 VideoResult_t CBinkVideoSubSystem::PlayVideoFileFullScreen( const char *filename, void *mainWindow, int windowWidth, int windowHeight, int desktopWidth, int desktopHeight, bool windowed, float forcedMinTime, VideoPlaybackFlags_t playbackFlags )
 {
-    return SetResult( VideoResult::FEATURE_NOT_AVAILABLE );
+	(void)mainWindow;
+	(void)desktopWidth;
+	(void)desktopHeight;
+
+	if ( m_CurrentStatus != VideoSystemStatus::OK )
+		return SetResult( VideoResult::SYSTEM_NOT_AVAILABLE );
+	if ( IS_EMPTY_STR( filename ) || windowWidth <= 0 || windowHeight <= 0 )
+		return SetResult( VideoResult::BAD_INPUT_PARAMETERS );
+	if ( playbackFlags & ~VideoPlaybackFlags::VALID_FULLSCREEN_FLAGS )
+		return SetResult( VideoResult::FEATURE_NOT_AVAILABLE );
+	if ( ANY_BITFLAGS_SET( playbackFlags, VideoPlaybackFlags::LOOP_VIDEO | VideoPlaybackFlags::PRELOAD_VIDEO ) )
+		return SetResult( VideoResult::FEATURE_NOT_AVAILABLE );
+
+	VideoPlaybackFlags_t materialFlags = VideoPlaybackFlags::TEXTURES_ACTUAL_SIZE | VideoPlaybackFlags::DONT_AUTO_START_VIDEO;
+	if ( BITFLAGS_SET( playbackFlags, VideoPlaybackFlags::NO_AUDIO ) )
+		materialFlags |= VideoPlaybackFlags::NO_AUDIO;
+
+	CBinkMaterial videoMaterial;
+	if ( !videoMaterial.Init( "__fullscreen_bink", filename, materialFlags ) )
+		return SetResult( videoMaterial.GetLastResult() );
+	RegisterAudioMaterial( &videoMaterial );
+	if ( !videoMaterial.StartVideo() )
+	{
+		UnregisterAudioMaterial( &videoMaterial );
+		videoMaterial.Shutdown();
+		return SetResult( videoMaterial.GetLastResult() );
+	}
+
+	int videoWidth = 0, videoHeight = 0;
+	int textureWidth = 0, textureHeight = 0;
+	videoMaterial.GetVideoImageSize( &videoWidth, &videoHeight );
+	videoMaterial.GetTextureSize( &textureWidth, &textureHeight );
+	{
+		CMatRenderContextPtr renderContext( materials );
+		renderContext->GetRenderTargetDimensions( windowWidth, windowHeight );
+	}
+
+	int outputWidth = videoWidth, outputHeight = videoHeight;
+	int outputX = 0, outputY = 0;
+	if ( !m_pCommonServices->CalculateVideoDimensions( videoWidth, videoHeight, windowWidth, windowHeight,
+		playbackFlags, &outputWidth, &outputHeight, &outputX, &outputY ) )
+	{
+		UnregisterAudioMaterial( &videoMaterial );
+		videoMaterial.Shutdown();
+		return SetResult( VideoResult::VIDEO_ERROR_OCCURED );
+	}
+
+	VideoResult_t inputResult = m_pCommonServices->InitFullScreenPlaybackInputHandler( playbackFlags, forcedMinTime, windowed );
+	if ( inputResult != VideoResult::SUCCESS )
+	{
+		UnregisterAudioMaterial( &videoMaterial );
+		videoMaterial.Shutdown();
+		return SetResult( inputResult );
+	}
+	while ( !videoMaterial.IsFinishedPlaying() )
+	{
+		bool abortEvent = false, pauseEvent = false, quitEvent = false;
+		if ( m_pCommonServices->ProcessFullScreenInput( abortEvent, pauseEvent, quitEvent ) )
+		{
+			if ( abortEvent || quitEvent )
+				break;
+			if ( pauseEvent )
+				videoMaterial.SetPaused( !videoMaterial.IsPaused() );
+		}
+
+		if ( !videoMaterial.IsPaused() )
+			videoMaterial.Update();
+
+		CMatRenderContextPtr renderContext( materials );
+		renderContext->Viewport( 0, 0, windowWidth, windowHeight );
+		renderContext->DepthRange( 0.0f, 1.0f );
+		renderContext->SetToneMappingScaleLinear( Vector( 1, 1, 1 ) );
+		renderContext->ClearColor3ub( 0, 0, 0 );
+		renderContext->ClearBuffers( true, true, true );
+		renderContext->DrawScreenSpaceRectangle( videoMaterial.GetMaterial(), outputX, outputY, outputWidth, outputHeight,
+			0, 0, videoWidth - 1, videoHeight - 1, textureWidth, textureHeight, nullptr, 1, 1 );
+		renderContext->Flush( true );
+		materials->SwapBuffers();
+
+		ThreadSleep( videoMaterial.IsPaused() ? 5 : 1 );
+	}
+
+	VideoResult_t playbackResult = videoMaterial.GetLastResult();
+	m_pCommonServices->TerminateFullScreenPlaybackInputHandler();
+	UnregisterAudioMaterial( &videoMaterial );
+	videoMaterial.Shutdown();
+	return SetResult( playbackResult );
 }
 
 
@@ -230,7 +371,8 @@ IVideoMaterial* CBinkVideoSubSystem::CreateVideoMaterial( const char *pMaterialN
 	AssertExitN( m_CurrentStatus == VideoSystemStatus::OK && IS_NOT_EMPTY( pMaterialName ) || IS_NOT_EMPTY( pVideoFileName ) );
 
 	CBinkMaterial *pVideoMaterial = new CBinkMaterial();
-	if ( pVideoMaterial == nullptr || pVideoMaterial->Init( pMaterialName, pVideoFileName, flags ) == false )
+	if ( pVideoMaterial == nullptr || pVideoMaterial->Init( pMaterialName, pVideoFileName,
+		flags | VideoPlaybackFlags::DONT_AUTO_START_VIDEO ) == false )
 	{
 		SAFE_DELETE( pVideoMaterial );
 		SetResult( VideoResult::VIDEO_ERROR_OCCURED );
@@ -239,6 +381,15 @@ IVideoMaterial* CBinkVideoSubSystem::CreateVideoMaterial( const char *pMaterialN
 
 	IVideoMaterial	*pInterface = (IVideoMaterial*) pVideoMaterial;
 	m_MaterialList.AddToTail( pInterface );
+	RegisterAudioMaterial( pVideoMaterial );
+	if ( !BITFLAGS_SET( flags, VideoPlaybackFlags::DONT_AUTO_START_VIDEO ) && !pVideoMaterial->StartVideo() )
+	{
+		UnregisterAudioMaterial( pVideoMaterial );
+		m_MaterialList.FindAndFastRemove( pInterface );
+		delete pVideoMaterial;
+		SetResult( VideoResult::VIDEO_ERROR_OCCURED );
+		return nullptr;
+	}
 
 	SetResult( VideoResult::SUCCESS );
 	return pInterface;
@@ -253,6 +404,7 @@ VideoResult_t CBinkVideoSubSystem::DestroyVideoMaterial( IVideoMaterial *pVideoM
 	if ( m_MaterialList.Find( pVideoMaterial ) != -1 )
 	{
 		CBinkMaterial *pObject = (CBinkMaterial*) pVideoMaterial;
+		UnregisterAudioMaterial( pObject );
 		pObject->Shutdown();
 		delete pObject;
 
@@ -338,8 +490,12 @@ bool CBinkVideoSubSystem::ShutdownBink()
 	m_bBinkInitialized = false;
 	m_CurrentStatus = VideoSystemStatus::NOT_INITIALIZED;
 	m_AvailableFeatures = VideoSystemFeature::NO_FEATURES;
+	{
+		AUTO_LOCK( m_AudioMaterialMutex );
+		m_AudioMaterialList.RemoveAll();
+		m_bAudioConfigured = false;
+	}
 	SetResult( VideoResult::SUCCESS );
 
 	return true;
 }
-

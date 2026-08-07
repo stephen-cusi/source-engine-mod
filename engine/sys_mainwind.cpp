@@ -1313,7 +1313,16 @@ void CGame::PlayStartupVideos( void )
 	
 	if ((buffer == NULL) || (vidFileLength == 0))
 	{
-		return;
+		if ( bEndGame || bRecap || !g_pFileSystem->FileExists( "media/valve.bik", "GAME" ) )
+			return;
+
+		const char *fallbackVideo = "media/valve.bik";
+		vidFileLength = Q_strlen( fallbackVideo ) + 1;
+		char *fallbackBuffer = (char *)malloc( vidFileLength );
+		if ( fallbackBuffer == NULL )
+			return;
+		Q_memcpy( fallbackBuffer, fallbackVideo, vidFileLength );
+		buffer = fallbackBuffer;
 	}
 
 	// hide cursor while playing videos
@@ -1752,4 +1761,3 @@ void CGame::SetActiveApp( bool active )
 {
 	m_bActiveApp = active;
 }
-

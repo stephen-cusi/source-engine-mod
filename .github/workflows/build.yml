@@ -3,24 +3,6 @@ name: Build
 on: [push, pull_request]
 
 jobs:
-  build-linux-i386:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v5
-    - name: Build linux-i386
-      run: |
-        scripts/build-ubuntu-i386.sh
-
-  build-linux-amd64:
-    runs-on: ubuntu-20.04
-
-    steps:
-    - uses: actions/checkout@v5
-    - name: Build linux-amd64
-      run: |
-        scripts/build-ubuntu-amd64.sh
-
   build-android-armv7a:
     runs-on: ubuntu-latest
 
@@ -95,29 +77,6 @@ jobs:
         git submodule init && git submodule update
         ./waf.bat configure -T debug -d
         ./waf.bat build
-
-  build-dedicated-linux-i386:
-    runs-on: ubuntu-20.04
-
-    steps:
-    - uses: actions/checkout@v5
-    - name: Build dedicated linux-i386
-      run: |
-        scripts/build-ubuntu-i386.sh -d
-    - uses: actions/upload-artifact@v4
-      with:
-        name: linux-source-engine-64-d
-        path: ./linux
-        if-no-files-found: error
-
-  build-dedicated-linux-amd64:
-    runs-on: ubuntu-20.04
-
-    steps:
-    - uses: actions/checkout@v5
-    - name: Build dedicated linux-amd64
-      run: |
-        scripts/build-ubuntu-amd64.sh -d
 
   build-macos-amd64:
     runs-on: macos-latest

@@ -242,7 +242,8 @@ void CAudioDeviceSDLAudio::OpenWaveOut( void )
 	desired.samples = 2048;
 	desired.callback = &CAudioDeviceSDLAudio::AudioCallbackEntry;
 	desired.userdata = this;
-	m_devId = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, SDL_AUDIO_ALLOW_ANY_CHANGE);
+	m_devId = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained,
+		SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
 
 	if (!m_devId)
 		SDLAUDIO_FAIL("SDL_OpenAudioDevice()");
@@ -571,4 +572,3 @@ void CAudioDeviceSDLAudio::ApplyDSPEffects( int idsp, portable_samplepair_t *pbu
 }
 
 #endif // !DEDICATED
-
