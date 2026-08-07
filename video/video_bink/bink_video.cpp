@@ -39,6 +39,9 @@ EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CBinkVideoSubSystem, IVideoSubSystem, VIDEO_S
 VideoFileExtensionInfo_t s_BinkExtensions[] = 
 {
 	{ ".bik", VideoSystem::BINK,  VideoSystemFeature::FULL_PLAYBACK },
+	{ ".bik2", VideoSystem::BINK,  VideoSystemFeature::FULL_PLAYBACK },
+	{ ".blk", VideoSystem::BINK,  VideoSystemFeature::FULL_PLAYBACK },
+	{ ".avi", VideoSystem::BINK,  VideoSystemFeature::FULL_PLAYBACK },
 };
 
 const int s_BinkExtensionCount = ARRAYSIZE( s_BinkExtensions );
