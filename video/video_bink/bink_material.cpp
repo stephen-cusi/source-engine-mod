@@ -83,6 +83,7 @@ int open_codec_context(int *stream_idx, AVCodecContext **dec_ctx, AVFormatContex
 		{
 			Warning("Failed to copy %s codec parameters to decoder context\n",
 					av_get_media_type_string(type));
+			avcodec_free_context(dec_ctx);
 			return ret;
 		}
 
@@ -91,6 +92,7 @@ int open_codec_context(int *stream_idx, AVCodecContext **dec_ctx, AVFormatContex
 		{
 			Warning("Failed to open %s codec\n",
 					av_get_media_type_string(type));
+			avcodec_free_context(dec_ctx);
 			return ret;
 		}
 
@@ -102,10 +104,10 @@ int open_codec_context(int *stream_idx, AVCodecContext **dec_ctx, AVFormatContex
 
 // ===========================================================================
 // CBinkMaterialRGBTextureRegenerator - Inherited from ITextureRegenerator
-//	Copies and converts the buffer bits to texture bits
-//	Currently only supports 32-bit BGR
+//	Copies the decoded RGB image into an opaque RGBA texture
 // ===========================================================================
 CBinkMaterialRGBTextureRegenerator::CBinkMaterialRGBTextureRegenerator() :
+	m_SrcImage( nullptr ),
 	m_nSourceWidth( 0 ),
 	m_nSourceHeight( 0 )
 {
@@ -145,7 +147,7 @@ void CBinkMaterialRGBTextureRegenerator::RegenerateTextureBits( ITexture *pTextu
 	}*/
 
 	// Verify the destination texture is set up correctly
-	Assert( pVTFTexture->Format() == IMAGE_FORMAT_RGB888 );
+	Assert( pVTFTexture->Format() == IMAGE_FORMAT_RGBA8888 );
 	Assert( pVTFTexture->RowSizeInBytes( 0 ) >= pVTFTexture->Width() * 4 );
 	Assert( pVTFTexture->Width() >= m_nSourceWidth );
 	Assert( pVTFTexture->Height() >= m_nSourceHeight );
@@ -154,14 +156,18 @@ void CBinkMaterialRGBTextureRegenerator::RegenerateTextureBits( ITexture *pTextu
 	BYTE   *pImageData	= pVTFTexture->ImageData();
 	int dstStride = pVTFTexture->RowSizeInBytes( 0 );
 
-	BYTE *pSrcData = m_SrcImage;
-
 	for (int y = 0; y < m_nSourceHeight; y++ )
 	{
-		memcpy( pImageData, pSrcData, m_nSourceWidth*3 );
+		const BYTE *pSrcData = m_SrcImage + y * m_nSourceWidth * 3;
+		for ( int x = 0; x < m_nSourceWidth; ++x )
+		{
+			pImageData[x * 4 + 0] = pSrcData[x * 3 + 0];
+			pImageData[x * 4 + 1] = pSrcData[x * 3 + 1];
+			pImageData[x * 4 + 2] = pSrcData[x * 3 + 2];
+			pImageData[x * 4 + 3] = 255;
+		}
 
 		pImageData += dstStride;
-		pSrcData += m_nSourceWidth*3;
 	}
 }
 
@@ -182,11 +188,50 @@ void CBinkMaterialRGBTextureRegenerator::Release()
 // CBinkMaterial Constructor
 //-----------------------------------------------------------------------------
 CBinkMaterial::CBinkMaterial() :
+	m_LastResult( VideoResult::SUCCESS ),
+	m_TexCordU( 0.0f ),
+	m_TexCordV( 0.0f ),
+	m_VideoFrameWidth( 0 ),
+	m_VideoFrameHeight( 0 ),
 	m_pFileName( nullptr ),
+	m_PlaybackFlags( VideoPlaybackFlags::NO_PLAYBACK_OPTIONS ),
 	m_bInitCalled( false ),
+	m_bMovieInitialized( false ),
+	m_bMoviePlaying( false ),
+	m_bMovieFinishedPlaying( false ),
+	m_bMoviePaused( false ),
+	m_bLoopMovie( false ),
+	m_bHasAudio( false ),
+	m_bMuted( false ),
+	m_CurrentVolume( 1.0f ),
+	m_QTMovieTimeScale( 0.0f ),
+	m_QTMoviefloat( 0.0f ),
+	m_QTMovieDuration( 0.0f ),
+	m_QTMovieDurationinSec( 0.0f ),
+	m_QTMovieFrameCount( 0 ),
+	m_MovieFirstFrameTime( 0.0 ),
+	m_NextInterestingTimeToPlay( 0.0 ),
+	m_MoviePauseTime( 0.0f ),
 	m_AVFrame( nullptr ),
-	m_AVPkt( nullptr )
+	m_AVAudioFrame( nullptr ),
+	m_AVPkt( nullptr ),
+	m_AVFmtCtx( nullptr ),
+	m_AVVideoStreamID( -1 ),
+	m_AVAudioStreamID( -1 ),
+	m_AVVideoDecCtx( nullptr ),
+	m_AVAudioDecCtx( nullptr ),
+	m_AVVideoStream( nullptr ),
+	m_AVAudioStream( nullptr ),
+	m_AVPixFormat( AV_PIX_FMT_NONE ),
+	m_MovieFrameDuration( 1.0 / 30.0 ),
+	m_SwrContext( nullptr ),
+	m_AudioOutputFormat( AV_SAMPLE_FMT_NONE ),
+	m_bAudioOutputConfigured( false ),
+	m_bAudioDecoderDrained( false ),
+	m_AudioQueueRead( 0 ),
+	m_RGBData( nullptr )
 {
+	memset( &m_AudioSpec, 0, sizeof(m_AudioSpec) );
 	memset( m_AVVideoData, 0, sizeof(m_AVVideoData) );
 	memset( m_AVVideoLinesize, 0, sizeof(m_AVVideoLinesize) );
 
@@ -199,27 +244,18 @@ CBinkMaterial::CBinkMaterial() :
 //-----------------------------------------------------------------------------
 CBinkMaterial::~CBinkMaterial()
 {
-	SetFileName( nullptr );
-
-	DestroyProceduralTexture();
-	DestroyProceduralMaterial();
+	Shutdown();
 
 	av_frame_free( &m_AVFrame );
+	av_frame_free( &m_AVAudioFrame );
 	av_packet_free( &m_AVPkt );
 
-	if( m_AVVideoData[0] )
-		av_free(m_AVVideoData[0]);
-
-	if( m_AVFmtCtx )
-		avformat_close_input( &m_AVFmtCtx );
 }
 
 
 void CBinkMaterial::Reset()
 {
-	printf("CBinkMaterial::Reset()\n");
-
-	SetFileName( nullptr );
+	CloseFile();
 
 	DestroyProceduralTexture();
 	DestroyProceduralMaterial();
@@ -230,7 +266,7 @@ void CBinkMaterial::Reset()
 	m_VideoFrameWidth = 0;
 	m_VideoFrameHeight = 0;
 
-	m_AVPixFormat = 0;
+	m_AVPixFormat = AV_PIX_FMT_NONE;
 	m_PlaybackFlags = VideoPlaybackFlags::NO_PLAYBACK_OPTIONS;
 
 	m_bMovieInitialized = false;
@@ -242,40 +278,31 @@ void CBinkMaterial::Reset()
 	m_bHasAudio = false;
 	m_bMuted = false;
 
-	m_CurrentVolume = 0.0f;
+	m_CurrentVolume = 1.0f;
 
 	m_QTMovieTimeScale = 0;
 	m_QTMovieDuration = 0;
 	m_QTMovieDurationinSec = 0.0f;
 	m_QTMovieFrameRate.SetFPS( 0, false );
+	m_QTMovieFrameCount = 0;
+	m_MovieFirstFrameTime = 0.0;
+	m_NextInterestingTimeToPlay = 0.0;
+	m_MoviePauseTime = 0.0f;
+	m_MovieFrameDuration = 1.0 / 30.0;
 
 	if( !m_AVFrame )
 		m_AVFrame = av_frame_alloc();
+	if( !m_AVAudioFrame )
+		m_AVAudioFrame = av_frame_alloc();
 	if( !m_AVPkt)
 		m_AVPkt = av_packet_alloc();
 
-	m_RGBData = nullptr;
-
-	m_AVFmtCtx = nullptr;
-	m_AVAudioStream = nullptr;
-	m_AVVideoStream = nullptr;
-
 	AssertMsg( m_AVFrame, "av_frame_alloc return nullptr\n" );
+	AssertMsg( m_AVAudioFrame, "av_frame_alloc return nullptr\n" );
 	AssertMsg( m_AVPkt, "av_packet_alloc return nullptr\n"  );
 
-	if( m_AVVideoData[0] )
-	{
-		av_free(m_AVVideoData[0]);
-		m_AVVideoData[0] = nullptr;
-	}
-
-	if( m_AVFmtCtx )
-	{
-		avformat_close_input( &m_AVFmtCtx );
-		m_AVFmtCtx = nullptr;
-	}
-
 	m_LastResult = VideoResult::SUCCESS;
+	m_bInitCalled = false;
 }
 
 
@@ -285,7 +312,7 @@ void CBinkMaterial::SetFileName( const char *theMovieFileName )
 
 	if ( theMovieFileName != nullptr )
 	{
-		AssertMsg( V_strlen( theQTMovieFileName ) <= MAX_FILENAME_LEN, "Bad Quicktime Movie Filename" );
+		AssertMsg( V_strlen( theMovieFileName ) <= MAX_FILENAME_LEN, "Bad Bink Movie Filename" );
 		m_pFileName = COPY_STRING( theMovieFileName );
 	}
 }
@@ -336,17 +363,16 @@ bool CBinkMaterial::HasAudio()
 
 bool CBinkMaterial::SetVolume( float fVolume )
 {
-	clamp( fVolume, 0.0f, 1.0f );
-
-	m_CurrentVolume = fVolume;
-
-	SetResult( VideoResult::AUDIO_ERROR_OCCURED );
-	return false;
+	AUTO_LOCK( m_AudioMutex );
+	m_CurrentVolume = clamp( fVolume, 0.0f, 1.0f );
+	SetResult( VideoResult::SUCCESS );
+	return true;
 }
 
 
 float CBinkMaterial::GetVolume()
 {
+	AUTO_LOCK( m_AudioMutex );
 	return m_CurrentVolume;
 }
 
@@ -354,6 +380,7 @@ float CBinkMaterial::GetVolume()
 void CBinkMaterial::SetMuted( bool bMuteState )
 {
 	AssertExitFunc( m_bMoviePlaying, SetResult( VideoResult::OPERATION_OUT_OF_SEQUENCE) );
+	AUTO_LOCK( m_AudioMutex );
 
 	SetResult( VideoResult::SUCCESS );
 
@@ -375,6 +402,7 @@ void CBinkMaterial::SetMuted( bool bMuteState )
 
 bool CBinkMaterial::IsMuted()
 {
+	AUTO_LOCK( m_AudioMutex );
 	return m_bMuted;
 }
 
@@ -421,13 +449,180 @@ VideoResult_t CBinkMaterial::SoundDeviceCommand( VideoSoundDeviceOperation_t ope
 }
 
 
+bool CBinkMaterial::ConfigureAudioOutput( const SDL_AudioSpec &audioSpec )
+{
+	if ( !m_bHasAudio )
+		return true;
+
+	AVSampleFormat outputFormat = AV_SAMPLE_FMT_NONE;
+	if ( audioSpec.format == AUDIO_S16SYS )
+		outputFormat = AV_SAMPLE_FMT_S16;
+	else if ( audioSpec.format == AUDIO_F32SYS )
+		outputFormat = AV_SAMPLE_FMT_FLT;
+	else
+		return false;
+
+	AVChannelLayout outputLayout;
+	av_channel_layout_default( &outputLayout, audioSpec.channels );
+	swr_free( &m_SwrContext );
+	int result = swr_alloc_set_opts2( &m_SwrContext, &outputLayout, outputFormat, audioSpec.freq,
+		&m_AVAudioDecCtx->ch_layout, m_AVAudioDecCtx->sample_fmt, m_AVAudioDecCtx->sample_rate, 0, nullptr );
+	av_channel_layout_uninit( &outputLayout );
+	if ( result < 0 || !m_SwrContext || swr_init( m_SwrContext ) < 0 )
+	{
+		swr_free( &m_SwrContext );
+		return false;
+	}
+
+	AUTO_LOCK( m_AudioMutex );
+	m_AudioSpec = audioSpec;
+	m_AudioOutputFormat = outputFormat;
+	m_bAudioOutputConfigured = true;
+	m_AudioQueue.clear();
+	m_AudioQueueRead = 0;
+	Msg( "Bink audio output: %d Hz, %d channels, SDL format 0x%x\n",
+		audioSpec.freq, audioSpec.channels, audioSpec.format );
+	return true;
+}
+
+
+void CBinkMaterial::MixAudio( uint8_t *pOutput, int outputBytes )
+{
+	AUTO_LOCK( m_AudioMutex );
+	if ( !pOutput || outputBytes <= 0 || !m_bMoviePlaying || m_bMoviePaused )
+		return;
+	const size_t available = m_AudioQueue.size() - m_AudioQueueRead;
+	const int bytesToMix = min( outputBytes, static_cast<int>(available) );
+	if ( bytesToMix <= 0 )
+		return;
+
+	if ( !m_bMuted && m_CurrentVolume > 0.0f )
+	{
+		SDL_MixAudioFormat( pOutput, &m_AudioQueue[m_AudioQueueRead], m_AudioSpec.format, bytesToMix,
+			static_cast<int>( m_CurrentVolume * SDL_MIX_MAXVOLUME ) );
+	}
+	m_AudioQueueRead += bytesToMix;
+	if ( m_AudioQueueRead == m_AudioQueue.size() )
+	{
+		m_AudioQueue.clear();
+		m_AudioQueueRead = 0;
+	}
+}
+
+
+int CBinkMaterial::QueuedAudioBytes()
+{
+	AUTO_LOCK( m_AudioMutex );
+	return static_cast<int>( m_AudioQueue.size() - m_AudioQueueRead );
+}
+
+
+void CBinkMaterial::ClearAudioQueue()
+{
+	AUTO_LOCK( m_AudioMutex );
+	m_AudioQueue.clear();
+	m_AudioQueueRead = 0;
+}
+
+
+bool CBinkMaterial::QueueAudioFrame( const AVFrame *pFrame )
+{
+	if ( !m_bAudioOutputConfigured || !m_SwrContext )
+		return true;
+
+	const int outputSamples = static_cast<int>( av_rescale_rnd(
+		swr_get_delay( m_SwrContext, m_AVAudioDecCtx->sample_rate ) + pFrame->nb_samples,
+		m_AudioSpec.freq, m_AVAudioDecCtx->sample_rate, AV_ROUND_UP ) );
+	const int outputBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.channels, outputSamples,
+		m_AudioOutputFormat, 1 );
+	if ( outputBytes <= 0 )
+		return false;
+
+	std::vector<uint8_t> converted( outputBytes );
+	uint8_t *outputData[] = { converted.data() };
+	const int convertedSamples = swr_convert( m_SwrContext, outputData, outputSamples,
+		reinterpret_cast<const uint8_t * const *>( pFrame->extended_data ), pFrame->nb_samples );
+	if ( convertedSamples < 0 )
+		return false;
+
+	const int convertedBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.channels, convertedSamples,
+		m_AudioOutputFormat, 1 );
+	AUTO_LOCK( m_AudioMutex );
+	if ( m_AudioQueueRead > 0 )
+	{
+		m_AudioQueue.erase( m_AudioQueue.begin(), m_AudioQueue.begin() + m_AudioQueueRead );
+		m_AudioQueueRead = 0;
+	}
+	m_AudioQueue.insert( m_AudioQueue.end(), converted.begin(), converted.begin() + convertedBytes );
+	return true;
+}
+
+
+bool CBinkMaterial::FlushAudioResampler()
+{
+	if ( !m_bAudioOutputConfigured || !m_SwrContext )
+		return true;
+
+	while ( true )
+	{
+		const int outputSamples = static_cast<int>( swr_get_delay( m_SwrContext, m_AudioSpec.freq ) );
+		if ( outputSamples <= 0 )
+			return true;
+		const int outputBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.channels, outputSamples,
+			m_AudioOutputFormat, 1 );
+		if ( outputBytes <= 0 )
+			return false;
+
+		std::vector<uint8_t> converted( outputBytes );
+		uint8_t *outputData[] = { converted.data() };
+		const int convertedSamples = swr_convert( m_SwrContext, outputData, outputSamples, nullptr, 0 );
+		if ( convertedSamples < 0 )
+			return false;
+		if ( convertedSamples == 0 )
+			return true;
+
+		const int convertedBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.channels, convertedSamples,
+			m_AudioOutputFormat, 1 );
+		AUTO_LOCK( m_AudioMutex );
+		if ( m_AudioQueueRead > 0 )
+		{
+			m_AudioQueue.erase( m_AudioQueue.begin(), m_AudioQueue.begin() + m_AudioQueueRead );
+			m_AudioQueueRead = 0;
+		}
+		m_AudioQueue.insert( m_AudioQueue.end(), converted.begin(), converted.begin() + convertedBytes );
+	}
+}
+
+
+bool CBinkMaterial::DecodeAudioPacket( const AVPacket *pPacket )
+{
+	if ( !m_AVAudioDecCtx )
+		return true;
+
+	int result = avcodec_send_packet( m_AVAudioDecCtx, pPacket );
+	if ( result < 0 && result != AVERROR_EOF )
+		return false;
+
+	while ( true )
+	{
+		result = avcodec_receive_frame( m_AVAudioDecCtx, m_AVAudioFrame );
+		if ( result == AVERROR(EAGAIN) || result == AVERROR_EOF )
+		{
+			m_bAudioDecoderDrained = ( result == AVERROR_EOF );
+			return result != AVERROR_EOF || FlushAudioResampler();
+		}
+		if ( result < 0 || !QueueAudioFrame( m_AVAudioFrame ) )
+			return false;
+		av_frame_unref( m_AVAudioFrame );
+	}
+}
+
+
 //-----------------------------------------------------------------------------
 // Initializes the video material
 //-----------------------------------------------------------------------------
 bool CBinkMaterial::Init( const char *pMaterialName, const char *pFileName, VideoPlaybackFlags_t flags )
 {
-	printf("CBinkMaterial::Init\n");
-
 	SetResult( VideoResult::BAD_INPUT_PARAMETERS );
 	AssertExitF( IS_NOT_EMPTY( pFileName ) );
 	AssertExitF( m_bInitCalled == false );
@@ -461,7 +656,8 @@ bool CBinkMaterial::Init( const char *pMaterialName, const char *pFileName, Vide
 
 void CBinkMaterial::Shutdown( void )
 {
-	StopVideo();
+	if ( m_bMoviePlaying )
+		StopVideo();
 	Reset();
 }
 
@@ -532,6 +728,7 @@ bool CBinkMaterial::IsLooping()
 
 void CBinkMaterial::SetPaused( bool bPauseState )
 {
+	AUTO_LOCK( m_AudioMutex );
 	if ( !m_bMoviePlaying || m_bMoviePaused == bPauseState )
 	{
 		Assert( m_bMoviePlaying );
@@ -540,16 +737,11 @@ void CBinkMaterial::SetPaused( bool bPauseState )
 
 	if ( bPauseState )			// Pausing the movie?
 	{
-		// Save off current time and set paused state
-//		m_MoviePauseTime = GetMovieTime( m_QTMovie, nullptr );
-//		StopMovie( m_QTMovie );
+		m_MoviePauseTime = static_cast<float>( Plat_FloatTime() );
 	}
 	else  // unpausing the movie
 	{
-		// Reset the movie to the paused time
-//		SetMovieTimeValue( m_QTMovie, m_MoviePauseTime );
-//		StartMovie( m_QTMovie );
-//		Assert( GetMoviesError() == noErr );
+		m_NextInterestingTimeToPlay += Plat_FloatTime() - m_MoviePauseTime;
 	}
 
 	m_bMoviePaused = bPauseState;
@@ -558,6 +750,7 @@ void CBinkMaterial::SetPaused( bool bPauseState )
 
 bool CBinkMaterial::IsPaused()
 {
+	AUTO_LOCK( m_AudioMutex );
 	return ( m_bMoviePlaying ) ? m_bMoviePaused : false;
 }
 
@@ -574,11 +767,12 @@ bool CBinkMaterial::StartVideo()
 
 	m_NextInterestingTimeToPlay = Plat_FloatTime();
 
-	printf("Movie start time = %lf\n", Plat_FloatTime());
-
 	// Transition to playing state
-	m_bMovieInitialized = false;
-	m_bMoviePlaying = true;
+	{
+		AUTO_LOCK( m_AudioMutex );
+		m_bMovieInitialized = false;
+		m_bMoviePlaying = true;
+	}
 
 	Update();
 
@@ -595,9 +789,12 @@ bool CBinkMaterial::StopVideo()
 		return false;
 	}
 
-	m_bMoviePlaying = false;
-	m_bMoviePaused = false;
-	m_bMovieFinishedPlaying = true;
+	{
+		AUTO_LOCK( m_AudioMutex );
+		m_bMoviePlaying = false;
+		m_bMoviePaused = false;
+		m_bMovieFinishedPlaying = true;
+	}
 
 	// free resources
 	CloseFile();
@@ -616,67 +813,123 @@ bool CBinkMaterial::Update( void )
 {
 	AssertExitF( m_bMoviePlaying );
 
-
-	// are we paused? can't update if so...
 	if ( m_bMoviePaused )
-		return true;			// reuse the last frame
-
-	// Get current time in the movie
-	float curMovieTime; // = GetMovieTime( m_QTMovie, nullptr );
+		return false;
 
 	if( m_NextInterestingTimeToPlay > Plat_FloatTime() )
-		return true;
+		return false;
 
 	m_NextInterestingTimeToPlay += m_MovieFrameDuration;
 
-	/* read frames from the file */
-
-	int ret;
-	while( (ret = av_read_frame(m_AVFmtCtx, m_AVPkt)) >= 0 )
+	while ( true )
 	{
-		if (m_AVPkt->stream_index == m_AVVideoStreamID)
+		int ret = avcodec_receive_frame( m_AVVideoDecCtx, m_AVFrame );
+		if ( ret == 0 )
 		{
-			avcodec_send_packet(m_AVVideoDecCtx, m_AVPkt);
-
-			ret = avcodec_receive_frame(m_AVVideoDecCtx, m_AVFrame);
-			if (ret < 0)
+			AVPixelFormat pixelFormat = static_cast<AVPixelFormat>( m_AVFrame->format );
+			if ( pixelFormat == AV_PIX_FMT_YUV420P || pixelFormat == AV_PIX_FMT_YUVJ420P )
 			{
-				av_packet_unref(m_AVPkt);
-				return true;
+				yuv420_rgb24_std( m_VideoFrameWidth, m_VideoFrameHeight,
+					m_AVFrame->data[0], m_AVFrame->data[1], m_AVFrame->data[2],
+					m_AVFrame->linesize[0], m_AVFrame->linesize[1], m_RGBData, m_VideoFrameWidth * 3, YCBCR_601 );
 			}
-
-			// write the frame data to output file
-			if (m_AVVideoDecCtx->codec->type == AVMEDIA_TYPE_VIDEO)
+			else if ( pixelFormat == AV_PIX_FMT_NV12 )
 			{
-				av_image_copy(m_AVVideoData, m_AVVideoLinesize, (const uint8_t **)(m_AVFrame->data), m_AVFrame->linesize, m_AVPixFormat, m_VideoFrameWidth, m_VideoFrameHeight);
+				nv12_rgb24_std( m_VideoFrameWidth, m_VideoFrameHeight,
+					m_AVFrame->data[0], m_AVFrame->data[1], m_AVFrame->linesize[0], m_AVFrame->linesize[1],
+					m_RGBData, m_VideoFrameWidth * 3, YCBCR_601 );
+			}
+			else if ( pixelFormat == AV_PIX_FMT_NV21 )
+			{
+				nv21_rgb24_std( m_VideoFrameWidth, m_VideoFrameHeight,
+					m_AVFrame->data[0], m_AVFrame->data[1], m_AVFrame->linesize[0], m_AVFrame->linesize[1],
+					m_RGBData, m_VideoFrameWidth * 3, YCBCR_601 );
+			}
+			else
+			{
+				Warning( "Unsupported Bink pixel format: %s\n", av_get_pix_fmt_name( pixelFormat ) );
+				av_frame_unref(m_AVFrame);
+				StopVideo();
+				SetResult( VideoResult::VIDEO_ERROR_OCCURED );
+				return false;
 			}
 
 			av_frame_unref(m_AVFrame);
-			break;
+			Rect_t videoRect = { 0, 0, m_VideoFrameWidth, m_VideoFrameHeight };
+			m_Texture->Download( &videoRect );
+			SetResult( VideoResult::SUCCESS );
+			return true;
 		}
 
-		av_packet_unref(m_AVPkt);
+		if ( ret == AVERROR_EOF )
+		{
+			if ( m_bHasAudio && QueuedAudioBytes() > 0 )
+				return false;
+			StopVideo();
+			return false;
+		}
+		if ( ret != AVERROR(EAGAIN) )
+		{
+			StopVideo();
+			SetResult( VideoResult::VIDEO_ERROR_OCCURED );
+			return false;
+		}
+
+		while ( true )
+		{
+			ret = av_read_frame( m_AVFmtCtx, m_AVPkt );
+			if ( ret == AVERROR_EOF )
+			{
+				if ( m_AVAudioDecCtx && !m_bAudioDecoderDrained && !DecodeAudioPacket( nullptr ) )
+				{
+					StopVideo();
+					SetResult( VideoResult::AUDIO_ERROR_OCCURED );
+					return false;
+				}
+				ret = avcodec_send_packet( m_AVVideoDecCtx, nullptr );
+				if ( ret < 0 && ret != AVERROR_EOF )
+				{
+					StopVideo();
+					SetResult( VideoResult::VIDEO_ERROR_OCCURED );
+					return false;
+				}
+				break;
+			}
+			if ( ret < 0 )
+			{
+				StopVideo();
+				SetResult( VideoResult::FILE_ERROR_OCCURED );
+				return false;
+			}
+			if ( m_AVPkt->stream_index == m_AVAudioStreamID )
+			{
+				const bool decoded = DecodeAudioPacket( m_AVPkt );
+				av_packet_unref( m_AVPkt );
+				if ( !decoded )
+				{
+					StopVideo();
+					SetResult( VideoResult::AUDIO_ERROR_OCCURED );
+					return false;
+				}
+				continue;
+			}
+			if ( m_AVPkt->stream_index != m_AVVideoStreamID )
+			{
+				av_packet_unref( m_AVPkt );
+				continue;
+			}
+
+			ret = avcodec_send_packet( m_AVVideoDecCtx, m_AVPkt );
+			av_packet_unref( m_AVPkt );
+			if ( ret < 0 )
+			{
+				StopVideo();
+				SetResult( VideoResult::VIDEO_ERROR_OCCURED );
+				return false;
+			}
+			break;
+		}
 	}
-
-
-	if( ret < 0 )
-	{
-		StopVideo();
-		return false;
-	}
-
-
-
-	yuv420_rgb24_std( m_VideoFrameWidth, m_VideoFrameHeight, m_AVVideoData[0],
-			m_AVVideoData[0]+m_VideoFrameHeight*m_VideoFrameWidth,
-			m_AVVideoData[0]+m_VideoFrameWidth*m_VideoFrameHeight+((m_VideoFrameWidth+1)/2)*((m_VideoFrameHeight+1)/2),
-			m_VideoFrameWidth, (m_VideoFrameWidth+1)/2, m_RGBData, m_VideoFrameWidth*3, YCBCR_601
-		);
-
-	m_Texture->Download();
-
-	SetResult( VideoResult::SUCCESS );
-	return true;
 }
 
 
@@ -716,6 +969,13 @@ void CBinkMaterial::GetVideoImageSize( int *pWidth, int *pHeight )
 
 	*pWidth  = m_VideoFrameWidth;
 	*pHeight = m_VideoFrameHeight;
+}
+
+void CBinkMaterial::GetTextureSize( int *pWidth, int *pHeight )
+{
+	Assert( pWidth != nullptr && pHeight != nullptr );
+	*pWidth = ( m_Texture != nullptr ) ? m_Texture->GetActualWidth() : m_VideoFrameWidth;
+	*pHeight = ( m_Texture != nullptr ) ? m_Texture->GetActualHeight() : m_VideoFrameHeight;
 }
 
 
@@ -806,8 +1066,6 @@ bool CBinkMaterial::SetTime( float flTime )
 //-----------------------------------------------------------------------------
 void CBinkMaterial::CreateProceduralTexture( const char *pTextureName )
 {
-	printf("CBinkMaterial::CreateProceduralTexture\n");
-
 	AssertIncRange( m_VideoFrameWidth, cMinVideoFrameWidth, cMaxVideoFrameWidth );
 	AssertIncRange( m_VideoFrameHeight, cMinVideoFrameHeight, cMaxVideoFrameHeight );
 	AssertStr( pTextureName );
@@ -819,9 +1077,9 @@ void CBinkMaterial::CreateProceduralTexture( const char *pTextureName )
 	int nWidth  = ( actualSizeTexture ) ? ALIGN_VALUE( m_VideoFrameWidth, TEXTURE_SIZE_ALIGNMENT ) : ComputeGreaterPowerOfTwo( m_VideoFrameWidth ); 
 	int nHeight = ( actualSizeTexture ) ? ALIGN_VALUE( m_VideoFrameHeight, TEXTURE_SIZE_ALIGNMENT ) : ComputeGreaterPowerOfTwo( m_VideoFrameHeight ); 
 
-	// initialize the procedural texture as 32-it RGBA, w/o mipmaps
+	// Use an explicit opaque alpha channel; GL may promote RGB888 internally.
 	m_Texture.InitProceduralTexture( pTextureName, "VideoCacheTextures", nWidth, nHeight, 
-				IMAGE_FORMAT_RGB888, TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_NOMIP |
+				IMAGE_FORMAT_RGBA8888, TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_NOMIP |
 				TEXTUREFLAGS_PROCEDURAL | TEXTUREFLAGS_SINGLECOPY | TEXTUREFLAGS_NOLOD );
 
 	// Use this to get the updated frame from the remote connection	
@@ -858,10 +1116,10 @@ void CBinkMaterial::CreateProceduralMaterial( const char *pMaterialName )
 	KeyValues *pVMTKeyValues = new KeyValues( "UnlitGeneric" );
 	{
 		pVMTKeyValues->SetString( "$basetexture", m_Texture->GetName() );
-		pVMTKeyValues->SetInt( "$nobasetexture", 1 );
+		pVMTKeyValues->SetInt( "$ignorez", 1 );
 		pVMTKeyValues->SetInt( "$nofog", 1 );
-		pVMTKeyValues->SetInt( "$spriteorientation", 3 );
-		pVMTKeyValues->SetInt( "$translucent", 1 );
+		pVMTKeyValues->SetInt( "$no_fullbright", 1 );
+		pVMTKeyValues->SetInt( "$nocull", 1 );
 		pVMTKeyValues->SetInt( "$nolod", 1 );
 		pVMTKeyValues->SetInt( "$nomip", 1 );
 		pVMTKeyValues->SetInt( "$gammacolorread", 0 );
@@ -905,13 +1163,12 @@ void CBinkMaterial::OpenMovie( const char *theMovieFileName )
 */
 
 	SetFileName( theMovieFileName );
-	printf("CBinkMaterial::OpenMovie( \"%s\" )\n", theMovieFileName);
 
 	if (avformat_open_input(&m_AVFmtCtx, theMovieFileName, NULL, NULL) < 0)
  	{
 		Warning("Could not open source file %s\n", theMovieFileName);
  		SetResult( VideoResult::FILE_ERROR_OCCURED ) ;
-		Reset();
+		CloseFile();
 		return;
 	}
 
@@ -919,7 +1176,7 @@ void CBinkMaterial::OpenMovie( const char *theMovieFileName )
 	{
 		Warning("Could not find stream information for %s\n", theMovieFileName);
  		SetResult( VideoResult::FILE_ERROR_OCCURED ) ;
-		Reset();
+		CloseFile();
 		return;
 	}
 
@@ -927,36 +1184,49 @@ void CBinkMaterial::OpenMovie( const char *theMovieFileName )
 	{
 		m_AVVideoStream = m_AVFmtCtx->streams[m_AVVideoStreamID];
 
-		/* allocate image where the decoded image will be put */
 		m_VideoFrameWidth = m_AVVideoDecCtx->width;
 		m_VideoFrameHeight = m_AVVideoDecCtx->height;
 		m_AVPixFormat = m_AVVideoDecCtx->pix_fmt;
-		size_t size = av_image_alloc(m_AVVideoData, m_AVVideoLinesize,
-							m_VideoFrameWidth, m_VideoFrameHeight, m_AVPixFormat, 1);
+	m_RGBData = static_cast<uint8_t *>( calloc( static_cast<size_t>(m_VideoFrameWidth) * m_VideoFrameHeight * 3, 1 ) );
 
-		m_RGBData = calloc( m_VideoFrameWidth*m_VideoFrameHeight*3, 1 );
-
-		printf("m_AVVideoData size = %zu\nm_VideoFrameWidth=%d\nm_VideoFrameHeight=%d\n", size, m_VideoFrameWidth, m_VideoFrameHeight);
-
-		if (size < 0)
+		if ( !m_RGBData )
 		{
 			Warning("Could not allocate raw video buffer\n", theMovieFileName);
  			SetResult( VideoResult::SYSTEM_ERROR_OCCURED ) ;
-			Reset();
- 			return;
+			CloseFile();
+			return;
 		}
 	}
 	else
 	{
 			Warning("open_codec_context failed for %s\n", theMovieFileName);
  			SetResult( VideoResult::SYSTEM_ERROR_OCCURED ) ;
-			Reset();
+			CloseFile();
 			return;
 	}
 
-	m_MovieFrameDuration = 1.0/((double)m_AVVideoStream->r_frame_rate.num/(double)m_AVVideoStream->r_frame_rate.den);
+	if ( !BITFLAGS_SET( m_PlaybackFlags, VideoPlaybackFlags::NO_AUDIO ) &&
+		open_codec_context( &m_AVAudioStreamID, &m_AVAudioDecCtx, m_AVFmtCtx, AVMEDIA_TYPE_AUDIO ) == 0 )
+	{
+		m_AVAudioStream = m_AVFmtCtx->streams[m_AVAudioStreamID];
+		m_bHasAudio = true;
+		Msg( "Bink audio: %d Hz, %d channels, %s\n", m_AVAudioDecCtx->sample_rate,
+			m_AVAudioDecCtx->ch_layout.nb_channels, av_get_sample_fmt_name( m_AVAudioDecCtx->sample_fmt ) );
+	}
+
+	AVRational frameRate = av_guess_frame_rate( m_AVFmtCtx, m_AVVideoStream, nullptr );
+	if ( frameRate.num <= 0 || frameRate.den <= 0 )
+		frameRate = AVRational{ 30, 1 };
+	const double framesPerSecond = av_q2d( frameRate );
+	m_MovieFrameDuration = 1.0 / framesPerSecond;
+	m_QTMovieFrameRate.SetFPS( static_cast<float>( framesPerSecond ) );
+	if ( m_AVVideoStream->duration != AV_NOPTS_VALUE )
+		m_QTMovieDurationinSec = static_cast<float>( m_AVVideoStream->duration * av_q2d( m_AVVideoStream->time_base ) );
+	else if ( m_AVFmtCtx->duration != AV_NOPTS_VALUE )
+		m_QTMovieDurationinSec = static_cast<float>( m_AVFmtCtx->duration / static_cast<double>( AV_TIME_BASE ) );
+	m_QTMovieFrameCount = ( m_QTMovieDurationinSec > 0.0f ) ? static_cast<int>( m_QTMovieDurationinSec * framesPerSecond + 0.5 ) : 0;
 	m_TextureRegen.SetSourceImage( m_RGBData, m_VideoFrameWidth, m_VideoFrameHeight );
-	printf("Video FPS: %lf\n", (double)m_AVVideoStream->r_frame_rate.num/(double)m_AVVideoStream->r_frame_rate.den);
+	Msg( "Bink video: %dx%d at %.3f FPS\n", m_VideoFrameWidth, m_VideoFrameHeight, framesPerSecond );
 
 #if 0
 	Handle	MovieFileDataRef = nullptr;
@@ -1068,12 +1338,29 @@ void CBinkMaterial::OpenMovie( const char *theMovieFileName )
 
 void CBinkMaterial::CloseFile()
 {
+	if ( m_AVPkt )
+		av_packet_unref( m_AVPkt );
+	if ( m_AVFrame )
+		av_frame_unref( m_AVFrame );
+	if ( m_AVAudioFrame )
+		av_frame_unref( m_AVAudioFrame );
+	ClearAudioQueue();
+	swr_free( &m_SwrContext );
 	av_freep( &m_AVVideoData[0] );
+	avcodec_free_context( &m_AVVideoDecCtx );
+	avcodec_free_context( &m_AVAudioDecCtx );
 	avformat_close_input( &m_AVFmtCtx );
-	m_AVFmtCtx = nullptr;
-	free(m_RGBData);
+	SAFE_FREE( m_RGBData );
+	m_AVVideoStream = nullptr;
+	m_AVAudioStream = nullptr;
+	m_AVVideoStreamID = -1;
+	m_AVAudioStreamID = -1;
+	m_AVPixFormat = AV_PIX_FMT_NONE;
+	m_bHasAudio = false;
+	m_bAudioOutputConfigured = false;
+	m_bAudioDecoderDrained = false;
+	m_AudioOutputFormat = AV_SAMPLE_FMT_NONE;
+	m_TextureRegen.SetSourceImage( nullptr, 0, 0 );
 
 	SetFileName( nullptr );
 }
-
-

@@ -19,6 +19,7 @@
 class IFileSystem;
 class IMaterialSystem;
 class CQuickTimeMaterial;
+class CBinkMaterial;
 
 //-----------------------------------------------------------------------------
 // Global interfaces - you already did the needed includes, right?
@@ -32,6 +33,9 @@ extern IMaterialSystem	*materials;
 #include "utlvector.h"
 #include "tier1/KeyValues.h"
 #include "tier0/platform.h"
+#include "tier0/threadtools.h"
+
+#include <SDL_audio.h>
 
 // -----------------------------------------------------------------------------
 // CQuickTimeVideoSubSystem - Implementation of IVideoSubSystem
@@ -91,6 +95,8 @@ class CBinkVideoSubSystem : public CTier2AppSystem< IVideoSubSystem >
 		bool							ShutdownBink();
 
 		VideoResult_t					SetResult( VideoResult_t status );
+		void						RegisterAudioMaterial( CBinkMaterial *pMaterial );
+		void						UnregisterAudioMaterial( CBinkMaterial *pMaterial );
 
 		bool							m_bBinkInitialized;
 		VideoResult_t					m_LastResult;
@@ -102,6 +108,10 @@ class CBinkVideoSubSystem : public CTier2AppSystem< IVideoSubSystem >
 		
 		CUtlVector< IVideoMaterial* >	m_MaterialList;
 		CUtlVector< IVideoRecorder* >	m_RecorderList;
+		CUtlVector< CBinkMaterial* >	m_AudioMaterialList;
+		CThreadFastMutex				m_AudioMaterialMutex;
+		SDL_AudioSpec					m_AudioSpec;
+		bool						m_bAudioConfigured;
 		
 		static const VideoSystemFeature_t	DEFAULT_FEATURE_SET;
 };
