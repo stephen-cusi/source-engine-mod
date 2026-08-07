@@ -50,6 +50,14 @@ jobs:
         export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
         export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
         python3 ./waf build --targets=video_bink,engine -j2
+    - name: Upload libs
+      uses: actions/upload-artifact@v5
+      with:
+        name: android-libs-aarch64
+        path: |
+          build/video/video_bink/libvideo_bink.so
+          build/engine/libengine.so
+        if-no-files-found: error
 
   build-video-bink-armv7a:
     runs-on: ubuntu-24.04
@@ -85,3 +93,11 @@ jobs:
         export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
         export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
         python3 ./waf build --targets=video_bink,engine -j2
+    - name: Upload libs
+      uses: actions/upload-artifact@v5
+      with:
+        name: android-libs-armv7a
+        path: |
+          build/video/video_bink/libvideo_bink.so
+          build/engine/libengine.so
+        if-no-files-found: error
