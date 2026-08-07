@@ -35,6 +35,9 @@ const char *COM_GetModDirectory()
 
 int DrawPrintWrappedText(vgui::HFont font, int pX, int pY, const wchar_t* pszText, int nLength, int nMaxWidth, bool bDraw)
 {
+    if ( !pszText || nLength <= 0 || nMaxWidth <= 0 )
+        return 0;
+
     float x = 0.0f;
     int extraY = 0;
     const int nFontTall = vgui::surface()->GetFontTall(font);
@@ -42,53 +45,68 @@ int DrawPrintWrappedText(vgui::HFont font, int pX, int pY, const wchar_t* pszTex
     const wchar_t* wszLastSpace = NULL;
     const wchar_t* wszEnd = pszText + nLength;
 
-    for (const wchar_t* wsz = pszText; *wsz; wsz++)
+    for (const wchar_t* wsz = pszText; wsz < wszEnd; wsz++)
     {
         wchar_t ch = *wsz;
 
         if (ch == L' ' || ch == L'\n')
             wszLastSpace = wsz;
 
-#if USE_GETKERNEDCHARWIDTH
-        wchar_t chBefore = 0;
-        wchar_t chAfter = 0;
-        if (wsz > pszText)
-            chBefore = wsz[-1];
-        chAfter = wsz[1];
-        float flWide = 0.0f, flabcA = 0.0f;
-        vgui::surface()->GetKernedCharWidth(font, ch, chBefore, chAfter, flWide, flabcA);
-        if (ch == L' ')
-            x = ceil(x);
-
-        surface()->DrawSetTextPos(x + px, y + py);
-        surface()->DrawUnicodeChar(ch);
-        x += floor(flWide + 0.6);
-#else
         x += vgui::surface()->GetCharacterWidth(font, ch);
-#endif
 
         if (x >= nMaxWidth || ch == L'\n')
         {
-            const wchar_t* wszNewStart = wszLastSpace ? wszLastSpace : wsz;
+            const wchar_t* wszBreak;
+            const wchar_t* wszNextStart;
+
+            if ( ch == L'\n' )
+            {
+                wszBreak = wsz;
+                wszNextStart = wsz + 1;
+            }
+            else if ( wszLastSpace )
+            {
+                wszBreak = wszLastSpace;
+                wszNextStart = wszLastSpace + 1;
+            }
+            else
+            {
+                // Break mid-word
+                if ( wsz == wszStrStart )
+                {
+                    // Even a single character doesn't fit, just force it
+                    wszBreak = wsz + 1;
+                    wszNextStart = wsz + 1;
+                }
+                else
+                {
+                    wszBreak = wsz;
+                    wszNextStart = wsz;
+                }
+            }
+
             if ( bDraw )
             {
                 vgui::surface()->DrawSetTextPos(pX, pY);
-                vgui::surface()->DrawPrintText(wszStrStart, (int)(intp)(wszNewStart - wszStrStart));
+                vgui::surface()->DrawPrintText(wszStrStart, (int)(wszBreak - wszStrStart));
             }
-            wszStrStart = wszNewStart + 1;
-            wsz = wszStrStart;
-            if ( ch == L'\n' )
-                wsz--;
+
+            wszStrStart = wszNextStart;
+            wsz = wszNextStart - 1; // loop increment will move it to wszNextStart
+            wszLastSpace = NULL;
             x = 0;
             pY += nFontTall;
             extraY += nFontTall;
         }
     }
 
-    if (wszStrStart != wszEnd && bDraw)
+    if (wszStrStart < wszEnd )
     {
-        vgui::surface()->DrawSetTextPos(pX, pY);
-        vgui::surface()->DrawPrintText(wszStrStart, (int)(intp)(wszEnd - wszStrStart));
+        if ( bDraw )
+        {
+            vgui::surface()->DrawSetTextPos(pX, pY);
+            vgui::surface()->DrawPrintText(wszStrStart, (int)(wszEnd - wszStrStart));
+        }
     }
 
     return extraY;
