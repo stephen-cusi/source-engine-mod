@@ -204,6 +204,8 @@ def define_platform(conf):
 			'GL_GLEXT_PROTOTYPES',
 			'BINK_VIDEO'
 		])
+	elif conf.env.DEST_OS == 'android':
+		conf.env.append_unique('DEFINES', ['BINK_VIDEO'])
 
 	if conf.options.TOGLES:
 		conf.env.append_unique('DEFINES', ['TOGLES'])
@@ -423,6 +425,10 @@ def check_deps(conf):
 			conf.check(lib='ssl', uselib_store='SSL')
 		conf.check(lib='android_support', uselib_store='ANDROID_SUPPORT')
 		conf.check(lib='opus', uselib_store='OPUS')
+		conf.check(lib='avcodec', uselib_store='AVCODEC')
+		conf.check(lib='avformat', uselib_store='AVFORMAT')
+		conf.check(lib='avutil', uselib_store='AVUTIL')
+		conf.check(lib='swresample', uselib_store='SWRESAMPLE')
 
 	if conf.env.DEST_OS == 'win32':
 		conf.check(lib='libz', uselib_store='ZLIB', define_name='USE_ZLIB')
@@ -520,6 +526,7 @@ def configure(conf):
 			'-I'+os.path.abspath('.')+'/thirdparty/openal-soft/include/',
 			'-I'+os.path.abspath('.')+'/thirdparty/fontconfig',
 			'-I'+os.path.abspath('.')+'/thirdparty/freetype/include',
+			'-I'+os.path.abspath('.')+'/lib/android/'+conf.env.DEST_CPU+'/include',
 			'-llog',
 			'-lz'
 		]

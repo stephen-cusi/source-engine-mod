@@ -1389,6 +1389,12 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 	bool bEscPressed	= false;
 	bool bReturnPressed	= false;
 	bool bSpacePressed	= false;
+#if defined( ANDROID )
+	// Double tap on the touchscreen skips the startup video
+	bool bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
+#else
+	bool bDoubleTapPressed = false;
+#endif
 
 	g_pLauncherMgr->PeekAndRemoveKeyboardEvents( &bEscPressed, &bReturnPressed, &bSpacePressed );
 #endif
@@ -1397,7 +1403,7 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 	bool bEscEvent = ( bEscPressed != m_bEscLast ) && bEscPressed;
 	bool bReturnEvent = ( bReturnPressed != m_bReturnLast ) &&  bReturnPressed;
 	bool bSpaceEvent = ( bSpacePressed != m_bSpaceLast ) && bSpacePressed;
-	bool bAnyKeyEvent = bEscEvent || bReturnEvent || bSpaceEvent;
+	bool bAnyKeyEvent = bEscEvent || bReturnEvent || bSpaceEvent || bDoubleTapPressed;
 
 	m_bEscLast = bEscPressed;
 	m_bReturnLast = bReturnPressed;
