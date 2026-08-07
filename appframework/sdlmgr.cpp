@@ -1643,6 +1643,14 @@ void CSDLMgr::handleKeyInput( const SDL_Event &event )
 
 	const bool bPressed = ( event.type == SDL_KEYDOWN );
 
+#if defined( ANDROID )
+	if ( bPressed &&
+		 ( event.key.keysym.scancode == SDL_SCANCODE_ESCAPE || event.key.keysym.scancode == SDL_SCANCODE_AC_BACK ) )
+	{
+		Msg( "Bink dbg: keydown escape/back scancode=%d\n", (int)event.key.keysym.scancode );
+	}
+#endif
+
 	// !!! FIXME: we should be getting text input from a different event...
 	CCocoaEvent theEvent;
 	theEvent.m_EventType = ( bPressed ) ? CocoaEvent_KeyDown : CocoaEvent_KeyUp;

@@ -523,7 +523,8 @@ void CBinkMaterial::MixAudio( uint8_t *pOutput, int outputBytes )
 			const int nSamples = bytesToMix / 2;
 			for ( int i = 0; i < nSamples; ++i )
 			{
-				int s = ( out[i] * vol + in[i] * ( 128 - vol ) ) >> 7;
+				// Same as SDL_MixAudioFormat_S16: dst += (src - dst) * vol / 128
+				int s = out[i] + ( in[i] - out[i] ) * vol / 128;
 				if ( s > 32767 ) s = 32767;
 				else if ( s < -32768 ) s = -32768;
 				out[i] = static_cast<int16_t>( s );
@@ -535,7 +536,7 @@ void CBinkMaterial::MixAudio( uint8_t *pOutput, int outputBytes )
 			const float *in = reinterpret_cast<const float *>( &m_AudioQueue[m_AudioQueueRead] );
 			const int nSamples = bytesToMix / 4;
 			for ( int i = 0; i < nSamples; ++i )
-				out[i] += in[i] * m_CurrentVolume;
+				out[i] += in[i] * ( static_cast<float>( vol ) / 128.0f );
 		}
 	}
 	m_AudioQueueRead += bytesToMix;
