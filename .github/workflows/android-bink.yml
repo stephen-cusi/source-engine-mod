@@ -50,6 +50,11 @@ jobs:
         export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
         export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
         python3 ./waf build --targets=video_bink,engine -j2
+    - name: Strip libs
+      run: |
+        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
+        llvm-strip --strip-unneeded build/video/video_bink/libvideo_bink.so
+        llvm-strip --strip-unneeded build/engine/libengine.so
     - name: Upload libs
       uses: actions/upload-artifact@v5
       with:
@@ -93,6 +98,11 @@ jobs:
         export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
         export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
         python3 ./waf build --targets=video_bink,engine -j2
+    - name: Strip libs
+      run: |
+        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
+        llvm-strip --strip-unneeded build/video/video_bink/libvideo_bink.so
+        llvm-strip --strip-unneeded build/engine/libengine.so
     - name: Upload libs
       uses: actions/upload-artifact@v5
       with:
