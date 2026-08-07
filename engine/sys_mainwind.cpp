@@ -1386,6 +1386,8 @@ void CGame::PlayStartupVideos( void )
 		COM_GetGameDir( gameDir, sizeof(gameDir) );
 		char loosePath[MAX_PATH];
 		V_ComposeFileName( gameDir, com_token, loosePath, sizeof(loosePath) );
+		Msg( "Bink dbg: gameDir='%s' token='%s' loosePath='%s' loose=%d\n",
+			gameDir, com_token, loosePath, IsLooseMediaFile( loosePath ) ? 1 : 0 );
 		if ( IsLooseMediaFile( loosePath ) )
 		{
 			Q_strncpy( localPath, loosePath, sizeof(localPath) );
@@ -1393,6 +1395,7 @@ void CGame::PlayStartupVideos( void )
 		else
 		{
 			g_pFileSystem->GetLocalPath( com_token, localPath, sizeof(localPath) );
+			Msg( "Bink dbg: GetLocalPath='%s' loose=%d\n", localPath, IsLooseMediaFile( localPath ) ? 1 : 0 );
 		}
 
 		// Only play videos that are real loose files; skip anything that only
