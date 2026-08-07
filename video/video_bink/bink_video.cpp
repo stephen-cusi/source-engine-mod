@@ -180,8 +180,8 @@ VideoResult_t CBinkVideoSubSystem::VideoSoundDeviceCMD( VideoSoundDeviceOperatio
 		{
 			if ( !pData )
 				return SetResult( VideoResult::BAD_INPUT_PARAMETERS );
-			const SDL_AudioSpec &audioSpec = *static_cast<const SDL_AudioSpec *>( pData );
-			if ( audioSpec.freq <= 0 || audioSpec.channels == 0 )
+			const VideoAudioSpec &audioSpec = *static_cast<const VideoAudioSpec *>( pData );
+			if ( audioSpec.m_Freq <= 0 || audioSpec.m_Channels == 0 )
 				return SetResult( VideoResult::BAD_INPUT_PARAMETERS );
 
 			AUTO_LOCK( m_AudioMaterialMutex );

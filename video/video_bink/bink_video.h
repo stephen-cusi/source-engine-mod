@@ -35,8 +35,6 @@ extern IMaterialSystem	*materials;
 #include "tier0/platform.h"
 #include "tier0/threadtools.h"
 
-#include <SDL_audio.h>
-
 // -----------------------------------------------------------------------------
 // CQuickTimeVideoSubSystem - Implementation of IVideoSubSystem
 // -----------------------------------------------------------------------------
@@ -110,7 +108,7 @@ class CBinkVideoSubSystem : public CTier2AppSystem< IVideoSubSystem >
 		CUtlVector< IVideoRecorder* >	m_RecorderList;
 		CUtlVector< CBinkMaterial* >	m_AudioMaterialList;
 		CThreadFastMutex				m_AudioMaterialMutex;
-		SDL_AudioSpec					m_AudioSpec;
+		VideoAudioSpec					m_AudioSpec;
 		bool						m_bAudioConfigured;
 		
 		static const VideoSystemFeature_t	DEFAULT_FEATURE_SET;

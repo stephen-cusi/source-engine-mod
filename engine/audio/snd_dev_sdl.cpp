@@ -258,7 +258,11 @@ void CAudioDeviceSDLAudio::OpenWaveOut( void )
 	// Tells Bink to use SDL for its audio decoding
 	if ( g_pVideo != NULL) 
 	{
-		g_pVideo->SoundDeviceCommand( VideoSoundDeviceOperation::SET_SDL_PARAMS, NULL, (void *)&obtained );
+		VideoAudioSpec spec;
+		spec.m_Freq = obtained.freq;
+		spec.m_Channels = obtained.channels;
+		spec.m_Format = obtained.format;
+		g_pVideo->SoundDeviceCommand( VideoSoundDeviceOperation::SET_SDL_PARAMS, NULL, (void *)&spec );
 	
 	}
 #endif
