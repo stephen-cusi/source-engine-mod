@@ -1313,7 +1313,6 @@ static bool FindLooseStartupVideo( const char *gameDir, const char *token, char 
 
 		char loosePath[MAX_PATH];
 		V_ComposeFileName( gameDir, candidate, loosePath, sizeof(loosePath) );
-		Msg( "Bink dbg: trying '%s' loose=%d\n", loosePath, IsLooseMediaFile( loosePath ) ? 1 : 0 );
 		if ( IsLooseMediaFile( loosePath ) )
 		{
 			Q_strncpy( outPath, loosePath, outLen );
