@@ -272,6 +272,7 @@ public:
 	virtual int GetEvents( CCocoaEvent *pEvents, int nMaxEventsToReturn, bool debugEvents = false );
 #if defined(LINUX) || defined(PLATFORM_BSD)
 	virtual int PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbSpace, bool debugEvent = false );
+	virtual bool PeekAndRemoveDoubleTap( void );
 #endif
 
 	// Set the mouse cursor position.
@@ -403,6 +404,7 @@ private:
 	Uint32 m_MouseButtonDownTimeStamp;
 	int m_MouseButtonDownX;
 	int m_MouseButtonDownY;
+	bool m_bGotDoubleTap;
 
 	bool m_bResetVsync;
 	int m_nFramesToSkip;
@@ -580,6 +582,7 @@ InitReturnVal_t CSDLMgr::Init()
 	m_MouseButtonDownTimeStamp = 0;
 	m_MouseButtonDownX = 0;
 	m_MouseButtonDownY = 0;
+	m_bGotDoubleTap = false;
 
 	m_bExpectSyntheticMouseMotion = false;
 	m_nMouseTargetX = 0;
@@ -1055,6 +1058,15 @@ int CSDLMgr::PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbS
 
 	m_CocoaEventsMutex.Unlock();
 	return nRead;
+}
+
+bool CSDLMgr::PeekAndRemoveDoubleTap( void )
+{
+	SDLAPP_FUNC;
+
+	bool bResult = m_bGotDoubleTap;
+	m_bGotDoubleTap = false;
+	return bResult;
 }
 
 #endif // LINUX
@@ -1847,13 +1859,21 @@ void CSDLMgr::PumpWindowsMessageLoop()
 
 				if ( bPressed )
 				{
+#if defined( ANDROID )
+					// Touchscreen taps drift more than mouse clicks, so allow a wider
+					// hit area when detecting a double-tap.
+					const int nDoubleClickSize = 64;
+#else
+					const int nDoubleClickSize = sdl_double_click_size.GetInt();
+#endif
 					if ( m_bGotMouseButtonDown &&
 						 ( (int)( event.button.timestamp - m_MouseButtonDownTimeStamp ) <= sdl_double_click_time.GetInt() ) &&
-						 ( abs( event.button.x - m_MouseButtonDownX ) <= sdl_double_click_size.GetInt() ) &&
-						 ( abs( event.button.y - m_MouseButtonDownY ) <= sdl_double_click_size.GetInt() ) )
+						 ( abs( event.button.x - m_MouseButtonDownX ) <= nDoubleClickSize ) &&
+						 ( abs( event.button.y - m_MouseButtonDownY ) <= nDoubleClickSize ) )
 					{
 						bDoublePress = true;
 						m_bGotMouseButtonDown = false;
+						m_bGotDoubleTap = true;
 					}
 					else
 					{

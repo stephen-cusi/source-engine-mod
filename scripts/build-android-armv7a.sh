@@ -13,6 +13,8 @@ tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
 export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
 export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
 
+./scripts/build-ffmpeg-android.sh armeabi-v7a-hard
+
 python3 ./waf configure -T release --prefix=../android_build --android=armeabi-v7a-hard,host,21 --target=../android_build/armeabi-v7a --disable-warns -4 --togles
 python3 ./waf install --strip
 
