@@ -526,6 +526,7 @@ InitReturnVal_t CSDLMgr::Init()
 	// Trap the Android back button so it produces a key event instead of
 	// quitting the app; the startup video input handler treats it as skip.
 	SDL_SetHint( SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1" );
+	Msg( "Bink dbg: back button trapped\n" );
 #endif
 
 	if (!SDL_WasInit(SDL_INIT_VIDEO))
@@ -1061,6 +1062,9 @@ int CSDLMgr::PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbS
 				nRead++;
 				*pbEsc = true;
 				pEvent->m_EventType = CocoaEvent_Deleted;
+#if defined( ANDROID )
+				Msg( "Bink dbg: back key treated as escape\n" );
+#endif
 				break;
 				case SDL_SCANCODE_RETURN:
 				case SDL_SCANCODE_KP_ENTER:
@@ -1933,6 +1937,7 @@ void CSDLMgr::PumpWindowsMessageLoop()
 				{
 					m_bGotFingerDown = false;
 					m_bGotDoubleTap = true;
+					Msg( "Bink dbg: double tap detected\n" );
 				}
 				else
 				{
@@ -1940,6 +1945,7 @@ void CSDLMgr::PumpWindowsMessageLoop()
 					m_FingerDownX = event.tfinger.x;
 					m_FingerDownY = event.tfinger.y;
 					m_bGotFingerDown = true;
+					Msg( "Bink dbg: fingerdown\n" );
 				}
 				break;
 			}
@@ -2050,6 +2056,7 @@ void CSDLMgr::PumpWindowsMessageLoop()
 			}
 			case SDL_QUIT:
 			{
+				Msg( "Bink dbg: SDL_QUIT\n" );
 				CCocoaEvent theEvent;
 				theEvent.m_EventType = CocoaEvent_AppQuit;
 				PostEvent( theEvent );
