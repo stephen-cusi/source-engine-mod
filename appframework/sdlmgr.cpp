@@ -272,8 +272,8 @@ public:
 	virtual int GetEvents( CCocoaEvent *pEvents, int nMaxEventsToReturn, bool debugEvents = false );
 #if defined(LINUX) || defined(PLATFORM_BSD)
 	virtual int PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbSpace, bool debugEvent = false );
-	virtual bool PeekAndRemoveDoubleTap( void );
 #endif
+	virtual bool PeekAndRemoveDoubleTap( void );
 
 	// Set the mouse cursor position.
 	virtual void SetCursorPosition( int x, int y );
@@ -1082,6 +1082,8 @@ int CSDLMgr::PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbS
 	return nRead;
 }
 
+#endif // LINUX
+
 bool CSDLMgr::PeekAndRemoveDoubleTap( void )
 {
 	SDLAPP_FUNC;
@@ -1090,8 +1092,6 @@ bool CSDLMgr::PeekAndRemoveDoubleTap( void )
 	m_bGotDoubleTap = false;
 	return bResult;
 }
-
-#endif // LINUX
 
 bool CSDLMgr::IsDebugEvent( CCocoaEvent& event )
 {

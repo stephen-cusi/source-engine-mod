@@ -54,8 +54,8 @@ public:
 	virtual int GetEvents( CCocoaEvent *pEvents, int nMaxEventsToReturn, bool debugEvents = false ) = 0;
 #if defined(LINUX) || defined(PLATFORM_BSD)
 	virtual int PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbSpace, bool debugEvents = false ) = 0;
-	virtual bool PeekAndRemoveDoubleTap( void ) = 0;
 #endif
+	virtual bool PeekAndRemoveDoubleTap( void ) = 0;
 
 	// Set the mouse cursor position.
 	virtual void SetCursorPosition( int x, int y ) = 0;
