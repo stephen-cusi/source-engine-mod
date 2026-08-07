@@ -254,7 +254,7 @@ void CAudioDeviceSDLAudio::OpenWaveOut( void )
 	AllocateOutputBuffers();
 	SDL_PauseAudioDevice(m_devId, 0);
 
-#if defined( BINK_VIDEO ) && defined( LINUX )
+#if defined( BINK_VIDEO ) && ( defined( LINUX ) || defined( OSX ) )
 	// Tells Bink to use SDL for its audio decoding
 	if ( g_pVideo != NULL) 
 	{
@@ -343,7 +343,7 @@ void CAudioDeviceSDLAudio::AudioCallback(Uint8 *stream, int len)
 	}
 
 	const int totalWriteable = len;
-#if defined( BINK_VIDEO ) && defined( LINUX )
+#if defined( BINK_VIDEO ) && ( defined( LINUX ) || defined( OSX ) )
 	Uint8 *stream_orig = stream;
 #endif
 	debugsdl("SDLAUDIO: writable size is %d.\n", totalWriteable);
@@ -376,7 +376,7 @@ void CAudioDeviceSDLAudio::AudioCallback(Uint8 *stream, int len)
 		m_readPos = len ? 0 : (m_readPos + writeLen);  // if still bytes to write to stream, we're rolling around the ring buffer.
 	}
 
-#if defined( BINK_VIDEO ) && defined( LINUX )
+#if defined( BINK_VIDEO ) && ( defined( LINUX ) || defined( OSX ) )
 	// Mix in Bink movie audio if that stuff is playing.
 	if ( g_pVideo != NULL) 
 	{

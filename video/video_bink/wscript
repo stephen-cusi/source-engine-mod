@@ -15,7 +15,7 @@ def configure(conf):
 	return
 
 def build(bld):
-	if bld.env.DEST_OS not in ('linux', 'android') or not bld.env.SDL:
+	if bld.env.DEST_OS not in ('linux', 'android', 'darwin') or not bld.env.SDL:
 		return
 
 	source = [
