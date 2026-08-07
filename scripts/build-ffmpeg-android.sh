@@ -47,7 +47,7 @@ case "$1" in
 esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-FFVER="4.4.4"
+FFVER="6.1.2"
 FFDIR="$ROOT/thirdparty/ffmpeg-$FFVER"
 PREFIX="$ROOT/lib/android/$libcpu"
 SYSROOT="$ANDROID_NDK_HOME/platforms/android-21/arch-$ndk_arch"
