@@ -20,6 +20,7 @@ case "$1" in
 		ndk_arch="arm64"
 		libcpu="aarch64"
 		clang_target="aarch64-linux-android21"
+		gcc_toolchain="$ANDROID_NDK_HOME/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64"
 		hardfp=0
 		;;
 	armeabi-v7a-hard)
@@ -27,6 +28,7 @@ case "$1" in
 		ndk_arch="arm"
 		libcpu="arm"
 		clang_target="arm-linux-androideabi21"
+		gcc_toolchain="$ANDROID_NDK_HOME/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64"
 		hardfp=1
 		;;
 	armeabi-v7a)
@@ -34,6 +36,7 @@ case "$1" in
 		ndk_arch="arm"
 		libcpu="arm"
 		clang_target="arm-linux-androideabi21"
+		gcc_toolchain="$ANDROID_NDK_HOME/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64"
 		hardfp=0
 		;;
 	*)
@@ -89,13 +92,15 @@ fi
 
 mkdir -p "$PREFIX"
 
-CROSS_CFLAGS="--sysroot=$SYSROOT -DANDROID -D__ANDROID__ -fPIC"
-CROSS_LDFLAGS="--sysroot=$SYSROOT -fuse-ld=lld -Wl,--no-undefined"
+# Mirror the engine's xcompile.py toolchain flags so clang can find libgcc/crt
+CROSS_CFLAGS="--sysroot=$SYSROOT -I$ANDROID_NDK_HOME/sources/android/support/include -DANDROID -D__ANDROID__ -fPIC"
+CROSS_LDFLAGS="--sysroot=$SYSROOT --gcc-toolchain=$gcc_toolchain -fuse-ld=lld -Wl,--hash-style=both -Wl,--no-undefined -no-canonical-prefixes"
 
 if [ "$ffarch" = "arm" ]; then
 	CROSS_CFLAGS="$CROSS_CFLAGS -march=armv7-a -mfpu=neon-vfpv4 -mcpu=cortex-a7"
+	CROSS_LDFLAGS="$CROSS_LDFLAGS -lgcc -march=armv7-a"
 	if [ "$hardfp" = "1" ]; then
-		CROSS_CFLAGS="$CROSS_CFLAGS -mfloat-abi=hard -D_NDK_MATH_NO_SOFTFP=1 -DLOAD_HARDFP -DSOFTFP_LINK"
+		CROSS_CFLAGS="$CROSS_CFLAGS -mfloat-abi=hard -D_NDK_MATH_NO_SOFTFP=1 -DLOAD_HARDFP -DSOFTFP_LINK -fno-builtin-strtod -fno-builtin-strtof -fno-builtin-strtold"
 		CROSS_LDFLAGS="$CROSS_LDFLAGS -Wl,--no-warn-mismatch -lm_hard"
 	fi
 fi
