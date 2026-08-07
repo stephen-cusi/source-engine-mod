@@ -457,23 +457,27 @@ VideoResult_t CBinkMaterial::SoundDeviceCommand( VideoSoundDeviceOperation_t ope
 }
 
 
-bool CBinkMaterial::ConfigureAudioOutput( const SDL_AudioSpec &audioSpec )
+bool CBinkMaterial::ConfigureAudioOutput( const VideoAudioSpec &audioSpec )
 {
 	if ( !m_bHasAudio )
 		return true;
 
+	// SDL audio format codes, kept so existing integrations don't change
+	const int kAudioS16 = 0x8010;   // AUDIO_S16SYS
+	const int kAudioF32 = 0x8120;   // AUDIO_F32SYS
+
 	AVSampleFormat outputFormat = AV_SAMPLE_FMT_NONE;
-	if ( audioSpec.format == AUDIO_S16SYS )
+	if ( audioSpec.m_Format == kAudioS16 )
 		outputFormat = AV_SAMPLE_FMT_S16;
-	else if ( audioSpec.format == AUDIO_F32SYS )
+	else if ( audioSpec.m_Format == kAudioF32 )
 		outputFormat = AV_SAMPLE_FMT_FLT;
 	else
 		return false;
 
 	AVChannelLayout outputLayout;
-	av_channel_layout_default( &outputLayout, audioSpec.channels );
+	av_channel_layout_default( &outputLayout, audioSpec.m_Channels );
 	swr_free( &m_SwrContext );
-	int result = swr_alloc_set_opts2( &m_SwrContext, &outputLayout, outputFormat, audioSpec.freq,
+	int result = swr_alloc_set_opts2( &m_SwrContext, &outputLayout, outputFormat, audioSpec.m_Freq,
 		&m_AVAudioDecCtx->ch_layout, m_AVAudioDecCtx->sample_fmt, m_AVAudioDecCtx->sample_rate, 0, nullptr );
 	av_channel_layout_uninit( &outputLayout );
 	if ( result < 0 || !m_SwrContext || swr_init( m_SwrContext ) < 0 )
@@ -488,8 +492,8 @@ bool CBinkMaterial::ConfigureAudioOutput( const SDL_AudioSpec &audioSpec )
 	m_bAudioOutputConfigured = true;
 	m_AudioQueue.clear();
 	m_AudioQueueRead = 0;
-	Msg( "Bink audio output: %d Hz, %d channels, SDL format 0x%x\n",
-		audioSpec.freq, audioSpec.channels, audioSpec.format );
+	Msg( "Bink audio output: %d Hz, %d channels, format 0x%x\n",
+		audioSpec.m_Freq, audioSpec.m_Channels, audioSpec.m_Format );
 	return true;
 }
 
@@ -506,8 +510,33 @@ void CBinkMaterial::MixAudio( uint8_t *pOutput, int outputBytes )
 
 	if ( !m_bMuted && m_CurrentVolume > 0.0f )
 	{
-		SDL_MixAudioFormat( pOutput, &m_AudioQueue[m_AudioQueueRead], m_AudioSpec.format, bytesToMix,
-			static_cast<int>( m_CurrentVolume * SDL_MIX_MAXVOLUME ) );
+		// SDL_MixAudioFormat-compatible mixing without linking SDL, so non-SDL
+		// devices (e.g. Windows DirectSound) can mix the movie audio too.
+		const int kAudioS16 = 0x8010;   // AUDIO_S16SYS
+		const int kAudioF32 = 0x8120;   // AUDIO_F32SYS
+		const int vol = static_cast<int>( m_CurrentVolume * 128.0f ); // SDL_MIX_MAXVOLUME
+
+		if ( m_AudioSpec.m_Format == kAudioS16 )
+		{
+			int16_t *out = reinterpret_cast<int16_t *>( pOutput );
+			const int16_t *in = reinterpret_cast<const int16_t *>( &m_AudioQueue[m_AudioQueueRead] );
+			const int nSamples = bytesToMix / 2;
+			for ( int i = 0; i < nSamples; ++i )
+			{
+				int s = ( out[i] * vol + in[i] * ( 128 - vol ) ) >> 7;
+				if ( s > 32767 ) s = 32767;
+				else if ( s < -32768 ) s = -32768;
+				out[i] = static_cast<int16_t>( s );
+			}
+		}
+		else if ( m_AudioSpec.m_Format == kAudioF32 )
+		{
+			float *out = reinterpret_cast<float *>( pOutput );
+			const float *in = reinterpret_cast<const float *>( &m_AudioQueue[m_AudioQueueRead] );
+			const int nSamples = bytesToMix / 4;
+			for ( int i = 0; i < nSamples; ++i )
+				out[i] += in[i] * m_CurrentVolume;
+		}
 	}
 	m_AudioQueueRead += bytesToMix;
 	if ( m_AudioQueueRead == m_AudioQueue.size() )
@@ -540,8 +569,8 @@ bool CBinkMaterial::QueueAudioFrame( const AVFrame *pFrame )
 
 	const int outputSamples = static_cast<int>( av_rescale_rnd(
 		swr_get_delay( m_SwrContext, m_AVAudioDecCtx->sample_rate ) + pFrame->nb_samples,
-		m_AudioSpec.freq, m_AVAudioDecCtx->sample_rate, AV_ROUND_UP ) );
-	const int outputBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.channels, outputSamples,
+		m_AudioSpec.m_Freq, m_AVAudioDecCtx->sample_rate, AV_ROUND_UP ) );
+	const int outputBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.m_Channels, outputSamples,
 		m_AudioOutputFormat, 1 );
 	if ( outputBytes <= 0 )
 		return false;
@@ -555,7 +584,7 @@ bool CBinkMaterial::QueueAudioFrame( const AVFrame *pFrame )
 	if ( convertedSamples < 0 )
 		return false;
 
-	const int convertedBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.channels, convertedSamples,
+	const int convertedBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.m_Channels, convertedSamples,
 		m_AudioOutputFormat, 1 );
 	AUTO_LOCK( m_AudioMutex );
 	if ( m_AudioQueueRead > 0 )
@@ -575,10 +604,10 @@ bool CBinkMaterial::FlushAudioResampler()
 
 	while ( true )
 	{
-		const int outputSamples = static_cast<int>( swr_get_delay( m_SwrContext, m_AudioSpec.freq ) );
+		const int outputSamples = static_cast<int>( swr_get_delay( m_SwrContext, m_AudioSpec.m_Freq ) );
 		if ( outputSamples <= 0 )
 			return true;
-		const int outputBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.channels, outputSamples,
+		const int outputBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.m_Channels, outputSamples,
 			m_AudioOutputFormat, 1 );
 		if ( outputBytes <= 0 )
 			return false;
@@ -591,7 +620,7 @@ bool CBinkMaterial::FlushAudioResampler()
 		if ( convertedSamples == 0 )
 			return true;
 
-		const int convertedBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.channels, convertedSamples,
+		const int convertedBytes = av_samples_get_buffer_size( nullptr, m_AudioSpec.m_Channels, convertedSamples,
 			m_AudioOutputFormat, 1 );
 		AUTO_LOCK( m_AudioMutex );
 		if ( m_AudioQueueRead > 0 )

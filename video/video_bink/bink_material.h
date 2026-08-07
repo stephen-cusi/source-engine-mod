@@ -34,7 +34,6 @@ extern IMaterialSystem	*materials;
 #include "materialsystem/MaterialSystemUtil.h"
 #include "tier0/threadtools.h"
 
-#include <SDL_audio.h>
 #include <vector>
 
 extern "C"
@@ -137,7 +136,7 @@ class CBinkMaterial : public IVideoMaterial
 		virtual void				GetVideoTexCoordRange( float *pMaxU, float *pMaxV ) ;		// Returns the max texture coordinate of the video portion of the material surface ( 0.0, 0.0 to U, V )
 		virtual void				GetVideoImageSize( int *pWidth, int *pHeight );				// Returns the frame size of the Video Image Frame in pixels ( the stored in a subrect of the material itself)
 		void					GetTextureSize( int *pWidth, int *pHeight );
-		bool					ConfigureAudioOutput( const SDL_AudioSpec &audioSpec );
+		bool					ConfigureAudioOutput( const VideoAudioSpec &audioSpec );
 		void					MixAudio( uint8_t *pOutput, int outputBytes );
 
 	private:
@@ -225,7 +224,7 @@ class CBinkMaterial : public IVideoMaterial
 		double m_MovieFrameDuration;
 
 		SwrContext *m_SwrContext;
-		SDL_AudioSpec m_AudioSpec;
+		VideoAudioSpec m_AudioSpec;
 		AVSampleFormat m_AudioOutputFormat;
 		bool m_bAudioOutputConfigured;
 		bool m_bAudioDecoderDrained;
