@@ -1337,8 +1337,11 @@ void CGame::PlayStartupVideos( void )
 		if ( bEndGame || bRecap )
 			return;
 
+		// Prefer a loose valve.bik under the game directory over a VPK-packed copy
+		char gameDir[MAX_PATH];
+		COM_GetGameDir( gameDir, sizeof(gameDir) );
 		char valvePath[MAX_PATH];
-		g_pFileSystem->GetLocalPath( "media/valve.bik", valvePath, sizeof(valvePath) );
+		V_ComposeFileName( gameDir, "media/valve.bik", valvePath, sizeof(valvePath) );
 		if ( !IsLooseMediaFile( valvePath ) )
 			return;
 
@@ -1374,10 +1377,23 @@ void CGame::PlayStartupVideos( void )
 			break;
 		}
 
-		// get the path to the media file and play it.
+		// Prefer a loose file under the game directory. GetLocalPath would
+		// otherwise resolve to a VPK-packed copy first, which can't be opened.
 		char localPath[MAX_PATH];
+		localPath[0] = 0;
 
- 		    g_pFileSystem->GetLocalPath( com_token, localPath, sizeof(localPath) );
+		char gameDir[MAX_PATH];
+		COM_GetGameDir( gameDir, sizeof(gameDir) );
+		char loosePath[MAX_PATH];
+		V_ComposeFileName( gameDir, com_token, loosePath, sizeof(loosePath) );
+		if ( IsLooseMediaFile( loosePath ) )
+		{
+			Q_strncpy( localPath, loosePath, sizeof(localPath) );
+		}
+		else
+		{
+			g_pFileSystem->GetLocalPath( com_token, localPath, sizeof(localPath) );
+		}
 
 		// Only play videos that are real loose files; skip anything that only
 		// lives inside a pack (VPK) since it can't be opened for playback.
