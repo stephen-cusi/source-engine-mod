@@ -189,7 +189,7 @@ bool GamepadUIBasePanel::StartBackgroundMusic( float flVolume )
         GamepadUI::GetInstance().GetEngineClient()->ClientCmd_Unrestricted( found );
     }
 
-    fileNames.PurgeAndDeleteElements();
+    fileNames.PurgeAndDeleteElementsArray();
 
     return m_nBackgroundMusicGUID != 0;
 }
