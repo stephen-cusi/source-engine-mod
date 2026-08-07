@@ -26,14 +26,14 @@ case "$1" in
 		ffarch="arm"
 		ndk_arch="arm"
 		libcpu="arm"
-		clang_target="armv7a-linux-androideabi21"
+		clang_target="arm-linux-androideabi21"
 		hardfp=1
 		;;
 	armeabi-v7a)
 		ffarch="arm"
 		ndk_arch="arm"
 		libcpu="arm"
-		clang_target="armv7a-linux-androideabi21"
+		clang_target="arm-linux-androideabi21"
 		hardfp=0
 		;;
 	*)
@@ -72,14 +72,19 @@ if [ ! -d "$FFDIR" ]; then
 				"https://ffmpeg.org/releases/ffmpeg-$FFVER.tar.xz"
 		fi
 	fi
-	mkdir -p "$FFDIR"
+	rm -rf "$FFDIR"
 	tar -xf "$TARBALL" -C "$ROOT/thirdparty"
 	# GitHub tarball extracts to FFmpeg-n$FFVER, release tarball to ffmpeg-$FFVER
-	if [ ! -f "$FFDIR/configure" ] && [ -d "$ROOT/thirdparty/FFmpeg-n$FFVER" ]; then
+	if [ -d "$ROOT/thirdparty/FFmpeg-n$FFVER" ]; then
 		mv "$ROOT/thirdparty/FFmpeg-n$FFVER" "$FFDIR"
-	elif [ ! -f "$FFDIR/configure" ]; then
+	elif [ -d "$ROOT/thirdparty/ffmpeg-$FFVER" ]; then
 		mv "$ROOT/thirdparty/ffmpeg-$FFVER" "$FFDIR"
 	fi
+fi
+
+if [ ! -f "$FFDIR/configure" ]; then
+	echo "FFmpeg source extraction failed: $FFDIR/configure missing" >&2
+	exit 1
 fi
 
 mkdir -p "$PREFIX"
