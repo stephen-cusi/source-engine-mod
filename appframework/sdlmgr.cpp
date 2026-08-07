@@ -1924,19 +1924,21 @@ void CSDLMgr::PumpWindowsMessageLoop()
 				// Android touches may not be converted to mouse button events,
 				// so detect the double-tap used to skip the startup video from
 				// finger events directly. Coordinates are normalized 0..1.
+				const float dx = event.tfinger.x - m_FingerDownX;
+				const float dy = event.tfinger.y - m_FingerDownY;
 				if ( m_bGotFingerDown &&
-					 ( (int)( event.touch.timestamp - m_FingerDownTimeStamp ) <= sdl_double_click_time.GetInt() ) &&
-					 ( fabs( event.touch.x - m_FingerDownX ) <= 0.1f ) &&
-					 ( fabs( event.touch.y - m_FingerDownY ) <= 0.1f ) )
+					 ( (int)( event.tfinger.timestamp - m_FingerDownTimeStamp ) <= sdl_double_click_time.GetInt() ) &&
+					 ( dx > -0.1f && dx < 0.1f ) &&
+					 ( dy > -0.1f && dy < 0.1f ) )
 				{
 					m_bGotFingerDown = false;
 					m_bGotDoubleTap = true;
 				}
 				else
 				{
-					m_FingerDownTimeStamp = event.touch.timestamp;
-					m_FingerDownX = event.touch.x;
-					m_FingerDownY = event.touch.y;
+					m_FingerDownTimeStamp = event.tfinger.timestamp;
+					m_FingerDownX = event.tfinger.x;
+					m_FingerDownY = event.tfinger.y;
 					m_bGotFingerDown = true;
 				}
 				break;
