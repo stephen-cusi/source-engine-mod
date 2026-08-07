@@ -10,7 +10,7 @@ jobs:
     # - name: Build Linux (32 bit)
       # run: |
         # scripts/build-ubuntu-i386.sh
-    # - uses: actions/upload-artifact@v4
+    # - uses: actions/upload-artifact@v5
       # with:
         # name: hl2sb-linux-i386
         # path: ./to_upload
@@ -24,7 +24,7 @@ jobs:
     # - name: Build Linux (64 Bit)
       # run: |
         # scripts/build-ubuntu-amd64.sh
-    # - uses: actions/upload-artifact@v4
+    # - uses: actions/upload-artifact@v5
       # with:
         # name: hl2sb-linux-amd64
         # path: ./to_upload
@@ -56,7 +56,7 @@ jobs:
          mv modlauncher-waf/build/android/mod-signed.apk lmod-release.apk
 
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: lmod-apk
         path: lmod-release.apk
@@ -88,7 +88,7 @@ jobs:
          mv modlauncher-waf/build/android/mod-signed.apk hl2mp-release.apk
 
     - name: 'Upload Artifact'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: hl2mp-apk
         path: hl2mp-release.apk
@@ -109,7 +109,7 @@ jobs:
 
 
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         name: hl2-win-amd64
         path: ./win
@@ -125,7 +125,7 @@ jobs:
         # git submodule init && git submodule update
         # ./waf.bat configure -T debug -d --prefix=./win --build-game=hl2sb
         # ./waf.bat install
-    # - uses: actions/upload-artifact@v4
+    # - uses: actions/upload-artifact@v5
       # with:
         # name: win-dedicated-i386
         # path: ./win
@@ -141,7 +141,7 @@ jobs:
         # git submodule init && git submodule update
         # ./waf.bat configure -T debug -d -8 --prefix=./win --build-game=hl2sb
         # ./waf.bat install
-    # - uses: actions/upload-artifact@v4
+    # - uses: actions/upload-artifact@v5
       # with:
         # name: hl2sb-win-dedicated-amd64
         # path: ./win
@@ -155,7 +155,7 @@ jobs:
     # - name: Build Linux Dedicated (32 bit)
       # run: |
         # scripts/build-ubuntu-i386.sh -d
-    # - uses: actions/upload-artifact@v4
+    # - uses: actions/upload-artifact@v5
       # with:
         # name: hl2sb-linux-dedicated-i386
         # path: ./to-upload
@@ -169,7 +169,7 @@ jobs:
     # - name: Build Linux Dedicated (64 bit)
       # run: |
         # scripts/build-ubuntu-amd64.sh -d
-    # - uses: actions/upload-artifact@v4
+    # - uses: actions/upload-artifact@v5
       # with:
         # name: hl2sb-linux-dedicated-amd64
         # path: ./to-upload
@@ -183,7 +183,7 @@ jobs:
     # - name: Build MacOS (64 bit)
       # run: |
         # scripts/build-macos-amd64.sh
-    # - uses: actions/upload-artifact@v4
+    # - uses: actions/upload-artifact@v5
       # with:
         # name: hl2sb-macos-amd64
         # path: ./to-upload
@@ -197,7 +197,7 @@ jobs:
     # - name: Build MacOS Dedicated (64 bit)
       # run: |
         # scripts/build-macos-amd64.sh -d
-    # - uses: actions/upload-artifact@v4
+    # - uses: actions/upload-artifact@v5
       # with:
         # name: hl2sb-macos-dedicated-amd64
         # path: ./to-upload

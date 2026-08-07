@@ -45,7 +45,7 @@ jobs:
     - name: Save build configuration
       run: cp build/config.log linux/info.txt
     - name: Upload Linux build
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: source-engine-linux-x86_64
         path: linux
@@ -59,7 +59,7 @@ jobs:
     - name: Build android-armv7a
       run: |
           scripts/build-android-armv7a.sh
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         name: build-android-armv7a
         path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
@@ -72,7 +72,7 @@ jobs:
     - name: Build android-aarch64
       run: |
         scripts/build-android-arm64.sh
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         name: build-android-aarch64
         path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
@@ -109,7 +109,7 @@ jobs:
         git submodule init && git submodule update
         ./waf.bat configure -T release -d --prefix=./win --build-game=hl2mp -4
         ./waf.bat install
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         name: win-source-engine-d-hl2mp
         path: ./win
