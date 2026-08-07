@@ -62,8 +62,24 @@ fi
 if [ ! -d "$FFDIR" ]; then
 	mkdir -p "$ROOT/thirdparty"
 	echo "Downloading FFmpeg $FFVER..."
-	curl -L -o /tmp/ffmpeg-$FFVER.tar.xz "https://ffmpeg.org/releases/ffmpeg-$FFVER.tar.xz"
-	tar -xf /tmp/ffmpeg-$FFVER.tar.xz -C "$ROOT/thirdparty"
+	TARBALL=/tmp/ffmpeg-$FFVER.tar.xz
+	if [ ! -f "$TARBALL" ]; then
+		# GitHub mirror first (fast/reliable), ffmpeg.org as fallback
+		if ! curl -L --fail --retry 5 --retry-all-errors --connect-timeout 30 --max-time 600 -o "$TARBALL" \
+			"https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n$FFVER.tar.gz"; then
+			rm -f "$TARBALL"
+			curl -L --fail --retry 5 --retry-all-errors --connect-timeout 30 --max-time 600 -o "$TARBALL" \
+				"https://ffmpeg.org/releases/ffmpeg-$FFVER.tar.xz"
+		fi
+	fi
+	mkdir -p "$FFDIR"
+	tar -xf "$TARBALL" -C "$ROOT/thirdparty"
+	# GitHub tarball extracts to FFmpeg-n$FFVER, release tarball to ffmpeg-$FFVER
+	if [ ! -f "$FFDIR/configure" ] && [ -d "$ROOT/thirdparty/FFmpeg-n$FFVER" ]; then
+		mv "$ROOT/thirdparty/FFmpeg-n$FFVER" "$FFDIR"
+	elif [ ! -f "$FFDIR/configure" ]; then
+		mv "$ROOT/thirdparty/ffmpeg-$FFVER" "$FFDIR"
+	fi
 fi
 
 mkdir -p "$PREFIX"
