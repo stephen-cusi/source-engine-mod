@@ -1274,6 +1274,55 @@ static bool IsLooseMediaFile( const char *path )
 	return true;
 }
 
+//-----------------------------------------------------------------------------
+// Finds a loose video file under the game directory that matches the given
+// token's basename. The token may reference an extension that doesn't exist on
+// disk (e.g. startupvids.txt lists media/valve.avi but only media/valve.bik is
+// present), so the other supported video extensions are tried as well.
+//-----------------------------------------------------------------------------
+static const char *s_StartupVideoExts[] = { "bik", "bik2", "blk", "avi" };
+
+static bool FindLooseStartupVideo( const char *gameDir, const char *token, char *outPath, int outLen )
+{
+	const char *reqExt = V_GetFileExtension( token );
+
+	const char *order[5];
+	int count = 0;
+	if ( reqExt && reqExt[0] )
+		order[count++] = reqExt;
+	for ( int i = 0; i < ARRAYSIZE( s_StartupVideoExts ) && count < 5; ++i )
+	{
+		bool already = false;
+		for ( int j = 0; j < count; ++j )
+		{
+			if ( V_stricmp( order[j], s_StartupVideoExts[i] ) == 0 )
+			{
+				already = true;
+				break;
+			}
+		}
+		if ( !already )
+			order[count++] = s_StartupVideoExts[i];
+	}
+
+	for ( int i = 0; i < count; ++i )
+	{
+		char candidate[MAX_PATH];
+		V_snprintf( candidate, sizeof(candidate), "%s", token );
+		V_SetExtension( candidate, order[i], sizeof(candidate) );
+
+		char loosePath[MAX_PATH];
+		V_ComposeFileName( gameDir, candidate, loosePath, sizeof(loosePath) );
+		Msg( "Bink dbg: trying '%s' loose=%d\n", loosePath, IsLooseMediaFile( loosePath ) ? 1 : 0 );
+		if ( IsLooseMediaFile( loosePath ) )
+		{
+			Q_strncpy( outPath, loosePath, outLen );
+			return true;
+		}
+	}
+	return false;
+}
+
 
 //-----------------------------------------------------------------------------
 // Purpose: Play startup videos
@@ -1379,28 +1428,15 @@ void CGame::PlayStartupVideos( void )
 
 		// Prefer a loose file under the game directory. GetLocalPath would
 		// otherwise resolve to a VPK-packed copy first, which can't be opened.
+		// The token may also reference an extension that isn't present (e.g.
+		// media/valve.avi listed but only media/valve.bik exists), so try the
+		// other supported video extensions before giving up.
 		char localPath[MAX_PATH];
 		localPath[0] = 0;
 
 		char gameDir[MAX_PATH];
 		COM_GetGameDir( gameDir, sizeof(gameDir) );
-		char loosePath[MAX_PATH];
-		V_ComposeFileName( gameDir, com_token, loosePath, sizeof(loosePath) );
-		Msg( "Bink dbg: gameDir='%s' token='%s' loosePath='%s' loose=%d\n",
-			gameDir, com_token, loosePath, IsLooseMediaFile( loosePath ) ? 1 : 0 );
-		if ( IsLooseMediaFile( loosePath ) )
-		{
-			Q_strncpy( localPath, loosePath, sizeof(localPath) );
-		}
-		else
-		{
-			g_pFileSystem->GetLocalPath( com_token, localPath, sizeof(localPath) );
-			Msg( "Bink dbg: GetLocalPath='%s' loose=%d\n", localPath, IsLooseMediaFile( localPath ) ? 1 : 0 );
-		}
-
-		// Only play videos that are real loose files; skip anything that only
-		// lives inside a pack (VPK) since it can't be opened for playback.
-		if ( !IsLooseMediaFile( localPath ) )
+		if ( !FindLooseStartupVideo( gameDir, com_token, localPath, sizeof(localPath) ) )
 		{
 			localPath[0] = 0;
 			continue;
