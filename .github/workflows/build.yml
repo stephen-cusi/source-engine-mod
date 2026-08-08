@@ -102,8 +102,16 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - name: Build windows-amd64
+      shell: pwsh
       run: |
         git submodule init && git submodule update
+        curl -sL -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
+        Expand-Archive -Force ffmpeg.zip
+        $ff = Get-ChildItem ffmpeg-* -Directory | Select-Object -First 1
+        Copy-Item $ff/include/libav* common/ -Recurse -Force
+        Copy-Item $ff/include/libsw* common/ -Recurse -Force
+        Copy-Item $ff/lib/avcodec.lib,$ff/lib/avformat.lib,$ff/lib/avutil.lib,$ff/lib/swresample.lib,$ff/lib/swscale.lib lib/win32/amd64/
+        Copy-Item $ff/bin/avcodec-62.dll,$ff/bin/avformat-62.dll,$ff/bin/avutil-60.dll,$ff/bin/swresample-6.dll,$ff/bin/swscale-9.dll lib/win32/amd64/
         ./waf.bat configure -T release --prefix=./win --disable-warns
         ./waf.bat install
     - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
@@ -137,8 +145,16 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - name: Build dedicated windows-amd64
+      shell: pwsh
       run: |
         git submodule init && git submodule update
+        curl -sL -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
+        Expand-Archive -Force ffmpeg.zip
+        $ff = Get-ChildItem ffmpeg-* -Directory | Select-Object -First 1
+        Copy-Item $ff/include/libav* common/ -Recurse -Force
+        Copy-Item $ff/include/libsw* common/ -Recurse -Force
+        Copy-Item $ff/lib/avcodec.lib,$ff/lib/avformat.lib,$ff/lib/avutil.lib,$ff/lib/swresample.lib,$ff/lib/swscale.lib lib/win32/amd64/
+        Copy-Item $ff/bin/avcodec-62.dll,$ff/bin/avformat-62.dll,$ff/bin/avutil-60.dll,$ff/bin/swresample-6.dll,$ff/bin/swscale-9.dll lib/win32/amd64/
         ./waf.bat configure -T release -d --prefix=./win --disable-warns
         ./waf.bat install
     - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)

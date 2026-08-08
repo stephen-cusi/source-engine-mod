@@ -446,6 +446,10 @@ def check_deps(conf):
 		conf.check(lib='d3d9', uselib_store='D3D9')
 		conf.check(lib='dsound', uselib_store='DSOUND')
 		conf.check(lib='dxguid', uselib_store='DXGUID')
+		conf.check(lib='avcodec', uselib_store='AVCODEC')
+		conf.check(lib='avformat', uselib_store='AVFORMAT')
+		conf.check(lib='avutil', uselib_store='AVUTIL')
+		conf.check(lib='swresample', uselib_store='SWRESAMPLE')
 		if conf.options.OPUS:
 			conf.check(lib='opus', uselib_store='OPUS')
 
@@ -564,7 +568,6 @@ def configure(conf):
 			'/Zc:forScope',
 			'/Zc:wchar_t',
 			'/GR',
-			'/TP',
 			'/EHsc'
 		]
 
