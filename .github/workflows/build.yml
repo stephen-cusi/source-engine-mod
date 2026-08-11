@@ -169,7 +169,7 @@ jobs:
         if-no-files-found: error
 
   build-macos-amd64:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
 
     steps:
     - uses: actions/checkout@v5
@@ -183,8 +183,23 @@ jobs:
         path: ./macos
         if-no-files-found: error
 
-  build-dedicated-macos-amd64:
+  build-macos-arm64:
     runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v5
+    - name: Build macos-arm64
+      run: |
+        scripts/build-macos-arm64.sh --prefix=./macos
+        ./waf install
+    - uses: actions/upload-artifact@v5
+      with:
+        name: source-engine-macos-arm64
+        path: ./macos
+        if-no-files-found: error
+
+  build-dedicated-macos-amd64:
+    runs-on: macos-15-intel
 
     steps:
     - uses: actions/checkout@v5
@@ -195,5 +210,20 @@ jobs:
     - uses: actions/upload-artifact@v5
       with:
         name: source-engine-dedicated-macos-amd64
+        path: ./macos
+        if-no-files-found: error
+
+  build-dedicated-macos-arm64:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v5
+    - name: Build dedicated macos-arm64
+      run: |
+        scripts/build-macos-arm64.sh -d --prefix=./macos
+        ./waf install
+    - uses: actions/upload-artifact@v5
+      with:
+        name: source-engine-dedicated-macos-arm64
         path: ./macos
         if-no-files-found: error
