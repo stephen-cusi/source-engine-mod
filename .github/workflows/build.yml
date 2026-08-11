@@ -45,7 +45,7 @@ jobs:
     - name: Save build configuration
       run: cp build/config.log linux/info.txt
     - name: Upload Linux build
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: source-engine-linux-x86_64
         path: linux
@@ -59,7 +59,7 @@ jobs:
     - name: Build android-armv7a
       run: |
           scripts/build-android-armv7a.sh
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: build-android-armv7a
         path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
@@ -72,7 +72,7 @@ jobs:
     - name: Build android-aarch64
       run: |
         scripts/build-android-arm64.sh
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: build-android-aarch64
         path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
@@ -90,7 +90,7 @@ jobs:
     - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
       run: |
         Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: win-source-engine-i386
         path: ./win
@@ -118,7 +118,7 @@ jobs:
     - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
       run: |
         Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: win-source-engine-amd64
         path: ./win
@@ -132,11 +132,11 @@ jobs:
     - name: Build dedicated windows-i386
       run: |
         git submodule init && git submodule update
-        ./waf.bat configure -T release -d --prefix=./win --build-game=hl2mp -4
+        ./waf.bat configure -T release -d --prefix=./win -4
         ./waf.bat install
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
-        name: win-source-engine-d-hl2mp
+        name: win-source-engine-d-i386
         path: ./win
         if-no-files-found: error
 
@@ -162,7 +162,7 @@ jobs:
     - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
       run: |
         Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: win-source-engine-d-amd64
         path: ./win
@@ -177,7 +177,7 @@ jobs:
       run: |
         scripts/build-macos-amd64.sh --prefix=./macos
         ./waf install
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: source-engine-macos-amd64
         path: ./macos
@@ -192,7 +192,7 @@ jobs:
       run: |
         scripts/build-macos-arm64.sh --prefix=./macos
         ./waf install
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: source-engine-macos-arm64
         path: ./macos
@@ -207,7 +207,7 @@ jobs:
       run: |
         scripts/build-macos-amd64.sh -d --prefix=./macos
         ./waf install
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: source-engine-dedicated-macos-amd64
         path: ./macos
@@ -222,7 +222,7 @@ jobs:
       run: |
         scripts/build-macos-arm64.sh -d --prefix=./macos
         ./waf install
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v7
       with:
         name: source-engine-dedicated-macos-arm64
         path: ./macos
