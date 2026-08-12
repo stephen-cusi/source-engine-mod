@@ -1,63 +1,71 @@
-#一个mod,一个server端+hl2dm
-name: my_build_win32--2023
+name: Build Windows hl2dm
 
 on:
   push:
     branches:
-      - "*"
+      - "**"
   pull_request:
-    branches:
-      - "*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-srceng-server-win-32-hl2dm:
+  build-hl2dm-server-win32:
+    name: hl2dm Server (Win32)
     runs-on: windows-2019
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build-sv
-      run: |
-        
-        git submodule init;git submodule update
-        #sudo apt update;sudo apt upgrade;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
-        ./waf.bat configure -T release --prefix=./win --disable-warns --enable-opus
-        ./waf.bat install -j4
-        
-        cat build/config.log >./win/info.txt
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
 
-    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
-      run: |
-        Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+      - name: Build server
+        run: |
+          ./waf.bat configure -T release --prefix=./win --disable-warns --enable-opus
+          ./waf.bat install -j4
+          cat build/config.log > ./win/info.txt
 
-    - uses: actions/upload-artifact@v7
-      with:
-        name: hl2dm-win64
-        path: ./win
-        if-no-files-found: error
+      - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+        run: |
+          Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
 
+      - name: Upload hl2dm server
+        uses: actions/upload-artifact@v7
+        with:
+          name: hl2dm-win64
+          path: ./win
+          if-no-files-found: error
 
-  build-srceng-win-hl2dm:
+  build-hl2dm-win32:
+    name: hl2dm Client (Win32)
     runs-on: windows-2019
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build
-      run: |
-        #
-        git submodule init;git submodule update
-        ./waf.bat configure -T release -4 --prefix=./win --disable-warns --enable-opus
-        
-        ./waf.bat install -j4
-        cat build/config.log > ./win/info.txt
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
 
-    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
-      run: |
-        Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+      - name: Build client
+        run: |
+          ./waf.bat configure -T release -4 --prefix=./win --disable-warns --enable-opus
+          ./waf.bat install -j4
+          cat build/config.log > ./win/info.txt
 
-    - uses: actions/upload-artifact@v7
-      with:
-        name: hl2dm-win32
-        path: ./win
-        if-no-files-found: error
-        
-        
+      - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+        run: |
+          Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+
+      - name: Upload hl2dm client
+        uses: actions/upload-artifact@v7
+        with:
+          name: hl2dm-win32
+          path: ./win
+          if-no-files-found: error
