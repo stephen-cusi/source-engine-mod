@@ -1,229 +1,338 @@
 name: Build
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-linux-x86_64:
+    name: Linux (x86_64)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
-    - name: Check out source
-      uses: actions/checkout@v5
-      with:
-        submodules: recursive
-    - name: Install build dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install --no-install-recommends -y \
-          build-essential \
-          libavcodec-dev \
-          libavformat-dev \
-          libavutil-dev \
-          libbz2-dev \
-          libcurl4-gnutls-dev \
-          libedit-dev \
-          libfontconfig1-dev \
-          libfreetype6-dev \
-          libjpeg-dev \
-          libopenal-dev \
-          libpng-dev \
-          libsdl2-dev \
-          libswresample-dev \
-          zlib1g-dev
-    - name: Configure
-      run: >-
-        python3 ./waf configure
-        -T release
-        --disable-warns
-        --prefix="${{ github.workspace }}/linux"
-        --build-games=hl2
-    - name: Build
-      run: python3 ./waf build -j2
-    - name: Install
-      run: python3 ./waf install -j2
-    - name: Save build configuration
-      run: cp build/config.log linux/info.txt
-    - name: Upload Linux build
-      uses: actions/upload-artifact@v7
-      with:
-        name: source-engine-linux-x86_64
-        path: linux
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libbz2-dev \
+            libcurl4-gnutls-dev \
+            libedit-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libjpeg-dev \
+            libopenal-dev \
+            libpng-dev \
+            libsdl2-dev \
+            libswresample-dev \
+            zlib1g-dev
+
+      - name: Configure
+        run: >-
+          python3 ./waf configure
+          -T release
+          --disable-warns
+          --prefix="${{ github.workspace }}/linux"
+          --build-games=hl2
+
+      - name: Build
+        run: python3 ./waf build -j2
+
+      - name: Install
+        run: python3 ./waf install -j2
+
+      - name: Save build configuration
+        run: cp build/config.log linux/info.txt
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-engine-linux-x86_64
+          path: linux
+          if-no-files-found: error
 
   build-android-armv7a:
+    name: Android (armeabi-v7a)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build android-armv7a
-      run: |
-          scripts/build-android-armv7a.sh
-    - uses: actions/upload-artifact@v7
-      with:
-        name: build-android-armv7a
-        path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build android-armv7a
+        run: scripts/build-android-armv7a.sh
+
+      - name: Upload Android build
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-android-armv7a
+          path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
+          if-no-files-found: error
 
   build-android-aarch64:
+    name: Android (arm64-v8a)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build android-aarch64
-      run: |
-        scripts/build-android-arm64.sh
-    - uses: actions/upload-artifact@v7
-      with:
-        name: build-android-aarch64
-        path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build android-aarch64
+        run: scripts/build-android-arm64.sh
+
+      - name: Upload Android build
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-android-aarch64
+          path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
+          if-no-files-found: error
 
   build-windows-i386:
+    name: Windows (x86)
     runs-on: windows-2022
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build windows-i386
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T release --prefix=./win --disable-warns --32bits
-        ./waf.bat install
-    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
-      run: |
-        Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
-    - uses: actions/upload-artifact@v7
-      with:
-        name: win-source-engine-i386
-        path: ./win
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build windows-i386
+        run: |
+          ./waf.bat configure -T release --prefix=./win --disable-warns --32bits
+          ./waf.bat install
+
+      - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+        run: |
+          Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-source-engine-i386
+          path: ./win
+          if-no-files-found: error
 
   build-windows-amd64:
+    name: Windows (x64)
     runs-on: windows-2022
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build windows-amd64
-      shell: pwsh
-      run: |
-        git submodule init && git submodule update
-        curl -sL -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
-        Expand-Archive -Force ffmpeg.zip -DestinationPath ffmpeg
-        $ff = (Get-ChildItem ffmpeg -Directory | Select-Object -First 1).FullName
-        Write-Output "FFmpeg dir: $ff"
-        Copy-Item "$ff/include/libavcodec","$ff/include/libavdevice","$ff/include/libavfilter","$ff/include/libavformat","$ff/include/libavutil" common/ -Recurse -Force
-        Copy-Item "$ff/include/libswresample","$ff/include/libswscale" common/ -Recurse -Force
-        Copy-Item "$ff/lib/avcodec.lib","$ff/lib/avformat.lib","$ff/lib/avutil.lib","$ff/lib/swresample.lib","$ff/lib/swscale.lib" lib/win32/amd64/
-        Copy-Item "$ff/bin/avcodec-62.dll","$ff/bin/avformat-62.dll","$ff/bin/avutil-60.dll","$ff/bin/swresample-6.dll","$ff/bin/swscale-9.dll" lib/win32/amd64/
-        ./waf.bat configure -T release --prefix=./win --disable-warns
-        ./waf.bat install
-    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
-      run: |
-        Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
-    - uses: actions/upload-artifact@v7
-      with:
-        name: win-source-engine-amd64
-        path: ./win
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Prepare FFmpeg
+        shell: pwsh
+        run: |
+          curl -sL -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
+          Expand-Archive -Force ffmpeg.zip -DestinationPath ffmpeg
+          $ff = (Get-ChildItem ffmpeg -Directory | Select-Object -First 1).FullName
+          Write-Output "FFmpeg dir: $ff"
+          Copy-Item "$ff/include/libavcodec","$ff/include/libavdevice","$ff/include/libavfilter","$ff/include/libavformat","$ff/include/libavutil" common/ -Recurse -Force
+          Copy-Item "$ff/include/libswresample","$ff/include/libswscale" common/ -Recurse -Force
+          Copy-Item "$ff/lib/avcodec.lib","$ff/lib/avformat.lib","$ff/lib/avutil.lib","$ff/lib/swresample.lib","$ff/lib/swscale.lib" lib/win32/amd64/
+          Copy-Item "$ff/bin/avcodec-62.dll","$ff/bin/avformat-62.dll","$ff/bin/avutil-60.dll","$ff/bin/swresample-6.dll","$ff/bin/swscale-9.dll" lib/win32/amd64/
+
+      - name: Build windows-amd64
+        shell: pwsh
+        run: |
+          ./waf.bat configure -T release --prefix=./win --disable-warns
+          ./waf.bat install
+
+      - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+        run: |
+          Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-source-engine-amd64
+          path: ./win
+          if-no-files-found: error
 
   build-dedicated-windows-i386:
+    name: Windows Dedicated (x86)
     runs-on: windows-2022
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build dedicated windows-i386
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T release -d --prefix=./win -4
-        ./waf.bat install
-    - uses: actions/upload-artifact@v7
-      with:
-        name: win-source-engine-d-i386
-        path: ./win
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build dedicated windows-i386
+        run: |
+          ./waf.bat configure -T release -d --prefix=./win -4
+          ./waf.bat install
+
+      - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+        run: |
+          Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-source-engine-d-i386
+          path: ./win
+          if-no-files-found: error
 
   build-dedicated-windows-amd64:
+    name: Windows Dedicated (x64)
     runs-on: windows-2022
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build dedicated windows-amd64
-      shell: pwsh
-      run: |
-        git submodule init && git submodule update
-        curl -sL -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
-        Expand-Archive -Force ffmpeg.zip -DestinationPath ffmpeg
-        $ff = (Get-ChildItem ffmpeg -Directory | Select-Object -First 1).FullName
-        Write-Output "FFmpeg dir: $ff"
-        Copy-Item "$ff/include/libavcodec","$ff/include/libavdevice","$ff/include/libavfilter","$ff/include/libavformat","$ff/include/libavutil" common/ -Recurse -Force
-        Copy-Item "$ff/include/libswresample","$ff/include/libswscale" common/ -Recurse -Force
-        Copy-Item "$ff/lib/avcodec.lib","$ff/lib/avformat.lib","$ff/lib/avutil.lib","$ff/lib/swresample.lib","$ff/lib/swscale.lib" lib/win32/amd64/
-        Copy-Item "$ff/bin/avcodec-62.dll","$ff/bin/avformat-62.dll","$ff/bin/avutil-60.dll","$ff/bin/swresample-6.dll","$ff/bin/swscale-9.dll" lib/win32/amd64/
-        ./waf.bat configure -T release -d --prefix=./win --disable-warns
-        ./waf.bat install
-    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
-      run: |
-        Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
-    - uses: actions/upload-artifact@v7
-      with:
-        name: win-source-engine-d-amd64
-        path: ./win
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Prepare FFmpeg
+        shell: pwsh
+        run: |
+          curl -sL -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
+          Expand-Archive -Force ffmpeg.zip -DestinationPath ffmpeg
+          $ff = (Get-ChildItem ffmpeg -Directory | Select-Object -First 1).FullName
+          Write-Output "FFmpeg dir: $ff"
+          Copy-Item "$ff/include/libavcodec","$ff/include/libavdevice","$ff/include/libavfilter","$ff/include/libavformat","$ff/include/libavutil" common/ -Recurse -Force
+          Copy-Item "$ff/include/libswresample","$ff/include/libswscale" common/ -Recurse -Force
+          Copy-Item "$ff/lib/avcodec.lib","$ff/lib/avformat.lib","$ff/lib/avutil.lib","$ff/lib/swresample.lib","$ff/lib/swscale.lib" lib/win32/amd64/
+          Copy-Item "$ff/bin/avcodec-62.dll","$ff/bin/avformat-62.dll","$ff/bin/avutil-60.dll","$ff/bin/swresample-6.dll","$ff/bin/swscale-9.dll" lib/win32/amd64/
+
+      - name: Build dedicated windows-amd64
+        shell: pwsh
+        run: |
+          ./waf.bat configure -T release -d --prefix=./win --disable-warns
+          ./waf.bat install
+
+      - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+        run: |
+          Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-source-engine-d-amd64
+          path: ./win
+          if-no-files-found: error
 
   build-macos-amd64:
+    name: macOS (x86_64)
     runs-on: macos-15-intel
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build macos-amd64
-      run: |
-        scripts/build-macos-amd64.sh --prefix=./macos
-        ./waf install
-    - uses: actions/upload-artifact@v7
-      with:
-        name: source-engine-macos-amd64
-        path: ./macos
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build macos-amd64
+        run: |
+          scripts/build-macos-amd64.sh --prefix=./macos
+          ./waf install
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-engine-macos-amd64
+          path: ./macos
+          if-no-files-found: error
 
   build-macos-arm64:
+    name: macOS (arm64)
     runs-on: macos-latest
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build macos-arm64
-      run: |
-        scripts/build-macos-arm64.sh --prefix=./macos
-        ./waf install
-    - uses: actions/upload-artifact@v7
-      with:
-        name: source-engine-macos-arm64
-        path: ./macos
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build macos-arm64
+        run: |
+          scripts/build-macos-arm64.sh --prefix=./macos
+          ./waf install
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-engine-macos-arm64
+          path: ./macos
+          if-no-files-found: error
 
   build-dedicated-macos-amd64:
+    name: macOS Dedicated (x86_64)
     runs-on: macos-15-intel
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build dedicated macos-amd64
-      run: |
-        scripts/build-macos-amd64.sh -d --prefix=./macos
-        ./waf install
-    - uses: actions/upload-artifact@v7
-      with:
-        name: source-engine-dedicated-macos-amd64
-        path: ./macos
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build dedicated macos-amd64
+        run: |
+          scripts/build-macos-amd64.sh -d --prefix=./macos
+          ./waf install
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-engine-dedicated-macos-amd64
+          path: ./macos
+          if-no-files-found: error
 
   build-dedicated-macos-arm64:
+    name: macOS Dedicated (arm64)
     runs-on: macos-latest
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Build dedicated macos-arm64
-      run: |
-        scripts/build-macos-arm64.sh -d --prefix=./macos
-        ./waf install
-    - uses: actions/upload-artifact@v7
-      with:
-        name: source-engine-dedicated-macos-arm64
-        path: ./macos
-        if-no-files-found: error
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build dedicated macos-arm64
+        run: |
+          scripts/build-macos-arm64.sh -d --prefix=./macos
+          ./waf install
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-engine-dedicated-macos-arm64
+          path: ./macos
+          if-no-files-found: error

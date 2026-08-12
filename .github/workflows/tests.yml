@@ -1,68 +1,109 @@
 name: Tests
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests-linux-i386:
-    runs-on: ubuntu-20.04
+    name: Linux (x86) tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Run tests linux-i386
-      run: |
-        scripts/tests-ubuntu-i386.sh
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Run tests linux-i386
+        run: scripts/tests-ubuntu-i386.sh
 
   tests-linux-amd64:
-    runs-on: ubuntu-20.04
+    name: Linux (x64) tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Run tests linux-amd64
-      run: |
-        scripts/tests-ubuntu-amd64.sh
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Run tests linux-amd64
+        run: scripts/tests-ubuntu-amd64.sh
 
   tests-macos-amd64:
+    name: macOS (x86_64) tests
     runs-on: macos-15-intel
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Run tests macos-amd64
-      run: |
-        scripts/tests-macos-amd64.sh
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Run tests macos-amd64
+        run: scripts/tests-macos-amd64.sh
 
   tests-macos-arm64:
+    name: macOS (arm64) tests
     runs-on: macos-latest
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Run tests macos-arm64
-      run: |
-        scripts/tests-macos-arm64.sh
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Run tests macos-arm64
+        run: scripts/tests-macos-arm64.sh
 
   tests-windows-i386:
-    runs-on: windows-2019
+    name: Windows (x86) tests
+    runs-on: windows-2022
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Run tests windows-i386
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T release --tests --prefix=out/ --32bits
-        ./waf.bat install
-        cd out
-        $env:Path = "bin";
-        ./unittest.exe
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Run tests windows-i386
+        run: |
+          ./waf.bat configure -T release --tests --prefix=out/ --32bits
+          ./waf.bat install
+          cd out
+          $env:Path = "bin";
+          ./unittest.exe
 
   tests-windows-amd64:
-    runs-on: windows-2019
+    name: Windows (x64) tests
+    runs-on: windows-2022
+    timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Run tests windows-amd64
-      run: |
-        git submodule init && git submodule update
-        ./waf.bat configure -T release --tests --prefix=out/
-        ./waf.bat install
-        cd out
-        $env:Path = "bin";
-        ./unittest.exe
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Run tests windows-amd64
+        run: |
+          ./waf.bat configure -T release --tests --prefix=out/
+          ./waf.bat install
+          cd out
+          $env:Path = "bin";
+          ./unittest.exe
