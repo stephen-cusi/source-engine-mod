@@ -21,9 +21,11 @@
 // ------------------------------------------------------------------------
 
 #define nullchar	( (char) 0x00 )
-#ifndef nullptr
-#define nullptr		( 0 )
-#endif
+// NOTE: Do not #define nullptr here. `nullptr` is a C++11 keyword; mapping it
+// to the integer literal 0 breaks libc++ standard library templates such as
+// std::vector, whose default construction instantiates pointers from nullptr
+// (e.g. __compressed_pair). This previously failed to compile on macOS with
+// Xcode 16.4's libc++.
 
 #define ZeroVar( var )				V_memset( &var, nullchar, sizeof( var ) )
 #define ZeroVarPtr( pVar )			V_memset( pVar, nullchar, sizeof( *pVar) ) 
