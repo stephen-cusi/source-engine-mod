@@ -101,25 +101,24 @@ jobs:
           tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
 
       - name: Configure
-        env:
-          ANDROID_NDK_HOME: ${{ github.workspace }}/android-ndk-r10e/
-          PATH: ${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:${{ env.PATH }}
-        run: >-
-          ./scripts/build-ffmpeg-android.sh armeabi-v7a-hard &&
-          python3 ./waf configure
-          -T release
-          --prefix=../android_build
-          --android=armeabi-v7a-hard,host,21
-          --target=../android_build/armeabi-v7a
-          --disable-warns
-          -4
-          --togles
+        run: |
+          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
+          export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+          ./scripts/build-ffmpeg-android.sh armeabi-v7a-hard
+          python3 ./waf configure \
+            -T release \
+            --prefix=../android_build \
+            --android=armeabi-v7a-hard,host,21 \
+            --target=../android_build/armeabi-v7a \
+            --disable-warns \
+            -4 \
+            --togles
 
       - name: Build and install
-        env:
-          ANDROID_NDK_HOME: ${{ github.workspace }}/android-ndk-r10e/
-          PATH: ${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:${{ env.PATH }}
-        run: python3 ./waf install --strip
+        run: |
+          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
+          export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+          python3 ./waf install --strip
 
       - name: Upload Android build
         uses: actions/upload-artifact@v7
@@ -152,24 +151,23 @@ jobs:
           tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
 
       - name: Configure
-        env:
-          ANDROID_NDK_HOME: ${{ github.workspace }}/android-ndk-r10e/
-          PATH: ${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:${{ env.PATH }}
-        run: >-
-          ./scripts/build-ffmpeg-android.sh aarch64 &&
-          python3 ./waf configure
-          -T release
-          --prefix=../android_build
-          --android=aarch64,host,21
-          --target=../android_build/aarch64
-          --disable-warns
-          --togles
+        run: |
+          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
+          export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+          ./scripts/build-ffmpeg-android.sh aarch64
+          python3 ./waf configure \
+            -T release \
+            --prefix=../android_build \
+            --android=aarch64,host,21 \
+            --target=../android_build/aarch64 \
+            --disable-warns \
+            --togles
 
       - name: Build and install
-        env:
-          ANDROID_NDK_HOME: ${{ github.workspace }}/android-ndk-r10e/
-          PATH: ${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:${{ env.PATH }}
-        run: python3 ./waf install --strip
+        run: |
+          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
+          export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+          python3 ./waf install --strip
 
       - name: Upload Android build
         uses: actions/upload-artifact@v7
