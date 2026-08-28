@@ -728,10 +728,10 @@ Vector4D ConvertLightmapColorToRGBScale( const float *lightmapColor )
 fltx4 ConvertLightmapColorToRGBScale( FLTX4 lightmapColor )
 {
 	
-	static const fltx4 vTwoFiftyFive = {255.0f, 255.0f, 255.0f, 255.0f};
-	static const fltx4 FourPoint1s = { 0.1, 0.1, 0.1, 0.1 };
-	static const fltx4 vTwoFiftyFiveOverSixteen = {255.0f / 16.0f, 255.0f / 16.0f, 255.0f / 16.0f, 255.0f / 16.0f};
-	// static const fltx4 vSixteenOverTwoFiftyFive = { 16.0f / 255.0f, 16.0f / 255.0f, 16.0f / 255.0f, 16.0f / 255.0f };
+	 fltx4  = FLTX4_SET_PS();
+	 fltx4  = FLTX4_SET_PS();
+	 fltx4  = FLTX4_SET_PS();
+	//  fltx4  = FLTX4_SET_PS();
 
 
 	// find the highest color value in lightmapColor and replicate it
@@ -891,7 +891,7 @@ FORCEINLINE fltx4 PackPixel_BGRA8888( FLTX4 rgba )
 {
 	// this happens to be in an order such that we can use the handy builtin packing op
 	// clamp to 0..255 (coz it might have leaked over)
-	static const fltx4 vTwoFiftyFive = {255.0f, 255.0f, 255.0f, 255.0f};
+	 fltx4  = FLTX4_SET_PS();
 
 	// the magic number such that when mul-accummulated against rbga,
 	// gets us a representation 3.0 + (r)*2^-22 -- puts the bits at
@@ -1081,7 +1081,7 @@ static void BumpedLightmapBitsToPixelWriter_HDRI_BGRA_X360( float* RESTRICT pFlo
 			s < groupsOfFourLimit; 
 			s += 4, srcTexelOffset += 4 * ( FOUR ))
 		{				
-			static const fltx4 vSixteen = {16.0f, 16.0f, 16.0f, 16.0f};
+			 fltx4  = FLTX4_SET_PS();
 			// the store-gather simds
 			fltx4 outBaseMap = Four_Zeros, outBump1 = Four_Zeros, outBump2 = Four_Zeros, outBump3 = Four_Zeros;
 			// we'll read four at a time
@@ -1230,7 +1230,7 @@ static void BumpedLightmapBitsToPixelWriter_HDRI_BGRA_X360( float* RESTRICT pFlo
 				srcTexelOffset += ( FOUR ))
 		{				
 
-			static const fltx4 vSixteen = {16.0f, 16.0f, 16.0f, 16.0f};
+			 fltx4  = FLTX4_SET_PS();
 			fltx4 vColor[4];
 			fltx4 vFloatImage = LoadUnalignedSIMD(&pFloatImage[srcTexelOffset]);
 			fltx4 vFloatImageBump1 = LoadUnalignedSIMD(&pFloatImageBump1[srcTexelOffset]);
@@ -1501,7 +1501,7 @@ void CMatLightmaps::BumpedLightmapBitsToPixelWriter_HDRI( float* RESTRICT pFloat
 					s++, m_LightmapPixelWriter.SkipBytes(nRewindToNextPixel),srcTexelOffset += ( FOUR ))
 				{				
 
-					static const fltx4 vSixteen = {16.0f, 16.0f, 16.0f, 16.0f};
+					 fltx4  = FLTX4_SET_PS();
 					fltx4 vColor[4];
 					fltx4 vFloatImage = LoadUnalignedSIMD(&pFloatImage[srcTexelOffset]);
 					fltx4 vFloatImageBump1 = LoadUnalignedSIMD(&pFloatImageBump1[srcTexelOffset]);
@@ -1822,7 +1822,7 @@ void CMatLightmaps::LightmapBitsToPixelWriter_HDRI( float* RESTRICT pFloatImage,
 				m_LightmapPixelWriter.Seek( pOffsetIntoLightmapPage[0], pOffsetIntoLightmapPage[1] + t );
 				for ( int s = 0; s < pLightmapSize[0]; ++s, pSrc += 4 )
 				{	
-					static const fltx4 vSixteen = {16.0f, 16.0f, 16.0f, 16.0f};
+					 fltx4  = FLTX4_SET_PS();
 					fltx4 rgba = LoadUnalignedSIMD(pSrc);
 
 					// clamp to 0..16 float
@@ -1856,7 +1856,7 @@ void CMatLightmaps::LightmapBitsToPixelWriter_HDRI( float* RESTRICT pFloatImage,
 				m_LightmapPixelWriter.Seek( pOffsetIntoLightmapPage[0], pOffsetIntoLightmapPage[1] + t );
 				for ( int s = 0; s < pLightmapSize[0]; ++s, pSrc += 4 )
 				{	
-					static const fltx4 vSixteen = {16.0f, 16.0f, 16.0f, 16.0f};
+					 fltx4  = FLTX4_SET_PS();
 					fltx4 rgba = LoadUnalignedSIMD(pSrc);
 
 					// clamp to 0..16 float

@@ -7,6 +7,39 @@
 #include "mathlib/ssemath.h"
 #include "mathlib/ssequaternion.h"
 
+#ifdef _M_ARM64
+// MSVC ARM64: __n128 doesn't support brace initialization
+const fltx4 Four_PointFives = FLTX4_SET_PS(0.5f,0.5f,0.5f,0.5f);
+#ifndef _X360
+const fltx4 Four_Zeros = FLTX4_SET_PS(0.0f,0.0f,0.0f,0.0f);
+const fltx4 Four_Ones = FLTX4_SET_PS(1.0f,1.0f,1.0f,1.0f);
+#endif
+const fltx4 Four_Twos = FLTX4_SET_PS(2.0f,2.0f,2.0f,2.0f);
+const fltx4 Four_Threes = FLTX4_SET_PS(3.0f,3.0f,3.0f,3.0f);
+const fltx4 Four_Fours = FLTX4_SET_PS(4.0f,4.0f,4.0f,4.0f);
+const fltx4 Four_Origin = FLTX4_SET_PS(0.0f,0.0f,0.0f,1.0f);
+const fltx4 Four_NegativeOnes = FLTX4_SET_PS(-1.0f,-1.0f,-1.0f,-1.0f);
+
+const fltx4 Four_2ToThe21s = FLTX4_SET_PS((float)(1<<21),(float)(1<<21),(float)(1<<21),(float)(1<<21));
+const fltx4 Four_2ToThe22s = FLTX4_SET_PS((float)(1<<22),(float)(1<<22),(float)(1<<22),(float)(1<<22));
+const fltx4 Four_2ToThe23s = FLTX4_SET_PS((float)(1<<23),(float)(1<<23),(float)(1<<23),(float)(1<<23));
+const fltx4 Four_2ToThe24s = FLTX4_SET_PS((float)(1<<24),(float)(1<<24),(float)(1<<24),(float)(1<<24));
+
+const fltx4 Four_Point225s = FLTX4_SET_PS(.225f,.225f,.225f,.225f);
+const fltx4 Four_Epsilons = FLTX4_SET_PS(FLT_EPSILON,FLT_EPSILON,FLT_EPSILON,FLT_EPSILON);
+
+const fltx4 Four_FLT_MAX = FLTX4_SET_PS(FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX);
+const fltx4 Four_Negative_FLT_MAX = FLTX4_SET_PS(-FLT_MAX,-FLT_MAX,-FLT_MAX,-FLT_MAX);
+const fltx4 g_SIMD_0123 = FLTX4_SET_PS(0.0f,1.0f,2.0f,3.0f);
+
+const fltx4 g_QuatMultRowSign[4] =
+{
+	FLTX4_SET_PS( 1.0f,  1.0f, -1.0f, 1.0f),
+	FLTX4_SET_PS(-1.0f,  1.0f,  1.0f, 1.0f),
+	FLTX4_SET_PS( 1.0f, -1.0f,  1.0f, 1.0f),
+	FLTX4_SET_PS(-1.0f, -1.0f, -1.0f, 1.0f)
+};
+#else
 const fltx4 Four_PointFives={0.5,0.5,0.5,0.5};
 #ifndef _X360
 const fltx4 Four_Zeros={0.0,0.0,0.0,0.0};
@@ -37,6 +70,7 @@ const fltx4 g_QuatMultRowSign[4] =
 	{  1.0f, -1.0f,  1.0f, 1.0f },
 	{ -1.0f, -1.0f, -1.0f, 1.0f }
 };
+#endif // _M_ARM64
 
 const uint32 ALIGN16 g_SIMD_clear_signmask[4] ALIGN16_POST = {0x7fffffff,0x7fffffff,0x7fffffff,0x7fffffff};
 const uint32 ALIGN16 g_SIMD_signmask[4] ALIGN16_POST = { 0x80000000, 0x80000000, 0x80000000, 0x80000000 };

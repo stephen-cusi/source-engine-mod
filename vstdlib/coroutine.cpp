@@ -67,7 +67,7 @@ void OutputDebugStringA( const char *pchMsg ) { fprintf( stderr, pchMsg ); fflus
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
-#if defined( _MSC_VER ) && ( _MSC_VER >= 1900 ) && defined( PLATFORM_64BITS )
+#if defined( _MSC_VER ) && ( _MSC_VER >= 1900 ) && defined( PLATFORM_64BITS ) && !defined(_M_ARM64)
 //the VS2105 longjmp() seems to freak out jumping back into a coroutine (just like linux if _FORTIFY_SOURCE is defined)
 // I can't find an analogy to _FORTIFY_SOURCE for MSVC at the moment, so I wrote a quick assembly to longjmp() without any safety checks
 extern "C" NORETURN void Coroutine_LongJmp_Unchecked( jmp_buf buffer, int nResult );
@@ -213,7 +213,7 @@ static const int k_cubMaxCoroutineStackSize = (48 * 1024);
 static const int k_cubMaxCoroutineStackSize = (32 * 1024);
 #endif // defined( _DEBUG )
 
-#ifdef _WIN64
+#if defined(_WIN64) && !defined(_M_ARM64)
 extern "C" byte *GetStackPtr64();
 #define GetStackPtr( pStackPtr)		byte *pStackPtr = GetStackPtr64();
 #else
