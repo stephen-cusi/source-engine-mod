@@ -9,6 +9,12 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+// sse2neon.h must be included BEFORE <intrin.h> or any SSE headers on MSVC ARM64
+// to avoid __m128 type conflicts. platform.h is included by nearly all files.
+#if defined(_M_ARM64) && !defined(SSE2NEON_H)
+#include "../../common/sse2neon.h"
+#endif
+
 #if defined(__x86_64__) || defined(_WIN64) || defined(__aarch64__)
 #define PLATFORM_64BITS 1
 #endif
