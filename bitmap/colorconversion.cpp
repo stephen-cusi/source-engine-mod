@@ -17,6 +17,7 @@
 #include "tier1/strtools.h"
 #include "mathlib/compressed_vector.h"
 #include "nvtc.h"
+#include "../public/mathlib/vector.h"
 
 #ifdef POSIX
 typedef int32 *DWORD_PTR;

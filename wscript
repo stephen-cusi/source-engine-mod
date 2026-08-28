@@ -87,6 +87,7 @@ projects={
 		'vgui2/vgui_surfacelib',
 		'vguimatsurface',
 		'video',
+		'video/video_bink',
 		'vphysics',
 		'vpklib',
 		'vstdlib',
@@ -94,6 +95,7 @@ projects={
 		'utils/vtex',
 		'unicode',
 		'video',
+        'game/gamepadui',
 	],
 	'tests': [
 		'appframework',
@@ -206,6 +208,8 @@ def define_platform(conf):
 			'GL_GLEXT_PROTOTYPES',
 			'BINK_VIDEO'
 		])
+	elif conf.env.DEST_OS in ('android', 'darwin'):
+		conf.env.append_unique('DEFINES', ['BINK_VIDEO'])
 
 	if conf.options.TOGLES:
 		conf.env.append_unique('DEFINES', ['TOGLES'])
@@ -261,6 +265,11 @@ def define_platform(conf):
 			'NO_HOOK_MALLOC',
 			'_DLL_EXT=.dylib'
 		])
+		# ivp sources use alloca but only include <alloca.h> for LINUX/SUN;
+		# Apple's stdlib.h does not declare it under strict ANSI. Force the
+		# header in so those files compile on macOS.
+		conf.env.append_unique('CFLAGS', ['-include', 'alloca.h'])
+		conf.env.append_unique('CXXFLAGS', ['-include', 'alloca.h'])
 
 	elif conf.env.DEST_OS in ['freebsd', 'openbsd', 'netbsd', 'dragonflybsd']: # Tested only in freebsd
 		conf.env.append_unique('DEFINES', [
@@ -403,6 +412,11 @@ def check_deps(conf):
 				conf.check_cfg(package='libjpeg', uselib_store='JPEG', args=['--cflags', '--libs'])
 				conf.check_cfg(package='libpng', uselib_store='PNG', args=['--cflags', '--libs'])
 				conf.check_cfg(package='libcurl', uselib_store='CURL', args=['--cflags', '--libs'])
+				if conf.env.DEST_OS in ('linux', 'darwin'):
+					conf.check_cfg(package='libavcodec', uselib_store='AVCODEC', args=['--cflags', '--libs'])
+					conf.check_cfg(package='libavformat', uselib_store='AVFORMAT', args=['--cflags', '--libs'])
+					conf.check_cfg(package='libavutil', uselib_store='AVUTIL', args=['--cflags', '--libs'])
+					conf.check_cfg(package='libswresample', uselib_store='SWRESAMPLE', args=['--cflags', '--libs'])
 			conf.check_cfg(package='zlib', uselib_store='ZLIB', args=['--cflags', '--libs'])
 
 			if conf.options.OPUS:
@@ -420,6 +434,10 @@ def check_deps(conf):
 			conf.check(lib='ssl', uselib_store='SSL')
 		conf.check(lib='android_support', uselib_store='ANDROID_SUPPORT')
 		conf.check(lib='opus', uselib_store='OPUS')
+		conf.check(lib='avcodec', uselib_store='AVCODEC')
+		conf.check(lib='avformat', uselib_store='AVFORMAT')
+		conf.check(lib='avutil', uselib_store='AVUTIL')
+		conf.check(lib='swresample', uselib_store='SWRESAMPLE')
 
 	if conf.env.DEST_OS == 'win32':
 		conf.check(lib='libz', uselib_store='ZLIB', define_name='USE_ZLIB')
@@ -434,6 +452,11 @@ def check_deps(conf):
 		conf.check(lib='d3d9', uselib_store='D3D9')
 		conf.check(lib='dsound', uselib_store='DSOUND')
 		conf.check(lib='dxguid', uselib_store='DXGUID')
+		if conf.env.DEST_CPU == 'amd64':
+			conf.check(lib='avcodec', uselib_store='AVCODEC')
+			conf.check(lib='avformat', uselib_store='AVFORMAT')
+			conf.check(lib='avutil', uselib_store='AVUTIL')
+			conf.check(lib='swresample', uselib_store='SWRESAMPLE')
 		if conf.options.OPUS:
 			conf.check(lib='opus', uselib_store='OPUS')
 
@@ -540,6 +563,7 @@ def configure(conf):
 			'-I'+os.path.abspath('.')+'/thirdparty/openal-soft/include/',
 			'-I'+os.path.abspath('.')+'/thirdparty/fontconfig',
 			'-I'+os.path.abspath('.')+'/thirdparty/freetype/include',
+			'-I'+os.path.abspath('.')+'/lib/android/'+conf.env.DEST_CPU+'/include',
 			'-llog',
 			'-lz'
 		]
@@ -582,7 +606,6 @@ def configure(conf):
 			'/Zc:forScope',
 			'/Zc:wchar_t',
 			'/GR',
-			'/TP',
 			'/EHsc'
 		]
 		# sse2neon.h requires new preprocessor on MSVC ARM64

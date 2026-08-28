@@ -1173,8 +1173,8 @@ bool CVideoCommonServices::CalculateVideoDimensions( int videoWidth, int videoHe
 				}
 				else	// can scale variably..
 				{
-					float Xfactor = ( displayWidth / curWidth );
-					float Yfactor = ( displayHeight / curHeight );
+					float Xfactor = ( (float)displayWidth / curWidth );
+					float Yfactor = ( (float)displayHeight / curHeight );
 					float scale = MIN( Xfactor, Yfactor );
 					
 					curWidth = (int)  ( curWidth * scale + 0.35f );
@@ -1356,6 +1356,7 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 
 
 	// Pump OS Messages
+	bool bDoubleTapPressed = false;
 #if defined( WIN32 )
 	MSG msg;
 	while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
@@ -1389,6 +1390,10 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 	bool bEscPressed	= false;
 	bool bReturnPressed	= false;
 	bool bSpacePressed	= false;
+#if defined( ANDROID )
+	// Double tap on the touchscreen skips the startup video
+	bDoubleTapPressed = g_pLauncherMgr->PeekAndRemoveDoubleTap();
+#endif
 
 	g_pLauncherMgr->PeekAndRemoveKeyboardEvents( &bEscPressed, &bReturnPressed, &bSpacePressed );
 #endif
@@ -1397,7 +1402,7 @@ bool CVideoCommonServices::ProcessFullScreenInput( bool &bAbortEvent, bool &bPau
 	bool bEscEvent = ( bEscPressed != m_bEscLast ) && bEscPressed;
 	bool bReturnEvent = ( bReturnPressed != m_bReturnLast ) &&  bReturnPressed;
 	bool bSpaceEvent = ( bSpacePressed != m_bSpaceLast ) && bSpacePressed;
-	bool bAnyKeyEvent = bEscEvent || bReturnEvent || bSpaceEvent;
+	bool bAnyKeyEvent = bEscEvent || bReturnEvent || bSpaceEvent || bDoubleTapPressed;
 
 	m_bEscLast = bEscPressed;
 	m_bReturnLast = bReturnPressed;
