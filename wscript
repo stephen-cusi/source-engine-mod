@@ -123,6 +123,7 @@ projects={
 		'dmxloader',
 		'engine',
 		'game/server',
+		'inputsystem',
 		'ivp/havana',
 		'ivp/havana/havok/hk_base',
 		'ivp/havana/havok/hk_math',
