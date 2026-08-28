@@ -1228,14 +1228,19 @@ PLATFORM_INTERFACE struct tm *		Plat_gmtime( const time_t *timep, struct tm *res
 PLATFORM_INTERFACE time_t			Plat_timegm( struct tm *timeptr );
 PLATFORM_INTERFACE struct tm *		Plat_localtime( const time_t *timep, struct tm *result );
 
-#if defined( _WIN32 ) && defined( _MSC_VER ) && ( _MSC_VER >= 1400 )
+#if defined( _WIN32 ) && defined( _MSC_VER ) && ( _MSC_VER >= 1400 ) && !defined(_M_ARM64)
 	extern "C" unsigned __int64 __rdtsc();
 	#pragma intrinsic(__rdtsc)
 #endif
 
 inline uint64 Plat_Rdtsc()
 {
-#if (defined( __arm__ ) || defined( __aarch64__ )) && defined (POSIX)
+#if defined(_M_ARM64)
+	// ARM64: no direct cycle counter available in user mode
+	// Use QueryPerformanceCounter as fallback (declared in windows.h, include guard below)
+	// This is only used for timing, not for actual cycle counting
+	return 0; // CalculateClockSpeed uses QPC separately
+#elif (defined( __arm__ ) || defined( __aarch64__ )) && defined (POSIX)
 	struct timespec t;
 	clock_gettime( CLOCK_REALTIME, &t);
 	return t.tv_sec * 1000000000ULL + t.tv_nsec;

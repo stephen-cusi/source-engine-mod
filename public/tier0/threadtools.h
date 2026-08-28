@@ -239,7 +239,8 @@ inline void ThreadPause()
         sched_yield();
 #elif defined ( COMPILER_MSVC64 )
 #if defined( _M_ARM64 )
-	YieldProcessor();
+	// ARM64: yield hint instruction via intrinsic
+	__yield();
 #else
 	_mm_pause();
 #endif

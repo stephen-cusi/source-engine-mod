@@ -19,7 +19,11 @@
 
 #if defined(__i386__) || defined(_M_IX86)
 // For MMX intrinsics
+#ifdef _M_ARM64
+#include <intrin.h>
+#else
 #include <xmmintrin.h>
+#endif
 #endif
 
 // XXX remove me
@@ -1188,7 +1192,7 @@ inline float SimpleSplineRemapValClamped( float val, float A, float B, float C, 
 
 FORCEINLINE int RoundFloatToInt(float f)
 {
-#if defined(__i386__) || defined(_M_IX86) || defined( PLATFORM_WINDOWS_PC64 ) || defined(__x86_64__)
+#if (defined(__i386__) || defined(_M_IX86) || defined( PLATFORM_WINDOWS_PC64 ) || defined(__x86_64__)) && !defined(_M_ARM64)
 	return _mm_cvtss_si32(_mm_load_ss(&f));
 #elif defined( _X360 )
 #ifdef Assert
@@ -1201,7 +1205,7 @@ FORCEINLINE int RoundFloatToInt(float f)
 	};
 	flResult = __fctiw( f );
 	return pResult[1];
-#elif defined (__arm__) ||  defined (__aarch64__)
+#elif defined (__arm__) ||  defined (__aarch64__) || defined(_M_ARM64)
         return (int)(f + 0.5f);
 #else
 #error Unknown architecture

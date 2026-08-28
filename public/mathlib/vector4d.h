@@ -17,7 +17,11 @@
 #include <stdlib.h>		// For rand(). We really need a library!
 #include <float.h>
 #if defined(__SSE__) || defined(_M_IX86_FP)
+#ifdef _M_ARM64
+#include <intrin.h>
+#else
 #include <xmmintrin.h>	// For SSE
+#endif
 #endif
 #include "basetypes.h"	// For vec_t, put this somewhere else?
 #include "tier0/dbg.h"
@@ -154,8 +158,10 @@ public:
 	inline void Set( vec_t X, vec_t Y, vec_t Z, vec_t W );
 	inline void InitZero( void );
 
+#if !defined(_M_ARM64)
 	inline __m128 &AsM128() { return *(__m128*)&x; }
-	inline const __m128 &AsM128() const { return *(const __m128*)&x; } 
+	inline const __m128 &AsM128() const { return *(const __m128*)&x; }
+#endif
 
 private:
 	// No copy constructors allowed if we're in optimal mode
@@ -618,7 +624,9 @@ inline void Vector4DAligned::Set( vec_t X, vec_t Y, vec_t Z, vec_t W )
 
 inline void Vector4DAligned::InitZero( void )
 {
-#if !defined( _X360 )
+#if defined(_M_ARM64)
+	x = y = z = w = 0.0f;
+#elif !defined( _X360 )
 	this->AsM128() = _mm_set1_ps( 0.0f );
 #else
 	this->AsM128() = __vspltisw( 0 );
@@ -668,7 +676,17 @@ inline void Vector4DWeightMADSSE( vec_t w, Vector4DAligned const& vInA, Vector4D
 {
 	Assert( vInA.IsValid() && vInB.IsValid() && IsFinite(w) );
 
-#if !defined( _X360 )
+#if defined(_M_ARM64)
+	// Scalar fallback for ARM64
+	vOutA.x += vInA.x * w;
+	vOutA.y += vInA.y * w;
+	vOutA.z += vInA.z * w;
+	vOutA.w += vInA.w * w;
+	vOutB.x += vInB.x * w;
+	vOutB.y += vInB.y * w;
+	vOutB.z += vInB.z * w;
+	vOutB.w += vInB.w * w;
+#elif !defined( _X360 )
 	// Replicate scalar float out to 4 components
     __m128 packed = _mm_set1_ps( w );
 
