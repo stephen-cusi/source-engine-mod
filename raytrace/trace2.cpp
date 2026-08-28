@@ -17,7 +17,7 @@ static uint32 MapDistanceToPixel(float t)
 
 #define MAGIC_NUMBER (1<<23)
 
-static fltx4 Four_MagicNumbers={ MAGIC_NUMBER, MAGIC_NUMBER, MAGIC_NUMBER, MAGIC_NUMBER };
+ fltx4  = FLTX4_SET_PS();
 static ALIGN16 int32 Four_255s[4]= {0xff,0xff,0xff,0xff};
 #define PIXMASK ( * ( reinterpret_cast< fltx4 *>( &Four_255s ) ) )
 
@@ -26,7 +26,7 @@ void MapLinearIntensities(FourVectors const &intens,uint32 *p1, uint32 *p2, uint
 	// convert four pixels worth of sse-style rgb into argb lwords
 	// NOTE the _mm_empty macro is voodoo. do not mess with this routine casually - simply throwing
 	// anything that ends up generating a fpu stack references in here would be bad news.
-	static fltx4 pixscale={255.0,255.0,255.0,255.0};
+	 fltx4  = FLTX4_SET_PS();
 	fltx4 r,g,b;
 	r=MinSIMD(pixscale,MulSIMD(pixscale,PowSIMD(intens.x,IGAMMA)));
 	g=MinSIMD(pixscale,MulSIMD(pixscale,PowSIMD(intens.y,IGAMMA)));
@@ -44,8 +44,8 @@ void MapLinearIntensities(FourVectors const &intens,uint32 *p1, uint32 *p2, uint
 
 static ALIGN16 uint32 signmask[4]={0x80000000,0x80000000,0x80000000,0x80000000};
 static ALIGN16 int32 all_ones[4]={-1,-1,-1,-1};
-static fltx4 all_zeros={0,0,0,0};
-static fltx4 TraceLimit={1.0e20,1.0e20,1.0e20,1.0e20};
+ fltx4  = FLTX4_SET_PS();
+ fltx4  = FLTX4_SET_PS();
 
 void RayTracingEnvironment::RenderScene(
 	int width, int height,								   // width and height of desired rendering

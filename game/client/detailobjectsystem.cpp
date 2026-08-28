@@ -2122,8 +2122,8 @@ int CDetailObjectSystem::SortSpritesBackToFront( int nLeaf, const Vector &viewOr
 #else
 #define MANTISSA_LSB_OFFSET 0
 #endif
-static fltx4 Four_MagicNumbers={ MAGIC_NUMBER, MAGIC_NUMBER, MAGIC_NUMBER, MAGIC_NUMBER };
-static fltx4 Four_255s={ 255.0, 255.0, 255.0, 255.0 };
+ fltx4  = FLTX4_SET_PS();
+ fltx4  = FLTX4_SET_PS();
 
 static ALIGN16 int32 And255Mask[4] ALIGN16_POST = {0xff,0xff,0xff,0xff};
 #define PIXMASK ( * ( reinterpret_cast< fltx4 *>( &And255Mask ) ) )

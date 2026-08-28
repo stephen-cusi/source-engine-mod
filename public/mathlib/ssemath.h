@@ -57,7 +57,29 @@ typedef __vector4 fltx4;
 typedef __vector4 i32x4; // a VMX register; just a way of making it explicit that we're doing integer ops.
 typedef __vector4 u32x4; // a VMX register; just a way of making it explicit that we're doing unsigned integer ops.
 
+#elif defined(_M_ARM64)
+
+// MSVC ARM64: __m128 is __n128, same type as x86. Use it directly.
+typedef __m128 fltx4;
+typedef __m128 i32x4;
+typedef __m128 u32x4;
+
+// Helper for brace initialization of fltx4 constants on MSVC ARM64
+// MSVC ARM64 __n128 doesn't support brace init {a,b,c,d}
+#define FLTX4_SET_PS(a,b,c,d) _mm_set_ps((float)(d),(float)(c),(float)(b),(float)(a))
+
 #else
+
+typedef __m128 fltx4;
+typedef __m128 i32x4;
+typedef __m128 u32x4;
+
+#endif
+
+// FLTX4_SET_PS: portable fltx4 constant initializer
+#ifndef FLTX4_SET_PS
+#define FLTX4_SET_PS(a,b,c,d) { (float)(a),(float)(b),(float)(c),(float)(d) }
+#endif
 
 typedef __m128 fltx4;
 typedef __m128 i32x4;
