@@ -694,8 +694,8 @@ def build(bld):
 
 	if bld.env.DEST_OS in ['win32', 'android']:
 		sdl_name = 'SDL2.dll' if bld.env.DEST_OS == 'win32' else 'libSDL2.so'
-		# ARM64: lib directories use 'arm64' naming, not 'aarch64'
-		cpu_dir = 'arm64' if bld.env.DEST_CPU == 'aarch64' else bld.env.DEST_CPU
+		# ARM64 on Windows: lib directories use 'arm64' naming, not 'aarch64'
+		cpu_dir = 'arm64' if bld.env.DEST_OS == 'win32' and bld.env.DEST_CPU == 'aarch64' else bld.env.DEST_CPU
 		sdl_path = os.path.join('lib', bld.env.DEST_OS, cpu_dir, sdl_name)
 		bld.install_files(bld.env.LIBDIR, [sdl_path])
 
