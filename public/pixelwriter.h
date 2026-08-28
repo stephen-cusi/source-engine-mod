@@ -669,7 +669,7 @@ FORCEINLINE void CPixelWriter::WritePixelNoAdvance_BGRA8888( FLTX4 rgba, void * 
 {
 	// this happens to be in an order such that we can use the handy builtin packing op
 	// clamp to 0..255 (coz it might have leaked over)
-	static const fltx4 vTwoFiftyFive = {255.0f, 255.0f, 255.0f, 255.0f};
+	static const fltx4 vTwoFiftyFive = FLTX4_SET_PS(255.0f, 255.0f, 255.0f, 255.0f);
 	fltx4 N = MinSIMD(vTwoFiftyFive, rgba); 
 
 	// the magic number such that when mul-accummulated against rbga,
