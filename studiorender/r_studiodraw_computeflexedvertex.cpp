@@ -77,8 +77,8 @@ const ALIGN16 int32 g_perm_delta_wrinkle[4] = {0x14150000, 0x16170000, 0x1819000
 const ALIGN16 int32 g_perm_ndelta[4] = {0x1A1B0000, 0x1C1D0000, 0x1E1F0000, 0};
 //const ALIGN16 int32 g_perm_w0[4]     = {0x00010203,0x08090A0B,0x00010203,0x08090A0B};
 const ALIGN16 int32 g_perm_w1[4]     = {0x0C0D0E0F,0x0C0D0E0F,0x04050607,0x04050607};
- fltx4  = FLTX4_SET_PS();
- fltx4  = FLTX4_SET_PS();
+const fltx4 g_sc256_255_special = FLTX4_SET_PS(256.0f/255.0f,256.0f/255.0f,-256.0f/255.0f,-256.0f/255.0f);
+const fltx4 g_f40011 = FLTX4_SET_PS(0,0,1,1);
 fltx4 g_dummy2[2];
 
 int g_nStreamOffset_prefetch = 256;

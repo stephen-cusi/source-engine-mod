@@ -618,7 +618,7 @@ static void AccumulateBumpedLightstyles( ColorRGBExp32* pLightmap, int lightmapS
 // off the corresponding channel in the intermediate halfword expansion
 // when we combine it with the unsigned unpack for the other channels
 static const int32 ALIGN16 g_SIMD_HalfWordMask[4]= {  0x0000000, 0x0000FFFF, 0x0000000, 0x0000FFFF };
- fltx4  = FLTX4_SET_PS();
+static const fltx4 vOneOverTwoFiftyFive = FLTX4_SET_PS(1.0f / 255.0f , 1.0f / 255.0f , 1.0f / 255.0f , 1.0f / 255.0f);
 
 // grind through accumlating onto the blocklights, 
 // one cache line at a time. Input pointers are assumed

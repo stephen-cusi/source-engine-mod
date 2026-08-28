@@ -81,12 +81,6 @@ typedef __m128 u32x4;
 #define FLTX4_SET_PS(a,b,c,d) { (float)(a),(float)(b),(float)(c),(float)(d) }
 #endif
 
-typedef __m128 fltx4;
-typedef __m128 i32x4;
-typedef __m128 u32x4;
-
-#endif
-
 // The FLTX4 type is a fltx4 used as a parameter to a function.
 // On the 360, the best way to do this is pass-by-copy on the registers.
 // On the PC, the best way is to pass by const reference. 

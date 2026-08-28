@@ -72,7 +72,7 @@ void R_LightAmbient_4D( const FourVectors& normal, Vector4D* pLightBoxColor, Fou
 //	VPROF( "R_LightAmbient" );
 
 	// !!speed!! compute ambient color cube in sse format
-	 fltx4  = FLTX4_SET_PS();
+	static fltx4 FourZeros = FLTX4_SET_PS(0.,0.,0.,.0);
 
 	// find the contributions from each axis
 	fltx4 NegMask=CmpLtSIMD(normal.x,FourZeros);
