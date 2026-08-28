@@ -32,6 +32,9 @@ extern IMaterialSystem	*materials;
 #include "materialsystem/itexture.h"
 #include "materialsystem/imaterialsystem.h"
 #include "materialsystem/MaterialSystemUtil.h"
+#include "tier0/threadtools.h"
+
+#include <vector>
 
 extern "C"
 {
@@ -40,6 +43,7 @@ extern "C"
 #include <libavutil/timestamp.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libswresample/swresample.h>
 }
 
 // -----------------------------------------------------------------------------
@@ -131,6 +135,9 @@ class CBinkMaterial : public IVideoMaterial
 
 		virtual void				GetVideoTexCoordRange( float *pMaxU, float *pMaxV ) ;		// Returns the max texture coordinate of the video portion of the material surface ( 0.0, 0.0 to U, V )
 		virtual void				GetVideoImageSize( int *pWidth, int *pHeight );				// Returns the frame size of the Video Image Frame in pixels ( the stored in a subrect of the material itself)
+		void					GetTextureSize( int *pWidth, int *pHeight );
+		bool					ConfigureAudioOutput( const VideoAudioSpec &audioSpec );
+		void					MixAudio( uint8_t *pOutput, int outputBytes );
 
 	private:
 		friend class CBinkMaterialRGBTextureRegenerator;
@@ -142,6 +149,11 @@ class CBinkMaterial : public IVideoMaterial
 		// Initializes, shuts down the video stream
 		void 						OpenMovie( const char *theMovieFileName );
 		void 						CloseFile();
+		bool					DecodeAudioPacket( const AVPacket *pPacket );
+		bool					QueueAudioFrame( const AVFrame *pFrame );
+		bool					FlushAudioResampler();
+		void					ClearAudioQueue();
+		int					QueuedAudioBytes();
 
 		// Initializes, shuts down the procedural texture
 		void						CreateProceduralTexture( const char *pTextureName );
@@ -194,6 +206,7 @@ class CBinkMaterial : public IVideoMaterial
 
 		// AV stuff
 		AVFrame *m_AVFrame;
+		AVFrame *m_AVAudioFrame;
 		AVPacket *m_AVPkt;
 		AVFormatContext *m_AVFmtCtx;
 
@@ -206,9 +219,18 @@ class CBinkMaterial : public IVideoMaterial
 		AVStream *m_AVVideoStream;
 		AVStream *m_AVAudioStream;
 
-		int m_AVPixFormat;
+		AVPixelFormat m_AVPixFormat;
 
 		double m_MovieFrameDuration;
+
+		SwrContext *m_SwrContext;
+		VideoAudioSpec m_AudioSpec;
+		AVSampleFormat m_AudioOutputFormat;
+		bool m_bAudioOutputConfigured;
+		bool m_bAudioDecoderDrained;
+		CThreadFastMutex m_AudioMutex;
+		std::vector<uint8_t> m_AudioQueue;
+		size_t m_AudioQueueRead;
 
 		uint8_t *m_AVVideoData[4];
 		uint8_t *m_RGBData;

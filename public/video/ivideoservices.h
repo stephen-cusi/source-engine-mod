@@ -165,6 +165,17 @@ namespace VideoSoundDeviceOperation
 };
 typedef VideoSoundDeviceOperation::EVideoSoundDeviceOperation_t VideoSoundDeviceOperation_t;
 
+// Neutral audio output spec passed to the video subsystem via SoundDeviceCommand.
+// m_Format uses SDL audio format codes (0x8010 = AUDIO_S16SYS, 0x8120 = AUDIO_F32SYS)
+// so SDL-based integrations keep working while non-SDL devices (e.g. Windows
+// DirectSound) can provide the same information without linking SDL.
+struct VideoAudioSpec
+{
+	int m_Freq;
+	int m_Channels;
+	int m_Format;
+};
+
 
 	// ==============================================
 	// Video Encoding related settings

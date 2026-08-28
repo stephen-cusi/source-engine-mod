@@ -87,6 +87,9 @@ using namespace vgui;
 #include "tier1/utlstring.h"
 #include "steam/steam_api.h"
 
+#include "materialsystem/imaterial.h"
+#include "tier2/renderutils.h"
+
 #ifdef ANDROID
 #include <SDL_misc.h>
 #endif
@@ -732,10 +735,10 @@ public:
 
     MESSAGE_FUNC_HANDLE( OnCursorEnteredMenuItem, "CursorEnteredMenuItem", menuItem);
 
+	vgui::VPANEL	m_hMainMenuOverridePanel;
 private:
 	CFooterPanel *m_pConsoleFooter;
 	vgui::CKeyRepeatHandler	m_KeyRepeat;
-	vgui::VPANEL	m_hMainMenuOverridePanel;
 };
 
 //-----------------------------------------------------------------------------
@@ -811,6 +814,8 @@ CBasePanel::CBasePanel() : Panel(NULL, "BaseGameUIPanel")
 	m_iBackgroundImageID = -1;
 	m_iProductImageID = -1;
 	m_iLoadingImageID = -1;
+	m_iLoadingSpinnerImageID = -1;
+	m_fLoadingSpinnerFrame = 0;
 
 	if ( GameUI().IsConsoleUI() )
 	{
@@ -833,8 +838,11 @@ CBasePanel::CBasePanel() : Panel(NULL, "BaseGameUIPanel")
 #endif
 	}
 
-	m_pGameMenuButtons.AddToTail( CreateMenuButton( this, "GameMenuButton", ModInfo().GetGameTitle() ) );
-	m_pGameMenuButtons.AddToTail( CreateMenuButton( this, "GameMenuButton2", ModInfo().GetGameTitle2() ) );
+	if (!IsGamepadUI())
+	{
+		m_pGameMenuButtons.AddToTail(CreateMenuButton(this, "GameMenuButton", ModInfo().GetGameTitle()));
+		m_pGameMenuButtons.AddToTail(CreateMenuButton(this, "GameMenuButton2", ModInfo().GetGameTitle2()));
+	}
 #ifdef CS_BETA
 	if ( !ModInfo().NoCrosshair() ) // hack to not show the BETA for HL2 or HL1Port
 	{
@@ -917,10 +925,10 @@ CBasePanel::CBasePanel() : Panel(NULL, "BaseGameUIPanel")
 
 	if( IsAndroid() )
 	{
-		AddUrlButton( this, "vgui/\x64\x69\x73\x63\x6f\x72\x64\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x64\x69\x73\x63\x6f\x72\x64\x2e\x67\x67\x2f\x68\x5a\x52\x42\x37\x57\x4d\x67\x47\x77" );
-		AddUrlButton( this, "vgui/\x74\x77\x69\x74\x74\x65\x72\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x74\x77\x69\x74\x74\x65\x72\x2e\x63\x6f\x6d\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72" );
-		AddUrlButton( this, "vgui/\x74\x65\x6c\x65\x67\x72\x61\x6d\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x74\x2e\x6d\x65\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72\x5f\x73\x6f\x75\x72\x63\x65" );
-		AddUrlButton( this, "vgui/\x67\x69\x74\x68\x75\x62\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x67\x69\x74\x68\x75\x62\x2e\x63\x6f\x6d\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72\x2f\x73\x6f\x75\x72\x63\x65\x2d\x65\x6e\x67\x69\x6e\x65" );
+		// AddUrlButton( this, "vgui/\x64\x69\x73\x63\x6f\x72\x64\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x64\x69\x73\x63\x6f\x72\x64\x2e\x67\x67\x2f\x68\x5a\x52\x42\x37\x57\x4d\x67\x47\x77" );
+		// AddUrlButton( this, "vgui/\x74\x77\x69\x74\x74\x65\x72\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x74\x77\x69\x74\x74\x65\x72\x2e\x63\x6f\x6d\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72" );
+		// AddUrlButton( this, "vgui/\x74\x65\x6c\x65\x67\x72\x61\x6d\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x74\x2e\x6d\x65\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72\x5f\x73\x6f\x75\x72\x63\x65" );
+		// AddUrlButton( this, "vgui/\x67\x69\x74\x68\x75\x62\x5f\x6c\x6f\x67\x6f", "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x67\x69\x74\x68\x75\x62\x2e\x63\x6f\x6d\x2f\x6e\x69\x6c\x6c\x65\x72\x75\x73\x72\x2f\x73\x6f\x75\x72\x63\x65\x2d\x65\x6e\x67\x69\x6e\x65" );
 	}
 }
 
@@ -978,6 +986,12 @@ CBasePanel::~CBasePanel()
 		{
 			vgui::surface()->DestroyTextureID( m_iLoadingImageID );
 			m_iLoadingImageID = -1;
+		}
+
+		if (m_iLoadingSpinnerImageID != -1 )
+		{
+			vgui::surface()->DestroyTextureID(m_iLoadingSpinnerImageID);
+			m_iLoadingSpinnerImageID = -1;
 		}
 	}
 }
@@ -1301,7 +1315,14 @@ void CBasePanel::SetBackgroundRenderState(EBackgroundState state)
 			// fade background into main menu
 			m_bRenderingBackgroundTransition = true;
 			m_flTransitionStartTime = frametime;
-			m_flTransitionEndTime = frametime + 3.0f;
+			if (IsGamepadUI())
+			{
+				m_flTransitionEndTime = frametime + 1.0f;
+			}
+			else
+			{
+				m_flTransitionEndTime = frametime + 3.0f;
+			}
 		}
 	}
 	else if ( state == BACKGROUND_LOADING )
@@ -1362,6 +1383,12 @@ void CBasePanel::OnLevelLoadingStarted()
 {
 	m_bLevelLoading = true;
 
+	ConVarRef("cl_gamepadui_mainmenu_draw").SetValue(false);
+
+	//Msg("%d\n", GameUI().IsLoading());
+	//GameUI().SetLoadingState(m_bLevelLoading);
+	//Msg("%d\n", GameUI().IsLoading());
+
 	m_pGameMenu->ShowFooter( false );
 
 	if ( m_hMatchmakingBasePanel.Get() )
@@ -1383,6 +1410,8 @@ void CBasePanel::OnLevelLoadingStarted()
 void CBasePanel::OnLevelLoadingFinished()
 {
 	m_bLevelLoading = false;
+
+	ConVarRef("cl_gamepadui_mainmenu_draw").SetValue(true);
 
 	if ( m_hMatchmakingBasePanel.Get() )
 	{
@@ -1475,7 +1504,29 @@ void CBasePanel::DrawBackgroundImage()
 		surface()->DrawSetTexture(m_iLoadingImageID);
 		int twide, ttall;
 		surface()->DrawGetTextureSize(m_iLoadingImageID, twide, ttall);
-		surface()->DrawTexturedRect(wide - twide, tall - ttall, wide, tall);
+		if (IsGamepadUI())
+		{
+			surface()->DrawTexturedRect(wide - ((twide / 512.f) * twide) - 30, 30, wide - 30, (ttall / 512.f) * ttall + 30);
+			
+			static unsigned int	nFrameCache = 0;
+			surface()->DrawGetTextureSize(m_iLoadingSpinnerImageID, twide, ttall); //now use twide and ttall for spinner
+			IScheme* pScheme = vgui::scheme()->GetIScheme(vgui::scheme()->GetScheme("Scheme"));
+			surface()->DrawSetColor(pScheme->GetColor("SteamDeckSpinner", { 201, 100, 0, alpha }));
+			surface()->DrawSetTextureFrame(m_iLoadingSpinnerImageID, ((int)m_fLoadingSpinnerFrame) % surface()->GetTextureNumFrames(m_iLoadingSpinnerImageID), &nFrameCache);
+			surface()->DrawSetTexture(m_iLoadingSpinnerImageID);
+
+			surface()->DrawTexturedRect(wide - ((twide / 512.f)* twide) - 30, 30, wide - 30, (ttall / 512.f) * ttall + 30);
+
+			static float SpinnerTimeDelta = 0;
+			static float SpinnerTime = 0;
+			SpinnerTimeDelta = engine->Time() - SpinnerTime;
+			m_fLoadingSpinnerFrame += SpinnerTimeDelta * 100;
+			SpinnerTime = engine->Time();
+		}
+		else
+		{
+			surface()->DrawTexturedRect(wide - twide, tall - ttall, wide, tall);
+		}
 	}
 
 	// update the menu alpha
@@ -1802,6 +1853,7 @@ void CBasePanel::PerformLayout()
 //-----------------------------------------------------------------------------
 void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 {
+	
 	int i;
 	BaseClass::ApplySchemeSettings(pScheme);
 
@@ -1864,7 +1916,7 @@ void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 	SetBgColor(Color(0, 0, 0, 0));
 
 	m_BackdropColor = pScheme->GetColor("mainmenu.backdrop", Color(0, 0, 0, 128));
-
+	
 	char filename[MAX_PATH];
 	if ( IsX360() )
 	{
@@ -1902,6 +1954,7 @@ void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 	{
 		m_iBackgroundImageID = surface()->CreateNewTextureID();
 	}
+
 	surface()->DrawSetTextureFile( m_iBackgroundImageID, filename, false, false );
 
 	if ( IsX360() )
@@ -1915,19 +1968,40 @@ void CBasePanel::ApplySchemeSettings(IScheme *pScheme)
 		}
 		surface()->DrawSetTextureFile( m_iProductImageID, filename, false, false );
 	}
-
+	
+	
 	if ( IsPC() )
 	{
 		// load the loading icon
 		if ( m_iLoadingImageID == -1 )
 		{
-			const char* loading = "console/startup_loading";
-			if ( IsSteamDeck() )
-				loading = "gamepadui/game_logo";
-			m_iLoadingImageID = surface()->CreateNewTextureID();
-			surface()->DrawSetTextureFile( m_iLoadingImageID, loading, false, false );
+			if (IsGamepadUI())
+			{
+				const char* loading = "gamepadui/game_logo.vtf";
+				m_iLoadingImageID = surface()->CreateNewTextureID();
+				surface()->DrawSetTextureFile(m_iLoadingImageID, loading, true, false);
+			
+			}
+			else
+			{
+				const char* loading = "console/startup_loading";
+				m_iLoadingImageID = surface()->CreateNewTextureID();
+				surface()->DrawSetTextureFile(m_iLoadingImageID, loading, false, false);
+			}
+			
+		}
+
+		if (IsGamepadUI())
+		{
+			if (m_iLoadingSpinnerImageID == -1)
+			{
+				const char* loadingCircle = "gamepadui/spinner";
+				m_iLoadingSpinnerImageID = surface()->CreateNewTextureID();
+				surface()->DrawSetTextureFile(m_iLoadingSpinnerImageID, loadingCircle, true, false);
+			}
 		}
 	}
+	
 }
 
 //-----------------------------------------------------------------------------

@@ -210,8 +210,7 @@ def build(bld):
 		source += [
 			'audio/voice_record_sdl.cpp' #[$OSXALL||$LINUXALL]
 		]
-		if bld.env.DEST_OS != "darwin":
-			source += ['audio/snd_dev_sdl.cpp']
+		source += ['audio/snd_dev_sdl.cpp']
 
 	source_win = [
 		'audio/snd_dev_direct.cpp',

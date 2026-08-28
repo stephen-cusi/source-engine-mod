@@ -272,6 +272,7 @@ public:
 	virtual int GetEvents( CCocoaEvent *pEvents, int nMaxEventsToReturn, bool debugEvents = false );
 #if defined(LINUX) || defined(PLATFORM_BSD)
 	virtual int PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbSpace, bool debugEvent = false );
+	virtual bool PeekAndRemoveDoubleTap( void );
 #endif
 
 	// Set the mouse cursor position.
@@ -403,6 +404,14 @@ private:
 	Uint32 m_MouseButtonDownTimeStamp;
 	int m_MouseButtonDownX;
 	int m_MouseButtonDownY;
+	bool m_bGotDoubleTap;
+
+#if defined( ANDROID )
+	bool m_bGotFingerDown;
+	Uint32 m_FingerDownTimeStamp;
+	float m_FingerDownX;
+	float m_FingerDownY;
+#endif
 
 	bool m_bResetVsync;
 	int m_nFramesToSkip;
@@ -580,6 +589,13 @@ InitReturnVal_t CSDLMgr::Init()
 	m_MouseButtonDownTimeStamp = 0;
 	m_MouseButtonDownX = 0;
 	m_MouseButtonDownY = 0;
+	m_bGotDoubleTap = false;
+#if defined( ANDROID )
+	m_bGotFingerDown = false;
+	m_FingerDownTimeStamp = 0;
+	m_FingerDownX = 0;
+	m_FingerDownY = 0;
+#endif
 
 	m_bExpectSyntheticMouseMotion = false;
 	m_nMouseTargetX = 0;
@@ -1032,11 +1048,11 @@ int CSDLMgr::PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbS
 			{
 				switch ( pEvent->m_VirtualKeyCode )
 				{
-				case SDL_SCANCODE_ESCAPE:
-					nRead++;
-					*pbEsc = true;
-					pEvent->m_EventType = CocoaEvent_Deleted;
-					break;
+			case SDL_SCANCODE_ESCAPE:
+				nRead++;
+				*pbEsc = true;
+				pEvent->m_EventType = CocoaEvent_Deleted;
+				break;
 				case SDL_SCANCODE_RETURN:
 				case SDL_SCANCODE_KP_ENTER:
 					nRead++;
@@ -1055,6 +1071,15 @@ int CSDLMgr::PeekAndRemoveKeyboardEvents( bool *pbEsc, bool *pbReturn, bool *pbS
 
 	m_CocoaEventsMutex.Unlock();
 	return nRead;
+}
+
+bool CSDLMgr::PeekAndRemoveDoubleTap( void )
+{
+	SDLAPP_FUNC;
+
+	bool bResult = m_bGotDoubleTap;
+	m_bGotDoubleTap = false;
+	return bResult;
 }
 
 #endif // LINUX
@@ -1847,13 +1872,21 @@ void CSDLMgr::PumpWindowsMessageLoop()
 
 				if ( bPressed )
 				{
+#if defined( ANDROID )
+					// Touchscreen taps drift more than mouse clicks, so allow a wider
+					// hit area when detecting a double-tap.
+					const int nDoubleClickSize = 64;
+#else
+					const int nDoubleClickSize = sdl_double_click_size.GetInt();
+#endif
 					if ( m_bGotMouseButtonDown &&
 						 ( (int)( event.button.timestamp - m_MouseButtonDownTimeStamp ) <= sdl_double_click_time.GetInt() ) &&
-						 ( abs( event.button.x - m_MouseButtonDownX ) <= sdl_double_click_size.GetInt() ) &&
-						 ( abs( event.button.y - m_MouseButtonDownY ) <= sdl_double_click_size.GetInt() ) )
+						 ( abs( event.button.x - m_MouseButtonDownX ) <= nDoubleClickSize ) &&
+						 ( abs( event.button.y - m_MouseButtonDownY ) <= nDoubleClickSize ) )
 					{
 						bDoublePress = true;
 						m_bGotMouseButtonDown = false;
+						m_bGotDoubleTap = true;
 					}
 					else
 					{
@@ -1875,6 +1908,33 @@ void CSDLMgr::PumpWindowsMessageLoop()
 
 				break;
 			}
+
+#if defined( ANDROID )
+			case SDL_FINGERDOWN:
+			{
+				// Android touches may not be converted to mouse button events,
+				// so detect the double-tap used to skip the startup video from
+				// finger events directly. Coordinates are normalized 0..1.
+				const float dx = event.tfinger.x - m_FingerDownX;
+				const float dy = event.tfinger.y - m_FingerDownY;
+				if ( m_bGotFingerDown &&
+					 ( (int)( event.tfinger.timestamp - m_FingerDownTimeStamp ) <= sdl_double_click_time.GetInt() ) &&
+					 ( dx > -0.1f && dx < 0.1f ) &&
+					 ( dy > -0.1f && dy < 0.1f ) )
+				{
+					m_bGotFingerDown = false;
+					m_bGotDoubleTap = true;
+				}
+				else
+				{
+					m_FingerDownTimeStamp = event.tfinger.timestamp;
+					m_FingerDownX = event.tfinger.x;
+					m_FingerDownY = event.tfinger.y;
+					m_bGotFingerDown = true;
+				}
+				break;
+			}
+#endif
 
 			case SDL_MOUSEWHEEL:
 			{
