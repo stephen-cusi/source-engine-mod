@@ -450,7 +450,7 @@ def configure(conf):
 		conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
 
 	if is_arm64_native:
-		conf.env.MSVC_TARGETS = ['arm64']
+		conf.env.MSVC_TARGETS = ['amd64_arm64'] # native ARM64 host, use cross-compile target that waf recognizes
 	else:
 		conf.env.MSVC_TARGETS = ['x64'] # explicitly request x86 target for MSVC
 		if conf.options.TARGET32:

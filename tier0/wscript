@@ -36,7 +36,7 @@ def build(bld):
 		'minidump.cpp',
 		'pch_tier0.cpp',
 		#'pmc360.cpp',		[$X360]
-		'PMELib.cpp',		#[$WINDOWS||$POSIX]
+		'PMELib.cpp',		#[$WINDOWS||$POSIX] -- x86/POSIX only, uses inline asm
 		'progressbar.cpp',
 		'security.cpp',
 		'systeminformation.cpp',
@@ -54,10 +54,12 @@ def build(bld):
 			'assert_dialog.rc',
 			#'etwprof.cpp',			[$WINDOWS]
 			'platform.cpp',
-			'pme.cpp',
 			'vcrmode.cpp',
 			'win32consoleio.cpp'
 		]
+		# pme.cpp is x86-only (uses inline asm, PME/PMELib)
+		if bld.env.DEST_CPU != 'aarch64':
+			source += ['pme.cpp']
 		if bld.env.DEST_CPU == 'amd64':
 			source += [
 				'InterlockedCompareExchange128.masm'
