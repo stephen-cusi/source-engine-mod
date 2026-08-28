@@ -424,7 +424,9 @@ def check_deps(conf):
 		conf.check(lib='SDL2', uselib_store='SDL2')
 		conf.check(lib='libjpeg', uselib_store='JPEG', define_name='HAVE_JPEG')
 		conf.check(lib='libpng', uselib_store='PNG', define_name='HAVE_PNG')
-		conf.check(lib='d3dx9', uselib_store='D3DX9')
+		# d3dx9 is not available on ARM64; only needed by client (togl, shaderapidx9)
+		if conf.env.DEST_CPU != 'aarch64':
+			conf.check(lib='d3dx9', uselib_store='D3DX9')
 		conf.check(lib='d3d9', uselib_store='D3D9')
 		conf.check(lib='dsound', uselib_store='DSOUND')
 		conf.check(lib='dxguid', uselib_store='DXGUID')
@@ -436,13 +438,23 @@ def check_deps(conf):
 def configure(conf):
 	conf.load('fwgslib reconfigure compiler_optimizations')
 
+	# Detect ARM64 natively (WoA: Windows on ARM)
+	is_arm64_native = (conf.env.DEST_OS == 'win32' and os.environ.get('PROCESSOR_ARCHITECTURE', '').upper() == 'ARM64')
+
 	# Force XP compability, all build targets should add
 	# subsystem=bld.env.MSVC_SUBSYSTEM
 	# TODO: wrapper around bld.stlib, bld.shlib and so on?
-	conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
-	conf.env.MSVC_TARGETS = ['x64'] # explicitly request x86 target for MSVC
-	if conf.options.TARGET32:
-		conf.env.MSVC_TARGETS = ['x86']
+	if is_arm64_native:
+		conf.env.MSVC_SUBSYSTEM = 'WINDOWS'
+	else:
+		conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
+
+	if is_arm64_native:
+		conf.env.MSVC_TARGETS = ['arm64']
+	else:
+		conf.env.MSVC_TARGETS = ['x64'] # explicitly request x86 target for MSVC
+		if conf.options.TARGET32:
+			conf.env.MSVC_TARGETS = ['x86']
 
 	if sys.platform == 'win32':
 		conf.load('msvc_pdb_ext msdev msvs msvcdeps')
@@ -452,8 +464,12 @@ def configure(conf):
 	elif conf.env.DEST_OS == 'darwin':
 		conf.load('mm_hook')
 
+	# HACKHACK: override msvc DEST_CPU value by something that we understand
+	if conf.env.DEST_CPU == 'arm64':
+		conf.env.DEST_CPU = 'aarch64'
+
 	conf.env.BIT32_MANDATORY = conf.options.TARGET32
-	if conf.env.BIT32_MANDATORY:
+	if conf.env.BIT32_MANDATORY and conf.env.DEST_CPU != 'aarch64':
 		Logs.info('WARNING: will build engine for 32-bit target')
 		conf.load('force_32bit')
 
@@ -536,9 +552,19 @@ def configure(conf):
 		cflags += flags
 		linkflags += flags
 	else:
+		arch_flag = ''
+		if conf.env.DEST_CPU == 'x86':
+			arch_flag = '/arch:SSE'
+		elif conf.env.DEST_CPU == 'x86_64':
+			arch_flag = '/arch:AVX'
+		# ARM64: no /arch: flag needed
+
 		cflags += [
 			'/I'+os.path.abspath('.')+'/thirdparty/SDL',
-			'/arch:SSE' if conf.env.DEST_CPU == 'x86' else '/arch:AVX',
+		]
+		if arch_flag:
+			cflags += [arch_flag]
+		cflags += [
 			'/GF',
 			'/Gy',
 			'/fp:fast',
@@ -571,6 +597,10 @@ def configure(conf):
 			'/LIBPATH:'+os.path.abspath('.')+'/lib/win32/'+conf.env.DEST_CPU+'/',
 			'/LIBPATH:'+os.path.abspath('.')+'/dx9sdk/lib/'+conf.env.DEST_CPU+'/'
 		]
+		# ARM64: lib directories use 'arm64' naming, not 'aarch64'
+		if conf.env.DEST_CPU == 'aarch64':
+			linkflags[-2] = '/LIBPATH:'+os.path.abspath('.')+'/lib/win32/arm64/'
+			linkflags[-1] = '/LIBPATH:'+os.path.abspath('.')+'/dx9sdk/lib/arm64/'
 
 	# And here C++ flags starts to be treated separately
 	cxxflags = list(cflags)
@@ -586,6 +616,8 @@ def configure(conf):
 			conf.define('COMPILER_MSVC32', 1)
 		elif conf.env.DEST_CPU in ['x86_64', 'amd64']:
 			conf.define('COMPILER_MSVC64', 1)
+		elif conf.env.DEST_CPU == 'aarch64':
+			conf.define('COMPILER_MSVC64', 1) # ARM64 is 64-bit
 
 	if conf.env.COMPILER_CC != 'msvc':
 		conf.check_cc(cflags=cflags, linkflags=linkflags, msg='Checking for required C flags')
@@ -629,7 +661,9 @@ def build(bld):
 
 	if bld.env.DEST_OS in ['win32', 'android']:
 		sdl_name = 'SDL2.dll' if bld.env.DEST_OS == 'win32' else 'libSDL2.so'
-		sdl_path = os.path.join('lib', bld.env.DEST_OS, bld.env.DEST_CPU, sdl_name)
+		# ARM64: lib directories use 'arm64' naming, not 'aarch64'
+		cpu_dir = 'arm64' if bld.env.DEST_CPU == 'aarch64' else bld.env.DEST_CPU
+		sdl_path = os.path.join('lib', bld.env.DEST_OS, cpu_dir, sdl_name)
 		bld.install_files(bld.env.LIBDIR, [sdl_path])
 
 	if bld.env.DEST_OS == 'win32':
