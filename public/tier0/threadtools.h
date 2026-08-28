@@ -238,7 +238,11 @@ inline void ThreadPause()
 #elif defined( POSIX )
         sched_yield();
 #elif defined ( COMPILER_MSVC64 )
+#if defined( _M_ARM64 )
+	YieldProcessor();
+#else
 	_mm_pause();
+#endif
 #elif defined( COMPILER_MSVC32 )
 	__asm pause;
 #elif defined( COMPILER_MSVCX360 )
@@ -492,7 +496,7 @@ inline bool ThreadInterlockedAssignIf( uint32 volatile *p, uint32 value, uint32 
 //inline bool ThreadInterlockedAssignIf( int volatile *p, int value, int comperand )	{ return ThreadInterlockedAssignIf( (int32 volatile *)p, value, comperand ); }
 
 
-#if defined( _WIN64 )
+#if defined( _WIN64 ) && !defined( _M_ARM64 )
 typedef __m128i int128;
 inline int128 int128_zero()	{ return _mm_setzero_si128(); }
 PLATFORM_INTERFACE bool ThreadInterlockedAssignIf128( volatile int128 *pDest, const int128 &value, const int128 &comperand ) NOINLINE;
