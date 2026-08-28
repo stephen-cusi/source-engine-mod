@@ -144,6 +144,7 @@ projects={
 		'unicode',
 		'vgui2/vgui_controls',
 		'vgui2/src',
+		'vgui2/vgui_surfacelib',
 		'vphysics',
 		'vpklib',
 		'vstdlib',
