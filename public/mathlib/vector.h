@@ -25,7 +25,11 @@
 #if defined(__SSE__) || defined(_M_IX86_FP)
 #define USE_SSE
 // For MMX intrinsics
+#ifdef _M_ARM64
+#include <intrin.h>
+#else
 #include <xmmintrin.h>
+#endif
 #endif
 
 #include "tier0/dbg.h"

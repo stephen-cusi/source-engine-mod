@@ -22,7 +22,7 @@ const tchar* GetProcessorVendorId();
 
 static bool cpuid(uint32 function, uint32& out_eax, uint32& out_ebx, uint32& out_ecx, uint32& out_edx)
 {
-#if defined (__arm__) || defined (__aarch64__) || defined( _X360 )
+#if defined (__arm__) || defined (__aarch64__) || defined(_M_ARM64) || defined( _X360 )
 	return false;
 #elif defined(GNUC)
 
@@ -372,7 +372,7 @@ const tchar* GetProcessorArchName()
 	return "amd64";
 #elif defined(__i386__) || defined(_X86_) || defined(_M_IX86)
 	return "i386";
-#elif defined __aarch64__
+#elif defined __aarch64__ || defined(_M_ARM64)
         return "aarch64";
 #elif defined __arm__ || defined _M_ARM
         return "arm";

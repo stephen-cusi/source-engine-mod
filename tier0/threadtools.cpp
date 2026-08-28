@@ -1833,7 +1833,7 @@ bool ThreadInterlockedAssignIf64(volatile int64 *pDest, int64 value, int64 compe
 #endif
 }
 
-#ifdef _WIN64
+#if defined(_WIN64) && !defined(_M_ARM64)
 bool ThreadInterlockedAssignIf128( volatile int128 *pDest, const int128 &value, const int128 &comperand )
 {
 	DbgAssert( ( (size_t)pDest % 16 ) == 0 );
