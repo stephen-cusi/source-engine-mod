@@ -84,7 +84,7 @@ extern "C" NORETURN void Coroutine_LongJmp_Unchecked( jmp_buf buffer, int nResul
 #define Validate_Jump_Buffer( _Member ) COMPILE_TIME_ASSERT( (Q_offsetof( _JUMP_BUFFER, _Member ) == Q_offsetof( _Duplicate_JUMP_BUFFER, _Member )) && (SIZEOF_MEMBER( _JUMP_BUFFER, _Member ) == SIZEOF_MEMBER( _Duplicate_JUMP_BUFFER, _Member )) )
 
 	//validate that the structure in assembly matches what the crt setjmp thinks it is
-#	if defined( PLATFORM_64BITS )
+#	if defined( PLATFORM_64BITS ) && !defined( _M_ARM64 )
 		struct _Duplicate_JUMP_BUFFER
 		{
 			unsigned __int64 Frame;
@@ -140,7 +140,7 @@ extern "C" NORETURN void Coroutine_LongJmp_Unchecked( jmp_buf buffer, int nResul
 		Validate_Jump_Buffer( Xmm13 );
 		Validate_Jump_Buffer( Xmm14 );
 		Validate_Jump_Buffer( Xmm15 );
-#	else
+#	elif !defined( _M_ARM64 )
 		struct _Duplicate_JUMP_BUFFER
 		{
 			unsigned long Ebp;
