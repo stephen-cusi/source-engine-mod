@@ -574,6 +574,9 @@ def configure(conf):
 			'/TP',
 			'/EHsc'
 		]
+		# sse2neon.h requires new preprocessor on MSVC ARM64
+		if conf.env.DEST_CPU == 'aarch64':
+			cflags += ['/Zc:preprocessor']
 
 		if conf.options.BUILD_TYPE == 'debug':
 			linkflags += [
