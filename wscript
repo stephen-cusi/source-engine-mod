@@ -439,7 +439,7 @@ def configure(conf):
 	conf.load('fwgslib reconfigure compiler_optimizations')
 
 	# Detect ARM64 natively (WoA: Windows on ARM)
-	is_arm64_native = (conf.env.DEST_OS == 'win32' and os.environ.get('PROCESSOR_ARCHITECTURE', '').upper() == 'ARM64')
+	is_arm64_native = (sys.platform == 'win32' and os.environ.get('PROCESSOR_ARCHITECTURE', '').upper() == 'ARM64')
 
 	# Force XP compability, all build targets should add
 	# subsystem=bld.env.MSVC_SUBSYSTEM
@@ -450,7 +450,14 @@ def configure(conf):
 		conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
 
 	if is_arm64_native:
-		conf.env.MSVC_TARGETS = ['amd64_arm64'] # native ARM64 host, use cross-compile target that waf recognizes
+		# Patch waf's msvc platform list to support native ARM64 compilation
+		# waf 2.0.26 only knows cross-compile targets (amd64_arm64, x86_arm64)
+		# but on a native ARM64 host, we want to use vcvarsall.bat arm64
+		from waflib.Tools import msvc
+		if ('arm64', 'arm64') not in msvc.all_msvc_platforms:
+			msvc.all_msvc_platforms.append(('arm64', 'arm64'))
+		conf.env.MSVC_TARGETS = ['arm64']
+		Logs.info('ARM64 native: patched msvc platforms, targets=%s' % str(conf.env.MSVC_TARGETS))
 	else:
 		conf.env.MSVC_TARGETS = ['x64'] # explicitly request x86 target for MSVC
 		if conf.options.TARGET32:
