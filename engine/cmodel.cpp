@@ -862,7 +862,7 @@ BOX TRACING
 
 // Custom SIMD implementation for box brushes
 
-const fltx4 Four_DistEpsilons=FLTX4_SET_PS(DIST_EPSILON,DIST_EPSILON,DIST_EPSILON,DIST_EPSILON);
+const fltx4 Four_DistEpsilons = FLTX4_SET_PS(DIST_EPSILON,DIST_EPSILON,DIST_EPSILON,DIST_EPSILON);
 const int32 ALIGN16 g_CubeFaceIndex0[4] ALIGN16_POST = {0,1,2,-1};
 const int32 ALIGN16 g_CubeFaceIndex1[4] ALIGN16_POST = {3,4,5,-1};
 bool IntersectRayWithBoxBrush( TraceInfo_t *pTraceInfo, const cbrush_t *pBrush, cboxbrush_t *pBox )
@@ -1572,7 +1572,7 @@ void FASTCALL CM_TraceToLeaf( TraceInfo_t * RESTRICT pTraceInfo, int ndxLeaf, fl
 			fltx4 traceStart = LoadAlignedSIMD(pTraceInfo->m_start.Base());
 			fltx4 traceDelta = LoadAlignedSIMD(pTraceInfo->m_delta.Base());
 			fltx4 traceInvDelta = LoadAlignedSIMD(pTraceInfo->m_invDelta.Base());
-			 fltx4  = FLTX4_SET_PS();
+			static const fltx4 vecEpsilon = FLTX4_SET_PS(DISPCOLL_DIST_EPSILON,DISPCOLL_DIST_EPSILON,DISPCOLL_DIST_EPSILON,DISPCOLL_DIST_EPSILON);
 			// only used in !IS_POINT version:
 			fltx4 extents;
 			if (!IS_POINT)
@@ -2894,11 +2894,11 @@ CON_COMMAND( opt_test_collision, "Quick timing test in IsBoxIntersectingRay" )
 		numIters = Q_atoi(args.Arg(1));
 	}
 	{
-		 fltx4  = FLTX4_SET_PS();
-		 fltx4  = FLTX4_SET_PS();
-		 fltx4  = FLTX4_SET_PS();
-		 fltx4  = FLTX4_SET_PS();
-		 fltx4  = FLTX4_SET_PS();
+		fltx4 boxMin = FLTX4_SET_PS(1,1,1,0);
+		fltx4 boxMax = FLTX4_SET_PS(2,2,2,0);
+		fltx4 origin = FLTX4_SET_PS(0,0,0,0);
+		fltx4 delta = FLTX4_SET_PS(3,4,3,0);
+		fltx4 invdelta = FLTX4_SET_PS(1.0f/3.0f, 1.0f/4.0f, 1.0f/3.0f,0);
 		fltx4 flTolerance = ReplicateX4(.0001f);
 
 		double startTime = Plat_FloatTime();
@@ -2909,11 +2909,11 @@ CON_COMMAND( opt_test_collision, "Quick timing test in IsBoxIntersectingRay" )
 	}
 
 	{
-		 fltx4  = FLTX4_SET_PS();
-		 fltx4  = FLTX4_SET_PS();
-		 fltx4  = FLTX4_SET_PS();
-		 fltx4  = FLTX4_SET_PS();
-		 fltx4  = FLTX4_SET_PS();
+		fltx4 boxMin = FLTX4_SET_PS(1,1,1,0);
+		fltx4 boxMax = FLTX4_SET_PS(2,2,2,0);
+		fltx4 origin = FLTX4_SET_PS(0,0,0,0);
+		fltx4 delta = FLTX4_SET_PS(3,4,3,0);
+		fltx4 invdelta = FLTX4_SET_PS(1.0f/3.0f, 1.0f/4.0f, 1.0f/3.0f,0);
 		fltx4 flTolerance = ReplicateX4(.0001f);
 
 		double startTime = Plat_FloatTime();

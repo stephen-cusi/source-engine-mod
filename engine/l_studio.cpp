@@ -40,8 +40,10 @@
 #include "materialsystem/materialsystem_config.h"
 #include "materialsystem/itexture.h"
 #include "IHammer.h"
-#if defined( _WIN32 ) && !defined( _X360 )
+#if defined( _WIN32 ) && !defined( _X360 ) && !defined( _M_ARM64 )
 #include <xmmintrin.h>
+#elif defined( _M_ARM64 )
+#include <intrin.h>
 #endif
 #include "staticpropmgr.h"
 #include "materialsystem/hardwaretexels.h"

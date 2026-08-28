@@ -216,6 +216,10 @@ static const int k_cubMaxCoroutineStackSize = (32 * 1024);
 #if defined(_WIN64) && !defined(_M_ARM64)
 extern "C" byte *GetStackPtr64();
 #define GetStackPtr( pStackPtr)		byte *pStackPtr = GetStackPtr64();
+#elif defined(_M_ARM64)
+// ARM64: use MSVC intrinsic to get stack pointer
+#include <intrin.h>
+#define GetStackPtr( pStackPtr )	byte *pStackPtr = (byte*)_AddressOfReturnAddress()
 #else
 #ifdef WIN32
 #define GetStackPtr( pStackPtr )	byte *pStackPtr;	__asm mov pStackPtr, esp	

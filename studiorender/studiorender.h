@@ -22,8 +22,10 @@
 #include "flexrenderdata.h"
 #include "mathlib/compressed_vector.h"
 #include "r_studiolight.h"
-#if defined( _WIN32 ) && !defined( _X360 )
+#if defined( _WIN32 ) && !defined( _X360 ) && !defined( _M_ARM64 )
 #include <xmmintrin.h>
+#elif defined( _M_ARM64 )
+#include <intrin.h>
 #endif
 #include "tier0/dbg.h"
 
