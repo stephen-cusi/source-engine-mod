@@ -58,7 +58,9 @@ def build(bld):
 			'win32consoleio.cpp'
 		]
 		# pme.cpp is x86-only (uses inline asm, PME/PMELib)
-		if bld.env.DEST_CPU != 'aarch64':
+		if bld.env.DEST_CPU == 'aarch64':
+			source += ['pme_posix.cpp'] # ARM64: use stubs
+		else:
 			source += ['pme.cpp']
 		if bld.env.DEST_CPU == 'amd64':
 			source += [
