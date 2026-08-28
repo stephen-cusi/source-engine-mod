@@ -109,3 +109,14 @@ jobs:
     - name: Build dedicated macos-amd64
       run: |
         scripts/build-macos-amd64.sh -d
+
+  build-dedicated-windows-arm64:
+    runs-on: windows-11-arm
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build dedicated windows-arm64
+      run: |
+        git submodule init && git submodule update
+        ./waf.bat configure -T release -d
+        ./waf.bat build
