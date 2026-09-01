@@ -38,8 +38,8 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 - Bink audio support( for video_bink )
 
 # How to Build?
-- [Building instructions(EN)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(EN))
-- [Building instructions(RU)](https://github.com/nillerusr/source-engine/wiki/Source-Engine-(RU))
+- [Building instructions(EN)](https://github.com/stephen-cusi/source-engine-mod/wiki/Source-Engine-(EN))
+- [Building instructions(RU)](https://github.com/stephen-cusi/source-engine-mod/wiki/Source-Engine-(RU))
 
 ## Windows on ARM (WoA) Build
 
