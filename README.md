@@ -17,7 +17,6 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 # Features:
 - Android, OSX, FreeBSD, Windows, Linux( glibc, musl ) support
 - Arm support( except windows )
-- **Windows on ARM (WoA) native support** (Snapdragon X Elite, etc.)
 - 64bit support
 - Modern toolchains support
 - Fixed many undefined behaviours
@@ -40,46 +39,6 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 # How to Build?
 - [Building instructions(EN)](https://github.com/stephen-cusi/source-engine-mod/wiki/Source-Engine-(EN))
 - [Building instructions(RU)](https://github.com/stephen-cusi/source-engine-mod/wiki/Source-Engine-(RU))
-
-## Windows on ARM (WoA) Build
-
-This fork supports native ARM64 compilation for Windows on ARM devices (e.g., Snapdragon X Elite).
-
-### Prerequisites
-1. Install Visual Studio 2022 with **Desktop development with C++** workload
-2. Install **ARM64 build tools** (included in the workload)
-3. Install Python 3.x
-
-### Building
-```batch
-:: Open "Developer Command Prompt for VS 2022" (ARM64 Native)
-:: Or run vcvarsall.bat arm64
-
-cd path\to\source-engine
-python waf configure -T release -d
-python waf build
-```
-
-### Key Notes
-- The waf build system automatically detects ARM64 native compilation
-- No cross-compilation flags needed when building on ARM64 hardware
-- `d3dx9` is automatically skipped on ARM64 (not available)
-- Libraries are expected in `lib/win32/arm64/` directory
-- For dedicated server: `python waf configure -T release -d --build-games=hl2mp`
-
-### Library Structure
-```
-lib/
-  win32/
-    arm64/     ← ARM64 libraries go here
-      SDL2.lib
-      SDL2.dll
-      libjpeg.lib
-      libpng.lib
-      libz.lib
-    amd64/     ← x86_64 libraries
-    x86/       ← x86 libraries
-```
 
 # Support me
 BTC: `bc1qnjq92jj9uqjtafcx2zvnwd48q89hgtd6w8a6na`
