@@ -16,7 +16,7 @@ This project is using waf buildsystem. If you have waf-related questions look ht
 
 # Features:
 - Android, OSX, FreeBSD, Windows, Linux( glibc, musl ) support
-- Arm support( except windows )
+- Arm support( Windows dedicated server only )
 - 64bit support
 - Modern toolchains support
 - Fixed many undefined behaviours
