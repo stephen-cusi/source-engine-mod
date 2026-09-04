@@ -54,10 +54,10 @@ jobs:
           --build-games=hl2sb
 
       - name: Build
-        run: python3 ./waf build -j2
+        run: python3 ./waf build --target=client,server -j2
 
       - name: Install
-        run: python3 ./waf install -j2
+        run: python3 ./waf install --target=client,server -j2
 
       - name: Save build configuration
         run: cp build/config.log linux/info.txt
@@ -114,7 +114,7 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
           export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-          python3 ./waf install --strip
+          python3 ./waf install --target=client,server --strip
 
       - name: Upload Android build
         uses: actions/upload-artifact@v7
@@ -163,7 +163,7 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
           export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-          python3 ./waf install --strip
+          python3 ./waf install --target=client,server --strip
 
       - name: Upload Android build
         uses: actions/upload-artifact@v7
@@ -197,7 +197,9 @@ jobs:
           --32bits
 
       - name: Build and install
-        run: ./waf.bat install
+        run: >-
+          ./waf.bat build --target=client,server &&
+          ./waf.bat install --target=client,server
 
       - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
         run: |
@@ -232,7 +234,9 @@ jobs:
 
       - name: Build and install
         shell: pwsh
-        run: ./waf.bat install
+        run: >-
+          ./waf.bat build --target=client,server &&
+          ./waf.bat install --target=client,server
 
       - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
         run: |
@@ -242,74 +246,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: win-source-engine-amd64
-          path: ./win
-          if-no-files-found: error
-
-  build-dedicated-windows-i386:
-    name: Windows Dedicated (x86)
-    runs-on: windows-2022
-    timeout-minutes: 60
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
-      - name: Configure
-        run: >-
-          ./waf.bat configure
-          -T release
-          -d
-          --prefix=./win
-          -4
-
-      - name: Build and install
-        run: ./waf.bat install
-
-      - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
-        run: |
-          Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
-
-      - name: Upload Windows build
-        uses: actions/upload-artifact@v7
-        with:
-          name: win-source-engine-d-i386
-          path: ./win
-          if-no-files-found: error
-
-  build-dedicated-windows-amd64:
-    name: Windows Dedicated (x64)
-    runs-on: windows-2022
-    timeout-minutes: 60
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
-      - name: Configure
-        shell: pwsh
-        run: >-
-          ./waf.bat configure
-          -T release
-          -d
-          --prefix=./win
-          --disable-warns
-
-      - name: Build and install
-        shell: pwsh
-        run: ./waf.bat install
-
-      - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
-        run: |
-          Get-ChildItem -Path ./win -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
-
-      - name: Upload Windows build
-        uses: actions/upload-artifact@v7
-        with:
-          name: win-source-engine-d-amd64
           path: ./win
           if-no-files-found: error
 
@@ -343,8 +279,8 @@ jobs:
 
       - name: Build and install
         run: |
-          python3 ./waf build
-          python3 ./waf install
+          python3 ./waf build --target=client,server
+          python3 ./waf install --target=client,server
 
       - name: Upload macOS build
         uses: actions/upload-artifact@v7
@@ -385,88 +321,12 @@ jobs:
 
       - name: Build and install
         run: |
-          python3 ./waf build
-          python3 ./waf install
+          python3 ./waf build --target=client,server
+          python3 ./waf install --target=client,server
 
       - name: Upload macOS build
         uses: actions/upload-artifact@v7
         with:
           name: source-engine-macos-arm64
-          path: ./macos
-          if-no-files-found: error
-
-  build-dedicated-macos-amd64:
-    name: macOS Dedicated (x86_64)
-    runs-on: macos-15-intel
-    timeout-minutes: 60
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
-      - name: Install build dependencies
-        run: |
-          brew untap aws/tap || true
-          brew install sdl2 pkg-config
-
-      - name: Configure
-        run: >-
-          python3 ./waf configure
-          -T release
-          -d
-          --disable-warns
-          --prefix=./macos
-
-      - name: Build and install
-        run: |
-          python3 ./waf build
-          python3 ./waf install
-
-      - name: Upload macOS build
-        uses: actions/upload-artifact@v7
-        with:
-          name: source-engine-dedicated-macos-amd64
-          path: ./macos
-          if-no-files-found: error
-
-  build-dedicated-macos-arm64:
-    name: macOS Dedicated (arm64)
-    runs-on: macos-latest
-    timeout-minutes: 60
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
-      - name: Install build dependencies
-        run: |
-          brew untap aws/tap || true
-          brew install sdl2 pkg-config
-
-      - name: Configure
-        run: |
-          if [ "$(uname -m)" != "arm64" ]; then
-            echo "Expected arm64 host, got: $(uname -m)" >&2
-            exit 1
-          fi
-          if [ "$(python3 -c 'import platform; print(platform.machine())')" != "arm64" ]; then
-            echo "Python reports non-arm64 (likely running under Rosetta); native Python required" >&2
-            exit 1
-          fi
-          python3 ./waf configure -T release -d --disable-warns --prefix=./macos
-
-      - name: Build and install
-        run: |
-          python3 ./waf build
-          python3 ./waf install
-
-      - name: Upload macOS build
-        uses: actions/upload-artifact@v7
-        with:
-          name: source-engine-dedicated-macos-arm64
           path: ./macos
           if-no-files-found: error
