@@ -51,7 +51,7 @@ jobs:
           -T release
           --disable-warns
           --prefix="${{ github.workspace }}/linux"
-          --build-games=hl2
+          --build-games=hl2sb
 
       - name: Build
         run: python3 ./waf build -j2
@@ -106,6 +106,7 @@ jobs:
             --android=armeabi-v7a-hard,host,21 \
             --target=../android_build/armeabi-v7a \
             --disable-warns \
+            --build-games=hl2sb \
             -4 \
             --togles
 
@@ -155,6 +156,7 @@ jobs:
             --android=aarch64,host,21 \
             --target=../android_build/aarch64 \
             --disable-warns \
+            --build-games=hl2sb \
             --togles
 
       - name: Build and install
@@ -191,6 +193,7 @@ jobs:
           -T release
           --prefix=./win
           --disable-warns
+          --build-games=hl2sb
           --32bits
 
       - name: Build and install
@@ -225,6 +228,7 @@ jobs:
           -T release
           --prefix=./win
           --disable-warns
+          --build-games=hl2sb
 
       - name: Build and install
         shell: pwsh
@@ -334,6 +338,7 @@ jobs:
           python3 ./waf configure
           -T release
           --disable-warns
+          --build-games=hl2sb
           --prefix=./macos
 
       - name: Build and install
@@ -376,7 +381,7 @@ jobs:
             echo "Python reports non-arm64 (likely running under Rosetta); native Python required" >&2
             exit 1
           fi
-          python3 ./waf configure -T release --disable-warns --prefix=./macos
+          python3 ./waf configure -T release --disable-warns --build-games=hl2sb --prefix=./macos
 
       - name: Build and install
         run: |
