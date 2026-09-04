@@ -1,0 +1,19 @@
+commit 9a6a676fa504888423da2e588652983936755cc4
+Author: tyabus <tyabustest@gmail.com>
+Date:   Mon Feb 21 01:02:09 2022 +0600
+
+    Fixed Statement in spark explosion water check
+
+diff --git a/src/game/server/explode.cpp b/src/game/server/explode.cpp
+index 42d8df35..6d44ef5b 100644
+--- a/src/game/server/explode.cpp
++++ b/src/game/server/explode.cpp
+@@ -352,7 +352,7 @@ void CEnvExplosion::InputExplode( inputdata_t &inputdata )
+ 	SetNextThink( gpGlobals->curtime + 0.3 );
+ 
+ 	// Only do these effects if we're not submerged
+-	if ( UTIL_PointContents( GetAbsOrigin() ) & CONTENTS_WATER )
++	if ( !(UTIL_PointContents( GetAbsOrigin() ) & CONTENTS_WATER ) )
+ 	{
+ 		// draw sparks
+ 		if ( !( m_spawnflags & SF_ENVEXPLOSION_NOSPARKS ) )

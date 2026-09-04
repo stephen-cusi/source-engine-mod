@@ -1,0 +1,3 @@
+770a7e6e Fixed CHL2GameMovement::CanAccelerate being always true
+ src/game/shared/hl2/hl_gamemovement.cpp | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)

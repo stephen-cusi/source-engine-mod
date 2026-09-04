@@ -1,0 +1,20 @@
+commit ca1b51e4d161ad5be2bd44925a2b538a3e7a67eb
+Author: tyabus <tyabustest@gmail.com>
+Date:   Mon Aug 16 00:10:26 2021 +0600
+
+    Fixed Schrodinger's crouch bug
+
+diff --git a/src/game/shared/gamemovement.cpp b/src/game/shared/gamemovement.cpp
+index 69fef9b8..ed705524 100644
+--- a/src/game/shared/gamemovement.cpp
++++ b/src/game/shared/gamemovement.cpp
+@@ -4182,9 +4182,6 @@ void CGameMovement::FinishUnDuckJump( trace_t &trace )
+ //-----------------------------------------------------------------------------
+ void CGameMovement::FinishDuck( void )
+ {
+-	if ( player->GetFlags() & FL_DUCKING )
+-		return;
+-
+ 	player->AddFlag( FL_DUCKING );
+ 	player->m_Local.m_bDucked = true;
+ 	player->m_Local.m_bDucking = false;

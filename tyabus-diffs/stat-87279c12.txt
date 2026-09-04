@@ -1,0 +1,4 @@
+87279c12 Don't let player use Sprint while in a vehicle
+ src/game/client/hl2mp/c_hl2mp_player.cpp | 4 ++--
+ src/game/server/hl2/hl2_player.cpp       | 1 +
+ 2 files changed, 3 insertions(+), 2 deletions(-)

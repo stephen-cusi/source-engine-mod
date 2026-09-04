@@ -1,0 +1,19 @@
+commit 6cf047a5216b86cdb1447d6b8eaf60d6c97a1be3
+Author: tyabus <tyabustest@gmail.com>
+Date:   Mon Aug 16 00:16:27 2021 +0600
+
+    client/physics.cpp: DEFAULT_TICK_INTERVAL -> gpGlobals->interval_per_tick
+
+diff --git a/src/game/client/physics.cpp b/src/game/client/physics.cpp
+index fb182ab0..15d292b4 100644
+--- a/src/game/client/physics.cpp
++++ b/src/game/client/physics.cpp
+@@ -177,7 +177,7 @@ void PhysicsLevelInit( void )
+ 	physenv->SetGravity( Vector(0, 0, -GetCurrentGravity() ) );
+ 	// 15 ms per tick
+ 	// NOTE: Always run client physics at this rate - helps keep ragdolls stable
+-	physenv->SetSimulationTimestep( IsXbox() ? DEFAULT_XBOX_CLIENT_VPHYSICS_TICK : DEFAULT_TICK_INTERVAL );
++	physenv->SetSimulationTimestep( IsXbox() ? DEFAULT_XBOX_CLIENT_VPHYSICS_TICK : gpGlobals->interval_per_tick );
+ 	physenv->SetCollisionEventHandler( &g_Collisions );
+ 	physenv->SetCollisionSolver( &g_Collisions );
+ 

@@ -1,0 +1,19 @@
+commit 3ffb1c9bb78e9eeea9fdae06796ffb425b202785
+Author: tyabus <tyabustest@gmail.com>
+Date:   Sun Feb 20 21:32:27 2022 +0600
+
+    Enable shadow receiving on viewmodels
+
+diff --git a/src/game/shared/baseviewmodel_shared.h b/src/game/shared/baseviewmodel_shared.h
+index 15d3be53..3df00a17 100644
+--- a/src/game/shared/baseviewmodel_shared.h
++++ b/src/game/shared/baseviewmodel_shared.h
+@@ -145,7 +145,7 @@ public:
+ 	// Should this object receive shadows?
+ 	virtual bool			ShouldReceiveProjectedTextures( int flags )
+ 	{
+-		return false;
++		return true;
+ 	}
+ 
+ 	// Add entity to visible view models list?

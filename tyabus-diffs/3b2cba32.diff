@@ -1,0 +1,19 @@
+commit 3b2cba32fec2fa357e25e440dac5e379fc6836e2
+Author: tyabus <tyabustest@gmail.com>
+Date:   Fri Feb 18 01:09:58 2022 +0600
+
+    SDK2013CE:  Stopped negative FOVs from occuring
+
+diff --git a/src/game/client/view.cpp b/src/game/client/view.cpp
+index d74d326e..af2cf4d5 100644
+--- a/src/game/client/view.cpp
++++ b/src/game/client/view.cpp
+@@ -736,7 +736,7 @@ void CViewRender::SetUpViews()
+ 	float flFOVOffset = fDefaultFov - view.fov;
+ 
+ 	//Adjust the viewmodel's FOV to move with any FOV offsets on the viewer's end
+-	view.fovViewmodel = g_pClientMode->GetViewModelFOV() - flFOVOffset;
++	view.fovViewmodel = fabs( g_pClientMode->GetViewModelFOV() - flFOVOffset );
+ 
+ 	if ( UseVR() )
+ 	{

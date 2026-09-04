@@ -1,0 +1,30 @@
+commit a7f227baab08d4adcec244b9c23ead434e13b31c
+Author: tyabus <tyabustest@gmail.com>
+Date:   Wed Apr 26 15:27:16 2023 +0600
+
+    server: Always recharge suit power if sv_infinite_aux_power is enabled
+
+diff --git a/src/game/server/hl2/hl2_player.cpp b/src/game/server/hl2/hl2_player.cpp
+index f70d9276..e9c8d94f 100644
+--- a/src/game/server/hl2/hl2_player.cpp
++++ b/src/game/server/hl2/hl2_player.cpp
+@@ -95,7 +95,7 @@ ConVar player_showpredictedposition_timestep( "player_showpredictedposition_time
+ ConVar player_squad_transient_commands( "player_squad_transient_commands", "1", FCVAR_REPLICATED );
+ ConVar player_squad_double_tap_time( "player_squad_double_tap_time", "0.25" );
+ 
+-ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "0" );
++ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "0", FCVAR_NOTIFY );
+ 
+ ConVar autoaim_unlock_target( "autoaim_unlock_target", "0.8666" );
+ 
+@@ -1956,6 +1956,10 @@ bool CHL2_Player::SuitPower_RemoveDevice( const CSuitPowerDevice &device )
+ #define SUITPOWER_BEGIN_RECHARGE_DELAY	0.5f
+ bool CHL2_Player::SuitPower_ShouldRecharge( void )
+ {
++	// Suitpower cheat on?
++	if ( sv_infinite_aux_power.GetBool() )
++		return true;
++
+ 	// Make sure all devices are off.
+ 	if( m_HL2Local.m_bitsActiveDevices != 0x00000000 )
+ 		return false;

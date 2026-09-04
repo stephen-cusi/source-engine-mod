@@ -1,0 +1,28 @@
+commit 770a7e6eb254fb2bf202e7820fa76d0750fc59a7
+Author: tyabus <tyabustest@gmail.com>
+Date:   Mon Aug 16 00:14:22 2021 +0600
+
+    Fixed CHL2GameMovement::CanAccelerate being always true
+
+diff --git a/src/game/shared/hl2/hl_gamemovement.cpp b/src/game/shared/hl2/hl_gamemovement.cpp
+index e7e573ec..4b7dec3b 100644
+--- a/src/game/shared/hl2/hl_gamemovement.cpp
++++ b/src/game/shared/hl2/hl_gamemovement.cpp
+@@ -1137,9 +1137,7 @@ bool CHL2GameMovement::CanAccelerate()
+ 	}
+ #endif
+ 
+-	BaseClass::CanAccelerate();
+-
+-	return true;
++	return BaseClass::CanAccelerate();
+ }
+ 
+ 
+@@ -1149,4 +1147,4 @@ bool CHL2GameMovement::CanAccelerate()
+ 	IGameMovement *g_pGameMovement = ( IGameMovement * )&g_GameMovement;
+ 
+ 	EXPOSE_SINGLE_INTERFACE_GLOBALVAR(CGameMovement, IGameMovement,INTERFACENAME_GAMEMOVEMENT, g_GameMovement );
+-#endif
+\ No newline at end of file
++#endif

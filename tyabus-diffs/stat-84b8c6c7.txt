@@ -1,0 +1,3 @@
+84b8c6c7 shared: Unlock all movevars (remove FCVAR_DEVELOPMENTONLY flag from them)
+ src/game/shared/movevars_shared.cpp | 39 +++++--------------------------------
+ 1 file changed, 5 insertions(+), 34 deletions(-)

@@ -1,0 +1,38 @@
+commit 87279c1239c4f8bc2482a016c92c0a9d6d58c8e8
+Author: tyabus <tyabustest@gmail.com>
+Date:   Mon Feb 21 18:49:02 2022 +0600
+
+    Don't let player use Sprint while in a vehicle
+
+diff --git a/src/game/client/hl2mp/c_hl2mp_player.cpp b/src/game/client/hl2mp/c_hl2mp_player.cpp
+index 49e55e29..9df87717 100644
+--- a/src/game/client/hl2mp/c_hl2mp_player.cpp
++++ b/src/game/client/hl2mp/c_hl2mp_player.cpp
+@@ -558,7 +558,7 @@ Vector C_HL2MP_Player::GetAutoaimVector( float flDelta )
+ //-----------------------------------------------------------------------------
+ bool C_HL2MP_Player::CanSprint( void )
+ {
+-	return ( (!m_Local.m_bDucked && !m_Local.m_bDucking) && (GetWaterLevel() != 3) );
++	return ( (!m_Local.m_bDucked && !m_Local.m_bDucking) && (!IsInAVehicle()) && (GetWaterLevel() != 3) );
+ }
+ 
+ 
+@@ -982,4 +982,4 @@ void C_HL2MP_Player::PostThink( void )
+ 
+ 	// Store the eye angles pitch so the client can compute its animation state correctly.
+ 	m_angEyeAngles = EyeAngles();
+-}
+\ No newline at end of file
++}
+diff --git a/src/game/server/hl2/hl2_player.cpp b/src/game/server/hl2/hl2_player.cpp
+index 0b145ea3..f70d9276 100644
+--- a/src/game/server/hl2/hl2_player.cpp
++++ b/src/game/server/hl2/hl2_player.cpp
+@@ -1162,6 +1162,7 @@ bool CHL2_Player::CanSprint()
+ {
+ 	return ( m_bSprintEnabled &&										// Only if sprint is enabled 
+ 			!IsWalking() &&												// Not if we're walking
++			!IsInAVehicle() && 							// Nor if we're in a vehicle
+ 			!( m_Local.m_bDucked && !m_Local.m_bDucking ) &&			// Nor if we're ducking
+ 			(GetWaterLevel() != 3) &&									// Certainly not underwater
+ 			(GlobalEntity_GetState("suit_no_sprint") != GLOBAL_ON) );	// Out of the question without the sprint module

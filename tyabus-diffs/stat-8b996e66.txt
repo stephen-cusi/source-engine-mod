@@ -1,0 +1,3 @@
+8b996e66 Add noshadow flag to the SetWeaponVisible function
+ src/game/shared/basecombatweapon_shared.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)

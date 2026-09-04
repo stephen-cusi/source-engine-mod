@@ -1,0 +1,4 @@
+592e37a8 Forcefully spawn former spectator after team change
+ src/game/server/hl2mp/hl2mp_client.cpp |  4 ++--
+ src/game/server/hl2mp/hl2mp_player.cpp | 29 +++++++++++++++++++++++++++--
+ 2 files changed, 29 insertions(+), 4 deletions(-)

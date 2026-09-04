@@ -1,0 +1,5 @@
+d8fdd1ff viewmodel_fov,default_fov cvars are no longer cheat
+ src/game/client/hl2/hl2_clientmode.cpp | 2 +-
+ src/game/client/view.cpp               | 4 ----
+ src/game/shared/shareddefs.h           | 2 +-
+ 3 files changed, 2 insertions(+), 6 deletions(-)

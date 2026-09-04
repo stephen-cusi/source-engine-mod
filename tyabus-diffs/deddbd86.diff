@@ -1,0 +1,37 @@
+commit deddbd861df0e14a33df0f6cfc3ad87af3064ff2
+Author: tyabus <tyabustest@gmail.com>
+Date:   Tue May 3 15:32:40 2022 +0600
+
+    Fixed vehicles shifting viewangles of every player on the server
+
+diff --git a/src/game/shared/vehicle_viewblend_shared.cpp b/src/game/shared/vehicle_viewblend_shared.cpp
+index 51ac1eb0..52be3854 100644
+--- a/src/game/shared/vehicle_viewblend_shared.cpp
++++ b/src/game/shared/vehicle_viewblend_shared.cpp
+@@ -279,14 +279,21 @@ void SharedVehicleViewSmoothing(CBasePlayer *pPlayer,
+ 
+ 			// Enter animation has finished, align view with the eye attachment point
+ 			// so they can start mouselooking around.
+-			if ( !bExitAnimOn )
++#ifdef CLIENT_DLL
++			if ( pPlayer->IsLocalPlayer() )
+ 			{
+-				Vector localEyeOrigin;
+-				QAngle localEyeAngles;
++#endif
++				if ( !bExitAnimOn )
++				{
++					Vector localEyeOrigin;
++					QAngle localEyeAngles;
+ 
+-				pData->pVehicle->GetAttachmentLocal( eyeAttachmentIndex, localEyeOrigin, localEyeAngles );
+-				pPlayer->SetLocalAngles( localEyeAngles );
++					pData->pVehicle->GetAttachmentLocal( eyeAttachmentIndex, localEyeOrigin, localEyeAngles );
++					pPlayer->SetLocalAngles( localEyeAngles );
++				}
++#ifdef CLIENT_DLL
+ 			}
++#endif
+ 		}
+ 	}
+ 

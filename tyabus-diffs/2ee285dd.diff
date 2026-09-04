@@ -1,0 +1,32 @@
+commit 2ee285ddc744ee80c7099dc464c03621a472f522
+Author: tyabus <tyabustest@gmail.com>
+Date:   Sun Apr 10 21:08:05 2022 +0600
+
+    Drop holding object on ChangeTeam
+
+diff --git a/src/game/server/hl2/hl2_player.h b/src/game/server/hl2/hl2_player.h
+index dc39c800..9906e864 100644
+--- a/src/game/server/hl2/hl2_player.h
++++ b/src/game/server/hl2/hl2_player.h
+@@ -82,7 +82,7 @@ public:
+ //=============================================================================
+ #if defined ( HL2MP )
+ class CHL2_Player : public CBaseMultiplayerPlayer
+-#endif
++#else
+ class CHL2_Player : public CBasePlayer
+ #endif
+ {
+diff --git a/src/game/server/hl2mp/hl2mp_player.cpp b/src/game/server/hl2mp/hl2mp_player.cpp
+index 0f402fd7..01a0e2dc 100644
+--- a/src/game/server/hl2mp/hl2mp_player.cpp
++++ b/src/game/server/hl2mp/hl2mp_player.cpp
+@@ -945,6 +945,8 @@ void CHL2MP_Player::ChangeTeam( int iTeam )
+ 		SetPlayerModel();
+ 	}
+ 
++	ClearUseEntity();
++
+ 	if ( iTeam == TEAM_SPECTATOR )
+ 	{
+ 		RemoveAllItems( true );
