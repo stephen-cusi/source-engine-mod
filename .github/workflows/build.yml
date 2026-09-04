@@ -34,9 +34,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
             build-essential \
-            libavcodec-dev \
-            libavformat-dev \
-            libavutil-dev \
             libbz2-dev \
             libcurl4-gnutls-dev \
             libedit-dev \
@@ -46,7 +43,6 @@ jobs:
             libopenal-dev \
             libpng-dev \
             libsdl2-dev \
-            libswresample-dev \
             zlib1g-dev
 
       - name: Configure
@@ -104,7 +100,6 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
           export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-          ./scripts/build-ffmpeg-android.sh armeabi-v7a-hard
           python3 ./waf configure \
             -T release \
             --prefix=../android_build \
@@ -154,7 +149,6 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
           export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-          ./scripts/build-ffmpeg-android.sh aarch64
           python3 ./waf configure \
             -T release \
             --prefix=../android_build \
@@ -224,18 +218,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Prepare FFmpeg
-        shell: pwsh
-        run: |
-          curl -sL -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
-          Expand-Archive -Force ffmpeg.zip -DestinationPath ffmpeg
-          $ff = (Get-ChildItem ffmpeg -Directory | Select-Object -First 1).FullName
-          Write-Output "FFmpeg dir: $ff"
-          Copy-Item "$ff/include/libavcodec","$ff/include/libavdevice","$ff/include/libavfilter","$ff/include/libavformat","$ff/include/libavutil" common/ -Recurse -Force
-          Copy-Item "$ff/include/libswresample","$ff/include/libswscale" common/ -Recurse -Force
-          Copy-Item "$ff/lib/avcodec.lib","$ff/lib/avformat.lib","$ff/lib/avutil.lib","$ff/lib/swresample.lib","$ff/lib/swscale.lib" lib/win32/amd64/
-          Copy-Item "$ff/bin/avcodec-62.dll","$ff/bin/avformat-62.dll","$ff/bin/avutil-60.dll","$ff/bin/swresample-6.dll","$ff/bin/swscale-9.dll" lib/win32/amd64/
-
       - name: Configure
         shell: pwsh
         run: >-
@@ -303,18 +285,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Prepare FFmpeg
-        shell: pwsh
-        run: |
-          curl -sL -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
-          Expand-Archive -Force ffmpeg.zip -DestinationPath ffmpeg
-          $ff = (Get-ChildItem ffmpeg -Directory | Select-Object -First 1).FullName
-          Write-Output "FFmpeg dir: $ff"
-          Copy-Item "$ff/include/libavcodec","$ff/include/libavdevice","$ff/include/libavfilter","$ff/include/libavformat","$ff/include/libavutil" common/ -Recurse -Force
-          Copy-Item "$ff/include/libswresample","$ff/include/libswscale" common/ -Recurse -Force
-          Copy-Item "$ff/lib/avcodec.lib","$ff/lib/avformat.lib","$ff/lib/avutil.lib","$ff/lib/swresample.lib","$ff/lib/swscale.lib" lib/win32/amd64/
-          Copy-Item "$ff/bin/avcodec-62.dll","$ff/bin/avformat-62.dll","$ff/bin/avutil-60.dll","$ff/bin/swresample-6.dll","$ff/bin/swscale-9.dll" lib/win32/amd64/
-
       - name: Configure
         shell: pwsh
         run: >-
@@ -357,7 +327,7 @@ jobs:
       - name: Install build dependencies
         run: |
           brew untap aws/tap || true
-          brew install sdl2 pkg-config ffmpeg
+          brew install sdl2 pkg-config
 
       - name: Configure
         run: >-
@@ -392,7 +362,7 @@ jobs:
       - name: Install build dependencies
         run: |
           brew untap aws/tap || true
-          brew install sdl2 pkg-config ffmpeg
+          brew install sdl2 pkg-config
 
       - name: Configure
         env:
@@ -434,7 +404,7 @@ jobs:
       - name: Install build dependencies
         run: |
           brew untap aws/tap || true
-          brew install sdl2 pkg-config ffmpeg
+          brew install sdl2 pkg-config
 
       - name: Configure
         run: >-
@@ -470,7 +440,7 @@ jobs:
       - name: Install build dependencies
         run: |
           brew untap aws/tap || true
-          brew install sdl2 pkg-config ffmpeg
+          brew install sdl2 pkg-config
 
       - name: Configure
         run: |
