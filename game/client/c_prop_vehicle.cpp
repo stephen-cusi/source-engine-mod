@@ -76,7 +76,7 @@ C_PropVehicleDriveable::C_PropVehicleDriveable() :
 
 	m_ViewSmoothingData.pVehicle = this;
 	m_ViewSmoothingData.bClampEyeAngles = true;
-	m_ViewSmoothingData.bDampenEyePosition = true;
+	m_ViewSmoothingData.bDampenEyePosition = false;
 
 	m_ViewSmoothingData.flPitchCurveZero = PITCH_CURVE_ZERO;
 	m_ViewSmoothingData.flPitchCurveLinear = PITCH_CURVE_LINEAR;
@@ -203,12 +203,15 @@ void C_PropVehicleDriveable::DampenEyePosition( Vector &vecVehicleEyePos, QAngle
 //-----------------------------------------------------------------------------
 void C_PropVehicleDriveable::GetVehicleViewPosition( int nRole, Vector *pAbsOrigin, QAngle *pAbsAngles, float *pFOV /*=NULL*/ )
 {
-	SharedVehicleViewSmoothing( m_hPlayer,
-								pAbsOrigin, pAbsAngles,
-								m_bEnterAnimOn, m_bExitAnimOn,
-								m_vecEyeExitEndpoint, 
-								&m_ViewSmoothingData,
-								pFOV );
+	if( m_hPlayer && m_hPlayer->IsLocalPlayer() )
+	{
+		SharedVehicleViewSmoothing( m_hPlayer,
+									pAbsOrigin, pAbsAngles,
+									m_bEnterAnimOn, m_bExitAnimOn,
+									m_vecEyeExitEndpoint, 
+									&m_ViewSmoothingData,
+									pFOV );
+	}
 }
 
 

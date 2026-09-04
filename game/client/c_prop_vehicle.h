@@ -54,7 +54,7 @@ public:
 	virtual bool PrimaryAmmoUsesClips() const { return false; }
 #endif
 
-	virtual bool IsPredicted() const { return false; }
+	virtual bool IsPredicted() const { return true; }
 	virtual int GetJoystickResponseCurve() const;
 
 // C_BaseEntity overrides.
