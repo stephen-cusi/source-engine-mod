@@ -608,7 +608,7 @@ Vector C_HL2MP_Player::GetAutoaimVector( float flDelta )
 //-----------------------------------------------------------------------------
 bool C_HL2MP_Player::CanSprint( void )
 {
-	return ( (!m_Local.m_bDucked && !m_Local.m_bDucking) && (GetWaterLevel() != 3) );
+	return ( (!m_Local.m_bDucked && !m_Local.m_bDucking) && (!IsInAVehicle()) && (GetWaterLevel() != 3) );
 }
 
 

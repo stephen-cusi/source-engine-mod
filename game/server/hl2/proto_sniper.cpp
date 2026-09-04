@@ -211,7 +211,6 @@ public:
 	bool IsLaserOn( void ) { return m_pBeam != NULL; }
 
 	void Event_Killed( const CTakeDamageInfo &info );
-	void Event_KilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &info );
 	void UpdateOnRemove( void );
 	int OnTakeDamage_Alive( const CTakeDamageInfo &info );
 	bool WeaponLOSCondition(const Vector &ownerPos, const Vector &targetPos, bool bSetConditions) {return true;}
@@ -360,7 +359,6 @@ private:
 	bool						m_bWarnedTargetEntity;
 
 	float						m_flTimeLastShotMissed;
-	bool						m_bKilledPlayer;
 	bool						m_bShootZombiesInChest;		///< if true, do not try to shoot zombies in the headcrab
 
 	COutputEvent				m_OnShotFired;
@@ -516,7 +514,6 @@ enum
 	SCHED_PSNIPER_SWEEP_TARGET_NOINTERRUPT,
 	SCHED_PSNIPER_SNAPATTACK,
 	SCHED_PSNIPER_NO_CLEAR_SHOT,
-	SCHED_PSNIPER_PLAYER_DEAD,
 };
 
 //=========================================================
@@ -531,7 +528,6 @@ enum
 	TASK_SNIPER_PAINT_SWEEP_TARGET,
 	TASK_SNIPER_ATTACK_CURSOR,
 	TASK_SNIPER_PAINT_NO_SHOT,
-	TASK_SNIPER_PLAYER_DEAD,
 };
 
 
@@ -1001,7 +997,6 @@ void CProtoSniper::Spawn( void )
 
 	m_flTimeLastAttackedPlayer = 0.0f;
 	m_bWarnedTargetEntity = false;
-	m_bKilledPlayer = false;
 }
 
 //-----------------------------------------------------------------------------
@@ -1366,19 +1361,7 @@ void CProtoSniper::Event_Killed( const CTakeDamageInfo &info )
 	UTIL_Remove( this );
 }
 
-//---------------------------------------------------------
-//---------------------------------------------------------
-void CProtoSniper::Event_KilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &info )
-{
-	if( pVictim && pVictim->IsPlayer() )
-	{
-		// Andrew; In HL2SB, we're never satisfied by killing just a single
-		// player.
-#ifndef HL2SB
-		m_bKilledPlayer = true;
-#endif
-	}
-}
+
 
 //---------------------------------------------------------
 //---------------------------------------------------------
@@ -1403,26 +1386,6 @@ int CProtoSniper::SelectSchedule ( void )
 		return SCHED_RELOAD;
 	}
 
-#ifdef HL2SB
-	// Andrew; check to see if a player even exists first!
-	if( !AI_GetSinglePlayer() )
-	{
-		// Look for an enemy.
-		SetEnemy( NULL );
-		return SCHED_PSNIPER_SCAN;
-	}
-
-	if( !AI_GetNearestPlayer( GetAbsOrigin() )->IsAlive() && m_bKilledPlayer )
-#else
-	if( !AI_GetSinglePlayer()->IsAlive() && m_bKilledPlayer )
-#endif
-	{
-		if( HasCondition(COND_IN_PVS) )
-		{
-			return SCHED_PSNIPER_PLAYER_DEAD;
-		}
-	}
-	
 	if( HasCondition( COND_HEAR_DANGER ) )
 	{
 		// Next priority is to be suppressed!
@@ -1978,18 +1941,6 @@ void CProtoSniper::StartTask( const Task_t *pTask )
 {
 	switch( pTask->iTask )
 	{
-	case TASK_SNIPER_PLAYER_DEAD:
-		{
-#ifdef HL2SB
-			m_hSweepTarget = AI_GetNearestPlayer( GetAbsOrigin() );
-#else
-			m_hSweepTarget = AI_GetSinglePlayer();
-#endif
-			SetWait( 4.0f );
-			LaserOn( m_hSweepTarget->GetAbsOrigin(), vec3_origin );
-		}
-		break;
-
 	case TASK_SNIPER_ATTACK_CURSOR:
 		break;
 
@@ -2163,19 +2114,6 @@ void CProtoSniper::RunTask( const Task_t *pTask )
 {
 	switch( pTask->iTask )
 	{
-	case TASK_SNIPER_PLAYER_DEAD:
-		if( IsWaitFinished() )
-		{
-			m_hSweepTarget = PickDeadPlayerTarget();
-			m_vecPaintStart = m_vecPaintCursor;
-			SetWait( 4.0f );
-		}
-		else
-		{
-			PaintTarget( m_hSweepTarget->GetAbsOrigin(), 4.0f );
-		}
-		break;
-
 	case TASK_SNIPER_ATTACK_CURSOR:
 		if( FireBullet( m_vecPaintCursor, true ) )
 		{
@@ -2629,6 +2567,7 @@ Vector CProtoSniper::LeadTarget( CBaseEntity *pTarget )
 CBaseEntity *CProtoSniper::PickDeadPlayerTarget()
 {
 	const int iSearchSize = 32;
+	int iNumEntities;
 #ifdef HL2SB
 	CBasePlayer *pTarget = AI_GetNearestPlayer( GetAbsOrigin() );
 #else
@@ -2636,10 +2575,13 @@ CBaseEntity *CProtoSniper::PickDeadPlayerTarget()
 #endif
 	CBaseEntity *pEntities[ iSearchSize ];
 
+	if( !pTarget )
+		pTarget = (CBasePlayer *)this; // Fallback to sniper's position
+
 #ifdef HL2SB
-	int iNumEntities = UTIL_EntitiesInSphere( pEntities, iSearchSize, AI_GetNearestPlayer( GetAbsOrigin() )->GetAbsOrigin(), 180.0f, 0 );
+	iNumEntities = UTIL_EntitiesInSphere( pEntities, iSearchSize, pTarget->GetAbsOrigin(), 180.0f, 0 );
 #else
-	int iNumEntities = UTIL_EntitiesInSphere( pEntities, iSearchSize, AI_GetSinglePlayer()->GetAbsOrigin(), 180.0f, 0 );
+	iNumEntities = UTIL_EntitiesInSphere( pEntities, iSearchSize, pTarget->GetAbsOrigin(), 180.0f, 0 );
 #endif
 
 	// Not very robust, but doesn't need to be. Randomly select a nearby object in the list that isn't an NPC.

@@ -672,7 +672,7 @@ bool CHL2MP_Player::WantsLagCompensationOnEntity( const CBasePlayer *pPlayer, co
 {
 	// No need to lag compensate at all if we're not attacking in this command and
 	// we haven't attacked recently.
-	if ( !( pCmd->buttons & IN_ATTACK ) && (pCmd->command_number - m_iLastWeaponFireUsercmd > 5) )
+	if ( !( pCmd->buttons & IN_ATTACK ) && !( pCmd->buttons & IN_ATTACK2 ) && (pCmd->command_number - m_iLastWeaponFireUsercmd > 5) )
 		return false;
 
 	// If this entity hasn't been transmitted to us and acked, then don't bother lag compensating it.
@@ -942,16 +942,8 @@ bool CHL2MP_Player::BumpWeapon( CBaseCombatWeapon *pWeapon )
 
 void CHL2MP_Player::ChangeTeam( int iTeam )
 {
-/*	if ( GetNextTeamChangeTime() >= gpGlobals->curtime )
-	{
-		char szReturnString[128];
-		Q_snprintf( szReturnString, sizeof( szReturnString ), "Please wait %d more seconds before trying to switch teams again.\n", (int)(GetNextTeamChangeTime() - gpGlobals->curtime) );
-
-		ClientPrint( this, HUD_PRINTTALK, szReturnString );
-		return;
-	}*/
-
 	bool bKill = false;
+	bool bWasSpectator = false;
 
 	if ( HL2MPRules()->IsTeamplay() != true && iTeam != TEAM_SPECTATOR )
 	{
@@ -967,6 +959,11 @@ void CHL2MP_Player::ChangeTeam( int iTeam )
 		}
 	}
 
+	if (this->GetTeamNumber() == TEAM_SPECTATOR)
+	{
+		bWasSpectator = true;
+	}
+
 	BaseClass::ChangeTeam( iTeam );
 
 	m_flNextTeamChangeTime = gpGlobals->curtime + TEAM_CHANGE_INTERVAL;
@@ -980,9 +977,23 @@ void CHL2MP_Player::ChangeTeam( int iTeam )
 		SetPlayerModel();
 	}
 
+	if ( bWasSpectator )
+	{
+		Spawn();
+		return; // everything is useless afterwards
+	}
+
+	DetonateTripmines();
+	ClearUseEntity();
+
 	if ( iTeam == TEAM_SPECTATOR )
 	{
 		RemoveAllItems( true );
+
+		if ( IsInAVehicle() )
+		{
+			LeaveVehicle();
+		}
 
 		State_Transition( STATE_OBSERVER_MODE );
 	}

@@ -107,7 +107,7 @@ ConVar player_showpredictedposition_timestep( "player_showpredictedposition_time
 ConVar player_squad_transient_commands( "player_squad_transient_commands", "1", FCVAR_REPLICATED );
 ConVar player_squad_double_tap_time( "player_squad_double_tap_time", "0.25" );
 
-ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "0", FCVAR_CHEAT );
+ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "0", FCVAR_NOTIFY );
 
 ConVar autoaim_unlock_target( "autoaim_unlock_target", "0.8666" );
 
@@ -1174,6 +1174,7 @@ bool CHL2_Player::CanSprint()
 {
 	return ( m_bSprintEnabled &&										// Only if sprint is enabled 
 			!IsWalking() &&												// Not if we're walking
+			!IsInAVehicle() && 										// Nor if we're in a vehicle
 			!( m_Local.m_bDucked && !m_Local.m_bDucking ) &&			// Nor if we're ducking
 			(GetWaterLevel() != 3) &&									// Certainly not underwater
 			(GlobalEntity_GetState("suit_no_sprint") != GLOBAL_ON) );	// Out of the question without the sprint module
@@ -1962,6 +1963,10 @@ bool CHL2_Player::SuitPower_RemoveDevice( const CSuitPowerDevice &device )
 #define SUITPOWER_BEGIN_RECHARGE_DELAY	0.5f
 bool CHL2_Player::SuitPower_ShouldRecharge( void )
 {
+	// Suitpower cheat on?
+	if ( sv_infinite_aux_power.GetBool() )
+		return true;
+
 	// Make sure all devices are off.
 	if( m_HL2Local.m_bitsActiveDevices != 0x00000000 )
 		return false;
@@ -3727,6 +3732,9 @@ const impactdamagetable_t &CHL2_Player::GetPhysicsImpactDamageTable()
 //-----------------------------------------------------------------------------
 void CHL2_Player::Splash( void )
 {
+	if( IsObserver() )
+		return;
+
 	CEffectData data;
 	data.m_fFlags = 0;
 	data.m_vOrigin = GetAbsOrigin();
