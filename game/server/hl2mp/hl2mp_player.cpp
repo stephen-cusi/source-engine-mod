@@ -557,7 +557,7 @@ void CHL2MP_Player::ResetAnimation( void )
 
 		if (!GetAbsVelocity().x && !GetAbsVelocity().y)
 			SetAnimation( PLAYER_IDLE );
-		else if ((GetAbsVelocity().x || GetAbsVelocity().y) && ( GetFlags() & FL_ONGROUND ))
+		else if ((GetAbsVelocity().x || GetAbsVelocity().y))
 			SetAnimation( PLAYER_WALK );
 		else if (GetWaterLevel() > 1)
 			SetAnimation( PLAYER_WALK );
@@ -1525,7 +1525,7 @@ CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )
 	} while ( pSpot != pFirstSpot ); // loop if we're not back to the start
 
 	// we haven't found a place to spawn yet,  so kill any guy at the first spawn point and spawn there
-	if ( pSpot )
+	if ( pSpot && ( TEAM_SPECTATOR != GetTeamNumber() ) )
 	{
 		CBaseEntity *ent = NULL;
 		for ( CEntitySphereQuery sphere( pSpot->GetAbsOrigin(), 128 ); (ent = sphere.GetCurrentEntity()) != NULL; sphere.NextEntity() )
