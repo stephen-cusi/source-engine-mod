@@ -17,6 +17,10 @@
 #define COMPILER_GCC 1
 #endif
 
+#ifdef __GLIBC__
+#define PLATFORM_GLIBC 1
+#endif
+
 #ifdef __clang__
 #define COMPILER_CLANG 1
 #endif
@@ -590,7 +594,7 @@ typedef void * HINSTANCE;
 	#define FMTFUNCTION( a, b )
 #elif defined(GNUC)
 	#define SELECTANY __attribute__((weak))
-	#if defined(LINUX) && !defined(DEDICATED)
+	#ifndef DEDICATED
 		#define RESTRICT
 	#else
 		#define RESTRICT __restrict

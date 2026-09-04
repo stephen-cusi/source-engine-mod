@@ -95,6 +95,7 @@ enum soundlevel_t
 
 	// NOTE: Valid soundlevel_t values are 0-255.
 	//       256-511 are reserved for sounds using goldsrc compatibility attenuation.
+	SNDLVBL_MAX		= 511
 };
 
 #define MAX_SNDLVL_BITS		9	// Used to encode 0-255 for regular soundlevel_t's and 256-511 for goldsrc-compatible ones.

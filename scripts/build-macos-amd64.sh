@@ -1,8 +1,21 @@
 #!/bin/sh
+set -eu
+
+# Build for macOS x86_64 (Intel). `macos-latest` runners are now arm64, so this
+# must run on an Intel runner (e.g. macos-15-intel). waf derives the target CPU
+# from the Python interpreter, so also guard against a Rosetta-mis-detected arch.
+
+MACHINE=$(uname -m)
+if [ "$MACHINE" != "x86_64" ]; then
+    echo "Expected x86_64 host, got: $MACHINE" >&2
+    exit 1
+fi
 
 git submodule init && git submodule update
 
-brew install sdl2
+brew untap aws/tap || true
 
-./waf configure -T debug --64bits --disable-warns $* &&
+brew install sdl2 pkg-config
+
+./waf configure -T release --disable-warns $* &&
 ./waf build
