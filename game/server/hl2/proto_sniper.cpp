@@ -2898,7 +2898,6 @@ AI_BEGIN_CUSTOM_NPC( proto_sniper, CProtoSniper )
 	DECLARE_TASK( TASK_SNIPER_PAINT_SWEEP_TARGET );
 	DECLARE_TASK( TASK_SNIPER_ATTACK_CURSOR );
 	DECLARE_TASK( TASK_SNIPER_PAINT_NO_SHOT );
-	DECLARE_TASK( TASK_SNIPER_PLAYER_DEAD );
 
 	//=========================================================
 	// SCAN
@@ -3111,18 +3110,6 @@ AI_BEGIN_CUSTOM_NPC( proto_sniper, CProtoSniper )
 		"		COND_SNIPER_DISABLED"
 		"		COND_CAN_RANGE_ATTACK1"
 		"		COND_HEAR_DANGER"
-	)
-
-	//=========================================================
-	//=========================================================
-	DEFINE_SCHEDULE
-	(
-	SCHED_PSNIPER_PLAYER_DEAD,
-
-	"	Tasks"
-	"		TASK_SNIPER_PLAYER_DEAD		0"
-	"	"
-	"	Interrupts"
 	)
 
 AI_END_CUSTOM_NPC()
