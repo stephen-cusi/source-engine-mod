@@ -1,3 +1,0 @@
-a88f99d6 Leave vehicle on team change
- src/game/server/hl2mp/hl2mp_player.cpp | 5 +++++
- 1 file changed, 5 insertions(+)

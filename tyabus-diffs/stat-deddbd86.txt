@@ -1,3 +1,0 @@
-deddbd86 Fixed vehicles shifting viewangles of every player on the server
- src/game/shared/vehicle_viewblend_shared.cpp | 17 ++++++++++++-----
- 1 file changed, 12 insertions(+), 5 deletions(-)

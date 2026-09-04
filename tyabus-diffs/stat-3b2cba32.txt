@@ -1,3 +1,0 @@
-3b2cba32 SDK2013CE:  Stopped negative FOVs from occuring
- src/game/client/view.cpp | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)

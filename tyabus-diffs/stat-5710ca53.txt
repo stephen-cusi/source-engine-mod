@@ -1,3 +1,0 @@
-5710ca53 Dont do watersplash if we're spectator
- src/game/server/hl2/hl2_player.cpp | 3 +++
- 1 file changed, 3 insertions(+)

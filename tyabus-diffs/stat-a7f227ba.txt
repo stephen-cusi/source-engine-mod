@@ -1,3 +1,0 @@
-a7f227ba server: Always recharge suit power if sv_infinite_aux_power is enabled
- src/game/server/hl2/hl2_player.cpp | 6 +++++-
- 1 file changed, 5 insertions(+), 1 deletion(-)

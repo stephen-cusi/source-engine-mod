@@ -1,3 +1,0 @@
-5cf73a40 Fix damage filters
- src/game/server/filters.cpp | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)

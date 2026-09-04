@@ -1,3 +1,0 @@
-6cf047a5 client/physics.cpp: DEFAULT_TICK_INTERVAL -> gpGlobals->interval_per_tick
- src/game/client/physics.cpp | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)

@@ -1,3 +1,0 @@
-9a6a676f Fixed Statement in spark explosion water check
- src/game/server/explode.cpp | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)

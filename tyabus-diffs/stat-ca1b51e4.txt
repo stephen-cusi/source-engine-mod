@@ -1,3 +1,0 @@
-ca1b51e4 Fixed Schrodinger's crouch bug
- src/game/shared/gamemovement.cpp | 3 ---
- 1 file changed, 3 deletions(-)

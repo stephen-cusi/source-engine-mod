@@ -1,3 +1,0 @@
-9b1d5344 Fixed proto_sniper crashes, stop after player's death
- src/game/server/hl2/proto_sniper.cpp | 60 +++---------------------------------
- 1 file changed, 5 insertions(+), 55 deletions(-)

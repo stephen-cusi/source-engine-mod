@@ -1,3 +1,0 @@
-e70235c4 Spectator's nicknames are now grey in chat
- src/game/client/hl2mp/hl2mp_hud_chat.cpp | 1 +
- 1 file changed, 1 insertion(+)
