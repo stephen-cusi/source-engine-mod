@@ -817,6 +817,11 @@ void CViewRender::SetUpViews()
 	s_DbgSetupOrigin = view.origin;
 	s_DbgSetupAngles = view.angles;
 #endif
+
+#ifdef HL2SB
+	// hl2sb: recompute the vehicle view with a fresh bone cache to avoid stale-bone jitter/lag.
+	MP_PostSimulate();
+#endif
 }
 
 
