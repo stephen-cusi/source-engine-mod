@@ -196,13 +196,19 @@ C_HL2MP_Player* C_HL2MP_Player::GetLocalHL2MPPlayer()
 
 void C_HL2MP_Player::Initialize( void )
 {
-	m_headYawPoseParam = LookupPoseParameter( "head_yaw" );
+	CStudioHdr *hdr = GetModelPtr();
+	// Custom player models can be huge and load asynchronously - GetModelPtr()
+	// is NULL until the dynamic model is ready. OnModelLoadCompleted calls
+	// OnNewModel again, so just bail out here.
+	if ( !hdr )
+		return;
+
+	m_headYawPoseParam = LookupPoseParameter( hdr, "head_yaw" );
 	GetPoseParameterRange( m_headYawPoseParam, m_headYawMin, m_headYawMax );
 
-	m_headPitchPoseParam = LookupPoseParameter( "head_pitch" );
+	m_headPitchPoseParam = LookupPoseParameter( hdr, "head_pitch" );
 	GetPoseParameterRange( m_headPitchPoseParam, m_headPitchMin, m_headPitchMax );
 
-	CStudioHdr *hdr = GetModelPtr();
 	for ( int i = 0; i < hdr->GetNumPoseParameters() ; i++ )
 	{
 		SetPoseParameter( hdr, i, 0.0 );
@@ -212,8 +218,12 @@ void C_HL2MP_Player::Initialize( void )
 CStudioHdr *C_HL2MP_Player::OnNewModel( void )
 {
 	CStudioHdr *hdr = BaseClass::OnNewModel();
-	
-	Initialize( );
+
+	// Only initialize pose data once the model (studio hdr) is actually available.
+	if ( hdr )
+	{
+		Initialize( );
+	}
 
 	return hdr;
 }
