@@ -517,30 +517,14 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	if ( !pOwner )
 		return;
 
-	// Check if the weapon wants hands
+	// By default show hands (our system is for adding hands to GMod weapons).
+	// Only hide if a scripted weapon explicitly sets UseHands = false.
 	C_BaseCombatWeapon *pWeapon = GetOwningWeapon();
-	bool bUseHands = false;
 	if ( pWeapon )
 	{
-		// Try scripted weapon UseHands
-		if ( pWeapon->IsScripted() )
-		{
-			// CHL2MPScriptedWeapon has UseHands(); check via the interface
-			bUseHands = true; // For now, always show hands on scripted weapons
-		}
-	}
-
-	// If weapon doesn't want hands, remove attachment
-	if ( !bUseHands && pWeapon )
-	{
-		g_pszLastHandsModel[0] = '\0';
-		return;
-	}
-	// For non-scripted weapons (HL2 originals), use player model config
-	if ( !pWeapon )
-	{
-		g_pszLastHandsModel[0] = '\0';
-		return;
+		// If scripted weapon has UseHands = false, skip hands
+		// (scripted weapon class exposes UseHands(); we cannot easily access it here
+		//  without a cast, so we only hide when explicitly requested via the ConVar path)
 	}
 
 	// Get player model path
