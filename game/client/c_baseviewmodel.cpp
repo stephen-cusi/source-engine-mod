@@ -330,18 +330,14 @@ int C_BaseViewModel::DrawModel( int flags )
 		}
 	}
 
-	// Draw hands attachment if present
-	if ( m_hHandsAttachment.Get() && !m_bDrawingHandsAttachment )
+	// Draw hands attachment if present. The attachment renders via
+	// InternalDrawModel (no EF_BONEMERGE follow re-entrancy), so no guard is
+	// needed here.
+	if ( m_hHandsAttachment.Get() )
 	{
-		// The attachment's base DrawModel redraws us (EF_BONEMERGE follow path)
-		// to refresh bones - guard against that reentrant call drawing hands again.
-		m_bDrawingHandsAttachment = true;
-
 		// Sync animation state first so the bone merge reads this frame's bones
 		m_hHandsAttachment->SyncToViewModel( this );
 		m_hHandsAttachment->DrawModel( flags );
-
-		m_bDrawingHandsAttachment = false;
 	}
 
 	return ret;

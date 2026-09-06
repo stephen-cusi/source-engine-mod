@@ -64,9 +64,14 @@ bool C_ViewmodelAttachment::SetHandsModel( const char *pszModelName )
 	if ( !pszModelName || !pszModelName[0] )
 		return false;
 
-	// Make sure the model is registered with the client DLL before
-	// InitializeAsClientEntity looks up the model index.
-	CBaseEntity::PrecacheModel( pszModelName );
+	// Client-side CBaseEntity::PrecacheModel is just an index lookup - it loads
+	// nothing. Models referenced by cfg/playermodel are already in the model
+	// pool (the server precaches them at config load), but models coming from
+	// the cl_hands_model override are not. Load them dynamically into the pool.
+	if ( modelinfo->GetModelIndex( pszModelName ) == -1 )
+	{
+		engine->LoadModel( pszModelName );
+	}
 
 	if ( !InitializeAsClientEntity( pszModelName, RENDER_GROUP_OPAQUE_ENTITY ) )
 	{
@@ -108,7 +113,11 @@ void C_ViewmodelAttachment::AttachToViewmodel( C_BaseViewModel *pViewModel )
 	AddSolidFlags( FSOLID_NOT_SOLID );
 	SetLocalOrigin( vec3_origin );
 	SetLocalAngles( vec3_angle );
-	AddEffects( EF_BONEMERGE | EF_BONEMERGE_FASTCULL );
+	// NOTE: no EF_BONEMERGE_FASTCULL - it re-places the render origin at the
+	// parent's WorldSpaceCenter (the viewmodel sits at the camera near-plane),
+	// which flings the merged arms out of view. We draw the arms manually from
+	// C_BaseViewModel::DrawModel, so the leaf-cull optimization isn't needed.
+	AddEffects( EF_BONEMERGE );
 
 	m_bAttached = true;
 
@@ -131,7 +140,7 @@ void C_ViewmodelAttachment::DetachFromViewmodel( void )
 	if ( !m_bAttached )
 		return;
 
-	RemoveEffects( EF_BONEMERGE | EF_BONEMERGE_FASTCULL );
+	RemoveEffects( EF_BONEMERGE );
 	SetParent( NULL );
 
 	m_hParentViewModel = NULL;
@@ -319,8 +328,14 @@ int C_ViewmodelAttachment::DrawModel( int flags )
 	pViewModel->GetColorModulation( color );
 	render->SetColorModulation( color );
 
-	// Draw with bone transforms set by SetupBones
-	int ret = BaseClass::DrawModel( flags );
+	// Draw the merged bones directly. We must NOT call BaseClass::DrawModel here:
+	// as an EF_BONEMERGE follower of the viewmodel, C_BaseAnimating::DrawModel would
+	// take the "follow" branch (follow->DrawModel(0) to refresh the master, then
+	// gate the child render on that returning non-zero). Called with the viewmodel's
+	// flags, that reentrant master draw returns 0 (no STUDIO_RENDER) so our arms
+	// would never render. InternalDrawModel runs SetupBones (which does the
+	// bonemerge) and draws directly - matching the old visible path.
+	int ret = InternalDrawModel( flags );
 
 	return ret;
 }

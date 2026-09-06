@@ -205,12 +205,6 @@ private:
 	// Hands attachment for custom player models
 #if defined( CLIENT_DLL )
 	CHandle<class C_ViewmodelAttachment>	m_hHandsAttachment;
-
-	// Re-entrancy guard: the hands attachment is an EF_BONEMERGE follower of this
-	// viewmodel, and C_BaseAnimating::DrawModel() redraws the followed entity
-	// (follow->DrawModel) to refresh its bone setup. Without this flag that
-	// reentrant call draws the hands again and recurses until the stack dies.
-	bool					m_bDrawingHandsAttachment = false;
 #endif
 
 	typedef CHandle< CBaseCombatWeapon > CBaseCombatWeaponHandle;
