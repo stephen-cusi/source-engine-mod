@@ -93,7 +93,13 @@ void CC_HL2SB_ReloadModels( const CCommand &args )
 	Msg( "[HL2SB] Reloaded %d model configs\n", g_nHL2SB_ModelConfigCount );
 }
 
-// Register console commands
+// Register console commands.
+// This file is compiled into BOTH client.dll and server.dll (see client_hl2mp.vpc
+// and server_hl2mp.vpc).  If these commands were registered unconditionally, each
+// DLL would register them once and the console would show the command / autocomplete
+// hint twice.  These commands are client-side only (they resolve a config and fire
+// `cl_playermodel` at the server), so register them only in the client DLL.
+#if defined( CLIENT_DLL )
 static ConCommand hl2sb_setmodel( "hl2sb_setmodel", CC_HL2SB_SetModel, 
 	"Load and apply a player model config\n"
 	"Usage: hl2sb_setmodel <configname>\n"
@@ -104,3 +110,4 @@ static ConCommand hl2sb_listmodels( "hl2sb_listmodels", CC_HL2SB_ListModels,
 
 static ConCommand hl2sb_reloadmodels( "hl2sb_reloadmodels", CC_HL2SB_ReloadModels, 
 	"Reload all player model configs from cfg/playermodel/" );
+#endif // CLIENT_DLL
