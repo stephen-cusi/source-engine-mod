@@ -37,6 +37,13 @@ ConVar cl_hands_angle_roll( "cl_hands_angle_roll", "0", FCVAR_ARCHIVE, "Hands mo
 
 ConVar cl_hands_debug( "cl_hands_debug", "0", FCVAR_ARCHIVE, "Verbose c_hands debug output" );
 
+// When enabled, skip merging hands onto viewmodels that already draw their own
+// arms (stock HL2/EP2/HL2MP weapon viewmodels, which reference the shared
+// "v_hand" material). Merging an extra pair onto those double-draws the arms
+// (visible on SLAM, grenade, crowbar, ...). MMOD-style replacement viewmodels
+// are gun-only (no v_hand material) and still receive the merged hands.
+ConVar cl_hands_skip_baked_arms( "cl_hands_skip_baked_arms", "1", FCVAR_ARCHIVE, "Don't merge c_hands onto viewmodels that already have their own arms (stock HL2 v_hand models)" );
+
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------

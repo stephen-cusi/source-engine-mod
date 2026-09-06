@@ -951,8 +951,18 @@ float CHL2MPRules::FlPlayerFallDamage( CBasePlayer *pPlayer )
 
 	RETURN_LUA_NUMBER();
 
-	return BaseClass::FlPlayerFallDamage( pPlayer );
-} 
+	// HL2SB: GMod-style fall damage.
+	// Mirrors Garry's Mod base gamemode (gamemodes/base/gamemode/player.lua GM:GetFallDamage):
+	//   mp_falldamage 1 (realistic) -> ( fallSpeed - 526.5 ) * ( 100 / 396 )
+	//   otherwise (default)         -> flat 10 HP
+	if ( falldamage.GetBool() )
+	{
+		float flFallSpeed = pPlayer->m_Local.m_flFallVelocity;
+		return MAX( 0.0f, ( flFallSpeed - PLAYER_MAX_SAFE_FALL_SPEED ) * DAMAGE_FOR_FALL_SPEED );
+	}
+
+	return 10;
+}
 #endif
 #endif
 

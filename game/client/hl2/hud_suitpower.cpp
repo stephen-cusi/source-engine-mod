@@ -22,6 +22,9 @@ using namespace vgui;
 
 DECLARE_HUDELEMENT( CHudSuitPower );
 
+// HL2SB: hide the aux/suit-power HUD by default (aux power is infinite)
+ConVar cl_hide_suitpower_hud( "cl_hide_suitpower_hud", "1", FCVAR_ARCHIVE );
+
 #define SUITPOWER_INIT -1
 
 //-----------------------------------------------------------------------------
@@ -60,6 +63,10 @@ void CHudSuitPower::Reset( void )
 //-----------------------------------------------------------------------------
 bool CHudSuitPower::ShouldDraw()
 {
+	// HL2SB: hide the aux/suit-power HUD entirely when requested
+	if ( cl_hide_suitpower_hud.GetBool() )
+		return false;
+
 	bool bNeedsDraw = false;
 
 	C_BaseHLPlayer *pPlayer = (C_BaseHLPlayer *)C_BasePlayer::GetLocalPlayer();

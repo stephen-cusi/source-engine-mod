@@ -522,6 +522,46 @@ static char g_pszFailedHandsModel[MAX_PATH] = "";
 
 // Master switch, defined in c_viewmodel_attachment.cpp
 extern ConVar cl_hands;
+// Skip-baked-arms switch, defined in c_viewmodel_attachment.cpp
+extern ConVar cl_hands_skip_baked_arms;
+
+//-----------------------------------------------------------------------------
+// Purpose: Does this viewmodel already draw its own arms?
+//          Stock HL2/EP2/HL2MP weapon viewmodels bake the arm/hand mesh into
+//          the model and texture it with the shared "v_hand" material
+//          (e.g. "v_hand_sheet"). Merging an extra pair of c_hands onto them
+//          double-draws the arms. MMOD-style replacement viewmodels are gun
+//          only (arms live in default-off bodygroups or are absent) and carry
+//          no v_hand material, so they must still receive the merged hands.
+//          We detect the baked arms by scanning the studio texture table for a
+//          material whose name contains "v_hand" (case-insensitive).
+//-----------------------------------------------------------------------------
+static bool ViewModelHasBakedArms( C_BaseViewModel *pVM )
+{
+	if ( !pVM )
+		return false;
+
+	CStudioHdr *pHdr = pVM->GetModelPtr();
+	if ( !pHdr )
+		return false;
+
+	const studiohdr_t *pRaw = pHdr->GetRenderHdr();
+	if ( !pRaw )
+		return false;
+
+	for ( int i = 0; i < pRaw->numtextures; i++ )
+	{
+		const mstudiotexture_t *pTex = pRaw->pTexture( i );
+		if ( !pTex )
+			continue;
+
+		const char *pszName = pTex->pszName();
+		if ( pszName && Q_stristr( pszName, "v_hand" ) )
+			return true;
+	}
+
+	return false;
+}
 
 void C_BaseViewModel::ReleaseHandsAttachment( void )
 {
@@ -545,6 +585,16 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 
 	// Master switch off - drop any existing attachment
 	if ( !cl_hands.GetBool() )
+	{
+		ReleaseHandsAttachment();
+		return;
+	}
+
+	// Don't merge hands onto a viewmodel that already draws its own arms
+	// (stock HL2 v_hand models) - that would double-draw the arms. Release any
+	// attachment we may have made earlier (e.g. the player just switched from a
+	// gun-only MMOD weapon to a stock one).
+	if ( cl_hands_skip_baked_arms.GetBool() && ViewModelHasBakedArms( this ) )
 	{
 		ReleaseHandsAttachment();
 		return;

@@ -38,6 +38,9 @@
 
 #include "ilagcompensationmanager.h"
 
+// HL2SB: flashlight turned on by default at spawn
+extern ConVar sv_flashlight_default;
+
 int g_iLastCitizenModel = 0;
 int g_iLastCombineModel = 0;
 
@@ -304,6 +307,12 @@ void CHL2MP_Player::Spawn(void)
 		RemoveEffects( EF_NODRAW );
 		
 		GiveDefaultItems();
+	}
+
+	// HL2SB: turn the flashlight on by default (requires the suit, which GiveDefaultItems equips)
+	if ( sv_flashlight_default.GetBool() )
+	{
+		FlashlightTurnOn();
 	}
 
 	SetNumAnimOverlays( 3 );
@@ -1106,10 +1115,11 @@ void CHL2MP_Player::CheatImpulseCommands( int iImpulse )
 	{
 		case 101:
 			{
-				if( sv_cheats->GetBool() )
-				{
+				// HL2SB: legit cheats - no sv_cheats requirement
+				// if( sv_cheats->GetBool() )
+				// {
 					GiveAllItems();
-				}
+				// }
 			}
 			break;
 
@@ -1117,6 +1127,20 @@ void CHL2MP_Player::CheatImpulseCommands( int iImpulse )
 			BaseClass::CheatImpulseCommands( iImpulse );
 	}
 }
+
+//------------------------------------------------------------------------------
+// Purpose: Legit impulse 101 (give all items) - not blocked by sv_cheats
+//------------------------------------------------------------------------------
+void CC_LegitImpulse101( void )
+{
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( UTIL_GetCommandClient() );
+	if ( !pPlayer )
+		return;
+
+	pPlayer->GiveAllItems();
+}
+
+static ConCommand LegitImpulse( "LegitImpulse", CC_LegitImpulse101, "Legit impulse 101 - give all items (no sv_cheats needed)." );
 
 bool CHL2MP_Player::ShouldRunRateLimitedCommand( const CCommand &args )
 {
