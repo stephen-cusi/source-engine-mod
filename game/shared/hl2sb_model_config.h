@@ -11,7 +11,7 @@
 
 #define HL2SB_MAX_MODEL_NAME 64
 #define HL2SB_MAX_MODEL_PATH 128
-#define HL2SB_MAX_MODELS 64
+#define HL2SB_MAX_MODELS 128
 
 // Model config structure
 struct HL2SB_ModelConfig_t

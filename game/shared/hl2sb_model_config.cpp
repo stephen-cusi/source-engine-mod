@@ -1,5 +1,6 @@
 // hl2sb_model_config.cpp
 // HL2SB Player Model Configuration System
+// HL2SB_MAX_MODELS raised to 128 (gmod player model pack registers ~81 configs).
 
 #include "cbase.h"
 #include "hl2sb_model_config.h"
@@ -84,7 +85,15 @@ bool HL2SB_LoadModelConfigFromKV( const char *pszFilePath, const char *pszConfig
 	}
 	if ( config.szHandsModel[0] )
 	{
-		CBaseEntity::PrecacheModel( config.szHandsModel );
+		// The hands value may encode skin/body after the path:
+		//   "models/weapons/c_arms_citizen.mdl|2|0000000"
+		// Precache the bare model path only.
+		char szBare[ HL2SB_MAX_MODEL_PATH ];
+		Q_strncpy( szBare, config.szHandsModel, sizeof(szBare) );
+		char *pPipe = strchr( szBare, '|' );
+		if ( pPipe )
+			*pPipe = '\0';
+		CBaseEntity::PrecacheModel( szBare );
 	}
 #endif
 

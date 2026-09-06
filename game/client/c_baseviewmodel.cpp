@@ -616,6 +616,8 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 
 	// Get hands model: cl_hands_model override first, else config-system mapping
 	const char *pszHandsModel = NULL;
+	char szHandsBuf[ MAX_PATH ];
+	Q_strncpy( szHandsBuf, "", sizeof( szHandsBuf ) );
 	const char *pszOverride = cl_hands_model.GetString();
 	if ( pszOverride && pszOverride[0] && Q_stricmp( pszOverride, "auto" ) != 0 )
 	{
@@ -624,6 +626,47 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	else
 	{
 		pszHandsModel = HL2SB_GetHandsModelForPlayer( pszPlayerModel );
+	}
+
+	// The config system may encode skin/bodygroup after the path:
+	//   "models/weapons/c_arms_citizen.mdl|2|0000000"
+	int iHandsSkin = -1, iHandsBodyValid = 0;
+	char szHandsBody[ 32 ] = "";
+	if ( pszHandsModel )
+	{
+		Q_strncpy( szHandsBuf, pszHandsModel, sizeof( szHandsBuf ) );
+		char *pPipe1 = strchr( szHandsBuf, '|' );
+		if ( pPipe1 )
+		{
+			*pPipe1 = '\0';
+			char *pPipe2 = strchr( pPipe1 + 1, '|' );
+			if ( pPipe2 )
+			{
+				*pPipe2 = '\0';
+				iHandsSkin = atoi( pPipe1 + 1 );
+				Q_strncpy( szHandsBody, pPipe2 + 1, sizeof( szHandsBody ) );
+				iHandsBodyValid = 1;
+			}
+			else
+			{
+				Q_strncpy( szHandsBody, pPipe1 + 1, sizeof( szHandsBody ) );
+				iHandsBodyValid = 1;
+			}
+		}
+		pszHandsModel = szHandsBuf;
+	}
+
+	// Cache key includes encoded skin/body so switching between two player
+	// models that share a hands model but differ in skin (e.g. citizen skin0
+	// vs bloody-zombie skin2) still re-applies.
+	char szHandsKey[ MAX_PATH + 64 ];
+	if ( pszHandsModel )
+	{
+		if ( iHandsSkin >= 0 )
+			Q_snprintf( szHandsKey, sizeof( szHandsKey ), "%s|%i|%s", pszHandsModel, iHandsSkin, szHandsBody );
+		else
+			Q_snprintf( szHandsKey, sizeof( szHandsKey ), "%s|%s", pszHandsModel, szHandsBody );
+		pszHandsModel = szHandsKey;
 	}
 
 	// No hands model for this player model - remove attachment
@@ -651,10 +694,19 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	// Remove our old attachment (if any)
 	ReleaseHandsAttachment();
 
-	// Create new hands attachment
+	// Create new hands attachment (load the bare model path, not the cache key)
 	C_ViewmodelAttachment *pAttach = new C_ViewmodelAttachment;
-	if ( pAttach && pAttach->SetHandsModel( pszHandsModel ) )
+	if ( pAttach && pAttach->SetHandsModel( szHandsBuf ) )
 	{
+		// Apply skin/bodygroup encoded in the config ("path|skin|body").
+		// e.g. zombie/charple/corpse use c_arms_citizen skin 2 = bloody hands.
+		if ( iHandsSkin >= 0 )
+			pAttach->m_nSkin = iHandsSkin;
+		if ( iHandsBodyValid && szHandsBody[0] )
+		{
+			for ( int iGroup = 0; szHandsBody[ iGroup ] >= '0' && szHandsBody[ iGroup ] <= '9'; ++iGroup )
+				static_cast<C_BaseAnimating *>( pAttach )->SetBodygroup( iGroup, szHandsBody[ iGroup ] - '0' );
+		}
 		pAttach->AttachToViewmodel( this );
 		m_hHandsAttachment = pAttach;
 		Q_strncpy( g_pszLastHandsModel, pszHandsModel, sizeof(g_pszLastHandsModel) );

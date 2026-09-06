@@ -78,6 +78,40 @@ void GetParticleManifest( CUtlVector<CUtlString>& list )
 	}
 
 	manifest->deleteThis();
+
+	// HL2SB: auto-register mod particle collections dropped under any search
+	// path's particles/ dir using the *_mmod.pcf naming convention (GMod-style
+	// addons ship their own pcf files but the base manifest only lists Valve's).
+	// Done after the manifest so a mod pcf can override a Valve system of the
+	// same name (last definition wins for particle systems).
+	{
+		FileFindHandle_t hFind;
+		const char *pszFile = filesystem->FindFirstEx( "particles/*_mmod.pcf", "GAME", &hFind );
+		if ( pszFile )
+		{
+			while ( pszFile )
+			{
+				char szFull[MAX_PATH];
+				Q_snprintf( szFull, sizeof(szFull), "particles/%s", pszFile );
+
+				// The same file can be reported once per search path it exists
+				// in; keep one entry per unique path string.
+				bool bDup = false;
+				for ( int i = 0; i < list.Count(); ++i )
+				{
+					if ( !Q_stricmp( list[i].Get(), szFull ) )
+					{
+						bDup = true;
+						break;
+					}
+				}
+				if ( !bDup )
+					list.AddToTail( szFull );
+				pszFile = filesystem->FindNext( hFind );
+			}
+			filesystem->FindClose( hFind );
+		}
+	}
 }
 
 
