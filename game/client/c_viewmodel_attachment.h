@@ -39,6 +39,9 @@ public:
 	// Override drawing to use bonemerge from parent
 	virtual int DrawModel( int flags );
 
+	// Override SetupBones to use parent viewmodel's bone transforms
+	virtual bool SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, int boneMask, float currentTime );
+
 	// Entity is always transmitted to local player
 	virtual int ShouldTransmit( const CCheckTransmitInfo *pInfo, const void *pVSPTState );
 

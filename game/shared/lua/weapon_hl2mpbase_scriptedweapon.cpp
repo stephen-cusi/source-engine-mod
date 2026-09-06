@@ -677,6 +677,25 @@ const char *CHL2MPScriptedWeapon::GetAnimPrefix( void ) const
 	return BaseClass::GetAnimPrefix();
 }
 
+bool CHL2MPScriptedWeapon::UseHands( void ) const
+{
+#if defined ( LUA_SDK )
+	lua_getref( L, m_nTableReference );
+	lua_getfield( L, -1, "UseHands" );
+	lua_remove( L, -2 );
+
+	if ( lua_isboolean( L, -1 ) )
+	{
+		bool bUseHands = lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+		return bUseHands;
+	}
+	lua_pop( L, 1 );
+#endif
+
+	return false;
+}
+
 const char *CHL2MPScriptedWeapon::GetPrintName( void ) const
 {
 #if defined ( LUA_SDK )

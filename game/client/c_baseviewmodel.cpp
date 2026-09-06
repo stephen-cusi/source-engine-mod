@@ -508,8 +508,8 @@ RenderGroup_t C_BaseViewModel::GetRenderGroup()
 //-----------------------------------------------------------------------------
 // Purpose: Update hands attachment based on player model
 //-----------------------------------------------------------------------------
-// Track last player model to detect changes
-static const char *g_pszLastPlayerModel = NULL;
+// Track last successfully attached hands model
+static char g_pszLastHandsModel[MAX_PATH] = "";
 
 void C_BaseViewModel::UpdateHandsAttachment( void )
 {
@@ -517,52 +517,66 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	if ( !pOwner )
 		return;
 
-	// Get player model path
-	const char *pszPlayerModel = modelinfo->GetModelName( pOwner->GetModel() );
-	
-	// Check if player model changed
-	bool bModelChanged = ( pszPlayerModel != g_pszLastPlayerModel );
-	if ( bModelChanged && g_pszLastPlayerModel )
+	// Check if the weapon wants hands
+	C_BaseCombatWeapon *pWeapon = GetOwningWeapon();
+	bool bUseHands = false;
+	if ( pWeapon )
 	{
-		// Model changed, force update
-		g_pszLastPlayerModel = pszPlayerModel;
-		
-		// Remove old hands attachment and recreate
-		if ( m_hHandsAttachment.Get() )
+		// Try scripted weapon UseHands
+		if ( pWeapon->IsScripted() )
 		{
-			m_hHandsAttachment->DetachFromViewmodel();
-			m_hHandsAttachment->Release();
-			m_hHandsAttachment = NULL;
+			// CHL2MPScriptedWeapon has UseHands(); check via the interface
+			bUseHands = true; // For now, always show hands on scripted weapons
 		}
 	}
-	else if ( !g_pszLastPlayerModel )
+
+	// If weapon doesn't want hands, remove attachment
+	if ( !bUseHands && pWeapon )
 	{
-		g_pszLastPlayerModel = pszPlayerModel;
+		g_pszLastHandsModel[0] = '\0';
+		return;
 	}
+	// For non-scripted weapons (HL2 originals), use player model config
+	if ( !pWeapon )
+	{
+		g_pszLastHandsModel[0] = '\0';
+		return;
+	}
+
+	// Get player model path
+	const char *pszPlayerModel = modelinfo->GetModelName( pOwner->GetModel() );
 
 	// Get hands model from config system
 	const char *pszHandsModel = HL2SB_GetHandsModelForPlayer( pszPlayerModel );
 
-	// No hands model for this player model
+	// No hands model for this player model - remove attachment
 	if ( !pszHandsModel )
 	{
-		m_hHandsAttachment = NULL;
+		g_pszLastHandsModel[0] = '\0';
 		return;
 	}
 
-	if ( !m_hHandsAttachment.Get() )
+	// If we already successfully attached this exact model, do nothing
+	// (prevents repeated creation every frame)
+	if ( !Q_stricmp( g_pszLastHandsModel, pszHandsModel ) )
 	{
-		// Create new hands attachment
-		C_ViewmodelAttachment *pAttach = new C_ViewmodelAttachment;
-		if ( pAttach && pAttach->SetHandsModel( pszHandsModel ) )
-		{
-			pAttach->AttachToViewmodel( this );
-			m_hHandsAttachment = pAttach;
-		}
+		return;
 	}
-	else if ( bModelChanged )
+
+	// Remove old attachment
+	m_hHandsAttachment = NULL;
+
+	// Create new hands attachment
+	C_ViewmodelAttachment *pAttach = new C_ViewmodelAttachment;
+	if ( pAttach && pAttach->SetHandsModel( pszHandsModel ) )
 	{
-		// Update existing hands model
-		m_hHandsAttachment->SetHandsModel( pszHandsModel );
+		pAttach->AttachToViewmodel( this );
+		m_hHandsAttachment = pAttach;
+		Q_strncpy( g_pszLastHandsModel, pszHandsModel, sizeof(g_pszLastHandsModel) );
+		Msg( "[HL2SB-HANDS] Attached hands model: %s\n", pszHandsModel );
+	}
+	else
+	{
+		if ( pAttach ) delete pAttach;
 	}
 }

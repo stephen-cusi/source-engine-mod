@@ -61,6 +61,18 @@ bool HL2SB_LoadModelConfigFromKV( const char *pszFilePath, const char *pszConfig
 
 	g_nHL2SB_ModelConfigCount++;
 
+#if !defined( CLIENT_DLL )
+	// Server: precache all models referenced by this config
+	if ( config.szPlayerModel[0] )
+	{
+		CBaseEntity::PrecacheModel( config.szPlayerModel );
+	}
+	if ( config.szHandsModel[0] )
+	{
+		CBaseEntity::PrecacheModel( config.szHandsModel );
+	}
+#endif
+
 	Msg( "[HL2SB] Loaded: %s -> %s\n", config.szName, config.szPlayerModel );
 	return true;
 }

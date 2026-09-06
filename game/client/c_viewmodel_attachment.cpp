@@ -11,6 +11,8 @@
 #include "bone_setup.h"
 #include "model_types.h"
 #include "hands_model_mapping.h"
+#include "cliententitylist.h"
+#include "gamestringpool.h"
 #include "tier0/memdbgon.h"
 
 // ConVar for overriding hands model
@@ -44,11 +46,14 @@ bool C_ViewmodelAttachment::SetHandsModel( const char *pszModelName )
 	if ( !pszModelName )
 		return false;
 
-	// Set the model (handles precaching internally)
-	SetModelName( pszModelName );
-	SetModel( pszModelName );
+	// Standard SetModel - server should have precached this model
+	SetModelName( AllocPooledString( pszModelName ) );
+	bool bSuccess = SetModel( pszModelName );
 
-	return true;
+	Msg( "[HL2SB-HANDS] SetHandsModel: %s -> %s (GetModel=%p)\n", 
+		pszModelName, bSuccess ? "OK" : "FAIL", GetModel() );
+
+	return bSuccess;
 }
 
 //-----------------------------------------------------------------------------
@@ -60,18 +65,11 @@ void C_ViewmodelAttachment::AttachToViewmodel( C_BaseViewModel *pViewModel )
 	if ( !pViewModel )
 		return;
 
-	// Detach from previous viewmodel if any
-	DetachFromViewmodel();
-
 	// Store handle to parent
 	m_hParentViewModel = pViewModel;
 
 	// Set as owned by the same entity as the viewmodel
 	SetOwnerEntity( pViewModel->GetOwnerEntity() );
-
-	// Spawn and add to client entity list
-	Spawn();
-	AddToLeafSystem();
 
 	// Set parent for bonemerge
 	SetParent( pViewModel );
@@ -104,6 +102,50 @@ void C_ViewmodelAttachment::DetachFromViewmodel( void )
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: Setup bones - do NOT copy parent bone matrices
+//          Instead, position the whole entity at the weapon's hand bone
+//-----------------------------------------------------------------------------
+ConVar cl_hands_offset_x( "cl_hands_offset_x", "0", FCVAR_ARCHIVE, "Hands model X offset" );
+ConVar cl_hands_offset_y( "cl_hands_offset_y", "0", FCVAR_ARCHIVE, "Hands model Y offset" );
+ConVar cl_hands_offset_z( "cl_hands_offset_z", "0", FCVAR_ARCHIVE, "Hands model Z offset" );
+
+bool C_ViewmodelAttachment::SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, int boneMask, float currentTime )
+{
+	C_BaseViewModel *pViewModel = m_hParentViewModel.Get();
+	if ( pViewModel && pViewModel->GetModelPtr() )
+	{
+		CStudioHdr *hdrParent = pViewModel->GetModelPtr();
+		// Find the right hand bone
+		for ( int i = 0; i < hdrParent->numbones(); i++ )
+		{
+			const char *pszBoneName = hdrParent->pBone( i )->pszName();
+			if ( pszBoneName && ( Q_stricmp( pszBoneName, "ValveBiped.Bip01_R_Hand" ) == 0 ||
+			                      Q_stricmp( pszBoneName, "VolvoBipod.Bip01_R_Hand" ) == 0 ) )
+			{
+				matrix3x4_t handToWorld;
+				pViewModel->GetBoneTransform( i, handToWorld );
+				
+				// Apply user-configured offset
+				Vector vecOffset( cl_hands_offset_x.GetFloat(), cl_hands_offset_y.GetFloat(), cl_hands_offset_z.GetFloat() );
+				
+				// Transform offset into hand bone local space
+				Vector vecOrigin;
+				QAngle vecAngles;
+				MatrixAngles( handToWorld, vecAngles, vecOrigin );
+				vecOrigin += vecOffset;
+				
+				// Set this entity's transform to follow the hand bone
+				SetAbsOrigin( vecOrigin );
+				SetAbsAngles( vecAngles );
+				break;
+			}
+		}
+	}
+	
+	return BaseClass::SetupBones( pBoneToWorldOut, nMaxBones, boneMask, currentTime );
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Draw the hands model
 // Input  : flags - Drawing flags
 // Output : Number of bones rendered
@@ -130,7 +172,7 @@ int C_ViewmodelAttachment::DrawModel( int flags )
 	pViewModel->GetColorModulation( color );
 	render->SetColorModulation( color );
 
-	// Draw with bonemerge from parent
+	// Draw with bone transforms set by SetupBones
 	int ret = BaseClass::DrawModel( flags );
 
 	return ret;
