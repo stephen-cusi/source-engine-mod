@@ -14,6 +14,8 @@
 
 #ifdef HL2SB
 	#include "hl2_shareddefs.h"
+	#include "hl2sb_model_scan.h"
+	#include "hl2sb_model_config.h"
 #endif
 
 #ifdef LUA_SDK
@@ -1330,6 +1332,13 @@ void CHL2MPRules::Precache( void )
 #else
 	BEGIN_LUA_CALL_HOOK( "Precache" );
 	END_LUA_CALL_HOOK( 0, 0 );
+#endif
+
+#ifdef HL2SB
+	// Load model configs only (no precache - engine handles custom models)
+	Msg( "[HL2SB] Loading configs...\n" );
+	HL2SB_LoadAllModelConfigs();
+	Msg( "[HL2SB] Loaded %d configs\n", g_nHL2SB_ModelConfigCount );
 #endif
 }
 

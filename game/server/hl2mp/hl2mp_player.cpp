@@ -18,6 +18,11 @@
 #include "KeyValues.h"
 #include "team.h"
 #include "weapon_hl2mpbase.h"
+
+#ifdef HL2SB
+#include "hl2sb_player_model_manager.h"
+#include "hl2sb_model_config.h"
+#endif
 #include "grenade_satchel.h"
 #include "eventqueue.h"
 #include "gamestats.h"
@@ -328,6 +333,12 @@ void CHL2MP_Player::Spawn(void)
 	SetPlayerUnderwater(false);
 
 	m_bReady = false;
+
+#ifdef HL2SB
+	// Apply player model on spawn
+	// DISABLED for crash testing - model precache issue
+	// HL2SB_ModelManager_PlayerSpawn( this );
+#endif
 }
 
 void CHL2MP_Player::PickupObject( CBaseEntity *pObject, bool bLimitMassAndSize )
@@ -384,6 +395,14 @@ bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )
 			return true;
 		}
 	}
+
+#ifdef HL2SB
+	// Also accept models from HL2SB config
+	if ( HL2SB_FindModelConfigByPath( pModel ) )
+	{
+		return true;
+	}
+#endif
 
 	return false;
 }
@@ -445,21 +464,14 @@ void CHL2MP_Player::SetPlayerModel( void )
 	szModelName = engine->GetClientConVarValue( engine->IndexOfEdict( edict() ), "cl_playermodel" );
 
 #ifdef HL2SB
-	//Andrew; Map our requested player model to the new model/player path.
-	char file[_MAX_PATH];
-	Q_strncpy( file, szModelName, sizeof(file) );
-	if ( Q_strnicmp( file, "models/player/", 14 ) )
+	// Precache the model before using it
+	if ( szModelName && szModelName[0] )
 	{
-		char *substring = strstr( file, "models/" );
-		if ( substring )
+		int idx = modelinfo->GetModelIndex( szModelName );
+		if ( idx == -1 )
 		{
-			// replace with new directory
-			const char *dirname = substring + strlen("models/");
-			*substring = 0;
-			char destpath[_MAX_PATH];
-			// player
-			Q_snprintf( destpath, sizeof(destpath), "models/player/%s", dirname);
-			szModelName = destpath;
+			Msg( "[HL2SB] Precaching model: %s\n", szModelName );
+			CBaseEntity::PrecacheModel( szModelName );
 		}
 	}
 #endif

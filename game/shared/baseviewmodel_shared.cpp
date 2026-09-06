@@ -13,6 +13,7 @@
 #include "prediction.h"
 #include "client_virtualreality.h"
 #include "sourcevr/isourcevirtualreality.h"
+#include "c_viewmodel_attachment.h"
 #else
 #include "vguiscreen.h"
 #endif
@@ -65,6 +66,14 @@ CBaseViewModel::~CBaseViewModel()
 void CBaseViewModel::UpdateOnRemove( void )
 {
 	BaseClass::UpdateOnRemove();
+
+#if defined( CLIENT_DLL )
+	if ( m_hHandsAttachment.Get() )
+	{
+		// Simply release the handle - the attachment entity will be cleaned up
+		m_hHandsAttachment = NULL;
+	}
+#endif
 
 	DestroyControlPanels();
 }

@@ -14,6 +14,8 @@
 #include "iviewrender_beams.h"			// flashlight beam
 #include "r_efx.h"
 #include "dlight.h"
+#include "hl2sb_model_scan.h"
+#include "hl2sb_model_config.h"
 
 #if defined( LUA_SDK )
 #include "luamanager.h"

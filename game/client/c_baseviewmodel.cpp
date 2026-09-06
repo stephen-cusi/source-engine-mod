@@ -7,6 +7,7 @@
 //=============================================================================//
 #include "cbase.h"
 #include "c_baseviewmodel.h"
+#include "c_viewmodel_attachment.h"
 #include "model_types.h"
 #include "hud.h"
 #include "view_shared.h"
@@ -18,6 +19,8 @@
 #include "tools/bonelist.h"
 #include <KeyValues.h>
 #include "hltvcamera.h"
+#include "hl2sb_model_config.h"
+#include "hands_model_mapping.h"
 
 #if defined( REPLAY_ENABLED )
 #include "replay/replaycamera.h"
@@ -327,6 +330,12 @@ int C_BaseViewModel::DrawModel( int flags )
 		}
 	}
 
+	// Draw hands attachment if present
+	if ( m_hHandsAttachment.Get() )
+	{
+		m_hHandsAttachment->DrawModel( flags );
+	}
+
 	return ret;
 }
 
@@ -448,6 +457,9 @@ void C_BaseViewModel::OnDataChanged( DataUpdateType_t updateType )
 {
 	SetPredictionEligible( true );
 	BaseClass::OnDataChanged(updateType);
+
+	// Update hands attachment when viewmodel changes
+	UpdateHandsAttachment();
 }
 
 void C_BaseViewModel::PostDataUpdate( DataUpdateType_t updateType )
@@ -491,4 +503,66 @@ void C_BaseViewModel::GetBoneControllers(float controllers[MAXSTUDIOBONECTRLS])
 RenderGroup_t C_BaseViewModel::GetRenderGroup()
 {
 	return RENDER_GROUP_VIEW_MODEL_OPAQUE;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Update hands attachment based on player model
+//-----------------------------------------------------------------------------
+// Track last player model to detect changes
+static const char *g_pszLastPlayerModel = NULL;
+
+void C_BaseViewModel::UpdateHandsAttachment( void )
+{
+	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+	if ( !pOwner )
+		return;
+
+	// Get player model path
+	const char *pszPlayerModel = modelinfo->GetModelName( pOwner->GetModel() );
+	
+	// Check if player model changed
+	bool bModelChanged = ( pszPlayerModel != g_pszLastPlayerModel );
+	if ( bModelChanged && g_pszLastPlayerModel )
+	{
+		// Model changed, force update
+		g_pszLastPlayerModel = pszPlayerModel;
+		
+		// Remove old hands attachment and recreate
+		if ( m_hHandsAttachment.Get() )
+		{
+			m_hHandsAttachment->DetachFromViewmodel();
+			m_hHandsAttachment->Release();
+			m_hHandsAttachment = NULL;
+		}
+	}
+	else if ( !g_pszLastPlayerModel )
+	{
+		g_pszLastPlayerModel = pszPlayerModel;
+	}
+
+	// Get hands model from config system
+	const char *pszHandsModel = HL2SB_GetHandsModelForPlayer( pszPlayerModel );
+
+	// No hands model for this player model
+	if ( !pszHandsModel )
+	{
+		m_hHandsAttachment = NULL;
+		return;
+	}
+
+	if ( !m_hHandsAttachment.Get() )
+	{
+		// Create new hands attachment
+		C_ViewmodelAttachment *pAttach = new C_ViewmodelAttachment;
+		if ( pAttach && pAttach->SetHandsModel( pszHandsModel ) )
+		{
+			pAttach->AttachToViewmodel( this );
+			m_hHandsAttachment = pAttach;
+		}
+	}
+	else if ( bModelChanged )
+	{
+		// Update existing hands model
+		m_hHandsAttachment->SetHandsModel( pszHandsModel );
+	}
 }

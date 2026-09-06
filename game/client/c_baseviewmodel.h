@@ -16,4 +16,19 @@
 #include "utlvector.h"
 #include "baseviewmodel_shared.h"
 
+#if defined( CLIENT_DLL )
+
+// Forward declaration
+class C_ViewmodelAttachment;
+
+// Add hands attachment member to C_BaseViewModel
+// This is done via a client-side extension since the base class is shared
+
+// Add this to your c_baseviewmodel.cpp:
+// CHandle<C_ViewmodelAttachment> m_hHandsAttachment;
+// void UpdateHandsAttachment( void );
+// void UpdateOnRemove( void );
+
+#endif // CLIENT_DLL
+
 #endif // C_BASEVIEWMODEL_H

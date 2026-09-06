@@ -127,6 +127,16 @@ $Project "Client (HL2MP)"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_player_shared.h"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_weapon_parse.cpp"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_weapon_parse.h"
+			// HL2SB Model System
+			$File	"$SRCDIR\game\shared\hl2sb_model_scan.cpp"
+			$File	"$SRCDIR\game\shared\hl2sb_model_scan.h"
+			$File	"$SRCDIR\game\shared\hl2sb_model_config.cpp"
+			$File	"$SRCDIR\game\shared\hl2sb_model_config.h"
+			$File	"$SRCDIR\game\shared\hl2sb_model_commands.cpp"
+			$File	"cl_hl2sb_modelmenu.cpp"
+			$File	"cl_hl2sb_modelmenu.h"
+			$File	"hl2sb_crash_handler.cpp"
+			$File	"hl2sb_crash_handler.h"
 
 			$Folder	"Weapons"
 			{

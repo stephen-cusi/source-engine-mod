@@ -171,6 +171,9 @@ public:
 	virtual bool			GetAttachment( int number, Vector &origin );
 	virtual	bool			GetAttachment( int number, Vector &origin, QAngle &angles );
 	virtual bool			GetAttachmentVelocity( int number, Vector &originVel, Quaternion &angleVel );
+
+	// Hands attachment system
+	void					UpdateHandsAttachment( void );
 #endif
 
 private:
@@ -198,6 +201,10 @@ private:
 	int						m_nOldAnimationParity;
 #endif
 
+	// Hands attachment for custom player models
+#if defined( CLIENT_DLL )
+CHandle<class C_ViewmodelAttachment>	m_hHandsAttachment;
+#endif
 
 	typedef CHandle< CBaseCombatWeapon > CBaseCombatWeaponHandle;
 	CNetworkVar( CBaseCombatWeaponHandle, m_hWeapon );
