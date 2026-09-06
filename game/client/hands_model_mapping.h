@@ -11,12 +11,23 @@
 #endif
 
 #include "convar.h"
+#include "tier0/platform.h"  // MAX_PATH
 
 // Default hands model when no mapping is found
 #define HANDS_MODEL_DEFAULT "models/arms/hands.mdl"
 
 // ConVar for overriding hands model
 extern ConVar cl_hands_model;
+
+// Last successfully attached hands model (populated by C_BaseViewModel).
+// Empty string means no c_hands have been attached -> stock/none.
+extern char g_pszLastHandsModel[MAX_PATH];
+
+// Hands model whose entity creation failed (see c_baseviewmodel.cpp).
+extern char g_pszFailedHandsModel[MAX_PATH];
+
+// Returns the currently active hands model path, or NULL if none is attached.
+const char *HL2SB_GetActiveHandsModel( void );
 
 // Get the hands model path for a given player model
 // Returns NULL if no hands should be shown

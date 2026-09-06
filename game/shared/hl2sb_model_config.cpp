@@ -221,3 +221,34 @@ const char *HL2SB_GetHandsModelForPlayer( const char *pszPlayerModelPath )
 
 	return NULL;
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: Print the loaded model config list to the console.
+//          Shared by hl2sb_listmodels and hl2sb_modelmenu.
+//-----------------------------------------------------------------------------
+void HL2SB_PrintModelList( void )
+{
+	HL2SB_EnsureModelConfigsLoaded();
+
+	Msg( "=== HL2SB Player Models ===\n" );
+	Msg( "Use: hl2sb_setmodel <name>\n" );
+	Msg( "Config Count: %d\n", g_nHL2SB_ModelConfigCount );
+
+	Msg( "\n  Available models:\n" );
+	for ( int i = 0; i < g_nHL2SB_ModelConfigCount; i++ )
+	{
+		const HL2SB_ModelConfig_t &config = g_HL2SB_ModelConfigs[i];
+		Msg( "  [%d] %s\n", i + 1, config.szName );
+		Msg( "      Model: %s\n", config.szPlayerModel );
+		if ( config.szHandsModel[0] )
+		{
+			Msg( "      Hands: %s\n", config.szHandsModel );
+		}
+		Msg( "\n" );
+	}
+
+	if ( g_nHL2SB_ModelConfigCount == 0 )
+	{
+		Msg( "  (none found - check cfg/playermodel/)\n" );
+	}
+}

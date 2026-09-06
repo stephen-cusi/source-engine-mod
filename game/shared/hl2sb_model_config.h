@@ -35,6 +35,10 @@ void HL2SB_LoadAllModelConfigs( void );
 // from any console command.  Safe to call more than once.
 void HL2SB_EnsureModelConfigsLoaded( void );
 
+// Print the list of loaded player model configs to the console.  Shared by the
+// hl2sb_listmodels and hl2sb_modelmenu commands.
+void HL2SB_PrintModelList( void );
+
 // Load a specific model config by name
 // Returns true if config was loaded successfully
 bool HL2SB_LoadModelConfig( const char *pszConfigName );

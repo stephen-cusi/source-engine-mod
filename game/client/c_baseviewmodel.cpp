@@ -512,13 +512,24 @@ RenderGroup_t C_BaseViewModel::GetRenderGroup()
 //-----------------------------------------------------------------------------
 // Purpose: Update hands attachment based on player model
 //-----------------------------------------------------------------------------
-// Track last successfully attached hands model
-static char g_pszLastHandsModel[MAX_PATH] = "";
+// Track last successfully attached hands model (non-static: hl2sb_status reads it)
+char g_pszLastHandsModel[MAX_PATH] = "";
 
 // Last hands model whose entity creation failed. Retrying every frame just
 // spams the console and churns entities - a bad/missing model path stays
 // blocked until the requested model changes or the attachment is released.
-static char g_pszFailedHandsModel[MAX_PATH] = "";
+char g_pszFailedHandsModel[MAX_PATH] = "";
+
+// Accessor for the current c_hands state, so console commands (hl2sb_status)
+// can report what hands model is actually attached without reaching into the
+// viewmodel internals.
+const char *HL2SB_GetActiveHandsModel( void )
+{
+	// Empty means no hands have been attached this session -> stock/none.
+	if ( !g_pszLastHandsModel[0] )
+		return NULL;
+	return g_pszLastHandsModel;
+}
 
 // Master switch, defined in c_viewmodel_attachment.cpp
 extern ConVar cl_hands;
