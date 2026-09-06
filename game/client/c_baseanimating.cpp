@@ -698,6 +698,7 @@ C_BaseAnimating::C_BaseAnimating() :
 	m_pRagdollInfo = NULL;
 	m_pJiggleBones = NULL;
 	m_pBoneMergeCache = NULL;
+	m_bLenientBoneMerge = false;
 
 	m_flPlaybackRate = 1.0f;
 
@@ -1460,6 +1461,7 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 			{
 				m_pBoneMergeCache = new CBoneMergeCache;
 				m_pBoneMergeCache->Init( this );
+				m_pBoneMergeCache->SetLenientNameMatching( m_bLenientBoneMerge );
 			}
 			m_pBoneMergeCache->MergeMatchingBones( boneMask );
 		}

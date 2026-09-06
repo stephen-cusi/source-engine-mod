@@ -68,11 +68,8 @@ void CBaseViewModel::UpdateOnRemove( void )
 	BaseClass::UpdateOnRemove();
 
 #if defined( CLIENT_DLL )
-	if ( m_hHandsAttachment.Get() )
-	{
-		// Simply release the handle - the attachment entity will be cleaned up
-		m_hHandsAttachment = NULL;
-	}
+	// Detach and delete the hands entity - it is owned by this viewmodel
+	ReleaseHandsAttachment();
 #endif
 
 	DestroyControlPanels();

@@ -153,6 +153,11 @@ public:
 	virtual bool OnPostInternalDrawModel( ClientModelRenderInfo_t *pInfo );
 	void		DoInternalDrawModel( ClientModelRenderInfo_t *pInfo, DrawModelState_t *pState, matrix3x4_t *pBoneToWorldArray = NULL );
 
+	// Make this entity's EF_BONEMERGE match bones with rig prefixes stripped
+	// ("ValveBiped.Bip01_R_Hand" <-> "Bip01_R_Hand"), so GMod c_arms models can
+	// merge onto stock HL2/HL2MP viewmodels. Must be called before first bone setup.
+	void			SetLenientBoneMerge( bool bLenient ) { m_bLenientBoneMerge = bLenient; }
+
 	//
 	virtual CMouthInfo *GetMouth();
 	virtual void	ControlMouth( CStudioHdr *pStudioHdr );
@@ -596,12 +601,15 @@ protected:
 	CInterpolatedVar< float >		m_iv_flCycle;
 	float							m_flOldCycle;
 	bool							m_bNoModelParticles;
+	CBoneMergeCache					*m_pBoneMergeCache;	// This caches the strcmp lookups that it has to do
+														// when merging bones
 
 private:
 	float							m_flOldModelScale;
 	int								m_nOldSequence;
-	CBoneMergeCache					*m_pBoneMergeCache;	// This caches the strcmp lookups that it has to do
-														// when merg
+
+	// Bonemerge name matching is lenient (prefix-stripped) when set. See SetLenientBoneMerge().
+	bool							m_bLenientBoneMerge;
 	
 	CUtlVector< matrix3x4_t >		m_CachedBoneData; // never access this directly. Use m_BoneAccessor.
 	memhandle_t						m_hitboxBoneCacheHandle;

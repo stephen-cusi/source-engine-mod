@@ -25,6 +25,7 @@ CBoneMergeCache::CBoneMergeCache()
 	m_pFollowRenderHdr = NULL;
 	m_pOwnerHdr = NULL;
 	m_nFollowBoneSetupMask = 0;
+	m_bLenientNameMatch = false;
 }
 
 void CBoneMergeCache::Init( C_BaseAnimating *pOwner )
@@ -35,6 +36,43 @@ void CBoneMergeCache::Init( C_BaseAnimating *pOwner )
 	m_pFollowRenderHdr = NULL;
 	m_pOwnerHdr = NULL;
 	m_nFollowBoneSetupMask = 0;
+	m_bLenientNameMatch = false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Strip rig prefix segments ("ValveBiped.", "cmodels.", ...) from a bone
+//          name so GMod c_arms rigs ("ValveBiped.Bip01_R_Hand") can merge onto
+//          stock viewmodels whose biped bones are just "Bip01_R_Hand".
+//-----------------------------------------------------------------------------
+static void StripBonePrefix( const char *pszIn, char *pszOut, int nOutLen )
+{
+	const char *pszBase = strrchr( pszIn, '.' );
+	pszBase = pszBase ? pszBase + 1 : pszIn;
+	Q_strncpy( pszOut, pszBase, nOutLen );
+}
+
+static int FindMergeBone( CStudioHdr *pFollowHdr, const char *pszOwnerBoneName, bool bLenient )
+{
+	int iBone = Studio_BoneIndexByName( pFollowHdr, pszOwnerBoneName );
+	if ( iBone >= 0 || !bLenient )
+		return iBone;
+
+	// Exact match failed - retry with rig prefixes stripped from both names.
+	char szNormOwner[MAX_PATH];
+	StripBonePrefix( pszOwnerBoneName, szNormOwner, sizeof( szNormOwner ) );
+	if ( !szNormOwner[0] )
+		return -1;
+
+	int nBones = pFollowHdr->numbones();
+	for ( int i = 0; i < nBones; i++ )
+	{
+		char szNormFollow[MAX_PATH];
+		StripBonePrefix( pFollowHdr->pBone( i )->pszName(), szNormFollow, sizeof( szNormFollow ) );
+		if ( !Q_stricmp( szNormOwner, szNormFollow ) )
+			return i;
+	}
+
+	return -1;
 }
 
 void CBoneMergeCache::UpdateCache()
@@ -80,7 +118,7 @@ void CBoneMergeCache::UpdateCache()
 			m_nFollowBoneSetupMask = BONE_USED_BY_BONE_MERGE;
 			for ( int i = 0; i < m_pOwnerHdr->numbones(); i++ )
 			{
-				int parentBoneIndex = Studio_BoneIndexByName( m_pFollowHdr, pOwnerBones[i].pszName() );
+				int parentBoneIndex = FindMergeBone( m_pFollowHdr, pOwnerBones[i].pszName(), m_bLenientNameMatch );
 				if ( parentBoneIndex < 0 )
 					continue;
 

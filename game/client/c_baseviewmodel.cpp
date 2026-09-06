@@ -331,9 +331,17 @@ int C_BaseViewModel::DrawModel( int flags )
 	}
 
 	// Draw hands attachment if present
-	if ( m_hHandsAttachment.Get() )
+	if ( m_hHandsAttachment.Get() && !m_bDrawingHandsAttachment )
 	{
+		// The attachment's base DrawModel redraws us (EF_BONEMERGE follow path)
+		// to refresh bones - guard against that reentrant call drawing hands again.
+		m_bDrawingHandsAttachment = true;
+
+		// Sync animation state first so the bone merge reads this frame's bones
+		m_hHandsAttachment->SyncToViewModel( this );
 		m_hHandsAttachment->DrawModel( flags );
+
+		m_bDrawingHandsAttachment = false;
 	}
 
 	return ret;
@@ -511,44 +519,66 @@ RenderGroup_t C_BaseViewModel::GetRenderGroup()
 // Track last successfully attached hands model
 static char g_pszLastHandsModel[MAX_PATH] = "";
 
+// Master switch, defined in c_viewmodel_attachment.cpp
+extern ConVar cl_hands;
+
+void C_BaseViewModel::ReleaseHandsAttachment( void )
+{
+	if ( C_ViewmodelAttachment *pOld = m_hHandsAttachment.Get() )
+	{
+		pOld->DetachFromViewmodel();
+		pOld->Release();
+		m_hHandsAttachment = NULL;
+	}
+	// Clear the "already attached" cache (our entity is gone; another viewmodel
+	// that holds the same model simply re-attaches it a bit early - harmless).
+	g_pszLastHandsModel[0] = '\0';
+}
+
 void C_BaseViewModel::UpdateHandsAttachment( void )
 {
 	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
 	if ( !pOwner )
 		return;
 
-	// By default show hands (our system is for adding hands to GMod weapons).
-	// Only hide if a scripted weapon explicitly sets UseHands = false.
-	C_BaseCombatWeapon *pWeapon = GetOwningWeapon();
-	if ( pWeapon )
+	// Master switch off - drop any existing attachment
+	if ( !cl_hands.GetBool() )
 	{
-		// If scripted weapon has UseHands = false, skip hands
-		// (scripted weapon class exposes UseHands(); we cannot easily access it here
-		//  without a cast, so we only hide when explicitly requested via the ConVar path)
+		ReleaseHandsAttachment();
+		return;
 	}
 
 	// Get player model path
 	const char *pszPlayerModel = modelinfo->GetModelName( pOwner->GetModel() );
 
-	// Get hands model from config system
-	const char *pszHandsModel = HL2SB_GetHandsModelForPlayer( pszPlayerModel );
+	// Get hands model: cl_hands_model override first, else config-system mapping
+	const char *pszHandsModel = NULL;
+	const char *pszOverride = cl_hands_model.GetString();
+	if ( pszOverride && pszOverride[0] && Q_stricmp( pszOverride, "auto" ) != 0 )
+	{
+		pszHandsModel = pszOverride;
+	}
+	else
+	{
+		pszHandsModel = HL2SB_GetHandsModelForPlayer( pszPlayerModel );
+	}
 
 	// No hands model for this player model - remove attachment
 	if ( !pszHandsModel )
 	{
-		g_pszLastHandsModel[0] = '\0';
+		ReleaseHandsAttachment();
 		return;
 	}
 
-	// If we already successfully attached this exact model, do nothing
-	// (prevents repeated creation every frame)
-	if ( !Q_stricmp( g_pszLastHandsModel, pszHandsModel ) )
+	// g_pszLastHandsModel is global; another viewmodel may own the cached
+	// attachment already. Only skip when *our* attachment is the right model.
+	if ( !Q_stricmp( g_pszLastHandsModel, pszHandsModel ) && m_hHandsAttachment.Get() )
 	{
 		return;
 	}
 
-	// Remove old attachment
-	m_hHandsAttachment = NULL;
+	// Remove our old attachment (if any)
+	ReleaseHandsAttachment();
 
 	// Create new hands attachment
 	C_ViewmodelAttachment *pAttach = new C_ViewmodelAttachment;

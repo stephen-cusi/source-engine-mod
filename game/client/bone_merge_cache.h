@@ -40,6 +40,11 @@ public:
 	// Returns true if the specified bone is one that gets merged in MergeMatchingBones.
 	int IsBoneMerged( int iBone ) const;
 
+	// When enabled, bone name matching ignores rig prefix segments ("ValveBiped.Bip01_R_Hand"
+	// matches "Bip01_R_Hand"), so GMod-style c_arms models can merge onto stock HL2/HL2MP
+	// viewmodels that use unprefixed biped bones.
+	void SetLenientNameMatching( bool bLenient ) { m_bLenientNameMatch = bLenient; }
+
 	// Gets the origin for the first merge bone on the parent.
 	bool GetAimEntOrigin( Vector *pAbsOrigin, QAngle *pAbsAngles );
 
@@ -70,6 +75,9 @@ private:
 
 	CUtlVector<CMergedBone> m_MergedBones;
 	CUtlVector<unsigned char> m_BoneMergeBits;	// One bit for each bone. The bit is set if the bone gets merged.
+
+	// If true, bone names are matched with rig prefixes stripped.
+	bool m_bLenientNameMatch;
 };
 
 
