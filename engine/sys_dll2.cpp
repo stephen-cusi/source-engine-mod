@@ -1850,6 +1850,19 @@ extern "C" void __cdecl WriteSteamMiniDumpWithComment( unsigned int uStructuredE
 			struct _EXCEPTION_POINTERS * pExceptionInfo,
 			const char *pszFilenameSuffix )
 {
+	// Always write a local minidump into <gamedir>/dumps so crashes can be
+	// debugged without Steam/breakpad being present.
+	{
+		char szGameDir[ MAX_PATH ];
+		COM_GetGameDir( szGameDir, sizeof( szGameDir ) );
+		char szPrefix[ MAX_PATH + 32 ];
+		Q_snprintf( szPrefix, sizeof( szPrefix ), "%s/dumps/crash", szGameDir );
+		SetMinidumpFilenamePrefix( szPrefix );
+		// MiniDumpWithDataSegs(0x1) | MiniDumpWithIndirectlyReferencedMemory(0x40) | MiniDumpWithUnloadedModules(0x20)
+		WriteMiniDumpUsingExceptionInfo( uStructuredExceptionCode, pExceptionInfo, 0x61,
+			pszFilenameSuffix, NULL );
+	}
+
 	// TODO: dynamically set the minidump comment from contextual info about the crash (i.e current VPROF node)?
 #if !defined( NO_STEAM )
 
