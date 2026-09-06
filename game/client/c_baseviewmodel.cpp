@@ -519,6 +519,11 @@ RenderGroup_t C_BaseViewModel::GetRenderGroup()
 // Track last successfully attached hands model
 static char g_pszLastHandsModel[MAX_PATH] = "";
 
+// Last hands model whose entity creation failed. Retrying every frame just
+// spams the console and churns entities - a bad/missing model path stays
+// blocked until the requested model changes or the attachment is released.
+static char g_pszFailedHandsModel[MAX_PATH] = "";
+
 // Master switch, defined in c_viewmodel_attachment.cpp
 extern ConVar cl_hands;
 
@@ -533,6 +538,7 @@ void C_BaseViewModel::ReleaseHandsAttachment( void )
 	// Clear the "already attached" cache (our entity is gone; another viewmodel
 	// that holds the same model simply re-attaches it a bit early - harmless).
 	g_pszLastHandsModel[0] = '\0';
+	g_pszFailedHandsModel[0] = '\0';
 }
 
 void C_BaseViewModel::UpdateHandsAttachment( void )
@@ -570,6 +576,14 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 		return;
 	}
 
+	// Same model that already failed to load this session - stay quiet instead
+	// of re-creating and re-warning every frame (resets via cl_hands toggle,
+	// model/cvar change, or viewmodel removal).
+	if ( g_pszFailedHandsModel[0] && !Q_stricmp( g_pszFailedHandsModel, pszHandsModel ) )
+	{
+		return;
+	}
+
 	// g_pszLastHandsModel is global; another viewmodel may own the cached
 	// attachment already. Only skip when *our* attachment is the right model.
 	if ( !Q_stricmp( g_pszLastHandsModel, pszHandsModel ) && m_hHandsAttachment.Get() )
@@ -587,10 +601,12 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 		pAttach->AttachToViewmodel( this );
 		m_hHandsAttachment = pAttach;
 		Q_strncpy( g_pszLastHandsModel, pszHandsModel, sizeof(g_pszLastHandsModel) );
+		g_pszFailedHandsModel[0] = '\0';
 		Msg( "[HL2SB-HANDS] Attached hands model: %s\n", pszHandsModel );
 	}
 	else
 	{
 		if ( pAttach ) delete pAttach;
+		Q_strncpy( g_pszFailedHandsModel, pszHandsModel, sizeof(g_pszFailedHandsModel) );
 	}
 }
