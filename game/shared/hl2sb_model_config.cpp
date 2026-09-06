@@ -13,6 +13,21 @@
 
 HL2SB_ModelConfig_t g_HL2SB_ModelConfigs[HL2SB_MAX_MODELS];
 int g_nHL2SB_ModelConfigCount = 0;
+// Guard so the table is only scanned once on each side unless someone explicitly
+// reloads.  Prevents console commands from re-reading the cfg dir every call.
+static bool g_bModelConfigsLoaded = false;
+
+//-----------------------------------------------------------------------------
+// Purpose: Lazy-load the model config table if it hasn't been populated yet.
+//-----------------------------------------------------------------------------
+void HL2SB_EnsureModelConfigsLoaded( void )
+{
+	if ( g_bModelConfigsLoaded )
+		return;
+
+	HL2SB_LoadAllModelConfigs();
+	g_bModelConfigsLoaded = true;
+}
 
 //-----------------------------------------------------------------------------
 // Purpose: Load a single model config from KeyValues file
@@ -83,6 +98,7 @@ bool HL2SB_LoadModelConfigFromKV( const char *pszFilePath, const char *pszConfig
 void HL2SB_LoadAllModelConfigs( void )
 {
 	g_nHL2SB_ModelConfigCount = 0;
+	g_bModelConfigsLoaded = false;
 
 	Msg( "[HL2SB] Loading model configs...\n" );
 
@@ -151,6 +167,8 @@ bool HL2SB_LoadModelConfig( const char *pszConfigName )
 //-----------------------------------------------------------------------------
 const HL2SB_ModelConfig_t *HL2SB_GetModelConfig( int nIndex )
 {
+	HL2SB_EnsureModelConfigsLoaded();
+
 	if ( nIndex < 0 || nIndex >= g_nHL2SB_ModelConfigCount )
 		return NULL;
 
@@ -162,6 +180,8 @@ const HL2SB_ModelConfig_t *HL2SB_GetModelConfig( int nIndex )
 //-----------------------------------------------------------------------------
 const HL2SB_ModelConfig_t *HL2SB_GetModelConfigByName( const char *pszName )
 {
+	HL2SB_EnsureModelConfigsLoaded();
+
 	for ( int i = 0; i < g_nHL2SB_ModelConfigCount; i++ )
 	{
 		if ( !Q_stricmp( g_HL2SB_ModelConfigs[i].szName, pszName ) )
@@ -175,6 +195,8 @@ const HL2SB_ModelConfig_t *HL2SB_GetModelConfigByName( const char *pszName )
 //-----------------------------------------------------------------------------
 const HL2SB_ModelConfig_t *HL2SB_FindModelConfigByPath( const char *pszPlayerModelPath )
 {
+	HL2SB_EnsureModelConfigsLoaded();
+
 	if ( !pszPlayerModelPath || !pszPlayerModelPath[0] )
 		return NULL;
 
@@ -191,6 +213,8 @@ const HL2SB_ModelConfig_t *HL2SB_FindModelConfigByPath( const char *pszPlayerMod
 //-----------------------------------------------------------------------------
 const char *HL2SB_GetHandsModelForPlayer( const char *pszPlayerModelPath )
 {
+	HL2SB_EnsureModelConfigsLoaded();
+
 	const HL2SB_ModelConfig_t *pConfig = HL2SB_FindModelConfigByPath( pszPlayerModelPath );
 	if ( pConfig && pConfig->szHandsModel[0] )
 		return pConfig->szHandsModel;

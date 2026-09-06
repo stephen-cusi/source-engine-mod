@@ -11,16 +11,25 @@
 
 void HL2SB_ShowModelMenu( void )
 {
+	// Make sure the config table is populated before reading it
+	HL2SB_EnsureModelConfigsLoaded();
+
 	// List all available models
 	Msg( "=== HL2SB Player Models ===\n" );
-	Msg( "Use: hl2sb_setmodel <name>\n\n" );
+	Msg( "Use: hl2sb_setmodel <name>\n" );
+	Msg( "Config Count: %d\n\n", g_nHL2SB_ModelConfigCount );
 
 	for ( int i = 0; i < g_nHL2SB_ModelConfigCount; i++ )
 	{
 		const HL2SB_ModelConfig_t &config = g_HL2SB_ModelConfigs[i];
-		Msg( "  %s - %s\n", config.szName, config.szPlayerModel );
+		Msg( "  [%d] %s\n", i + 1, config.szName );
+		Msg( "      Model: %s\n", config.szPlayerModel );
+		if ( config.szHandsModel[0] )
+		{
+			Msg( "      Hands: %s\n", config.szHandsModel );
+		}
+		Msg( "\n" );
 	}
-	Msg( "\n" );
 }
 
 void HL2SB_HideModelMenu( void )

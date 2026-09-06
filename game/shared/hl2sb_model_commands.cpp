@@ -19,6 +19,9 @@ extern IVEngineClient *engine;
 //-----------------------------------------------------------------------------
 void CC_HL2SB_SetModel( const CCommand &args )
 {
+	// Make sure the config table is populated before reading it
+	HL2SB_EnsureModelConfigsLoaded();
+
 	if ( args.ArgC() < 2 )
 	{
 		Msg( "Usage: hl2sb_setmodel <configname>\n" );
@@ -46,6 +49,11 @@ void CC_HL2SB_SetModel( const CCommand &args )
 	if ( !pConfig )
 	{
 		Warning( "[HL2SB] Model config '%s' not found\n", pszConfigName );
+		Msg( "Available configs:\n" );
+		for ( int i = 0; i < g_nHL2SB_ModelConfigCount; i++ )
+		{
+			Msg( "  %s\n", g_HL2SB_ModelConfigs[i].szName );
+		}
 		return;
 	}
 
@@ -67,6 +75,9 @@ void CC_HL2SB_SetModel( const CCommand &args )
 //-----------------------------------------------------------------------------
 void CC_HL2SB_ListModels( const CCommand &args )
 {
+	// Make sure the config table is populated before reading it
+	HL2SB_EnsureModelConfigsLoaded();
+
 	Msg( "=== HL2SB Player Models ===\n" );
 	Msg( "Config Count: %d\n\n", g_nHL2SB_ModelConfigCount );
 

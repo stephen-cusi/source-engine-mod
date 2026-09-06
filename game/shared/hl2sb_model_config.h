@@ -29,6 +29,12 @@ extern int g_nHL2SB_ModelConfigCount;
 // Load all model configs from cfg/playermodel/
 void HL2SB_LoadAllModelConfigs( void );
 
+// Lazy-load the model config table if it hasn't been populated yet.
+// On the client the table is only populated by HL2SB_LoadAllModelConfigs()
+// (the server does it during Precache), so call this before reading the table
+// from any console command.  Safe to call more than once.
+void HL2SB_EnsureModelConfigsLoaded( void );
+
 // Load a specific model config by name
 // Returns true if config was loaded successfully
 bool HL2SB_LoadModelConfig( const char *pszConfigName );

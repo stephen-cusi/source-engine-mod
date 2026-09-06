@@ -1347,7 +1347,7 @@ void CHL2MPRules::Precache( void )
 #ifdef HL2SB
 	// Load model configs only (no precache - engine handles custom models)
 	Msg( "[HL2SB] Loading configs...\n" );
-	HL2SB_LoadAllModelConfigs();
+	HL2SB_EnsureModelConfigsLoaded();
 	Msg( "[HL2SB] Loaded %d configs\n", g_nHL2SB_ModelConfigCount );
 #endif
 }
