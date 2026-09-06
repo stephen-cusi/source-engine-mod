@@ -6,6 +6,7 @@
 //===========================================================================//
 #include "cbase.h"
 #include "c_baseanimating.h"
+// HL2SB: recompile marker for ai_activity.h ACT_HL2MP_WALK addition (client/server enum parity).
 #include "c_sprite.h"
 #include "model_types.h"
 #include "bone_setup.h"

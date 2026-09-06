@@ -725,8 +725,36 @@ bool CHL2MP_Player::WantsLagCompensationOnEntity( const CBasePlayer *pPlayer, co
 	return true;
 }
 
+// HL2SB: optional remap of HL2MP activities onto HL2 campaign activities.
+// GMod player-model masters actually ship the HL2MP ("mp_*") sequences AND the
+// HL2 ones, so the default is OFF; enable only for models that lack the HL2MP
+// set. The original T-pose cause was the missing m_anm/f_anm/z_anm masters.
+ConVar hl2sb_gmod_anims( "hl2sb_gmod_anims", "0", FCVAR_NOTIFY,
+	"Map HL2MP activities onto HL2 campaign activities (0 = keep HL2MP set, correct for GMod masters)" );
+
+// Diagnostic: log the movement activity + resolved sequence whenever the main
+// sequence changes, so we can see whether ACT_HL2MP_RUN resolves to run_all_01.
+ConVar hl2sb_anim_debug( "hl2sb_anim_debug", "0", 0, "Log CHL2MP_Player::SetAnimation sequence resolution" );
+
+// Speed below which the player uses the walk cycle instead of the run cycle.
+// Matches hl2_normspeed(190)-20; GMod shows walk_all at normal movement speed.
+ConVar hl2sb_runthreshold( "hl2sb_runthreshold", "170", FCVAR_NOTIFY, "Movement speed at/above which the run animation is used instead of walk" );
+
 Activity CHL2MP_Player::TranslateTeamActivity( Activity ActToTranslate )
 {
+	if ( hl2sb_gmod_anims.GetBool() )
+	{
+		switch ( ActToTranslate )
+		{
+		case ACT_HL2MP_IDLE:			return ACT_IDLE;
+		case ACT_HL2MP_RUN:				return ACT_RUN;
+		case ACT_HL2MP_IDLE_CROUCH:		return ACT_CROUCHIDLE;
+		case ACT_HL2MP_WALK_CROUCH:		return ACT_WALK_CROUCH;
+		case ACT_HL2MP_JUMP:			return ACT_LEAP;
+		default:						break;
+		}
+	}
+
 	if ( m_iModelType == TEAM_COMBINE )
 		 return ActToTranslate;
 	
@@ -836,16 +864,14 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 			{
 				if ( speed > 0 )
 				{
-					/*
-					if ( bRunning == false )
-					{
-						idealActivity = ACT_WALK;
-					}
+					// GMod-style movement: below the run threshold use the
+					// walk cycle (walk_all) so the leg cadence matches the
+					// actual movement speed. Forcing the run animation at walk
+					// speed slowed it to ~45%, which looked like foot-sliding.
+					if ( speed < hl2sb_runthreshold.GetFloat() )
+						idealActivity = ACT_HL2MP_WALK;
 					else
-					*/
-					{
 						idealActivity = ACT_HL2MP_RUN;
-					}
 				}
 				else
 				{
@@ -890,6 +916,12 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		// Already using the desired animation?
 		if ( GetSequence() == animDesired )
 			return;
+
+		if ( hl2sb_anim_debug.GetBool() )
+		{
+			Msg( "[ANIMDBG] spd=%.0f actEnum=%d -> seq#%d '%s'\n",
+				speed, (int)idealActivity, animDesired, GetSequenceName( animDesired ) );
+		}
 
 		m_flPlaybackRate = 1.0;
 		ResetSequence( animDesired );

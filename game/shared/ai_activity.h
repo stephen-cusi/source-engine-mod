@@ -2107,6 +2107,12 @@ typedef enum
 	ACT_SPELL_VM_ARM, 
 	ACT_SPELL_VM_FIRE,
 
+	// HL2SB: GMod player-model masters carry a "walk_all" sequence tagged with
+	// the activity name ACT_HL2MP_WALK (Valve's HL2MP list has no plain walk).
+	// Registered by name at load, so appending here (not in the HL2MP block)
+	// avoids shifting any existing activity value.
+	ACT_HL2MP_WALK,
+
 	// this is the end of the global activities, private per-monster activities start here.
 	LAST_SHARED_ACTIVITY,
 } Activity;
