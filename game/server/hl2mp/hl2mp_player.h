@@ -17,6 +17,7 @@ class CHL2MP_Player;
 #include "simtimer.h"
 #include "soundenvelope.h"
 #include "hl2mp_player_shared.h"
+#include "gmod_player_animstate.h"
 #include "hl2mp_gamerules.h"
 #include "utldict.h"
 
@@ -146,7 +147,7 @@ public:
 private:
 
 	CNetworkQAngle( m_angEyeAngles );
-	CPlayerAnimState   m_PlayerAnimState;
+	CGModPlayerAnimState   m_PlayerAnimState;
 
 	int m_iLastWeaponFireUsercmd;
 	int m_iModelType;

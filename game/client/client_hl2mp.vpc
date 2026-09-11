@@ -129,6 +129,9 @@ $Project "Client (HL2MP)"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_gamerules.h"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_player_shared.cpp"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_player_shared.h"
+			// HL2SB GMod player animation state (Phase 1a: behaviour-neutral takeover)
+			$File	"$SRCDIR\game\shared\hl2sb\gmod_player_animstate.cpp"
+			$File	"$SRCDIR\game\shared\hl2sb\gmod_player_animstate.h"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_weapon_parse.cpp"
 			$File	"$SRCDIR\game\shared\hl2mp\hl2mp_weapon_parse.h"
 			// HL2SB Model System

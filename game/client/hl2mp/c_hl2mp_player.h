@@ -12,6 +12,7 @@
 class C_HL2MP_Player;
 #include "c_basehlplayer.h"
 #include "hl2mp_player_shared.h"
+#include "gmod_player_animstate.h"
 #include "beamdraw.h"
 
 //=============================================================================
@@ -94,7 +95,7 @@ private:
 	
 	C_HL2MP_Player( const C_HL2MP_Player & );
 
-	CPlayerAnimState m_PlayerAnimState;
+	CGModPlayerAnimState m_PlayerAnimState;
 
 	QAngle	m_angEyeAngles;
 

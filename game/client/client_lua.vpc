@@ -133,6 +133,9 @@ $Project "Client (HL2SB)"
 		// HL2SB: Garry's Mod .gma addon archives (addons/*.gma)
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.cpp"
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.h"
+		// HL2SB: Garry's Mod SWEP.HoldType -> Activity translation (weapon_base/sh_anim.lua)
+		$File "$SRCDIR/game/shared/hl2sb/gmod_activity_translate.cpp"
+		$File "$SRCDIR/game/shared/hl2sb/gmod_activity_translate.h"
 	}
 
 	$Folder "SMenu"

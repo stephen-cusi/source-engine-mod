@@ -102,6 +102,9 @@ $Project "Server (HL2MP)"
 		// HL2SB: Garry's Mod .gma addon archives (addons/*.gma)
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.cpp"
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.h"
+		// HL2SB: Garry's Mod SWEP.HoldType -> Activity translation (weapon_base/sh_anim.lua)
+		$File "$SRCDIR/game/shared/hl2sb/gmod_activity_translate.cpp"
+		$File "$SRCDIR/game/shared/hl2sb/gmod_activity_translate.h"
 		$File "$SRCDIR/game/server/hl2sb_undo.cpp"
 		$File "$SRCDIR/game/server/hl2sb_undo.h"
 	}
