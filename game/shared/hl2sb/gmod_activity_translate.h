@@ -26,8 +26,9 @@
 //       ActivityTranslate[ ACT_MP_SWIM_IDLE ]                = index + 8
 //       ActivityTranslate[ ACT_MP_SWIM ]                     = index + 9
 //
-//   and one special case ("normal" has no jump animation, so it gets
-//   ACT_HL2MP_JUMP_SLAM).
+//   and one special case: for "normal" Garry's Mod replaces the ACT_MP_JUMP
+//   entry with ACT_HL2MP_JUMP_SLAM ("normal" has no jump animation).  It is the
+//   only key sh_anim.lua hand-writes.
 //
 //   WHY SOME ENTRIES ARE ABSENT IN THIS FORK
 //   ----------------------------------------
@@ -37,25 +38,37 @@
 //   it spells them per hold type (ACT_HL2MP_IDLE_PISTOL, ACT_HL2MP_IDLE_SMG1,
 //   ...), so the eight entries here are resolved by *name*, one member at a
 //   time, instead of adding GMod's offsets and hoping the two block layouts
-//   agree.  The fork's seven members line up with sh_anim.lua's first seven
-//   keys, in order:
+//   agree.  Each of the fork's seven members is matched to the key that names
+//   it by meaning, never by carrying GMod's offset across - this fork has no
+//   walk member, so GMod's offset is already one too high from RUN onwards:
 //
+//       fork member                            key that names it (sh_anim.lua)
 //       ACT_HL2MP_IDLE_<HT>                    ACT_MP_STAND_IDLE
-//       ACT_HL2MP_RUN_<HT>                     ACT_MP_WALK
-//       ACT_HL2MP_IDLE_CROUCH_<HT>             ACT_MP_RUN
-//       ACT_HL2MP_WALK_CROUCH_<HT>             ACT_MP_CROUCH_IDLE
-//       ACT_HL2MP_GESTURE_RANGE_ATTACK_<HT>    ACT_MP_CROUCHWALK
-//       ACT_HL2MP_GESTURE_RELOAD_<HT>          ACT_MP_ATTACK_*_PRIMARYFIRE
-//       ACT_HL2MP_JUMP_<HT>                    ACT_MP_RELOAD_*
+//       ACT_HL2MP_RUN_<HT>                     ACT_MP_RUN
+//       ACT_HL2MP_IDLE_CROUCH_<HT>             ACT_MP_CROUCH_IDLE
+//       ACT_HL2MP_WALK_CROUCH_<HT>             ACT_MP_CROUCHWALK
+//       ACT_HL2MP_GESTURE_RANGE_ATTACK_<HT>    ACT_MP_ATTACK_STAND_PRIMARYFIRE
+//       ACT_HL2MP_GESTURE_RELOAD_<HT>          ACT_MP_RELOAD_STAND
+//       ACT_HL2MP_JUMP_<HT>                    ACT_MP_JUMP
 //
-//   Four Lua entries - ACT_MP_JUMP, ACT_RANGE_ATTACK1, ACT_MP_SWIM_IDLE and
-//   ACT_MP_SWIM - address members this fork does not declare at all, so they
-//   have no translation: GMod_TranslateActivity() returns the input activity
-//   unchanged for them (never -1, never 0), exactly as GMod's own
-//   SWEP:TranslateActivity() returning -1 leaves the activity alone, and the
-//   fallback chain then hands back the untranslated activity.  Only eleven of
-//   GMod's hold types have a block here at all; the other eight have no
-//   translations.
+//   Four Lua entries name a member this fork does not declare for any hold
+//   type, so they have no translation: GMod_TranslateActivity() returns the
+//   input activity unchanged for them (never -1, never 0), exactly as GMod's
+//   own SWEP:TranslateActivity() returning -1 leaves the activity alone, and
+//   the fallback chain then hands back the untranslated activity.
+//
+//       ACT_MP_WALK          this fork has no ACT_HL2MP_WALK_<HT> member
+//       ACT_RANGE_ATTACK1    the block has no ranged-attack member
+//       ACT_MP_SWIM_IDLE     the block has no swim member
+//       ACT_MP_SWIM          the block has no swim member
+//
+//   Two more keys share a slot instead of taking one of their own:
+//   ACT_MP_ATTACK_CROUCH_PRIMARYFIRE reuses ACT_MP_ATTACK_STAND_PRIMARYFIRE's
+//   and ACT_MP_RELOAD_CROUCH reuses ACT_MP_RELOAD_STAND's, so every hold type
+//   still resolves exactly seven members.
+//
+//   Only eleven of GMod's hold types have a block here at all (the ten suffixed
+//   ones plus "normal"); the other eight have no translations.
 //
 //   Every hold type name still resolves, including the ones this fork has no
 //   block for (fist, melee2, passive, knife, duel, camera, magic, revolver):
