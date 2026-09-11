@@ -110,14 +110,14 @@ enum GModHoldType_t
 	HL2SB_HOLDTYPE_MELEE,		// "melee"		ACT_HL2MP_IDLE_MELEE
 	HL2SB_HOLDTYPE_SLAM,		// "slam"		ACT_HL2MP_IDLE_SLAM
 	HL2SB_HOLDTYPE_NORMAL,		// "normal"		ACT_HL2MP_IDLE
-	HL2SB_HOLDTYPE_FIST,		// "fist"		(absent from this fork)
-	HL2SB_HOLDTYPE_MELEE2,		// "melee2"		(absent from this fork)
-	HL2SB_HOLDTYPE_PASSIVE,		// "passive"	(absent from this fork)
-	HL2SB_HOLDTYPE_KNIFE,		// "knife"		(absent from this fork)
-	HL2SB_HOLDTYPE_DUEL,		// "duel"		(absent from this fork)
-	HL2SB_HOLDTYPE_CAMERA,		// "camera"		(absent from this fork)
-	HL2SB_HOLDTYPE_MAGIC,		// "magic"		(absent from this fork)
-	HL2SB_HOLDTYPE_REVOLVER,	// "revolver"	(absent from this fork)
+	HL2SB_HOLDTYPE_FIST,		// "fist"		ACT_HL2MP_IDLE_FIST
+	HL2SB_HOLDTYPE_MELEE2,		// "melee2"		ACT_HL2MP_IDLE_MELEE2
+	HL2SB_HOLDTYPE_PASSIVE,		// "passive"	ACT_HL2MP_IDLE_PASSIVE
+	HL2SB_HOLDTYPE_KNIFE,		// "knife"		ACT_HL2MP_IDLE_KNIFE
+	HL2SB_HOLDTYPE_DUEL,		// "duel"		ACT_HL2MP_IDLE_DUEL
+	HL2SB_HOLDTYPE_CAMERA,		// "camera"		ACT_HL2MP_IDLE_CAMERA
+	HL2SB_HOLDTYPE_MAGIC,		// "magic"		ACT_HL2MP_IDLE_MAGIC
+	HL2SB_HOLDTYPE_REVOLVER,	// "revolver"	ACT_HL2MP_IDLE_REVOLVER
 
 	HL2SB_HOLDTYPE_COUNT
 };

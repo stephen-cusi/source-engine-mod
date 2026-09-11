@@ -1821,9 +1821,8 @@ const char *GMod_ActivityName( Activity act )
 // and the base activity is then resolved through the compiler's own
 // ai_activity.h, one row per hold type.  A hold type whose base activity this
 // fork does not define has base 0 ("no index"), which turns every entry into
-// ACT_INVALID - which is the truthful answer, not a guess.  The names of the
-// eight hold types this fork has no block for are still valid hold types: a
-// SWEP may set them, they simply have no translations here.
+// ACT_INVALID - which is the truthful answer, not a guess.  Every hold type in
+// the table below now has a real block in ai_activity.h, so all of them resolve.
 //-----------------------------------------------------------------------------
 struct GModHoldTypeInfo_t
 {
@@ -1848,14 +1847,14 @@ static GModHoldTypeInfo_t s_GMod_HoldTypes[ HL2SB_HOLDTYPE_COUNT ] =
 	{ "melee",		"ACT_HL2MP_IDLE_MELEE",		0 },
 	{ "slam",		"ACT_HL2MP_IDLE_SLAM",		0 },
 	{ "normal",		"ACT_HL2MP_IDLE",			0 },
-	{ "fist",		"ACT_HL2MP_IDLE_FIST",		0 },	// absent in this fork
-	{ "melee2",		"ACT_HL2MP_IDLE_MELEE2",	0 },	// absent in this fork
-	{ "passive",	"ACT_HL2MP_IDLE_PASSIVE",	0 },	// absent in this fork
-	{ "knife",		"ACT_HL2MP_IDLE_KNIFE",		0 },	// absent in this fork
-	{ "duel",		"ACT_HL2MP_IDLE_DUEL",		0 },	// absent in this fork
-	{ "camera",		"ACT_HL2MP_IDLE_CAMERA",	0 },	// absent in this fork
-	{ "magic",		"ACT_HL2MP_IDLE_MAGIC",		0 },	// absent in this fork
-	{ "revolver",	"ACT_HL2MP_IDLE_REVOLVER",	0 },	// absent in this fork
+	{ "fist",		"ACT_HL2MP_IDLE_FIST",		0 },
+	{ "melee2",		"ACT_HL2MP_IDLE_MELEE2",	0 },
+	{ "passive",	"ACT_HL2MP_IDLE_PASSIVE",	0 },
+	{ "knife",		"ACT_HL2MP_IDLE_KNIFE",		0 },
+	{ "duel",		"ACT_HL2MP_IDLE_DUEL",		0 },
+	{ "camera",		"ACT_HL2MP_IDLE_CAMERA",	0 },
+	{ "magic",		"ACT_HL2MP_IDLE_MAGIC",		0 },
+	{ "revolver",	"ACT_HL2MP_IDLE_REVOLVER",	0 },
 };
 
 // Garry's Mod's one hand-written entry:
@@ -1863,110 +1862,112 @@ static GModHoldTypeInfo_t s_GMod_HoldTypes[ HL2SB_HOLDTYPE_COUNT ] =
 //     -- "normal" jump animation doesn't exist
 //     if ( t == "normal" ) then self.ActivityTranslate[ ACT_MP_JUMP ] = ACT_HL2MP_JUMP_SLAM end
 //
-// ACT_MP_JUMP is slot 6 below (this fork's ACT_HL2MP_JUMP_<HT> member), so for
+// ACT_MP_JUMP is slot 7 below (this fork's ACT_HL2MP_JUMP_<HT> member), so for
 // "normal" the override replaces that one slot's answer - which is exactly what
-// the Lua does by mutating its own ActivityTranslate table.  The other ten hold
-// types keep their ACT_HL2MP_JUMP_<HT> member, and the eight hold types with no
-// block have no entry at all, so GMod_TranslateActivity() hands the caller's own
-// activity back for them.
+// the Lua does by mutating its own ActivityTranslate table.  The other hold types
+// keep their ACT_HL2MP_JUMP_<HT> member.
 static const Activity GMOD_NORMAL_JUMP = ACT_HL2MP_JUMP_SLAM;
 
 //-----------------------------------------------------------------------------
 // Where each GMod activity goes, slot by slot.
 //
 // Garry's Mod resolves its table by *arithmetic* on its own ACT_HL2MP_* block
-// (index + N), which works there because GMod's block has ten members per hold
-// type and its identifiers are laid out to match its offsets.  This fork's block
-// has seven members per hold type and the identifiers are spelled per hold type
-// ("ACT_HL2MP_IDLE_PISTOL", "ACT_HL2MP_IDLE_SMG1"), so the entries here are
-// resolved by *name*: for each hold type, ask the compiler for its own seven
-// members, in the fork's declaration order.
+// (index + N), so the block must have ten members per hold type in GMod's order.
+// ai_activity.h now does exactly that (see the generated family there): every
+// hold type has the same ten slots, in the same order, so ACT_HL2MP_IDLE_<HT> + N
+// is the member named N in this table for every hold type - and, because the base
+// block follows the same order, ACT_HL2MP_IDLE + 1..6 and +9 are WALK, RUN,
+// IDLE_CROUCH, WALK_CROUCH, GESTURE_RANGE_ATTACK, GESTURE_RELOAD and SWIM, which
+// is what GMod's own gamemode/animations.lua computes.
 //
-// The keys are matched to the members by *meaning*, never by carrying GMod's
-// offsets across: this fork dropped the walk member (and the aim/swim variants)
-// from the block, so GMod's offset is already one too high by the time it reaches
-// RUN.  Reading the offsets across would hand ACT_MP_RUN the crouch-idle
-// animation, ACT_MP_RELOAD_* the jump animation, and ACT_MP_JUMP nothing:
-//
-//   slot  fork member                   key that names it (sh_anim.lua)     GMod offset
-//   0     ACT_HL2MP_IDLE_<HT>           ACT_MP_STAND_IDLE                    +0
-//   1     ACT_HL2MP_RUN_<HT>            ACT_MP_RUN                           +2
-//   2     ACT_HL2MP_IDLE_CROUCH_<HT>    ACT_MP_CROUCH_IDLE                   +3
-//   3     ACT_HL2MP_WALK_CROUCH_<HT>    ACT_MP_CROUCHWALK                    +4
-//   4     ..._GESTURE_RANGE_ATTACK_<HT> ACT_MP_ATTACK_STAND_PRIMARYFIRE      +5
-//   5     ..._GESTURE_RELOAD_<HT>       ACT_MP_RELOAD_STAND                  +6
-//   6     ACT_HL2MP_JUMP_<HT>           ACT_MP_JUMP                           +7
+//   slot  member                          key that names it                GMod offset
+//   0     ACT_HL2MP_IDLE_<HT>             ACT_MP_STAND_IDLE                +0
+//   1     ACT_HL2MP_WALK_<HT>             ACT_MP_WALK                      +1
+//   2     ACT_HL2MP_RUN_<HT>              ACT_MP_RUN                       +2
+//   3     ACT_HL2MP_IDLE_CROUCH_<HT>      ACT_MP_CROUCH_IDLE               +3
+//   4     ACT_HL2MP_WALK_CROUCH_<HT>      ACT_MP_CROUCHWALK                +4
+//   5     ..._GESTURE_RANGE_ATTACK_<HT>   ACT_MP_ATTACK_STAND_PRIMARYFIRE  +5
+//   6     ..._GESTURE_RELOAD_<HT>         ACT_MP_RELOAD_STAND              +6
+//   7     ACT_HL2MP_JUMP_<HT>             ACT_MP_JUMP                      +7
+//   8     ACT_HL2MP_SWIM_IDLE_<HT>        ACT_MP_SWIM_IDLE                 +8
+//   9     ACT_HL2MP_SWIM_<HT>             ACT_MP_SWIM                      +9
 //
 // Two more keys name the same member as a slot above (sh_anim.lua gives them the
 // same offset as it gives that slot), so they are aliases and not slots of their
-// own - the member set stays seven per hold type:
+// own:
 //
-//   ACT_MP_ATTACK_CROUCH_PRIMARYFIRE  -> slot 4, same member as the standing fire
-//   ACT_MP_RELOAD_CROUCH              -> slot 5, same member as the standing reload
+//   ACT_MP_ATTACK_CROUCH_PRIMARYFIRE  -> slot 5, same member as the standing fire
+//   ACT_MP_RELOAD_CROUCH              -> slot 6, same member as the standing reload
 //
-// Four keys name a member this fork does not declare for *any* hold type, so they
-// are deliberately absent from the table:
+// One key still names a member this fork declares for no hold type, so it is
+// deliberately absent from the table:
 //
-//   ACT_MP_WALK          this fork has no ACT_HL2MP_WALK_<HT> member
-//   ACT_RANGE_ATTACK1    the block has no ranged-attack member
-//   ACT_MP_SWIM_IDLE     the block has no swim member
-//   ACT_MP_SWIM          the block has no swim member
+//   ACT_RANGE_ATTACK1    the block has no melee/ranged-attack member (GMod's own
+//                        table has no entry for it either - sh_anim.lua only
+//                        names it in a comment)
 //
-// For those GMod_TranslateActivity() returns the input activity unchanged (GMod's
-// own "no entry in the table" behaviour), which is what makes the fallback chain
-// hand back the untranslated activity - never -1 and never 0.
+// For that key GMod_TranslateActivity() returns the input activity unchanged
+// (GMod's own "no entry in the table" behaviour), which is what makes the
+// fallback chain hand back the untranslated activity - never -1 and never 0.
 //
 // Each slot is still filled through a name check rather than assumed: if
-// ai_activity.h is ever reordered, the slot degrades to ACT_INVALID (reported in
-// anim_audit/E_holdtype_table.md) instead of silently becoming another hold
-// type's animation.
+// ai_activity.h is ever reordered, the build fails on the static asserts below
+// instead of a slot silently becoming another hold type's animation.
 //-----------------------------------------------------------------------------
-#define GMOD_MAX_ROLE		7		// members in this fork's ACT_HL2MP_* block
+#define GMOD_MAX_ROLE		10		// members in this fork's ACT_HL2MP_* block
 #define GMOD_MAX_HOLDTYPE	19		// entries in s_GMod_HoldTypes
 
 // Member-name suffixes of the fork's ACT_HL2MP_* block, indexed by slot.
+// This is Garry's Mod's own slot order, which ai_activity.h now mirrors, so
+// ACT_HL2MP_IDLE_<HT> + slot == the member named here for every hold type.
 static const char *const s_HL2MPMemberSuffix[ GMOD_MAX_ROLE ] =
 {
 	"_IDLE",					// 0  ACT_MP_STAND_IDLE
-	"_RUN",						// 1  ACT_MP_RUN
-	"_IDLE_CROUCH",				// 2  ACT_MP_CROUCH_IDLE
-	"_WALK_CROUCH",				// 3  ACT_MP_CROUCHWALK
-	"_GESTURE_RANGE_ATTACK",	// 4  ACT_MP_ATTACK_STAND_PRIMARYFIRE
-	"_GESTURE_RELOAD",			// 5  ACT_MP_RELOAD_STAND
-	"_JUMP",					// 6  ACT_MP_JUMP
+	"_WALK",					// 1  ACT_MP_WALK
+	"_RUN",						// 2  ACT_MP_RUN
+	"_IDLE_CROUCH",				// 3  ACT_MP_CROUCH_IDLE
+	"_WALK_CROUCH",				// 4  ACT_MP_CROUCHWALK
+	"_GESTURE_RANGE_ATTACK",	// 5  ACT_MP_ATTACK_STAND_PRIMARYFIRE
+	"_GESTURE_RELOAD",			// 6  ACT_MP_RELOAD_STAND
+	"_JUMP",					// 7  ACT_MP_JUMP
+	"_SWIM_IDLE",				// 8  ACT_MP_SWIM_IDLE
+	"_SWIM",					// 9  ACT_MP_SWIM
 };
 
 // The hold type part of an ACT_HL2MP_* member name, for the block-based hold
 // types ("_PISTOL" -> ACT_HL2MP_IDLE_PISTOL).  Indexed like s_GMod_HoldTypes;
-// the "normal" row is "" (the generic block carries no hold type part) and the
-// eight absent rows are NULL (their members do not exist here).
+// the "normal" row is "" (the generic block carries no hold type part).
 static const char *const s_GMod_HoldTypeSuffix[ HL2SB_HOLDTYPE_COUNT ] =
 {
 	"_PISTOL", "_SMG1", "_GRENADE", "_AR2", "_SHOTGUN", "_RPG", "_PHYSGUN",
-	"_CROSSBOW", "_MELEE", "_SLAM", "", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	"_CROSSBOW", "_MELEE", "_SLAM", "", "_FIST", "_MELEE2", "_PASSIVE",
+	"_KNIFE", "_DUEL", "_CAMERA", "_MAGIC", "_REVOLVER"
 };
 
 // ACT_MP_* keys, in the same order as s_HL2MPMemberSuffix - which is what makes
-// the translation table a flat [hold type][slot] array.  Deliberately not GMod's
-// offset order: this fork has no walk member, so each key is matched to the
-// member it *names* (see the slot table above).  The two keys sh_anim.lua gives a
-// shared offset are in the alias table below, not here.
+// the translation table a flat [hold type][slot] array.  These are GMod's own
+// offsets (sh_anim.lua / animations.lua), matched to the member of the same
+// name.  The two keys sh_anim.lua gives a shared offset are in the alias table
+// below, not here.
 static const Activity s_GMod_TranslatedKeys[ GMOD_MAX_ROLE ] =
 {
 	ACT_MP_STAND_IDLE,					// 0  ACT_HL2MP_IDLE_<HT>
-	ACT_MP_RUN,							// 1  ACT_HL2MP_RUN_<HT>
-	ACT_MP_CROUCH_IDLE,					// 2  ACT_HL2MP_IDLE_CROUCH_<HT>
-	ACT_MP_CROUCHWALK,					// 3  ACT_HL2MP_WALK_CROUCH_<HT>
-	ACT_MP_ATTACK_STAND_PRIMARYFIRE,	// 4  ..._GESTURE_RANGE_ATTACK_<HT>
-	ACT_MP_RELOAD_STAND,				// 5  ..._GESTURE_RELOAD_<HT>
-	ACT_MP_JUMP,						// 6  ACT_HL2MP_JUMP_<HT>
+	ACT_MP_WALK,						// 1  ACT_HL2MP_WALK_<HT>
+	ACT_MP_RUN,							// 2  ACT_HL2MP_RUN_<HT>
+	ACT_MP_CROUCH_IDLE,					// 3  ACT_HL2MP_IDLE_CROUCH_<HT>
+	ACT_MP_CROUCHWALK,					// 4  ACT_HL2MP_WALK_CROUCH_<HT>
+	ACT_MP_ATTACK_STAND_PRIMARYFIRE,	// 5  ..._GESTURE_RANGE_ATTACK_<HT>
+	ACT_MP_RELOAD_STAND,				// 6  ..._GESTURE_RELOAD_<HT>
+	ACT_MP_JUMP,						// 7  ACT_HL2MP_JUMP_<HT>
+	ACT_MP_SWIM_IDLE,					// 8  ACT_HL2MP_SWIM_IDLE_<HT>
+	ACT_MP_SWIM,						// 9  ACT_HL2MP_SWIM_<HT>
 };
 
 // sh_anim.lua gives two more keys the *same offset* as the slot key above them -
 // ACT_MP_ATTACK_CROUCH_PRIMARYFIRE is also "+5" (sh_anim.lua:47) and
 // ACT_MP_RELOAD_CROUCH is also "+6" (sh_anim.lua:49) - so they answer with that
 // slot's member.  They are aliases of a key, not slots of their own: the member
-// set stays seven per hold type.
+// set stays ten per hold type.
 static const struct GModTranslatedKeyAlias_t
 {
 	Activity	key;		// the extra GMod key
@@ -1985,9 +1986,10 @@ s_GMod_TranslatedKeyAliases[] =
 // suffix tables say.  It cannot catch the other half of the contract, which is
 // that member N of a block is numerically ACT_HL2MP_IDLE_<HT> + N - and that is
 // exactly what lets GMod_MemberActivity() reach member N without a name lookup
-// table of its own.  These asserts pin every one of the fork's 77 members to its
-// declared slot; reordering ai_activity.h now fails the build instead of
-// silently degrading a slot to ACT_INVALID.
+// table of its own.  These asserts pin all 22 of the fork's hold-type blocks (ten
+// members each, in GMod's slot order) to their declared slot; reordering
+// ai_activity.h now fails the build instead of silently degrading a slot to
+// ACT_INVALID.
 //-----------------------------------------------------------------------------
 #define GMOD_STATIC_CHECK_MEMBER( ht, member, slot ) \
 	static_assert( ACT_HL2MP_##member##_##ht == ACT_HL2MP_IDLE_##ht + ( slot ), \
@@ -1995,12 +1997,15 @@ s_GMod_TranslatedKeyAliases[] =
 
 #define GMOD_STATIC_CHECK_HOLDTYPE( ht ) \
 	GMOD_STATIC_CHECK_MEMBER( ht, IDLE, 0 ); \
-	GMOD_STATIC_CHECK_MEMBER( ht, RUN, 1 ); \
-	GMOD_STATIC_CHECK_MEMBER( ht, IDLE_CROUCH, 2 ); \
-	GMOD_STATIC_CHECK_MEMBER( ht, WALK_CROUCH, 3 ); \
-	GMOD_STATIC_CHECK_MEMBER( ht, GESTURE_RANGE_ATTACK, 4 ); \
-	GMOD_STATIC_CHECK_MEMBER( ht, GESTURE_RELOAD, 5 ); \
-	GMOD_STATIC_CHECK_MEMBER( ht, JUMP, 6 )
+	GMOD_STATIC_CHECK_MEMBER( ht, WALK, 1 ); \
+	GMOD_STATIC_CHECK_MEMBER( ht, RUN, 2 ); \
+	GMOD_STATIC_CHECK_MEMBER( ht, IDLE_CROUCH, 3 ); \
+	GMOD_STATIC_CHECK_MEMBER( ht, WALK_CROUCH, 4 ); \
+	GMOD_STATIC_CHECK_MEMBER( ht, GESTURE_RANGE_ATTACK, 5 ); \
+	GMOD_STATIC_CHECK_MEMBER( ht, GESTURE_RELOAD, 6 ); \
+	GMOD_STATIC_CHECK_MEMBER( ht, JUMP, 7 ); \
+	GMOD_STATIC_CHECK_MEMBER( ht, SWIM_IDLE, 8 ); \
+	GMOD_STATIC_CHECK_MEMBER( ht, SWIM, 9 )
 
 #define GMOD_STATIC_CHECK_GENERIC_MEMBER( member, slot ) \
 	static_assert( ACT_HL2MP_##member == ACT_HL2MP_IDLE + ( slot ), \
@@ -2016,18 +2021,33 @@ GMOD_STATIC_CHECK_HOLDTYPE( PHYSGUN );
 GMOD_STATIC_CHECK_HOLDTYPE( CROSSBOW );
 GMOD_STATIC_CHECK_HOLDTYPE( MELEE );
 GMOD_STATIC_CHECK_HOLDTYPE( SLAM );
+GMOD_STATIC_CHECK_HOLDTYPE( FIST );
+GMOD_STATIC_CHECK_HOLDTYPE( MELEE2 );
+GMOD_STATIC_CHECK_HOLDTYPE( PASSIVE );
+GMOD_STATIC_CHECK_HOLDTYPE( KNIFE );
+GMOD_STATIC_CHECK_HOLDTYPE( DUEL );
+GMOD_STATIC_CHECK_HOLDTYPE( CAMERA );
+GMOD_STATIC_CHECK_HOLDTYPE( MAGIC );
+GMOD_STATIC_CHECK_HOLDTYPE( REVOLVER );
+GMOD_STATIC_CHECK_HOLDTYPE( ANGRY );
+GMOD_STATIC_CHECK_HOLDTYPE( SCARED );
+GMOD_STATIC_CHECK_HOLDTYPE( ZOMBIE );
+GMOD_STATIC_CHECK_HOLDTYPE( SUITCASE );
 
 GMOD_STATIC_CHECK_GENERIC_MEMBER( IDLE, 0 );
-GMOD_STATIC_CHECK_GENERIC_MEMBER( RUN, 1 );
-GMOD_STATIC_CHECK_GENERIC_MEMBER( IDLE_CROUCH, 2 );
-GMOD_STATIC_CHECK_GENERIC_MEMBER( WALK_CROUCH, 3 );
-GMOD_STATIC_CHECK_GENERIC_MEMBER( GESTURE_RANGE_ATTACK, 4 );
-GMOD_STATIC_CHECK_GENERIC_MEMBER( GESTURE_RELOAD, 5 );
-GMOD_STATIC_CHECK_GENERIC_MEMBER( JUMP, 6 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( WALK, 1 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( RUN, 2 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( IDLE_CROUCH, 3 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( WALK_CROUCH, 4 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( GESTURE_RANGE_ATTACK, 5 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( GESTURE_RELOAD, 6 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( JUMP, 7 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( SWIM_IDLE, 8 );
+GMOD_STATIC_CHECK_GENERIC_MEMBER( SWIM, 9 );
 
 // The two "how many" constants must stay tied to the enums they index, or the
 // loops below would walk past their arrays.
-static_assert( GMOD_MAX_ROLE == 7, "the fork's HL2MP block has seven members" );
+static_assert( GMOD_MAX_ROLE == 10, "the fork's HL2MP block has ten members" );
 static_assert( GMOD_MAX_HOLDTYPE == HL2SB_HOLDTYPE_COUNT,
 			   "s_GMod_HoldTypes must have one row per GModHoldType_t value" );
 
@@ -2056,12 +2076,12 @@ static bool GMod_IsResolvableActivity( Activity act )
 // The name is built from the slot's suffix plus the hold type's own suffix
 // ("_IDLE" + "_PISTOL"), so "smg" asks for ACT_HL2MP_IDLE_SMG1 and never for
 // ACT_HL2MP_IDLE_SMG.  Returns ACT_INVALID when this fork does not declare that
-// member, which is the case for all seven slots of the eight hold types with no
-// ACT_HL2MP_*_<HT> block.
+// member, or when the arithmetic answer and the name disagree.
 //
-// This is deliberately name-based rather than arithmetic-based: it is the only
-// way to address this fork's block, and it also means a reordering of
-// ai_activity.h can never make a slot resolve to another hold type's animation.
+// The lookup is arithmetic-first with a *name check*: every hold type now has the
+// same ten slots in the same order, so iBase + iSlot is the member, and the check
+// is what keeps a future reordering of ai_activity.h from making a slot resolve
+// to another hold type's animation.
 static Activity GMod_MemberActivity( int iHoldType, int iSlot )
 {
 	const int iBase = s_GMod_HoldTypes[ iHoldType ].iBaseActivity;
@@ -2108,8 +2128,16 @@ static void GMod_InitHoldTypeTable( void )
 	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_MELEE ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE_MELEE;
 	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_SLAM ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE_SLAM;
 	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_NORMAL ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE;
-	// The remaining eight hold types have no ACT_HL2MP_IDLE_* in this fork and
-	// stay at 0 -> every entry ACT_INVALID.
+	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_FIST ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE_FIST;
+	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_MELEE2 ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE_MELEE2;
+	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_PASSIVE ].iBaseActivity	= (Activity)ACT_HL2MP_IDLE_PASSIVE;
+	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_KNIFE ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE_KNIFE;
+	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_DUEL ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE_DUEL;
+	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_CAMERA ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE_CAMERA;
+	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_MAGIC ].iBaseActivity		= (Activity)ACT_HL2MP_IDLE_MAGIC;
+	s_GMod_HoldTypes[ HL2SB_HOLDTYPE_REVOLVER ].iBaseActivity	= (Activity)ACT_HL2MP_IDLE_REVOLVER;
+	// Every hold type in the table now has a real block in ai_activity.h, so all
+	// 19 rows resolve; the runtime self-check below proves it.
 
 	// 2. GMod's ActivityTranslate, entry by entry.
 	for ( int i = 0; i < GMOD_MAX_HOLDTYPE; ++i )
@@ -2119,12 +2147,12 @@ static void GMod_InitHoldTypeTable( void )
 		// the slot if the fork's own name does not match.  The two shared keys
 		// (ACT_MP_ATTACK_CROUCH_PRIMARYFIRE, ACT_MP_RELOAD_CROUCH) are resolved
 		// to these slots by s_GMod_TranslatedKeyAliases in
-		// GMod_TranslateActivity(); the four keys that name no member here
-		// (ACT_MP_WALK, ACT_RANGE_ATTACK1, ACT_MP_SWIM_IDLE, ACT_MP_SWIM) are
-		// not in the table at all, so no slot answers them -> ACT_INVALID ->
-		// the caller gets its own activity back, never -1 and never 0.  The
-		// "normal" ACT_MP_JUMP override is applied by GMod_TranslateActivity()
-		// when the key is asked for, not stored into the matrix here.
+		// GMod_TranslateActivity(); the one key that names no member here
+		// (ACT_RANGE_ATTACK1) is not in the table at all, so no slot answers it
+		// -> ACT_INVALID -> the caller gets its own activity back, never -1 and
+		// never 0.  The "normal" ACT_MP_JUMP override is applied by
+		// GMod_TranslateActivity() when the key is asked for, not stored into
+		// the matrix here.
 		for ( int iSlot = 0; iSlot < GMOD_MAX_ROLE; ++iSlot )
 			s_GMod_ActivityTranslate[ i ][ iSlot ] = GMod_MemberActivity( i, iSlot );
 	}
@@ -2218,8 +2246,8 @@ Activity GMod_TranslateActivity( int iHoldType, Activity act )
 	}
 
 	// Garry's Mod's "normal" jump override (sh_anim.lua:56-58): for "normal" the
-	// ACT_MP_JUMP entry is replaced by ACT_HL2MP_JUMP_SLAM.  The other ten hold
-	// types answer ACT_MP_JUMP from slot 6 (their ACT_HL2MP_JUMP_<HT> member).
+	// ACT_MP_JUMP entry is replaced by ACT_HL2MP_JUMP_SLAM.  Every other hold type
+	// answers ACT_MP_JUMP from slot 7 (its ACT_HL2MP_JUMP_<HT> member).
 	if ( act == ACT_MP_JUMP && iHoldType == HL2SB_HOLDTYPE_NORMAL )
 		return GMOD_NORMAL_JUMP;
 
@@ -2232,11 +2260,10 @@ Activity GMod_TranslateActivity( int iHoldType, Activity act )
 
 	// GMod's own behaviour when the weapon's ActivityTranslate has no entry for
 	// this activity: SWEP:TranslateActivity() returns -1 and GM:TranslateActivity
-	// keeps the activity it was given.  That covers the eight hold types this
-	// fork has no ACT_HL2MP_* block for, the four keys that name no member here
-	// (ACT_MP_WALK, ACT_RANGE_ATTACK1, ACT_MP_SWIM_IDLE, ACT_MP_SWIM), and every
-	// activity sh_anim.lua does not mention at all (ACT_MP_JUMP_LAND,
-	// ACT_MP_AIRWALK, every ACT_VM_*, ...).
+	// keeps the activity it was given.  That covers the one key that names no
+	// member here (ACT_RANGE_ATTACK1), every activity sh_anim.lua does not
+	// mention at all (ACT_MP_JUMP_LAND, ACT_MP_AIRWALK, every ACT_VM_*, ...), and
+	// any activity the target model simply has no sequence for.
 	return act;
 }
 
