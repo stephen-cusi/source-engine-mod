@@ -272,12 +272,28 @@ void CLuaEffect::Draw( double frametime )
 	{
 		lua_pushvalue( L, -2 );
 		luasrc_pcall( L, 1, 1, 0 );
-		if ( !lua_toboolean( L, -1 ) )
+
+		const bool bAlive = lua_toboolean( L, -1 ) != 0;
+		if ( !bAlive )
 			Destroy();
 		lua_pop( L, 1 );
+
+		// HL2SB diagnostic: does the draw path actually reach the script?
+		if ( bAlive )
+		{
+			char szKey[ 160 ];
+			Q_snprintf( szKey, sizeof( szKey ), "lua-effect-draw:%s", GetName() );
+			HL2SB_WarnOnce( szKey, "CLuaEffect '%s': Think -> true, drawing\n", GetName() );
+		}
 	}
 	else
 	{
+		// HL2SB diagnostic: a template with no Think() is legal (GMod's contract
+		// says an effect retires when Think is missing? no - it lives), but a
+		// missing one on a scripted effect is worth naming.
+		char szKey[ 160 ];
+		Q_snprintf( szKey, sizeof( szKey ), "lua-effect-nothink:%s", GetName() );
+		HL2SB_WarnOnce( szKey, "CLuaEffect '%s': no Think() function\n", GetName() );
 		lua_pop( L, 1 );
 	}
 
@@ -290,11 +306,21 @@ void CLuaEffect::Draw( double frametime )
 	lua_getfield( L, -1, "Render" );
 	if ( lua_isfunction( L, -1 ) )
 	{
+		// HL2SB diagnostic: the script's Render() is being submitted.
+		char szKey[ 160 ];
+		Q_snprintf( szKey, sizeof( szKey ), "lua-effect-render:%s", GetName() );
+		HL2SB_WarnOnce( szKey, "CLuaEffect '%s': Render submitted\n", GetName() );
+
 		lua_pushvalue( L, -2 );
 		luasrc_pcall( L, 1, 0, 0 );
 	}
 	else
 	{
+		// HL2SB diagnostic: an effect whose table has no Render() can never be
+		// seen; name it rather than drawing nothing in silence.
+		char szKey[ 160 ];
+		Q_snprintf( szKey, sizeof( szKey ), "lua-effect-norender:%s", GetName() );
+		HL2SB_WarnOnce( szKey, "CLuaEffect '%s': no Render() function\n", GetName() );
 		lua_pop( L, 1 );
 	}
 

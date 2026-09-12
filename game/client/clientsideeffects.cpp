@@ -19,6 +19,11 @@
 
 bool g_FXCreationAllowed = false;
 
+// HL2SB: game/shared/lua/luamanager.h is not on this file's include path
+// (client_base.vpc vs client_lua.vpc), so the bounded one-shot warning helper is
+// declared here -- same trick as c_te_effect_dispatch.cpp's HL2SB_CreateLuaEffect.
+void HL2SB_WarnOnce( const char *pszKey, const char *pszFormat, ... );
+
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Input  : state - 
@@ -129,7 +134,6 @@ bool HL2SB_ClientEffectsHaveRoom( void )
 {
 	return g_EffectsList.HL2SBHasRoom();
 }
-
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
@@ -206,6 +210,16 @@ void CEffectsList::DrawEffects( double frametime )
 	VPROF_BUDGET( "CEffectsList::DrawEffects", VPROF_BUDGETGROUP_PARTICLE_RENDERING );
 	int i;
 	CClientSideEffect *effect;
+
+	// HL2SB diagnostic: is the client effect list actually being drawn?  An
+	// effect that is created, never retired and still never seen means either
+	// this is never called (viewrender.cpp:1387) or its Draw()/Render() is
+	// silently doing nothing -- this names which.
+	if ( m_nEffects > 0 )
+	{
+		HL2SB_WarnOnce( "clienteffects-drawn",
+			"CEffectsList::DrawEffects is running (%d effect(s) on the list)\n", m_nEffects );
+	}
 
 	// Go backwards so deleting effects doesn't screw up
 	for ( i = m_nEffects - 1 ; i >= 0; i-- )

@@ -185,7 +185,7 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 						// exactly when we need it).  Keyed by weapon class so a
 						// shot with another weapon in hand cannot hide this one.
 						char szKey[ 192 ];
-						Q_snprintf( szKey, sizeof( szKey ), "te-firebullets-tracer:%s", szWeapon );
+						Q_snprintf( szKey, sizeof( szKey ), "te-firebullets-tracer:%s:%d", szWeapon, m_iTracerName );
 						HL2SB_WarnOnce( szKey,
 							"TE_HL2MPFireBullets: tracers=%d impacts=%d tracer='%s' (from %s, table index %d) weapon='%s' shooter=%d\n",
 							m_bDoTracers ? 1 : 0,

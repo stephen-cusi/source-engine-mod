@@ -644,6 +644,10 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
 {
     IMaterial *pMaterial = NULL;
 
+    // HL2SB: the path this call asked for, kept in scope for the diagnostic
+    // below (NULL when the caller handed us a real IMaterial object).
+    const char *pszName = NULL;
+
     // HL2SB: GMod spells this render.SetMaterial( Material( path ) ), and this
     // engine's Material() is a Lua proxy table
     // (lua/includes/extensions/gmod_surface.lua) that only wraps a texture id --
@@ -660,8 +664,6 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
     }
     else
     {
-        const char *pszName = NULL;
-
         if ( lua_type( L, 1 ) == LUA_TSTRING )
         {
             pszName = lua_tostring( L, 1 );
@@ -746,6 +748,20 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
 
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->Bind( pMaterial );
+
+    // HL2SB diagnostic: name what a script's Material() path actually resolved
+    // to.  A proxy table (gmod_surface.lua's Material()) is not an IMaterial, so
+    // this is also the place that can silently hand back the error material.
+    if ( pMaterial != NULL )
+    {
+        char szKey[ 192 ];
+        Q_snprintf( szKey, sizeof( szKey ), "setmaterial:%s", pMaterial->GetName() );
+        HL2SB_WarnOnce( szKey,
+            "render.SetMaterial -> '%s' (error=%d, requested '%s')\n",
+            pMaterial->GetName(),
+            pMaterial->IsErrorMaterial() ? 1 : 0,
+            ( pszName != NULL ) ? pszName : "<material object>" );
+    }
 
     // HL2SB: DrawBeam's CBeamSegDraw::Start(pCtx, n, NULL) is supposed to pick
     // up the bound material, but the Nyan Gun's rainbow tracer came out
@@ -851,6 +867,19 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     float textureStart = LUA_BINDING_ARGUMENT( luaL_checknumber, 4, "textureStart" );
     float textureEnd = LUA_BINDING_ARGUMENT( luaL_checknumber, 5, "textureEnd" );
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 6, lua_Color( 255, 255, 255, 255 ), "color" );
+
+    // HL2SB diagnostic: a beam that is submitted but never seen is either a
+    // degenerate one (zero width / zero length) or one drawn with the wrong
+    // material, so say exactly what was submitted, once per material.
+    {
+        const char *pszMaterial = ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none bound>";
+        char szKey[ 192 ];
+        Q_snprintf( szKey, sizeof( szKey ), "drawbeam:%s", pszMaterial );
+        HL2SB_WarnOnce( szKey,
+            "render.DrawBeam -> material '%s' width=%.2f alpha=%.2f length=%.0f start=(%.0f %.0f %.0f)\n",
+            pszMaterial, width, color.a() / 255.0f, end.DistTo( start ),
+            start.x, start.y, start.z );
+    }
 
     CMatRenderContextPtr pRenderContext( materials );
     CBeamSegDraw beamDraw;
