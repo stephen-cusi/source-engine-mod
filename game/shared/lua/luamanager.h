@@ -683,4 +683,17 @@ bool       luasrc_SetGamemode (const char *gamemode);
 class CAmmoDef;
 void       luasrc_ApplyAmmoTypes (CAmmoDef *pAmmoDef);
 
+// HL2SB: "ask the engine for this resource once per session, then remember it".
+// Defined in lutil_shared.cpp; shared with lparticle_system.cpp.  Stops the
+// GMod bindings that take resource names at run time -- util.PrecacheModel /
+// util.PrecacheSound, util.SpriteTrail's texture, CreateSound's wave,
+// ParticleSystems.Precache -- from re-running the engine's precache (and its
+// synchronous load) on every call, which is what made the first throws stutter.
+bool       HL2SB_PrecacheOnce (const char *pszName);
+
+// HL2SB: one Warning() line per distinct key, capped at 32 keys per DLL load.
+// For branches that leave an engine object in a state Lua cannot see, so that
+// the next crash log names the live path instead of a bare access violation.
+void       HL2SB_WarnOnce (const char *pszKey, const char *pszFormat, ...);
+
 #endif // LUAMANAGER_H

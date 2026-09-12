@@ -12,6 +12,14 @@ LUA_REGISTRATION_INIT( ParticleSystems )
 LUA_BINDING_BEGIN( ParticleSystems, Precache, "library", "Precache a particle system." )
 {
     const char *systemName = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "systemName" );
+
+    // HL2SB: GMod addons precache their particle systems from Initialize, which
+    // runs again for every re-created entity / every map reload.  Asking the
+    // engine once per name per session keeps the (synchronous, disk-touching)
+    // PrecacheParticleSystem() off the live throw, not just off the second one.
+    if ( !HL2SB_PrecacheOnce( systemName ) )
+        return 0;
+
     PrecacheParticleSystem( systemName );
     return 0;
 }

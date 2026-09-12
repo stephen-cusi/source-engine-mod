@@ -456,6 +456,36 @@ int CSpriteTrail::DrawModel( int flags )
 
 	TrailPoint_t *pPrevPoint = NULL;
 	float flTailAlphaDist = m_flMinFadeLength;
+
+	// HL2SB: the ribbon is tapered against BOTH the age of each point (Valve's
+	// Lerp below) and its distance from the head along the trail, whichever is
+	// narrower.
+	//
+	// The age of a point is only a proxy for "how far behind the head it is", and
+	// the proxy fails exactly when a trail is young: a point recorded on the
+	// frame the entity spawned still has ~all of its lifetime left, so it keeps
+	// (almost) the full start width -- and for the Nyan Gun the bomb spawns 28
+	// units in front of, 24 to the right of and 8 below the player's eye, so that
+	// "young tail" is 25 units from the camera and a 16-unit-wide ribbon there
+	// covers 200+ pixels of screen: the frame-by-frame "rainbow slab spreading
+	// sideways from the tiny bomb", and the striped columns once the camera looks
+	// along the trail.  Tapering against the real polyline length makes the tail
+	// reach endwidth from the very first frame, so the ribbon is always a ribbon
+	// that follows the entity and tapers, and it can never flood the screen.
+	float flDistFromHead[ MAX_SPRITE_TRAIL_POINTS + 1 ];
+	flDistFromHead[ m_nStepCount ] = 0.0f;
+	{
+		Vector vecAheadPos = currentPoint.m_vecScreenPos;
+		for ( int i = m_nStepCount - 1; i >= 0; --i )
+		{
+			const Vector &vecPointPos = GetTrailPoint( i )->m_vecScreenPos;
+			flDistFromHead[ i ] = flDistFromHead[ i + 1 ] + vecPointPos.DistTo( vecAheadPos );
+			vecAheadPos = vecPointPos;
+		}
+	}
+	const float flTrailLength = flDistFromHead[ 0 ];
+	const bool bCanTaperByLength = ( flTrailLength > 1.0f );
+
 	for ( int i = 0; i <= m_nStepCount; ++i )
 	{
 		// This makes it so that we're always drawing to the current location
@@ -463,6 +493,14 @@ int CSpriteTrail::DrawModel( int flags )
 
 		float flLifePerc = (pPoint->m_flDieTime - gpGlobals->curtime) / m_flLifeTime;
 		flLifePerc = clamp( flLifePerc, 0.0f, 1.0f );
+
+		// How far along the ribbon this point is, 1 at the head and 0 at the tail.
+		float flWidthPerc = flLifePerc;
+		if ( bCanTaperByLength )
+		{
+			float flLengthPerc = clamp( 1.0f - ( flDistFromHead[ i ] / flTrailLength ), 0.0f, 1.0f );
+			flWidthPerc = MIN( flWidthPerc, flLengthPerc );
+		}
 
 		BeamSeg_t curSeg;
 		curSeg.m_vColor.x = (float) m_clrRender->r / 255.0f;
@@ -497,7 +535,7 @@ int CSpriteTrail::DrawModel( int flags )
 
 		if ( m_flEndWidth >= 0.0f )
 		{
-			curSeg.m_flWidth = Lerp( flLifePerc, m_flEndWidth.Get(), m_flStartWidth.Get() );
+			curSeg.m_flWidth = Lerp( flWidthPerc, m_flEndWidth.Get(), m_flStartWidth.Get() );
 		}
 		else
 		{

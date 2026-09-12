@@ -402,6 +402,21 @@ void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent 
 
 	const int nOther = 1 - index;
 
+	// HL2SB: the bomb's whole detonation lives in this dispatch, and it hands the
+	// script a physics object and the entity it hit.  Both can legitimately be
+	// missing (an impact against the world / a brush), and lua_pushphysicsobject
+	// / lua_pushentity would then push a handle to nothing -- so name the path
+	// once if it ever happens with a NULL, so the next crash log says which of
+	// these it was.
+	if ( pEvent->pObjects[ index ] == NULL ) {
+		HL2SB_WarnOnce( "physicscollide-noobject",
+			"ENT:PhysicsCollide: pObjects[%d] is NULL (no physics object for this side of the collision)", index );
+	}
+	if ( pEvent->pEntities[ nOther ] == NULL ) {
+		HL2SB_WarnOnce( "physicscollide-noentity",
+			"ENT:PhysicsCollide: pEntities[%d] is NULL (the collision was against the world)", nOther );
+	}
+
 	Vector vecHitPos = vec3_origin;
 	Vector vecHitNormal = vec3_origin;
 	if ( pEvent->pInternalData != NULL )

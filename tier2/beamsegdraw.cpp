@@ -53,6 +53,44 @@ inline void CBeamSegDraw::ComputeNormal( const Vector &vecCameraPos, const Vecto
 	// Get a vector that is perpendicular to us and perpendicular to the beam.
 	// This is used to fatten the beam.
 	CrossProduct( vTangentY, vDirToBeam, *pNormal );
+
+	// HL2SB: a beam (or a sprite trail) that points at the camera makes this
+	// cross product vanish, and VectorNormalizeFast() then returns a direction
+	// made of nothing but float noise.  That noise is what "fattens" the beam, so
+	// the ribbon is thrown in a random direction and renders as a screen-filling
+	// slab instead of a ribbon -- the Nyan Gun's bomb is thrown *away* from the
+	// player, so its trail points straight back at the camera and this is its
+	// normal case, not a corner case.  Reuse the previous segment's normal (it is
+	// already perpendicular to the view and to the neighbouring segment, and it is
+	// only ever read after one has been stored), and rebuild it from a stable
+	// world axis on the first segment.
+	float flNormalLenSqr = pNormal->LengthSqr();
+	if ( flNormalLenSqr < 1e-6f )
+	{
+		Vector vFallback;
+		VectorSubtract( vStartPos, vNextPos, vFallback );
+		if ( vFallback.LengthSqr() < 1e-6f )
+			vFallback = m_vNormalLast;
+
+		if ( vFallback.LengthSqr() > 1e-6f )
+		{
+			// A fixed reference axis that cannot be parallel to the beam.
+			Vector vReference( 0.0f, 0.0f, 1.0f );
+			if ( fabs( vFallback.z ) > 0.9f )
+				vReference.Init( 1.0f, 0.0f, 0.0f );
+
+			CrossProduct( vFallback, vReference, *pNormal );
+			VectorNormalize( *pNormal );
+		}
+		else
+		{
+			// Nothing to work from at all: leave the beam with no width rather
+			// than a random direction.
+			pNormal->Init( 0.0f, 0.0f, 0.0f );
+		}
+		return;
+	}
+
 	VectorNormalizeFast( *pNormal );
 }
 

@@ -35,7 +35,78 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data );
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+#include <stdarg.h>
+#include "utldict.h"
 
+/*
+** HL2SB: "ask the engine for this resource once, then remember it" cache, plus a
+** bounded one-shot diagnostic printer.
+**
+** The Nyan Gun only ever hands resource names to the engine at run time (the
+** trail's .vmt inside util.SpriteTrail, the waves inside CreateSound, the
+** particle system inside ParticleSystems.Precache), so the disk/decode/upload
+** cost of each one lands on a *live* throw -- which is the first-second stutter
+** the frame analysis saw.  There is no way to move that cost into the map's
+** precache phase (the name is not known then), but it can at least be made to
+** happen exactly once per name per session instead of on every call: the old
+** bindings re-asked the engine every time, and the log shows it
+** ("Late precache of nyan/rainbow.vmt", "Direct precache of <wave>").
+**
+** Both dictionaries are created lazily: a file-scope CUtlDict would run its
+** constructor while the DLL is still loading, i.e. before the engine has
+** installed its allocator.
+*/
+static CUtlDict<int, int> *s_pHL2SBPrecached = NULL;
+static CUtlDict<int, int> *s_pHL2SBWarned = NULL;
+
+// Returns true the first time this exact name is passed, false afterwards.
+// Non-static: game/shared/lua/lparticle_system.cpp shares the same cache.
+bool HL2SB_PrecacheOnce (const char *pszName) {
+  if ( pszName == NULL || pszName[0] == '\0' )
+    return false;
+
+  if ( s_pHL2SBPrecached == NULL )
+    s_pHL2SBPrecached = new CUtlDict<int, int>();
+
+  // Bounded: a runaway script must not be able to grow this without limit.
+  if ( s_pHL2SBPrecached->Count() >= 512 )
+    return false;
+
+  if ( s_pHL2SBPrecached->Find( pszName ) != s_pHL2SBPrecached->InvalidIndex() )
+    return false;
+
+  s_pHL2SBPrecached->Insert( pszName, 1 );
+  return true;
+}
+
+/*
+** One log line per distinct key, at most 32 keys per DLL load.  Used on the
+** branches that can leave an engine object in a state Lua cannot see (a
+** CSoundPatch whose owner entity is gone, a NULL attacker in BlastDamage, a
+** colliding entity with no physics object), so that the *next* crash log names
+** the path that was live instead of leaving a bare access violation.
+** Non-static: game/shared/lua/basescripted.cpp uses it too.
+*/
+void HL2SB_WarnOnce (const char *pszKey, const char *pszFormat, ...) {
+  if ( s_pHL2SBWarned == NULL )
+    s_pHL2SBWarned = new CUtlDict<int, int>();
+
+  if ( s_pHL2SBWarned->Count() >= 32 )
+    return;
+
+  if ( s_pHL2SBWarned->Find( pszKey ) != s_pHL2SBWarned->InvalidIndex() )
+    return;
+
+  s_pHL2SBWarned->Insert( pszKey, 1 );
+
+  char szBuf[ 320 ];
+  va_list args;
+  va_start( args, pszFormat );
+  Q_vsnprintf( szBuf, sizeof( szBuf ), pszFormat, args );
+  va_end( args );
+
+  Warning( "[HL2SB] %s\n", szBuf );
+}
 
 
 static int luasrc_UTIL_VecToYaw (lua_State *L) {
@@ -251,6 +322,11 @@ static int luasrc_UTIL_PlayerByIndex (lua_State *L) {
 // every map reload) ran this on each spawn.
 static int luasrc_util_PrecacheSound (lua_State *L) {
   const char *pszName = luaL_checkstring(L, 1);
+
+  // HL2SB: ask once per name per session (see HL2SB_PrecacheOnce).
+  if ( !HL2SB_PrecacheOnce( pszName ) )
+    return 0;
+
   if ( CBaseEntity::PrecacheScriptSound( pszName ) <= 0
        && !enginesound->IsSoundPrecached( pszName ) ) {
     CBaseEntity::PrecacheSound( pszName );
@@ -263,10 +339,15 @@ static int luasrc_util_PrecacheSound (lua_State *L) {
 // util.PrecacheModel directly.  Precaching is a server-side operation; on the
 // client the argument is validated and dropped, matching GMod's behaviour.
 static int luasrc_util_PrecacheModel (lua_State *L) {
+  const char *pszName = luaL_checkstring(L, 1);
+
+  // HL2SB: an SWEP is recreated on every pickup and every map reload, and each
+  // recreation used to re-run the whole precache of its model/sound list.
+  if ( !HL2SB_PrecacheOnce( pszName ) )
+    return 0;
+
 #ifndef CLIENT_DLL
-  CBaseEntity::PrecacheModel(luaL_checkstring(L, 1));
-#else
-  luaL_checkstring(L, 1);
+  CBaseEntity::PrecacheModel( pszName );
 #endif
   return 0;
 }
@@ -310,6 +391,16 @@ static int luasrc_UTIL_Effect (lua_State *L) {
 ** networked entity on both realms, but only the server can create one, so this
 ** is the server implementation; the client returns nil exactly like it would
 ** for an entity the server owns (the client's copy arrives over the network).
+**
+** Anchoring: the first cut used CBaseEntity::SetParent() alone.  That only sets
+** the *move parent*; CSpriteTrail's client-side GetRenderOrigin() -- which is
+** what actually samples every trail point -- reads CSprite::m_hAttachedToEntity
+** / m_nAttachment, which only CSprite::SetAttachment() sets.  Every trail the
+** engine itself creates is anchored with SetAttachment (env_effectsscript.cpp
+** :261, prop_combine_ball.cpp:402, grenade_frag.cpp:178-179,
+** env_headcrabcanister.cpp:494), so do the same: the ribbon then follows the
+** model's attachment point instead of the entity's bare origin, and it is
+** sampled from the same place on both realms.
 */
 static int luasrc_UTIL_SpriteTrail (lua_State *L) {
 #ifndef CLIENT_DLL
@@ -317,15 +408,40 @@ static int luasrc_UTIL_SpriteTrail (lua_State *L) {
   int iAttachment = luaL_checkint( L, 2 );
   lua_Color clr = luaL_checkcolor( L, 3 );
   bool bAdditive = luaL_checkboolean( L, 4 );
-  float flStartWidth = luaL_checknumber( L, 5 );
-  float flEndWidth = luaL_checknumber( L, 6 );
-  float flLifetime = luaL_checknumber( L, 7 );
-  float flTextureResolution = luaL_checknumber( L, 8 );
+  float flStartWidth = (float)luaL_checknumber( L, 5 );
+  float flEndWidth = (float)luaL_checknumber( L, 6 );
+  float flLifetime = (float)luaL_optnumber( L, 7, 1.0f );
+  float flTextureResolution = (float)luaL_optnumber( L, 8, 0.0f );
   const char *pszTexture = luaL_checkstring( L, 9 );
+
+  // Scripts hand over 0 / -1 / NaN freely (GMod's own effects do); a zero or
+  // negative lifetime would make every point expire on the frame it is recorded
+  // (nothing renders, and UpdateTrail() then re-adds a point every frame), and a
+  // zero texture resolution would stretch the texture over the whole ribbon.
+  if ( !IsFinite( flStartWidth ) || flStartWidth < 0.0f )
+    flStartWidth = 0.0f;
+  if ( !IsFinite( flEndWidth ) )
+    flEndWidth = 0.0f;
+  if ( !IsFinite( flLifetime ) || flLifetime <= 0.0f )
+    flLifetime = 1.0f;
+  if ( !IsFinite( flTextureResolution ) || flTextureResolution <= 0.0f )
+    flTextureResolution = ( flStartWidth + flEndWidth ) > 0.0f
+                          ? ( 1.0f / ( flStartWidth + flEndWidth ) * 0.5f )
+                          : 0.03125f;
+  if ( iAttachment < 0 )
+    iAttachment = 0;
 
   Vector vecOrigin = vec3_origin;
   if ( pEntity != NULL ) {
     vecOrigin = pEntity->GetAbsOrigin();
+  }
+
+  // HL2SB: precache the trail texture once per session, before the entity is
+  // created, so a weapon that is re-created (every pickup / every map reload)
+  // does not re-run CSpriteTrail::Precache()'s "Late precache of <vmt>" and its
+  // synchronous material + texture load on a live throw.
+  if ( HL2SB_PrecacheOnce( pszTexture ) ) {
+    CBaseEntity::PrecacheModel( pszTexture );
   }
 
   CSpriteTrail *pTrail = CSpriteTrail::SpriteTrailCreate( pszTexture, vecOrigin, true );
@@ -345,6 +461,11 @@ static int luasrc_UTIL_SpriteTrail (lua_State *L) {
   if ( pEntity != NULL ) {
     pTrail->SetParent( pEntity, iAttachment );
     pTrail->SetLocalOrigin( vec3_origin );
+    // ... and the attachment, the way the engine's own trails do it.  If the
+    // model has no such attachment, CSpriteTrail::GetRenderOrigin() falls back
+    // to the entity's origin on its own (SpriteTrail.cpp:537-553), so a bad
+    // index degrades to the old behaviour instead of moving the ribbon.
+    pTrail->SetAttachment( pEntity, iAttachment );
   }
 
   lua_pushentity( L, pTrail );
@@ -358,17 +479,48 @@ static int luasrc_UTIL_SpriteTrail (lua_State *L) {
 /*
 ** HL2SB GMod compat: util.BlastDamage( inflictor, attacker, origin, radius, damage ).
 ** Server-side in GMod too (the client has no authoritative damage model).
+**
+** The Nyan bomb calls this from ENT:PhysicsCollide with self:GetOwner() as the
+** attacker, and the owner is already gone whenever the bomb outlives its owner
+** (dropped, disconnected, or the weapon was removed) -- so a NULL attacker and a
+** NULL inflictor are both reachable here, as are zero/negative/absurd radii from
+** a script.  g_pGameRules itself is NULL outside a live server (level shutdown,
+** a menu-state Lua call), and dereferencing it is an outright null-pointer
+** crash, so guard before dispatching.
 */
 static int luasrc_UTIL_BlastDamage (lua_State *L) {
 #ifndef CLIENT_DLL
   CBaseEntity *pInflictor = lua_toentity( L, 1 );
   CBaseEntity *pAttacker = lua_toentity( L, 2 );
   Vector vecOrigin = luaL_checkvector( L, 3 );
-  float flRadius = luaL_checknumber( L, 4 );
-  float flDamage = luaL_checknumber( L, 5 );
+  float flRadius = (float)luaL_checknumber( L, 4 );
+  float flDamage = (float)luaL_checknumber( L, 5 );
+
+  if ( g_pGameRules == NULL ) {
+    HL2SB_WarnOnce( "blastdamage-norules",
+      "util.BlastDamage called with g_pGameRules == NULL (level shutting down?); ignored" );
+    return 0;
+  }
+
+  if ( !IsFinite( flRadius ) || flRadius <= 0.0f ) {
+    HL2SB_WarnOnce( "blastdamage-radius",
+      "util.BlastDamage got a non-positive radius (%.3f); ignored", flRadius );
+    return 0;
+  }
+  if ( !IsFinite( flDamage ) )
+    flDamage = 0.0f;
 
   if ( pInflictor == NULL ) {
     pInflictor = pAttacker;
+  }
+
+  // A blast with no inflictor AND no attacker is legitimate (a map object
+  // exploding), but it is also what an addon ends up with when its owner entity
+  // died first -- which is worth one line in the log, because RadiusDamage()
+  // attributes the damage to the world and nothing else records it.
+  if ( pAttacker == NULL ) {
+    HL2SB_WarnOnce( "blastdamage-noattacker",
+      "util.BlastDamage with a NULL attacker (owner entity already gone); damage is attributed to the world" );
   }
 
   CTakeDamageInfo info( pInflictor, pAttacker, flDamage, DMG_BLAST );
@@ -565,6 +717,17 @@ static CSoundPatch *HL2SB_ChannelEnsurePatch( lua_State *L, int nIndex ) {
   // without touching it.
   CBaseEntity *pEntity = HL2SB_ChannelEntity( L, nIndex );
   if ( pEntity == NULL ) {
+    // The risk branch the crash hunt cares about: the owner entity died (or the
+    // weapon was dropped) while this channel still owned a live CSoundPatch.
+    // CSoundControllerImp::SystemUpdate() removes such a patch from its update
+    // list WITHOUT deleting it (soundenvelope.cpp:500-513, 920-928), so the
+    // pointer is stale-but-allocated; touching it would be a latent
+    // use-after-free the moment anything else frees or reuses that block.  Drop
+    // it, never dereference it, and say so once.
+    if ( HL2SB_ChannelPatch( L, nIndex ) != NULL ) {
+      HL2SB_WarnOnce( "channel-owner-gone",
+        "CreateSound channel: owner entity went away with a live CSoundPatch; the pointer is dropped unused (the engine leaves such patches allocated)" );
+    }
     HL2SB_ChannelSetPatch( L, nIndex, NULL );
     HL2SB_ChannelSetBool( L, nIndex, HL2SB_CHANNEL_FIELD_PLAYING, false );
     return NULL;
@@ -587,7 +750,10 @@ static CSoundPatch *HL2SB_ChannelEnsurePatch( lua_State *L, int nIndex ) {
   // is the same call EmitSound makes, hence the same once-per-channel
   // "Direct precache of ..." line the first cut produced.
 #ifndef CLIENT_DLL
-  if ( !enginesound->IsSoundPrecached( pszSound ) )
+  // HL2SB: same "ask once per name" cache as util.PrecacheSound -- the addon
+  // creates this channel on every deploy and every first shot, and each create
+  // used to re-run the engine's precache query.
+  if ( !enginesound->IsSoundPrecached( pszSound ) && HL2SB_PrecacheOnce( pszSound ) )
     CBaseEntity::PrecacheSound( pszSound );
 #endif
 
@@ -616,8 +782,16 @@ static void HL2SB_ChannelShutdown( lua_State *L, int nIndex ) {
   CSoundPatch *pPatch = HL2SB_ChannelPatch( L, nIndex );
 
   if ( pPatch != NULL ) {
-    if ( HL2SB_ChannelEntity( L, nIndex ) != NULL )
+    if ( HL2SB_ChannelEntity( L, nIndex ) != NULL ) {
       CSoundEnvelopeController::GetController().SoundDestroy( pPatch );
+    } else {
+      // Never touch a patch whose owner is gone (see HL2SB_ChannelEnsurePatch):
+      // the controller has already dropped it, and SoundDestroy() would be the
+      // use-after-free.  Forget it instead -- the engine's own comment
+      // (soundenvelope.cpp:511) admits these leak.
+      HL2SB_WarnOnce( "channel-shutdown-owner-gone",
+        "CreateSound channel Stop(): owner entity already gone; the CSoundPatch handle was dropped instead of destroyed" );
+    }
 
     HL2SB_ChannelSetPatch( L, nIndex, NULL );
   }
