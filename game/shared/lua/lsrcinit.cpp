@@ -22,6 +22,9 @@
 #include "luamanager.h"
 #include "lbaseentity_shared.h"
 #include "ipredictionsystem.h"
+#ifdef CLIENT_DLL
+#include "prediction.h"			// CPrediction *prediction, for IsFirstTimePredicted
+#endif
 
 
 static const luaL_Reg luasrclibs[] = {
@@ -813,6 +816,25 @@ static int lua_SuppressHostEvents (lua_State *L) {
 }
 #endif
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the global IsFirstTimePredicted().
+//
+// GMod exposes it as a global on both realms; this fork only had the client-side
+// library method prediction.IsFirstTimePredicted.  The Nyan Gun's PrimaryAttack
+// opens with it (weapon_nyangun.lua:95) and threw 65 times in one run - which
+// also left its firing sound looping forever, because the code that stops the
+// sound comes after that line and never ran.
+//-----------------------------------------------------------------------------
+static int lua_IsFirstTimePredicted (lua_State *L) {
+#ifdef CLIENT_DLL
+  lua_pushboolean( L, prediction->IsFirstTimePredicted() );
+#else
+  // The server is the authority; GMod's server-side answer is "yes, go ahead".
+  lua_pushboolean( L, true );
+#endif
+  return 1;
+}
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
@@ -1013,6 +1035,9 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_setglobal( L, "Msg" );
   lua_pushcfunction( L, lua_MsgN );
   lua_setglobal( L, "MsgN" );
+
+  lua_pushcfunction( L, lua_IsFirstTimePredicted );
+  lua_setglobal( L, "IsFirstTimePredicted" );
 
   /* GMod's type(): keep the real one as an upvalue and install the wrapper in its
   ** place (see lua_type_gmod above). */
