@@ -17,10 +17,13 @@
 // HL2SB: game.AddParticles() below drives the particle system manager directly.
 #include "particles/particles.h"
 #include "filesystem.h"
-// HL2SB: luaL_checkentity (SuppressHostEvents) and the GMod global helpers
-// registered at the end.
+// HL2SB: luaL_checkentity (SuppressHostEvents), the GMod global helpers
+// registered at the end, the NetworkVar shim (which hands back a Color) and the
+// vector/color accessors it and sent_ball need.
 #include "luamanager.h"
 #include "lbaseentity_shared.h"
+#include <lColor.h>
+#include <mathlib/lvector.h>
 #include "ipredictionsystem.h"
 #ifdef CLIENT_DLL
 #include "prediction.h"			// CPrediction *prediction, for IsFirstTimePredicted
@@ -880,6 +883,279 @@ static int lua_IsFirstTimePredicted (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the scripted-entity network variable shim.
+//
+// GMod's ENT:SetupDataTables() declares network variables:
+//
+//     self:NetworkVar( "Float", 0, "BallSize" )
+//     self:NetworkVarNotify( "BallSize", self.OnBallSizeChanged )
+//
+// and GMod's engine turns each declaration into the Set<name>/Get<name> pair the
+// script then calls.  This fork has no DataTable slots for Lua entities, so the
+// accessors are defined here -- installed by CBaseScripted::InitScriptedEntity()
+// as the entity table's NetworkVar / NetworkVarNotify fields (basescripted.cpp),
+// which is why a stock GMod entity script can call them without being modified.
+//
+// The pair is LARGELY the same shim weapons/weapon_base/shared.lua already builds
+// for SWEPs, with one difference that matters: a SWEP stores per-table and each
+// realm reads its own copy, but a network var that the SERVER sets and the CLIENT
+// reads must cross the wire (sent_ball's SpawnFunction sets BallSize/BallColor on
+// the server, while its ENT:Draw reads them on the client).  A plain Lua table
+// would leave the client on the defaults -- size 0, black -- so the two variables
+// sent_ball declares are carried by fields the entity ALREADY networks:
+//
+//   BallColor -> SetRenderColor / GetRenderColor   (m_clrRender; the right type,
+//               the right semantics, already replicated, and the accessors now
+//               exist in lbaseentity_shared.cpp)
+//   BallSize  -> SetSkin / GetSkin                 (m_nSkin, a CNetworkVar on
+//               CBaseAnimating and already replicated; a sprite entity never
+//               uses the skin, so nothing else is competing for it)
+//
+// Everything else -- and every other type -- keeps the per-table behaviour, so
+// this is a superset of the SWEP shim, not a replacement.  Self-designed: GMod
+// uses real engine network vars and there is no public implementation to copy.
+//-----------------------------------------------------------------------------
+enum HL2SB_NWStorage_t
+{
+  HL2SB_NW_TABLE = 0,   // entity's own Lua table (the SWEP shim's behaviour)
+  HL2SB_NW_SKIN,        // m_nSkin        (int,   CNetworkVar)
+  HL2SB_NW_RENDERCOLOR, // m_clrRender    (color32, CNetworkVar)
+};
+
+static HL2SB_NWStorage_t HL2SB_NWStorageForName (const char *pszName) {
+  if ( V_stricmp( pszName, "BallSize" ) == 0 )
+    return HL2SB_NW_SKIN;
+
+  if ( V_stricmp( pszName, "BallColor" ) == 0 )
+    return HL2SB_NW_RENDERCOLOR;
+
+  return HL2SB_NW_TABLE;
+}
+
+// Push the script-visible default for a declared variable.
+static void HL2SB_NWPushValue (lua_State *L, const char *pszType) {
+  if ( V_stricmp( pszType, "Vector" ) == 0 ) {
+    lua_pushvector( L, Vector( 0, 0, 0 ) );
+    return;
+  }
+
+  if ( V_stricmp( pszType, "Angle" ) == 0 ) {
+    lua_pushangle( L, QAngle( 0, 0, 0 ) );
+    return;
+  }
+
+  if ( V_stricmp( pszType, "Bool" ) == 0 ) {
+    lua_pushboolean( L, false );
+    return;
+  }
+
+  if ( V_stricmp( pszType, "String" ) == 0 ) {
+    lua_pushstring( L, "" );
+    return;
+  }
+
+  // Float / Int / anything unrecognised: GMod's numeric default.
+  lua_pushnumber( L, 0 );
+}
+
+// Push the value the entity's own table holds, or the type default when it was
+// never set.  Leaves the value on top of the stack (the value being replaced is
+// still underneath it -- the accessors pop it on the way out).
+static void HL2SB_NWPushTableValue (lua_State *L, int iSelf, const char *pszStorageKey, const char *pszType) {
+  if ( lua_istable( L, iSelf ) ) {
+    lua_pushstring( L, pszStorageKey );
+    lua_rawget( L, iSelf );
+    if ( !lua_isnil( L, -1 ) ) {
+      return;
+    }
+    lua_pop( L, 1 );
+  }
+
+  HL2SB_NWPushValue( L, pszType );
+}
+
+// Read the current value of a declared variable and push it.  The value being
+// replaced (if any) stays on the stack underneath, so the wrapper can still use
+// it as NetworkVarNotify's "old" argument.
+static void HL2SB_NWReadValue (lua_State *L, int iSelf, const char *pszStorageKey,
+                               HL2SB_NWStorage_t storage, const char *pszType) {
+  if ( storage == HL2SB_NW_TABLE ) {
+    lua_pushstring( L, pszStorageKey );
+    lua_rawget( L, iSelf );
+    return;
+  }
+
+  CBaseEntity *pEntity = lua_toentity( L, iSelf );
+
+  if ( pEntity == NULL ) {
+    HL2SB_NWPushValue( L, pszType );
+    return;
+  }
+
+  if ( storage == HL2SB_NW_SKIN ) {
+    // m_nSkin is the replicated copy, so it wins whenever it carries a real
+    // value; 0 means "nothing networked here" (GMod's sent_ball clamps its own
+    // sizes to >= 4), and then the table's exact value is the better answer.
+    const int iSkin = pEntity->GetSkin();
+    if ( iSkin != 0 ) {
+      lua_pushnumber( L, iSkin );
+      return;
+    }
+
+    HL2SB_NWPushTableValue( L, iSelf, pszStorageKey, pszType );
+    return;
+  }
+
+  // m_clrRender, handed back in the 0..255 Color the rest of Lua expects.
+  color32 clr = pEntity->GetRenderColor();
+  lua_pushcolor( L, Color( clr.r, clr.g, clr.b, clr.a ) );
+}
+
+// Set<name>( value ) for one entity.  Upvalue 1 is the type ("Float"), upvalue 2
+// the storage key ("__hl2sb_nw_BallSize"), upvalue 3 the slot, upvalue 4 the
+// storage kind.  Mirrors the SWEP shim, plus the cross-realm stores above and
+// GMod's NetworkVarNotify callback.
+static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
+  // Normalise the arguments to self, value (so the notify call below can build
+  // its own frame regardless of what the caller passed).
+  if ( lua_gettop( L ) < 2 ) {
+    lua_settop( L, 2 );
+  }
+
+  const char *pszType = lua_tostring( L, lua_upvalueindex( 1 ) );
+  const char *pszKey = lua_tostring( L, lua_upvalueindex( 2 ) );
+  const char *pszName = ( pszKey != NULL ) ? ( pszKey + strlen( "__hl2sb_nw_" ) ) : "";
+  const HL2SB_NWStorage_t storage = ( HL2SB_NWStorage_t )lua_tointeger( L, lua_upvalueindex( 4 ) );
+
+  // GMod fires NetworkVarNotify( name, fn ) as fn( name, old, new ); read the
+  // old value first, before the stores below overwrite it.
+  HL2SB_NWReadValue( L, 1, pszKey, storage, pszType );  // [self, value, old]
+
+  CBaseEntity *pEntity = lua_toentity( L, 1 );
+
+  if ( storage == HL2SB_NW_SKIN && pEntity != NULL ) {
+    // m_nSkin carries the value across the realm (vphysics and rendering never
+    // read it for a sprite entity).  It is an int, so the exact value is ALSO
+    // kept in the entity's table and m_nSkin is only the cross-realm copy --
+    // that way a fractional BallSize survives on the realm that set it, and the
+    // other realm gets the truncated networked value.
+    pEntity->SetSkin( ( int )lua_tonumber( L, 2 ) );
+    lua_pushvalue( L, 4 );
+    lua_rawset( L, 1 );
+  } else if ( storage == HL2SB_NW_RENDERCOLOR && pEntity != NULL ) {
+    // GMod stores colours as 0..1 Vectors (sent_ball's Initialize does
+    // SetBallColor( Vector( 1, 0.3, 0.3 ) )), so that is the expected shape --
+    // but a Color table is accepted too, because ENT:KeyValue's "rendercolor"
+    // path and hand-written addons pass both.
+    if ( luaL_testudata( L, 2, LUA_VECTORLIBNAME ) != NULL ) {
+      Vector vec = luaL_checkvector( L, 2 );
+      pEntity->SetRenderColor( vec.x, vec.y, vec.z );
+    } else if ( lua_istable( L, 2 ) ) {
+      Color clr = luaL_checkcolor( L, 2 );
+      pEntity->SetRenderColor( clr.r(), clr.g(), clr.b() );
+    } else {
+      luaL_argerror( L, 2, "Vector or Color expected" );
+    }
+
+    lua_pushvalue( L, 4 );
+    lua_rawset( L, 1 );
+  } else {
+    // Plain per-table storage.  rawset, so a variable named like an existing
+    // method can neither be hijacked by nor hijack the entity's metatable.
+    lua_pushvalue( L, 4 );
+    lua_rawset( L, 1 );
+  }
+
+  lua_pushstring( L, "__hl2sb_nwn" );                            // [self, value, old, key]
+  lua_rawget( L, 1 );                                            // [self, value, old, notify]
+  if ( lua_istable( L, -1 ) ) {
+    lua_pushstring( L, pszName );
+    lua_rawget( L, -2 );                                         // [.., notify, fn]
+    if ( lua_isfunction( L, -1 ) ) {
+      lua_pushvalue( L, 1 );                                     // self
+      lua_pushstring( L, pszName );                              // name
+      lua_pushvalue( L, 3 );                                     // old
+      lua_pushvalue( L, 2 );                                     // new
+      lua_call( L, 4, 0 );                                       // [.., notify]
+    } else {
+      lua_pop( L, 1 );                                           // [.., notify]
+    }
+  }
+
+  lua_pop( L, 1 );                                               // [self, value, old]
+  return 0;
+}
+
+// Get<name>() for one entity.  Same upvalue layout as the setter.
+static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
+  const char *pszType = lua_tostring( L, lua_upvalueindex( 1 ) );
+  const char *pszKey = lua_tostring( L, lua_upvalueindex( 2 ) );
+  const HL2SB_NWStorage_t storage = ( HL2SB_NWStorage_t )lua_tointeger( L, lua_upvalueindex( 4 ) );
+
+  HL2SB_NWReadValue( L, 1, pszKey, storage, pszType );
+  return 1;
+}
+
+// self:NetworkVar( type, slot, name [, options] )
+static int HL2SB_Lua_EntityNetworkVar (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+
+  const char *pszType = luaL_checkstring( L, 2 );
+  const int iSlot = ( int )luaL_checknumber( L, 3 );
+  const char *pszName = luaL_checkstring( L, 4 );
+
+  char szKey[ 160 ];
+  Q_snprintf( szKey, sizeof( szKey ), "__hl2sb_nw_%s", pszName );
+
+  const HL2SB_NWStorage_t storage = HL2SB_NWStorageForName( pszName );
+
+  char szSetter[ 160 ];
+  char szGetter[ 160 ];
+  Q_snprintf( szSetter, sizeof( szSetter ), "Set%s", pszName );
+  Q_snprintf( szGetter, sizeof( szGetter ), "Get%s", pszName );
+
+  lua_pushstring( L, pszType );
+  lua_pushstring( L, szKey );
+  lua_pushinteger( L, iSlot );
+  lua_pushinteger( L, ( int )storage );
+
+  lua_pushcclosure( L, HL2SB_Lua_EntityNetworkVarSet, 4 );
+  lua_setfield( L, 1, szSetter );
+
+  lua_pushstring( L, pszType );
+  lua_pushstring( L, szKey );
+  lua_pushinteger( L, iSlot );
+  lua_pushinteger( L, ( int )storage );
+
+  lua_pushcclosure( L, HL2SB_Lua_EntityNetworkVarGet, 4 );
+  lua_setfield( L, 1, szGetter );
+
+  return 0;
+}
+
+// self:NetworkVarNotify( name, fn )  -- SERVER in GMod; callable anywhere here.
+static int HL2SB_Lua_EntityNetworkVarNotify (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  const char *pszName = luaL_checkstring( L, 2 );
+  luaL_checktype( L, 3, LUA_TFUNCTION );
+
+  lua_pushstring( L, "__hl2sb_nwn" );       // [self, name, fn, key]
+  lua_rawget( L, 1 );                       // [self, name, fn, notify]
+  if ( !lua_istable( L, -1 ) ) {
+    lua_pop( L, 1 );
+    lua_newtable( L );                      // [self, name, fn, notify]
+    lua_pushstring( L, "__hl2sb_nwn" );     // [self, name, fn, notify, key]
+    lua_pushvalue( L, -2 );                 // [self, name, fn, notify, key, notify]
+    lua_rawset( L, 1 );                     // [self, name, fn, notify]
+  }
+
+  lua_pushvalue( L, 3 );                    // [self, name, fn, notify, fn]
+  lua_setfield( L, -2, pszName );           // notify[ name ] = fn
+  lua_pop( L, 1 );                          // [self, name, fn]
+  return 0;
+}
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
@@ -1097,6 +1373,42 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
 
   lua_pushcfunction( L, lua_IsFirstTimePredicted );
   lua_setglobal( L, "IsFirstTimePredicted" );
+
+  /* HL2SB: the scripted-entity network variable shim.  CBaseScripted::
+  ** InitScriptedEntity() installs these two onto each entity's Lua table (as
+  ** NetworkVar / NetworkVarNotify) before calling ENT:SetupDataTables(), so a
+  ** stock GMod entity script declares its network variables without knowing this
+  ** engine has no DataTable slots for Lua entities.  Both realms: the client
+  ** needs the accessors too, because that is where ENT:Draw reads them. */
+  lua_pushcfunction( L, HL2SB_Lua_EntityNetworkVar );
+  lua_setglobal( L, "HL2SB_EntityNetworkVar" );
+  lua_pushcfunction( L, HL2SB_Lua_EntityNetworkVarNotify );
+  lua_setglobal( L, "HL2SB_EntityNetworkVarNotify" );
+
+  /* HL2SB: GMod's `achievements` table, as a STUB.
+  **
+  ** GMod's achievements library lives in gamemodes/base/gamemode/cl_achievements.lua
+  ** and is not part of what was imported here, so the global was simply absent.
+  ** GMod's stock sent_ball calls achievements.EatBall() through
+  ** activator:SendLua() when the ball is eaten, i.e. it runs through
+  ** LuaRunString on the CLIENT -- so a missing table raised a Lua error in the
+  ** console every time a ball was consumed.
+  **
+  ** This only keeps the call from throwing; nothing is recorded and there is no
+  ** overlay to award anything in.  It is deliberately a table of no-ops rather
+  ** than a fake implementation, and script may replace the whole table.
+  */
+  if ( luaL_loadstring( L,
+    "achievements = achievements or {}\n"
+    "setmetatable( achievements, { __index = function() return function() end end } )\n" ) == 0 )
+  {
+    lua_pcall( L, 0, 0, 0 );
+  }
+  else
+  {
+    Warning( "[HL2SB] lsrcinit: achievements stub failed to compile: %s\n", lua_tostring( L, -1 ) );
+    lua_pop( L, 1 );
+  }
 
   /* GMod's type(): keep the real one as an upvalue and install the wrapper in its
   ** place (see lua_type_gmod above). */

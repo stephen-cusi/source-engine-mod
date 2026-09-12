@@ -45,6 +45,10 @@
 
 extern ISoundEmitterSystemBase *soundemitterbase;
 
+// HL2SB: the "precache each raw wave once" helper from game/shared/lua/lutil_shared.cpp.
+// sound.Play needs it for the same reason Entity:EmitSound does (see below).
+extern bool HL2SB_PrecacheOnce( const char *pszName );
+
 // The recipient-filter argument of Sounds.Play is optional: accept either filter
 // type, and anything else means "build a PAS attenuation filter around origin".
 static bool lua_issoundsrecipientfilter (lua_State *L, int idx) {
@@ -158,22 +162,36 @@ LUA_BINDING_BEGIN( Sounds, Add, "library", "Creates a sound script." )
 LUA_BINDING_END()
 
 // lua_run_cl Sounds.Play("ambient/levels/labs/teleport_alarm_loop1.wav", Vectors.Create(0, 0, 0))
-LUA_BINDING_BEGIN( Sounds, Play, "library", "Plays a sound emitting from a place in the world. Not properly tested for sound script names (didn't work when I tried it)" )
+//
+// HL2SB GMod compat: the argument list is GMOD's, not Experiment's.
+//
+// This binding was ported with Experiment: Source's order --
+//     ( sound, origin, entity, channel, volume, soundLevel, soundFlags,
+//       pitchPercent, dsp, filter )
+// but GMod's sound.Play is
+//     sound.Play( sound, pos, level, pitch, volume, channel )
+// so a stock GMod script calling sound.Play( BounceSound, pos, 75, pitch, vol )
+// (which is what sent_ball's ENT:PhysicsCollide does) had 75 read as an
+// ENTITY INDEX and the pitch read as a CHANNEL, and the sound either went to the
+// wrong place or was dropped.  GMod's order is implemented here; nothing inside
+// this tree called Sounds.Play at all before, so nothing regresses.
+LUA_BINDING_BEGIN( Sounds, Play, "library", "Plays a sound emitting from a place in the world. GMod order: ( sound, pos, level, pitch, volume, channel )." )
 {
     const char *pszSoundName = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "soundName" );  // doc: sound script name or sound file name relative to sound/ folder
     const Vector vecOrigin = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "origin" );       // doc: position of the sound
-    int entityIndex = ( int )LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 3, SOUND_FROM_WORLD, "entity" );
-    SOUND_CHANNEL channel = ( SOUND_CHANNEL )LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 4, CHAN_AUTO, "channel" );
+    soundlevel_t soundLevel = LUA_BINDING_ARGUMENT_ENUM_WITH_DEFAULT( soundlevel_t, 3, SNDLVL_NORM, "soundLevel" );
+    float flPitchPercent = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 4, 100, "pitchPercent" );
     float flVolume = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 5, 1, "volume" );
-    soundlevel_t soundLevel = LUA_BINDING_ARGUMENT_ENUM_WITH_DEFAULT( soundlevel_t, 6, SNDLVL_NORM, "soundLevel" );
-    int soundFlags = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 7, 0, "soundFlags" );
-    float flPitchPercent = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 8, 100, "pitchPercent" );
-    int nDSP = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 9, 0, "dsp" );
+    SOUND_CHANNEL channel = ( SOUND_CHANNEL )LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 6, CHAN_AUTO, "channel" );
+
+    // Not part of GMod's signature, but a few call sites in this tree and in
+    // Experiment-era scripts pass a recipient filter last; keep accepting it.
+    int entityIndex = SOUND_FROM_WORLD;
     lua_CRecipientFilter filter;
 
-    if ( lua_issoundsrecipientfilter( L, 10 ) )
+    if ( lua_issoundsrecipientfilter( L, 7 ) )
     {
-        filter = LUA_BINDING_ARGUMENT_NILLABLE( luaL_checkrecipientfilter, 10, "filter" );
+        filter = LUA_BINDING_ARGUMENT_NILLABLE( luaL_checkrecipientfilter, 7, "filter" );
     }
     else
     {
@@ -182,28 +200,41 @@ LUA_BINDING_BEGIN( Sounds, Play, "library", "Plays a sound emitting from a place
 
     float duration = 0;
 
+#ifndef CLIENT_DLL
+    // HL2SB GMod compat: a GMod script plays a raw wave by name without ever
+    // precaching it, and SV_StartSound then drops it ("SV_StartSound: <wave> not
+    // precached (0)") with no Lua-visible error -- exactly the trap Entity:EmitSound
+    // already works around (see lbaseentity_shared.cpp).  sent_ball plays
+    // sound/garrysmod/balloon_pop_cute.wav this way, so register it once here.
+    if ( pszSoundName[0] != '!' && pszSoundName[0] != '?' && HL2SB_PrecacheOnce( pszSoundName ) )
+    {
+        CBaseEntity::PrecacheScriptSound( pszSoundName );
+        CBaseEntity::PrecacheSound( pszSoundName );
+        enginesound->PrecacheSound( pszSoundName );
+    }
+#endif
+
     EmitSound_t params;
     params.m_pSoundName = pszSoundName;
     params.m_pOrigin = &vecOrigin;
     params.m_flVolume = flVolume;
     params.m_SoundLevel = soundLevel;
     params.m_nPitch = flPitchPercent;
-    params.m_nSpecialDSP = nDSP;
+    params.m_nSpecialDSP = 0;
     params.m_flSoundTime = 0;
     params.m_pflSoundDuration = &duration;
     params.m_bWarnOnDirectWaveReference = false;
     params.m_nChannel = channel;
-    params.m_nFlags = soundFlags;
+    params.m_nFlags = 0;
 
     CBaseEntity::EmitSound( filter, entityIndex, params );
 
-    // Upstream pushes the duration and then returns 0, which throws the value away
-    // (the returned count is what Lua sees).  Return it instead.
     lua_pushnumber( L, duration );
 
     return 1;
 }
 LUA_BINDING_END()
+
 
 /*
 ** Open Sounds library

@@ -286,6 +286,20 @@ static int CBaseEntity_TakeHealth (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Entity:TakePhysicsDamage( dmginfo ).
+//
+// GMod's ENT:OnTakeDamage does
+//     self:TakePhysicsDamage( dmginfo )
+// so that a shot/blast shoves the object around physically.  CBaseEntity has that
+// behaviour (baseentity.cpp:1569) but under the engine's own name,
+// VPhysicsTakeDamage(); the binding was simply never written, so GMod's stock
+// sent_ball's OnTakeDamage stopped on its first line and the ball never reacted
+// to being shot.
+static int CBaseEntity_TakePhysicsDamage (lua_State *L) {
+  lua_pushinteger(L, luaL_checkentity(L, 1)->VPhysicsTakeDamage(luaL_checkdamageinfo(L, 2)));
+  return 1;
+}
+
 static int CBaseEntity_Event_Killed (lua_State *L) {
   luaL_checkentity(L, 1)->Event_Killed(luaL_checkdamageinfo(L, 2));
   return 0;
@@ -697,6 +711,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"OnTakeDamage", CBaseEntity_OnTakeDamage},
   {"TakeDamage", CBaseEntity_TakeDamage},
   {"TakeHealth", CBaseEntity_TakeHealth},
+  {"TakePhysicsDamage", CBaseEntity_TakePhysicsDamage},
   {"Event_Killed", CBaseEntity_Event_Killed},
   {"Event_KilledOther", CBaseEntity_Event_KilledOther},
   {"IsTriggered", CBaseEntity_IsTriggered},

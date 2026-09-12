@@ -1643,6 +1643,59 @@ static int CBaseEntity_SetRenderColor (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: Entity:GetRenderColor().
+//
+// GMod's sent_ball stores its colour through NetworkVar( "Vector", 0, "BallColor" )
+// and its CLIENT-side ENT:Draw reads it back with GetBallColor().  The engine-side
+// shim maps that onto m_clrRender (see HL2SB_EntityNetworkVar in lsrcinit.cpp),
+// and this is the read half -- it returns GMod's 0..1 Vector (the same units
+// SetRenderColor takes), not the 0..255 color32.
+static int CBaseEntity_GetRenderColor (lua_State *L) {
+  color32 clr = luaL_checkentity(L, 1)->GetRenderColor();
+  lua_pushvector(L, Vector( clr.r / 255.0f, clr.g / 255.0f, clr.b / 255.0f ));
+  return 1;
+}
+
+// HL2SB GMod compat: Entity:SetSkin( n ) / Entity:GetSkin().
+//
+// GMod's Lua entities declare skin as a plain property; this fork only had the
+// CBaseAnimating:SetSkin panel-side binding, which is unreachable from an entity
+// userdata (its metatable is CBaseEntity).  GMod's sent_ball pitches its
+// NetworkVar( "Float", 0, "BallSize" ) on m_nSkin -- a sprite entity never reads
+// the skin -- so these go through lua_toanimating(), which dynamic_casts the
+// handle's entity to C_BaseAnimating/CBaseAnimating and returns NULL for an
+// entity that is not one.  That cast is done in game/*/lua/lbaseanimating.cpp
+// with real RTTI, so this never produces a bogus pointer.
+//
+// m_nSkin lives on CBaseAnimating as a CNetworkVar, so writing it here is what
+// carries the value to the other realm.
+static lua_CBaseAnimating *HL2SB_EntityAsAnimating (lua_State *L, int narg) {
+  return lua_toanimating( L, narg );
+}
+
+static int CBaseEntity_SetSkin (lua_State *L) {
+  lua_CBaseAnimating *pAnimating = HL2SB_EntityAsAnimating( L, 1 );
+  const int iSkin = luaL_checkint( L, 2 );
+
+  if ( pAnimating != NULL ) {
+    pAnimating->m_nSkin = iSkin;
+  } else {
+    // Not an animating entity, so there is no m_nSkin to write.  Fall back to
+    // rejecting loudly rather than silently doing nothing: silently ignoring it
+    // is how a wrong assumption here would hide (the ball would simply draw at
+    // size 0 on the other realm with no error anywhere).
+    luaL_argerror( L, 1, "animating entity expected (no m_nSkin to set)" );
+  }
+
+  return 0;
+}
+
+static int CBaseEntity_GetSkin (lua_State *L) {
+  lua_CBaseAnimating *pAnimating = HL2SB_EntityAsAnimating( L, 1 );
+  lua_pushinteger( L, ( pAnimating != NULL ) ? pAnimating->m_nSkin : 0 );
+  return 1;
+}
+
 static int CBaseEntity_SetRenderColorA (lua_State *L) {
   luaL_checkentity(L, 1)->SetRenderColorA(luaL_checknumber(L, 2));
   return 0;
@@ -2480,8 +2533,10 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetParametersForSound", CBaseEntity_GetParametersForSound},
   {"GetPredictionPlayer", CBaseEntity_GetPredictionPlayer},
   {"GetPredictionRandomSeed", CBaseEntity_GetPredictionRandomSeed},
+  {"GetRenderColor", CBaseEntity_GetRenderColor},
   {"GetSimulatingPlayer", CBaseEntity_GetSimulatingPlayer},
   {"GetSimulationTime", CBaseEntity_GetSimulationTime},
+  {"GetSkin", CBaseEntity_GetSkin},
   {"GetSolid", CBaseEntity_GetSolid},
   {"GetSolidFlags", CBaseEntity_GetSolidFlags},
   {"GetSoundDuration", CBaseEntity_GetSoundDuration},
@@ -2605,6 +2660,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetPredictionEligible", CBaseEntity_SetPredictionEligible},
   {"SetPredictionPlayer", CBaseEntity_SetPredictionPlayer},
   {"SetRenderColor", CBaseEntity_SetRenderColor},
+  {"SetSkin", CBaseEntity_SetSkin},
   {"SetRenderColorA", CBaseEntity_SetRenderColorA},
   {"SetRenderColorB", CBaseEntity_SetRenderColorB},
   {"SetRenderColorG", CBaseEntity_SetRenderColorG},

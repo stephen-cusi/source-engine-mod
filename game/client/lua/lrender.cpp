@@ -862,6 +862,27 @@ LUA_BINDING_BEGIN( Renders, DrawSprite, "library", "Draws a sprite", "client" )
 }
 LUA_BINDING_END()
 
+LUA_BINDING_BEGIN( Renders, ComputeLighting, "library", "Returns the lighting at the given position, in the 0..1 range GMod scripts expect.", "client" )
+{
+    Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
+    Vector defaultNormal = vec3_origin;
+    Vector normal = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optvector, 2, &defaultNormal, "normal" );
+    bool bClamp = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optboolean, 3, true, "clamp" );
+
+    // HL2SB: this is a real engine entry point, not an approximation --
+    // IVEngineClient::ComputeLighting() (public/cdll_int.h:392), the same call
+    // game/client/c_impact_effects.cpp:486 makes for impact lighting.  With a
+    // normal it evaluates the world lights plus the ambient cube at that point,
+    // which is what GMod's render.ComputeLighting returns; the bClamp argument
+    // (GMod's default is true) is passed straight through.
+    Vector color( 1, 1, 1 );
+    engine->ComputeLighting( position, ( normal == vec3_origin ) ? NULL : &normal, bClamp, color, NULL );
+
+    lua_pushvector( L, color );
+    return 1;
+}
+LUA_BINDING_END( "Vector", "The lighting colour at the position." )
+
 LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
 {
     Vector &start = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "start" );
