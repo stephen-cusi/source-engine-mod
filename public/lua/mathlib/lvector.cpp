@@ -204,6 +204,25 @@ static int Vector_IsValid (lua_State *L) {
   return 1;
 }
 
+/*
+** HL2SB GMod compat: Vector:IsZero().
+**
+** GMod's stock sent_ball.lua:79 does
+**     if ( !self:GetBallColor():IsZero() ) then return end
+** and GMod's Vector has IsZero; this fork only had the engine's C++ helper, so
+** the call raised "attempt to call a nil value (method 'IsZero')" and aborted
+** ENT:Initialize before it could pick a random colour.
+**
+** mathlib's Vector::IsZero() (public/mathlib/vector.h:139) is exactly the
+** tolerance test GMod's does -- every component within 0.01 of zero -- so it is
+** used directly rather than reimplemented.  GMod's Color has no IsZero (it is
+** not in Color's method list), so none was added there; nothing needs it.
+*/
+static int Vector_IsZero (lua_State *L) {
+  lua_pushboolean(L, luaL_checkvector(L, 1).IsZero());
+  return 1;
+}
+
 static int Vector_Length (lua_State *L) {
   lua_pushnumber(L, luaL_checkvector(L, 1).Length());
   return 1;
@@ -264,14 +283,34 @@ static int Vector_Zero (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB GMod compat: GMod's Vector component names.
+**
+** GMod's Vector accepts x/X/r/1, y/Y/g/2 and z/Z/b/3 (GMod wiki: Vector).
+** This fork only accepted x/y/z, so GMod's sent_ball -- whose GetBallColor() is
+** declared NetworkVar( "Vector", 0, "BallColor" ) and whose ENT:Draw reads
+** c.r / c.g / c.b -- got nil for all three and died on
+** "attempt to perform arithmetic on a nil value".
+**
+** Only the colour spelling is added here (what the entity needs); the same
+** trick for QAngle's p/y/r/roll spelling is QAngle_FieldToComponent below.
+*/
+static int Vector_FieldToComponent (const char *field) {
+  if (strcmp(field, "x") == 0 || strcmp(field, "r") == 0) return 0;
+  if (strcmp(field, "y") == 0 || strcmp(field, "g") == 0) return 1;
+  if (strcmp(field, "z") == 0 || strcmp(field, "b") == 0) return 2;
+  return -1;
+}
+
 static int Vector___index (lua_State *L) {
   Vector v = luaL_checkvector(L, 1);
   const char *field = luaL_checkstring(L, 2);
-  if (strcmp(field, "x") == 0)
+  const int iComponent = Vector_FieldToComponent(field);
+  if (iComponent == 0)
     lua_pushnumber(L, v.x);
-  else if (strcmp(field, "y") == 0)
+  else if (iComponent == 1)
     lua_pushnumber(L, v.y);
-  else if (strcmp(field, "z") == 0)
+  else if (iComponent == 2)
     lua_pushnumber(L, v.z);
   else {
     lua_getmetatable(L, 1);
@@ -283,11 +322,12 @@ static int Vector___index (lua_State *L) {
 
 static int Vector___newindex (lua_State *L) {
   const char *field = luaL_checkstring(L, 2);
-  if (strcmp(field, "x") == 0)
+  const int iComponent = Vector_FieldToComponent(field);
+  if (iComponent == 0)
     luaL_checkvector(L, 1).x = (vec_t)luaL_checknumber(L, 3);
-  else if (strcmp(field, "y") == 0)
+  else if (iComponent == 1)
     luaL_checkvector(L, 1).y = (vec_t)luaL_checknumber(L, 3);
-  else if (strcmp(field, "z") == 0)
+  else if (iComponent == 2)
     luaL_checkvector(L, 1).z = (vec_t)luaL_checknumber(L, 3);
   return 0;
 }
@@ -352,6 +392,7 @@ static const luaL_Reg Vectormeta[] = {
   {"IsLengthGreaterThan", Vector_IsLengthGreaterThan},
   {"IsLengthLessThan", Vector_IsLengthLessThan},
   {"IsValid", Vector_IsValid},
+  {"IsZero", Vector_IsZero},
   {"Length", Vector_Length},
   {"Length2D", Vector_Length2D},
   {"Length2DSqr", Vector_Length2DSqr},
