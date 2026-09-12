@@ -57,6 +57,19 @@ static bool SMenu_IsScriptedClass( const char *pszClass )
 		}
 	}
 
+	// HL2SB: GMod's scripted ENTITIES are a single FILE, not a folder:
+	// lua/entities/<class>.lua (sent_ball is one).  SWEPs use the folder form tested
+	// above.  Without this test a stock GMod entity was not recognised as scripted
+	// content, so it was not allowed the generic icon fallback and was dropped from
+	// the list altogether - which is exactly why the Entities page came up empty even
+	// though addons/menu/entitylist.txt listed it and materials/entities/<class>.png
+	// was installed.
+	char szEntityScript[MAX_PATH];
+	Q_snprintf( szEntityScript, sizeof( szEntityScript ), "lua/entities/%s.lua", pszClass );
+
+	if ( filesystem->FileExists( szEntityScript ) )
+		return true;
+
 	return false;
 }
 
