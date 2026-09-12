@@ -1338,6 +1338,19 @@ public:
 
 	int								m_iHealth;
 
+	// HL2SB: the server's m_iMaxHealth is a CNetworkVarForDerived on CBaseEntity and
+	// was in no client table at all, so C_BaseEntity::GetMaxHealth() handed its
+	// hardcoded 1 to every script.  weapon_medkit does
+	//     if ( health >= maxhealth ) then self:HealFail( ent ) return false end
+	// which on the client was therefore true for every living entity: the predicted
+	// heal always took the failure path, so it played the deny sound and never
+	// animated the viewmodel.  (The local player's viewmodel is PREDICTED, so the
+	// server's own successful animation never reaches the player's screen.)
+	// Networked for the player in DT_BasePlayer, mirroring m_iHealth: the prop must
+	// sit in the same position in player.cpp's send table and c_baseplayer.cpp's
+	// recv table, because recv props are matched to send props BY INDEX.
+	int								m_iMaxHealth;
+
 	// was pev->speed
 	float							m_flSpeed;
 

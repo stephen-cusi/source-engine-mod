@@ -140,6 +140,11 @@ public:
 	// Data handlers
 	virtual bool	IsPlayer( void ) const { return true; }
 	virtual int		GetHealth() const { return m_iHealth; }
+	// HL2SB: mirror GetHealth().  Without this the client fell through to
+	// C_BaseEntity::GetMaxHealth(), which is hardcoded to 1 -- see the note on
+	// m_iMaxHealth in c_baseentity.h.  The floor keeps the old behaviour for the
+	// first frames, before the initial network update has arrived.
+	virtual int		GetMaxHealth() const { return m_iMaxHealth > 0 ? m_iMaxHealth : 1; }
 
 	int		GetBonusProgress() const { return m_iBonusProgress; }
 	int		GetBonusChallenge() const { return m_iBonusChallenge; }

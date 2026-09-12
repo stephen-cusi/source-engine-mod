@@ -8040,6 +8040,12 @@ void SendProxy_CropFlagsToPlayerFlagBitsLength( const SendProp *pProp, const voi
 		SendPropEHandle(SENDINFO(m_hVehicle)),
 		SendPropEHandle(SENDINFO(m_hUseEntity)),
 		SendPropInt		(SENDINFO(m_iHealth), -1, SPROP_VARINT | SPROP_CHANGES_OFTEN ),
+		// HL2SB: must stay immediately after m_iHealth here AND in the client's
+		// DT_BasePlayer (game/client/c_baseplayer.cpp).  The client had no max health
+		// at all (GetMaxHealth() was hardcoded to 1), which made weapon_medkit's
+		// `health >= maxhealth` check true on the client for every living player, so
+		// the predicted heal always failed -- deny sound, no viewmodel animation.
+		SendPropInt		(SENDINFO(m_iMaxHealth), -1, SPROP_VARINT | SPROP_CHANGES_OFTEN ),
 		SendPropInt		(SENDINFO(m_lifeState), 3, SPROP_UNSIGNED ),
 		SendPropInt		(SENDINFO(m_iBonusProgress), 15 ),
 		SendPropInt		(SENDINFO(m_iBonusChallenge), 4 ),

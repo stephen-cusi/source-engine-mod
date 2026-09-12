@@ -1366,20 +1366,21 @@ Activity CHL2MPScriptedWeapon::GetDrawActivity( void )
 // Valve's content is meant to be resolved: v_smg1.mdl carries the full ACT_VM_*
 // list (w_smg1.mdl only carries ACT_VM_IDLE and its range-attack activity).
 //
-// GMod content breaks that assumption.  The weapon's own model is also the
-// index the engine networks (CBaseCombatWeapon::Precache sets m_iWorldModelIndex
-// from GetWorldModel(), which is what a client-side scripted weapon gets its
-// model from), and GMod's world models carry no ACT_VM_* names at all:
-// models/weapons/w_medkit.mdl is a single sequence called "idle" with no
-// activity name.  SelectWeightedSequence() therefore answers
-// ACTIVITY_NOT_AVAILABLE, CBaseCombatWeapon::SetIdealActivity() returns false
-// before it ever reaches SendViewModelAnim(), and the medkit's viewmodel sat on
-// its first frame forever -- no draw, no heal animation, no idle.
+// ⚠️ Measured on 2026-09-13 (the one-shot line below): for a scripted weapon the
+// own model IS the viewmodel -- weapon_medkit reports
+// weaponModel='models/weapons/c_medkit.mdl' resolves=1 -- so an earlier theory
+// that GMod's activity-less world models were breaking this was WRONG.  What the
+// log did show is that resolution can still fail for a normal reason:
 //
-// So when the weapon's own model cannot resolve the activity, resolve it on the
-// viewmodel entity instead: that is the model the player actually watches, and
-// the one that carries the activities (models/weapons/c_medkit.mdl has
-// ACT_VM_DRAW / ACT_VM_HOLSTER / ACT_VM_IDLE / ACT_VM_PRIMARYATTACK).
+//   SendWeaponAnim 'weapon_flechettegun' activity=172: weaponModel='c_smg1.mdl' resolves=0
+//
+// models/weapons/c_smg1.mdl simply has no ACT_VM_HOLSTER, so the stock path
+// returns false and nothing is animated.
+//
+// So this fallback is a safety net, not the medkit's fix: when the weapon's own
+// model cannot resolve the activity, try the viewmodel entity's own sequence list
+// before giving up.  It costs nothing when the stock path works (it is not
+// reached), and it turns a silent no-op into either an animation or a log line.
 //-----------------------------------------------------------------------------
 bool CHL2MPScriptedWeapon::SendWeaponAnim( int iActivity )
 {

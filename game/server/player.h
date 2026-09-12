@@ -856,6 +856,11 @@ public:
 
 	IMPLEMENT_NETWORK_VAR_FOR_DERIVED( m_lifeState );
 	IMPLEMENT_NETWORK_VAR_FOR_DERIVED( m_iHealth );
+	// HL2SB: m_iMaxHealth is a CNetworkVarForDerived on CBaseEntity, so a derived
+	// class has to opt into the change notification before it can put the variable
+	// in its send table.  Same treatment as m_iHealth above; the matching send prop
+	// is in DT_BasePlayer (player.cpp) and the client's is in c_baseplayer.cpp.
+	IMPLEMENT_NETWORK_VAR_FOR_DERIVED( m_iMaxHealth );
 	IMPLEMENT_NETWORK_VAR_FOR_DERIVED( m_vecBaseVelocity );
 	IMPLEMENT_NETWORK_VAR_FOR_DERIVED( m_nNextThinkTick );
 	IMPLEMENT_NETWORK_VAR_FOR_DERIVED( m_vecVelocity );
