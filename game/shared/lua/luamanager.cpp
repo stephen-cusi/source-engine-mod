@@ -1069,6 +1069,180 @@ LUA_API void luasrc_dumpstack(lua_State *L) {
   lua_pop(L, 1);  /* pop function */
 }
 
+/*
+** HL2SB: script-visible globals GMod guarantees before any entity/weapon script
+** runs, installed once per load pass (both helpers are idempotent).
+**
+**   GAMEMODE      GMod always has it; HL2SB loads weapons/entities BEFORE
+**                 luasrc_LoadGamemode(), so a stock GMod weapon that reads it at
+**                 file scope --
+**                     if ( GAMEMODE.Name == "Trouble in Terrorist Town" ) then
+**                 (weapon_nyangun.lua line 59 does exactly that) --
+**                 died with "attempt to index a nil value (global 'GAMEMODE')"
+**                 and the SWEP was never registered.  The real table lands in
+**                 luasrc_SetGamemode() a moment later.
+**
+**   timer.Destroy GMod's timer library has both Remove() and Destroy(); this
+**                 fork's lua/includes/modules/timer.lua only has Remove, so
+**                 weapon_nyangun's KillSounds() (called from Holster/OnRemove)
+**                 raised "attempt to call a nil value (field 'Destroy')" and
+**                 aborted the rest of the method.
+*/
+static void luasrc_EnsureGamemodeStub (lua_State *L)
+{
+	lua_getglobal( L, "GAMEMODE" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+	}
+	else
+	{
+		lua_pop( L, 1 );
+		lua_newtable( L );
+		lua_setglobal( L, "GAMEMODE" );
+	}
+
+	lua_getglobal( L, "timer" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "Destroy" );
+		const bool bMissing = lua_isnil( L, -1 ) != 0;
+		lua_pop( L, 1 );
+
+		if ( bMissing )
+		{
+			lua_getfield( L, -1, "Remove" );
+			lua_setfield( L, -2, "Destroy" );
+		}
+	}
+	lua_pop( L, 1 );
+}
+
+/*
+** HL2SB: is this a flat "<name>.lua" entry (as opposed to a directory)?
+** GMod loads BOTH layouts and so must this loader.
+*/
+static bool luasrc_IsFlatLuaFile (const char *pszName, char *pszClassName, size_t nClassNameLen)
+{
+	const int nLen = Q_strlen( pszName );
+	if ( nLen <= 4 || Q_stricmp( pszName + nLen - 4, ".lua" ) != 0 )
+		return false;
+
+	Q_strncpy( pszClassName, pszName, MIN( (size_t)nLen - 3, nClassNameLen ) );
+	pszClassName[ MIN( (size_t)nLen - 4, nClassNameLen - 1 ) ] = '\0';
+	Q_strlower( pszClassName );
+
+	return true;
+}
+
+/*
+** HL2SB: one scripted entity, from whichever layout found it.
+** GMod treats "lua/entities/<name>.lua" and "lua/entities/<name>/shared.lua" as
+** the same entity class, so both paths funnel through here.
+*/
+static void luasrc_LoadOneEntity (const char *filename, const char *className)
+{
+	char fullpath[ MAX_PATH ] = { 0 };
+
+	if ( !filesystem->FileExists( filename, "MOD" ) )
+		return;
+
+	filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
+	Msg( "[Lua] entity '%s' <- %s\n", className, fullpath );
+
+	lua_newtable( L );
+	char entDir[ MAX_PATH ];
+	Q_snprintf( entDir, sizeof( entDir ), "entities/%s", className );
+	lua_pushstring( L, entDir );
+	lua_setfield( L, -2, "__folder" );
+	lua_pushstring( L, LUA_BASE_ENTITY_CLASS );
+	lua_setfield( L, -2, "__base" );
+	lua_pushstring( L, LUA_BASE_ENTITY_FACTORY );
+	lua_setfield( L, -2, "__factory" );
+	lua_setglobal( L, "ENT" );
+
+	if ( luasrc_dofile( L, fullpath ) != 0 )
+	{
+		lua_pushnil( L );
+		lua_setglobal( L, "ENT" );
+		return;
+	}
+
+	// The Team Sandbox `entity` module is what the engine's own
+	// CBaseScripted::LoadScriptedEntity() reads back -- without this registration
+	// the factory exists but the instance has no Lua table.
+	lua_getglobal( L, "entity" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "register" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_remove( L, -2 );
+			lua_getglobal( L, "ENT" );
+			lua_pushstring( L, className );
+			luasrc_pcall( L, 2, 0, 0 );
+		}
+		else
+		{
+			lua_pop( L, 2 );
+		}
+	}
+	else
+	{
+		lua_pop( L, 1 );
+	}
+
+	// GMod's own registry (scripted_ents.Get / GetSpawnable / baseclass.Set).
+	// GMod's engine calls this for every lua/entities/* file, and framework code
+	// (duplicator.Allow, baseclass.Set) reads it back.  Failure is not fatal:
+	// the engine factory below is what actually spawns the entity.
+	lua_getglobal( L, "scripted_ents" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "Register" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_remove( L, -2 );
+			lua_getglobal( L, "ENT" );
+			lua_pushstring( L, className );
+			luasrc_pcall( L, 2, 0, 0 );
+		}
+		else
+		{
+			lua_pop( L, 2 );
+		}
+	}
+	else
+	{
+		lua_pop( L, 1 );
+	}
+
+	// Register the engine entity factory when the script asked for one.
+	lua_getglobal( L, "ENT" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "__factory" );
+		if ( lua_isstring( L, -1 ) )
+		{
+			const char *pszClassname = lua_tostring( L, -1 );
+			if (Q_strcmp(pszClassname, "CBaseAnimating") == 0)
+				RegisterScriptedEntity( className );
+#ifndef CLIENT_DLL
+			else if (Q_strcmp(pszClassname, "CBaseTrigger") == 0)
+				RegisterScriptedTrigger( className );
+#endif
+		}
+		lua_pop( L, 2 );
+	}
+	else
+	{
+		lua_pop( L, 1 );
+	}
+
+	lua_pushnil( L );
+	lua_setglobal( L, "ENT" );
+}
+
 void luasrc_LoadEntities (const char *path)
 {
 	FileFindHandle_t fh;
@@ -1078,10 +1252,11 @@ void luasrc_LoadEntities (const char *path)
 		path = "";
 	}
 
+	luasrc_EnsureGamemodeStub( L );
+
 	char root[ MAX_PATH ] = { 0 };
 
 	char filename[ MAX_PATH ] = { 0 };
-	char fullpath[ MAX_PATH ] = { 0 };
 	char className[ 255 ] = { 0 };
 
 	Q_snprintf( root, sizeof( root ), "%s" LUA_PATH_ENTITIES "/*", path );
@@ -1106,71 +1281,108 @@ void luasrc_LoadEntities (const char *path)
 				{
 					Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_ENTITIES "/%s/shared.lua", path, className );
 				}
-				if ( filesystem->FileExists( filename, "MOD" ) )
-				{
-					filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
-					lua_newtable( L );
-					char entDir[ MAX_PATH ];
-					Q_snprintf( entDir, sizeof( entDir ), "entities/%s", className );
-					lua_pushstring( L, entDir );
-					lua_setfield( L, -2, "__folder" );
-					lua_pushstring( L, LUA_BASE_ENTITY_CLASS );
-					lua_setfield( L, -2, "__base" );
-					lua_pushstring( L, LUA_BASE_ENTITY_FACTORY );
-					lua_setfield( L, -2, "__factory" );
-					lua_setglobal( L, "ENT" );
-					if ( luasrc_dofile( L, fullpath ) == 0 )
-					{
-						lua_getglobal( L, "entity" );
-						if ( lua_istable( L, -1 ) )
-						{
-							lua_getfield( L, -1, "register" );
-							if ( lua_isfunction( L, -1 ) )
-							{
-								lua_remove( L, -2 );
-								lua_getglobal( L, "ENT" );
-								lua_pushstring( L, className );
-								luasrc_pcall( L, 2, 0, 0 );
-								lua_getglobal( L, "ENT" );
-								if ( lua_istable( L, -1 ) )
-								{
-									lua_getfield( L, -1, "__factory" );
-									if ( lua_isstring( L, -1 ) )
-									{
-										const char *pszClassname = lua_tostring( L, -1 );
-										if (Q_strcmp(pszClassname, "CBaseAnimating") == 0)
-											RegisterScriptedEntity( className );
-#ifndef CLIENT_DLL
-										else if (Q_strcmp(pszClassname, "CBaseTrigger") == 0)
-											RegisterScriptedTrigger( className );
-#endif
-									}
-									lua_pop( L, 2 );
-								}
-								else
-								{
-									lua_pop( L, 1 );
-								}
-							}
-							else
-							{
-								lua_pop( L, 2 );
-							}
-						}
-						else
-						{
-							lua_pop( L, 1 );
-						}
-					}
-					lua_pushnil( L );
-					lua_setglobal( L, "ENT" );
-				}
+				luasrc_LoadOneEntity( filename, className );
+			}
+			else if ( luasrc_IsFlatLuaFile( fn, className, sizeof( className ) ) )
+			{
+				// GMod: "lua/entities/<name>.lua" is a complete scripted entity,
+				// registered under the file's basename.
+				Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_ENTITIES "/%s", path, fn );
+				luasrc_LoadOneEntity( filename, className );
 			}
 		}
 
 		fn = g_pFullFileSystem->FindNext( fh );
 	}
 	g_pFullFileSystem->FindClose( fh );
+}
+
+/*
+** HL2SB: one SWEP, from whichever layout found it.
+**
+** GMod treats "lua/weapons/<name>.lua" and "lua/weapons/<name>/shared.lua" as the
+** same weapon, so both paths funnel through here and a flat file behaves exactly
+** like <name>/shared.lua -- same seed, same __folder/__base, same
+** weapon.register() call, same log line.
+*/
+static void luasrc_LoadOneWeapon (const char *filename, const char *className)
+{
+	char fullpath[ MAX_PATH ] = { 0 };
+
+	if ( !filesystem->FileExists( filename, "MOD" ) )
+		return;
+
+	filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
+
+	// HL2SB: say which script a weapon was built from, and from which file on
+	// disk.  The loader used to be silent here, so "did an addon's SWEP actually
+	// get picked up?" could only be answered by walking the file system by hand --
+	// and GMod compatibility regressions are exactly the kind of thing that has
+	// to be checkable from the log.
+	Msg( "[Lua] weapon '%s' <- %s\n", className, fullpath );
+
+	// GMod semantics: the engine seeds every SWEP with a deep copy of the base
+	// weapon table before running the script, so stock scripts can assign fields
+	// into SWEP.Primary/SWEP.Secondary at the top level (`SWEP.Primary.Sound = ...`)
+	// without creating those tables themselves.
+	//
+	// The table key is the weapons/ DIRECTORY name, which for the GMod-style base
+	// is "weapon_base"; fall back to the engine's own scripted base for older
+	// layouts. Primary/Secondary are guaranteed to be tables regardless of what
+	// the seed resolved, because a base whose data lives in flat keys
+	// (clip_size, ...) has no Primary table of its own.
+	luasrc_dostring( L,
+		"local __b = weapon.get( \"weapon_base\" )"
+		" or weapon.get( \"" LUA_BASE_WEAPON "\" ) or {};"
+		"SWEP = table.copy( __b );"
+		"if type( SWEP ) ~= \"table\" then SWEP = {} end;"
+		"if type( SWEP.Primary ) ~= \"table\" then SWEP.Primary = {} end;"
+		"if type( SWEP.Secondary ) ~= \"table\" then SWEP.Secondary = {} end" );
+	lua_getglobal( L, "SWEP" );
+	if ( !lua_istable( L, -1 ) )
+	{
+		// Paranoia: the seed should always leave a table here.
+		lua_pop( L, 1 );
+		lua_newtable( L );
+		lua_newtable( L );
+		lua_setfield( L, -2, "Primary" );
+		lua_newtable( L );
+		lua_setfield( L, -2, "Secondary" );
+	}
+
+	char entDir[ MAX_PATH ];
+	Q_snprintf( entDir, sizeof( entDir ), "weapons/%s", className );
+	lua_pushstring( L, entDir );
+	lua_setfield( L, -2, "__folder" );
+	lua_pushstring( L, LUA_BASE_WEAPON );
+	lua_setfield( L, -2, "__base" );
+	lua_setglobal( L, "SWEP" );
+	if ( luasrc_dofile( L, fullpath ) == 0 )
+	{
+		lua_getglobal( L, "weapon" );
+		if ( lua_istable( L, -1 ) )
+		{
+			lua_getfield( L, -1, "register" );
+			if ( lua_isfunction( L, -1 ) )
+			{
+				lua_remove( L, -2 );
+				lua_getglobal( L, "SWEP" );
+				lua_pushstring( L, className );
+				luasrc_pcall( L, 2, 0, 0 );
+				RegisterScriptedWeapon( className );
+			}
+			else
+			{
+				lua_pop( L, 2 );
+			}
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+	}
+	lua_pushnil( L );
+	lua_setglobal( L, "SWEP" );
 }
 
 void luasrc_LoadWeapons (const char *path)
@@ -1182,10 +1394,11 @@ void luasrc_LoadWeapons (const char *path)
 		path = "";
 	}
 
+	luasrc_EnsureGamemodeStub( L );
+
 	char root[ MAX_PATH ] = { 0 };
 
 	char filename[ MAX_PATH ] = { 0 };
-	char fullpath[ MAX_PATH ] = { 0 };
 	char className[ MAX_WEAPON_STRING ] = { 0 };
 
 	Q_snprintf( root, sizeof( root ), "%s" LUA_PATH_WEAPONS "/*", path );
@@ -1210,89 +1423,135 @@ void luasrc_LoadWeapons (const char *path)
 				{
 					Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_WEAPONS "/%s/shared.lua", path, className );
 				}
-				if ( filesystem->FileExists( filename, "MOD" ) )
-				{
-					filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
-
-					// HL2SB: say which script a weapon was built from, and from
-					// which file on disk.  The loader used to be silent here, so
-					// "did an addon's SWEP actually get picked up?" could only be
-					// answered by walking the file system by hand -- and GMod
-					// compatibility regressions are exactly the kind of thing that
-					// has to be checkable from the log.
-					Msg( "[Lua] weapon '%s' <- %s\n", className, fullpath );
-
-					// GMod semantics: the engine seeds every SWEP with a deep copy
-					// of the base weapon table before running the script, so stock
-					// scripts can assign fields into SWEP.Primary/SWEP.Secondary at
-					// the top level (`SWEP.Primary.Sound = ...`) without creating
-					// those tables themselves.
-					//
-					// The table key is the weapons/ DIRECTORY name, which for the
-					// GMod-style base is "weapon_base"; fall back to the engine's
-					// own scripted base for older layouts. Primary/Secondary are
-					// guaranteed to be tables regardless of what the seed resolved,
-					// because a base whose data lives in flat keys (clip_size, ...)
-					// has no Primary table of its own.
-					luasrc_dostring( L,
-						"local __b = weapon.get( \"weapon_base\" )"
-						" or weapon.get( \"" LUA_BASE_WEAPON "\" ) or {};"
-						"SWEP = table.copy( __b );"
-						"if type( SWEP ) ~= \"table\" then SWEP = {} end;"
-						"if type( SWEP.Primary ) ~= \"table\" then SWEP.Primary = {} end;"
-						"if type( SWEP.Secondary ) ~= \"table\" then SWEP.Secondary = {} end" );
-					lua_getglobal( L, "SWEP" );
-					if ( !lua_istable( L, -1 ) )
-					{
-						// Paranoia: the seed should always leave a table here.
-						lua_pop( L, 1 );
-						lua_newtable( L );
-						lua_newtable( L );
-						lua_setfield( L, -2, "Primary" );
-						lua_newtable( L );
-						lua_setfield( L, -2, "Secondary" );
-					}
-
-					char entDir[ MAX_PATH ];
-					Q_snprintf( entDir, sizeof( entDir ), "weapons/%s", className );
-					lua_pushstring( L, entDir );
-					lua_setfield( L, -2, "__folder" );
-					lua_pushstring( L, LUA_BASE_WEAPON );
-					lua_setfield( L, -2, "__base" );
-					lua_setglobal( L, "SWEP" );
-					if ( luasrc_dofile( L, fullpath ) == 0 )
-					{
-						lua_getglobal( L, "weapon" );
-						if ( lua_istable( L, -1 ) )
-						{
-							lua_getfield( L, -1, "register" );
-							if ( lua_isfunction( L, -1 ) )
-							{
-								lua_remove( L, -2 );
-								lua_getglobal( L, "SWEP" );
-								lua_pushstring( L, className );
-								luasrc_pcall( L, 2, 0, 0 );
-								RegisterScriptedWeapon( className );
-							}
-							else
-							{
-								lua_pop( L, 2 );
-							}
-						}
-						else
-						{
-							lua_pop( L, 1 );
-						}
-					}
-					lua_pushnil( L );
-					lua_setglobal( L, "SWEP" );
-				}
+				luasrc_LoadOneWeapon( filename, className );
+			}
+			else if ( luasrc_IsFlatLuaFile( fn, className, sizeof( className ) ) )
+			{
+				// GMod: "lua/weapons/<name>.lua" is a complete SWEP, registered
+				// under the file's basename.  HL2SB used to skip these entirely,
+				// so a flat SWEP did nothing at all and said nothing about it.
+				Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_WEAPONS "/%s", path, fn );
+				luasrc_LoadOneWeapon( filename, className );
 			}
 		}
 
 		fn = g_pFullFileSystem->FindNext( fh );
 	}
 	g_pFullFileSystem->FindClose( fh );
+}
+
+/*
+** HL2SB: GMod's lua/effects/<name>.lua loader.
+**
+** Effects are CLIENT ONLY (GMod's Lua Loading Order lists effects/ in the client
+** column, and a Lua effect is nothing but a table of Init/Think/Render methods
+** run by the client's renderer).
+**
+** This was written long ago and left commented out because "it might load
+** something twice" -- it cannot: nothing else in this engine ever walks
+** LUA_PATH_EFFECTS (the folder passes cover includes/, game/ and autorun/ only),
+** so a file is reached exactly once per call and the call sites are the level
+** init plus the per-gamemode content pass, exactly like weapons/entities.
+**
+** Each file is run with a fresh global EFFECT table (GMod's contract) which is
+** then handed to effects.Register(EFFECT, name) and kept in the engine-side
+** template registry the effect spawner reads.
+*/
+void luasrc_LoadEffects (const char *path)
+{
+#ifdef CLIENT_DLL
+	FileFindHandle_t fh;
+
+	if ( !path )
+	{
+		path = "";
+	}
+
+	char root[ MAX_PATH ] = { 0 };
+	char filename[ MAX_PATH ] = { 0 };
+	char fullpath[ MAX_PATH ] = { 0 };
+	char className[ 255 ] = { 0 };
+
+	Q_snprintf( root, sizeof( root ), "%s" LUA_PATH_EFFECTS "/*", path );
+
+	char const *fn = g_pFullFileSystem->FindFirstEx( root, "MOD", &fh );
+	while ( fn )
+	{
+		if ( fn[0] != '.' && !g_pFullFileSystem->FindIsDirectory( fh )
+		     && luasrc_IsFlatLuaFile( fn, className, sizeof( className ) ) )
+		{
+			Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_EFFECTS "/%s", path, fn );
+			if ( filesystem->FileExists( filename, "MOD" ) )
+			{
+				filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
+				Msg( "[Lua] effect '%s' <- %s\n", className, fullpath );
+
+				lua_newtable( L );
+				char effDir[ MAX_PATH ];
+				Q_snprintf( effDir, sizeof( effDir ), "effects/%s", className );
+				lua_pushstring( L, effDir );
+				lua_setfield( L, -2, "__folder" );
+				lua_setglobal( L, "EFFECT" );
+
+				if ( luasrc_dofile( L, fullpath ) == 0 )
+				{
+					// effects.Register(EFFECT, name) -- GMod's own library.
+					lua_getglobal( L, "effects" );
+					if ( lua_istable( L, -1 ) )
+					{
+						lua_getfield( L, -1, "Register" );
+						if ( lua_isfunction( L, -1 ) )
+						{
+							lua_remove( L, -2 );
+							lua_getglobal( L, "EFFECT" );
+							lua_pushstring( L, className );
+							luasrc_pcall( L, 2, 0, 0 );
+						}
+						else
+						{
+							lua_pop( L, 2 );
+						}
+					}
+					else
+					{
+						lua_pop( L, 1 );
+					}
+
+					// Keep the template where the engine's effect spawner can
+					// find it.  It cannot use effects.Create(): that function
+					// ends in table.Merge( NewEffect, EffectList["base"] ), and
+					// this engine's table.Merge() raises "bad argument #1 to
+					// 'for iterator'" on a nil source because no "base" effect is
+					// ever registered here.  Copying the template is what
+					// effects.Create() is for anyway.
+					lua_getglobal( L, "__hl2sb_lua_effects" );
+					if ( !lua_istable( L, -1 ) )
+					{
+						lua_pop( L, 1 );
+						lua_newtable( L );
+						lua_pushvalue( L, -1 );
+						lua_setglobal( L, "__hl2sb_lua_effects" );
+					}
+					int nRegistry = lua_gettop( L );
+					lua_getglobal( L, "EFFECT" );
+					if ( lua_istable( L, -1 ) )
+					{
+						lua_pushstring( L, className );
+						lua_pushvalue( L, -2 );
+						lua_rawset( L, nRegistry );
+					}
+					lua_pop( L, 2 );
+				}
+
+				lua_pushnil( L );
+				lua_setglobal( L, "EFFECT" );
+			}
+		}
+
+		fn = g_pFullFileSystem->FindNext( fh );
+	}
+	g_pFullFileSystem->FindClose( fh );
+#endif // CLIENT_DLL
 }
 
 bool luasrc_LoadGamemode (const char *gamemode) {
@@ -1376,7 +1635,7 @@ bool luasrc_SetGamemode (const char *gamemode) {
 	  Q_snprintf( loadPath, sizeof( loadPath ), "%s/", contentSearchPath );
 	  luasrc_LoadWeapons( loadPath );
 	  luasrc_LoadEntities( loadPath );
-	  // luasrc_LoadEffects( loadPath );
+	  luasrc_LoadEffects( loadPath );
 	  BEGIN_LUA_CALL_HOOK("Initialize");
 	  END_LUA_CALL_HOOK(0,0);
 

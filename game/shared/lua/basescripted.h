@@ -17,6 +17,12 @@
 
 #endif 
 
+#ifndef CLIENT_DLL
+// HL2SB GMod compat: ENT:PhysicsCollide( data, physObj ).  Server only, because
+// gamevcollisionevent_t and CBaseEntity::VPhysicsCollision exist only there.
+struct gamevcollisionevent_t;
+#endif
+
 class CBaseScripted : /* public CBaseEntity */ public CBaseAnimating
 {
 public:
@@ -52,6 +58,12 @@ public:
 #endif
 
 	virtual void VPhysicsUpdate( IPhysicsObject *pPhysics );
+
+#ifndef CLIENT_DLL
+	// HL2SB GMod compat: ENT:PhysicsCollide( data, physObj ) -- the callback
+	// weapon_nyangun's bomb entity explodes from.
+	virtual void	VPhysicsCollision( int index, gamevcollisionevent_t *pEvent );
+#endif
 
 #ifdef CLIENT_DLL
 // IClientThinkable.

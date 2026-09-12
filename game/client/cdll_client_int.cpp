@@ -1708,7 +1708,11 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 
 	luasrc_LoadWeapons();
 	luasrc_LoadEntities();
-	//luasrc_LoadEffects();
+	// HL2SB: GMod's effects/ stage (Lua Loading Order step 9) -- the loader was
+	// written but never called, so lua/effects/*.lua (and every addon's custom
+	// util.Effect / tracer effect) did nothing at all.  It is idempotent per
+	// call and nothing else walks LUA_PATH_EFFECTS, so nothing loads twice.
+	luasrc_LoadEffects();
 
 	//Andrew; loadup base gamemode.
 	luasrc_LoadGamemode( LUA_BASE_GAMEMODE );

@@ -17,6 +17,8 @@
 #include "ammodef.h"
 #include "luamanager.h"
 #include "lbasecombatweapon_shared.h"
+// HL2SB: lua_pushtrace(), for SWEP:DoImpactEffect( trace, damageType ).
+#include "lgametrace.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -1143,6 +1145,91 @@ void CHL2MPScriptedWeapon::FireBullets( const FireBulletsInfo_t &info )
 	{
 		pPlayer->FireBullets(info);
 	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: GMod calls SWEP:DoImpactEffect( trace, damageType ) for every bullet
+//          impact, and a `true` return vetoes the engine's own impact effect.
+//
+// HL2SB: nothing ever dispatched this, so a scripted weapon's impacts silently
+// fell through to the stock HL2 impact and the SWEP's impact effect -- which for
+// weapon_nyangun is the entire visible result of shooting something
+// (util.Effect( "rb655_nyan_bounce" )) -- never ran at all, with no error.
+//-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::DoImpactEffect( trace_t &tr, int nDamageType )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "DoImpactEffect" );
+		lua_pushtrace( L, tr );
+		lua_pushinteger( L, nDamageType );
+	END_LUA_CALL_WEAPON_METHOD( 2, 1 );
+
+	// The END macro guarantees exactly one result (or nil) on top of the stack.
+	if ( lua_isboolean( L, -1 ) )
+	{
+		const bool bHandled = lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+		if ( bHandled )
+			return;
+	}
+	else
+	{
+		lua_pop( L, 1 );
+	}
+#endif
+
+	BaseClass::DoImpactEffect( tr, nDamageType );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: GMod's source of a bullet tracer's effect name.
+//
+// HL2SB: a SWEP passes its tracer effect as bullet.TracerName
+// (weapon_nyangun: bullet.TracerName = "rb655_nyan_tracer"), but the engine's
+// tracer path does not read the bullet table at all -- CBaseEntity::MakeTracer()
+// (baseentity_shared.cpp:2257) and the server's TE_HL2MPFireBullets handler
+// (c_te_hl2mp_shotgun_shot.cpp:101) both ask the WEAPON for GetTracerType().
+// So CBaseEntity_FireBullets() (lbaseentity_shared.cpp) copies bullet.TracerName
+// into this weapon's own Lua table as Primary.TracerName, and this returns it.
+//
+// Both realms get their own copy of that field from their own predicted
+// FireBullets, which is what makes the client's TE path work too: the server's
+// TE_HL2MPFireBullets arrives on a client whose weapon already learned the name.
+//-----------------------------------------------------------------------------
+const char *CHL2MPScriptedWeapon::GetTracerType( void )
+{
+#if defined ( LUA_SDK )
+	static char s_szTracerName[ 64 ];
+
+	if ( L != NULL && m_nTableReference >= 0 )
+	{
+		static const char *s_pTracerField[ 2 ] = { "Primary", "Secondary" };
+
+		lua_getref( L, m_nTableReference );                 // [tbl]
+		if ( lua_istable( L, -1 ) )
+		{
+			for ( int i = 0; i < 2; ++i )
+			{
+				lua_getfield( L, -1, s_pTracerField[ i ] ); // [tbl, sub]
+				if ( lua_istable( L, -1 ) )
+				{
+					lua_getfield( L, -1, "TracerName" );    // [tbl, sub, name]
+					if ( lua_type( L, -1 ) == LUA_TSTRING )
+					{
+						Q_strncpy( s_szTracerName, lua_tostring( L, -1 ), sizeof( s_szTracerName ) );
+						lua_pop( L, 3 );                    // []
+						return s_szTracerName;
+					}
+					lua_pop( L, 1 );                        // [tbl, sub]
+				}
+				lua_pop( L, 1 );                            // [tbl]
+			}
+		}
+		lua_pop( L, 1 );                                    // []
+	}
+#endif
+
+	return BaseClass::GetTracerType();
 }
 
 bool CHL2MPScriptedWeapon::Reload( void )

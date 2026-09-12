@@ -26,6 +26,19 @@
 LUA_API lua_FireBulletsInfo_t lua_tofirebulletsinfo (lua_State *L, int idx) {
   luaL_checktype(L, idx, LUA_TTABLE);
   FireBulletsInfo_t info;
+
+  // HL2SB: FireBulletsInfo_t's default constructor only initialises m_iAmmoType,
+  // m_vecSrc and m_vecDirShooting under _DEBUG (shareddefs.h:686) -- in a release
+  // build they are indeterminate, and GMod scripts routinely omit AmmoType
+  // (weapon_nyangun.lua deliberately comments it out: "For some extremely stupid
+  // reason this breaks the tracer effect").  The garbage then reaches
+  // GetAmmoDef()->TracerType( info.m_iAmmoType ) / DamageType( ... ) and
+  // pAmmoDef->Flags( ... ), which are plain array reads -- an out-of-range access.
+  // 0 is the engine's own "None" ammo type, which is also GMod's fallback.
+  info.m_iAmmoType = 0;
+  info.m_vecSrc.Init();
+  info.m_vecDirShooting.Init();
+
   lua_getfield(L, idx, "m_bPrimaryAttack");
   if (!lua_isnil(L, -1))
     info.m_bPrimaryAttack = luaL_checkboolean(L, -1);

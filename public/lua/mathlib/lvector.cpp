@@ -115,11 +115,48 @@ static int Vector_GetNormalized (lua_State *L) {
   return 1;
 }
 
-// GMod's Vector:Normalize() normalises the vector.  A Lua vector here is a copy,
-// so the normalised value is returned (callers that use the return value - the
-// usual GMod spelling - behave identically).
+// GMod's Vector:Normalize() normalises the vector IN PLACE.  This used to return
+// the normalised value without touching the receiver, which is visibly wrong for
+// the canonical GMod idiom
+//
+//     local vel = self:GetVelocity()
+//     vel:Normalize()
+//     ... use vel ...
+//
+// (weapon_nyangun's ENT:Draw does exactly that).  It stays a superset of the old
+// behaviour: the normalised vector is still returned, so callers that wrote
+// `local dir = v:Normalize()` keep working.
 static int Vector_Normalize (lua_State *L) {
-  return Vector_GetNormalized( L );
+  Vector &v = luaL_checkvector(L, 1);
+  v.NormalizeInPlace();
+  lua_pushvector(L, v);
+  return 1;
+}
+
+/*
+** HL2SB: GMod's Vector:Rotate( angle ).
+**
+** Rotates the vector by the given angle and stores the result back in the same
+** Lua vector -- it is in place in GMod, and callers depend on that:
+**
+**     vel:Rotate( Angle( 0, 90, 0 ) )
+**     vel.z = 0
+**
+** (weapon_nyangun's ENT:Draw).  The angle is applied as a change of basis built
+** from AngleVectors(), which is what GMod's own implementation does.
+*/
+static int Vector_Rotate (lua_State *L) {
+  Vector &v = luaL_checkvector(L, 1);
+  const QAngle ang = luaL_checkangle(L, 2);
+
+  Vector fwd, right, up;
+  AngleVectors(ang, &fwd, &right, &up);
+
+  Vector rotated = fwd * v.x + right * v.y + up * v.z;
+  v = rotated;
+
+  lua_pushvector(L, v);
+  return 1;
 }
 
 static int Vector_Distance (lua_State *L) {
@@ -305,6 +342,7 @@ static const luaL_Reg Vectormeta[] = {
   {"ToTable", Vector_ToTable},
   {"GetNormalized", Vector_GetNormalized},
   {"Normalize", Vector_Normalize},
+  {"Rotate", Vector_Rotate},
   {"Distance", Vector_Distance},
   {"DistTo", Vector_DistTo},
   {"DistToSqr", Vector_DistToSqr},
@@ -396,15 +434,55 @@ static int QAngle_LengthSqr (lua_State *L) {
   return 1;
 }
 
+/*
+** HL2SB: GMod's QAngle component names and direction helpers.
+**
+** GMod spells an Angle's components p / y / r (pitch / yaw / roll), not
+** x / y / z, and every GMod script that reads one -- weapon_nyangun's draw code
+** does `local vz = vel:Angle().p` -- was getting nil.  Both spellings are
+** accepted here; the engine's own x/y/z stays because in-tree HL2SB scripts use
+** it.  Angle:Forward/Right/Up are GMod's direction helpers; HL2SB never bound
+** them, so `self:GetAngles():Forward()` and `ang:Right()` / `ang:Up()` (all three
+** used by weapon_nyangun) raised "attempt to call a nil value (method ...)".
+*/
+static bool QAngle_FieldToComponent (const char *field, int *out)
+{
+  if (strcmp(field, "x") == 0 || strcmp(field, "p") == 0 || strcmp(field, "pitch") == 0) { *out = 0; return true; }
+  if (strcmp(field, "y") == 0 || strcmp(field, "yaw") == 0) { *out = 1; return true; }
+  if (strcmp(field, "z") == 0 || strcmp(field, "r") == 0 || strcmp(field, "roll") == 0) { *out = 2; return true; }
+  return false;
+}
+
+static int QAngle_Forward (lua_State *L) {
+  QAngle ang = luaL_checkangle(L, 1);
+  Vector fwd;
+  AngleVectors(ang, &fwd, NULL, NULL);
+  lua_pushvector(L, fwd);
+  return 1;
+}
+
+static int QAngle_Right (lua_State *L) {
+  QAngle ang = luaL_checkangle(L, 1);
+  Vector right;
+  AngleVectors(ang, NULL, &right, NULL);
+  lua_pushvector(L, right);
+  return 1;
+}
+
+static int QAngle_Up (lua_State *L) {
+  QAngle ang = luaL_checkangle(L, 1);
+  Vector up;
+  AngleVectors(ang, NULL, NULL, &up);
+  lua_pushvector(L, up);
+  return 1;
+}
+
 static int QAngle___index (lua_State *L) {
   QAngle v = luaL_checkangle(L, 1);
   const char *field = luaL_checkstring(L, 2);
-  if (strcmp(field, "x") == 0)
-    lua_pushnumber(L, v.x);
-  else if (strcmp(field, "y") == 0)
-    lua_pushnumber(L, v.y);
-  else if (strcmp(field, "z") == 0)
-    lua_pushnumber(L, v.z);
+  int component = 0;
+  if (QAngle_FieldToComponent(field, &component))
+    lua_pushnumber(L, v[component]);
   else {
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);
@@ -415,12 +493,9 @@ static int QAngle___index (lua_State *L) {
 
 static int QAngle___newindex (lua_State *L) {
   const char *field = luaL_checkstring(L, 2);
-  if (strcmp(field, "x") == 0)
-    luaL_checkangle(L, 1).x = (vec_t)luaL_checknumber(L, 3);
-  else if (strcmp(field, "y") == 0)
-    luaL_checkangle(L, 1).y = (vec_t)luaL_checknumber(L, 3);
-  else if (strcmp(field, "z") == 0)
-    luaL_checkangle(L, 1).z = (vec_t)luaL_checknumber(L, 3);
+  int component = 0;
+  if (QAngle_FieldToComponent(field, &component))
+    luaL_checkangle(L, 1)[component] = (vec_t)luaL_checknumber(L, 3);
   return 0;
 }
 
@@ -466,6 +541,10 @@ static const luaL_Reg QAnglemeta[] = {
   {"IsValid", QAngle_IsValid},
   {"Length", QAngle_Length},
   {"LengthSqr", QAngle_LengthSqr},
+  // HL2SB: GMod's Angle direction helpers.
+  {"Forward", QAngle_Forward},
+  {"Right", QAngle_Right},
+  {"Up", QAngle_Up},
   {"__index", QAngle___index},
   {"__newindex", QAngle___newindex},
   {"__tostring", QAngle___tostring},

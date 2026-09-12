@@ -15,6 +15,12 @@
 #include "toolframework_client.h"
 #include "tier0/vprof.h"
 
+// HL2SB: GMod's lua/effects/*.lua runtime.  Declared here rather than included
+// because this file is compiled from client_hl2mp.vpc, which does not carry
+// game/client/lua on its include path (client_lua.vpc does).
+// Implementation: game/client/lua/lua_effects.cpp
+bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data );
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -70,6 +76,16 @@ C_TEEffectDispatch::~C_TEEffectDispatch( void )
 //-----------------------------------------------------------------------------
 void DispatchEffectToCallback( const char *pEffectName, const CEffectData &m_EffectData )
 {
+	// HL2SB: GMod's lua/effects/<name>.lua come first.  Every effect name ends up
+	// here -- server-sent ones via TE_DispatchEffect below, client-side ones via
+	// DispatchEffect()/TE_DispatchEffect -- so one hook covers both paths, and a
+	// scripted effect shadows an engine callback of the same name exactly as it
+	// does in GMod.
+	if ( HL2SB_CreateLuaEffect( pEffectName, m_EffectData ) )
+	{
+		return;
+	}
+
 	// Look through all the registered callbacks
 	for ( CClientEffectRegistration *pReg = CClientEffectRegistration::s_pHead; pReg; pReg = pReg->m_pNext )
 	{

@@ -16,6 +16,11 @@
 #endif
 #include "lbaseentity_shared.h"
 #include "lvphysics_interface.h"
+#include "mathlib/lvector.h"
+#ifndef CLIENT_DLL
+// HL2SB: gamevcollisionevent_t, for ENT:PhysicsCollide.
+#include "physics.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -221,6 +226,50 @@ void CBaseScripted::InitScriptedEntity( void )
 int CBaseScripted::DrawModel( int flags )
 {
 #ifdef LUA_SDK
+	// HL2SB: GMod's ENT:Draw() REPLACES the default model draw -- the example on
+	// GMod's own wiki is
+	//
+	//     function ENT:Draw()
+	//         self:DrawModel()          -- ask for the model explicitly
+	//     end
+	//
+	// so a scripted entity that renders itself and never calls DrawModel (the
+	// nyan bomb draws two textured quads and nothing else) must not also have its
+	// model drawn underneath.  Nothing dispatched "Draw" before this, and the
+	// entity's own ENT:Draw never ran at all -- which for weapon_nyangun's bomb
+	// meant no visible rendering of any kind.
+	//
+	// The method's PRESENCE decides, because the dispatch macro cannot tell "no
+	// such method" from "the method returned nil".  An explicit `false` is
+	// honoured as "also draw the model".
+	bool bHasDraw = false;
+
+	if ( L != NULL && m_nTableReference >= 0 )
+	{
+		lua_getref( L, m_nTableReference );
+		if ( lua_istable( L, -1 ) )
+		{
+			lua_getfield( L, -1, "Draw" );
+			bHasDraw = lua_isfunction( L, -1 ) != 0;
+			lua_pop( L, 1 );
+		}
+		lua_pop( L, 1 );
+	}
+
+	if ( bHasDraw )
+	{
+		BEGIN_LUA_CALL_ENTITY_METHOD( "Draw" );
+		END_LUA_CALL_ENTITY_METHOD( 0, 1 );
+
+		if ( !( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) == 0 ) )
+		{
+			lua_pop( L, 1 );
+			return 1;
+		}
+
+		lua_pop( L, 1 );
+	}
+
 	BEGIN_LUA_CALL_ENTITY_METHOD( "DrawModel" );
 		lua_pushinteger( L, flags );
 	END_LUA_CALL_ENTITY_METHOD( 1, 1 );
@@ -329,6 +378,84 @@ void CBaseScripted::VPhysicsUpdate( IPhysicsObject *pPhysics )
 	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
 #endif
 }
+
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB GMod compat: ENT:PhysicsCollide( data, physObj ).
+//
+// GMod hands a scripted entity a CollisionData table every time its physics
+// object collides with something, and weapon_nyangun's bomb is entirely built
+// around it: PhysicsCollide() is where the explosion, the blast damage and
+// self:Remove() live.  Nothing dispatched it, so the bomb bounced forever and
+// never went off.
+//
+// The table carries GMod's documented keys.  (The script here only reads self,
+// but the shape is what addons are written against.)
+//-----------------------------------------------------------------------------
+void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent )
+{
+	BaseClass::VPhysicsCollision( index, pEvent );
+
+#ifdef LUA_SDK
+	if ( pEvent == NULL || index < 0 || index > 1 )
+		return;
+
+	const int nOther = 1 - index;
+
+	Vector vecHitPos = vec3_origin;
+	Vector vecHitNormal = vec3_origin;
+	if ( pEvent->pInternalData != NULL )
+	{
+		pEvent->pInternalData->GetContactPoint( vecHitPos );
+		pEvent->pInternalData->GetSurfaceNormal( vecHitNormal );
+	}
+
+	BEGIN_LUA_CALL_ENTITY_METHOD( "PhysicsCollide" );
+		{
+			lua_newtable( L );
+
+			lua_pushstring( L, "HitEntity" );
+			lua_pushentity( L, pEvent->pEntities[ nOther ] );
+			lua_settable( L, -3 );
+
+			lua_pushstring( L, "HitPos" );
+			lua_pushvector( L, vecHitPos );
+			lua_settable( L, -3 );
+
+			lua_pushstring( L, "HitNormal" );
+			lua_pushvector( L, vecHitNormal );
+			lua_settable( L, -3 );
+
+			lua_pushstring( L, "Speed" );
+			lua_pushnumber( L, pEvent->collisionSpeed );
+			lua_settable( L, -3 );
+
+			lua_pushstring( L, "DeltaTime" );
+			lua_pushnumber( L, pEvent->deltaCollisionTime );
+			lua_settable( L, -3 );
+
+			lua_pushstring( L, "OurOldVelocity" );
+			lua_pushvector( L, pEvent->preVelocity[ index ] );
+			lua_settable( L, -3 );
+
+			lua_pushstring( L, "TheirOldVelocity" );
+			lua_pushvector( L, pEvent->preVelocity[ nOther ] );
+			lua_settable( L, -3 );
+
+			lua_pushstring( L, "PhysObject" );
+			lua_pushphysicsobject( L, pEvent->pObjects[ index ] );
+			lua_settable( L, -3 );
+
+			lua_pushstring( L, "HitPhysicsObject" );
+			lua_pushphysicsobject( L, pEvent->pObjects[ nOther ] );
+			lua_settable( L, -3 );
+		}
+		lua_pushphysicsobject( L, pEvent->pObjects[ index ] );
+	END_LUA_CALL_ENTITY_METHOD( 2, 0 );
+#endif
+}
+#endif // !CLIENT_DLL
+
 
 //-----------------------------------------------------------------------------
 // Purpose: GMod ENT contract: OnRemove is called before the entity is deleted.

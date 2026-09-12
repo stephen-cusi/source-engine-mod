@@ -2256,6 +2256,18 @@ void CBaseEntity::MakeTracer( const Vector &vecTracerSrc, const trace_t &tr, int
 {
 	const char *pszTracerName = GetTracerType();
 
+	// HL2SB GMod compat: an explicit tracer name is a request to draw THAT
+	// tracer, and GMod's engine does not second-guess it with the ammo's tracer
+	// style.  Here the ammo decides, and an addon-declared ammo type
+	// (weapon_nyangun: game.AddAmmoType( { name = "rb655_nyan" } )) has
+	// TRACER_NONE -- the switch below then drew nothing at all, so a scripted
+	// weapon whose only tracer source is bullet.TracerName
+	// (bullet.TracerName = "rb655_nyan_tracer") got no tracer.
+	if ( pszTracerName != NULL && pszTracerName[0] != '\0' && iTracerType == TRACER_NONE )
+	{
+		iTracerType = TRACER_LINE;
+	}
+
 	Vector vNewSrc = vecTracerSrc;
 
 	int iAttachment = GetTracerAttachment();

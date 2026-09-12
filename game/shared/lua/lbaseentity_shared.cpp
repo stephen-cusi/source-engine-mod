@@ -33,6 +33,11 @@
 #include "ltakedamageinfo.h"
 #include "mathlib/lvector.h"
 #include "lvphysics_interface.h"
+// HL2SB: solid_t (public/vcollide_parse.h) + PhysSphereCreate /
+// g_PhysDefaultObjectParams (game/shared/physics_shared.h) for
+// Entity:PhysicsInitSphere().
+#include "vcollide_parse.h"
+#include "physics_shared.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -278,7 +283,29 @@ static int CBaseEntity_EmitSound (lua_State *L) {
     float duration = 0;
 	CBaseEntity *pSoundEnt = luaL_checkentity(L, 1);
 	const char *pszSoundName = luaL_checkstring(L, 2);
-	float flSoundTime = luaL_optnumber(L, 3, 0.0f);
+
+	// HL2SB GMod compat #0: Entity:EmitSound( name, soundLevel, pitch, volume, channel ).
+	//
+	// Arg 3 used to be read as a *soundTime* (the Team Sandbox signature) and
+	// nothing else was read at all.  GMod scripts pass GMod's arguments, and the
+	// engine turns a nonzero soundTime into SND_DELAY with
+	// `fDelay = soundtime - curtime` (engine/sv_main.cpp:1151, and the client
+	// mirrors it at cl_main.cpp:729) -- so weapon_nyangun's
+	//
+	//     self:EmitSound( "weapons/nyan/nya1.wav", 100, math.random( 60, 80 ) )
+	//
+	// asked for the sound to start at t=100 SECONDS, i.e. ~100 s after the map
+	// loaded, instead of playing it now at sound level 100 and the requested
+	// pitch.  Every EmitSound call site in this tree's Lua is 1-argument, so
+	// nothing depends on the old reading of arg 3.
+	//
+	// -1 means "not supplied": the sound script's value (or the engine default)
+	// is kept, which is exactly GMod's rule.
+	const int nSoundLevelArg = luaL_optint(L, 3, -1);
+	const int nPitchArg      = luaL_optint(L, 4, -1);
+	const float flVolumeArg  = (float)luaL_optnumber(L, 5, -1.0f);
+	const int nChannelArg    = luaL_optint(L, 6, -1);
+	const float flSoundTime  = 0.0f;
 
 	// HL2SB GMod compat #1: GMod scripts play sounds by name without ever
 	// precaching them.  SV_StartSound drops any wave that was never registered
@@ -336,7 +363,13 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 		emit.m_flSoundTime     = flSoundTime;
 		emit.m_pflSoundDuration = &duration;
 
-		CPASAttenuationFilter soundFilter( pSoundEnt, params.soundlevel );
+		// HL2SB: GMod's explicit arguments win over the sound script's.
+		if ( nSoundLevelArg >= 0 ) emit.m_SoundLevel = (soundlevel_t)nSoundLevelArg;
+		if ( nPitchArg >= 0 )      emit.m_nPitch = nPitchArg;
+		if ( flVolumeArg >= 0.0f ) emit.m_flVolume = flVolumeArg;
+		if ( nChannelArg >= 0 )    emit.m_nChannel = nChannelArg;
+
+		CPASAttenuationFilter soundFilter( pSoundEnt, emit.m_SoundLevel );
 #ifdef CLIENT_DLL
 		// Predicted Lua weapon sounds: C_RecipientFilter::UsePredictionRules keeps
 		// the sound from being re-issued on every extra prediction pass of the
@@ -360,6 +393,12 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 		emit.m_pflSoundDuration = &duration;
 		emit.m_bWarnOnDirectWaveReference = true;
 		emit.m_nChannel        = CHAN_WEAPON;
+
+		// HL2SB: GMod's explicit arguments (see the top of this function).
+		if ( nSoundLevelArg >= 0 ) emit.m_SoundLevel = (soundlevel_t)nSoundLevelArg;
+		if ( nPitchArg >= 0 )      emit.m_nPitch = nPitchArg;
+		if ( flVolumeArg >= 0.0f ) emit.m_flVolume = flVolumeArg;
+		if ( nChannelArg >= 0 )    emit.m_nChannel = nChannelArg;
 
 		CPASAttenuationFilter soundFilter( pSoundEnt, pszSoundName );
 #ifdef CLIENT_DLL
@@ -432,7 +471,47 @@ static int CBaseEntity_EyePosition (lua_State *L) {
 }
 
 static int CBaseEntity_FireBullets (lua_State *L) {
-  luaL_checkentity(L, 1)->FireBullets(lua_tofirebulletsinfo(L, 2));
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  /*
+  ** HL2SB GMod compat: GMod's bullet tables carry TracerName
+  ** (weapon_nyangun: bullet.TracerName = "rb655_nyan_tracer"), but this engine's
+  ** tracer path never looks at the bullet table -- both CBaseEntity::MakeTracer()
+  ** (baseentity_shared.cpp:2257) and the server's TE_HL2MPFireBullets handler
+  ** (c_te_hl2mp_shotgun_shot.cpp:101) ask the WEAPON for GetTracerType().
+  **
+  ** So publish it onto the firing weapon's own Lua table, where
+  ** CHL2MPScriptedWeapon::GetTracerType() reads it.  Both realms run this call
+  ** (the client in prediction), so each realm's weapon instance learns the name,
+  ** which is also what makes the client's TE_HL2MPFireBullets path work.
+  */
+  if (lua_istable(L, 2)) {
+    lua_getfield(L, 2, "TracerName");
+    if (lua_type(L, -1) == LUA_TSTRING) {
+      const char *pszTracerName = lua_tostring(L, -1);
+
+      CBaseCombatWeapon *pWeapon = NULL;
+      CBasePlayer *pOwner = ToBasePlayer(pEntity);
+      if (pOwner != NULL)
+        pWeapon = pOwner->GetActiveWeapon();
+
+      if (pWeapon != NULL && pWeapon->m_nTableReference >= 0) {
+        lua_getref(L, pWeapon->m_nTableReference);
+        if (lua_istable(L, -1)) {
+          lua_getfield(L, -1, "Primary");
+          if (lua_istable(L, -1)) {
+            lua_pushstring(L, pszTracerName);
+            lua_setfield(L, -2, "TracerName");
+          }
+          lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+      }
+    }
+    lua_pop(L, 1);
+  }
+
+  pEntity->FireBullets(lua_tofirebulletsinfo(L, 2));
   return 0;
 }
 
@@ -1569,6 +1648,76 @@ static int CBaseEntity_WakeRestingObjects (lua_State *L) {
   return 0;
 }
 
+
+/*
+** HL2SB GMod compat: Entity:PhysicsInitSphere( radius, physmat ).
+**
+** weapon_nyangun's bomb entity opens with
+**
+**     self:PhysicsInitSphere( 6, "metal" )
+**     self:SetMoveType( MOVETYPE_VPHYSICS )
+**     self:SetSolid( SOLID_VPHYSICS )
+**
+** and this engine has no CBaseEntity::PhysicsInitSphere at all, so the entity
+** script died on its first Initialize() line and no physics object (and no
+** PhysicsCollide, which is where the explosion lives) was ever created.
+**
+** PhysSphereCreate() is the engine's own sphere collider (game/shared/
+** physics_shared.cpp:457) -- it is what prop_combine_ball and the HL2 props use
+** -- so this is the engine path, not a reimplementation.
+*/
+static int CBaseEntity_PhysicsInitSphere (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const float flRadius = luaL_checknumber(L, 2);
+  const char *pszSurfaceProp = luaL_optstring(L, 3, "default");
+
+  solid_t solid;
+  memset(&solid, 0, sizeof(solid));
+  solid.params = g_PhysDefaultObjectParams;
+  solid.params.pGameData = static_cast<void *>(pEntity);
+  Q_strncpy(solid.surfaceprop, pszSurfaceProp, sizeof(solid.surfaceprop));
+
+  // Same step prop_combine_ball.cpp:329 takes before CreateSphereObject: the
+  // entity's own collision bounds have to match the physics shape, or traces and
+  // the surrounding-bounds used by the network code stay at the old (model) size.
+  pEntity->SetCollisionBounds( Vector( -flRadius, -flRadius, -flRadius ),
+                               Vector( flRadius, flRadius, flRadius ) );
+
+  IPhysicsObject *pObject = PhysSphereCreate(pEntity, flRadius, pEntity->GetAbsOrigin(), solid);
+
+  if (pObject != NULL) {
+    pEntity->VPhysicsSetObject(pObject);
+    pObject->Wake();
+  }
+
+  lua_pushphysicsobject(L, pObject);
+  return 1;
+}
+
+/*
+** HL2SB GMod compat: Entity:SetPhysicsAttacker( entity [, time] ).
+**
+** GMod remembers the player that last shoved a physics object so a kill can be
+** credited to them.  This engine keeps no such member on CBaseEntity (only CGib,
+** CBreakableProp and CPhysicsCannister carry one, for the gravity gun), so there
+** is nothing to store it in.  What matters for the caller's intent -- kill
+** attribution -- is the entity's OWNER, which is what the engine's damage path
+** reads (CEnvExplosion::Explode() builds its CTakeDamageInfo from
+** GetOwnerEntity(), explode.cpp:391), so the attacker becomes the owner when the
+** entity does not have one yet.  The call is always accepted instead of raising.
+*/
+static int CBaseEntity_SetPhysicsAttacker (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  CBaseEntity *pAttacker = lua_toentity(L, 2);
+  luaL_optnumber(L, 3, 0.0f);
+
+  if (pEntity != NULL && pAttacker != NULL && pEntity->GetOwnerEntity() == NULL) {
+    pEntity->SetOwnerEntity(pAttacker);
+  }
+
+  return 0;
+}
+
 static int CBaseEntity_WorldAlignMaxs (lua_State *L) {
   Vector v = luaL_checkentity(L, 1)->WorldAlignMaxs();
   lua_pushvector(L, v);
@@ -2063,10 +2212,13 @@ static const luaL_Reg CBaseEntitymeta[] = {
 {"GetPhysicsObject", CBaseEntity_GetPhysicsObject},
   {"VPhysicsGetObjectList", CBaseEntity_VPhysicsGetObjectList},
   {"VPhysicsInitNormal", CBaseEntity_VPhysicsInitNormal},
+  // HL2SB GMod compat: PhysicsInitSphere + SetPhysicsAttacker (see the
+  // definitions above for why they had to be added).
+  {"PhysicsInitSphere", CBaseEntity_PhysicsInitSphere},
+  {"SetPhysicsAttacker", CBaseEntity_SetPhysicsAttacker},
   {"VPhysicsInitStatic", CBaseEntity_VPhysicsInitStatic},
   {"VPhysicsIsFlesh", CBaseEntity_VPhysicsIsFlesh},
-  {"VPhysicsSetObject", CBaseEntity_VPhysicsSetObject},
-  {"VPhysicsUpdate", CBaseEntity_VPhysicsUpdate},
+  {"VPhysicsSetObject", CBaseEntity_VPhysicsSetObject},  {"VPhysicsUpdate", CBaseEntity_VPhysicsUpdate},
   {"WakeRestingObjects", CBaseEntity_WakeRestingObjects},
   {"WorldAlignMaxs", CBaseEntity_WorldAlignMaxs},
   {"WorldAlignMins", CBaseEntity_WorldAlignMins},

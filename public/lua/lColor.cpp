@@ -273,5 +273,25 @@ LUALIB_API int luaopen_Color (lua_State *L) {
   */
   luaL_register(L, "_G", Color_funcs);
   lua_pop(L, 1);
+
+  /*
+  ** HL2SB: GMod's named colour globals.  They were never published, so every
+  ** stock GMod script that passes color_white around -- killicon.Add( name,
+  ** icon, color_white ), surface.SetDrawColor( color_white ),
+  ** render.DrawQuadEasy( ..., color_white, ... ), util.SpriteTrail( ... ) -- was
+  ** handing nil to a function that needs a colour.  GMod declares these three in
+  ** C, with the same values.
+  */
+  lua_Color white( 255, 255, 255, 255 );
+  lua_Color black( 0, 0, 0, 255 );
+  lua_Color transparent( 255, 255, 255, 0 );
+
+  lua_pushcolor( L, white );
+  lua_setglobal( L, "color_white" );
+  lua_pushcolor( L, black );
+  lua_setglobal( L, "color_black" );
+  lua_pushcolor( L, transparent );
+  lua_setglobal( L, "color_transparent" );
+
   return 1;
 }

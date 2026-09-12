@@ -73,6 +73,95 @@ static int CEffectData_GetEffectNameIndex (lua_State *L) {
   }
 #endif
 
+/*
+** HL2SB GMod compat: the accessors a GMod effect script actually calls.
+**
+** GMod's CEffectData exposes a Get/Set pair for every field, and
+** lua/effects/*.lua is written against them -- rb655_nyan_tracer.lua's Init opens
+** with
+**
+**     self.Position  = data:GetStart()
+**     self.EndPos    = data:GetOrigin()
+**     self.WeaponEnt = data:GetEntity()
+**     self.Attachment = data:GetAttachment()
+**
+** and without them the whole effect died on the first line.  Only
+** entindex/GetEffectNameIndex/GetEntity existed here; the field reads/writes in
+** __index/__newindex below are not a substitute, because a method call is a
+** metatable FUNCTION lookup, not a field lookup.
+*/
+#define HL2SB_EFFECTDATA_VECTOR_ACCESSORS( Name, Field )      \
+  static int CEffectData_Get##Name (lua_State *L) {           \
+    lua_pushvector(L, luaL_checkeffect(L, 1).Field);          \
+    return 1;                                                 \
+  }                                                           \
+  static int CEffectData_Set##Name (lua_State *L) {           \
+    luaL_checkeffect(L, 1).Field = luaL_checkvector(L, 2);    \
+    return 0;                                                 \
+  }
+
+#define HL2SB_EFFECTDATA_ANGLE_ACCESSORS( Name, Field )       \
+  static int CEffectData_Get##Name (lua_State *L) {           \
+    lua_pushangle(L, luaL_checkeffect(L, 1).Field);           \
+    return 1;                                                 \
+  }                                                           \
+  static int CEffectData_Set##Name (lua_State *L) {           \
+    luaL_checkeffect(L, 1).Field = luaL_checkangle(L, 2);     \
+    return 0;                                                 \
+  }
+
+#define HL2SB_EFFECTDATA_NUMBER_ACCESSORS( Name, Field )      \
+  static int CEffectData_Get##Name (lua_State *L) {           \
+    lua_pushnumber(L, luaL_checkeffect(L, 1).Field);          \
+    return 1;                                                 \
+  }                                                           \
+  static int CEffectData_Set##Name (lua_State *L) {           \
+    luaL_checkeffect(L, 1).Field = (float)luaL_checknumber(L, 2); \
+    return 0;                                                 \
+  }
+
+#define HL2SB_EFFECTDATA_INT_ACCESSORS( Name, Field )         \
+  static int CEffectData_Get##Name (lua_State *L) {           \
+    lua_pushinteger(L, luaL_checkeffect(L, 1).Field);         \
+    return 1;                                                 \
+  }                                                           \
+  static int CEffectData_Set##Name (lua_State *L) {           \
+    luaL_checkeffect(L, 1).Field = luaL_checkint(L, 2);       \
+    return 0;                                                 \
+  }
+
+HL2SB_EFFECTDATA_VECTOR_ACCESSORS( Start,  m_vStart )
+HL2SB_EFFECTDATA_VECTOR_ACCESSORS( Origin, m_vOrigin )
+HL2SB_EFFECTDATA_VECTOR_ACCESSORS( Normal, m_vNormal )
+HL2SB_EFFECTDATA_ANGLE_ACCESSORS( Angles,  m_vAngles )
+HL2SB_EFFECTDATA_NUMBER_ACCESSORS( Scale,     m_flScale )
+HL2SB_EFFECTDATA_NUMBER_ACCESSORS( Magnitude, m_flMagnitude )
+HL2SB_EFFECTDATA_NUMBER_ACCESSORS( Radius,    m_flRadius )
+HL2SB_EFFECTDATA_INT_ACCESSORS( Flags,        m_fFlags )
+HL2SB_EFFECTDATA_INT_ACCESSORS( Attachment,   m_nAttachmentIndex )
+HL2SB_EFFECTDATA_INT_ACCESSORS( HitBox,       m_nHitBox )
+HL2SB_EFFECTDATA_INT_ACCESSORS( DamageType,   m_nDamageType )
+HL2SB_EFFECTDATA_INT_ACCESSORS( Material,     m_nMaterial )
+HL2SB_EFFECTDATA_INT_ACCESSORS( SurfaceProp,  m_nSurfaceProp )
+HL2SB_EFFECTDATA_INT_ACCESSORS( Color,        m_nColor )
+
+// GMod's GetEntIndex / SetEntIndex are aliases of the entity the effect belongs to.
+#ifdef CLIENT_DLL
+  static int CEffectData_GetEntIndex (lua_State *L) {
+    lua_pushinteger(L, luaL_checkeffect(L, 1).entindex());
+    return 1;
+  }
+#else
+  static int CEffectData_GetEntIndex (lua_State *L) {
+    lua_pushinteger(L, luaL_checkeffect(L, 1).m_nEntIndex);
+    return 1;
+  }
+  static int CEffectData_SetEntIndex (lua_State *L) {
+    luaL_checkeffect(L, 1).m_nEntIndex = luaL_checkint(L, 2);
+    return 0;
+  }
+#endif
+
 static int CEffectData___index (lua_State *L) {
   CEffectData data = luaL_checkeffect(L, 1);
   const char *field = luaL_checkstring(L, 2);
@@ -170,6 +259,39 @@ static const luaL_Reg CEffectDatameta[] = {
 #ifdef CLIENT_DLL
   {"GetEntity", CEffectData_GetEntity},
 #endif
+  // HL2SB GMod compat: the field accessors lua/effects/*.lua is written against.
+  {"GetStart", CEffectData_GetStart},
+  {"SetStart", CEffectData_SetStart},
+  {"GetOrigin", CEffectData_GetOrigin},
+  {"SetOrigin", CEffectData_SetOrigin},
+  {"GetNormal", CEffectData_GetNormal},
+  {"SetNormal", CEffectData_SetNormal},
+  {"GetAngles", CEffectData_GetAngles},
+  {"SetAngles", CEffectData_SetAngles},
+  {"GetScale", CEffectData_GetScale},
+  {"SetScale", CEffectData_SetScale},
+  {"GetMagnitude", CEffectData_GetMagnitude},
+  {"SetMagnitude", CEffectData_SetMagnitude},
+  {"GetRadius", CEffectData_GetRadius},
+  {"SetRadius", CEffectData_SetRadius},
+  {"GetFlags", CEffectData_GetFlags},
+  {"SetFlags", CEffectData_SetFlags},
+  {"GetAttachment", CEffectData_GetAttachment},
+  {"SetAttachment", CEffectData_SetAttachment},
+  {"GetHitBox", CEffectData_GetHitBox},
+  {"SetHitBox", CEffectData_SetHitBox},
+  {"GetDamageType", CEffectData_GetDamageType},
+  {"SetDamageType", CEffectData_SetDamageType},
+  {"GetMaterial", CEffectData_GetMaterial},
+  {"SetMaterial", CEffectData_SetMaterial},
+  {"GetSurfaceProp", CEffectData_GetSurfaceProp},
+  {"SetSurfaceProp", CEffectData_SetSurfaceProp},
+  {"GetColor", CEffectData_GetColor},
+  {"SetColor", CEffectData_SetColor},
+  {"GetEntIndex", CEffectData_GetEntIndex},
+#ifndef CLIENT_DLL
+  {"SetEntIndex", CEffectData_SetEntIndex},
+#endif
   {"__index", CEffectData___index},
   {"__newindex", CEffectData___newindex},
   {"__tostring", CEffectData___tostring},
@@ -205,6 +327,18 @@ LUALIB_API int luaopen_CEffectData (lua_State *L) {
   lua_pushstring(L, "effect");
   lua_setfield(L, -2, "__type");  /* metatable.__type = "effect" */
   luaL_register(L, "_G", CEffectData_funcs);
+
+  /*
+  ** HL2SB GMod compat: GMod's constructor is EffectData(), not the Team Sandbox
+  ** CEffectData().  Both names are published; gmod_camera/shared.lua:190 and
+  ** every lua/effects/*.lua script that builds effect data use the GMod spelling,
+  ** and GMod's own bootstrap defines the alias in C (the Lua shim that would have
+  ** done it, modules/gmod_compatibility/sh_init.lua, is never loaded here -- the
+  ** folder pass does not recurse into gmod_compatibility/).
+  */
+  lua_pushcfunction(L, luasrc_CEffectData);
+  lua_setglobal(L, "EffectData");
+
   lua_pop(L, 1);
   return 1;
 }

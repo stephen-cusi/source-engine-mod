@@ -7,6 +7,7 @@
 #include "rendertexture.h"
 #include "view_scene.h"
 #include <materialsystem/imaterialsystem.h>
+#include <materialsystem/imesh.h>
 #include <vgui/ISurface.h>
 #include <vgui_controls/Controls.h>
 #include "mathlib/lvector.h"
@@ -629,10 +630,156 @@ LUA_BINDING_END( "Entity", "The view entity." )
 
 LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in the next render operations", "client" )
 {
-    IMaterial *pMaterial = LUA_BINDING_ARGUMENT( luaL_checkmaterial, 1, "material" );
+    IMaterial *pMaterial = NULL;
+
+    // HL2SB: GMod spells this render.SetMaterial( Material( path ) ), and this
+    // engine's Material() is a Lua proxy table
+    // (lua/includes/extensions/gmod_surface.lua) that only wraps a texture id --
+    // it has Width/Height/GetTextureID but it is NOT an IMaterial, and render.*
+    // is a 3D API that needs one.
+    //
+    // Every scripted effect (lua/effects/rb655_nyan_bounce.lua: Material(
+    // "nyan/cat" ) then render.SetMaterial( Cat )) and ENT:Draw go through here,
+    // and without this the call raised "bad argument #1 to 'SetMaterial'
+    // (IMaterial expected, got table)" and nothing drew at all.
+    if ( luaL_testudata( L, 1, LUA_MATERIALLIBNAME ) != NULL )
+    {
+        pMaterial = luaL_checkmaterial( L, 1 );
+    }
+    else
+    {
+        const char *pszName = NULL;
+
+        if ( lua_type( L, 1 ) == LUA_TSTRING )
+        {
+            pszName = lua_tostring( L, 1 );
+        }
+        else if ( lua_istable( L, 1 ) )
+        {
+            // The proxy keeps its path in __path (mat:GetName() returns it).
+            lua_getfield( L, 1, "__path" );
+            if ( lua_type( L, -1 ) == LUA_TSTRING )
+                pszName = lua_tostring( L, -1 );
+            lua_pop( L, 1 );
+        }
+        else if ( lua_isnumber( L, 1 ) )
+        {
+            // Older HL2SB scripts pass a bare surface texture number.
+            pszName = lua_tostring( L, 1 );
+        }
+
+        if ( pszName == NULL || pszName[0] == '\0' )
+            luaL_argerror( L, 1, "material, material path or texture name expected" );
+
+        char szResolved[ 512 ];
+        Q_strncpy( szResolved, pszName, sizeof( szResolved ) );
+
+        pMaterial = materials->FindMaterial( szResolved, TEXTURE_GROUP_OTHER, false );
+
+        // GMod scripts routinely name the image where the shader next to it is
+        // what actually ships: Material( "nyan/cat.png" ) against
+        // materials/nyan/cat.vmt.  Retry without the image extension before
+        // giving up on the error material.
+        if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
+        {
+            int nLastDot = -1;
+            int nLastSlash = -1;
+            for ( int i = 0; szResolved[ i ] != '\0'; ++i )
+            {
+                if ( szResolved[ i ] == '.' )
+                    nLastDot = i;
+                else if ( szResolved[ i ] == '/' )
+                    nLastSlash = i;
+            }
+
+            if ( nLastDot > nLastSlash )
+            {
+                szResolved[ nLastDot ] = '\0';
+                IMaterial *pRetry = materials->FindMaterial( szResolved, TEXTURE_GROUP_OTHER, false );
+                if ( pRetry != NULL && !pRetry->IsErrorMaterial() )
+                    pMaterial = pRetry;
+            }
+        }
+
+        if ( pMaterial == NULL )
+        {
+            pMaterial = materials->FindMaterial( "debug/debugempty", TEXTURE_GROUP_OTHER, false );
+        }
+    }
 
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->Bind( pMaterial );
+
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, DrawQuadEasy, "library", "Draws a quad with the currently bound material, facing the given normal.", "client" )
+{
+    Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
+    Vector normal = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "normal" );
+    float width = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "width" );
+    float height = LUA_BINDING_ARGUMENT( luaL_checknumber, 4, "height" );
+    lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 5, lua_Color( 255, 255, 255, 255 ), "color" );
+    float rotation = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 6, 0.0f, "rotation" );
+
+    VectorNormalize( normal );
+
+    // A basis perpendicular to the quad's normal.
+    Vector reference( 0.0f, 0.0f, 1.0f );
+    if ( fabs( normal.z ) > 0.99f )
+    {
+        reference.Init( 0.0f, 1.0f, 0.0f );
+    }
+
+    Vector right = normal.Cross( reference );
+    VectorNormalize( right );
+    Vector up = right.Cross( normal );
+    VectorNormalize( up );
+
+    if ( rotation != 0.0f )
+    {
+        float flSin, flCos;
+        SinCos( DEG2RAD( rotation ), &flSin, &flCos );
+
+        Vector rotatedRight = right * flCos + up * flSin;
+        Vector rotatedUp = up * flCos - right * flSin;
+
+        right = rotatedRight;
+        up = rotatedUp;
+    }
+
+    const Vector rightHalf = right * ( width * 0.5f );
+    const Vector upHalf = up * ( height * 0.5f );
+
+    const float flRed = color.r() / 255.0f;
+    const float flGreen = color.g() / 255.0f;
+    const float flBlue = color.b() / 255.0f;
+    const float flAlpha = color.a() / 255.0f;
+
+    CMatRenderContextPtr pRenderContext( materials );
+    IMesh *pMesh = pRenderContext->GetDynamicMesh();
+
+    CMeshBuilder meshBuilder;
+    meshBuilder.Begin( pMesh, MATERIAL_QUADS, 1 );
+
+    // ( 0, 0 ) .. ( 1, 1 ) in texture space, counter-clockwise.
+    const float flU[ 4 ] = { 0.0f, 1.0f, 1.0f, 0.0f };
+    const float flV[ 4 ] = { 0.0f, 0.0f, 1.0f, 1.0f };
+    const float flSign[ 4 ][ 2 ] = { { -1.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 1.0f }, { -1.0f, 1.0f } };
+
+    for ( int i = 0; i < 4; ++i )
+    {
+        Vector corner = position + rightHalf * flSign[ i ][ 0 ] + upHalf * flSign[ i ][ 1 ];
+
+        meshBuilder.Position3fv( corner.Base() );
+        meshBuilder.Color4f( flRed, flGreen, flBlue, flAlpha );
+        meshBuilder.TexCoord2f( 0, flU[ i ], flV[ i ] );
+        meshBuilder.AdvanceVertex();
+    }
+
+    meshBuilder.End();
+    pMesh->Draw();
 
     return 0;
 }

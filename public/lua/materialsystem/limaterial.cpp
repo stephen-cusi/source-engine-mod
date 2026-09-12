@@ -384,6 +384,98 @@ static const luaL_Reg IMaterialmeta[] = {
 };
 
 
+#ifndef CLIENT_DLL
+/*
+** HL2SB GMod compat: Material( path ) on the SERVER.
+**
+** GMod defines Material() on both realms, and GMod entity scripts call it at
+** FILE SCOPE -- weapon_nyangun's lua/entities/ent_nyan_bomb.lua opens with
+**
+**     local nyan_cat = Material( "nyan/cat.png" )
+**     local nyan_cat_rev = Material( "nyan/cat_reversed.png" )
+**
+** above its `if ( CLIENT ) then ... return end` guard.  On this engine the
+** client's Material() is the Lua proxy in
+** lua/includes/extensions/gmod_surface.lua, which starts with
+** `if ( not _CLIENT ) then return end` -- so the SERVER had no Material at all,
+** the entity script threw on line 8, scripted_ents/entity.register never ran, and
+** ents.Create( "ent_nyan_bomb" ) silently returned NULL.
+**
+** The shape below is the same one the client proxy hands out (`__path`,
+** GetName, IsError, Width/Height, GetColor, GetTexture, GetTextureID), so a
+** script sees one Material object on both realms.  It is deliberately NOT a
+** material-system lookup: this is the server realm, the only thing a server-side
+** Material is ever used for is to hand it back to another API, and reaching into
+** the material system from the server DLL is not something this fork does
+** anywhere.
+*/
+static int luasrc_Material_server_GetName (lua_State *L) {
+  lua_getfield(L, 1, "__path");
+  return 1;
+}
+
+static int luasrc_Material_server_IsError (lua_State *L) {
+  lua_pushboolean(L, false);
+  return 1;
+}
+
+static int luasrc_Material_server_Zero (lua_State *L) {
+  lua_pushnumber(L, 0);
+  return 1;
+}
+
+static int luasrc_Material_server_White (lua_State *L) {
+  lua_pushcolor(L, lua_Color(255, 255, 255, 255));
+  return 1;
+}
+
+static int luasrc_Material_server_GetTexture (lua_State *L) {
+  lua_newtable(L);
+  lua_pushcfunction(L, luasrc_Material_server_GetName);
+  lua_setfield(L, -2, "GetName");
+  lua_pushcfunction(L, luasrc_Material_server_Zero);
+  lua_setfield(L, -2, "Width");
+  lua_pushcfunction(L, luasrc_Material_server_Zero);
+  lua_setfield(L, -2, "Height");
+  lua_pushcfunction(L, luasrc_Material_server_Zero);
+  lua_setfield(L, -2, "GetTextureID");
+  return 1;
+}
+
+static int luasrc_Material_server (lua_State *L) {
+  const char *pszPath = luaL_checkstring(L, 1);
+
+  lua_newtable(L);
+
+  lua_pushstring(L, pszPath);
+  lua_setfield(L, -2, "__path");
+
+  lua_pushcfunction(L, luasrc_Material_server_GetName);
+  lua_setfield(L, -2, "GetName");
+
+  lua_pushcfunction(L, luasrc_Material_server_IsError);
+  lua_setfield(L, -2, "IsError");
+
+  lua_pushcfunction(L, luasrc_Material_server_Zero);
+  lua_setfield(L, -2, "Width");
+
+  lua_pushcfunction(L, luasrc_Material_server_Zero);
+  lua_setfield(L, -2, "Height");
+
+  lua_pushcfunction(L, luasrc_Material_server_Zero);
+  lua_setfield(L, -2, "GetTextureID");
+
+  lua_pushcfunction(L, luasrc_Material_server_White);
+  lua_setfield(L, -2, "GetColor");
+
+  lua_pushcfunction(L, luasrc_Material_server_GetTexture);
+  lua_setfield(L, -2, "GetTexture");
+
+  return 1;
+}
+#endif // !CLIENT_DLL
+
+
 /*
 ** Open IMaterial object
 */
@@ -394,6 +486,13 @@ LUALIB_API int luaopen_IMaterial (lua_State *L) {
   lua_setfield(L, -2, "__index");  /* metatable.__index = metatable */
   lua_pushstring(L, "material");
   lua_setfield(L, -2, "__type");  /* metatable.__type = "material" */
+
+#ifndef CLIENT_DLL
+  /* HL2SB: the server half of GMod's Material() -- see the comment above. */
+  lua_pushcfunction(L, luasrc_Material_server);
+  lua_setglobal(L, "Material");
+#endif
+
   return 1;
 }
 

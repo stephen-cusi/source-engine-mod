@@ -1039,6 +1039,45 @@ static int CBasePlayer_LagCompensation (lua_State *L) {
   return 0;
 }
 
+
+/*
+** HL2SB GMod compat: Player:KeyDown / KeyPressed / KeyReleased.
+**
+** weapon_nyangun's Reload() gates on `self.Owner:KeyPressed( IN_RELOAD )` and its
+** Think() on KeyReleased( IN_ATTACK ) / KeyDown( IN_ATTACK ), and none of the
+** three existed -- each call raised "attempt to call a nil value (method ...)",
+** which aborted SWEP:Reload before it ever created the bomb entity.
+**
+** GMod semantics, straight off the members the engine already maintains on every
+** client and server player (CBasePlayer::m_nButtons / m_afButtonPressed /
+** m_afButtonReleased, refreshed from the usercmd in
+** CBasePlayer::PhysicsSimulate -- baseplayer_shared.cpp:763):
+**
+**   KeyDown( k )     - the button is held right now
+**   KeyPressed( k )  - it went down this frame
+**   KeyReleased( k ) - it came up this frame
+*/
+static int CBasePlayer_KeyDown (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const int nKey = luaL_checkint(L, 2);
+  lua_pushboolean(L, (pPlayer->m_nButtons & nKey) != 0);
+  return 1;
+}
+
+static int CBasePlayer_KeyPressed (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const int nKey = luaL_checkint(L, 2);
+  lua_pushboolean(L, (pPlayer->m_afButtonPressed & nKey) != 0);
+  return 1;
+}
+
+static int CBasePlayer_KeyReleased (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const int nKey = luaL_checkint(L, 2);
+  lua_pushboolean(L, (pPlayer->m_afButtonReleased & nKey) != 0);
+  return 1;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"LagCompensation", CBasePlayer_LagCompensation},
   {"IsValid", CBasePlayer_IsValid},
@@ -1107,6 +1146,10 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"IsUseableEntity", CBasePlayer_IsUseableEntity},
   {"ItemPostFrame", CBasePlayer_ItemPostFrame},
   {"ItemPreFrame", CBasePlayer_ItemPreFrame},
+  // HL2SB GMod compat: Player:KeyDown / KeyPressed / KeyReleased.
+  {"KeyDown", CBasePlayer_KeyDown},
+  {"KeyPressed", CBasePlayer_KeyPressed},
+  {"KeyReleased", CBasePlayer_KeyReleased},
   {"LeaveVehicle", CBasePlayer_LeaveVehicle},
   {"LocalEyeAngles", CBasePlayer_LocalEyeAngles},
   {"MaxSpeed", CBasePlayer_MaxSpeed},

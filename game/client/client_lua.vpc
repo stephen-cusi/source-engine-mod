@@ -53,6 +53,8 @@ $Project "Client (HL2SB)"
 		// HL2SB: ported from Experiment: Source (render.* and ITexture userdata)
 		$File "lua/litexture.cpp"
 		$File "lua/lrender.cpp"
+		// HL2SB: GMod's lua/effects/*.lua runtime (EFFECT:Init/Think/Render)
+		$File "lua/lua_effects.cpp"
 		// HL2SB: ported from Experiment: Source (GMod's chat.*)
 		$File "lua/lc_chat.cpp"
 		$File "lua/scripted_controls/lButton.cpp"

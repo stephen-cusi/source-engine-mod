@@ -181,6 +181,24 @@ static int mathlib_VectorAngles (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB: GMod's math.Rand( min, max ).
+**
+** A float random in [min, max).  It is all over GMod scripts -- weapon_nyangun's
+** impact effect jitters the normal with math.Rand( -0.5, 0.5 ).  This engine has
+** no such function: the mathlib table below is registered as "mathlib" (see
+** LUA_MATHLIBLIBNAME), NOT as "math", and the Lua math extension in
+** lua/includes/extensions/math.lua only adds Round/Clamp/Sign/Approach/Remap/
+** EaseInOut/IsNearlyEqual to the real "math" table.  RandomFloat() is vstdlib's
+** RNG, the same one SharedRandomFloat() is built on.
+*/
+static int mathlib_Rand (lua_State *L) {
+  const float flMin = (float)luaL_optnumber(L, 1, 0.0f);
+  const float flMax = (float)luaL_optnumber(L, 2, 1.0f);
+  lua_pushnumber(L, flMax > flMin ? RandomFloat(flMin, flMax) : flMin);
+  return 1;
+}
+
 
 static const luaL_Reg mathliblib[] = {
   {"clamp",   mathlib_clamp},
@@ -195,6 +213,16 @@ static const luaL_Reg mathliblib[] = {
 */
 LUALIB_API int luaopen_mathlib (lua_State *L) {
   luaL_register(L, LUA_MATHLIBLIBNAME, mathliblib);
+
+  /* HL2SB: math.Rand belongs on the STANDARD math table -- that is where GMod
+  ** puts it and where extensions/math.lua keeps adding its own helpers. */
+  lua_getglobal(L, "math");
+  if (lua_istable(L, -1)) {
+    lua_pushcfunction(L, mathlib_Rand);
+    lua_setfield(L, -2, "Rand");
+  }
+  lua_pop(L, 1);
+
   return 1;
 }
 

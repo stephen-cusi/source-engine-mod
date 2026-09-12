@@ -54,7 +54,18 @@ public:
 	virtual void	ItemBusyFrame( void );
 	virtual void	FireBullets( const FireBulletsInfo_t &info );
 	virtual bool	Reload();
-	
+
+	// HL2SB GMod compat: SWEP:DoImpactEffect( trace, damageType ) -- the impact
+	// effect of every scripted weapon (weapon_nyangun's util.Effect(
+	// "rb655_nyan_bounce" ) lives there).  Both are OVERRIDES of virtuals that
+	// CBaseEntity already declares, so the class layout and the vtable slot
+	// count are unchanged -- deliberately no data members were added for the
+	// tracer name (see GetTracerType in the .cpp: it reads the weapon's own Lua
+	// table, which the FireBullets binding writes).
+	virtual void	DoImpactEffect( trace_t &tr, int nDamageType );
+	virtual const char *GetTracerType( void );
+
+
 	virtual bool	Deploy( void );
 	virtual bool	Holster( CBaseCombatWeapon *pSwitchingTo );
 
