@@ -86,6 +86,24 @@ void DispatchEffectToCallback( const char *pEffectName, const CEffectData &m_Eff
 		return;
 	}
 
+	// HL2SB debug: one-shot per effect name so we can see whether a custom
+	// tracer (rb655_nyan_tracer) is reaching the client at all.
+	{
+		static char s_szSeen[8][128];
+		static int s_nSeen = 0;
+		bool bNew = true;
+		for ( int i = 0; i < s_nSeen; ++i )
+		{
+			if ( !Q_stricmp( s_szSeen[i], pEffectName ) ) { bNew = false; break; }
+		}
+		if ( bNew && s_nSeen < 8 )
+		{
+			Q_strncpy( s_szSeen[s_nSeen], pEffectName, sizeof( s_szSeen[0] ) );
+			++s_nSeen;
+			DevMsg( "[HL2SB] DispatchEffect '%s' -> no Lua effect, trying engine callbacks\n", pEffectName );
+		}
+	}
+
 	// Look through all the registered callbacks
 	for ( CClientEffectRegistration *pReg = CClientEffectRegistration::s_pHead; pReg; pReg = pReg->m_pNext )
 	{

@@ -322,13 +322,15 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 	// SoundEmitterSystem.cpp:1494).  Register it once, then leave the cache
 	// alone.
 #ifndef CLIENT_DLL
-	if ( pszSoundName[0] != '!' && pszSoundName[0] != '?' &&	// not a sentence / user voice
-	     !enginesound->IsSoundPrecached( pszSoundName ) )
+	// Precache raw .wav paths from addons (weapons/nyan/nya1.wav).  Do NOT
+	// gate on IsSoundPrecached -- it and SV_StartSound disagree for addon
+	// waves.  HL2SB_PrecacheOnce prevents per-shot spam.
+	if ( pszSoundName[0] != '!' && pszSoundName[0] != '?' &&
+	     HL2SB_PrecacheOnce( pszSoundName ) )
 	{
-		if ( CBaseEntity::PrecacheScriptSound( pszSoundName ) <= 0 )
-		{
-			CBaseEntity::PrecacheSound( pszSoundName );
-		}
+		CBaseEntity::PrecacheScriptSound( pszSoundName );
+		CBaseEntity::PrecacheSound( pszSoundName );
+		enginesound->PrecacheSound( pszSoundName );
 	}
 #endif
 
@@ -1733,6 +1735,143 @@ static int CBaseEntity_SetPhysicsAttacker (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: NW variables (local-per-realm store).
+//
+// GMod's SetNWString/GetNWString etc. are real networked variables.  This is
+// a minimal stand-in: a static dict keyed by "<entindex>_<name>_<type>" so
+// scripts that call the API (player_auth.lua's UserGroup) stop crashing with
+// "attempt to call a nil value (method 'SetNWString')".  Values do NOT sync
+// between client and server; a real NW implementation is still a follow-up.
+//-----------------------------------------------------------------------------
+struct HL2SB_NWValue
+{
+  CUtlString s;
+  int        i;
+  float      f;
+  bool       b;
+  EHANDLE    hEnt;
+};
+
+static CUtlDict<HL2SB_NWValue, unsigned short> s_NWVars;
+
+static HL2SB_NWValue *NWVarGetOrCreate( CBaseEntity *pEntity, const char *pszName, bool bCreate )
+{
+  if ( !pEntity || !pszName || !pszName[0] )
+    return NULL;
+
+  char szKey[256];
+  Q_snprintf( szKey, sizeof( szKey ), "%d_%s", pEntity->entindex(), pszName );
+
+  unsigned short idx = s_NWVars.Find( szKey );
+  if ( s_NWVars.IsValidIndex( idx ) )
+    return &s_NWVars[idx];
+
+  if ( !bCreate )
+    return NULL;
+
+  idx = s_NWVars.Insert( szKey );
+  if ( !s_NWVars.IsValidIndex( idx ) )
+    return NULL;
+
+  HL2SB_NWValue &v = s_NWVars[idx];
+  v.i = 0; v.f = 0.0f; v.b = false;
+  return &v;
+}
+
+static int CBaseEntity_SetNWString (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  const char *pszValue = luaL_optstring(L, 3, "");
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, true );
+  if (p) p->s = pszValue;
+  return 0;
+}
+
+static int CBaseEntity_GetNWString (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  const char *pszDefault = luaL_optstring(L, 3, "");
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, false );
+  lua_pushstring( L, ( p && p->s.Length() ) ? p->s.Get() : pszDefault );
+  return 1;
+}
+
+static int CBaseEntity_SetNWInt (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  int iValue = (int)luaL_checknumber(L, 3);
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, true );
+  if (p) p->i = iValue;
+  return 0;
+}
+
+static int CBaseEntity_GetNWInt (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  int iDefault = (int)luaL_optnumber(L, 3, 0);
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, false );
+  lua_pushinteger( L, p ? p->i : iDefault );
+  return 1;
+}
+
+static int CBaseEntity_SetNWFloat (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  float flValue = (float)luaL_checknumber(L, 3);
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, true );
+  if (p) p->f = flValue;
+  return 0;
+}
+
+static int CBaseEntity_GetNWFloat (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  float flDefault = (float)luaL_optnumber(L, 3, 0.0f);
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, false );
+  lua_pushnumber( L, p ? p->f : flDefault );
+  return 1;
+}
+
+static int CBaseEntity_SetNWBool (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  bool bValue = lua_toboolean(L, 3) != 0;
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, true );
+  if (p) p->b = bValue;
+  return 0;
+}
+
+static int CBaseEntity_GetNWBool (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  bool bDefault = lua_toboolean(L, 3) != 0;
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, false );
+  lua_pushboolean( L, p ? p->b : bDefault );
+  return 1;
+}
+
+static int CBaseEntity_SetNWEntity (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  CBaseEntity *pValue = lua_toentity(L, 3);
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, true );
+  if (p) p->hEnt = pValue;
+  return 0;
+}
+
+static int CBaseEntity_GetNWEntity (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, pszName, false );
+  CBaseEntity *pResult = p ? p->hEnt.Get() : NULL;
+  if ( pResult )
+    lua_pushentity( L, pResult );
+  else
+    lua_pushnil( L );
+  return 1;
+}
+
 static int CBaseEntity_WorldAlignMaxs (lua_State *L) {
   Vector v = luaL_checkentity(L, 1)->WorldAlignMaxs();
   lua_pushvector(L, v);
@@ -2240,6 +2379,20 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"WorldAlignSize", CBaseEntity_WorldAlignSize},
   {"WorldSpaceCenter", CBaseEntity_WorldSpaceCenter},
   {"WorldToEntitySpace", CBaseEntity_WorldToEntitySpace},
+  // HL2SB GMod compat: NW variable family.  GMod's NW vars are real networked
+  // variables; this is a local-per-realm store keyed by entindex + name so
+  // scripts that call SetNWString/GetNWString (player_auth.lua's UserGroup)
+  // stop crashing.  Values do NOT sync between client and server yet.
+  {"SetNWString", CBaseEntity_SetNWString},
+  {"GetNWString", CBaseEntity_GetNWString},
+  {"SetNWInt", CBaseEntity_SetNWInt},
+  {"GetNWInt", CBaseEntity_GetNWInt},
+  {"SetNWFloat", CBaseEntity_SetNWFloat},
+  {"GetNWFloat", CBaseEntity_GetNWFloat},
+  {"SetNWBool", CBaseEntity_SetNWBool},
+  {"GetNWBool", CBaseEntity_GetNWBool},
+  {"SetNWEntity", CBaseEntity_SetNWEntity},
+  {"GetNWEntity", CBaseEntity_GetNWEntity},
   {"__index", CBaseEntity___index},
   {"__newindex", CBaseEntity___newindex},
   {"__eq", CBaseEntity___eq},

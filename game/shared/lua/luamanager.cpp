@@ -2111,4 +2111,86 @@ void luasrc_ApplyAmmoTypes (CAmmoDef *pAmmoDef)
 
   if (iApplied > 0)
     Msg( "[Ammo] applied %d Lua ammo definition(s)\n", iApplied );
+
+  //--------------------------------------------------------------------------
+  // HL2SB: also consume game.AddAmmoType() entries.
+  //
+  // GMod addons call game.AddAmmoType({ name = "rb655_nyan" }) at file scope.
+  // That lands in extensions/game.lua's local AmmoTypes table, retrieved by
+  // game.BuildAmmoTypes().  The ammo-module path above never sees it, so the
+  // weapon logs "using undefined primary ammo type (rb655_nyan)" every load.
+  // Same field names as the ammo module (name / dmgtype / tracer / ...).
+  //--------------------------------------------------------------------------
+  if (lua_getglobal(L, "game") != LUA_TTABLE)
+  {
+    lua_pop(L, 1);
+    return;
+  }
+
+  lua_getfield(L, -1, "BuildAmmoTypes");
+  lua_remove(L, -2);  /* drop game table */
+
+  if (!lua_isfunction(L, -1))
+  {
+    lua_pop(L, 1);
+    return;
+  }
+
+  if (luasrc_pcall(L, 0, 1, 0) != 0)
+    return;
+
+  if (!lua_istable(L, -1))
+  {
+    lua_pop(L, 1);
+    return;
+  }
+
+  int iGameCount = (int)lua_objlen(L, -1);
+  int iGameApplied = 0;
+
+  for (int i = 1; i <= iGameCount; ++i)
+  {
+    lua_rawgeti(L, -1, i);
+
+    if (lua_istable(L, -1))
+    {
+      lua_getfield(L, -1, "name");
+      const char *pszName = lua_isstring(L, -1) ? lua_tostring(L, -1) : NULL;
+      lua_pop(L, 1);
+
+      if (pszName && pszName[0] && pAmmoDef->Index(pszName) <= 0)
+      {
+        int iDmgType = DMG_BULLET, iTracer = TRACER_NONE;
+        int iPlrDmg = 0, iNpcDmg = 0, iCarry = 9999, iFlags = 0;
+        int iMinSplash = 4, iMaxSplash = 8;
+        float flForce = 0.0f;
+
+        luasrc_AmmoFieldInt(L, "dmgtype",   iDmgType);
+        luasrc_AmmoFieldInt(L, "tracer",    iTracer);
+        luasrc_AmmoFieldInt(L, "plydmg",    iPlrDmg);
+        luasrc_AmmoFieldInt(L, "npcdmg",    iNpcDmg);
+        luasrc_AmmoFieldInt(L, "maxcarry",  iCarry);
+        luasrc_AmmoFieldFloat(L, "force",   flForce);
+        luasrc_AmmoFieldInt(L, "flags",     iFlags);
+        luasrc_AmmoFieldInt(L, "minsplash", iMinSplash);
+        luasrc_AmmoFieldInt(L, "maxsplash", iMaxSplash);
+
+        pAmmoDef->AddAmmoType( pszName, iDmgType, iTracer, iPlrDmg, iNpcDmg,
+                               iCarry, flForce, iFlags, iMinSplash, iMaxSplash );
+
+        if (pAmmoDef->Index(pszName) > 0)
+        {
+          Msg( "[Ammo] game.AddAmmoType added '%s'\n", pszName );
+          ++iGameApplied;
+        }
+      }
+    }
+
+    lua_pop(L, 1);  /* pop the ammo entry */
+  }
+
+  lua_pop(L, 1);    /* pop BuildAmmoTypes result */
+
+  if (iGameApplied > 0)
+    Msg( "[Ammo] applied %d game.AddAmmoType definition(s)\n", iGameApplied );
 }

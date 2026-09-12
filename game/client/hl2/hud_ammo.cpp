@@ -15,6 +15,9 @@
 #include <vgui/ILocalize.h>
 #include <vgui/ISurface.h>
 #include "ihudlcd.h"
+#ifdef LUA_SDK
+#include "weapon_hl2mpbase_scriptedweapon.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -133,6 +136,22 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 		SetPaintBackgroundEnabled(false);
 		return;
 	}
+
+#ifdef LUA_SDK
+	// GMod SWEPs can hide the ammo HUD with SWEP.DrawAmmo = false
+	// (weapon_nyangun does exactly that).
+	{
+		CHL2MPScriptedWeapon *pScripted = dynamic_cast<CHL2MPScriptedWeapon *>( wpn );
+		if ( pScripted && !pScripted->DrawAmmo() )
+		{
+			hudlcd->SetGlobalStat( "(ammo_primary)", "n/a" );
+			hudlcd->SetGlobalStat( "(ammo_secondary)", "n/a" );
+			SetPaintEnabled(false);
+			SetPaintBackgroundEnabled(false);
+			return;
+		}
+	}
+#endif
 
 	SetPaintEnabled(true);
 	SetPaintBackgroundEnabled(true);
@@ -455,11 +474,22 @@ protected:
 			SetPaintBackgroundEnabled(false);
 			return;
 		}
-		else
+
+#ifdef LUA_SDK
+		// SWEP.DrawAmmo = false hides both ammo panels (GMod semantic).
 		{
-			SetPaintEnabled(true);
-			SetPaintBackgroundEnabled(true);
+			CHL2MPScriptedWeapon *pScripted = dynamic_cast<CHL2MPScriptedWeapon *>( wpn );
+			if ( pScripted && !pScripted->DrawAmmo() )
+			{
+				SetPaintEnabled(false);
+				SetPaintBackgroundEnabled(false);
+				return;
+			}
 		}
+#endif
+
+		SetPaintEnabled(true);
+		SetPaintBackgroundEnabled(true);
 
 		UpdateAmmoState();
 	}

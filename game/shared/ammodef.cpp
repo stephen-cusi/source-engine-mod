@@ -240,27 +240,39 @@ void CAmmoDef::AddAmmoType(char const* name, int damageType, int tracerType,
 		m_AmmoType[m_nAmmoIndex].pPlrDmgCVar	= cvar->FindVar(plr_cvar);
 		if (!m_AmmoType[m_nAmmoIndex].pPlrDmgCVar)
 		{
-			Msg("ERROR: Ammo (%s) found no CVar named (%s)\n",name,plr_cvar);
+			// HL2SB: HL1 weapons reference sk_ cvars this mod does not ship.
+			// Non-fatal -- fall through to the integer default instead of
+			// USE_CVAR (which would dereference the NULL cvar pointer).
+			DevMsg("Ammo (%s) found no CVar named (%s), using integer default\n",name,plr_cvar);
 		}
-		m_AmmoType[m_nAmmoIndex].pPlrDmg = USE_CVAR;
+		else
+		{
+			m_AmmoType[m_nAmmoIndex].pPlrDmg = USE_CVAR;
+		}
 	}
 	if (npc_cvar)
 	{
 		m_AmmoType[m_nAmmoIndex].pNPCDmgCVar	= cvar->FindVar(npc_cvar);
 		if (!m_AmmoType[m_nAmmoIndex].pNPCDmgCVar)
 		{
-			Msg("ERROR: Ammo (%s) found no CVar named (%s)\n",name,npc_cvar);
+			DevMsg("Ammo (%s) found no CVar named (%s), using integer default\n",name,npc_cvar);
 		}
-		m_AmmoType[m_nAmmoIndex].pNPCDmg = USE_CVAR;
+		else
+		{
+			m_AmmoType[m_nAmmoIndex].pNPCDmg = USE_CVAR;
+		}
 	}
 	if (carry_cvar)
 	{
 		m_AmmoType[m_nAmmoIndex].pMaxCarryCVar= cvar->FindVar(carry_cvar);
 		if (!m_AmmoType[m_nAmmoIndex].pMaxCarryCVar)
 		{
-			Msg("ERROR: Ammo (%s) found no CVar named (%s)\n",name,carry_cvar);
+			DevMsg("Ammo (%s) found no CVar named (%s), using integer default\n",name,carry_cvar);
 		}
-		m_AmmoType[m_nAmmoIndex].pMaxCarry = USE_CVAR;
+		else
+		{
+			m_AmmoType[m_nAmmoIndex].pMaxCarry = USE_CVAR;
+		}
 	}
 	m_AmmoType[m_nAmmoIndex].physicsForceImpulse = physicsForceImpulse;
 	m_nAmmoIndex++;

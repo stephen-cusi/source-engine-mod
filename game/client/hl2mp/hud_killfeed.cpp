@@ -88,6 +88,10 @@ struct KillFeedItem
 									// NPC-vs-NPC): no weapon glyph to show
 	float			flAddTime;		// server time when this entry was added
 	float			flDisplayTime;	// server time when it should be removed
+	char			szWeaponClass[64];	// full weapon class name (weapon_nyangun);
+										// empty when unknown.  Lua SWEPs register
+										// killicons by class name, not by the
+										// stripped mod_textures.txt short name.
 };
 
 //-----------------------------------------------------------------------------
@@ -507,6 +511,7 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 	deathMsg.bKillerIsPlayer = false;
 	deathMsg.bVictimIsNPC = false;
 	deathMsg.bUseSkull = false;
+	deathMsg.szWeaponClass[0] = 0;
 
 	if ( !Q_stricmp( pszName, "entity_killed" ) )
 	{
@@ -563,6 +568,11 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 
 		const char *pszWeapon = event->GetString( "weapon", "" );
 		deathMsg.iconDeath = gHUD.GetIcon( VarArgs( "death_%s", pszWeapon ) );
+
+		// Full class name (weapon_nyangun) for Lua killicon lookup.
+		Q_strncpy( deathMsg.szWeaponClass, event->GetString( "weaponname", "" ),
+				   sizeof( deathMsg.szWeaponClass ) );
+
 		if ( !deathMsg.iconDeath || deathMsg.iSuicide )
 		{
 			// No weapon death icon found (or it's a world/NPC kill); fall back to
@@ -636,6 +646,10 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 			fullkilledwith[0] = 0;
 		}
 
+		// Full class name (weapon_nyangun) for Lua killicon lookup.
+		Q_strncpy( deathMsg.szWeaponClass, event->GetString( "weaponname", "" ),
+				   sizeof( deathMsg.szWeaponClass ) );
+
 		deathMsg.iconDeath = gHUD.GetIcon( fullkilledwith );
 		if ( !deathMsg.iconDeath || deathMsg.iSuicide )
 		{
@@ -674,7 +688,10 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 			lua_pushboolean( L, deathMsg.iSuicide != 0 );
 			lua_pushboolean( L, deathMsg.bVictimIsNPC );
 			lua_pushboolean( L, deathMsg.bKillerIsPlayer );
-		END_LUA_CALL_HOOK( 8, 0 );
+			// 9th: full weapon class name so Lua SWEPs can look up their own
+			// killicon.Add( "weapon_nyangun", ... ) entry by class.
+			lua_pushstring( L, deathMsg.szWeaponClass );
+		END_LUA_CALL_HOOK( 9, 0 );
 
 		return;
 	}

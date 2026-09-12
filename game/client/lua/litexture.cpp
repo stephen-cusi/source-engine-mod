@@ -494,6 +494,16 @@ static int HL2SB_Material( lua_State *L )
     ** on every frame.  The duplicate/procedural-material problem has to be
     ** fixed in the materialsystem (see the queue in cmaterialsystem.cpp).
     */
+    // HL2SB: pin the material so it cannot be evicted between this call
+    // (file-scope load time) and the first render.SetMaterial / DrawQuadEasy.
+    // An evicted material gets re-resolved mid-render, which is the documented
+    // "Binding uncached material ... artificially incrementing refcount" path
+    // that crashes the Nyan Gun's bomb Draw (EXECUTE on heap).
+    if ( !pMaterial->IsErrorMaterial() )
+    {
+        pMaterial->IncrementReferenceCount();
+    }
+
     lua_pushmaterial( L, pMaterial );
     return 1;
 }

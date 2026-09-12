@@ -1046,11 +1046,17 @@ void CHL2MPRules::DeathNotice( CBasePlayer *pVictim, const CTakeDamageInfo &info
 					if ( pScorer->GetActiveWeapon() )
 					{
 						killer_weapon_name = pScorer->GetActiveWeapon()->GetClassname();
+#ifdef LUA_SDK
+						weapon_class_name = pScorer->GetActiveWeapon()->GetClassname();
+#endif
 					}
 				}
 				else
 				{
 					killer_weapon_name = pInflictor->GetClassname();  // it's just that easy
+#ifdef LUA_SDK
+					weapon_class_name = pInflictor->GetClassname();
+#endif
 				}
 			}
 		}

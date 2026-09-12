@@ -1753,6 +1753,11 @@ void CBaseEntity::SendOnKilledGameEvent( const CTakeDamageInfo &info )
 
 		event->SetString( "weapon", szWeaponName );
 
+		// Full class name (e.g. "weapon_nyangun") so the client can look up a
+		// Lua SWEP's own killicon.Add() entry by class, not just the stripped
+		// mod_textures.txt short name in "weapon".
+		event->SetString( "weaponname", szWeapon );
+
 		gameeventmanager->FireEvent( event );
 	}
 }

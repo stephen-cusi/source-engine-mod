@@ -768,13 +768,11 @@ void CHudWeaponSelection::Paint()
 
 						if ( iWeaponsInSlotPos == 0 )
 						{
-							if ( slotpos < iFirstPos || !hud_showemptyweaponslots.GetBool() )
-								continue;
-							DrawBox( xpos, ypos, largeBoxWide, largeBoxTall, m_EmptyBoxColor, m_flAlphaOverride, bDrawBucketNumber ? i + 1 : -1 );
-
-							// move down to the next bucket
-							ypos += (largeBoxTall + m_flBoxGap);
-							bDrawBucketNumber = false;
+							// HL2SB / GMod: never draw empty position boxes in the
+							// active bucket.  GMod packs weapons tightly; drawing
+							// gaps for SlotPos holes (SMG at 0, nyan gun at 5)
+							// pushed the icon off the bottom of the screen.
+							continue;
 						}
 						else
 						{
@@ -949,6 +947,23 @@ static bool HL2SB_DrawWeaponSelectIcon( C_BaseCombatWeapon *pWeapon, int xpos, i
 	Q_strncpy( szIconName, pszIcon, sizeof( szIconName ) );
 
 	IMaterial *pMaterial = materials->FindMaterial( szIconName, TEXTURE_GROUP_VGUI, false );
+
+	// GMod SWEPs often ship a bare .png with no .vmt (nyan/selection.png).
+	// FindMaterialEx already synthesises UnlitGeneric for that, but retry
+	// without the image extension in case the first lookup missed.
+	if ( !pMaterial || pMaterial->IsErrorMaterial() )
+	{
+		char szNoExt[MAX_PATH];
+		Q_strncpy( szNoExt, szIconName, sizeof( szNoExt ) );
+		char *pDot = strrchr( szNoExt, '.' );
+		char *pSlash = strrchr( szNoExt, '/' );
+		if ( pDot && ( !pSlash || pDot > pSlash ) )
+		{
+			*pDot = '\0';
+			pMaterial = materials->FindMaterial( szNoExt, TEXTURE_GROUP_VGUI, false );
+		}
+	}
+
 	if ( !pMaterial || pMaterial->IsErrorMaterial() )
 	{
 		HL2SB_WeaponIconWarn( szIconName, "no such material" );

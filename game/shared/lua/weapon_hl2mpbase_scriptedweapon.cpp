@@ -16,6 +16,7 @@
 #include "in_buttons.h"
 #include "ammodef.h"
 #include "luamanager.h"
+#include "luasrclib.h"
 #include "lbasecombatweapon_shared.h"
 // HL2SB: lua_pushtrace(), for SWEP:DoImpactEffect( trace, damageType ).
 #include "lgametrace.h"
@@ -736,7 +737,9 @@ void CHL2MPScriptedWeapon::Precache( void )
 	InitScriptedWeapon();
 
 	// Get the ammo indexes for the ammo's specified in the data file
-	if ( GetWpnData().szAmmo1[0] )
+	// GMod: Primary.Ammo = "none" means "this weapon uses no ammo" -- skip
+	// silently instead of logging an undefined-ammo error every spawn.
+	if ( GetWpnData().szAmmo1[0] && Q_stricmp( GetWpnData().szAmmo1, "none" ) )
 	{
 		m_iPrimaryAmmoType = GetAmmoDef()->Index( GetWpnData().szAmmo1 );
 		if (m_iPrimaryAmmoType == -1)
@@ -744,7 +747,7 @@ void CHL2MPScriptedWeapon::Precache( void )
 			Msg("ERROR: Weapon (%s) using undefined primary ammo type (%s)\n",GetClassname(), GetWpnData().szAmmo1);
 		}
 	}
-	if ( GetWpnData().szAmmo2[0] )
+	if ( GetWpnData().szAmmo2[0] && Q_stricmp( GetWpnData().szAmmo2, "none" ) )
 	{
 		m_iSecondaryAmmoType = GetAmmoDef()->Index( GetWpnData().szAmmo2 );
 		if (m_iSecondaryAmmoType == -1)
@@ -907,6 +910,22 @@ const char *CHL2MPScriptedWeapon::GetWepSelectIcon( void ) const
 			{
 				Q_strncpy( s_szWepSelectIcon, lua_tostring( L, -1 ), sizeof( s_szWepSelectIcon ) );
 				bHaveIcon = true;
+			}
+			lua_pop( L, 1 );
+		}
+		else if ( luaL_testudata( L, -1, LUA_MATERIALLIBNAME ) != NULL )
+		{
+			// The engine's Material() (litexture.cpp HL2SB_Material) returns an
+			// IMaterial userdata, not the old proxy table.  Call its GetName().
+			lua_getfield( L, -1, "GetName" );
+			if ( lua_isfunction( L, -1 ) )
+			{
+				lua_pushvalue( L, -2 );		// self
+				if ( lua_pcall( L, 1, 1, 0 ) == 0 && lua_type( L, -1 ) == LUA_TSTRING )
+				{
+					Q_strncpy( s_szWepSelectIcon, lua_tostring( L, -1 ), sizeof( s_szWepSelectIcon ) );
+					bHaveIcon = true;
+				}
 			}
 			lua_pop( L, 1 );
 		}

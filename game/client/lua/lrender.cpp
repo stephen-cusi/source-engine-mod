@@ -34,6 +34,18 @@ LUA_REGISTRATION_INIT( Renders );
 static CUtlStack< ShaderAPITextureHandle_t > filterTextureHandlesMinification;
 static CUtlStack< ShaderAPITextureHandle_t > filterTextureHandlesMagnification;
 
+// HL2SB: last material bound by render.SetMaterial, so DrawBeam can pass it
+// explicitly to CBeamSegDraw::Start (relying on the bound-material path made
+// the Nyan Gun's rainbow tracer invisible).
+static IMaterial *g_pHL2SBLastBoundMaterial = NULL;
+
+// HL2SB: path -> IMaterial cache.  SetMaterial is called every frame from
+// ENT:Draw and effect Render; re-resolving through FindMaterialEx each time
+// re-ran the PNG-synthesise path mid-render, which is the documented
+// "creating materials while drawing crashes" landmine.  Resolve once, reuse.
+struct HL2SB_MatCacheEntry_t { IMaterial *pMat; };
+static CUtlDict<HL2SB_MatCacheEntry_t, unsigned short> s_MatCache;
+
 #ifdef GAME_DLL
 
 LUA_BINDING_BEGIN( Renders, SpawnBeam, "library", "Spawns a temporary beam entity to render a beam. The alpha of the color servers as the brightness of it.", "server" )
@@ -671,44 +683,76 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
         if ( pszName == NULL || pszName[0] == '\0' )
             luaL_argerror( L, 1, "material, material path or texture name expected" );
 
-        char szResolved[ 512 ];
-        Q_strncpy( szResolved, pszName, sizeof( szResolved ) );
-
-        pMaterial = materials->FindMaterial( szResolved, TEXTURE_GROUP_OTHER, false );
-
-        // GMod scripts routinely name the image where the shader next to it is
-        // what actually ships: Material( "nyan/cat.png" ) against
-        // materials/nyan/cat.vmt.  Retry without the image extension before
-        // giving up on the error material.
-        if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
+        // Cache hit: reuse the previously resolved material.  Avoids
+        // re-running FindMaterialEx (and its PNG-synthesise path) every frame
+        // from ENT:Draw / effect Render, which is the documented
+        // "create material while drawing" crash.
+        unsigned short idx = s_MatCache.Find( pszName );
+        if ( s_MatCache.IsValidIndex( idx ) && s_MatCache[idx].pMat != NULL )
         {
-            int nLastDot = -1;
-            int nLastSlash = -1;
-            for ( int i = 0; szResolved[ i ] != '\0'; ++i )
-            {
-                if ( szResolved[ i ] == '.' )
-                    nLastDot = i;
-                else if ( szResolved[ i ] == '/' )
-                    nLastSlash = i;
-            }
-
-            if ( nLastDot > nLastSlash )
-            {
-                szResolved[ nLastDot ] = '\0';
-                IMaterial *pRetry = materials->FindMaterial( szResolved, TEXTURE_GROUP_OTHER, false );
-                if ( pRetry != NULL && !pRetry->IsErrorMaterial() )
-                    pMaterial = pRetry;
-            }
+            pMaterial = s_MatCache[idx].pMat;
         }
-
-        if ( pMaterial == NULL )
+        else
         {
-            pMaterial = materials->FindMaterial( "debug/debugempty", TEXTURE_GROUP_OTHER, false );
+            char szResolved[ 512 ];
+            Q_strncpy( szResolved, pszName, sizeof( szResolved ) );
+
+            pMaterial = materials->FindMaterial( szResolved, TEXTURE_GROUP_OTHER, false );
+
+            // GMod scripts routinely name the image where the shader next to it is
+            // what actually ships: Material( "nyan/cat.png" ) against
+            // materials/nyan/cat.vmt.  Retry without the image extension before
+            // giving up on the error material.
+            if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
+            {
+                int nLastDot = -1;
+                int nLastSlash = -1;
+                for ( int i = 0; szResolved[ i ] != '\0'; ++i )
+                {
+                    if ( szResolved[ i ] == '.' )
+                        nLastDot = i;
+                    else if ( szResolved[ i ] == '/' )
+                        nLastSlash = i;
+                }
+
+                if ( nLastDot > nLastSlash )
+                {
+                    szResolved[ nLastDot ] = '\0';
+                    IMaterial *pRetry = materials->FindMaterial( szResolved, TEXTURE_GROUP_OTHER, false );
+                    if ( pRetry != NULL && !pRetry->IsErrorMaterial() )
+                        pMaterial = pRetry;
+                }
+            }
+
+            if ( pMaterial == NULL )
+            {
+                pMaterial = materials->FindMaterial( "debug/debugempty", TEXTURE_GROUP_OTHER, false );
+            }
+
+            if ( s_MatCache.Count() < 256 )
+            {
+                unsigned short newIdx = s_MatCache.Insert( pszName );
+                if ( s_MatCache.IsValidIndex( newIdx ) )
+                {
+                    s_MatCache[newIdx].pMat = pMaterial;
+                    // Pin so the material system cannot evict it while the
+                    // cache holds the pointer (dangling-pointer crash).
+                    if ( pMaterial && !pMaterial->IsErrorMaterial() )
+                        pMaterial->IncrementReferenceCount();
+                }
+            }
         }
     }
 
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->Bind( pMaterial );
+
+    // HL2SB: DrawBeam's CBeamSegDraw::Start(pCtx, n, NULL) is supposed to pick
+    // up the bound material, but the Nyan Gun's rainbow tracer came out
+    // invisible after the colour-range fix -- the beam drew with whatever
+    // material happened to be bound instead of the one SetMaterial just set.
+    // Remember it so DrawBeam can pass it explicitly.
+    g_pHL2SBLastBoundMaterial = pMaterial;
 
     return 0;
 }
@@ -810,20 +854,31 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
 
     CMatRenderContextPtr pRenderContext( materials );
     CBeamSegDraw beamDraw;
-    beamDraw.Start( pRenderContext, 2, NULL );
+    // Pass the material SetMaterial just bound explicitly -- NULL means
+    // "whatever is currently bound", which was not reliably the Lua material.
+    beamDraw.Start( pRenderContext, 2, g_pHL2SBLastBoundMaterial );
+
+    // CBeamSegDraw feeds m_vColor / m_flAlpha straight into Color4f, which
+    // expects 0-1.  GMod's Color() is 0-255, so passing the raw bytes made
+    // every beam draw with overflowed vertex colour (the Nyan Gun's rainbow
+    // tracer came out yellow-green) and a hardcoded alpha of 1.0 killed the
+    // script's fade-out.  Same convention as DrawQuadEasy above.
+    const float flRed   = color.r() / 255.0f;
+    const float flGreen = color.g() / 255.0f;
+    const float flBlue  = color.b() / 255.0f;
+    const float flAlpha = color.a() / 255.0f;
 
     BeamSeg_t seg;
-    seg.m_flAlpha = 1.0;
+    seg.m_flAlpha = flAlpha;
     seg.m_flWidth = width;
+    seg.m_vColor = Vector( flRed, flGreen, flBlue );
 
     seg.m_vPos = start;
     seg.m_flTexCoord = textureStart;
-    seg.m_vColor = Vector( color.r(), color.g(), color.b() );  // HL2SB: lua_Color has no ToVector()
     beamDraw.NextSeg( &seg );
 
     seg.m_vPos = end;
     seg.m_flTexCoord = textureEnd;
-    seg.m_vColor = Vector( color.r(), color.g(), color.b() );  // HL2SB: lua_Color has no ToVector()
     beamDraw.NextSeg( &seg );
 
     beamDraw.End();
