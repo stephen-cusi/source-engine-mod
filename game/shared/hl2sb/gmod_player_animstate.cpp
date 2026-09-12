@@ -190,6 +190,30 @@ void CGModPlayerAnimState::Update()
 	// (game/shared/animation.cpp:216), so this is one integer compare per frame.
 	VerifySequenceIndex( pStudioHdr );
 
+	// The base class's pose writers read state that only its own
+	// Update(float eyeYaw, float eyePitch) sets up, and this class deliberately
+	// does not call that Update (it would ClearAnimationLayers() ->
+	// SetNumAnimOverlays(5) and pick its own activities via CalcMainActivity).
+	// Those two steps have to happen here instead, or the 9-way leg blend in
+	// ComputeGModPoseParam_Move() reads stale values:
+	//
+	//   * m_flEyeYaw decides the movement direction relative to the view
+	//     (base_playeranimstate.cpp:610-621).  Left at its initial 0, every
+	//     direction is measured against a view of yaw 0.
+	//   * ResetGroundSpeed() fills m_flMaxGroundSpeed, which
+	//     CalcMovementPlaybackRate() turns into the blend's magnitude
+	//     (base_playeranimstate.cpp:515-524).  Left at 0 it returns the
+	//     flGroundSpeed < 0.001 fallback of 0.01, so cos/sin scale the whole
+	//     blend down to ~0.01 and move_x/move_y stay in the centre cell however
+	//     the player moves - the legs never blend in any direction.
+	//     (The base's own Update calls UpdateInterpolators(), which is private
+	//     and does exactly this; ResetGroundSpeed() is the protected equivalent -
+	//     base_playeranimstate.cpp:247-250.)
+	QAngle eyeAngles = GetOuter()->GetAnimEyeAngles();
+	m_flEyeYaw = eyeAngles[ YAW ];
+	m_flEyePitch = eyeAngles[ PITCH ];
+	ResetGroundSpeed();
+
 	ComputeGModPoseParam_BodyYaw();			// move_yaw, for HL2-style models only
 	ComputeGModPoseParam_Move( pStudioHdr );	// move_x/move_y 3x3, for GMod models only
 	ComputeGModPoseParam_BodyPitch( pStudioHdr );
