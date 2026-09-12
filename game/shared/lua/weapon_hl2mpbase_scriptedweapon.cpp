@@ -1283,6 +1283,25 @@ const char *CHL2MPScriptedWeapon::GetTracerType( void )
 	}
 #endif
 
+	/*
+	** HL2SB diagnostic (AGENTS.md 9.7): this weapon has no bullet.TracerName
+	** published on THIS realm, so every tracer it fires falls back to the stock
+	** "Tracer" effect here.  The name is published by the Lua FireBullets()
+	** binding (lbaseentity_shared.cpp) in the realm that runs it; the client only
+	** runs it when the shot is predicted there, which is exactly how the Nyan
+	** Gun lost its rainbow tracer while its impacts kept working.  One line per
+	** class per DLL load.
+	*/
+	{
+		char szKey[128];
+		Q_snprintf( szKey, sizeof( szKey ), "tracer-name-missing:%s", GetClassname() );
+#ifdef CLIENT_DLL
+		HL2SB_WarnOnce( szKey, "GetTracerType: client has no TracerName for '%s'\n", GetClassname() );
+#else
+		HL2SB_WarnOnce( szKey, "GetTracerType: server has no TracerName for '%s'\n", GetClassname() );
+#endif
+	}
+
 	return BaseClass::GetTracerType();
 }
 

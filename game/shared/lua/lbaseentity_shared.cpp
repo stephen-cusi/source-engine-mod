@@ -492,22 +492,56 @@ static int CBaseEntity_FireBullets (lua_State *L) {
     if (lua_type(L, -1) == LUA_TSTRING) {
       const char *pszTracerName = lua_tostring(L, -1);
 
+#ifdef CLIENT_DLL
+      const char *pszRealm = "client";
+#else
+      const char *pszRealm = "server";
+#endif
+
       CBaseCombatWeapon *pWeapon = NULL;
       CBasePlayer *pOwner = ToBasePlayer(pEntity);
       if (pOwner != NULL)
         pWeapon = pOwner->GetActiveWeapon();
 
       if (pWeapon != NULL && pWeapon->m_nTableReference >= 0) {
+        bool bPublished = false;
+
         lua_getref(L, pWeapon->m_nTableReference);
         if (lua_istable(L, -1)) {
           lua_getfield(L, -1, "Primary");
           if (lua_istable(L, -1)) {
             lua_pushstring(L, pszTracerName);
             lua_setfield(L, -2, "TracerName");
+            bPublished = true;
           }
           lua_pop(L, 1);
         }
         lua_pop(L, 1);
+
+        /*
+        ** HL2SB diagnostic (AGENTS.md 9.7): one line per realm, so the log says
+        ** WHICH realm learned bullet.TracerName.  The client's copy is the one
+        ** that matters -- C_TEHL2MPFireBullets::CreateEffects() draws the tracer
+        ** on the client and needs the name there -- and it only exists if this
+        ** realm ran the Lua FireBullets() itself, i.e. if the shot was predicted
+        ** here (a ported SWEP gates that on IsFirstTimePredicted()).  A missing
+        ** "client" line = the rainbow tracer had no name to draw with.
+        */
+        if (bPublished) {
+          HL2SB_WarnOnce("firebullets-tracername-ok",
+            "FireBullets: %s learned TracerName '%s' for '%s'\n",
+            pszRealm, pszTracerName, pWeapon->GetClassname());
+        } else {
+          HL2SB_WarnOnce("firebullets-tracername-noprimary",
+            "FireBullets: %s could not publish TracerName '%s' on '%s' (no Primary subtable)\n",
+            pszRealm, pszTracerName, pWeapon->GetClassname());
+        }
+      } else {
+        HL2SB_WarnOnce("firebullets-tracername-skip",
+          "FireBullets: %s could not publish TracerName '%s' (weapon=%s, lua table ref=%d)\n",
+          pszRealm, pszTracerName,
+          (pWeapon != NULL) ? pWeapon->GetClassname() : "none",
+          (pWeapon != NULL) ? (int)pWeapon->m_nTableReference : -1000);
       }
     }
     lua_pop(L, 1);

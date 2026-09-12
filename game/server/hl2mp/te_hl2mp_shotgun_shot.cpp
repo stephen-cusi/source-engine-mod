@@ -12,6 +12,10 @@
 //=============================================================================//
 #include "cbase.h"
 #include "basetempentity.h"
+// HL2SB: g_pStringTableEffectDispatch + MAX_EFFECT_DISPATCH_STRING_BITS, to ship
+// the tracer effect name as an index into the engine's own effect-name table.
+#include "networkstringtable_gamedll.h"
+#include "effect_dispatch_data.h"
 
 
 #define NUM_BULLET_SEED_BITS 8
@@ -39,6 +43,9 @@ public:
 	CNetworkVar( float, m_flSpread );
 	CNetworkVar( bool, m_bDoImpacts );
 	CNetworkVar( bool, m_bDoTracers );
+	// HL2SB: index into the "EffectDispatch" network string table holding the
+	// tracer effect name the shooter wanted ("rb655_nyan_tracer"), 0 for none.
+	CNetworkVar( int, m_iTracerName );
 };
 
 //-----------------------------------------------------------------------------
@@ -67,6 +74,7 @@ IMPLEMENT_SERVERCLASS_ST_NOBASE(CTEHL2MPFireBullets, DT_TEHL2MPFireBullets)
 	SendPropFloat( SENDINFO( m_flSpread ), 10, 0, 0, 1 ),	
 	SendPropBool( SENDINFO( m_bDoImpacts ) ),
 	SendPropBool( SENDINFO( m_bDoTracers ) ),
+	SendPropInt( SENDINFO( m_iTracerName ), MAX_EFFECT_DISPATCH_STRING_BITS, SPROP_UNSIGNED ),
 END_SEND_TABLE()
 
 
@@ -74,6 +82,29 @@ END_SEND_TABLE()
 static CTEHL2MPFireBullets g_TEHL2MPFireBullets( "Shotgun Shot" );
 
 
+//-----------------------------------------------------------------------------
+// HL2SB: WHY THIS TE CARRIES THE TRACER NAME
+//
+// GMod's bullet tables name their tracer (weapon_nyangun: bullet.TracerName =
+// "rb655_nyan_tracer"), and a SWEP publishes it into its own Lua table when the
+// Lua FireBullets() binding runs (lbaseentity_shared.cpp) -- CHL2MPScriptedWeapon
+// ::GetTracerType() then hands it to the engine.
+//
+// The client that receives this TE (C_TEHL2MPFireBullets::CreateEffects) is the
+// one that actually draws the tracers, and it used to ask ITS OWN weapon for
+// GetTracerType().  That only works if the client happened to run the Lua
+// FireBullets() itself, i.e. only if the shot was predicted on that realm -- and
+// GMod SWEPs gate that on IsFirstTimePredicted() (weapon_nyangun.lua:95), which
+// the client answers from the live prediction state.  When it does not run, the
+// name is unknown on the client and the tracer silently falls back to the stock
+// "Tracer" effect: the rainbow came out missing for the shooter while every
+// other part of the shot (impacts, sounds, damage) worked.
+//
+// So the server -- the authority, which always knows the name -- ships it with
+// the shot.  The name travels as an index into the engine's "EffectDispatch"
+// network string table, exactly the way DispatchEffect() itself sends one, which
+// needs no new table and no string property.
+//-----------------------------------------------------------------------------
 void TE_HL2MPFireBullets( 
 	int	iPlayerIndex,
 	const Vector &vOrigin,
@@ -83,7 +114,8 @@ void TE_HL2MPFireBullets(
 	int iShots,
 	float flSpread,
 	bool bDoTracers,
-	bool bDoImpacts )
+	bool bDoImpacts,
+	const char *pszTracerName )
 {
 	CPASFilter filter( vOrigin );
 	filter.UsePredictionRules();
@@ -97,6 +129,17 @@ void TE_HL2MPFireBullets(
 	g_TEHL2MPFireBullets.m_iAmmoID = iAmmoID;
 	g_TEHL2MPFireBullets.m_bDoTracers = bDoTracers;
 	g_TEHL2MPFireBullets.m_bDoImpacts = bDoImpacts;
+
+	// Index 0 is the string table's empty string, i.e. "no name here".
+	g_TEHL2MPFireBullets.m_iTracerName = 0;
+	if ( pszTracerName != NULL && pszTracerName[0] != '\0' && g_pStringTableEffectDispatch != NULL )
+	{
+		int iIndex = g_pStringTableEffectDispatch->AddString( CBaseEntity::IsServer(), pszTracerName );
+		if ( iIndex > 0 )
+		{
+			g_TEHL2MPFireBullets.m_iTracerName = iIndex;
+		}
+	}
 	
 	Assert( iSeed < (1 << NUM_BULLET_SEED_BITS) );
 	

@@ -2054,7 +2054,18 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 #if defined( HL2MP ) && defined( GAME_DLL )
 	if ( bDoServerEffects == false )
 	{
-		TE_HL2MPFireBullets( entindex(), tr.startpos, info.m_vecDirShooting, info.m_iAmmoType, iEffectSeed, info.m_iShots, info.m_vecSpread.x, bDoTracers, bDoImpacts );
+		// HL2SB: the shooter's own tracer effect name rides with the shot.
+		//
+		// This is the authority, so GetTracerType() is reliable here: for a Lua
+		// SWEP it resolves through CHL2MPScriptedWeapon::GetTracerType() to
+		// bullet.TracerName, which the Lua FireBullets() binding published a few
+		// lines above.  The receiving client cannot always work that name out
+		// for itself (its own FireBullets() only runs when the shot is predicted
+		// there), so it used to draw the stock "Tracer" instead of, say,
+		// rb655_nyan_tracer -- the Nyan Gun's rainbow was missing for the
+		// shooter while its impacts and sounds worked.  See
+		// TE_HL2MPFireBullets() in game/server/hl2mp/te_hl2mp_shotgun_shot.cpp.
+		TE_HL2MPFireBullets( entindex(), tr.startpos, info.m_vecDirShooting, info.m_iAmmoType, iEffectSeed, info.m_iShots, info.m_vecSpread.x, bDoTracers, bDoImpacts, GetTracerType() );
 	}
 #endif
 

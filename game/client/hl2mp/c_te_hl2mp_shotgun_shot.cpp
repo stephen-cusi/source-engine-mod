@@ -10,12 +10,25 @@
 #include "ammodef.h"
 #include "c_te_effect_dispatch.h"
 #include "shot_manipulator.h"
+// HL2SB: g_StringTableEffectDispatch, to resolve the tracer effect name the
+// server shipped with this TE (see TE_HL2MPFireBullets).
+#include "networkstringtable_clientdll.h"
+
+// HL2SB: game/shared/lua/luamanager.h is not on this file's include path
+// (client_hl2mp.vpc vs client_lua.vpc -- same reason c_te_effect_dispatch.cpp
+// declares HL2SB_CreateLuaEffect by hand), so the bounded one-shot warning
+// helper is declared here.
+void HL2SB_WarnOnce( const char *pszKey, const char *pszFormat, ... );
 
 class C_TEHL2MPFireBullets : public C_BaseTempEntity
 {
 public:
 	DECLARE_CLASS( C_TEHL2MPFireBullets, C_BaseTempEntity );
 	DECLARE_CLIENTCLASS();
+
+	// HL2SB: the network layer fills every prop on creation, but keep the
+	// "no name" value explicit for the paths that read it first.
+	C_TEHL2MPFireBullets() : m_iTracerName( 0 ) {}
 
 	virtual void	PostDataUpdate( DataUpdateType_t updateType );
 
@@ -32,6 +45,10 @@ public:
 	int		m_iShots;
 	bool	m_bDoImpacts;
 	bool	m_bDoTracers;
+	// HL2SB: index into the "EffectDispatch" string table holding the tracer
+	// effect name the shooter's weapon asked for (0 = the table's empty string,
+	// i.e. the server did not send one).
+	int		m_iTracerName;
 };
 
 class CTraceFilterSkipPlayerAndViewModelOnly : public CTraceFilter
@@ -98,7 +115,43 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 
 					if ( m_bDoTracers )
 					{
-						const char *pTracerName = pWpn->GetTracerType();
+						// HL2SB: prefer the name the server sent with the shot.
+						//
+						// Asking our own weapon (pWpn->GetTracerType()) only works
+						// when THIS realm ran the Lua FireBullets() that published
+						// bullet.TracerName -- i.e. only when the shot was predicted
+						// here.  When it was not, the name was empty and the shot
+						// silently drew the stock "Tracer": the Nyan Gun's rainbow
+						// tracer was missing for the shooter while its impacts,
+						// sounds and damage all worked.
+						const char *pTracerName = NULL;
+
+						if ( m_iTracerName > 0 && g_StringTableEffectDispatch != NULL )
+						{
+							pTracerName = g_StringTableEffectDispatch->GetString( m_iTracerName );
+						}
+
+						if ( ( pTracerName == NULL || pTracerName[0] == '\0' ) && pWpn != NULL )
+						{
+							pTracerName = pWpn->GetTracerType();
+						}
+
+						if ( pTracerName == NULL || pTracerName[0] == '\0' )
+						{
+							pTracerName = "Tracer";
+						}
+
+						// HL2SB diagnostic: names the source of the tracer name in
+						// ds_debug.log, once per DLL load (Warning, not DevMsg --
+						// DevMsg needs developer 1 and is then missing exactly when
+						// we need it).
+						HL2SB_WarnOnce( "te-firebullets-tracer",
+							"TE_HL2MPFireBullets: tracers=%d impacts=%d tracer='%s' (from %s) weapon='%s'\n",
+							m_bDoTracers ? 1 : 0,
+							m_bDoImpacts ? 1 : 0,
+							pTracerName,
+							( m_iTracerName > 0 ) ? "server TE" : "weapon GetTracerType",
+							pWpn->GetClassname() );
 
 						CEffectData data;
 						data.m_vStart = tr.startpos;
@@ -109,14 +162,7 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 						// Stomp the start, since it's not going to be used anyway
 						data.m_nAttachmentIndex = 1;
 
-						if ( pTracerName )
-						{
-							DispatchEffect( pTracerName, data );
-						}
-						else
-						{
-							DispatchEffect( "Tracer", data );
-						}
+						DispatchEffect( pTracerName, data );
 					}
 					
 					if ( m_bDoImpacts )
@@ -155,6 +201,7 @@ BEGIN_RECV_TABLE_NOBASE(C_TEHL2MPFireBullets, DT_TEHL2MPFireBullets )
 	RecvPropFloat( RECVINFO( m_flSpread ) ),
 	RecvPropBool( RECVINFO( m_bDoImpacts ) ),
 	RecvPropBool( RECVINFO( m_bDoTracers ) ),
+	RecvPropInt( RECVINFO( m_iTracerName ) ),
 END_RECV_TABLE()
 
 
