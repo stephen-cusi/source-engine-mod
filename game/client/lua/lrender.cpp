@@ -818,7 +818,10 @@ LUA_BINDING_BEGIN( Renders, DrawQuadEasy, "library", "Draws a quad with the curr
     const float flAlpha = color.a() / 255.0f;
 
     CMatRenderContextPtr pRenderContext( materials );
-    IMesh *pMesh = pRenderContext->GetDynamicMesh();
+    // HL2SB: the material goes in explicitly -- the mesh's vertex format comes
+    // from it, and the no-argument form can hand back a mesh whose format does
+    // not match, in which case the vertex writes land in the wrong fields.
+    IMesh *pMesh = pRenderContext->GetDynamicMesh( true, NULL, NULL, g_pHL2SBLastBoundMaterial );
 
     CMeshBuilder meshBuilder;
     meshBuilder.Begin( pMesh, MATERIAL_QUADS, 1 );
@@ -876,7 +879,7 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     {
         static int s_nDrawBeamLogged = 0;
 
-        if ( s_nDrawBeamLogged < 24 )
+        if ( s_nDrawBeamLogged < 120 )
         {
             ++s_nDrawBeamLogged;
 
@@ -946,7 +949,11 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     const float flBlue  = color.b() / 255.0f;
     const float flAlpha = color.a() / 255.0f;
 
-    IMesh *pMesh = pRenderContext->GetDynamicMesh();
+    // The material goes in explicitly: the mesh's vertex format comes from it,
+    // and GetDynamicMesh() without it can hand back a mesh whose format does not
+    // match the material at all -- the draw then writes the wrong fields and
+    // nothing appears.  (CBeamSegDraw::Start did the same thing.)
+    IMesh *pMesh = pRenderContext->GetDynamicMesh( true, NULL, NULL, g_pHL2SBLastBoundMaterial );
     CMeshBuilder meshBuilder;
 
     // 4 triangles: the quad twice, once per winding.

@@ -180,7 +180,10 @@ static int LuaEffect_GetTracerShootPos( lua_State *L )
 	{
 		char szKey[ 128 ];
 		Q_snprintf( szKey, sizeof( szKey ), "tracer-start:%s", pszSource );
-		HL2SB_WarnOnce( szKey, "GetTracerShootPos: '%s' (attachment %d) -> %s\n", pszEntity, iAttachment, pszSource );
+		HL2SB_WarnOnce( szKey, "GetTracerShootPos: '%s' (attachment %d) -> %s in=(%.0f %.0f %.0f) out=(%.0f %.0f %.0f)\n",
+			pszEntity, iAttachment, pszSource,
+			vecPosition.x, vecPosition.y, vecPosition.z,
+			vecResult.x, vecResult.y, vecResult.z );
 	}
 
 	lua_pushvector( L, vecResult );
@@ -299,6 +302,73 @@ void CLuaEffect::Draw( double frametime )
 			char szKey[ 160 ];
 			Q_snprintf( szKey, sizeof( szKey ), "lua-effect-draw:%s", GetName() );
 			HL2SB_WarnOnce( szKey, "CLuaEffect '%s': Think -> true, drawing\n", GetName() );
+		}
+
+		// HL2SB diagnostic: the geometry the script itself believes in.  A beam
+		// that is drawn from somewhere unexpected looks exactly like one that is
+		// not drawn at all, so print the effect's own numbers once.
+		if ( bAlive )
+		{
+			char szKey[ 160 ];
+			Q_snprintf( szKey, sizeof( szKey ), "lua-effect-geometry:%s", GetName() );
+
+			static char s_szGeometrySeen[ 32 ][ 160 ];
+			static int s_nGeometrySeen = 0;
+			bool bNew = true;
+
+			for ( int i = 0; i < s_nGeometrySeen; ++i )
+			{
+				if ( !Q_stricmp( s_szGeometrySeen[ i ], szKey ) )
+				{
+					bNew = false;
+					break;
+				}
+			}
+
+			if ( bNew && s_nGeometrySeen < 32 )
+			{
+				Q_strncpy( s_szGeometrySeen[ s_nGeometrySeen ], szKey, sizeof( s_szGeometrySeen[ 0 ] ) );
+				++s_nGeometrySeen;
+
+				char szStart[ 48 ], szEnd[ 48 ], szDist[ 48 ];
+
+				lua_getfield( L, -1, "StartPos" );
+				if ( luaL_testudata( L, -1, LUA_VECTORLIBNAME ) != NULL )
+				{
+					Vector vecStart = luaL_checkvector( L, -1 );
+					Q_snprintf( szStart, sizeof( szStart ), "(%.0f %.0f %.0f)", vecStart.x, vecStart.y, vecStart.z );
+				}
+				else
+				{
+					Q_strncpy( szStart, "?", sizeof( szStart ) );
+				}
+				lua_pop( L, 1 );
+
+				lua_getfield( L, -1, "EndPos" );
+				if ( luaL_testudata( L, -1, LUA_VECTORLIBNAME ) != NULL )
+				{
+					Vector vecEnd = luaL_checkvector( L, -1 );
+					Q_snprintf( szEnd, sizeof( szEnd ), "(%.0f %.0f %.0f)", vecEnd.x, vecEnd.y, vecEnd.z );
+				}
+				else
+				{
+					Q_strncpy( szEnd, "?", sizeof( szEnd ) );
+				}
+				lua_pop( L, 1 );
+
+				lua_getfield( L, -1, "Dist" );
+				if ( lua_isnumber( L, -1 ) )
+				{
+					Q_snprintf( szDist, sizeof( szDist ), "%.0f", lua_tonumber( L, -1 ) );
+				}
+				else
+				{
+					Q_strncpy( szDist, "?", sizeof( szDist ) );
+				}
+				lua_pop( L, 1 );
+
+				Warning( "[HL2SB] CLuaEffect '%s': StartPos=%s EndPos=%s Dist=%s\n", GetName(), szStart, szEnd, szDist );
+			}
 		}
 	}
 	else
