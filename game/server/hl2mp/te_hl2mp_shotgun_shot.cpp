@@ -35,6 +35,17 @@ public:
 
 public:
 	CNetworkVar( int, m_iPlayer );
+	// HL2SB: the firing weapon's entindex.  The client's recv table has always
+	// had this prop and the server's send table never did, and the engine
+	// matches recv props to send props BY INDEX (engine/dt_common_eng.cpp:108),
+	// so every field after m_iPlayer was shifted by one on the wire:
+	//   m_flSpread    <- m_bDoImpacts   (0 or 1, so the client re-traced every
+	//                                    shot with a garbage spread)
+	//   m_bDoImpacts  <- m_bDoTracers   (right by luck)
+	//   m_bDoTracers  <- whatever came next
+	//   m_iTracerName <- nothing at all
+	// Sending it here is what makes the rest of the table line up.
+	CNetworkVar( int, m_iWeaponIndex );
 	CNetworkVector( m_vecOrigin );
 	CNetworkVector( m_vecDir );
 	CNetworkVar( int, m_iAmmoID );
@@ -71,6 +82,7 @@ IMPLEMENT_SERVERCLASS_ST_NOBASE(CTEHL2MPFireBullets, DT_TEHL2MPFireBullets)
 	SendPropInt( SENDINFO( m_iSeed ), NUM_BULLET_SEED_BITS, SPROP_UNSIGNED ),
 	SendPropInt( SENDINFO( m_iShots ), 5, SPROP_UNSIGNED ),
 	SendPropInt( SENDINFO( m_iPlayer ), 6, SPROP_UNSIGNED ), 	// max 64 players, see MAX_PLAYERS
+	SendPropInt( SENDINFO( m_iWeaponIndex ), 11, SPROP_UNSIGNED ),	// HL2SB: see the class comment -- the client already had this prop
 	SendPropFloat( SENDINFO( m_flSpread ), 10, 0, 0, 1 ),	
 	SendPropBool( SENDINFO( m_bDoImpacts ) ),
 	SendPropBool( SENDINFO( m_bDoTracers ) ),
@@ -115,12 +127,14 @@ void TE_HL2MPFireBullets(
 	float flSpread,
 	bool bDoTracers,
 	bool bDoImpacts,
-	const char *pszTracerName )
+	const char *pszTracerName,
+	int iWeaponIndex )
 {
 	CPASFilter filter( vOrigin );
 	filter.UsePredictionRules();
 
 	g_TEHL2MPFireBullets.m_iPlayer = iPlayerIndex;
+	g_TEHL2MPFireBullets.m_iWeaponIndex = iWeaponIndex;
 	g_TEHL2MPFireBullets.m_vecOrigin = vOrigin;
 	g_TEHL2MPFireBullets.m_vecDir = vDir;
 	g_TEHL2MPFireBullets.m_iSeed = iSeed;

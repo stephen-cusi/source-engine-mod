@@ -2101,8 +2101,20 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 		// -- the Nyan Gun's rainbow was missing for the shooter while its impacts
 		// and sounds worked.  See TE_HL2MPFireBullets() in
 		// game/server/hl2mp/te_hl2mp_shotgun_shot.cpp.
+		//
+		// The weapon's entindex goes with it too: the client's recv table has
+		// always carried m_iWeaponIndex and this TE never sent it, which shifted
+		// every prop after m_iPlayer (see the class comment in that file).
+		CBaseCombatWeapon *pFiringWeapon = NULL;
+
+		if ( CBaseCombatCharacter *pShooter = MyCombatCharacterPointer() )
+		{
+			pFiringWeapon = pShooter->GetActiveWeapon();
+		}
+
 		TE_HL2MPFireBullets( entindex(), tr.startpos, info.m_vecDirShooting, info.m_iAmmoType, iEffectSeed, info.m_iShots, info.m_vecSpread.x, bDoTracers, bDoImpacts,
-							 ( pszScriptedTracerName[ 0 ] != '\0' ) ? pszScriptedTracerName : GetTracerType() );
+							 ( pszScriptedTracerName[ 0 ] != '\0' ) ? pszScriptedTracerName : GetTracerType(),
+							 ( pFiringWeapon != NULL ) ? pFiringWeapon->entindex() : 0 );
 	}
 #endif
 

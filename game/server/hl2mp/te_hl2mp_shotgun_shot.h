@@ -25,7 +25,8 @@ void TE_HL2MPFireBullets(
 	float flSpread, 
 	bool bDoTracers,
 	bool bDoImpacts,
-	const char *pszTracerName = NULL );
+	const char *pszTracerName = NULL,
+	int iWeaponIndex = 0 );
 
 
 #endif // TE_HL2MP_SHOTGUN_SHOT_H

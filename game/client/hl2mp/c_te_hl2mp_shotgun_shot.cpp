@@ -78,16 +78,48 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 		 return;
 
 	C_BaseEntity *pEnt = ClientEntityList().GetEnt( m_iPlayer );
+	C_BasePlayer *pPlayer = ( pEnt != NULL ) ? dynamic_cast<C_BasePlayer *>( pEnt ) : NULL;
 
-	if ( pEnt )
+	// HL2SB: find the weapon the shot actually came from.
+	//
+	// This used to trust the client's own active weapon, which is a networked
+	// value and can lag behind the shot; and it bailed out entirely when that
+	// lookup failed, so the TE could arrive and silently draw nothing.
+	// m_iWeaponIndex is the server's answer -- the send/recv tables were
+	// misaligned before (see the class comment in
+	// game/server/hl2mp/te_hl2mp_shotgun_shot.cpp), so it never arrived until
+	// now.
+	C_BaseCombatWeapon *pWpn = NULL;
+
+	if ( m_iWeaponIndex > 0 )
 	{
-		C_BasePlayer *pPlayer = dynamic_cast<C_BasePlayer *>(pEnt);
+		pWpn = dynamic_cast<C_BaseCombatWeapon *>( ClientEntityList().GetEnt( m_iWeaponIndex ) );
+	}
 
-		if ( pPlayer && pPlayer->GetActiveWeapon() )
+	if ( pWpn == NULL && pPlayer != NULL )
+	{
+		pWpn = dynamic_cast<C_BaseCombatWeapon *>( pPlayer->GetActiveWeapon() );
+	}
+
+	// HL2SB diagnostic: says whether this TE arrived at all and what it carried,
+	// once per (shooter, weapon index, resolved-or-not).  Before this, a TE whose
+	// weapon lookup failed left no trace in the log anywhere.
+	{
+		char szKey[ 160 ];
+		Q_snprintf( szKey, sizeof( szKey ), "te-firebullets-enter:%d:%d:%d", m_iPlayer, m_iWeaponIndex, ( pWpn != NULL ) ? 1 : 0 );
+		HL2SB_WarnOnce( szKey,
+			"TE_HL2MPFireBullets: shooter=%d weaponIndex=%d weapon='%s' tracers=%d impacts=%d shots=%d spread=%.4f tracerIndex=%d\n",
+			m_iPlayer, m_iWeaponIndex, ( pWpn != NULL ) ? pWpn->GetClassname() : "<none>",
+			m_bDoTracers ? 1 : 0, m_bDoImpacts ? 1 : 0, m_iShots, m_flSpread, m_iTracerName );
+	}
+
+	if ( pPlayer == NULL && pWpn == NULL )
+	{
+		return;
+	}
+
+	{
 		{
-			C_BaseCombatWeapon *pWpn = dynamic_cast<C_BaseCombatWeapon *>( pPlayer->GetActiveWeapon() );
-
-			if ( pWpn )
 			{
 				int iSeed = m_iSeed;
 					
@@ -108,9 +140,6 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 				for (int iShot = 0; iShot < nShots; iShot++)
 				{
 					pWpn = hWeapon.Get();
-
-					if ( pWpn == NULL )
-						break;
 
 					RandomSeed( iSeed );	// init random system with this seed
 
@@ -133,11 +162,16 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 					// HL2SB: capture everything that comes from the weapon BEFORE
 					// any Lua runs (see the handle comment above): the tracer's
 					// entity handle, the class name for the diagnostic, and the
-					// tracer effect name.
-					const CBaseHandle hTracerEnt = pWpn->GetRefEHandle();
+					// tracer effect name.  Without a weapon (a script removed it,
+					// or the index was stale) the tracer still has a name and the
+					// shooter to start from, so fall back to the shooter's handle
+					// -- GetTracerShootPos() then uses the local player's viewmodel
+					// muzzle, which is the right muzzle anyway.
+					const CBaseHandle hTracerEnt = ( pWpn != NULL ) ? pWpn->GetRefEHandle()
+												   : ( ( pPlayer != NULL ) ? pPlayer->GetRefEHandle() : CBaseHandle() );
 
 					char szWeapon[ 64 ];
-					Q_strncpy( szWeapon, pWpn->GetClassname(), sizeof( szWeapon ) );
+					Q_strncpy( szWeapon, ( pWpn != NULL ) ? pWpn->GetClassname() : "<none>", sizeof( szWeapon ) );
 
 					char szTracerName[ 128 ] = { 0 };
 
@@ -165,7 +199,7 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 							pTracerName = g_StringTableEffectDispatch->GetString( m_iTracerName );
 						}
 
-						if ( pTracerName == NULL || pTracerName[0] == '\0' )
+						if ( ( pTracerName == NULL || pTracerName[0] == '\0' ) && pWpn != NULL )
 						{
 							pTracerName = pWpn->GetTracerType();
 						}
@@ -199,7 +233,9 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 
 					// Impacts first: DoImpactEffect() calls into Lua and must be
 					// the last use of the raw weapon pointer in this iteration.
-					if ( m_bDoImpacts )
+					// Without a weapon there is nothing to ask (the predicted path
+					// drew those impacts already).
+					if ( m_bDoImpacts && pWpn != NULL )
 					{
 						pWpn->DoImpactEffect( tr, pAmmoDef->DamageType( m_iAmmoID ) );
 					}
