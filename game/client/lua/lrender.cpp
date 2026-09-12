@@ -8,7 +8,6 @@
 #include "view_scene.h"
 #include <materialsystem/imaterialsystem.h>
 #include <materialsystem/imesh.h>
-#include "filesystem.h"
 #include <vgui/ISurface.h>
 #include <vgui_controls/Controls.h>
 #include "mathlib/lvector.h"
@@ -21,7 +20,6 @@
 #include "beamdraw.h"
 #include "materialsystem/limaterial.h"
 #include "iviewrender_beams.h"
-#include "tier1/KeyValues.h"
 #include <mathlib/lvmatrix.h>
 #endif
 
@@ -630,136 +628,6 @@ LUA_BINDING_BEGIN( Renders, GetViewEntity, "library", "Returns the entity the cl
 }
 LUA_BINDING_END( "Entity", "The view entity." )
 
-/*
-** HL2SB: the material the script bound with render.SetMaterial().
-**
-** IMesh::Draw() draws with whatever material is currently bound, so the bind has
-** to survive from the SetMaterial call to the DrawQuad / DrawSprite / DrawBeam
-** call that uses it.  Keeping our own handle and re-binding it immediately before the
-** mesh is built makes that explicit and immune to any other engine code binding
-** a material in between (which is what makes a quad "show the material's own or
-** a stale modulation" instead of the one the script asked for).
-*/
-static IMaterial *g_pHL2SB_RenderMaterial = NULL;
-
-/*
-** HL2SB: GMod addresses materials by image file -- Material( "nyan/cat.png" ) --
-** while stock Source insists on a .vmt of the same name.  CMaterialSystem::
-** FindMaterialEx synthesises an UnlitGeneric from the image when the .vmt is
-** missing, but it does so through CMaterialDict::AddMaterial(), which does NOT
-** store the KeyValues on the material: its first draw calls
-** CMaterial::PrecacheVars() with no KeyValues, re-loads materials/<name>.vmt,
-** fails ("CMaterial::PrecacheVars: error loading vmt file for nyan/cat_reversed"
-** -- 300x in the log) and the material ends up with no shader at all
-** ("CMaterial::DrawElements: No bound shader").  That is exactly what the nyan
-** cat's second quad (Material( "nyan/cat_reversed.png" ), which has no .vmt
-** beside it in the addon) was hitting.
-**
-** Building the same UnlitGeneric through IMaterialSystem::CreateMaterial() puts
-** the KeyValues ON the material, so it precaches from them forever, and the
-** texture lookup then falls back to the image (materials/<name>.png) the same
-** way it does for the engine's own synthesised materials.
-*/
-struct HL2SB_ImageMaterial_t
-{
-	char		szRequest[MAX_PATH];
-	IMaterial	*pMaterial;
-};
-
-static HL2SB_ImageMaterial_t s_HL2SB_ImageMaterials[16];
-static int s_nHL2SB_ImageMaterials = 0;
-
-// "materials/<name>" with an image extension, for a name that may already carry
-// one (or may have had it stripped by the engine).
-static bool HL2SB_FindImageFile( const char *pszName, char *pszOut, int nOutLen )
-{
-	static const char *s_pExtensions[] = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
-
-	if ( pszName == NULL || pszName[0] == '\0' )
-		return false;
-
-	char szLogical[MAX_PATH];
-	const char *pszLogical = pszName;
-	if ( !Q_strnicmp( pszLogical, "materials/", 10 ) )
-		pszLogical += 10;
-	Q_strncpy( szLogical, pszLogical, sizeof( szLogical ) );
-
-	char szPath[MAX_PATH];
-
-	Q_snprintf( szPath, sizeof( szPath ), "materials/%s", szLogical );
-	if ( filesystem->FileExists( szPath, "GAME" ) )
-	{
-		Q_strncpy( pszOut, szLogical, nOutLen );
-		return true;
-	}
-
-	for ( int i = 0; i < ARRAYSIZE( s_pExtensions ); ++i )
-	{
-		Q_snprintf( szPath, sizeof( szPath ), "materials/%s%s", szLogical, s_pExtensions[i] );
-		if ( filesystem->FileExists( szPath, "GAME" ) )
-		{
-			Q_snprintf( pszOut, nOutLen, "%s%s", szLogical, s_pExtensions[i] );
-			return true;
-		}
-	}
-
-	return false;
-}
-
-static IMaterial *HL2SB_BuildImageMaterial( const char *pszRequest )
-{
-	// One material per requested name: the script calls SetMaterial every frame.
-	for ( int i = 0; i < s_nHL2SB_ImageMaterials; ++i )
-	{
-		if ( !Q_stricmp( s_HL2SB_ImageMaterials[i].szRequest, pszRequest ) )
-			return s_HL2SB_ImageMaterials[i].pMaterial;
-	}
-
-	char szImage[MAX_PATH];
-	if ( !HL2SB_FindImageFile( pszRequest, szImage, sizeof( szImage ) ) )
-		return NULL;
-
-	KeyValues *pKeyValues = new KeyValues( "UnlitGeneric" );
-	pKeyValues->SetString( "$basetexture", szImage );
-	pKeyValues->SetInt( "$translucent", 1 );
-	pKeyValues->SetInt( "$vertexcolor", 1 );
-	pKeyValues->SetInt( "$vertexalpha", 1 );
-	pKeyValues->SetInt( "$nolod", 1 );
-
-	// CreateMaterial takes ownership of the KeyValues (the material stores them
-	// and deletes them with itself), which is the whole point of using it here.
-	IMaterial *pMaterial = materials->CreateMaterial( szImage, pKeyValues );
-
-	if ( pMaterial == NULL )
-	{
-		pKeyValues->deleteThis();
-		return NULL;
-	}
-
-	if ( s_nHL2SB_ImageMaterials < ARRAYSIZE( s_HL2SB_ImageMaterials ) )
-	{
-		Q_strncpy( s_HL2SB_ImageMaterials[ s_nHL2SB_ImageMaterials ].szRequest, pszRequest,
-				   sizeof( s_HL2SB_ImageMaterials[0].szRequest ) );
-		s_HL2SB_ImageMaterials[ s_nHL2SB_ImageMaterials ].pMaterial = pMaterial;
-		++s_nHL2SB_ImageMaterials;
-	}
-
-	return pMaterial;
-}
-
-// Does a .vmt exist for this (already extension-stripped) material name?  If
-// not, the material can only have come from the image fallback above, whose
-// KeyValues are not stored on the material.
-static bool HL2SB_MaterialHasVMT( IMaterial *pMaterial )
-{
-	if ( pMaterial == NULL )
-		return false;
-
-	char szVMT[MAX_PATH];
-	Q_snprintf( szVMT, sizeof( szVMT ), "materials/%s.vmt", pMaterial->GetName() );
-	return filesystem->FileExists( szVMT, "GAME" );
-}
-
 LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in the next render operations", "client" )
 {
     IMaterial *pMaterial = NULL;
@@ -806,11 +674,6 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
         char szResolved[ 512 ];
         Q_strncpy( szResolved, pszName, sizeof( szResolved ) );
 
-        // Kept unmodified: the image-material fallback below addresses the name
-        // the SCRIPT asked for, extension and all.
-        char szRequest[ 512 ];
-        Q_strncpy( szRequest, pszName, sizeof( szRequest ) );
-
         pMaterial = materials->FindMaterial( szResolved, TEXTURE_GROUP_OTHER, false );
 
         // GMod scripts routinely name the image where the shader next to it is
@@ -838,31 +701,11 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
             }
         }
 
-        // HL2SB: the engine's own image material (see the long note above) has no
-        // .vmt and no KeyValues stored on it, so it can never precache a shader
-        // and draws nothing.  Replace it with one that can, whenever the name
-        // points at an image file and the engine's material has no .vmt beside
-        // it.  Ordinary .vmt-backed materials are untouched.
-        if ( pMaterial == NULL || pMaterial->IsErrorMaterial() || !HL2SB_MaterialHasVMT( pMaterial ) )
-        {
-            char szImageProbe[ MAX_PATH ];
-            if ( pMaterial == NULL
-                 || pMaterial->IsErrorMaterial()
-                 || HL2SB_FindImageFile( szRequest, szImageProbe, sizeof( szImageProbe ) ) )
-            {
-                IMaterial *pImageMaterial = HL2SB_BuildImageMaterial( szRequest );
-                if ( pImageMaterial != NULL )
-                    pMaterial = pImageMaterial;
-            }
-        }
-
         if ( pMaterial == NULL )
         {
             pMaterial = materials->FindMaterial( "debug/debugempty", TEXTURE_GROUP_OTHER, false );
         }
     }
-
-    g_pHL2SB_RenderMaterial = pMaterial;
 
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->Bind( pMaterial );
@@ -915,16 +758,6 @@ LUA_BINDING_BEGIN( Renders, DrawQuadEasy, "library", "Draws a quad with the curr
     const float flAlpha = color.a() / 255.0f;
 
     CMatRenderContextPtr pRenderContext( materials );
-
-    // HL2SB: re-bind the material render.SetMaterial() chose.  IMesh::Draw()
-    // uses whatever is bound, and building the dynamic mesh after the bind is
-    // what gives it the material's vertex format (position + colour + texcoord
-    // for UnlitGeneric with $vertexcolor/$vertexalpha).  Without this the quad
-    // could inherit a different material's format/state and sample "a stale
-    // modulation" instead of the colour this call passes.
-    if ( g_pHL2SB_RenderMaterial != NULL )
-        pRenderContext->Bind( g_pHL2SB_RenderMaterial );
-
     IMesh *pMesh = pRenderContext->GetDynamicMesh();
 
     CMeshBuilder meshBuilder;
@@ -960,15 +793,6 @@ LUA_BINDING_BEGIN( Renders, DrawSprite, "library", "Draws a sprite", "client" )
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 4, lua_Color( 255, 255, 255, 255 ), "color" );
 
     color32 rawColor = { color.r(), color.g(), color.b(), color.a() };
-
-    // HL2SB: as in DrawQuadEasy -- the sprite is drawn with the material
-    // render.SetMaterial() bound, not with whatever was left over.
-    if ( g_pHL2SB_RenderMaterial != NULL )
-    {
-        CMatRenderContextPtr pRenderContext( materials );
-        pRenderContext->Bind( g_pHL2SB_RenderMaterial );
-    }
-
     DrawSprite( position, width, height, rawColor );
 
     return 0;
@@ -985,12 +809,6 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 6, lua_Color( 255, 255, 255, 255 ), "color" );
 
     CMatRenderContextPtr pRenderContext( materials );
-
-    // HL2SB: the beam is drawn with the material render.SetMaterial() bound
-    // (the nyan tracer / bounce effects call it before every render.* draw).
-    if ( g_pHL2SB_RenderMaterial != NULL )
-        pRenderContext->Bind( g_pHL2SB_RenderMaterial );
-
     CBeamSegDraw beamDraw;
     beamDraw.Start( pRenderContext, 2, NULL );
 

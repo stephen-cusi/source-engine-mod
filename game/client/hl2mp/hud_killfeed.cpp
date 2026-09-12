@@ -508,23 +508,6 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 	deathMsg.bVictimIsNPC = false;
 	deathMsg.bUseSkull = false;
 
-	// HL2SB: the name the Lua kill feed will look its icon up by.
-	//
-	// GMod keys killicons by CLASS NAME ("weapon_nyangun", "ent_nyan_bomb" --
-	// which is what an addon passes to killicon.Add).  The engine hands over
-	// HL2MP's mod_textures.txt short name instead ("death_smg1", "d_skull"), and
-	// lua/game/client/gmod_deathnotice.lua aliases those back for first-party
-	// weapons.  A GMod addon's weapon has no mod_textures entry at all: the
-	// glyph lookup fails, everything falls back to the skull, and the addon's
-	// killicon.Add( "weapon_nyangun", "nyan/killicon", color_white ) was never
-	// consulted -- so the kill feed showed a skull and no weapon icon.
-	//
-	// When the glyph lookup fails, recover the real class name and hand Lua
-	// that instead.  (Nothing changes for first-party weapons: they still get
-	// their death_* short name.)
-	char szLuaIconName[128];
-	szLuaIconName[0] = 0;
-
 	if ( !Q_stricmp( pszName, "entity_killed" ) )
 	{
 		// A non-player entity (NPC / combat character) was killed. The victim is
@@ -587,19 +570,6 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 			// bogus weapon glyph.
 			deathMsg.iconDeath = m_iconD_skull;
 			deathMsg.bUseSkull = true;
-
-			// HL2SB: entity_killed has no "weaponname" field (see
-			// resource/modevents.res), but it does carry the inflictor's
-			// entindex, so the class name can be recovered from the entity --
-			// that is the name the addon's killicon was registered under.
-			if ( !deathMsg.iSuicide )
-			{
-				C_BaseEntity *pInflictor = C_BaseEntity::Instance( event->GetInt( "entindex_inflictor", 0 ) );
-				if ( pInflictor && pInflictor->GetClassname() && pInflictor->GetClassname()[0] )
-				{
-					Q_strncpy( szLuaIconName, pInflictor->GetClassname(), sizeof( szLuaIconName ) );
-				}
-			}
 		}
 	}
 	else if ( !Q_stricmp( pszName, "player_death" ) )
@@ -672,19 +642,6 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 			// No weapon glyph (or suicide); use the textured skull.
 			deathMsg.iconDeath = m_iconD_skull;
 			deathMsg.bUseSkull = true;
-
-			// HL2SB: player_death carries the weapon's full class name in
-			// "weaponname" (resource/modevents.res), so a GMod SWEP with no
-			// mod_textures glyph -- weapon_nyangun -- can still be resolved by
-			// the Lua kill feed, which is keyed by class name.
-			if ( !deathMsg.iSuicide )
-			{
-				const char *pszWeaponClass = event->GetString( "weaponname", "" );
-				if ( pszWeaponClass && pszWeaponClass[0] )
-				{
-					Q_strncpy( szLuaIconName, pszWeaponClass, sizeof( szLuaIconName ) );
-				}
-			}
 		}
 	}
 	else
@@ -710,16 +667,8 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		BEGIN_LUA_CALL_HOOK( "AddDeathNotice" );
 			lua_pushstring( L, deathMsg.Killer.szName );
 			lua_pushinteger( L, iKillerTeam );
-			// HL2SB: szLuaIconName holds the weapon/entity CLASS name when the
-			// engine had no HL2MP glyph for it (a GMod SWEP such as
-			// weapon_nyangun, or the nyan bomb).  That is the spelling GMod's
-			// killicon library is keyed by, so the addon's registered icon is
-			// finally reachable; first-party weapons keep their death_* short
-			// name, which gmod_deathnotice.lua aliases.
-			lua_pushstring( L, szLuaIconName[0]
-								? szLuaIconName
-								: ( deathMsg.iconDeath && deathMsg.iconDeath->szShortName[0]
-										? deathMsg.iconDeath->szShortName : "" ) );
+			lua_pushstring( L, deathMsg.iconDeath && deathMsg.iconDeath->szShortName[0]
+								? deathMsg.iconDeath->szShortName : "" );
 			lua_pushstring( L, deathMsg.Victim.szName );
 			lua_pushinteger( L, iVictimTeam );
 			lua_pushboolean( L, deathMsg.iSuicide != 0 );
