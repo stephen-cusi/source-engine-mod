@@ -58,6 +58,11 @@ public:
 
 extern IEffectsList *clienteffects;
 
+// HL2SB: does the client effect list have room for one more?  AddEffect()
+// silently drops the effect at its cap (MAX_EFFECTS).  Defined in
+// clientsideeffects.cpp, where the real list class is file-local.
+bool HL2SB_ClientEffectsHaveRoom( void );
+
 class IMaterialSystem;
 extern IMaterialSystem *materials;
 

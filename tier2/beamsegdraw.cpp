@@ -25,6 +25,14 @@ void CBeamSegDraw::Start( IMatRenderContext *pRenderContext, int nSegs, IMateria
 	m_nSegsDrawn = 0;
 	m_nTotalSegs = nSegs;
 
+	// HL2SB: clear the remembered normal.  ComputeNormal()'s degenerate-case
+	// fallback reads it when a zero-length segment leaves nothing else to work
+	// from, and on the very first segment of a beam that used to be uninitialised
+	// stack contents -- i.e. a garbage width axis, or a NaN one, for the first
+	// segment of every trail/beam that hit that case.  Zero makes the fallback
+	// take its deliberate "no width" branch instead.
+	m_vNormalLast.Init( 0.0f, 0.0f, 0.0f );
+
 	if ( pMeshBuilder )
 	{
 		m_pMeshBuilder = pMeshBuilder;

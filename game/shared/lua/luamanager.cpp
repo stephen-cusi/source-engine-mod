@@ -1998,7 +1998,14 @@ void luasrc_ApplyAmmoTypes (CAmmoDef *pAmmoDef)
   }
 
   if (luasrc_pcall(L, 0, 1, 0) != 0)
+  {
+    /* luasrc_pcall leaves the error object on the stack; the sibling early-outs
+    ** around this one pop theirs and this one used to leak a slot.  These run
+    ** from weapon/map setup, so the slots used to add up -- and a leaked Lua
+    ** stack is what AGENTS.md 5.4.2 turns into "HUD disappears" later. */
+    lua_pop(L, 1);
     return;
+  }
 
   if (!lua_istable(L, -1))
   {
@@ -2137,7 +2144,14 @@ void luasrc_ApplyAmmoTypes (CAmmoDef *pAmmoDef)
   }
 
   if (luasrc_pcall(L, 0, 1, 0) != 0)
+  {
+    /* luasrc_pcall leaves the error object on the stack; the sibling early-outs
+    ** around this one pop theirs and this one used to leak a slot.  These run
+    ** from weapon/map setup, so the slots used to add up -- and a leaked Lua
+    ** stack is what AGENTS.md 5.4.2 turns into "HUD disappears" later. */
+    lua_pop(L, 1);
     return;
+  }
 
   if (!lua_istable(L, -1))
   {

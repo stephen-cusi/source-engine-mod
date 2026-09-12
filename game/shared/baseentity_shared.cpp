@@ -1613,6 +1613,13 @@ static char s_szHL2SB_BulletTracerName[ 64 ] = { 0 };
 
 void HL2SB_SetNextBulletTracerName( const char *pszName )
 {
+	// Too long to carry: keep nothing rather than a truncated name, which would
+	// resolve to a different string-table entry (or none) on the receiving side.
+	if ( pszName != NULL && Q_strlen( pszName ) >= (int)sizeof( s_szHL2SB_BulletTracerName ) )
+	{
+		pszName = NULL;
+	}
+
 	Q_strncpy( s_szHL2SB_BulletTracerName, ( pszName != NULL ) ? pszName : "", sizeof( s_szHL2SB_BulletTracerName ) );
 }
 
@@ -1633,6 +1640,12 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 	int			nAmmoFlags	= pAmmoDef->Flags(info.m_iAmmoType);
 	
 	bool bDoServerEffects = true;
+
+	// HL2SB: consume the tracer effect name a scripted weapon published for this
+	// shot (see HL2SB_SetNextBulletTracerName).  Consumed unconditionally, even
+	// on paths that never use it, so a stale name can never attach itself to a
+	// later shot.
+	const char *pszScriptedTracerName = HL2SB_ConsumeBulletTracerName();
 
 #if defined( HL2MP ) && defined( GAME_DLL )
 	bDoServerEffects = false;
@@ -2080,16 +2093,14 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 		// HL2SB: the shooter's own tracer effect name rides with the shot.
 		//
 		// Preferred source is whatever the Lua Entity:FireBullets() binding
-		// published for THIS shot a few lines up the stack (see
-		// HL2SB_ConsumeBulletTracerName); GetTracerType() is the fallback for
-		// everything the Lua binding never saw.  The receiving client cannot
-		// always work the name out for itself (its own FireBullets() only runs
-		// when the shot is predicted there), so it used to draw the stock
-		// "Tracer" instead of, say, rb655_nyan_tracer -- the Nyan Gun's rainbow
-		// was missing for the shooter while its impacts and sounds worked.  See
-		// TE_HL2MPFireBullets() in game/server/hl2mp/te_hl2mp_shotgun_shot.cpp.
-		const char *pszScriptedTracerName = HL2SB_ConsumeBulletTracerName();
-
+		// published for THIS shot (consumed at the top of this function);
+		// GetTracerType() is the fallback for everything the Lua binding never
+		// saw.  The receiving client cannot always work the name out for itself
+		// (its own FireBullets() only runs when the shot is predicted there), so
+		// it used to draw the stock "Tracer" instead of, say, rb655_nyan_tracer
+		// -- the Nyan Gun's rainbow was missing for the shooter while its impacts
+		// and sounds worked.  See TE_HL2MPFireBullets() in
+		// game/server/hl2mp/te_hl2mp_shotgun_shot.cpp.
 		TE_HL2MPFireBullets( entindex(), tr.startpos, info.m_vecDirShooting, info.m_iAmmoType, iEffectSeed, info.m_iShots, info.m_vecSpread.x, bDoTracers, bDoImpacts,
 							 ( pszScriptedTracerName[ 0 ] != '\0' ) ? pszScriptedTracerName : GetTracerType() );
 	}

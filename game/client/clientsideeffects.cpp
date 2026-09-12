@@ -103,6 +103,11 @@ public:
 	void			DrawEffects( double frametime );
 	// Flush out all effects from the list
 	void			Flush( void );
+	// HL2SB: AddEffect() silently drops an effect once the list is full.  A
+	// caller that already took a Lua registry reference for it (the GMod
+	// lua/effects runtime does) would leak that reference forever and would also
+	// believe the effect was created, so let it ask first.
+	bool			HL2SBHasRoom( void ) const { return m_nEffects < MAX_EFFECTS; }
 private:
 	void			RemoveEffect( int effectIndex );
 	// Current number of effects
@@ -115,6 +120,15 @@ private:
 static CEffectsList g_EffectsList;
 // Public interface
 IEffectsList *clienteffects = ( IEffectsList * )&g_EffectsList;
+
+//-----------------------------------------------------------------------------
+// HL2SB: see CEffectsList::HL2SBHasRoom().  Defined here because CEffectsList
+// is file-local (its members are not visible through IEffectsList).
+//-----------------------------------------------------------------------------
+bool HL2SB_ClientEffectsHaveRoom( void )
+{
+	return g_EffectsList.HL2SBHasRoom();
+}
 
 //-----------------------------------------------------------------------------
 // Purpose: 

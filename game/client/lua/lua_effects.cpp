@@ -308,6 +308,15 @@ void CLuaEffect::Draw( double frametime )
 static bool HL2SB_FindLuaEffectTemplate( lua_State *L, const char *pszName )
 {
 	char szLookup[ 128 ];
+
+	// HL2SB: the name comes from the network (an effect string-table entry), so
+	// refuse anything that would be truncated -- two names sharing their first
+	// 127 characters would otherwise resolve to each other's template.
+	if ( pszName == NULL || pszName[0] == '\0' || Q_strlen( pszName ) >= (int)sizeof( szLookup ) )
+	{
+		return false;
+	}
+
 	Q_strncpy( szLookup, pszName, sizeof( szLookup ) );
 	Q_strlower( szLookup );
 
@@ -375,6 +384,16 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 
 	if ( nRef < 0 )
 		return false;
+
+	// CEffectsList::AddEffect() silently drops the effect once its 256 slot list
+	// is full: the registry reference taken above would leak for the lifetime of
+	// the process, and reporting success would also suppress the engine's own
+	// fallback for this effect name.  Ask before taking the slot.
+	if ( !HL2SB_ClientEffectsHaveRoom() )
+	{
+		lua_unref( L, nRef );
+		return false;
+	}
 
 	clienteffects->AddEffect( new CLuaEffect( pszName, nRef, data ) );
 

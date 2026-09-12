@@ -93,8 +93,25 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 					
 				CShotManipulator Manipulator( m_vecDir );
 
-				for (int iShot = 0; iShot < m_iShots; iShot++)
+				// HL2SB: everything below runs Lua -- DispatchEffect() lands in
+				// EFFECT:Init and DoImpactEffect() is the SWEP's own Lua method --
+				// and a script can destroy the shooter's weapon while it runs.  So
+				// never hold a raw weapon pointer across it: keep the weapon by
+				// handle and re-resolve it once per shot.
+				CHandle<C_BaseCombatWeapon> hWeapon = pWpn;
+				pWpn = NULL;
+
+				// Network-supplied loop bound: the server sends 5 bits, so this
+				// only matters for a desynced or hostile peer.
+				const int nShots = Min( m_iShots, 64 );
+
+				for (int iShot = 0; iShot < nShots; iShot++)
 				{
+					pWpn = hWeapon.Get();
+
+					if ( pWpn == NULL )
+						break;
+
 					RandomSeed( iSeed );	// init random system with this seed
 
 					// Don't run the biasing code for the player at the moment.
@@ -113,9 +130,20 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 						UTIL_TraceLine( m_vecOrigin, vecEnd, MASK_SHOT, &traceFilter, &tr);
 					}
 
+					// HL2SB: capture everything that comes from the weapon BEFORE
+					// any Lua runs (see the handle comment above): the tracer's
+					// entity handle, the class name for the diagnostic, and the
+					// tracer effect name.
+					const CBaseHandle hTracerEnt = pWpn->GetRefEHandle();
+
+					char szWeapon[ 64 ];
+					Q_strncpy( szWeapon, pWpn->GetClassname(), sizeof( szWeapon ) );
+
+					char szTracerName[ 128 ] = { 0 };
+
 					if ( m_bDoTracers )
 					{
-						// HL2SB: prefer the name the server sent with the shot.
+						// Prefer the name the server sent with the shot.
 						//
 						// Asking our own weapon (pWpn->GetTracerType()) only works
 						// when THIS realm ran the Lua FireBullets() that published
@@ -130,13 +158,14 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 						// the engine's GetString() asserts on an out-of-range one
 						// (its own DT_TEEffectDispatch relies on the string table
 						// update landing first; don't make this path depend on it).
-						if ( m_iTracerName > 0 && g_StringTableEffectDispatch != NULL &&
+						if ( m_iTracerName > 0 && m_iTracerName < MAX_EFFECT_DISPATCH_STRINGS &&
+							 g_StringTableEffectDispatch != NULL &&
 							 m_iTracerName < g_StringTableEffectDispatch->GetNumStrings() )
 						{
 							pTracerName = g_StringTableEffectDispatch->GetString( m_iTracerName );
 						}
 
-						if ( ( pTracerName == NULL || pTracerName[0] == '\0' ) && pWpn != NULL )
+						if ( pTracerName == NULL || pTracerName[0] == '\0' )
 						{
 							pTracerName = pWpn->GetTracerType();
 						}
@@ -146,40 +175,47 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 							pTracerName = "Tracer";
 						}
 
+						// Copied: GetTracerType() hands back a static buffer, and
+						// Lua runs before the name is used below.
+						Q_strncpy( szTracerName, pTracerName, sizeof( szTracerName ) );
+
 						// HL2SB diagnostic: names the source of the tracer name in
 						// ds_debug.log, once per weapon per DLL load (Warning, not
 						// DevMsg -- DevMsg needs developer 1 and is then missing
 						// exactly when we need it).  Keyed by weapon class so a
 						// shot with another weapon in hand cannot hide this one.
-						{
-							char szKey[ 160 ];
-							Q_snprintf( szKey, sizeof( szKey ), "te-firebullets-tracer:%s", pWpn->GetClassname() );
-							HL2SB_WarnOnce( szKey,
-								"TE_HL2MPFireBullets: tracers=%d impacts=%d tracer='%s' (from %s, table index %d) weapon='%s' shooter=%d\n",
-								m_bDoTracers ? 1 : 0,
-								m_bDoImpacts ? 1 : 0,
-								pTracerName,
-								( m_iTracerName > 0 ) ? "server TE" : "weapon GetTracerType",
-								m_iTracerName,
-								pWpn->GetClassname(),
-								m_iPlayer );
-						}
+						char szKey[ 192 ];
+						Q_snprintf( szKey, sizeof( szKey ), "te-firebullets-tracer:%s", szWeapon );
+						HL2SB_WarnOnce( szKey,
+							"TE_HL2MPFireBullets: tracers=%d impacts=%d tracer='%s' (from %s, table index %d) weapon='%s' shooter=%d\n",
+							m_bDoTracers ? 1 : 0,
+							m_bDoImpacts ? 1 : 0,
+							szTracerName,
+							( m_iTracerName > 0 ) ? "server TE" : "weapon GetTracerType",
+							m_iTracerName,
+							szWeapon,
+							m_iPlayer );
+					}
 
+					// Impacts first: DoImpactEffect() calls into Lua and must be
+					// the last use of the raw weapon pointer in this iteration.
+					if ( m_bDoImpacts )
+					{
+						pWpn->DoImpactEffect( tr, pAmmoDef->DamageType( m_iAmmoID ) );
+					}
+
+					if ( m_bDoTracers )
+					{
 						CEffectData data;
 						data.m_vStart = tr.startpos;
 						data.m_vOrigin = tr.endpos;
-						data.m_hEntity = pWpn->GetRefEHandle();
+						data.m_hEntity = hTracerEnt;
 						data.m_flScale = 0.0f;
 						data.m_fFlags |= TRACER_FLAG_USEATTACHMENT;
 						// Stomp the start, since it's not going to be used anyway
 						data.m_nAttachmentIndex = 1;
 
-						DispatchEffect( pTracerName, data );
-					}
-					
-					if ( m_bDoImpacts )
-					{
-						pWpn->DoImpactEffect( tr, pAmmoDef->DamageType( m_iAmmoID ) );
+						DispatchEffect( szTracerName, data );
 					}
 
 					iSeed++;
