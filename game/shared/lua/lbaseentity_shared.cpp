@@ -704,6 +704,114 @@ static int CBaseEntity_GetHealth (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:GetInternalVariable( name ).
+//
+// GMod reads one of an entity's declared datamap fields by name and hands back
+// its value.  weapon_medkit's CanHeal() is the caller that matters here:
+//
+//     local takedamage = ent:GetInternalVariable( "m_takedamage" )
+//     -- Don't heal turrets and helicopters
+//     return takedamage == nil or takedamage == DAMAGE_YES   -- 2
+//
+// CanHeal runs on every heal attempt, and the trace entity is only NULL when the
+// trace hit nothing -- so healing a live player or NPC reached this call with no
+// binding and threw "attempt to call a nil value (method 'GetInternalVariable')",
+// which the heal path swallowed (DoHeal's pcall-free caller just aborted).
+//
+// The walk is the one CBaseEntity::GetKeyValue / ParseKeyValue already uses:
+// GetDataDescMap() and then the baseMap chain.  An unknown name yields nil, which
+// is exactly the "not a damageable entity" answer the script asks for, and a
+// field the Lua side cannot represent (array, embedded class, function pointer)
+// yields nil rather than a wrong number.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_GetInternalVariable (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+
+  for ( datamap_t *pMap = pEntity->GetDataDescMap(); pMap != NULL; pMap = pMap->baseMap )
+  {
+    for ( int i = 0; i < pMap->dataNumFields; ++i )
+    {
+      typedescription_t &desc = pMap->dataDesc[i];
+
+      if ( desc.fieldName == NULL || Q_stricmp( desc.fieldName, pszName ) != 0 )
+        continue;
+
+      if ( desc.flags & FTYPEDESC_PTR )
+      {
+        lua_pushnil(L);
+        return 1;
+      }
+
+      const char *pField = (const char *)pEntity + desc.fieldOffset[0];
+
+      // A single scalar, vector or engine string can be handed to Lua.  Arrays
+      // (fieldSize > 1) and everything else cannot, so answer nil.
+      switch ( desc.fieldType )
+      {
+        case FIELD_BOOLEAN:
+          lua_pushboolean(L, *reinterpret_cast<const bool *>(pField) != 0);
+          return 1;
+
+        case FIELD_CHARACTER:
+          lua_pushinteger(L, *reinterpret_cast<const char *>(pField));
+          return 1;
+
+        case FIELD_SHORT:
+          lua_pushinteger(L, *reinterpret_cast<const short *>(pField));
+          return 1;
+
+        case FIELD_INTEGER:
+        case FIELD_TICK:
+        case FIELD_MODELINDEX:
+        case FIELD_MATERIALINDEX:
+          if ( desc.fieldSize != 1 )
+            break;
+          lua_pushinteger(L, *reinterpret_cast<const int *>(pField));
+          return 1;
+
+        case FIELD_INTEGER64:
+          if ( desc.fieldSize != 1 )
+            break;
+          lua_pushinteger(L, (lua_Integer)*reinterpret_cast<const int64 *>(pField));
+          return 1;
+
+        case FIELD_FLOAT:
+        case FIELD_TIME:
+          if ( desc.fieldSize != 1 )
+            break;
+          lua_pushnumber(L, *reinterpret_cast<const float *>(pField));
+          return 1;
+
+        case FIELD_VECTOR:
+        case FIELD_POSITION_VECTOR:
+          lua_pushvector(L, *reinterpret_cast<const Vector *>(pField));
+          return 1;
+
+        case FIELD_STRING:
+        case FIELD_MODELNAME:
+        case FIELD_SOUNDNAME:
+          lua_pushstring(L, STRING( *reinterpret_cast<const string_t *>(pField) ));
+          return 1;
+
+        case FIELD_EHANDLE:
+          CBaseEntity::PushLuaInstanceSafe(L, reinterpret_cast<const CHandle<CBaseEntity> *>(pField)->Get());
+          return 1;
+
+        default:
+          break;
+      }
+
+      lua_pushnil(L);
+      return 1;
+    }
+  }
+
+  lua_pushnil(L);
+  return 1;
+}
+
 static int CBaseEntity_GetKeyValue (lua_State *L) {
   char szValue[256];
   szValue[0] = '\0';
@@ -2336,6 +2444,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetGroundChangeTime", CBaseEntity_GetGroundChangeTime},
   {"GetGroundEntity", CBaseEntity_GetGroundEntity},
   {"GetHealth", CBaseEntity_GetHealth},
+  {"GetInternalVariable", CBaseEntity_GetInternalVariable},
   {"GetKeyValue", CBaseEntity_GetKeyValue},
   {"GetLastThink", CBaseEntity_GetLastThink},
   {"GetLastThinkTick", CBaseEntity_GetLastThinkTick},
