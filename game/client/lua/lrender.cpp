@@ -904,14 +904,16 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     // way), but a GMod effect beam binds an ordinary UnlitGeneric vmt
     // (nyan/rainbow.vmt, sprites/redglow1.vmt, ...): its vertex format has no
     // tangent and no second uv set, so those writes land on a -1 vertex offset
-    // and the beam comes out with uninitialised vertex data -- created, sized,
-    // coloured and submitted, and never seen.
+    // and the beam comes out with uninitialised vertex data.
     //
-    // A GMod beam is just a camera-facing quad, so build it here out of the
-    // fields every material has (position, colour, texcoord0), exactly like
-    // render.DrawQuadEasy, and emit both windings so no material can cull it.
-    Vector vecCameraPos;
-    pRenderContext->GetWorldSpaceCameraPosition( &vecCameraPos );
+    // The ribbon is therefore built the way the engine's own FX line renderer
+    // builds its tracers (game/client/fx_line.cpp, CFXLine::Draw): a
+    // camera-facing quad out of position/colour/texcoord0, with the width axis
+    // taken from the CURRENT VIEW ORIGIN.  That last part is not cosmetic: the
+    // render context's world-space camera position is not necessarily filled in
+    // inside the client-effect pass, and a wrong origin turns the quad edge-on --
+    // every number in the log still correct, and not one pixel on screen.
+    Vector vecCameraPos = MainViewOrigin();
 
     Vector vecAlong = end - start;
     Vector vecWidth;
@@ -937,17 +939,19 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     }
 
     VectorNormalize( vecWidth );
-    vecWidth *= width * 0.5f;
 
-    const Vector vecA = start + vecWidth;	// u = 0 at the start
-    const Vector vecB = start - vecWidth;	// u = 1 at the start
-    const Vector vecC = end + vecWidth;		// u = 0 at the end
-    const Vector vecD = end - vecWidth;		// u = 1 at the end
+    const Vector &vecAxis = vecWidth;	// unit width axis
+    const Vector vecHalfA = vecAxis * ( width * 0.5f );
 
     const float flRed   = color.r() / 255.0f;
     const float flGreen = color.g() / 255.0f;
     const float flBlue  = color.b() / 255.0f;
     const float flAlpha = color.a() / 255.0f;
+
+    const unsigned char ubRed   = (unsigned char)( flRed * 255.0f );
+    const unsigned char ubGreen = (unsigned char)( flGreen * 255.0f );
+    const unsigned char ubBlue  = (unsigned char)( flBlue * 255.0f );
+    const unsigned char ubAlpha = (unsigned char)( flAlpha * 255.0f );
 
     // The material goes in explicitly: the mesh's vertex format comes from it,
     // and GetDynamicMesh() without it can hand back a mesh whose format does not
@@ -956,33 +960,45 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     IMesh *pMesh = pRenderContext->GetDynamicMesh( true, NULL, NULL, g_pHL2SBLastBoundMaterial );
     CMeshBuilder meshBuilder;
 
-    // 4 triangles: the quad twice, once per winding.
-    meshBuilder.Begin( pMesh, MATERIAL_TRIANGLES, 4 );
+    // One quad, written exactly the way CFXLine::Draw() (game/client/fx_line.cpp)
+    // writes the engine's own tracers: position, texcoord0, colour and normal,
+    // MATERIAL_QUADS.  Staying identical to the working implementation matters
+    // more here than any cleverness of my own.
+    Vector vecTmp;
 
-    // Winding 1: A B C / B D C.  Winding 2: A C B / B C D.
-    struct BeamQuadVertex_t
-    {
-        const Vector *pPos;
-        float flU;
-        float flV;
-    };
+    meshBuilder.Begin( pMesh, MATERIAL_QUADS, 1 );
 
-    const BeamQuadVertex_t rgVerts[ 12 ] =
-    {
-        { &vecA, 0.0f, textureStart }, { &vecB, 1.0f, textureStart }, { &vecC, 0.0f, textureEnd },
-        { &vecB, 1.0f, textureStart }, { &vecD, 1.0f, textureEnd },   { &vecC, 0.0f, textureEnd },
+    // Start edge, u = 1
+    VectorMA( start, -1.0f, vecHalfA, vecTmp );
+    meshBuilder.Position3fv( vecTmp.Base() );
+    meshBuilder.TexCoord2f( 0, 1.0f, textureStart );
+    meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
+    meshBuilder.Normal3fv( vecAxis.Base() );
+    meshBuilder.AdvanceVertex();
 
-        { &vecA, 0.0f, textureStart }, { &vecC, 0.0f, textureEnd },   { &vecB, 1.0f, textureStart },
-        { &vecB, 1.0f, textureStart }, { &vecC, 0.0f, textureEnd },   { &vecD, 1.0f, textureEnd },
-    };
+    // Start edge, u = 0
+    VectorMA( start, 1.0f, vecHalfA, vecTmp );
+    meshBuilder.Position3fv( vecTmp.Base() );
+    meshBuilder.TexCoord2f( 0, 0.0f, textureStart );
+    meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
+    meshBuilder.Normal3fv( vecAxis.Base() );
+    meshBuilder.AdvanceVertex();
 
-    for ( int i = 0; i < 12; ++i )
-    {
-        meshBuilder.Position3fv( rgVerts[ i ].pPos->Base() );
-        meshBuilder.Color4f( flRed, flGreen, flBlue, flAlpha );
-        meshBuilder.TexCoord2f( 0, rgVerts[ i ].flU, rgVerts[ i ].flV );
-        meshBuilder.AdvanceVertex();
-    }
+    // End edge, u = 0
+    VectorMA( end, 1.0f, vecHalfA, vecTmp );
+    meshBuilder.Position3fv( vecTmp.Base() );
+    meshBuilder.TexCoord2f( 0, 0.0f, textureEnd );
+    meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
+    meshBuilder.Normal3fv( vecAxis.Base() );
+    meshBuilder.AdvanceVertex();
+
+    // End edge, u = 1
+    VectorMA( end, -1.0f, vecHalfA, vecTmp );
+    meshBuilder.Position3fv( vecTmp.Base() );
+    meshBuilder.TexCoord2f( 0, 1.0f, textureEnd );
+    meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
+    meshBuilder.Normal3fv( vecAxis.Base() );
+    meshBuilder.AdvanceVertex();
 
     meshBuilder.End();
     pMesh->Draw();
