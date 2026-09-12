@@ -65,6 +65,52 @@ LUALIB_API lua_HScheme luaL_checkscheme (lua_State *L, int narg) {
 
 
 LUALIB_API lua_HFont luaL_checkfont (lua_State *L, int narg) {
+  //-----------------------------------------------------------------------------
+  // HL2SB: accept GMod's font NAME as well as an HFont userdata.
+  //
+  // Every font binding in this fork goes through this one function --
+  // public/lua/vgui/LISurface.cpp (DrawSetTextFont :305, GetTextSize :648,
+  // SetFontGlyphSet :831, ...) and game/client/lua/scripted_controls/*.cpp
+  // (lLabel.cpp:173 Label:SetFont, lTextEntry.cpp:318 TextEntry:SetFont,
+  // lTextEntry.cpp:638 its fallback font, ...) -- so resolving the name HERE
+  // fixes the whole class at once instead of adding one wrapper per object
+  // class.  GMod's Lua passes names everywhere:
+  //
+  //     lua/derma/init.lua            surface.CreateFont( "DermaDefault", {...} )
+  //     lua/vgui/dtextentry.lua:60    self:SetFont( "DermaDefault" )
+  //     lua/vgui/dlabel.lua:39        self:SetFont( "DermaDefault" )
+  //     lua/vgui/dbutton.lua          self:SetFont( "DermaDefault" )
+  //
+  // Before this, a string produced
+  //     bad argument #1 to 'SetFont' (HFont expected, got string)
+  // which is what aborted the spawnmenu build (spawnmenu.lua:151 ToolToggle
+  // x66 is the half-built panel's Think, not a second bug).
+  //
+  // lua/includes/init.lua had already papered over this for the Panel and Label
+  // metatables only; that is exactly why DTextEntry -- whose base is the
+  // engine's TextEntry -- still died.  Those Lua wrappers stay (they are
+  // harmless: they resolve to an HFont first and this accepts either), but they
+  // are no longer load-bearing.
+  //
+  // Resolution and caching: LuaFont_ResolveByName (LISurface.cpp) consults the
+  // per-Lua-state "hl2sb_lua_fonts" registry that surface.CreateFont( name,
+  // fontData ) fills -- so a Derma font costs one hash lookup -- then the active
+  // scheme, then the scheme's "Default".  Returns 0 only if even that is gone.
+  //-----------------------------------------------------------------------------
+  if ( lua_type( L, narg ) == LUA_TSTRING ) {
+    const char *szName = lua_tostring( L, narg );
+    lua_HFont hFont = LuaFont_ResolveByName( L, szName );
+
+    if ( hFont != 0 )
+      return hFont;
+
+    // Nothing by that name anywhere: keep the old, explicit failure.
+    char szMsg[256];
+    Q_snprintf( szMsg, sizeof( szMsg ), "unknown font name '%s'", szName );
+    luaL_argerror( L, narg, szMsg );
+    return 0;  // not reached
+  }
+
   lua_HFont *d = (lua_HFont *)luaL_checkudata(L, narg, "HFont");
   return *d;
 }

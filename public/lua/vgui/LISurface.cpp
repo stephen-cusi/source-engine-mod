@@ -74,6 +74,56 @@ static void LuaFont_Store (lua_State *L, const char *szName, HFont hFont) {
   lua_pop( L, 1 );
 }
 
+// ---------------------------------------------------------------------------
+// HL2SB: name -> HFont, the ONE resolver.
+//
+// GMod's Lua API passes font NAMES to everything that takes a font
+// (`self:SetFont( "DermaDefault" )`, surface.DrawSetTextFont( name ), ...),
+// while this fork's bindings all demanded an HFont userdata because
+// luaL_checkfont() was a bare luaL_checkudata.  That is a whole CLASS of
+// "bad argument #1 to 'SetFont' (HFont expected, got string)", not one call
+// site: it surfaced first as
+//
+//     lua/vgui/DTextEntry.lua:60   self:SetFont( "DermaDefault" )
+//     Hook 'CreateSpawnMenu' (OnGamemodeLoaded) Failed: ... (HFont expected, got string)
+//
+// because DTextEntry's base is the engine's TextEntry, whose SetFont
+// (game/client/lua/scripted_controls/lTextEntry.cpp:318) was NOT covered by the
+// Lua-side wrappers that lua/includes/init.lua installs on the Panel and Label
+// metatables.  Fixing it per-class would have needed one wrapper per engine
+// class and would have missed the next one; this is the shared funnel instead
+// (see luaL_checkfont in LVGUI.cpp), and surface.SetFont routes through it too
+// so both spellings resolve identically.
+//
+// Order, matching surface.SetFont's long-standing behaviour:
+//   1. the per-Lua-state registry that surface.CreateFont( name, fontData )
+//      fills (LuaFont_Find above) -- this is the cache, and it is exactly what
+//      DermaDefault / DermaDefaultBold / DermaLarge / GModNotify land in,
+//      because lua/derma/init.lua creates them with the GMod table form;
+//   2. the active scheme's font table (that is where "Default",
+//      "DefaultSmall", "HL2MPTypeDeath" ... come from, via clientscheme.res);
+//   3. the scheme's "Default", so an unknown name degrades to a visible font
+//      instead of failing.
+// ---------------------------------------------------------------------------
+LUA_API lua_HFont LuaFont_ResolveByName (lua_State *L, const char *szName) {
+  if ( szName == NULL )
+    return 0;
+
+  HFont hFont = LuaFont_Find( L, szName );
+  if ( hFont != 0 )
+    return hFont;
+
+  vgui::IScheme *pScheme = scheme()->GetIScheme( scheme()->GetDefaultScheme() );
+  if ( pScheme == NULL )
+    return 0;
+
+  hFont = pScheme->GetFont( szName, false );
+  if ( hFont == 0 )
+    hFont = pScheme->GetFont( "Default", false );
+
+  return hFont;
+}
+
 
 
 static int surface_AddBitmapFontFile (lua_State *L) {
@@ -795,22 +845,11 @@ static int surface_SetBitmapFontName (lua_State *L) {
 static int surface_SetFont (lua_State *L) {
   const char *szName = luaL_checkstring(L, 1);
 
-  // HL2SB: fonts made at runtime with the GMod form of surface.CreateFont
-  // ( name, fontData ) are filed by name and must win over the scheme -- the
-  // scheme cannot know about them.
-  HFont hFont = LuaFont_Find( L, szName );
-
-  vgui::IScheme *pScheme = scheme()->GetIScheme(scheme()->GetDefaultScheme());
-  if ( hFont == 0 && pScheme )   // INVALID_FONT == 0 (vgui/VGUI.h)
-  {
-    hFont = pScheme->GetFont( szName, false );
-    if ( hFont == 0 )
-    {
-      HFont hDefault = pScheme->GetFont( "Default", false );
-      if ( hDefault != 0 )
-        hFont = hDefault;
-    }
-  }
+  // HL2SB: the shared resolver (LuaFont_ResolveByName above) -- registry first
+  // (fonts made at runtime with the GMod form of surface.CreateFont must win
+  // over the scheme, which cannot know about them), then the scheme, then the
+  // scheme's "Default".
+  HFont hFont = LuaFont_ResolveByName( L, szName );
 
   if ( hFont != 0 )
   {
