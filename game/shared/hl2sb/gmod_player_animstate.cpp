@@ -49,6 +49,11 @@
 static ConVar gmod_anim_9way( "gmod_anim_9way", "1", FCVAR_ARCHIVE,
 	"1 = drive Garry's Mod's move_x/move_y 3x3 leg blend on models that declare it" );
 
+// Stage 3 switch.  Only affects a player whose model is a GMod animation library
+// (one that declares move_x/move_y), so HL2-era models keep the HL2MP decision.
+static ConVar gmod_anim_decide( "gmod_anim_decide", "1", FCVAR_ARCHIVE,
+	"1 = let Garry's Mod's CalcMainActivity rules pick the player's state activity" );
+
 // Both mp_feetyawrate and mp_facefronttime are defined in
 // game/shared/base_playeranimstate.cpp:40/46, which is compiled into BOTH
 // client.dll and server.dll (client_base.vpc:191 / server_base.vpc:219). They are
@@ -70,7 +75,14 @@ extern ConVar mp_ik;
 //-----------------------------------------------------------------------------
 CGModPlayerAnimState::CGModPlayerAnimState( CHL2MP_Player *outer )
 	: m_pGModOuter( outer ),
-	  m_pReportedStudioHdr( NULL )
+	  m_pReportedStudioHdr( NULL ),
+	  m_bGModJumping( false ),
+	  m_bGModFirstJumpFrame( false ),
+	  m_bGModWasOnGround( false ),
+	  m_bGModInSwim( false ),
+	  m_bGModWasNoclipping( false ),
+	  m_flGModJumpStartTime( 0.0f ),
+	  m_flGModGroundTime( 0.0f )
 {
 	CModAnimConfig config;
 	config.m_flMaxBodyYawDegrees	= 0.0f;
@@ -297,6 +309,156 @@ void CGModPlayerAnimState::ReportGModPoseParamsOnce( CStudioHdr *pStudioHdr )
 			 : "move_yaw 8-way (HL2-era model)" );
 	Warning( "[HL2SB]   present  : %s\n", szPresent[ 0 ] ? szPresent : "(none)" );
 	Warning( "[HL2SB]   absent   : %s\n", szAbsent[ 0 ] ? szAbsent : "(none)" );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Stage 3 - Garry's Mod's activity decision.
+//
+// A port of gamemodes/base/gamemode/animations.lua, in the order
+// GM:CalcMainActivity (:305-330) calls its handlers:
+//
+//   HandlePlayerLanding (:129)   HandlePlayerNoClipping (:71)
+//   HandlePlayerDriving (:139)   HandlePlayerVaulting (:100)
+//   HandlePlayerJumping (:2)     HandlePlayerSwimming (:113)
+//   HandlePlayerDucking (:55)    then the 150 u/s run/walk/idle fallback (:320)
+//
+// Driving is deliberately NOT ported: HL2MP already handles vehicle parenting and
+// GMod's branch only resolves <vehicle>_drive / sit_<holdtype> sequence NAMES,
+// which the models this fork ships do not reliably bind.
+//
+// The returned activity is the BASE one.  CHL2MP_Player::SetAnimation() then runs
+// the weapon's own act table over it (Weapon_TranslateActivity), which is what
+// applies the hold type - the same order GMod uses (TranslateWeaponActivity
+// first, the +N idle table only if the weapon did not decide).
+//-----------------------------------------------------------------------------
+bool CGModPlayerAnimState::GMod_ShouldDecideActivity()
+{
+	if ( !gmod_anim_decide.GetBool() )
+		return false;
+
+	// Only Garry's Mod's animation libraries take this path; an HL2-era model
+	// (move_yaw) keeps the HL2MP decision untouched.
+	CStudioHdr *pStudioHdr = GetOuter()->GetModelPtr();
+	return pStudioHdr != NULL &&
+		   GetOuter()->LookupPoseParameter( pStudioHdr, "move_x" ) >= 0 &&
+		   GetOuter()->LookupPoseParameter( pStudioHdr, "move_y" ) >= 0;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: GMod's PLAYERANIMEVENT_JUMP handling (animations.lua:388-396).
+//-----------------------------------------------------------------------------
+void CGModPlayerAnimState::GMod_OnJumpEvent()
+{
+	m_bGModJumping = true;
+	m_bGModFirstJumpFrame = true;
+	m_flGModJumpStartTime = gpGlobals->curtime;
+	RestartMainSequence();
+}
+
+Activity CGModPlayerAnimState::GMod_CalcMainActivity( float flSpeed2D, bool bOnGround, bool bDucking, int iWaterLevel, int iMoveType )
+{
+	const float flSpeedSqr = flSpeed2D * flSpeed2D;
+	const float flCurTime = gpGlobals->curtime;
+	const bool bNoClip = ( iMoveType == MOVETYPE_NOCLIP );
+
+	// HandlePlayerLanding (:129-137): the landing gesture fires on the frame the
+	// player touches down, before any activity is chosen.  Gestures are a server
+	// entry point in this fork (the client has no RestartGesture).
+#ifndef CLIENT_DLL
+	if ( !bNoClip && bOnGround && !m_bGModWasOnGround )
+	{
+		GetOuter()->RestartGesture( ACT_LAND, true );
+	}
+#endif
+
+	// HandlePlayerNoClipping (:71-98).  GMod restarts the noclip gesture layer with
+	// addifmissing = false and leaves the activity alone.
+	if ( bNoClip && !m_bGModWasNoclipping )
+	{
+#ifndef CLIENT_DLL
+		GetOuter()->RestartGesture( ACT_GMOD_NOCLIP_LAYER, false );
+#endif
+	}
+	m_bGModWasNoclipping = bNoClip;
+
+	// HandlePlayerJumping (:2-53)
+	if ( bNoClip )
+	{
+		m_bGModJumping = false;
+	}
+	else if ( !m_bGModJumping && !bOnGround && iWaterLevel <= 0 )
+	{
+		// Airwalk until horizontal speed is gone, then it becomes the jump anim.
+		if ( m_flGModGroundTime == 0.0f )
+		{
+			m_flGModGroundTime = flCurTime;
+		}
+		else if ( ( flCurTime - m_flGModGroundTime ) > 0.0f && flSpeedSqr < 0.25f )
+		{
+			m_bGModJumping = true;
+			m_bGModFirstJumpFrame = false;
+			m_flGModJumpStartTime = 0.0f;
+		}
+	}
+
+	if ( m_bGModJumping )
+	{
+		if ( m_bGModFirstJumpFrame )
+		{
+			m_bGModFirstJumpFrame = false;
+			RestartMainSequence();
+		}
+
+		// 0.2 s after the jump event, or on touching water, the jump is over.
+		if ( iWaterLevel >= 2 || ( ( flCurTime - m_flGModJumpStartTime ) > 0.2f && bOnGround ) )
+		{
+			m_bGModJumping = false;
+			m_flGModGroundTime = 0.0f;
+			RestartMainSequence();
+		}
+
+		if ( m_bGModJumping )
+		{
+			m_bGModWasOnGround = bOnGround;
+			// GMod's own table maps ACT_MP_JUMP to ACT_HL2MP_JUMP_SLAM because no
+			// ACT_HL2MP_JUMP sequence exists; m_anm.mdl confirms that offline.
+			return ACT_HL2MP_JUMP_SLAM;
+		}
+	}
+
+	// HandlePlayerVaulting (:100-111): a very fast airborne player is animated as
+	// if swimming.  This is GMod's own rule, odd as it reads.
+	if ( flSpeedSqr >= 1000000.0f && !bOnGround )
+	{
+		m_bGModWasOnGround = bOnGround;
+		return ACT_HL2MP_SWIM;
+	}
+
+	// HandlePlayerSwimming (:113-127)
+	if ( iWaterLevel >= 2 && !bOnGround )
+	{
+		m_bGModInSwim = true;
+		m_bGModWasOnGround = bOnGround;
+		return ACT_HL2MP_SWIM;
+	}
+	m_bGModInSwim = false;
+
+	// HandlePlayerDucking (:55-69)
+	if ( bDucking )
+	{
+		m_bGModWasOnGround = bOnGround;
+		return ( flSpeedSqr > 0.25f ) ? ACT_HL2MP_WALK_CROUCH : ACT_HL2MP_IDLE_CROUCH;
+	}
+
+	// The fallback (:320-322): 150 u/s splits a run from a walk.
+	Activity idealActivity = ACT_HL2MP_IDLE;
+	if ( flSpeedSqr > 22500.0f )
+		idealActivity = ACT_HL2MP_RUN;
+	else if ( flSpeedSqr > 0.25f )
+		idealActivity = ACT_HL2MP_WALK;
+
+	m_bGModWasOnGround = bOnGround;
+	return idealActivity;
 }
 
 

@@ -60,6 +60,34 @@ public:
 	// The HL2MP entry point. Does NOT call CBasePlayerAnimState::Update().
 	virtual void Update();
 
+	// ------------------------------------------------------------------------------------
+	// Stage 3: Garry's Mod's CalcMainActivity state machine.
+	//
+	// CHL2MP_Player::SetAnimation() asks this for the *state* activities instead of
+	// running the HL2MP switch, so the decision is GMod's (animations.lua:2-330)
+	// rather than HL2MP's.  The event-driven activities (attack/reload) still come
+	// from playerAnim, exactly as GMod keeps them in GM:DoAnimationEvent.
+	//
+	// Returns a *base* activity - ACT_HL2MP_IDLE / _WALK / _RUN / _IDLE_CROUCH /
+	// _WALK_CROUCH / _JUMP_SLAM / _SWIM / _SWIM_IDLE - because the caller then runs
+	// the weapon's own act table over it (Weapon_TranslateActivity), which is the
+	// step that turns a base activity into its hold type's member.  That is GMod's
+	// order too: TranslateWeaponActivity first, the +N idle table only if the
+	// weapon did not decide.
+	//
+	// ACT_MP_JUMP maps to ACT_HL2MP_JUMP_SLAM, not ACT_HL2MP_JUMP: GMod's own
+	// animations.lua does exactly that ("normal" jump animation doesn't exist), and
+	// m_anm.mdl indeed binds no ACT_HL2MP_JUMP sequence - verified offline.
+	// ------------------------------------------------------------------------------------
+	Activity GMod_CalcMainActivity( float flSpeed2D, bool bOnGround, bool bDucking, int iWaterLevel, int iMoveType );
+
+	// GMod's PLAYERANIMEVENT_JUMP handling (animations.lua:388-396): start the
+	// jump state; the next GMod_CalcMainActivity() answers ACT_MP_JUMP.
+	void GMod_OnJumpEvent();
+
+	// True when this class is driving the activity decision (convar + GMod model).
+	bool GMod_ShouldDecideActivity();
+
 	// Base machinery is not used yet: keep it from gating or side-effecting us.
 	virtual bool ShouldUpdateAnimState();
 	virtual bool ShouldChangeSequences( void ) const;
@@ -120,6 +148,17 @@ private:
 	// touches it; it would only diverge if the base Update() were ever called,
 	// which this milestone does not do.
 	float m_flGModGaitYaw;
+
+	// GMod's plyTable state (animations.lua keeps the same fields on
+	// ply:GetTable()). Not networked: it only feeds the decision, and the result
+	// of the decision is the sequence, which HL2MP already networks.
+	bool  m_bGModJumping;
+	bool  m_bGModFirstJumpFrame;
+	bool  m_bGModWasOnGround;
+	bool  m_bGModInSwim;
+	bool  m_bGModWasNoclipping;
+	float m_flGModJumpStartTime;
+	float m_flGModGroundTime;
 };
 
 #endif // GMOD_PLAYER_ANIMSTATE_H

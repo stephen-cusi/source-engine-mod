@@ -798,7 +798,21 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	// This could stand to be redone. Why is playerAnim abstracted from activity? (sjb)
 	if ( playerAnim == PLAYER_JUMP )
 	{
-		idealActivity = ACT_HL2MP_JUMP;
+		if ( m_PlayerAnimState.GMod_ShouldDecideActivity() )
+		{
+			// Stage 3: GMod treats a jump as an event that starts a state
+			// (animations.lua:388-396, PLAYERANIMEVENT_JUMP -> m_bJumping), and then
+			// answers ACT_MP_JUMP, which its own table maps to ACT_HL2MP_JUMP_SLAM.
+			// That mapping matters here: no GMod animation library binds an
+			// ACT_HL2MP_JUMP sequence, so the HL2MP answer would fall through to
+			// sequence 0 and show the model's reference pose.
+			m_PlayerAnimState.GMod_OnJumpEvent();
+			idealActivity = ACT_HL2MP_JUMP_SLAM;
+		}
+		else
+		{
+			idealActivity = ACT_HL2MP_JUMP;
+		}
 	}
 	else if ( playerAnim == PLAYER_DIE )
 	{
@@ -828,7 +842,20 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	}
 	else if ( playerAnim == PLAYER_IDLE || playerAnim == PLAYER_WALK )
 	{
-		if ( !( GetFlags() & FL_ONGROUND ) && GetActivity( ) == ACT_HL2MP_JUMP )	// Still jumping
+		if ( m_PlayerAnimState.GMod_ShouldDecideActivity() )
+		{
+			// Stage 3: Garry's Mod's own state machine decides the activity
+			// (idle / walk / run / crouch / jump / swim / noclip).  The result is a
+			// BASE activity; the weapon's act table is applied further down, which
+			// is the step that picks the hold type's member.
+			idealActivity = m_PlayerAnimState.GMod_CalcMainActivity(
+				speed,
+				( GetFlags() & FL_ONGROUND ) != 0,
+				( GetFlags() & FL_DUCKING ) != 0,
+				GetWaterLevel(),
+				GetMoveType() );
+		}
+		else if ( !( GetFlags() & FL_ONGROUND ) && GetActivity( ) == ACT_HL2MP_JUMP )	// Still jumping
 		{
 			idealActivity = GetActivity( );
 		}
