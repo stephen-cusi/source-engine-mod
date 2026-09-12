@@ -1054,7 +1054,36 @@ static int Panel_SetPaintEnabled (lua_State *L) {
 }
 
 static int Panel_SetParent (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetParent(luaL_checkpanel(L, 2));
+  // HL2SB: the parent argument must accept nil, exactly as GMod does.
+  //
+  // luaL_checkpanel() maps BOTH nil and an invalid handle to NULL and reports
+  // them identically -- "Panel expected, got INVALID_PANEL" -- so the message
+  // below hid the fact that the argument was simply *absent*.  GMod's Lua
+  // detaches panels with it (lua/vgui/dtooltip.lua:129
+  // `self.Contents:SetParent( nil )`), and GMod's own DScrollPanel depends on it
+  // in a subtler way:
+  //
+  //   lua/vgui/dscrollpanel.lua:5   AccessorFunc( PANEL, "pnlCanvas", "Canvas" )
+  //   lua/vgui/dscrollpanel.lua:9   self.pnlCanvas = vgui.Create( "Panel", self )
+  //   lua/vgui/dscrollpanel.lua:35  pnl:SetParent( self:GetCanvas() )   <- AddItem
+  //   lua/vgui/dscrollpanel.lua:39  OnChildAdded -> self:AddItem( child )
+  //
+  // The engine fires OnChildAdded *during* vgui.Create (vgui2's
+  // VPanel::SetParent -> Client()->OnChildAdded), i.e. BEFORE the assignment on
+  // line 9 completes -- so GetCanvas() is still nil and AddItem hands nil to
+  // SetParent.  In GMod that is a harmless detach; here it threw, twice, on
+  // every DScrollPanel-derived control (DCategoryList, DIconBrowser, DTree,
+  // DMenu ...):
+  //
+  //   lua/vgui/DScrollPanel.lua:35: bad argument #1 to 'SetParent'
+  //       (Panel expected, got INVALID_PANEL)
+  //   ...
+  //   spawnmenu/toolpanel.lua:48: in method 'Init'
+  //
+  // luaL_optpanel returns the default without invoking the checker when the
+  // argument is absent/nil, so nil now becomes Panel::SetParent(NULL) -- the
+  // engine's own "no parent" (detach) semantics.
+  luaL_checkpanel(L, 1)->SetParent(luaL_optpanel(L, 2, NULL));
   return 0;
 }
 
