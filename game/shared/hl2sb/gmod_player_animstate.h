@@ -96,9 +96,24 @@ private:
 	void ComputeGModPoseParam_BodyPitch( CStudioHdr *pStudioHdr );
 	void ComputeGModPoseParam_BodyLookYaw( void );
 
+	// Stage 2: the GMod leg blend. GMod's libraries (m_anm/f_anm/z_anm) declare
+	// move_x/move_y and blend the legs on a 3x3 grid
+	// ("blendwidth 3 blend move_y -1 1 blend move_x -1 1", macro_movement_m.qci:91);
+	// the HL2-era models this fork shipped declare the single move_yaw instead.
+	// Reuses the engine's own 9-way maths, which is the code GMod's engine is
+	// derived from, rather than re-deriving the mapping here.
+	void ComputeGModPoseParam_Move( CStudioHdr *pStudioHdr );
+
+	// Stage 2 discipline: report exactly which pose parameters the current model
+	// declares, once per model, instead of guessing at a missing one.
+	void ReportGModPoseParamsOnce( CStudioHdr *pStudioHdr );
+
 	void ComputeGModPlaybackRate();
 
 	CHL2MP_Player *m_pGModOuter;
+
+	// Model whose pose-parameter inventory has already been reported.
+	CStudioHdr *m_pReportedStudioHdr;
 
 	// The base keeps its own m_flGaitYaw PRIVATE (base_playeranimstate.h:258),
 	// so the 8-way yaw estimator needs its own copy. Nothing else in the base

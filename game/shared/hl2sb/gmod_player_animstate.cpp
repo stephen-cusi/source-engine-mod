@@ -24,6 +24,10 @@
 
 #include "gmod_player_animstate.h"
 
+#include "animation.h"			// IndexModelSequences / LookupActivity / SelectWeightedSequence
+#include "engine/ivmodelinfo.h"	// modelinfo, FindOrLoadModel / GetStudiomodel (mdlcache comes from cbase.h)
+#include "activitylist.h"		// ActivityList_IndexForName, to tell shared from private
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -34,6 +38,16 @@
 #define MAX_TORSO_ANGLE		90.0f
 // Below this amount, don't play a turning animation/perform IK
 #define MIN_TURN_ANGLE_REQUIRING_TURN_ANIMATION		15.0f
+
+// Garry's Mod clamps the player's main-animation playback rate with
+// math.min( movement, 2 ) in gamemodes/base/gamemode/animations.lua, so a rate
+// outside [0, 2] is never a real speed.
+#define GMOD_MAX_PLAYBACK_RATE	2.0f
+
+// Stage 2 switch, for isolating the GMod leg blend from everything else while
+// testing in game:  gmod_anim_9way 0  falls back to the HL2-era behaviour.
+static ConVar gmod_anim_9way( "gmod_anim_9way", "1", FCVAR_ARCHIVE,
+	"1 = drive Garry's Mod's move_x/move_y 3x3 leg blend on models that declare it" );
 
 // Both mp_feetyawrate and mp_facefronttime are defined in
 // game/shared/base_playeranimstate.cpp:40/46, which is compiled into BOTH
@@ -55,7 +69,8 @@ extern ConVar mp_ik;
 //          we never call) and will not touch playback rate for 8WAY.
 //-----------------------------------------------------------------------------
 CGModPlayerAnimState::CGModPlayerAnimState( CHL2MP_Player *outer )
-	: m_pGModOuter( outer )
+	: m_pGModOuter( outer ),
+	  m_pReportedStudioHdr( NULL )
 {
 	CModAnimConfig config;
 	config.m_flMaxBodyYawDegrees	= 0.0f;
@@ -152,8 +167,19 @@ void CGModPlayerAnimState::Update()
 	m_angRender = GetOuter()->GetLocalAngles();
 	m_angRender[ PITCH ] = m_angRender[ ROLL ] = 0.0f;
 
-	ComputeGModPoseParam_BodyYaw();
-	ComputeGModPoseParam_BodyPitch( GetOuter()->GetModelPtr() );
+	CStudioHdr *pStudioHdr = GetOuter()->GetModelPtr();
+
+	// Guarantee this model's sequences have been resolved from their activity
+	// NAMES.  A .mdl stores -1 for every sequence's activity (studiomdl only
+	// records the name), so until IndexModelSequences() has run, every
+	// SelectWeightedSequence() on this model fails and the player sits on
+	// sequence 0 - the reference pose.  VerifySequenceIndex() is version-guarded
+	// (game/shared/animation.cpp:216), so this is one integer compare per frame.
+	VerifySequenceIndex( pStudioHdr );
+
+	ComputeGModPoseParam_BodyYaw();			// move_yaw, for HL2-style models only
+	ComputeGModPoseParam_Move( pStudioHdr );	// move_x/move_y 3x3, for GMod models only
+	ComputeGModPoseParam_BodyPitch( pStudioHdr );
 	ComputeGModPoseParam_BodyLookYaw();
 
 	ComputeGModPlaybackRate();
@@ -162,6 +188,117 @@ void CGModPlayerAnimState::Update()
 	GetOuter()->UpdateLookAt();
 #endif
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: Stage 2 - drive GMod's leg blend.
+//
+// GMod's player animation libraries blend the legs on a 3x3 grid:
+//
+//     $sequence $walkname$ {
+//         a_walking_..._SW  a_walking_..._S  a_walking_..._SE
+//         a_walking_..._W   a_walking_..._C  a_walking_..._E
+//         a_walking_..._NW  a_walking_..._N  a_walking_..._NE
+//         blendwidth 3 blend move_y -1 1 blend move_x -1 1
+//     }
+//                                          [GMod macro_movement_m.qci:87-91]
+//
+// and the engine feeds that grid from move_x/move_y.  This fork's engine already
+// contains that exact feeder (CBasePlayerAnimState::ComputePoseParam_MoveYaw,
+// LEGANIM_9WAY - base_playeranimstate.cpp:636-664, the code CS:GO and Portal
+// players run), and GMod's engine is a Source 2013 multiplayer derivative, so the
+// grid GMod compiled its models with is the grid that code writes.  Reusing it is
+// therefore the faithful choice, not a re-derivation.
+//
+// It is deliberately NOT a general switch to LEGANIM_9WAY: the HL2-era models in
+// this fork declare move_yaw and are written by ComputeGModPoseParam_BodyYaw()
+// above, exactly as HL2MP always did.  Only a model that actually declares
+// move_x AND move_y takes this path.
+//-----------------------------------------------------------------------------
+void CGModPlayerAnimState::ComputeGModPoseParam_Move( CStudioHdr *pStudioHdr )
+{
+	if ( !pStudioHdr )
+		return;
+
+	ReportGModPoseParamsOnce( pStudioHdr );
+
+	if ( !gmod_anim_9way.GetBool() )
+		return;
+
+	if ( GetOuter()->LookupPoseParameter( pStudioHdr, "move_x" ) < 0 ||
+		 GetOuter()->LookupPoseParameter( pStudioHdr, "move_y" ) < 0 )
+		return;
+
+	// Only LEGANIM_9WAY reaches the 9-way writer; LEGANIM_8WAY would take the
+	// move_yaw branch, which also drives the 8-way idle overlay (layer
+	// MAIN_IDLE_SEQUENCE_LAYER) - an HL2MP player owns three overlays and that
+	// layer belongs to the base's own sequence logic, which this class does not
+	// use.  So the config is switched for the duration of this one call.
+	const LegAnimType_t iSavedLegAnimType = m_AnimConfig.m_LegAnimType;
+	m_AnimConfig.m_LegAnimType = LEGANIM_9WAY;
+	CBasePlayerAnimState::ComputePoseParam_MoveYaw( pStudioHdr );
+	m_AnimConfig.m_LegAnimType = iSavedLegAnimType;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Print, once per model, exactly which animation surface this model
+//          offers.  Stage 2's rule is "report a missing parameter, never guess
+//          one": a playermodel that declares no usable leg blend looks frozen, and
+//          this is what makes that visible in the log instead of mysterious.
+//
+// The eight parameters GMod's libraries declare were established from the model
+// bytes in Stage 0 (STAGE0_GMOD_ANIM_INVENTORY.md section 4):
+//   move_y, move_x, aim_yaw, aim_pitch, vertical_velocity, vehicle_steer,
+//   head_yaw, head_pitch      (body_yaw does NOT exist in them)
+//-----------------------------------------------------------------------------
+static const char *const s_GModPoseParamNames[] =
+{
+	"move_x", "move_y", "move_yaw", "aim_yaw", "aim_pitch",
+	"body_yaw", "body_pitch", "head_yaw", "head_pitch",
+	"vertical_velocity", "vehicle_steer",
+};
+
+void CGModPlayerAnimState::ReportGModPoseParamsOnce( CStudioHdr *pStudioHdr )
+{
+	if ( !pStudioHdr || m_pReportedStudioHdr == pStudioHdr )
+		return;
+
+	m_pReportedStudioHdr = pStudioHdr;
+
+	char szPresent[ 640 ];
+	char szAbsent[ 256 ];
+	szPresent[ 0 ] = '\0';
+	szAbsent[ 0 ] = '\0';
+
+	for ( int i = 0; i < ARRAYSIZE( s_GModPoseParamNames ); ++i )
+	{
+		const int iParam = GetOuter()->LookupPoseParameter( pStudioHdr, s_GModPoseParamNames[ i ] );
+		if ( iParam < 0 )
+		{
+			Q_strncat( szAbsent, s_GModPoseParamNames[ i ], sizeof( szAbsent ), COPY_ALL_CHARACTERS );
+			Q_strncat( szAbsent, " ", sizeof( szAbsent ), COPY_ALL_CHARACTERS );
+			continue;
+		}
+
+		const mstudioposeparamdesc_t &desc = pStudioHdr->pPoseParameter( iParam );
+		char szOne[ 96 ];
+		Q_snprintf( szOne, sizeof( szOne ), "%s[%.0f..%.0f] ",
+					s_GModPoseParamNames[ i ], desc.start, desc.end );
+		Q_strncat( szPresent, szOne, sizeof( szPresent ), COPY_ALL_CHARACTERS );
+	}
+
+	const bool bNineWay =
+		GetOuter()->LookupPoseParameter( pStudioHdr, "move_x" ) >= 0 &&
+		GetOuter()->LookupPoseParameter( pStudioHdr, "move_y" ) >= 0;
+
+	Warning( "[HL2SB] GMod animstate on %s\n",
+			 modelinfo->GetModelName( GetOuter()->GetModel() ) );
+	Warning( "[HL2SB]   leg blend: %s\n", bNineWay
+			 ? "move_x/move_y 3x3 (GMod animation library)"
+			 : "move_yaw 8-way (HL2-era model)" );
+	Warning( "[HL2SB]   present  : %s\n", szPresent[ 0 ] ? szPresent : "(none)" );
+	Warning( "[HL2SB]   absent   : %s\n", szAbsent[ 0 ] ? szAbsent : "(none)" );
+}
+
 
 //-----------------------------------------------------------------------------
 // Purpose: Replaces CPlayerAnimState::ComputePlaybackRate
@@ -184,7 +321,18 @@ void CGModPlayerAnimState::ComputeGModPlaybackRate()
 		float flFactor = 1.0f;
 
 		// Note this gets set back to 1.0 if sequence changes due to ResetSequenceInfo below
-		GetOuter()->SetPlaybackRate( ( speed * flFactor ) / maxspeed );
+		float flRate = ( speed * flFactor ) / maxspeed;
+
+		// A GMod library sequence whose animation data did not load reports a
+		// denormal ground speed, which turns this ratio into garbage: the game log
+		// shows the datatable clamping m_flPlaybackRate from 28348063744.  GMod's
+		// own Lua clamps the rate with math.min( movement, 2 ), so anything outside
+		// [0, 2] here is a broken ground speed, not a real speed - play at 1.0
+		// rather than inheriting it.  (NaN fails the first comparison on purpose.)
+		if ( flRate != flRate || flRate < 0.0f || flRate > GMOD_MAX_PLAYBACK_RATE )
+			flRate = 1.0f;
+
+		GetOuter()->SetPlaybackRate( flRate );
 
 		// BUG BUG:
 		// This stuff really should be m_flPlaybackRate = speed / m_flGroundSpeed
@@ -543,3 +691,111 @@ void CGModPlayerAnimState::GetOuterAbsVelocity( Vector& vel )
 	vel = GetOuter()->GetAbsVelocity();
 #endif
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: In-game proof of the activity-vocabulary fix, and the tool for
+//          diagnosing a playermodel's GMod animation surface without a debugger.
+//
+//          * pose parameters with their real declared ranges - what Stage 2 can
+//            drive, and what it must report as missing
+//          * for every activity name the model binds: the number it resolves to,
+//            whether that name is a SHARED activity, and which sequence the
+//            engine picks for it.
+//
+//          The shared/private column is the one that matters.  A name that is
+//          PRIVATE on the server and absent on the client is exactly the silent
+//          realm divergence that registering the vocabulary removed; this command
+//          makes it a number on the screen.
+//-----------------------------------------------------------------------------
+CON_COMMAND( gmod_anim_dumpmodel, "dump a model's GMod animation surface: pose params + activity name -> sequence" )
+{
+	if ( args.ArgC() < 2 )
+	{
+		Msg( "usage: gmod_anim_dumpmodel <model path, e.g. models/player/group01/male_01.mdl>\n" );
+		return;
+	}
+
+	const char *pszModelName = args.Arg( 1 );
+	const model_t *pModel = modelinfo->FindOrLoadModel( pszModelName );
+	if ( !pModel )
+	{
+		Warning( "gmod_anim_dumpmodel: cannot load '%s'\n", pszModelName );
+		return;
+	}
+
+	studiohdr_t *pStudioHdrRaw = modelinfo->GetStudiomodel( pModel );
+	if ( !pStudioHdrRaw )
+	{
+		Warning( "gmod_anim_dumpmodel: '%s' has no studiohdr (not a studio model?)\n", pszModelName );
+		return;
+	}
+
+	CStudioHdr studioHdr( pStudioHdrRaw, mdlcache );
+
+	// Force the name -> activity-number pass, so what is printed below is what
+	// the engine will actually use at runtime for this model.
+	IndexModelSequences( &studioHdr );
+
+	Msg( "gmod_anim_dumpmodel: %s\n", pszModelName );
+	Msg( "  sequences %d, pose parameters %d, ik chains %d\n",
+		 studioHdr.GetNumSeq(), studioHdr.GetNumPoseParameters(), studioHdr.GetNumIKChains() );
+
+	Msg( "  pose parameters:\n" );
+	for ( int i = 0; i < studioHdr.GetNumPoseParameters(); ++i )
+	{
+		const mstudioposeparamdesc_t &desc = studioHdr.pPoseParameter( i );
+		Msg( "    [%2d] %-20s %.2f .. %.2f   loop %.2f\n",
+			 i, desc.pszName(), desc.start, desc.end, desc.loop );
+	}
+
+	CUtlVector<const char *> seenActivities;
+	int iShared = 0, iPrivate = 0, iUnknown = 0, iWithSequence = 0, iWithoutSequence = 0;
+
+	Msg( "  activity names bound by this model:\n" );
+	for ( int i = 0; i < studioHdr.GetNumSeq(); ++i )
+	{
+		mstudioseqdesc_t &seqdesc = studioHdr.pSeqdesc( i );
+		const char *pszActivity = seqdesc.pszActivityName();
+		if ( !pszActivity || !pszActivity[ 0 ] )
+			continue;
+
+		if ( seenActivities.Find( pszActivity ) != seenActivities.InvalidIndex() )
+			continue;
+		seenActivities.AddToTail( pszActivity );
+
+		// Is this name a SHARED activity (identical on both realms), or did the
+		// load-time pass have to invent a private number for it?
+		const int iRegistered = ActivityList_IndexForName( pszActivity );
+		if ( iRegistered < 0 )
+			++iUnknown;
+		else if ( iRegistered < LAST_SHARED_ACTIVITY )
+			++iShared;
+		else
+			++iPrivate;
+
+		const int iActivity = LookupActivity( &studioHdr, pszActivity );
+		const int iSequence = ( iActivity > ACT_RESET )
+			? SelectWeightedSequence( &studioHdr, iActivity ) : -1;
+
+		if ( iSequence >= 0 )
+			++iWithSequence;
+		else
+			++iWithoutSequence;
+
+		const char *pszKind = ( iRegistered < 0 ) ? "UNREGISTERED"
+			: ( iRegistered < LAST_SHARED_ACTIVITY ) ? "shared" : "PRIVATE";
+
+		Msg( "    %-46s %-12s activity=%-5d sequence=%d\n",
+			 pszActivity, pszKind, iActivity, iSequence );
+	}
+
+	Msg( "  summary: %d distinct names (shared %d, private %d, unregistered %d); "
+		 "sequences found %d, not found %d\n",
+		 seenActivities.Count(), iShared, iPrivate, iUnknown, iWithSequence, iWithoutSequence );
+
+	if ( iUnknown || iPrivate || iWithoutSequence )
+		Warning( "gmod_anim_dumpmodel: %s has %d unregistered and %d private activity names, "
+				 "and %d names with no sequence\n",
+				 pszModelName, iUnknown, iPrivate, iWithoutSequence );
+}
+
