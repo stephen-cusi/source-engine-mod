@@ -15,6 +15,44 @@
 #include "luasrclib.h"
 
 
+// HL2SB: publish one SURF_* member under two _E keys.
+//
+// GMod's lua/includes/modules/gmod_compatibility/sh_enumerations.lua reads
+// `_E.SURFACE` (:131) and merges it as SURFACE = "SURF", i.e. it wants the
+// SURF_* globals (SURF_LIGHT, SURF_SKY, SURF_NODRAW, ...).  Experiment: Source
+// published the table under `_E.SURF` only, and the ported file's
+// `_E.SURFACE = _E.SURFACE or {}` stub then fed the merge loop an EMPTY table,
+// so every SURF_* global was nil after this file ran -- LUA_SURFLIBNAME has
+// been "SURF" since the port.
+//
+// Rather than rename the key (which would break any existing reader of
+// _E.SURF) both keys are published from the same SURF_* constants, so they
+// cannot disagree.  Values stay tied to the C++ SURF_* names; only the table
+// key differs.
+#define HL2SB_PUSH_SURF_ENUM_LIB( L, lib, ... ) \
+  LUA_SET_ENUM_LIB_BEGIN( L, lib ); \
+  __VA_ARGS__ \
+  LUA_SET_ENUM_LIB_END( L )
+
+#define HL2SB_PUSH_SURF_MEMBERS( L ) \
+    lua_pushenum(L, SURF_LIGHT, "LIGHT"); \
+    lua_pushenum(L, SURF_SKY2D, "SKY2D"); \
+    lua_pushenum(L, SURF_SKY, "SKY"); \
+    lua_pushenum(L, SURF_WARP, "WARP"); \
+    lua_pushenum(L, SURF_TRANS, "TRANS"); \
+    lua_pushenum(L, SURF_NOPORTAL, "NOPORTAL"); \
+    lua_pushenum(L, SURF_TRIGGER, "TRIGGER"); \
+    lua_pushenum(L, SURF_NODRAW, "NODRAW"); \
+    lua_pushenum(L, SURF_HINT, "HINT"); \
+    lua_pushenum(L, SURF_SKIP, "SKIP"); \
+    lua_pushenum(L, SURF_NOLIGHT, "NOLIGHT"); \
+    lua_pushenum(L, SURF_BUMPLIGHT, "BUMPLIGHT"); \
+    lua_pushenum(L, SURF_NOSHADOWS, "NOSHADOWS"); \
+    lua_pushenum(L, SURF_NODECALS, "NODECALS"); \
+    lua_pushenum(L, SURF_NOCHOP, "NOCHOP"); \
+    lua_pushenum(L, SURF_HITBOX, "HITBOX");
+
+
 /*
 ** Open CONTENTS library
 */
@@ -68,28 +106,15 @@ LUALIB_API int luaopen_CONTENTS (lua_State *L) {
 
 /*
 ** Open SURF library
+**
+** HL2SB: the same table is published under BOTH the Team Sandbox key (_E.SURF)
+** and GMod's key (_E.SURFACE), because sh_enumerations.lua reads the GMod one
+** and the members have to come from the same SURF_* constants.  See the macros
+** at the top of this file.
 */
 LUALIB_API int luaopen_SURF (lua_State *L) {
-  BEGIN_LUA_SET_ENUM_LIB(L, LUA_SURFLIBNAME);
-    lua_pushenum(L, SURF_LIGHT, "LIGHT");
-    lua_pushenum(L, SURF_SKY2D, "SKY2D");
-    lua_pushenum(L, SURF_SKY, "SKY");
-    lua_pushenum(L, SURF_WARP, "WARP");
-    lua_pushenum(L, SURF_TRANS, "TRANS");
-    lua_pushenum(L, SURF_NOPORTAL, "NOPORTAL");
-    lua_pushenum(L, SURF_TRIGGER, "TRIGGER");
-    lua_pushenum(L, SURF_NODRAW, "NODRAW");
-
-    lua_pushenum(L, SURF_HINT, "HINT");
-
-    lua_pushenum(L, SURF_SKIP, "SKIP");
-    lua_pushenum(L, SURF_NOLIGHT, "NOLIGHT");
-    lua_pushenum(L, SURF_BUMPLIGHT, "BUMPLIGHT");
-    lua_pushenum(L, SURF_NOSHADOWS, "NOSHADOWS");
-    lua_pushenum(L, SURF_NODECALS, "NODECALS");
-    lua_pushenum(L, SURF_NOCHOP, "NOCHOP");
-    lua_pushenum(L, SURF_HITBOX, "HITBOX");
-  END_LUA_SET_ENUM_LIB(L);
+  HL2SB_PUSH_SURF_ENUM_LIB( L, LUA_SURFLIBNAME, HL2SB_PUSH_SURF_MEMBERS( L ) );
+  HL2SB_PUSH_SURF_ENUM_LIB( L, LUA_SURFACEENUMNAME, HL2SB_PUSH_SURF_MEMBERS( L ) );
   return 0;
 }
 

@@ -12,6 +12,22 @@
 // HL2SB: the DOCK_TYPE enum below publishes vgui::Panel's DOCK values, so it
 // cannot drift from the enum the dock pass switches on.
 #include <vgui_controls/Panel.h>
+// HL2SB: CULL_MODE comes from MaterialCullMode_t and the two stencil tables from
+// ShaderStencilFunc_t / ShaderStencilOp_t -- all three live in the material
+// system / shader API headers below, so the values cannot drift from the enums
+// the render context switches on.  They are published into both realms on
+// purpose: sh_enumerations.lua is a SHARED file and only reads
+// CULL_MODE / STENCIL_* inside its `if ( CLIENT )` block, but keeping _E
+// identical in both realms means an addon that reads them at load time does not
+// silently get nil on a listen server.
+#include <materialsystem/imaterialsystem.h>
+#include <shaderapi/ishadershadow.h>
+// HL2SB: FCAP_* -- the engine's real usability types (the flags
+// CBasePlayer::Use / CBaseEntity::ObjectCaps() actually test), published below as
+// _E.USABILITY_TYPE.
+#include "baseentity_shared.h"
+// HL2SB: IN_* for _E.INPUT.
+#include "in_buttons.h"
 
 // Quick and easy place to register some enums
 LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
@@ -39,19 +55,62 @@ LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
     lua_pushenum( L, CHAN_USER_BASE, "USER_BASE" );
     LUA_SET_ENUM_LIB_END( L );
 
+    //---------------------------------------------------------------------
+    // HL2SB: GMod's RENDER_MODE table.
+    //
+    // This was `LUA_SET_ENUM_LIB_BEGIN( L, LUA_SHAREDENUMNAME )` before, and
+    // LUA_SHAREDENUMNAME is "" -- so the members landed in _E[""] (an entry no
+    // Lua file can name) and EVERY global sh_enumerations.lua:256-266 derives
+    // from this table was nil: RENDERMODE_NORMAL, RENDERMODE_TRANSCOLOR,
+    // RENDERMODE_GLOW, ...  It never threw, because the RENDERMODE_* block sits
+    // outside sh_enumerations.lua's `if ( CLIENT )` and an assignment from a nil
+    // field is not an error in Lua, so the loss was silent.
+    //
+    // Published under GMod's key with its GMod-facing member names (the file
+    // names them at :257-266), values straight from kRender*, and nobare so the
+    // engine does not also seize the generic NORMAL / GLOW / NONE globals that
+    // belong to other enums.
+    //---------------------------------------------------------------------
     LUA_SET_ENUM_LIB_BEGIN( L, "RENDER_MODE" );
-    lua_pushenum( L, kRenderNormal, "NORMAL" );
-    lua_pushenum( L, kRenderTransColor, "TRANSPARENT_COLOR" );
-    lua_pushenum( L, kRenderTransTexture, "TRANSPARENT_TEXTURE" );
-    lua_pushenum( L, kRenderGlow, "GLOW" );
-    lua_pushenum( L, kRenderTransAlpha, "TRANSPARENT_ALPHA" );
-    lua_pushenum( L, kRenderTransAdd, "TRANSPARENT_ADD" );
-    lua_pushenum( L, kRenderEnvironmental, "ENVIRONMENTAL" );
-    lua_pushenum( L, kRenderTransAddFrameBlend, "TRANSPARENT_ADD_FRAME_BLEND" );
-    lua_pushenum( L, kRenderTransAlphaAdd, "TRANSPARENT_ALPHA_ADD" );
-    lua_pushenum( L, kRenderWorldGlow, "WORLD_GLOW" );
-    lua_pushenum( L, kRenderNone, "NONE" );
-    lua_pushenum( L, kRenderModeCount, "COUNT" );
+    lua_pushenum_nobare( L, kRenderNormal, "NORMAL" );
+    lua_pushenum_nobare( L, kRenderTransColor, "TRANSPARENT_COLOR" );
+    lua_pushenum_nobare( L, kRenderTransTexture, "TRANSPARENT_TEXTURE" );
+    lua_pushenum_nobare( L, kRenderGlow, "GLOW" );
+    lua_pushenum_nobare( L, kRenderTransAlpha, "TRANSPARENT_ALPHA" );
+    lua_pushenum_nobare( L, kRenderTransAdd, "TRANSPARENT_ADD" );
+    lua_pushenum_nobare( L, kRenderEnvironmental, "ENVIRONMENTAL" );
+    lua_pushenum_nobare( L, kRenderTransAddFrameBlend, "TRANSPARENT_ADD_FRAME_BLEND" );
+    lua_pushenum_nobare( L, kRenderTransAlphaAdd, "TRANSPARENT_ALPHA_ADD" );
+    lua_pushenum_nobare( L, kRenderWorldGlow, "WORLD_GLOW" );
+    lua_pushenum_nobare( L, kRenderNone, "NONE" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    //---------------------------------------------------------------------
+    // HL2SB: GMod's PLAYER_ANIMATION table.
+    //
+    // Same defect as RENDER_MODE above: this used to be published under the
+    // empty LUA_SHAREDENUMNAME, so _E[""] got it and _E.PLAYER_ANIMATION did
+    // not exist.  sh_enumerations.lua:138-142 hard-errors on a missing key
+    // ("Missing enumeration table for key: ..."), and even with the ported
+    // file's `_E.PLAYER_ANIMATION = _E.PLAYER_ANIMATION or {}` stub the globals
+    // at :268-277 (PLAYER_IDLE, PLAYER_WALK, ... PLAYER_LEAVE_AIMING) came out
+    // nil.  PLAYER_SUPERJUMP is the visible one: gmod_globals.lua:83 hardcodes
+    // it as 3, and 3 is what PLAYER_ANIM / shareddefs.h gives SUPER_JUMP.
+    //
+    // nobare because IDLE / WALK / JUMP / DIE / RELOAD / ATTACK1 are generic
+    // globals other enums and scripts own.
+    //---------------------------------------------------------------------
+    LUA_SET_ENUM_LIB_BEGIN( L, "PLAYER_ANIMATION" );
+    lua_pushenum_nobare( L, PLAYER_IDLE, "IDLE" );
+    lua_pushenum_nobare( L, PLAYER_WALK, "WALK" );
+    lua_pushenum_nobare( L, PLAYER_JUMP, "JUMP" );
+    lua_pushenum_nobare( L, PLAYER_SUPERJUMP, "SUPER_JUMP" );
+    lua_pushenum_nobare( L, PLAYER_DIE, "DIE" );
+    lua_pushenum_nobare( L, PLAYER_ATTACK1, "ATTACK1" );
+    lua_pushenum_nobare( L, PLAYER_IN_VEHICLE, "IN_VEHICLE" );
+    lua_pushenum_nobare( L, PLAYER_RELOAD, "RELOAD" );
+    lua_pushenum_nobare( L, PLAYER_START_AIMING, "START_AIMING" );
+    lua_pushenum_nobare( L, PLAYER_LEAVE_AIMING, "LEAVE_AIMING" );
     LUA_SET_ENUM_LIB_END( L );
 
     LUA_SET_ENUM_LIB_BEGIN( L, "RENDER_EFFECTS" );
@@ -194,6 +253,125 @@ LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
     lua_pushenum_nobare( L, vgui::Panel::DOCK_RIGHT,  "RIGHT" );
     lua_pushenum_nobare( L, vgui::Panel::DOCK_TOP,    "TOP" );
     lua_pushenum_nobare( L, vgui::Panel::DOCK_BOTTOM, "BOTTOM" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    //---------------------------------------------------------------------
+    // HL2SB: the GMod enumeration TABLES that lua/includes/init.lua asked for
+    // ("TODO(engine): publish _E.INPUT / _E.SURFACE / ... / _E.DOCK_TYPE for
+    // real", init.lua:398) and that
+    // lua/includes/modules/gmod_compatibility/sh_enumerations.lua reads with
+    // straight `_E.<KEY>` indexing.
+    //
+    // sh_enumerations.lua gives each of these a `_E.<KEY> = _E.<KEY> or {}`
+    // stub, so a missing table does not throw there -- it EVALUATES TO NIL and
+    // the globals the file exists to publish are silently left unset.  That is
+    // how DOCK_TYPE shipped TOP=3/RIGHT=4: the stub was consulted because the
+    // engine had published nothing, and every Dock(TOP) took the DOCK_RIGHT
+    // branch.  These four tables are the same class of bug, so the values are
+    // tied to the C++ enum/#define instead of being restated in Lua.
+    //
+    // nobare on every member: these short names are all generic globals
+    // (INPUT_ATTACK would be the only safe one) and sh_enumerations.lua -- not
+    // the engine -- owns the step that turns a table into globals (its
+    // enumsToMergeWithKey pass).  lua_pushenum_nobare still sets the table field
+    // and <lib>_<shortname>, which is exactly the contract those two Lua passes
+    // need.
+    //---------------------------------------------------------------------
+
+    // GMod's INPUT table.  sh_enumerations.lua:123 merges it as
+    // INPUT = "IN", so the members become the IN_* globals every keybind test
+    // uses (`if ( input.IsKeyDown( IN_ATTACK ) )`).  Values are the real
+    // in_buttons.h bits; lin_buttons.cpp publishes the same enum under its
+    // team-sandbox key _E.IN, which this deliberately shares -- both keys are
+    // consumed, and sharing the constants is what keeps them in step.
+    LUA_SET_ENUM_LIB_BEGIN( L, "INPUT" );
+    lua_pushenum_nobare( L, IN_ATTACK,    "ATTACK" );
+    lua_pushenum_nobare( L, IN_JUMP,      "JUMP" );
+    lua_pushenum_nobare( L, IN_DUCK,      "DUCK" );
+    lua_pushenum_nobare( L, IN_FORWARD,   "FORWARD" );
+    lua_pushenum_nobare( L, IN_BACK,      "BACK" );
+    lua_pushenum_nobare( L, IN_USE,       "USE" );
+    lua_pushenum_nobare( L, IN_CANCEL,    "CANCEL" );
+    lua_pushenum_nobare( L, IN_LEFT,      "LEFT" );
+    lua_pushenum_nobare( L, IN_RIGHT,     "RIGHT" );
+    lua_pushenum_nobare( L, IN_MOVELEFT,  "MOVELEFT" );
+    lua_pushenum_nobare( L, IN_MOVERIGHT, "MOVERIGHT" );
+    lua_pushenum_nobare( L, IN_ATTACK2,   "ATTACK2" );
+    lua_pushenum_nobare( L, IN_RUN,       "RUN" );
+    lua_pushenum_nobare( L, IN_RELOAD,    "RELOAD" );
+    lua_pushenum_nobare( L, IN_ALT1,      "ALT1" );
+    lua_pushenum_nobare( L, IN_ALT2,      "ALT2" );
+    lua_pushenum_nobare( L, IN_SCORE,     "SCORE" );
+    lua_pushenum_nobare( L, IN_SPEED,     "SPEED" );
+    lua_pushenum_nobare( L, IN_WALK,      "WALK" );
+    lua_pushenum_nobare( L, IN_ZOOM,      "ZOOM" );
+    lua_pushenum_nobare( L, IN_WEAPON1,   "WEAPON1" );
+    lua_pushenum_nobare( L, IN_WEAPON2,   "WEAPON2" );
+    lua_pushenum_nobare( L, IN_BULLRUSH,  "BULLRUSH" );
+    lua_pushenum_nobare( L, IN_GRENADE1,  "GRENADE1" );
+    lua_pushenum_nobare( L, IN_GRENADE2,  "GRENADE2" );
+    lua_pushenum_nobare( L, IN_ATTACK3,   "ATTACK3" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    // GMod's USABILITY_TYPE table.  There is no C++ `USABILITY_*` enum in this
+    // SDK: the engine spells the four usability kinds as the FCAP_* ObjectCaps
+    // bits, and those are what CBasePlayer::Use / CBaseEntity::ObjectCaps
+    // actually test.  sh_enumerations.lua:246-249 (SERVER only) publishes them
+    // as CONTINUOUS_USE / ONOFF_USE / DIRECTIONAL_USE / SIMPLE_USE, which is
+    // exactly the pair of names the engine uses at
+    // game/shared/baseplayer_shared.cpp:1384-1401.  GMod's own enum order
+    // (CONTINUOUS, ON_OFF, DIRECTIONAL, IMPULSE) is kept for the field names.
+    // NOTE: these are BIT FLAGS, not 0..3 -- see the report accompanying this
+    // change; a caller that compares them to a literal must use the bit.
+    LUA_SET_ENUM_LIB_BEGIN( L, "USABILITY_TYPE" );
+    lua_pushenum_nobare( L, FCAP_CONTINUOUS_USE,  "CONTINUOUS" );
+    lua_pushenum_nobare( L, FCAP_ONOFF_USE,       "ON_OFF" );
+    lua_pushenum_nobare( L, FCAP_DIRECTIONAL_USE, "DIRECTIONAL" );
+    lua_pushenum_nobare( L, FCAP_IMPULSE_USE,     "IMPULSE" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    // GMod's CULL_MODE.  sh_enumerations.lua:161-162 turns it into
+    // MATERIAL_CULLMODE_CCW / _CW, which are also globals in sh_init.lua's
+    // namespace; the members are the MaterialCullMode_t the render context
+    // switches on (MaterialCullMode_t::MATERIAL_CULLMODE_CCW == 0).
+    LUA_SET_ENUM_LIB_BEGIN( L, "CULL_MODE" );
+    lua_pushenum_nobare( L, MATERIAL_CULLMODE_CCW, "COUNTER_CLOCKWISE" );
+    lua_pushenum_nobare( L, MATERIAL_CULLMODE_CW,  "CLOCKWISE" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    // GMod's STENCIL_COMPARISON_FUNCTION.  Values are the StencilComparisonFunction_t
+    // members (STENCILCOMPARISONFUNCTION_NEVER == 1); the Lua stub said NEVER == 0,
+    // which is wrong for this enum and would have shifted every function by one.
+    // The names are the ones sh_enumerations.lua:199-215 reads (LESS_OR_EQUAL,
+    // NOT_EQUAL, GREATER_OR_EQUAL).
+    LUA_SET_ENUM_LIB_BEGIN( L, "STENCIL_COMPARISON_FUNCTION" );
+    lua_pushenum_nobare( L, STENCILCOMPARISONFUNCTION_NEVER,         "NEVER" );
+    lua_pushenum_nobare( L, STENCILCOMPARISONFUNCTION_LESS,          "LESS" );
+    lua_pushenum_nobare( L, STENCILCOMPARISONFUNCTION_EQUAL,         "EQUAL" );
+    lua_pushenum_nobare( L, STENCILCOMPARISONFUNCTION_LESSEQUAL,     "LESS_OR_EQUAL" );
+    lua_pushenum_nobare( L, STENCILCOMPARISONFUNCTION_GREATER,       "GREATER" );
+    lua_pushenum_nobare( L, STENCILCOMPARISONFUNCTION_NOTEQUAL,      "NOT_EQUAL" );
+    lua_pushenum_nobare( L, STENCILCOMPARISONFUNCTION_GREATEREQUAL,  "GREATER_OR_EQUAL" );
+    lua_pushenum_nobare( L, STENCILCOMPARISONFUNCTION_ALWAYS,        "ALWAYS" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    // GMod's STENCIL_OPERATION.  Values are the StencilOperation_t members that
+    // shaderapi/ishadershadow.h defines for the render context (KEEP == 0,
+    // ZERO == 1, SET_TO_REFERENCE == 2, INCREMENT_CLAMP == 3, ...), and the
+    // member names are GMod's own (sh_enumerations.lua:220-233 reads KEEP, ZERO,
+    // REPLACE, INCREMENT_CLAMP, DECREMENT_CLAMP, INVERT, INCREMENT_WRAP,
+    // DECREMENT_WRAP).  The Lua stub had the D3D-style order (INCRSAT == 3,
+    // DECRSAT == 4), which this enum does not use; REPLACE is
+    // SHADER_STENCILOP_SET_TO_REFERENCE there but keeps GMod's name here.
+    LUA_SET_ENUM_LIB_BEGIN( L, "STENCIL_OPERATION" );
+    lua_pushenum_nobare( L, SHADER_STENCILOP_KEEP,               "KEEP" );
+    lua_pushenum_nobare( L, SHADER_STENCILOP_ZERO,               "ZERO" );
+    lua_pushenum_nobare( L, SHADER_STENCILOP_SET_TO_REFERENCE,   "REPLACE" );
+    lua_pushenum_nobare( L, SHADER_STENCILOP_INCREMENT_CLAMP,    "INCREMENT_CLAMP" );
+    lua_pushenum_nobare( L, SHADER_STENCILOP_DECREMENT_CLAMP,    "DECREMENT_CLAMP" );
+    lua_pushenum_nobare( L, SHADER_STENCILOP_INVERT,             "INVERT" );
+    lua_pushenum_nobare( L, SHADER_STENCILOP_INCREMENT_WRAP,     "INCREMENT_WRAP" );
+    lua_pushenum_nobare( L, SHADER_STENCILOP_DECREMENT_WRAP,     "DECREMENT_WRAP" );
     LUA_SET_ENUM_LIB_END( L );
 
     LUA_SET_ENUM_LIB_BEGIN( L, "BLOOD_COLOR" );
@@ -842,8 +1020,18 @@ LUALIB_API int luaopen_FL_EDICT( lua_State *L )
     lua_pushenum( L, FL_EDICT_FULL, "FULL" );
     lua_pushenum( L, FL_EDICT_FULLCHECK, "FULL_CHECK" );
     lua_pushenum( L, FL_EDICT_ALWAYS, "ALWAYS" );
-    lua_pushenum( L, FL_EDICT_DONTSEND, "DONT_SEND" );
-    lua_pushenum( L, FL_EDICT_PVSCHECK, "PVS_CHECK" );
+    // HL2SB: GMod spells these two WITHOUT the underscore
+    // (sh_enumerations.lua:253-254 reads _E.EDICT_FLAG.DONTSEND and .PVSCHECK to
+    // build TRANSMIT_NEVER / TRANSMIT_PVS).  This engine published only
+    // DONT_SEND / PVS_CHECK, so both globals came out nil while the merge loop
+    // happily produced FL_EDICT_DONT_SEND / FL_EDICT_PVS_CHECK.  The GMod spelling
+    // is published with lua_pushenum_nobare because the bare DONTSEND / PVSCHECK
+    // are generic names this file should not seize.
+    lua_pushenum_nobare( L, FL_EDICT_DONTSEND, "DONTSEND" );
+    lua_pushenum_nobare( L, FL_EDICT_PVSCHECK, "PVSCHECK" );
+    // Legacy/engine spellings, kept so nothing that already reads them breaks.
+    lua_pushenum_nobare( L, FL_EDICT_DONTSEND, "DONT_SEND" );
+    lua_pushenum_nobare( L, FL_EDICT_PVSCHECK, "PVS_CHECK" );
     lua_pushenum( L, FL_EDICT_PENDING_DORMANT_CHECK, "PENDING_DORMANT_CHECK" );
     lua_pushenum( L, FL_EDICT_DIRTY_PVS_INFORMATION, "DIRTY_PVS_INFORMATION" );
     LUA_SET_ENUM_LIB_END( L );
