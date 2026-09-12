@@ -341,6 +341,76 @@ static ConVar s_CV_ShowParticleCounts("showparticlecounts", "0", 0, "Display num
 static ConVar s_cl_team("cl_team", "default", FCVAR_USERINFO|FCVAR_ARCHIVE, "Default team when joining a game");
 static ConVar s_cl_class("cl_class", "default", FCVAR_USERINFO|FCVAR_ARCHIVE, "Default class when joining a game");
 
+//-----------------------------------------------------------------------------
+// HL2SB: GMod's spawn-menu / context-menu toggle commands.
+//
+// WHY THESE ARE ENGINE COMMANDS.  GMod defines +menu/-menu in Lua
+// (gamemodes/base/gamemode/cl_spawnmenu.lua:10, `concommand.Add( "+menu", ... )`)
+// and this fork does too -- but that path has now failed twice in a row, for two
+// independent reasons, and the user has launched three times for three different
+// single missing symbols:
+//
+//   1. it is registered from the BASE gamemode's cl_init.lua, which the SERVER
+//      never loads -- luasrc_LoadGamemode picks gamemode/init.lua under
+//      #ifndef CLIENT_DLL (game/shared/lua/luamanager.cpp:1567-1571);
+//   2. and on the CLIENT, the sandbox gamemode immediately re-executes
+//      lua/includes/modules/concommand.lua (gamemodes/sandbox/gamemode/
+//      in_main.lua:7 does require( "concommand" ), and luasrc_dofolder never
+//      writes package.loaded), which swapped `tFnCommandCallbacks` out from
+//      under the just-registered callback.  CC_ConCommand then dispatched into
+//      an empty table and returned false; on the client that prints NOTHING,
+//      so pressing Q looked like a dead key.
+//      (Root-caused and fixed as well -- see the re-entry guard at the top of
+//      lua/includes/modules/concommand.lua.  This binding is the belt.)
+//
+// A static ConCommand is registered by ConVar_Register at DLL load, exactly like
+// the fork's own +smenu/-smenu (game/client/menu/sm_menu_list.cpp:311,317), so
+// nothing in the Lua load order can lose it.  Verified in the shipped client.dll
+// as NUL-terminated strings (tools/dll_has_string.py).
+//
+// The callbacks run the GMod hooks, which is where the spawnmenu listens:
+//     gamemodes/sandbox/gamemode/spawnmenu/spawnmenu.lua:241  GM:OnSpawnMenuOpen
+//     gamemodes/sandbox/gamemode/spawnmenu/spawnmenu.lua:259  GM:OnSpawnMenuClose
+//     gamemodes/sandbox/gamemode/spawnmenu/contextmenu.lua    GM:OnContextMenuOpen
+//                                                             GM:OnContextMenuClose
+// BEGIN_LUA_CALL_HOOK calls hook.call( event, _GAMEMODE ), whose gamemode
+// fallback is what reaches those methods.
+//-----------------------------------------------------------------------------
+static void HL2SB_CallMenuHook( const char *pszEvent )
+{
+	if ( !g_bLuaInitialized )
+		return;
+
+	BEGIN_LUA_CALL_HOOK( pszEvent );
+	END_LUA_CALL_HOOK( 0, 0 );
+}
+
+static void HL2SB_SpawnMenuDown( const CCommand &args )
+{
+	HL2SB_CallMenuHook( "OnSpawnMenuOpen" );
+}
+
+static void HL2SB_SpawnMenuUp( const CCommand &args )
+{
+	HL2SB_CallMenuHook( "OnSpawnMenuClose" );
+}
+
+static void HL2SB_ContextMenuDown( const CCommand &args )
+{
+	HL2SB_CallMenuHook( "OnContextMenuOpen" );
+}
+
+static void HL2SB_ContextMenuUp( const CCommand &args )
+{
+	HL2SB_CallMenuHook( "OnContextMenuClose" );
+}
+
+// Flags deliberately mirror +smenu (none): this fork's working precedent.
+static ConCommand hl2sb_menu_down_cmd( "+menu", HL2SB_SpawnMenuDown, "Open the GMod spawnmenu (hold)" );
+static ConCommand hl2sb_menu_up_cmd( "-menu", HL2SB_SpawnMenuUp, "Close the GMod spawnmenu (release)" );
+static ConCommand hl2sb_menu_context_down_cmd( "+menu_context", HL2SB_ContextMenuDown, "Open the GMod context menu (hold)" );
+static ConCommand hl2sb_menu_context_up_cmd( "-menu_context", HL2SB_ContextMenuUp, "Close the GMod context menu (release)" );
+
 #ifdef HL1MP_CLIENT_DLL
 static ConVar s_cl_load_hl1_content("cl_load_hl1_content", "0", FCVAR_ARCHIVE, "Mount the content from Half-Life: Source if possible");
 #endif
