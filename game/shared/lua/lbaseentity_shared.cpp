@@ -384,6 +384,25 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 	}
 	else
 	{
+		// HL2SB: this branch means "not a sound script", i.e. the caller is
+		// expected to be naming a .wav.  A GMod script that passes a
+		// sound-script name -- "HealthKit.Touch", which weapon_medkit does --
+		// lands here whenever the script tables are not loaded, and then the
+		// engine refuses the sound at play time with no clue as to why.  One
+		// line per distinct name makes that visible; a name with neither a
+		// slash nor a .wav extension has no business being a raw wave.
+		if ( pszSoundName[0] != '!' && pszSoundName[0] != '?' &&
+		     V_stristr( pszSoundName, ".wav" ) == NULL &&
+		     V_stristr( pszSoundName, "/" ) == NULL &&
+		     V_stristr( pszSoundName, "\\" ) == NULL )
+		{
+			char szKey[ 192 ];
+			Q_snprintf( szKey, sizeof( szKey ), "emitsound-no-script:%s", pszSoundName );
+			HL2SB_WarnOnce( szKey,
+				"EmitSound '%s': no sound script with that name is loaded, treated as a raw wave (it will be dropped)\n",
+				pszSoundName );
+		}
+
 		// Raw wave, no sound script.  Build the EmitSound_t by hand instead of
 		// using CBaseEntity::EmitSound( name, time, duration ) -- that overload
 		// leaves m_nChannel at CHAN_AUTO.  Everything else (volume, sound level,

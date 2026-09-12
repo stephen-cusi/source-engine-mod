@@ -108,6 +108,30 @@ void HL2SB_WarnOnce (const char *pszKey, const char *pszFormat, ...) {
   Warning( "[HL2SB] %s\n", szBuf );
 }
 
+/*
+** HL2SB: undo a HL2SB_PrecacheOnce() entry.
+**
+** The one-shot cache is process-lifetime, but a precache can legitimately FAIL
+** the first time it is asked: GMod scripts call Sound("HealthKit.Touch") at
+** weapon-file load time, which on the server happens before the sound emitter
+** system has necessarily read scripts/game_sounds_manifest.txt.  In that window
+** CBaseEntity::PrecacheScriptSound() answers 0, the caller falls back to
+** treating the sound-script NAME as a raw .wav path (which cannot work), and --
+** before this function existed -- the name stayed in the cache forever, so the
+** real wave was never registered for the rest of the session and every later
+** EmitSound of it was refused by the engine with "SV_StartSound: <wave> not
+** precached".  Forgetting the entry lets the next call retry.
+*/
+void HL2SB_PrecacheForget (const char *pszName) {
+  if ( s_pHL2SBPrecached == NULL || pszName == NULL )
+    return;
+
+  const int i = s_pHL2SBPrecached->Find( pszName );
+
+  if ( i != s_pHL2SBPrecached->InvalidIndex() )
+    s_pHL2SBPrecached->RemoveAt( i );
+}
+
 
 static int luasrc_UTIL_VecToYaw (lua_State *L) {
   lua_pushnumber(L, UTIL_VecToYaw(luaL_checkvector(L, 1)));
@@ -329,6 +353,11 @@ static int luasrc_util_PrecacheSound (lua_State *L) {
 
   if ( CBaseEntity::PrecacheScriptSound( pszName ) <= 0
        && !enginesound->IsSoundPrecached( pszName ) ) {
+    // Neither the sound script nor the raw wave registered.  Most often the
+    // script tables are not loaded yet (a weapon script runs this at load time);
+    // forget the entry so a later map load can retry instead of leaving the
+    // sound permanently unregistered for the whole process.
+    HL2SB_PrecacheForget( pszName );
     CBaseEntity::PrecacheSound( pszName );
   }
   return 0;

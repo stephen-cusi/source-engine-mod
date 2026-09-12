@@ -1357,12 +1357,77 @@ Activity CHL2MPScriptedWeapon::GetDrawActivity( void )
 //          ideal one, which leaves scripted viewmodels frozen on the first
 //          frame of the shot animation. Invalidating the cached ideal before
 //          delegating forces the restart on every call.
+//
+// HL2SB: the stock chain resolves the activity with SelectWeightedSequence() on
+// the WEAPON ENTITY's own model, and only then hands the resulting sequence
+// index to the viewmodel entity (CBaseCombatWeapon::SetIdealActivity ->
+// SendViewModelAnim).  CBaseCombatWeapon::Equip() and SetActivity() point that
+// own model at the VIEWMODEL while a player holds the weapon, which is how
+// Valve's content is meant to be resolved: v_smg1.mdl carries the full ACT_VM_*
+// list (w_smg1.mdl only carries ACT_VM_IDLE and its range-attack activity).
+//
+// GMod content breaks that assumption.  The weapon's own model is also the
+// index the engine networks (CBaseCombatWeapon::Precache sets m_iWorldModelIndex
+// from GetWorldModel(), which is what a client-side scripted weapon gets its
+// model from), and GMod's world models carry no ACT_VM_* names at all:
+// models/weapons/w_medkit.mdl is a single sequence called "idle" with no
+// activity name.  SelectWeightedSequence() therefore answers
+// ACTIVITY_NOT_AVAILABLE, CBaseCombatWeapon::SetIdealActivity() returns false
+// before it ever reaches SendViewModelAnim(), and the medkit's viewmodel sat on
+// its first frame forever -- no draw, no heal animation, no idle.
+//
+// So when the weapon's own model cannot resolve the activity, resolve it on the
+// viewmodel entity instead: that is the model the player actually watches, and
+// the one that carries the activities (models/weapons/c_medkit.mdl has
+// ACT_VM_DRAW / ACT_VM_HOLSTER / ACT_VM_IDLE / ACT_VM_PRIMARYATTACK).
 //-----------------------------------------------------------------------------
 bool CHL2MPScriptedWeapon::SendWeaponAnim( int iActivity )
 {
 	m_IdealActivity = ACT_INVALID;
 	m_nIdealSequence = -1;
-	return BaseClass::SendWeaponAnim( iActivity );
+
+	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+	CBaseViewModel *pViewModel = ( pOwner != NULL ) ? pOwner->GetViewModel( m_nViewModelIndex, false ) : NULL;
+
+	const bool bOnWeaponModel =
+		( SelectWeightedSequence( (Activity)iActivity ) != ACTIVITY_NOT_AVAILABLE );
+
+	// GetScriptedClassname() is client-only, and the client sets its classname
+	// from the scripted name, so GetClassname() names the SWEP on both realms.
+	char szKey[ 192 ];
+	Q_snprintf( szKey, sizeof( szKey ), "weaponanim:%s:%d", GetClassname(), iActivity );
+
+	HL2SB_WarnOnce( szKey,
+		"SendWeaponAnim '%s' activity=%d: weaponModel='%s' resolves=%d viewmodel='%s'\n",
+		GetClassname(), iActivity, STRING( GetModelName() ), bOnWeaponModel ? 1 : 0,
+		( pViewModel != NULL ) ? STRING( pViewModel->GetModelName() ) : "<none>" );
+
+	if ( bOnWeaponModel )
+		return BaseClass::SendWeaponAnim( iActivity );
+
+	if ( pViewModel == NULL )
+		return false;
+
+	// Make sure the viewmodel carries this weapon's model before asking it to
+	// resolve an activity (SendViewModelAnim would do this, but we need the
+	// sequence now).
+	SetViewModel();
+
+	const int nSequence = pViewModel->SelectWeightedSequence( (Activity)iActivity );
+
+	if ( nSequence == ACTIVITY_NOT_AVAILABLE )
+		return false;
+
+	// Keep the weapon's cached ideal in step, so MaintainIdealActivity() and
+	// IsViewModelSequenceFinished() agree with what the viewmodel is playing.
+	m_IdealActivity = (Activity)iActivity;
+	m_nIdealSequence = nSequence;
+
+	SendViewModelAnim( nSequence );
+
+	SetWeaponIdleTime( gpGlobals->curtime + SequenceDuration() );
+
+	return true;
 }
 
 //-----------------------------------------------------------------------------

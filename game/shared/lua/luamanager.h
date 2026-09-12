@@ -691,6 +691,13 @@ void       luasrc_ApplyAmmoTypes (CAmmoDef *pAmmoDef);
 // synchronous load) on every call, which is what made the first throws stutter.
 bool       HL2SB_PrecacheOnce (const char *pszName);
 
+// HL2SB: drop a HL2SB_PrecacheOnce() entry again, for the precaches that can
+// legitimately fail the first time they are asked (a GMod script calls
+// Sound("HealthKit.Touch") at weapon-load time, which can run before the sound
+// script tables exist).  Without this the failed attempt was cached for the
+// whole process and the sound stayed unregistered every later map load.
+void       HL2SB_PrecacheForget (const char *pszName);
+
 // HL2SB: one Warning() line per distinct key, capped at 32 keys per DLL load.
 // For branches that leave an engine object in a state Lua cannot see, so that
 // the next crash log names the live path instead of a bare access violation.
