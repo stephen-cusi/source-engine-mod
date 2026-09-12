@@ -348,8 +348,18 @@ public:
 				// by their lua/weapons/<class> script (pist_weagon).
 				weapons->InitScriptedWeapons( kv, weapons );
 
+				// HL2SB: a third page for scripted entities, and note what this does
+				// NOT do: it does not scan the generic "entity" key.  entitylist.txt
+				// carries ~600 engine class names (ai_*, env_*, xen_*, ...) that are
+				// useless in a spawn menu and would bury the handful that matter.
+				// "sent_" is the prefix GMod's scripted entities use (sent_ball is
+				// one), so this lists exactly those and nothing else.
+				CSMList *entities = new CSMList( this, "EntityPanel");
+				entities->InitEntities( kv, entities, "sent_" );
+
 				AddPage( npces, "NPCs" );
 				AddPage( weapons, "Weapons");
+				AddPage( entities, "Entities" );
 			}
 			kv->deleteThis();
 		}
