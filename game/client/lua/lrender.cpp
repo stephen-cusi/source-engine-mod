@@ -891,35 +891,94 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     }
 
     CMatRenderContextPtr pRenderContext( materials );
-    CBeamSegDraw beamDraw;
-    // Pass the material SetMaterial just bound explicitly -- NULL means
-    // "whatever is currently bound", which was not reliably the Lua material.
-    beamDraw.Start( pRenderContext, 2, g_pHL2SBLastBoundMaterial );
 
-    // CBeamSegDraw feeds m_vColor / m_flAlpha straight into Color4f, which
-    // expects 0-1.  GMod's Color() is 0-255, so passing the raw bytes made
-    // every beam draw with overflowed vertex colour (the Nyan Gun's rainbow
-    // tracer came out yellow-green) and a hardcoded alpha of 1.0 killed the
-    // script's fade-out.  Same convention as DrawQuadEasy above.
+    // HL2SB: hand-built ribbon instead of CBeamSegDraw.
+    //
+    // CBeamSegDraw::SpecifySeg() writes a SECOND texture coordinate and
+    // TANGENT_S/TANGENT_T per vertex.  That is fine for the materials the engine
+    // feeds it (CSpriteTrail passes a sprite-shader material, and the Nyan Gun's
+    // bomb trail -- the one rainbow that is actually visible -- is drawn that
+    // way), but a GMod effect beam binds an ordinary UnlitGeneric vmt
+    // (nyan/rainbow.vmt, sprites/redglow1.vmt, ...): its vertex format has no
+    // tangent and no second uv set, so those writes land on a -1 vertex offset
+    // and the beam comes out with uninitialised vertex data -- created, sized,
+    // coloured and submitted, and never seen.
+    //
+    // A GMod beam is just a camera-facing quad, so build it here out of the
+    // fields every material has (position, colour, texcoord0), exactly like
+    // render.DrawQuadEasy, and emit both windings so no material can cull it.
+    Vector vecCameraPos;
+    pRenderContext->GetWorldSpaceCameraPosition( &vecCameraPos );
+
+    Vector vecAlong = end - start;
+    Vector vecWidth;
+
+    CrossProduct( vecAlong, start - vecCameraPos, vecWidth );
+
+    if ( vecWidth.LengthSqr() < 1e-6f )
+    {
+        // The beam points at the camera: fall back to a stable world axis.
+        Vector vecReference( 0.0f, 0.0f, 1.0f );
+        if ( fabs( vecAlong.z ) > 0.9f )
+        {
+            vecReference.Init( 1.0f, 0.0f, 0.0f );
+        }
+
+        CrossProduct( vecAlong, vecReference, vecWidth );
+    }
+
+    if ( vecWidth.LengthSqr() < 1e-12f )
+    {
+        // Degenerate both ways (zero length beam): nothing to draw.
+        return 0;
+    }
+
+    VectorNormalize( vecWidth );
+    vecWidth *= width * 0.5f;
+
+    const Vector vecA = start + vecWidth;	// u = 0 at the start
+    const Vector vecB = start - vecWidth;	// u = 1 at the start
+    const Vector vecC = end + vecWidth;		// u = 0 at the end
+    const Vector vecD = end - vecWidth;		// u = 1 at the end
+
     const float flRed   = color.r() / 255.0f;
     const float flGreen = color.g() / 255.0f;
     const float flBlue  = color.b() / 255.0f;
     const float flAlpha = color.a() / 255.0f;
 
-    BeamSeg_t seg;
-    seg.m_flAlpha = flAlpha;
-    seg.m_flWidth = width;
-    seg.m_vColor = Vector( flRed, flGreen, flBlue );
+    IMesh *pMesh = pRenderContext->GetDynamicMesh();
+    CMeshBuilder meshBuilder;
 
-    seg.m_vPos = start;
-    seg.m_flTexCoord = textureStart;
-    beamDraw.NextSeg( &seg );
+    // 4 triangles: the quad twice, once per winding.
+    meshBuilder.Begin( pMesh, MATERIAL_TRIANGLES, 4 );
 
-    seg.m_vPos = end;
-    seg.m_flTexCoord = textureEnd;
-    beamDraw.NextSeg( &seg );
+    // Winding 1: A B C / B D C.  Winding 2: A C B / B C D.
+    struct BeamQuadVertex_t
+    {
+        const Vector *pPos;
+        float flU;
+        float flV;
+    };
 
-    beamDraw.End();
+    const BeamQuadVertex_t rgVerts[ 12 ] =
+    {
+        { &vecA, 0.0f, textureStart }, { &vecB, 1.0f, textureStart }, { &vecC, 0.0f, textureEnd },
+        { &vecB, 1.0f, textureStart }, { &vecD, 1.0f, textureEnd },   { &vecC, 0.0f, textureEnd },
+
+        { &vecA, 0.0f, textureStart }, { &vecC, 0.0f, textureEnd },   { &vecB, 1.0f, textureStart },
+        { &vecB, 1.0f, textureStart }, { &vecC, 0.0f, textureEnd },   { &vecD, 1.0f, textureEnd },
+    };
+
+    for ( int i = 0; i < 12; ++i )
+    {
+        meshBuilder.Position3fv( rgVerts[ i ].pPos->Base() );
+        meshBuilder.Color4f( flRed, flGreen, flBlue, flAlpha );
+        meshBuilder.TexCoord2f( 0, rgVerts[ i ].flU, rgVerts[ i ].flV );
+        meshBuilder.AdvanceVertex();
+    }
+
+    meshBuilder.End();
+    pMesh->Draw();
 
     return 0;
 }
