@@ -205,6 +205,9 @@ private:
 	// nothing has to have run before it is usable.
 	char m_szName[128];
 	int m_nRef;
+	// HL2SB diagnostic: how many times this effect was drawn (see the retirement
+	// warning in Draw()).
+	int m_nDraws;
 };
 
 CLuaEffect::~CLuaEffect( void )
@@ -221,6 +224,7 @@ CLuaEffect::~CLuaEffect( void )
 CLuaEffect::CLuaEffect( const char *pszName, int nRef, const CEffectData &data )
 	: CClientSideEffect( m_szName )
 	, m_nRef( nRef )
+	, m_nDraws( 0 )
 {
 	Q_strncpy( m_szName, ( pszName != NULL ) ? pszName : "lua_effect", sizeof( m_szName ) );
 
@@ -258,6 +262,8 @@ void CLuaEffect::Draw( double frametime )
 		return;
 	}
 
+	++m_nDraws;
+
 	lua_getref( L, m_nRef );
 	if ( !lua_istable( L, -1 ) )
 	{
@@ -275,7 +281,16 @@ void CLuaEffect::Draw( double frametime )
 
 		const bool bAlive = lua_toboolean( L, -1 ) != 0;
 		if ( !bAlive )
+		{
+			// HL2SB diagnostic: an effect that dies on its first or second draw
+			// is invisible in practice, which is the last way a correctly created
+			// and correctly rendered effect can still never be seen.
+			char szKey[ 160 ];
+			Q_snprintf( szKey, sizeof( szKey ), "lua-effect-retired:%s", GetName() );
+			HL2SB_WarnOnce( szKey, "CLuaEffect '%s': Think -> FALSE, retired after %d draw(s)\n", GetName(), m_nDraws );
+
 			Destroy();
+		}
 		lua_pop( L, 1 );
 
 		// HL2SB diagnostic: does the draw path actually reach the script?

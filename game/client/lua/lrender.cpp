@@ -868,17 +868,26 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     float textureEnd = LUA_BINDING_ARGUMENT( luaL_checknumber, 5, "textureEnd" );
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 6, lua_Color( 255, 255, 255, 255 ), "color" );
 
-    // HL2SB diagnostic: a beam that is submitted but never seen is either a
-    // degenerate one (zero width / zero length) or one drawn with the wrong
-    // material, so say exactly what was submitted, once per material.
+    // HL2SB diagnostic: log the first N beam submissions with their full
+    // geometry.  A submitted beam that is never seen is either degenerate (zero
+    // width / length / alpha) or somewhere unexpected -- and "once per material"
+    // hid the second effect's call behind the first one's, which is exactly how
+    // the Nyan Gun's tracer hid behind its own impact effect.
     {
-        const char *pszMaterial = ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none bound>";
-        char szKey[ 192 ];
-        Q_snprintf( szKey, sizeof( szKey ), "drawbeam:%s", pszMaterial );
-        HL2SB_WarnOnce( szKey,
-            "render.DrawBeam -> material '%s' width=%.2f alpha=%.2f length=%.0f start=(%.0f %.0f %.0f)\n",
-            pszMaterial, width, color.a() / 255.0f, end.DistTo( start ),
-            start.x, start.y, start.z );
+        static int s_nDrawBeamLogged = 0;
+
+        if ( s_nDrawBeamLogged < 24 )
+        {
+            ++s_nDrawBeamLogged;
+
+            const char *pszMaterial = ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none bound>";
+            Vector vecViewOrigin = MainViewOrigin();
+
+            Warning( "[HL2SB] render.DrawBeam #%d: material '%s' width=%.2f alpha=%.2f length=%.0f start=(%.0f %.0f %.0f) end=(%.0f %.0f %.0f) view=(%.0f %.0f %.0f)\n",
+                s_nDrawBeamLogged, pszMaterial, width, color.a() / 255.0f, end.DistTo( start ),
+                start.x, start.y, start.z, end.x, end.y, end.z,
+                vecViewOrigin.x, vecViewOrigin.y, vecViewOrigin.z );
+        }
     }
 
     CMatRenderContextPtr pRenderContext( materials );
