@@ -9,6 +9,9 @@
 #include <activitylist.h>
 #include "hl2_shareddefs.h"
 #include "decals.h"
+// HL2SB: the DOCK_TYPE enum below publishes vgui::Panel's DOCK values, so it
+// cannot drift from the enum the dock pass switches on.
+#include <vgui_controls/Panel.h>
 
 // Quick and easy place to register some enums
 LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
@@ -145,6 +148,52 @@ LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
     lua_pushenum( L, PANEL_INGAMESCREENS, "INGAME_SCREENS" );
     lua_pushenum( L, PANEL_GAMEDLL, "GAME_DLL" );
     lua_pushenum( L, PANEL_CLIENTDLL_TOOLS, "CLIENT_DLL_TOOLS" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    //---------------------------------------------------------------------
+    // HL2SB: GMod's DOCK enum -- the one GMod enum whose Lua names have no
+    // prefix (NODOCK/FILL/LEFT/RIGHT/TOP/BOTTOM, values 0..5).
+    //
+    // This table HAS to come from the engine, because
+    // lua/includes/modules/gmod_compatibility/sh_enumerations.lua only
+    // *stubs* it:
+    //
+    //     _E.DOCK_TYPE = _E.DOCK_TYPE or {
+    //         NONE = 0, FILL = 1, LEFT = 2, TOP = 3, RIGHT = 4, BOTTOM = 5,
+    //     }
+    //
+    // TOP and RIGHT are SWAPPED in that stub, and the file then publishes the
+    // globals straight out of it (sh_enumerations.lua:192-197).  So every
+    // `panel:Dock( TOP )` in the ported Derma content passed 3, which the vgui2
+    // dock pass reads as DOCK_RIGHT: the child was pinned to the right edge at
+    // full height and consumed no vertical space at all, so the Dock( FILL )
+    // sibling below it still covered the whole panel.
+    //
+    // Measured before this fix (client.dll of 95855e4e):
+    //     p 400x300, a:Dock(TOP) a:SetTall(40), b:Dock(FILL),
+    //     p:InvalidateLayout(true)
+    //     -> A y=0 h=300 (x=336, w=64)   B y=0 h=300      wanted A y=0 h=40 | B y=40 h=260
+    //     a DListLayout+DButton list -> 0/266 0/266 0/266, list h=266   wanted 90
+    // (266 = the DFrame's own DockPadding: dframe.lua:65 is
+    //  DockPadding( 5, 24 + 5, 5, 5 ), so 300 - 29 - 5.)
+    //
+    // Values are tied to vgui::Panel::HL2SBDockType_t (the enum
+    // vgui2/vgui_controls/Panel.cpp switches on) instead of being written out
+    // again, and they agree with lua/includes/extensions/gmod_isvalid.lua:100
+    // (the in-tree authority, which warns when a global has the wrong value).
+    //
+    // The bare globals are deliberately NOT published here
+    // (lua_pushenum_nobare): they are generic names other enums hand out, and
+    // gmod_isvalid.lua plus sh_enumerations.lua already own that step -- which
+    // is all this table has to make correct.
+    //---------------------------------------------------------------------
+    LUA_SET_ENUM_LIB_BEGIN( L, "DOCK_TYPE" );
+    lua_pushenum_nobare( L, vgui::Panel::DOCK_NONE,   "NONE" );
+    lua_pushenum_nobare( L, vgui::Panel::DOCK_FILL,   "FILL" );
+    lua_pushenum_nobare( L, vgui::Panel::DOCK_LEFT,   "LEFT" );
+    lua_pushenum_nobare( L, vgui::Panel::DOCK_RIGHT,  "RIGHT" );
+    lua_pushenum_nobare( L, vgui::Panel::DOCK_TOP,    "TOP" );
+    lua_pushenum_nobare( L, vgui::Panel::DOCK_BOTTOM, "BOTTOM" );
     LUA_SET_ENUM_LIB_END( L );
 
     LUA_SET_ENUM_LIB_BEGIN( L, "BLOOD_COLOR" );
