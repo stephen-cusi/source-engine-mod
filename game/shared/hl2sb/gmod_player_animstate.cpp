@@ -18,6 +18,7 @@
 
 #ifdef CLIENT_DLL
 	#include "c_hl2mp_player.h"
+	#include "c_baseplayer.h"
 #else
 	#include "hl2mp_player.h"
 #endif
@@ -960,4 +961,81 @@ CON_COMMAND( gmod_anim_dumpmodel, "dump a model's GMod animation surface: pose p
 				 "and %d names with no sequence\n",
 				 pszModelName, iUnknown, iPrivate, iWithoutSequence );
 }
+
+#ifdef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// Purpose: Dump the LOCAL player's live animation state.
+//
+// gmod_anim_dumpmodel answers "can this model play this activity" from the model
+// alone.  This answers "what is the player actually doing right now", which is
+// the other half of a wrong-looking pose:
+//
+//   * which sequence is really playing, and which activity name/number it is
+//   * the playback rate and the sequence's ground speed (the pair that produced
+//     the 28348063744 clamp in the first test)
+//   * every pose parameter's live value, so a pose parameter that is not being
+//     written, or is being written with something absurd, is visible
+//   * every anim overlay: sequence, weight, cycle and order.  GMod's movement
+//     sequences carry addlayer/iklock data, so a layer that is missing or
+//     carrying a stale sequence shows up here.
+//
+// Run it standing still, then while running, then while jumping, and compare.
+//-----------------------------------------------------------------------------
+CON_COMMAND( gmod_anim_dumpstate, "dump the local player's live animation state (sequence, pose parameters, layers)" )
+{
+	C_BasePlayer *pPlayer = C_BasePlayer::GetLocalPlayer();
+	if ( !pPlayer )
+	{
+		Msg( "gmod_anim_dumpstate: no local player\n" );
+		return;
+	}
+
+	CStudioHdr *pStudioHdr = pPlayer->GetModelPtr();
+	if ( !pStudioHdr )
+	{
+		Msg( "gmod_anim_dumpstate: local player has no studio model\n" );
+		return;
+	}
+
+	const int iSequence = pPlayer->GetSequence();
+
+	Msg( "gmod_anim_dumpstate: %s\n", modelinfo->GetModelName( pPlayer->GetModel() ) );
+
+	if ( iSequence >= 0 && iSequence < pStudioHdr->GetNumSeq() )
+	{
+		mstudioseqdesc_t &seqdesc = pStudioHdr->pSeqdesc( iSequence );
+		Msg( "  sequence  %d / %d  label '%s'  activity '%s' = %d  autolayers %d\n",
+			 iSequence, pStudioHdr->GetNumSeq(), seqdesc.pszLabel(),
+			 seqdesc.pszActivityName(), seqdesc.activity, seqdesc.numautolayers );
+		Msg( "  cycle %.3f  playback rate %.4f  ground speed %.4f\n",
+			 pPlayer->GetCycle(), pPlayer->GetPlaybackRate(),
+			 pPlayer->GetSequenceGroundSpeed( iSequence ) );
+	}
+	else
+	{
+		Msg( "  sequence  %d  <-- OUT OF RANGE (0..%d)\n", iSequence, pStudioHdr->GetNumSeq() - 1 );
+	}
+
+	Msg( "  pose parameters (%d):\n", pStudioHdr->GetNumPoseParameters() );
+	for ( int i = 0; i < pStudioHdr->GetNumPoseParameters(); ++i )
+	{
+		const mstudioposeparamdesc_t &desc = pStudioHdr->pPoseParameter( i );
+		Msg( "    %-18s = %8.3f   range %.1f .. %.1f\n",
+			 desc.pszName(), pPlayer->GetPoseParameter( i ), desc.start, desc.end );
+	}
+
+	Msg( "  anim overlays (%d):\n", pPlayer->GetNumAnimOverlays() );
+	for ( int i = 0; i < pPlayer->GetNumAnimOverlays(); ++i )
+	{
+		C_AnimationLayer *pLayer = pPlayer->GetAnimOverlay( i );
+		if ( !pLayer )
+			continue;
+		const char *pszLabel = ( pLayer->m_nSequence >= 0 && pLayer->m_nSequence < pStudioHdr->GetNumSeq() )
+			? pStudioHdr->pSeqdesc( pLayer->m_nSequence ).pszLabel() : "<invalid>";
+		Msg( "    [%d] seq %4d '%s'  weight %.3f  cycle %.3f  order %d\n",
+			 i, pLayer->m_nSequence, pszLabel, pLayer->m_flWeight, pLayer->m_flCycle, pLayer->m_nOrder );
+	}
+}
+#endif // CLIENT_DLL
+
 
