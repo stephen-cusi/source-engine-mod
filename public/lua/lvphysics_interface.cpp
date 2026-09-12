@@ -645,9 +645,56 @@ LUALIB_API int luaopen_physenv (lua_State *L) {
 }
 
 
+/*
+** HL2SB GMod compat: IPhysicsObject:IsValid().
+**
+** GMod's global IsValid() is defined in lua/includes/util.lua as
+**
+**     function IsValid( object )
+**         if ( !object ) then return false end
+**         local isvalid = object.IsValid          -- <- needs a METHOD
+**         if ( !isvalid ) then return false end
+**         return isvalid( object )
+**     end
+**
+** so a type with no IsValid method answers FALSE even when the value is a live
+** object.  The IPhysicsObject metatable had no such entry (gmod_isvalid.lua
+** only patches Entity and Player), and that is what broke weapon_nyangun's
+** thrown bomb:
+**
+**     local phys = ent:GetPhysicsObject()
+**     if ( IsValid( phys ) ) then phys:Wake() phys:AddVelocity( ent:GetForward() * 1337 ) end
+**
+** IsValid( phys ) was false, so the whole block was skipped -- no velocity, no
+** parabola, and NOTHING in the log, because a false `if` is not an error.  The
+** entity did have a physics object (PhysicsInitSphere ran: the log shows the
+** "Late precache of models/props_c17/SuitCase001a.mdl" and the rainbow
+** SpriteTrail from the same Initialize), so it just dropped out of the throw
+** position.
+**
+** Reaching this method means the userdata exists, i.e. the pointer is non-NULL
+** (lua_pushphysicsobject pushes nil for a NULL object).  A physics object whose
+** entity has been removed is still a dangling pointer, exactly as in GMod.
+*/
+static int IPhysicsObject_IsValid (lua_State *L) {
+  lua_pushboolean(L, luaL_checkphysicsobject(L, 1) != NULL);
+  return 1;
+}
+
+/*
+** HL2SB: GMod's IPhysicsObject:AddVelocity takes ONE argument:
+**
+**     IPhysicsObject:AddVelocity( Vector velocity )
+**
+** The angular impulse is optional there.  This binding demanded a third
+** argument, so once IsValid() no longer short-circuited the caller above, the
+** very next line would have raised "bad argument #3 to 'AddVelocity'".
+*/
 static int IPhysicsObject_AddVelocity (lua_State *L) {
   Vector velocity = luaL_checkvector(L, 2);
-  AngularImpulse angularVelocity = luaL_checkvector(L, 3);
+  AngularImpulse angularVelocity = vec3_origin;
+  if (!lua_isnoneornil(L, 3))
+    angularVelocity = luaL_checkvector(L, 3);
   luaL_checkphysicsobject(L, 1)->AddVelocity(&velocity, &angularVelocity);
   return 0;
 }
@@ -992,13 +1039,23 @@ static int IPhysicsObject_SetShadow (lua_State *L) {
   return 0;
 }
 
+/* HL2SB: same GMod one-argument shape as AddVelocity above. */
 static int IPhysicsObject_SetVelocity (lua_State *L) {
-  luaL_checkphysicsobject(L, 1)->SetVelocity(&luaL_checkvector(L, 2), &luaL_checkvector(L, 3));
+  Vector velocity = luaL_checkvector(L, 2);
+  AngularImpulse angularVelocity = vec3_origin;
+  if (!lua_isnoneornil(L, 3))
+    angularVelocity = luaL_checkvector(L, 3);
+  luaL_checkphysicsobject(L, 1)->SetVelocity(&velocity, &angularVelocity);
   return 0;
 }
 
+/* HL2SB: same GMod one-argument shape as AddVelocity above. */
 static int IPhysicsObject_SetVelocityInstantaneous (lua_State *L) {
-  luaL_checkphysicsobject(L, 1)->SetVelocityInstantaneous(&luaL_checkvector(L, 2), &luaL_checkvector(L, 3));
+  Vector velocity = luaL_checkvector(L, 2);
+  AngularImpulse angularVelocity = vec3_origin;
+  if (!lua_isnoneornil(L, 3))
+    angularVelocity = luaL_checkvector(L, 3);
+  luaL_checkphysicsobject(L, 1)->SetVelocityInstantaneous(&velocity, &angularVelocity);
   return 0;
 }
 
@@ -1078,6 +1135,7 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"IsMoveable", IPhysicsObject_IsMoveable},
   {"IsStatic", IPhysicsObject_IsStatic},
   {"IsTrigger", IPhysicsObject_IsTrigger},
+  {"IsValid", IPhysicsObject_IsValid},
   {"LocalToWorld", IPhysicsObject_LocalToWorld},
   {"LocalToWorldVector", IPhysicsObject_LocalToWorldVector},
   {"OutputDebugInfo", IPhysicsObject_OutputDebugInfo},

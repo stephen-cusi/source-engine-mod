@@ -13,6 +13,11 @@
 #include "lgametrace.h"
 #include "mathlib/lvector.h"
 #include "engine/IEngineSound.h"
+// HL2SB: CSoundEnvelopeController, which owns the engine's CSoundPatch objects.
+// CSoundPatch itself is defined only inside game/shared/soundenvelope.cpp, so
+// the controller interface is the only public handle on it -- which is exactly
+// what the GMod audio channel below needs (see luasrc_CreateSound).
+#include "soundenvelope.h"
 #include "leffect_dispatch_data.h"
 #include <lColor.h>
 
@@ -460,116 +465,278 @@ static int luasrc_SysTime (lua_State *L) {
 **
 ** -- was "attempt to call a nil value (global 'CreateSound')" on the first shot.
 **
-** The channel below is backed by the engine's own sound emitter instead: the
-** object is an ordinary Lua table holding the state, and Play/Stop/ChangeVolume
-** re-issue the SAME wave on the SAME channel on the SAME entity, with
-** SND_CHANGE_VOL / SND_STOP.  That is how the engine itself adjusts a playing
-** sound, so the loop and the beat still cross-fade the way the script intends.
+** The first cut of this binding was backed by EmitSound(): a fire-and-forget
+** sound that can be re-emitted with SND_CHANGE_VOL / SND_STOP but has no engine
+** object behind it.  That is why the addon's loop could never be stopped or
+** cross-faded -- and the log shows exactly what it did instead:
+**
+**     Direct precache of weapons/nyan/nyan_loop.wav
+**     Late precache of weapons/nyan/nyan_loop.wav
+**
+** (one EmitSound per press, no persistent voice).
+**
+** The channel is now a real voice: a CSoundPatch, created and driven through
+** CSoundEnvelopeController.  That is the engine's own looping-sound object (the
+** one C_BaseEntity::EmitSound( filter, entindex, EmitSound_t& ) and every
+** engine ambient loop is built on), so:
+**
+**     Play()                  -> controller.Play( patch, volume, pitch )
+**     ChangeVolume( v, t )    -> controller.SoundChangeVolume( patch, v, t )
+**                                ... a real ramp, i.e. the cross-fade
+**     Stop()/Shutdown         -> controller.SoundDestroy( patch )
+**
+** The channel stays an ordinary Lua table (the addon stores it on the SWEP and
+** only ever calls methods on it), with the CSoundPatch kept in a light-userdata
+** field.  Lifetime: the patch is created lazily on the first Play(), destroyed
+** by Stop()/Pause()/holster, and forgotten if the owning entity goes away --
+** the engine's controller drops a patch whose entity is gone, so touching the
+** pointer afterwards would be a use-after-free.
 */
-#define HL2SB_CHANNEL_FIELD_ENT     "__hl2sb_ent"
-#define HL2SB_CHANNEL_FIELD_SOUND   "__hl2sb_sound"
-#define HL2SB_CHANNEL_FIELD_VOLUME  "__hl2sb_volume"
-#define HL2SB_CHANNEL_FIELD_CHANNEL "__hl2sb_channel"
-#define HL2SB_CHANNEL_FIELD_PLAYING "__hl2sb_playing"
+#define HL2SB_CHANNEL_FIELD_ENT      "__hl2sb_ent"
+#define HL2SB_CHANNEL_FIELD_SOUND    "__hl2sb_sound"
+#define HL2SB_CHANNEL_FIELD_VOLUME   "__hl2sb_volume"
+#define HL2SB_CHANNEL_FIELD_CHANNEL  "__hl2sb_channel"
+#define HL2SB_CHANNEL_FIELD_PLAYING  "__hl2sb_playing"
+#define HL2SB_CHANNEL_FIELD_PATCH    "__hl2sb_patch"
+#define HL2SB_CHANNEL_FIELD_PAUSED   "__hl2sb_paused"
 
-static void HL2SB_EmitChannelSound( lua_State *L, int nFlags, float flVolumeOverride )
-{
-  lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_ENT );
+static CBaseEntity *HL2SB_ChannelEntity( lua_State *L, int nIndex ) {
+  lua_getfield( L, nIndex, HL2SB_CHANNEL_FIELD_ENT );
   CBaseEntity *pEntity = lua_toentity( L, -1 );
   lua_pop( L, 1 );
+  return pEntity;
+}
 
-  if ( pEntity == NULL )
-    return;
+static CSoundPatch *HL2SB_ChannelPatch( lua_State *L, int nIndex ) {
+  lua_getfield( L, nIndex, HL2SB_CHANNEL_FIELD_PATCH );
+  CSoundPatch *pPatch = (CSoundPatch *)lua_touserdata( L, -1 );
+  lua_pop( L, 1 );
+  return pPatch;
+}
 
-  lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_SOUND );
+static void HL2SB_ChannelSetPatch( lua_State *L, int nIndex, CSoundPatch *pPatch ) {
+  if ( pPatch != NULL )
+    lua_pushlightuserdata( L, pPatch );
+  else
+    lua_pushnil( L );
+  lua_setfield( L, nIndex, HL2SB_CHANNEL_FIELD_PATCH );
+}
+
+static bool HL2SB_ChannelBool( lua_State *L, int nIndex, const char *pszField ) {
+  lua_getfield( L, nIndex, pszField );
+  const bool bValue = lua_toboolean( L, -1 ) != 0;
+  lua_pop( L, 1 );
+  return bValue;
+}
+
+static void HL2SB_ChannelSetBool( lua_State *L, int nIndex, const char *pszField, bool bValue ) {
+  lua_pushboolean( L, bValue );
+  lua_setfield( L, nIndex, pszField );
+}
+
+static float HL2SB_ChannelVolume( lua_State *L, int nIndex ) {
+  lua_getfield( L, nIndex, HL2SB_CHANNEL_FIELD_VOLUME );
+  const float flVolume = lua_isnumber( L, -1 ) ? (float)lua_tonumber( L, -1 ) : 1.0f;
+  lua_pop( L, 1 );
+  return flVolume;
+}
+
+static void HL2SB_ChannelSetVolume( lua_State *L, int nIndex, float flVolume ) {
+  lua_pushnumber( L, flVolume );
+  lua_setfield( L, nIndex, HL2SB_CHANNEL_FIELD_VOLUME );
+}
+
+static int HL2SB_ChannelAudioChannel( lua_State *L, int nIndex ) {
+  lua_getfield( L, nIndex, HL2SB_CHANNEL_FIELD_CHANNEL );
+  const int nChannel = lua_isnumber( L, -1 ) ? (int)lua_tointeger( L, -1 ) : CHAN_STATIC;
+  lua_pop( L, 1 );
+  return nChannel;
+}
+
+/*
+** The engine's own looping voice for this channel, created on demand.  Returns
+** NULL when the owning entity or the sound name is gone -- every caller treats
+** that as "nothing to hear".
+*/
+static CSoundPatch *HL2SB_ChannelEnsurePatch( lua_State *L, int nIndex ) {
+  // The entity is checked FIRST: the engine's controller drops a CSoundPatch
+  // whose entity is gone (CSoundPatch::Update -> "Removing CSoundPatch with NULL
+  // EHandle"), so a stored pointer can already be freed and must be forgotten
+  // without touching it.
+  CBaseEntity *pEntity = HL2SB_ChannelEntity( L, nIndex );
+  if ( pEntity == NULL ) {
+    HL2SB_ChannelSetPatch( L, nIndex, NULL );
+    HL2SB_ChannelSetBool( L, nIndex, HL2SB_CHANNEL_FIELD_PLAYING, false );
+    return NULL;
+  }
+
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, nIndex );
+  if ( pPatch != NULL )
+    return pPatch;
+
+  lua_getfield( L, nIndex, HL2SB_CHANNEL_FIELD_SOUND );
   const char *pszSound = lua_isstring( L, -1 ) ? lua_tostring( L, -1 ) : NULL;
   lua_pop( L, 1 );
 
   if ( pszSound == NULL || pszSound[0] == '\0' )
-    return;
+    return NULL;
 
-  lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_CHANNEL );
-  const int nChannel = lua_isnumber( L, -1 ) ? lua_tointeger( L, -1 ) : CHAN_STATIC;
-  lua_pop( L, 1 );
-
-  lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_VOLUME );
-  float flVolume = lua_isnumber( L, -1 ) ? (float)lua_tonumber( L, -1 ) : 1.0f;
-  lua_pop( L, 1 );
-
-  if ( flVolumeOverride >= 0.0f )
-    flVolume = flVolumeOverride;
-
-  EmitSound_t emit;
-  emit.m_pSoundName = pszSound;
-  emit.m_nChannel = nChannel;
-  emit.m_flVolume = flVolume;
-  emit.m_SoundLevel = SNDLVL_NORM;
-  emit.m_nFlags = nFlags;
-  emit.m_bWarnOnDirectWaveReference = true;
+  // The server refuses to start a wave SV_StartSound has not been told about
+  // (the log is full of "SV_StartSound: weapons/nyan/nya2.wav not precached"),
+  // so a raw wave name has to be registered before the patch can start.  This
+  // is the same call EmitSound makes, hence the same once-per-channel
+  // "Direct precache of ..." line the first cut produced.
+#ifndef CLIENT_DLL
+  if ( !enginesound->IsSoundPrecached( pszSound ) )
+    CBaseEntity::PrecacheSound( pszSound );
+#endif
 
   CPASAttenuationFilter soundFilter( pEntity, pszSound );
 #ifdef CLIENT_DLL
   soundFilter.UsePredictionRules();
 #endif
-  pEntity->EmitSound( soundFilter, pEntity->entindex(), emit );
 
-  lua_pushnumber( L, flVolume );
-  lua_setfield( L, 1, HL2SB_CHANNEL_FIELD_VOLUME );
+  pPatch = CSoundEnvelopeController::GetController().SoundCreate(
+             soundFilter, pEntity->entindex(), HL2SB_ChannelAudioChannel( L, nIndex ),
+             pszSound, SNDLVL_NORM );
+
+  if ( pPatch != NULL )
+    HL2SB_ChannelSetPatch( L, nIndex, pPatch );
+
+  return pPatch;
+}
+
+/*
+** Stops the voice and forgets it.  Destroying the patch is what actually stops
+** the loop (the first cut's SND_STOP re-emit did not), so the next Play()
+** creates a fresh one.  When the entity is gone the engine has already taken the
+** patch away and it must NOT be touched again.
+*/
+static void HL2SB_ChannelShutdown( lua_State *L, int nIndex ) {
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, nIndex );
+
+  if ( pPatch != NULL ) {
+    if ( HL2SB_ChannelEntity( L, nIndex ) != NULL )
+      CSoundEnvelopeController::GetController().SoundDestroy( pPatch );
+
+    HL2SB_ChannelSetPatch( L, nIndex, NULL );
+  }
+
+  HL2SB_ChannelSetBool( L, nIndex, HL2SB_CHANNEL_FIELD_PLAYING, false );
 }
 
 static int luasrc_Channel_Play (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
-  HL2SB_EmitChannelSound( L, 0, -1.0f );
-  lua_pushboolean( L, true );
-  lua_setfield( L, 1, HL2SB_CHANNEL_FIELD_PLAYING );
+
+  CSoundPatch *pPatch = HL2SB_ChannelEnsurePatch( L, 1 );
+  if ( pPatch == NULL ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  CSoundEnvelopeController::GetController().Play( pPatch, HL2SB_ChannelVolume( L, 1 ), PITCH_NORM );
+  HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PLAYING, true );
+  HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED, false );
+
   lua_pushboolean( L, true );
   return 1;
 }
 
 static int luasrc_Channel_Stop (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
-  HL2SB_EmitChannelSound( L, SND_STOP, -1.0f );
-  lua_pushboolean( L, false );
-  lua_setfield( L, 1, HL2SB_CHANNEL_FIELD_PLAYING );
+  HL2SB_ChannelShutdown( L, 1 );
+  HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED, false );
+  return 0;
+}
+
+static int luasrc_Channel_Pause (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  HL2SB_ChannelShutdown( L, 1 );
+  HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED, true );
   return 0;
 }
 
 static int luasrc_Channel_SetVolume (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   const float flVolume = (float)luaL_checknumber( L, 2 );
-  HL2SB_EmitChannelSound( L, SND_CHANGE_VOL, flVolume );
+  HL2SB_ChannelSetVolume( L, 1, flVolume );
+
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
+    CSoundEnvelopeController::GetController().SoundChangeVolume( pPatch, flVolume, 0.0f );
+
   return 0;
 }
 
+/*
+** GMod's cross-fade: ChangeVolume( volume, time ) ramps over `time` seconds.
+** CSoundPatch::ChangeVolume is exactly that ramp, so the nyan gun's
+** "loop up on fire, loop down on release" finally works.
+*/
 static int luasrc_Channel_ChangeVolume (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   const float flVolume = (float)luaL_checknumber( L, 2 );
-  luaL_optnumber( L, 3, 0.0f );  /* dtime: the engine's change is immediate */
-  HL2SB_EmitChannelSound( L, SND_CHANGE_VOL, flVolume );
+  const float flDeltaTime = (float)luaL_optnumber( L, 3, 0.0f );
+  HL2SB_ChannelSetVolume( L, 1, flVolume );
+
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
+    CSoundEnvelopeController::GetController().SoundChangeVolume( pPatch, flVolume, flDeltaTime );
+
+  return 0;
+}
+
+static int luasrc_Channel_SetPitch (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  const float flPitch = (float)luaL_checknumber( L, 2 );
+
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
+    CSoundEnvelopeController::GetController().SoundChangePitch( pPatch, flPitch, 0.0f );
+
   return 0;
 }
 
 static int luasrc_Channel_IsPlaying (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
-  lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_PLAYING );
-  lua_pushboolean( L, lua_toboolean( L, -1 ) != 0 );
-  lua_remove( L, -2 );
+
+  if ( HL2SB_ChannelEntity( L, 1 ) == NULL ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  lua_pushboolean( L, HL2SB_ChannelBool( L, 1, HL2SB_CHANNEL_FIELD_PLAYING ) );
+  return 1;
+}
+
+static int luasrc_Channel_IsPaused (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  lua_pushboolean( L, HL2SB_ChannelBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED ) );
   return 1;
 }
 
 static int luasrc_Channel_IsValid (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
-  lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_ENT );
-  lua_pushboolean( L, lua_toentity( L, -1 ) != NULL );
-  lua_remove( L, -2 );
+  lua_pushboolean( L, HL2SB_ChannelEntity( L, 1 ) != NULL );
   return 1;
 }
 
 static int luasrc_Channel_GetVolume (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
-  lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_VOLUME );
-  lua_pushnumber( L, lua_isnumber( L, -1 ) ? lua_tonumber( L, -1 ) : 1.0 );
-  lua_remove( L, -2 );
+  lua_pushnumber( L, HL2SB_ChannelVolume( L, 1 ) );
+  return 1;
+}
+
+static int luasrc_Channel_GetPitch (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL ) {
+    lua_pushnumber( L, CSoundEnvelopeController::GetController().SoundGetPitch( pPatch ) );
+    return 1;
+  }
+
+  lua_pushnumber( L, PITCH_NORM );
   return 1;
 }
 
@@ -579,6 +746,11 @@ static int luasrc_Channel_NoOp (lua_State *L) {
 
 static int luasrc_Channel_Zero (lua_State *L) {
   lua_pushnumber( L, 0 );
+  return 1;
+}
+
+static int luasrc_Channel_False (lua_State *L) {
+  lua_pushboolean( L, false );
   return 1;
 }
 
@@ -608,22 +780,33 @@ static int luasrc_CreateSound (lua_State *L) {
   lua_pushboolean( L, false );
   lua_setfield( L, -2, HL2SB_CHANNEL_FIELD_PLAYING );
 
+  lua_pushboolean( L, false );
+  lua_setfield( L, -2, HL2SB_CHANNEL_FIELD_PAUSED );
+
+  lua_pushnil( L );
+  lua_setfield( L, -2, HL2SB_CHANNEL_FIELD_PATCH );
+
   struct { const char *pszName; lua_CFunction pfn; } methods[] = {
     { "Play",         luasrc_Channel_Play },
     { "Stop",         luasrc_Channel_Stop },
-    { "Pause",        luasrc_Channel_Stop },
+    { "Pause",        luasrc_Channel_Pause },
     { "SetVolume",    luasrc_Channel_SetVolume },
     { "ChangeVolume", luasrc_Channel_ChangeVolume },
     { "GetVolume",    luasrc_Channel_GetVolume },
+    { "SetPitch",     luasrc_Channel_SetPitch },
+    { "GetPitch",     luasrc_Channel_GetPitch },
     { "IsPlaying",    luasrc_Channel_IsPlaying },
-    { "IsPaused",     luasrc_Channel_IsPlaying },
+    { "IsPaused",     luasrc_Channel_IsPaused },
     { "IsValid",      luasrc_Channel_IsValid },
+    { "Is3D",         luasrc_Channel_False },
     { "GetTime",      luasrc_Channel_Zero },
     { "GetState",     luasrc_Channel_Zero },
-    /* Accepted and ignored: the spatialisation, pitch and seeking controls a
-    ** GMod script may poke at.  Nothing in the addon path uses them. */
+    { "GetPlaybackRate", luasrc_Channel_Zero },
+    /* Accepted and ignored: the seeking / spatialisation / looping controls a
+    ** GMod script may poke at.  A CSoundPatch loops or not by its own wave, and
+    ** nothing in the addon path uses them. */
     { "SetTime",      luasrc_Channel_NoOp },
-    { "SetPitch",     luasrc_Channel_NoOp },
+    { "SetPlaybackRate", luasrc_Channel_NoOp },
     { "EnableLooping", luasrc_Channel_NoOp },
     { "Set3DPosition", luasrc_Channel_NoOp },
     { "SetPos",       luasrc_Channel_NoOp },

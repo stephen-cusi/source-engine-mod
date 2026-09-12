@@ -717,13 +717,32 @@ void CHudWeaponSelection::Paint()
 					bool bDrawBucketNumber = true;
 					int iLastPos = GetLastPosInSlot( i );
 
+					// HL2SB: the position the slot's weapons actually START at.
+					//
+					// A GMod SWEP authors SlotPos freely and does not have to pack
+					// the low positions: weapon_nyangun is Slot 2 / SlotPos 5 and is
+					// the only weapon in slot 2.  Drawing a box for each empty
+					// position before it reserved five blank boxes ABOVE the icon
+					// and pushed the icon down to the bottom of the bucket ("HUD
+					// position is very low, and there are a few empty boxes above
+					// that are unused but occupied").
+					//
+					// Leading empties are therefore never drawn, whatever
+					// hud_showemptyweaponslots says; a gap BETWEEN two owned
+					// weapons is still drawn when it is on, which is what that
+					// convar is for ("weapons received out of order").
+					int iFirstPos = iLastPos;
+					C_BaseCombatWeapon *pFirstWeapon = GetFirstPos( i );
+					if ( pFirstWeapon )
+						iFirstPos = pFirstWeapon->GetPosition();
+
 					for (int slotpos = 0; slotpos <= iLastPos; slotpos++)
 					{
 #if !defined ( LUA_SDK )
 						C_BaseCombatWeapon *pWeapon = GetWeaponInSlot( i, slotpos );
 						if ( !pWeapon )
 						{
-							if ( !hud_showemptyweaponslots.GetBool() )
+							if ( slotpos < iFirstPos || !hud_showemptyweaponslots.GetBool() )
 								continue;
 							DrawBox( xpos, ypos, largeBoxWide, largeBoxTall, m_EmptyBoxColor, m_flAlphaOverride, bDrawBucketNumber ? i + 1 : -1 );
 						}
@@ -749,7 +768,7 @@ void CHudWeaponSelection::Paint()
 
 						if ( iWeaponsInSlotPos == 0 )
 						{
-							if ( !hud_showemptyweaponslots.GetBool() )
+							if ( slotpos < iFirstPos || !hud_showemptyweaponslots.GetBool() )
 								continue;
 							DrawBox( xpos, ypos, largeBoxWide, largeBoxTall, m_EmptyBoxColor, m_flAlphaOverride, bDrawBucketNumber ? i + 1 : -1 );
 

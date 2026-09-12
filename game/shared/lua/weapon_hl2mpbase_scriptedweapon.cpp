@@ -851,9 +851,22 @@ bool CHL2MPScriptedWeapon::UseHands( void ) const
 //-----------------------------------------------------------------------------
 // HL2SB GMod SWEP compat: the weapon selection HUD takes the icon straight off
 // the SWEP.  GMod spells it IconOverride (material path) or WepSelectIcon, and
-// the older WepSelectIcon spelling is a surface.GetTextureID() *number*, which
-// is not a material name - ignore numbers and let the HUD fall back to
-// materials/entities/weapon_<classname>.
+// the two spellings are used for two DIFFERENT things:
+//
+//   * a STRING is a material path ("nyan/selection.png");
+//   * a Material() object is what weapon_nyangun sets:
+//
+//         SWEP.WepSelectIcon = Material( "nyan/selection.png" )
+//
+//     which on this fork is the Lua proxy table from
+//     lua/includes/extensions/gmod_surface.lua; it keeps its path in __path and
+//     mat:GetName() returns the same string.
+//
+// The old version returned lua_tostring() of a value whose stack slot it had
+// already popped -- a pointer the GC could collect before the HUD copied it --
+// and it ignored every non-string, so the Material() form silently fell through
+// to the paper "weapons/swep" icon.  (The older WepSelectIcon spelling as a
+// surface.GetTextureID() *number* is still not a name, and is still ignored.)
 //-----------------------------------------------------------------------------
 const char *CHL2MPScriptedWeapon::GetWepSelectIcon( void ) const
 {
@@ -862,6 +875,11 @@ const char *CHL2MPScriptedWeapon::GetWepSelectIcon( void ) const
 		return NULL;
 
 	static const char *s_pIconKeys[] = { "IconOverride", "WepSelectIcon" };
+
+	// The caller (HL2SB_DrawWeaponSelectIcon in hud_weaponselection.cpp) copies
+	// this immediately, so one file-static buffer is enough -- and it keeps the
+	// string alive past the lua_pop() below, which the old code did not.
+	static char s_szWepSelectIcon[MAX_PATH];
 
 	for ( int i = 0; i < ARRAYSIZE( s_pIconKeys ); ++i )
 	{
@@ -875,11 +893,28 @@ const char *CHL2MPScriptedWeapon::GetWepSelectIcon( void ) const
 		lua_getfield( L, -1, s_pIconKeys[i] );
 		lua_remove( L, -2 );
 
-		const char *pszIcon = ( lua_type( L, -1 ) == LUA_TSTRING ) ? lua_tostring( L, -1 ) : NULL;
+		bool bHaveIcon = false;
+
+		if ( lua_type( L, -1 ) == LUA_TSTRING )
+		{
+			Q_strncpy( s_szWepSelectIcon, lua_tostring( L, -1 ), sizeof( s_szWepSelectIcon ) );
+			bHaveIcon = true;
+		}
+		else if ( lua_istable( L, -1 ) )
+		{
+			lua_getfield( L, -1, "__path" );
+			if ( lua_type( L, -1 ) == LUA_TSTRING )
+			{
+				Q_strncpy( s_szWepSelectIcon, lua_tostring( L, -1 ), sizeof( s_szWepSelectIcon ) );
+				bHaveIcon = true;
+			}
+			lua_pop( L, 1 );
+		}
+
 		lua_pop( L, 1 );
 
-		if ( pszIcon && pszIcon[0] )
-			return pszIcon;
+		if ( bHaveIcon && s_szWepSelectIcon[0] )
+			return s_szWepSelectIcon;
 	}
 #endif
 
