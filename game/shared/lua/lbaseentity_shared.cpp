@@ -1946,6 +1946,15 @@ static int CBaseEntity_WorldToEntitySpace (lua_State *L) {
   return 0;
 }
 
+// HL2SB: what a NULL entity answers to any method call.  See the NULL branch of
+// CBaseEntity___index(): GMod's NULL sentinel returns false for every method, and
+// scripts depend on it (weapon_medkit's CanHeal() calls ent:IsPlayer() on a trace
+// entity that is NULL whenever the trace hit nothing).
+static int HL2SB_NullEntityMethod (lua_State *L) {
+  lua_pushboolean(L, false);
+  return 1;
+}
+
 static int CBaseEntity___index (lua_State *L) {
   CBaseEntity *pEntity = lua_toentity(L, 1);
   if (pEntity == NULL) {
@@ -1965,8 +1974,24 @@ static int CBaseEntity___index (lua_State *L) {
     **     ConCommand 'undo' Failed: lua/includes/util.lua:318: attempt to index a NULL entity
     ** once a recorded entity had been removed.  Pushing nil makes the lookup
     ** yield nil, `isvalid` is nil, and IsValid() correctly answers false.
+    **
+    ** A NULL entity also has to answer METHOD CALLS the way GMod's does: false.
+    ** weapon_medkit's CanHeal() opens with
+    **     if ( ent:IsPlayer() or ent:IsNPC() ) then
+    ** on a trace entity that is NULL whenever the trace hit nothing, and the
+    ** nil lookup above turned that into "attempt to call a nil value (method
+    ** 'IsPlayer')" -- a throw, which aborted the whole heal path.  IsValid stays
+    ** an explicit false (the global IsValid() reads it first, and a function is
+    ** truthy in Lua), every other key yields a function that returns false.
     */
-    lua_pushnil(L);
+    const char *pszField = lua_tostring(L, 2);
+
+    if (pszField != NULL && Q_stricmp(pszField, "IsValid") == 0) {
+      lua_pushboolean(L, false);
+    } else {
+      lua_pushcfunction(L, HL2SB_NullEntityMethod);
+    }
+
     return 1;
   }
   const char *field = luaL_checkstring(L, 2);
@@ -2165,11 +2190,83 @@ static int CBaseEntity_TakeDamageInfo (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:IsConstraint().
+//
+// lua/includes/modules/constraint.lua asks this of every entity that goes away
+//     if ( ent:IsConstraint() || constraintClasses[ ent:GetClass() ] ) then ...
+// and the call was nil, so the hook threw on EVERY entity removal ("Hook
+// 'Constraint Library - ConstraintRemoved' (EntityRemoved) Failed").
+//
+// GMod answers it from a CBaseEntity predicate this fork does not have, and one
+// cannot be written portably: CPhysConstraint is a server-only C++ type
+// (game/server/physconstraint.cpp) and the client has no such class at all.  So
+// match the class names the constraint entities are registered under -- which is
+// what constraint.lua already does for itself, for the two classes ("phys_spring",
+// "phys_slideconstraint") it knows the predicate misses.
+//-----------------------------------------------------------------------------
+static const char *s_pHL2SB_ConstraintClasses[] = {
+  "phys_constraint",
+  "phys_constraintsystem",
+  "phys_hinge",
+  "phys_ballsocket",
+  "phys_slideconstraint",
+  "phys_lengthconstraint",
+  "phys_pulleyconstraint",
+  "phys_ragdollconstraint",
+  "phys_axisconstraint",
+  "phys_rotateconstraint",
+  "phys_weld",
+  "phys_spring",
+  "phys_keepupright",
+};
+
+static bool HL2SB_IsConstraintClass (const char *pszClass) {
+  if (pszClass == NULL)
+    return false;
+
+  for (int i = 0; i < ARRAYSIZE(s_pHL2SB_ConstraintClasses); ++i) {
+    if (!Q_stricmp(pszClass, s_pHL2SB_ConstraintClasses[i]))
+      return true;
+  }
+
+  return false;
+}
+
+static int CBaseEntity_IsConstraint (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  lua_pushboolean(L, pEntity != NULL && HL2SB_IsConstraintClass(pEntity->GetClassname()));
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:SendLua( code ).
+//
+// GMod runs the string on that entity's owner client.  This engine has no such
+// plumbing (only the console commands lua_run / lua_run_cl), so the honest thing
+// is to accept the call and do nothing -- gmod_camera's drop path does
+//     owner:SendLua( [[RunConsoleCommand( "jpeg" )]] )
+// and the throw ("attempt to call a nil value (method 'SendLua')") aborted the
+// weapon's own cleanup, which is strictly worse than the command not happening.
+// Reported once per DLL load rather than silently swallowed.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_SendLua (lua_State *L) {
+  const char *pszCode = lua_tostring(L, 2);
+
+  HL2SB_WarnOnce("entity-sendlua-ignored",
+    "Entity:SendLua( '%s' ) ignored: this engine has no client Lua-channel (only lua_run / lua_run_cl in the console)\n",
+    (pszCode != NULL) ? pszCode : "<none>");
+
+  return 0;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"GetForward", CBaseEntity_GetForward},
   {"GetRight", CBaseEntity_GetRight},
   {"GetLeft", CBaseEntity_GetLeft},
   {"GetUp", CBaseEntity_GetUp},
+  {"IsConstraint", CBaseEntity_IsConstraint},
+  {"SendLua", CBaseEntity_SendLua},
   {"TakeDamageInfo", CBaseEntity_TakeDamageInfo},
   {"SetAngles", CBaseEntity_SetAngles},
   {"GetAngles", CBaseEntity_GetAngles},

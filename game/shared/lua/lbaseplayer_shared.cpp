@@ -98,6 +98,80 @@ static int CBasePlayer_CurrentCommandNumber (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Player:GetCurrentCommand().
+//
+// gmod_camera's SWEP:Tick() reads the player's live command every frame
+// (lua/weapons/gmod_camera/shared.lua:117-122):
+//     local cmd = owner:GetCurrentCommand()
+//     if ( !cmd:KeyDown( IN_ATTACK2 ) ) then return end
+//     ... cmd:GetMouseY() ... cmd:GetMouseX() ...
+// and this engine had no binding for it at all, so that Tick() threw every frame
+// and the camera could be held but never zoomed or rolled.
+//
+// The engine only exposes the command as a const pointer (GetCurrentUserCommand,
+// valid while that player's command is being processed), so this hands back a
+// snapshot table with GMod's field names and the method spellings scripts use.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_CmdKeyDown (lua_State *L) {
+  lua_getfield(L, 1, "buttons");
+  const int nButtons = lua_tointeger(L, -1);
+  lua_pop(L, 1);
+
+  lua_pushboolean(L, (nButtons & luaL_checkint(L, 2)) != 0);
+  return 1;
+}
+
+static int CBasePlayer_CmdGetMouseX (lua_State *L) { lua_getfield(L, 1, "mousedx"); return 1; }
+static int CBasePlayer_CmdGetMouseY (lua_State *L) { lua_getfield(L, 1, "mousedy"); return 1; }
+static int CBasePlayer_CmdGetButtons (lua_State *L) { lua_getfield(L, 1, "buttons"); return 1; }
+static int CBasePlayer_CmdGetImpulse (lua_State *L) { lua_getfield(L, 1, "impulse"); return 1; }
+static int CBasePlayer_CmdGetViewAngles (lua_State *L) { lua_getfield(L, 1, "viewangles"); return 1; }
+static int CBasePlayer_CmdGetForwardMove (lua_State *L) { lua_getfield(L, 1, "forwardmove"); return 1; }
+static int CBasePlayer_CmdGetSideMove (lua_State *L) { lua_getfield(L, 1, "sidemove"); return 1; }
+static int CBasePlayer_CmdGetUpMove (lua_State *L) { lua_getfield(L, 1, "upmove"); return 1; }
+
+static int CBasePlayer_CmdSetViewAngles (lua_State *L) {
+  lua_setfield(L, 1, "viewangles");		// command table, angle
+  return 0;
+}
+
+static int CBasePlayer_GetCurrentCommand (lua_State *L) {
+  const CUserCmd *pCmd = luaL_checkplayer(L, 1)->GetCurrentUserCommand();
+
+  if (pCmd == NULL) {
+    lua_pushnil(L);
+    return 1;
+  }
+
+  lua_newtable(L);
+
+  lua_pushinteger(L, pCmd->command_number); lua_setfield(L, -2, "command_number");
+  lua_pushinteger(L, pCmd->tick_count);     lua_setfield(L, -2, "tick_count");
+  lua_pushinteger(L, pCmd->buttons);        lua_setfield(L, -2, "buttons");
+  lua_pushinteger(L, pCmd->impulse);        lua_setfield(L, -2, "impulse");
+  lua_pushinteger(L, pCmd->weaponselect);   lua_setfield(L, -2, "weaponselect");
+  lua_pushinteger(L, pCmd->mousedx);        lua_setfield(L, -2, "mousedx");
+  lua_pushinteger(L, pCmd->mousedy);        lua_setfield(L, -2, "mousedy");
+  lua_pushnumber(L, pCmd->forwardmove);     lua_setfield(L, -2, "forwardmove");
+  lua_pushnumber(L, pCmd->sidemove);        lua_setfield(L, -2, "sidemove");
+  lua_pushnumber(L, pCmd->upmove);          lua_setfield(L, -2, "upmove");
+  lua_pushangle(L, pCmd->viewangles);       lua_setfield(L, -2, "viewangles");
+
+  lua_pushcfunction(L, CBasePlayer_CmdKeyDown);        lua_setfield(L, -2, "KeyDown");
+  lua_pushcfunction(L, CBasePlayer_CmdGetMouseX);      lua_setfield(L, -2, "GetMouseX");
+  lua_pushcfunction(L, CBasePlayer_CmdGetMouseY);      lua_setfield(L, -2, "GetMouseY");
+  lua_pushcfunction(L, CBasePlayer_CmdGetButtons);     lua_setfield(L, -2, "GetButtons");
+  lua_pushcfunction(L, CBasePlayer_CmdGetImpulse);     lua_setfield(L, -2, "GetImpulse");
+  lua_pushcfunction(L, CBasePlayer_CmdGetViewAngles);  lua_setfield(L, -2, "GetViewAngles");
+  lua_pushcfunction(L, CBasePlayer_CmdSetViewAngles);  lua_setfield(L, -2, "SetViewAngles");
+  lua_pushcfunction(L, CBasePlayer_CmdGetForwardMove); lua_setfield(L, -2, "GetForwardMove");
+  lua_pushcfunction(L, CBasePlayer_CmdGetSideMove);    lua_setfield(L, -2, "GetSideMove");
+  lua_pushcfunction(L, CBasePlayer_CmdGetUpMove);      lua_setfield(L, -2, "GetUpMove");
+
+  return 1;
+}
+
 static int CBasePlayer_DoMuzzleFlash (lua_State *L) {
   luaL_checkplayer(L, 1)->DoMuzzleFlash();
   return 0;
@@ -1085,6 +1159,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"AddToPlayerSimulationList", CBasePlayer_AddToPlayerSimulationList},
   {"ClearZoomOwner", CBasePlayer_ClearZoomOwner},
   {"CurrentCommandNumber", CBasePlayer_CurrentCommandNumber},
+  {"GetCurrentCommand", CBasePlayer_GetCurrentCommand},
   {"DoMuzzleFlash", CBasePlayer_DoMuzzleFlash},
   {"MuzzleFlash", CBasePlayer_MuzzleFlash},
   {"ExitLadder", CBasePlayer_ExitLadder},
