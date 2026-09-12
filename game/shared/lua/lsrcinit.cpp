@@ -18,10 +18,20 @@
 #include "particles/particles.h"
 #include "filesystem.h"
 // HL2SB: luaL_checkentity (SuppressHostEvents), the GMod global helpers
-// registered at the end, the NetworkVar shim (which hands back a Color) and the
-// vector/color accessors it and sent_ball need.
+// registered at the end, the NetworkVar shim (which hands a 0..1 Vector back for
+// a Vector-declared variable, a 0..255 Color otherwise) and the vector/color
+// accessors it and sent_ball need.
 #include "luamanager.h"
 #include "lbaseentity_shared.h"
+// HL2SB: lua_toanimating() for the NetworkVar shim's m_nSkin carrier.  Each
+// realm has its own twin (game/*/lua/l[ c_ ]baseanimating.h); its
+// dynamic_cast is the real-RTTI cast that keeps a CBaseEntity from being
+// reinterpreted as an animating one.  Same pair lbaseentity_shared.cpp uses.
+#ifdef CLIENT_DLL
+#include "lc_baseanimating.h"
+#else
+#include "lbaseanimating.h"
+#endif
 #include <lColor.h>
 #include <mathlib/lvector.h>
 #include "ipredictionsystem.h"
@@ -894,8 +904,9 @@ static int lua_IsFirstTimePredicted (lua_State *L) {
 // and GMod's engine turns each declaration into the Set<name>/Get<name> pair the
 // script then calls.  This fork has no DataTable slots for Lua entities, so the
 // accessors are defined here -- installed by CBaseScripted::InitScriptedEntity()
-// as the entity table's NetworkVar / NetworkVarNotify fields (basescripted.cpp),
-// which is why a stock GMod entity script can call them without being modified.
+// as the entity table's NetworkVar / NetworkVarNotify fields (basescripted.cpp:
+// 206-238), which is why a stock GMod entity script can call them without being
+// modified.
 //
 // The pair is LARGELY the same shim weapons/weapon_base/shared.lua already builds
 // for SWEPs, with one difference that matters: a SWEP stores per-table and each
@@ -903,14 +914,44 @@ static int lua_IsFirstTimePredicted (lua_State *L) {
 // reads must cross the wire (sent_ball's SpawnFunction sets BallSize/BallColor on
 // the server, while its ENT:Draw reads them on the client).  A plain Lua table
 // would leave the client on the defaults -- size 0, black -- so the two variables
-// sent_ball declares are carried by fields the entity ALREADY networks:
+// sent_ball declares are ALSO carried by fields the entity already networks:
 //
 //   BallColor -> SetRenderColor / GetRenderColor   (m_clrRender; the right type,
-//               the right semantics, already replicated, and the accessors now
-//               exist in lbaseentity_shared.cpp)
-//   BallSize  -> SetSkin / GetSkin                 (m_nSkin, a CNetworkVar on
-//               CBaseAnimating and already replicated; a sprite entity never
-//               uses the skin, so nothing else is competing for it)
+//               the right semantics, already replicated)
+//   BallSize  -> m_nSkin                           (CNetworkVar( int ) on
+//               CBaseAnimating, already replicated)
+//
+// BALLCOLOR UNITS.  The script-visible shape is GMod's 0..1 Vector
+// (NetworkVar( "Vector", 0, "BallColor" ); ENT:Initialize does
+// SetBallColor( Vector( 1, 0.3, 0.3 ) )) while m_clrRender is a 0..255 color32,
+// so the setter scales by 255 and the getter divides by 255, and both clamp.
+// The getter returns a 0..1 Vector for a Vector-declared variable and the usual
+// 0..255 Color for any other declared type, because the declared type is what
+// GMod's own Get<name>() would have returned.
+//
+// BALLSIZE CARRIER.  BallSize is a Float but m_nSkin is an int, so the carrier
+// is lossy: the exact value always lives in the entity's own Lua table (the
+// realm that set it reads it back exactly, fractional or not) and m_nSkin is
+// only the cross-realm copy the other realm falls back to.  Reading therefore
+// consults the entity table FIRST and uses the replicated value only when this
+// realm never set the variable -- which also removes the old "0 means unset"
+// ambiguity.
+//
+// Known collision (documented, not hidden): m_nSkin is CBaseAnimating's own
+// "skin" INPUT -- DEFINE_INPUT( m_nSkin, FIELD_INTEGER, "skin" ),
+// game/server/baseanimating.cpp:164 -- so `ent_fire <ball> skin <n>` (or a menu
+// that feeds that input) changes the ball size.  It is an INPUT, not a
+// DEFINE_KEYFIELD, so a raw `skin` key in a BSP entity lump is not applied at
+// spawn; the collision needs something to fire the input.
+//
+// THERE IS NO BETTER REPLICATED INT CARRIER on this class:
+//   m_nSkin     10 bits signed  (ANIMATION_SKIN_BITS, baseanimating.h:527)  input "skin"
+//   m_nBody     32 bits         (ANIMATION_BODY_BITS)          keyfield "body" + input "SetBodyGroup"
+//   m_nHitboxSet 2 bits unsigned (ANIMATION_HITBOXSET_BITS)    keyfield "hitboxset" -- too small anyway
+//   m_nForceBone 8 bits signed  (-128..127)                    no keyfield, but sent_ball's own
+//                                                              MaxSize is 128, so it does not fit
+// m_nSkin is the best fit (covers sent_ball's 4..128 and is already proven
+// replicated for this entity), so it stays, with the read order above.
 //
 // Everything else -- and every other type -- keeps the per-table behaviour, so
 // this is a superset of the SWEP shim, not a replacement.  Self-designed: GMod
@@ -931,6 +972,16 @@ static HL2SB_NWStorage_t HL2SB_NWStorageForName (const char *pszName) {
     return HL2SB_NW_RENDERCOLOR;
 
   return HL2SB_NW_TABLE;
+}
+
+// True for the declared types whose values are numeric (GMod's Float and Int),
+// which is what decides whether a value is normalised through lua_tonumber()
+// before it is stored.  ENT:KeyValue hands sent_ball's SetBallSize() the string
+// value of the key ("32"), and GMod's own network-var setter coerces that to a
+// number -- without this, GetBallSize() would hand a string back to
+// math.Clamp().
+static bool HL2SB_NWIsNumericType (const char *pszType) {
+  return V_stricmp( pszType, "Float" ) == 0 || V_stricmp( pszType, "Int" ) == 0;
 }
 
 // Push the script-visible default for a declared variable.
@@ -959,33 +1010,112 @@ static void HL2SB_NWPushValue (lua_State *L, const char *pszType) {
   lua_pushnumber( L, 0 );
 }
 
-// Push the value the entity's own table holds, or the type default when it was
-// never set.  Leaves the value on top of the stack (the value being replaced is
-// still underneath it -- the accessors pop it on the way out).
-static void HL2SB_NWPushTableValue (lua_State *L, int iSelf, const char *pszStorageKey, const char *pszType) {
+// Push the table that holds this entity's scripted variables and return its
+// stack index; return 0 (pushing nothing) when there is none.
+//
+// This matters because the two halves of the shim are invoked with DIFFERENT
+// kinds of `self`, and the first version assumed they were the same:
+//
+//   NetworkVar / NetworkVarNotify   self = the entity's Lua TABLE
+//       (CBaseScripted::InitScriptedEntity() pushes the table it got from
+//        entity.get() -- basescripted.cpp:231 -- and refs that same table into
+//        m_nTableReference a few lines later)
+//   Set<name> / Get<name>           self = the entity USERDATA
+//       (BEGIN_LUA_CALL_ENTITY_METHOD pushes lua_pushanimating() as `self`, so
+//        ENT:Initialize()'s self:SetBallSize() hands this closure a userdata)
+//
+// lua_rawget()/lua_rawset() need a real table: called with a userdata they go
+// through Lua's internal api_check (compiled out in release builds) and treat
+// the userdata's memory as a Table header.  So the accessors resolve the
+// entity's table through the same member CBaseEntity___index uses
+// (lbaseentity_shared.cpp:2196).  A table self is used as-is, which keeps
+// NetworkVar/NetworkVarNotify and a script that calls Set<name> on the table
+// directly working.
+static int HL2SB_NWPushStorageTable (lua_State *L, int iSelf) {
   if ( lua_istable( L, iSelf ) ) {
-    lua_pushstring( L, pszStorageKey );
-    lua_rawget( L, iSelf );
-    if ( !lua_isnil( L, -1 ) ) {
-      return;
+    lua_pushvalue( L, iSelf );
+    return lua_gettop( L );
+  }
+
+  CBaseEntity *pEntity = lua_toentity( L, iSelf );
+  if ( pEntity != NULL && pEntity->m_nTableReference >= 0 &&
+       lua_isrefvalid( L, pEntity->m_nTableReference ) ) {
+    lua_getref( L, pEntity->m_nTableReference );
+    if ( lua_istable( L, -1 ) ) {
+      return lua_gettop( L );
     }
     lua_pop( L, 1 );
   }
 
-  HL2SB_NWPushValue( L, pszType );
+  return 0;
 }
 
-// Read the current value of a declared variable and push it.  The value being
-// replaced (if any) stays on the stack underneath, so the wrapper can still use
-// it as NetworkVarNotify's "old" argument.
-static void HL2SB_NWReadValue (lua_State *L, int iSelf, const char *pszStorageKey,
+// table[ pszStorageKey ] -> pushed value, true; nothing pushed, false.
+static bool HL2SB_NWRawGet (lua_State *L, int iTable, const char *pszStorageKey) {
+  lua_pushstring( L, pszStorageKey );
+  lua_rawget( L, iTable );
+  if ( !lua_isnil( L, -1 ) ) {
+    return true;
+  }
+
+  lua_pop( L, 1 );
+  return false;
+}
+
+// table[ pszStorageKey ] = the value at stack index iValue (raw, so a variable
+// named like an existing field cannot be hijacked by the table's metatable).
+static void HL2SB_NWRawSet (lua_State *L, int iTable, const char *pszStorageKey, int iValue) {
+  lua_pushstring( L, pszStorageKey );
+  lua_pushvalue( L, iValue );
+  lua_rawset( L, iTable );
+}
+
+// table[ pszStorageKey ] = flValue (raw).
+static void HL2SB_NWRawSetNumber (lua_State *L, int iTable, const char *pszStorageKey, double flValue) {
+  lua_pushstring( L, pszStorageKey );
+  lua_pushnumber( L, flValue );
+  lua_rawset( L, iTable );
+}
+
+// Read the current value of a declared variable and push it.  iTable is the
+// storage table (or 0 when the entity has none).  The value being replaced stays
+// on the stack underneath, so the wrapper can still use it as
+// NetworkVarNotify's "old" argument.
+static void HL2SB_NWReadValue (lua_State *L, int iSelf, int iTable, const char *pszStorageKey,
                                HL2SB_NWStorage_t storage, const char *pszType) {
   if ( storage == HL2SB_NW_TABLE ) {
-    lua_pushstring( L, pszStorageKey );
-    lua_rawget( L, iSelf );
+    if ( iTable != 0 && HL2SB_NWRawGet( L, iTable, pszStorageKey ) ) {
+      return;
+    }
+    HL2SB_NWPushValue( L, pszType );
     return;
   }
 
+  if ( storage == HL2SB_NW_SKIN ) {
+    // The entity's own table wins: it carries the exact value the script set on
+    // this realm (m_nSkin truncates a fractional BallSize, and 0 there means
+    // "nothing networked" rather than "unset").
+    if ( iTable != 0 && HL2SB_NWRawGet( L, iTable, pszStorageKey ) ) {
+      return;
+    }
+
+    // This realm never set it, so the replicated copy is all there is.  It is
+    // read through lua_toanimating()'s real-RTTI cast, not reinterpreted from a
+    // CBaseEntity: an entity that is not a CBaseAnimating has no m_nSkin.
+    lua_CBaseAnimating *pAnimating = lua_toanimating( L, iSelf );
+    if ( pAnimating != NULL && pAnimating->m_nSkin != 0 ) {
+      lua_pushnumber( L, pAnimating->m_nSkin );
+      return;
+    }
+
+    HL2SB_NWPushValue( L, pszType );
+    return;
+  }
+
+  // m_clrRender.  0..1 Vector when the declared type is Vector -- which is what
+  // sent_ball's ENT:Draw reads (c.r / c.g / c.b, then x255 for DrawSprite) --
+  // and the engine's 0..255 Color otherwise.  The bytes are already clamped by
+  // their type, so the division cannot overflow anything.
   CBaseEntity *pEntity = lua_toentity( L, iSelf );
 
   if ( pEntity == NULL ) {
@@ -993,97 +1123,170 @@ static void HL2SB_NWReadValue (lua_State *L, int iSelf, const char *pszStorageKe
     return;
   }
 
-  if ( storage == HL2SB_NW_SKIN ) {
-    // m_nSkin is the replicated copy, so it wins whenever it carries a real
-    // value; 0 means "nothing networked here" (GMod's sent_ball clamps its own
-    // sizes to >= 4), and then the table's exact value is the better answer.
-    const int iSkin = pEntity->GetSkin();
-    if ( iSkin != 0 ) {
-      lua_pushnumber( L, iSkin );
-      return;
-    }
+  const color32 clr = pEntity->GetRenderColor();
 
-    HL2SB_NWPushTableValue( L, iSelf, pszStorageKey, pszType );
+  if ( V_stricmp( pszType, "Vector" ) == 0 ) {
+    lua_pushvector( L, Vector( clr.r / 255.0f, clr.g / 255.0f, clr.b / 255.0f ) );
     return;
   }
 
-  // m_clrRender, handed back in the 0..255 Color the rest of Lua expects.
-  color32 clr = pEntity->GetRenderColor();
   lua_pushcolor( L, Color( clr.r, clr.g, clr.b, clr.a ) );
+}
+
+// GMod's m_clrRender is a 0..255 color32, so a script-visible colour has to be
+// scaled explicitly.  Everything is clamped: DrawSprite narrows int -> unsigned
+// char with no clamp of its own, so an out-of-range value wraps mod 256 instead
+// of saturating.
+static byte HL2SB_NWColorByte (double flValue) {
+  if ( flValue <= 0.0 ) {
+    return 0;
+  }
+
+  if ( flValue >= 255.0 ) {
+    return 255;
+  }
+
+  return ( byte )( flValue + 0.5 );
+}
+
+// Store the value the script passed and leave the value Get<name>() will hand
+// back on top of the stack, so the notify callback can be given the same
+// (normalised) "new" value.
+static void HL2SB_NWStoreValue (lua_State *L, int iSelf, int iTable, const char *pszStorageKey,
+                                HL2SB_NWStorage_t storage, const char *pszType) {
+  if ( storage == HL2SB_NW_RENDERCOLOR ) {
+    // Two accepted shapes.  A 0..1 Vector is GMod's colour shape
+    // (SetBallColor( Vector( 1, 0.3, 0.3 ) )); a 0..255 Color table comes from
+    // ENT:KeyValue's "rendercolor" path and from hand-written addons.
+    byte r = 0, g = 0, b = 0, a = 255;
+
+    if ( luaL_testudata( L, 2, LUA_VECTORLIBNAME ) != NULL ) {
+      const Vector vec = luaL_checkvector( L, 2 );
+      r = HL2SB_NWColorByte( ( double )vec.x * 255.0 );
+      g = HL2SB_NWColorByte( ( double )vec.y * 255.0 );
+      b = HL2SB_NWColorByte( ( double )vec.z * 255.0 );
+    } else if ( lua_iscolor( L, 2 ) ) {
+      const Color clr = luaL_checkcolor( L, 2 );
+      r = HL2SB_NWColorByte( clr.r() );
+      g = HL2SB_NWColorByte( clr.g() );
+      b = HL2SB_NWColorByte( clr.b() );
+      a = HL2SB_NWColorByte( clr.a() );
+    } else {
+      luaL_argerror( L, 2, "Vector or Color expected" );
+    }
+
+    // The script-visible value goes into the entity's table (so a re-read here
+    // is exact and cheap), the wire copy into m_clrRender.
+    if ( iTable != 0 ) {
+      HL2SB_NWRawSet( L, iTable, pszStorageKey, 2 );
+    }
+
+    CBaseEntity *pEntity = lua_toentity( L, iSelf );
+    if ( pEntity != NULL ) {
+      pEntity->SetRenderColor( r, g, b, a );
+    }
+
+    HL2SB_NWReadValue( L, iSelf, iTable, pszStorageKey, storage, pszType );  // [.., new]
+    return;
+  }
+
+  if ( storage == HL2SB_NW_SKIN ) {
+    // The exact value is what this realm keeps; m_nSkin is only the int copy the
+    // other realm gets.  A numeric string (ENT:KeyValue: "ball_size" "32") is
+    // coerced here, the way GMod's own Float network var would.
+    const double flValue = lua_tonumber( L, 2 );
+
+    if ( iTable != 0 ) {
+      HL2SB_NWRawSetNumber( L, iTable, pszStorageKey, flValue );
+    }
+
+    // m_nSkin is a 10-bit signed SendProp (ANIMATION_SKIN_BITS,
+    // game/server/baseanimating.h:527), so clamp into what the wire can carry
+    // (sent_ball's own sizes are 4..128).  Not an animating entity -> no
+    // m_nSkin at all; the variable degrades to the per-table behaviour, which
+    // is what the SWEP shim does, instead of throwing inside ENT:Initialize.
+    lua_CBaseAnimating *pAnimating = lua_toanimating( L, iSelf );
+    if ( pAnimating != NULL ) {
+      int iValue = ( int )flValue;
+      if ( iValue < 0 ) {
+        iValue = 0;
+      } else if ( iValue > 511 ) {
+        iValue = 511;
+      }
+      pAnimating->m_nSkin = iValue;
+    }
+
+    HL2SB_NWReadValue( L, iSelf, iTable, pszStorageKey, storage, pszType );  // [.., new]
+    return;
+  }
+
+  // Plain per-table storage.
+  if ( iTable != 0 ) {
+    if ( HL2SB_NWIsNumericType( pszType ) ) {
+      HL2SB_NWRawSetNumber( L, iTable, pszStorageKey, lua_tonumber( L, 2 ) );
+    } else {
+      HL2SB_NWRawSet( L, iTable, pszStorageKey, 2 );
+    }
+  }
+
+  HL2SB_NWReadValue( L, iSelf, iTable, pszStorageKey, storage, pszType );  // [.., new]
 }
 
 // Set<name>( value ) for one entity.  Upvalue 1 is the type ("Float"), upvalue 2
 // the storage key ("__hl2sb_nw_BallSize"), upvalue 3 the slot, upvalue 4 the
 // storage kind.  Mirrors the SWEP shim, plus the cross-realm stores above and
 // GMod's NetworkVarNotify callback.
+//
+// Stack discipline (the first version pushed a *stack* slot that did not exist
+// and then rawset() a nil key, so every Set<name>() threw "table index is nil";
+// the second resolved no table at all, because `self` here is a USERDATA):
+//   entry                      [self, value]
+//   storage table pushed       [self, value, table]
+//   read + store               [self, value, table, old, new]
+//   notify (if any)            above, with the callback's frame pushed and popped
+//   return                     the extra slots are discarded by the VM
 static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
   // Normalise the arguments to self, value (so the notify call below can build
   // its own frame regardless of what the caller passed).
-  if ( lua_gettop( L ) < 2 ) {
-    lua_settop( L, 2 );
-  }
+  lua_settop( L, 2 );
 
   const char *pszType = lua_tostring( L, lua_upvalueindex( 1 ) );
   const char *pszKey = lua_tostring( L, lua_upvalueindex( 2 ) );
   const char *pszName = ( pszKey != NULL ) ? ( pszKey + strlen( "__hl2sb_nw_" ) ) : "";
   const HL2SB_NWStorage_t storage = ( HL2SB_NWStorage_t )lua_tointeger( L, lua_upvalueindex( 4 ) );
 
-  // GMod fires NetworkVarNotify( name, fn ) as fn( name, old, new ); read the
-  // old value first, before the stores below overwrite it.
-  HL2SB_NWReadValue( L, 1, pszKey, storage, pszType );  // [self, value, old]
+  const int iTable = HL2SB_NWPushStorageTable( L, 1 );   // [self, value, table?]
 
-  CBaseEntity *pEntity = lua_toentity( L, 1 );
+  // GMod fires NetworkVarNotify( name, fn ) as fn( name, old, new ); the old
+  // value is read first, before the store below overwrites it.
+  HL2SB_NWReadValue( L, 1, iTable, pszKey, storage, pszType );   // [.., old]
 
-  if ( storage == HL2SB_NW_SKIN && pEntity != NULL ) {
-    // m_nSkin carries the value across the realm (vphysics and rendering never
-    // read it for a sprite entity).  It is an int, so the exact value is ALSO
-    // kept in the entity's table and m_nSkin is only the cross-realm copy --
-    // that way a fractional BallSize survives on the realm that set it, and the
-    // other realm gets the truncated networked value.
-    pEntity->SetSkin( ( int )lua_tonumber( L, 2 ) );
-    lua_pushvalue( L, 4 );
-    lua_rawset( L, 1 );
-  } else if ( storage == HL2SB_NW_RENDERCOLOR && pEntity != NULL ) {
-    // GMod stores colours as 0..1 Vectors (sent_ball's Initialize does
-    // SetBallColor( Vector( 1, 0.3, 0.3 ) )), so that is the expected shape --
-    // but a Color table is accepted too, because ENT:KeyValue's "rendercolor"
-    // path and hand-written addons pass both.
-    if ( luaL_testudata( L, 2, LUA_VECTORLIBNAME ) != NULL ) {
-      Vector vec = luaL_checkvector( L, 2 );
-      pEntity->SetRenderColor( vec.x, vec.y, vec.z );
-    } else if ( lua_istable( L, 2 ) ) {
-      Color clr = luaL_checkcolor( L, 2 );
-      pEntity->SetRenderColor( clr.r(), clr.g(), clr.b() );
-    } else {
-      luaL_argerror( L, 2, "Vector or Color expected" );
+  HL2SB_NWStoreValue( L, 1, iTable, pszKey, storage, pszType );  // [.., new]
+
+  const int iNew = lua_gettop( L );
+  const int iOld = iNew - 1;
+
+  if ( iTable != 0 ) {
+    lua_pushstring( L, "__hl2sb_nwn" );                    // [.., key]
+    lua_rawget( L, iTable );                               // [.., notify]
+    if ( lua_istable( L, -1 ) ) {
+      lua_pushstring( L, pszName );
+      lua_rawget( L, -2 );                                 // [.., notify, fn]
+      if ( lua_isfunction( L, -1 ) ) {
+        lua_pushvalue( L, 1 );                             // self
+        lua_pushstring( L, pszName );                      // name
+        lua_pushvalue( L, iOld );                          // old
+        lua_pushvalue( L, iNew );                          // new
+        lua_call( L, 4, 0 );                               // [.., notify]
+      } else {
+        lua_pop( L, 1 );                                   // [.., notify]
+      }
     }
 
-    lua_pushvalue( L, 4 );
-    lua_rawset( L, 1 );
-  } else {
-    // Plain per-table storage.  rawset, so a variable named like an existing
-    // method can neither be hijacked by nor hijack the entity's metatable.
-    lua_pushvalue( L, 4 );
-    lua_rawset( L, 1 );
+    lua_pop( L, 1 );                                       // [.., table, old, new]
+    lua_remove( L, iTable );                               // [self, value, old, new]
   }
 
-  lua_pushstring( L, "__hl2sb_nwn" );                            // [self, value, old, key]
-  lua_rawget( L, 1 );                                            // [self, value, old, notify]
-  if ( lua_istable( L, -1 ) ) {
-    lua_pushstring( L, pszName );
-    lua_rawget( L, -2 );                                         // [.., notify, fn]
-    if ( lua_isfunction( L, -1 ) ) {
-      lua_pushvalue( L, 1 );                                     // self
-      lua_pushstring( L, pszName );                              // name
-      lua_pushvalue( L, 3 );                                     // old
-      lua_pushvalue( L, 2 );                                     // new
-      lua_call( L, 4, 0 );                                       // [.., notify]
-    } else {
-      lua_pop( L, 1 );                                           // [.., notify]
-    }
-  }
-
-  lua_pop( L, 1 );                                               // [self, value, old]
   return 0;
 }
 
@@ -1093,17 +1296,30 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
   const char *pszKey = lua_tostring( L, lua_upvalueindex( 2 ) );
   const HL2SB_NWStorage_t storage = ( HL2SB_NWStorage_t )lua_tointeger( L, lua_upvalueindex( 4 ) );
 
-  HL2SB_NWReadValue( L, 1, pszKey, storage, pszType );
+  const int iTable = HL2SB_NWPushStorageTable( L, 1 );
+
+  HL2SB_NWReadValue( L, 1, iTable, pszKey, storage, pszType );
+
+  if ( iTable != 0 ) {
+    lua_remove( L, iTable );
+  }
+
   return 1;
 }
 
 // self:NetworkVar( type, slot, name [, options] )
 static int HL2SB_Lua_EntityNetworkVar (lua_State *L) {
-  luaL_checktype( L, 1, LUA_TTABLE );
-
   const char *pszType = luaL_checkstring( L, 2 );
   const int iSlot = ( int )luaL_checknumber( L, 3 );
   const char *pszName = luaL_checkstring( L, 4 );
+
+  // The accessors have to end up on the entity's Lua TABLE: that is what
+  // CBaseEntity___index falls back to when a script calls Set<name>() on the
+  // entity userdata (lbaseentity_shared.cpp:2196).
+  const int iTable = HL2SB_NWPushStorageTable( L, 1 );
+  if ( iTable == 0 ) {
+    luaL_argerror( L, 1, "entity or entity table expected" );
+  }
 
   char szKey[ 160 ];
   Q_snprintf( szKey, sizeof( szKey ), "__hl2sb_nw_%s", pszName );
@@ -1121,7 +1337,7 @@ static int HL2SB_Lua_EntityNetworkVar (lua_State *L) {
   lua_pushinteger( L, ( int )storage );
 
   lua_pushcclosure( L, HL2SB_Lua_EntityNetworkVarSet, 4 );
-  lua_setfield( L, 1, szSetter );
+  lua_setfield( L, iTable, szSetter );
 
   lua_pushstring( L, pszType );
   lua_pushstring( L, szKey );
@@ -1129,30 +1345,38 @@ static int HL2SB_Lua_EntityNetworkVar (lua_State *L) {
   lua_pushinteger( L, ( int )storage );
 
   lua_pushcclosure( L, HL2SB_Lua_EntityNetworkVarGet, 4 );
-  lua_setfield( L, 1, szGetter );
+  lua_setfield( L, iTable, szGetter );
 
+  lua_remove( L, iTable );
   return 0;
 }
 
 // self:NetworkVarNotify( name, fn )  -- SERVER in GMod; callable anywhere here.
 static int HL2SB_Lua_EntityNetworkVarNotify (lua_State *L) {
-  luaL_checktype( L, 1, LUA_TTABLE );
   const char *pszName = luaL_checkstring( L, 2 );
   luaL_checktype( L, 3, LUA_TFUNCTION );
 
-  lua_pushstring( L, "__hl2sb_nwn" );       // [self, name, fn, key]
-  lua_rawget( L, 1 );                       // [self, name, fn, notify]
-  if ( !lua_istable( L, -1 ) ) {
-    lua_pop( L, 1 );
-    lua_newtable( L );                      // [self, name, fn, notify]
-    lua_pushstring( L, "__hl2sb_nwn" );     // [self, name, fn, notify, key]
-    lua_pushvalue( L, -2 );                 // [self, name, fn, notify, key, notify]
-    lua_rawset( L, 1 );                     // [self, name, fn, notify]
+  const int iTable = HL2SB_NWPushStorageTable( L, 1 );
+  if ( iTable == 0 ) {
+    // Nothing to attach the callback to (no entity / no scripted table); the
+    // variable then simply never notifies, which is what the SWEP shim does.
+    return 0;
   }
 
-  lua_pushvalue( L, 3 );                    // [self, name, fn, notify, fn]
+  lua_pushstring( L, "__hl2sb_nwn" );       // [.., key]
+  lua_rawget( L, iTable );                  // [.., notify]
+  if ( !lua_istable( L, -1 ) ) {
+    lua_pop( L, 1 );
+    lua_newtable( L );                      // [.., notify]
+    lua_pushstring( L, "__hl2sb_nwn" );     // [.., notify, key]
+    lua_pushvalue( L, -2 );                 // [.., notify, key, notify]
+    lua_rawset( L, iTable );                // [.., notify]
+  }
+
+  lua_pushvalue( L, 3 );                    // [.., notify, fn]
   lua_setfield( L, -2, pszName );           // notify[ name ] = fn
-  lua_pop( L, 1 );                          // [self, name, fn]
+  lua_pop( L, 1 );                          // [..]
+  lua_remove( L, iTable );
   return 0;
 }
 
@@ -1389,14 +1613,21 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   **
   ** GMod's achievements library lives in gamemodes/base/gamemode/cl_achievements.lua
   ** and is not part of what was imported here, so the global was simply absent.
-  ** GMod's stock sent_ball calls achievements.EatBall() through
-  ** activator:SendLua() when the ball is eaten, i.e. it runs through
-  ** LuaRunString on the CLIENT -- so a missing table raised a Lua error in the
-  ** console every time a ball was consumed.
+  ** GMod's stock sent_ball names it in ENT:Use:
+  **     activator:SendLua( "achievements.EatBall()" )
   **
-  ** This only keeps the call from throwing; nothing is recorded and there is no
-  ** overlay to award anything in.  It is deliberately a table of no-ops rather
-  ** than a fake implementation, and script may replace the whole table.
+  ** ⚠️ This stub does NOT fix that call, and nothing here claims it does:
+  ** Entity:SendLua is a no-op in this fork -- it warns once and returns
+  ** (lbaseentity_shared.cpp:2433-2441, "this engine has no client Lua-channel")
+  ** -- so the string is never evaluated on either realm and a missing
+  ** `achievements` table would never have thrown from this entity.  The
+  ** previous comment claimed a console error every time a ball was eaten; that
+  ** was wrong, and so is any "fixes the error path" claim.
+  **
+  ** It is kept because it is harmless and gives GMod scripts/addons that index
+  ** the global directly something to call, exactly as the `sql` stub above does.
+  ** It records nothing: there is no achievement store and no overlay to award
+  ** anything in.  Script may replace the whole table.
   */
   if ( luaL_loadstring( L,
     "achievements = achievements or {}\n"

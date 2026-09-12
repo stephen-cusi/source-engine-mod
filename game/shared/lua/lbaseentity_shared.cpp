@@ -723,6 +723,19 @@ static int CBaseEntity_GetHealth (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Entity:Health(), GMod's spelling of GetHealth().
+//
+// GMod's stock sent_ball.lua:161 does
+//     local health = activator:Health()
+//     activator:SetHealth( health + 5 )
+// when the ball is eaten.  This fork only registered GetHealth/SetHealth, so
+// the read raised "attempt to call a nil value (method 'Health')" and the free
+// health (and everything after it in ENT:Use) never happened.  GMod has both
+// spellings; this keeps the alias on both realms where GetHealth already is.
+static int CBaseEntity_Health (lua_State *L) {
+  return CBaseEntity_GetHealth( L );
+}
+
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: Entity:GetInternalVariable( name ).
 //
@@ -1845,6 +1858,29 @@ static int CBaseEntity_GetPhysicsObject (lua_State *L) {
   return CBaseEntity_VPhysicsGetObject( L );
 }
 
+// HL2SB GMod compat: Entity:PhysWake().
+//
+// GMod's stock sent_ball.lua:100 calls self:PhysWake() at the end of
+// RebuildPhysics(), which ENT:Initialize() calls -- so without this binding
+// ENT:Initialize threw on that line (after PhysicsInitSphere/SetCollisionBounds
+// had already run, leaving a half-built ball).  GMod's PhysWake is
+// "VPhysicsGetObject():Wake()"; there was no entity-level binding anywhere in
+// this tree (only IPhysicsObject:Wake, public/lua/lvphysics_interface.cpp:1159).
+//
+// Bound in this shared file for both realms, matching GMod, and guarding the
+// NULL case the same way PhysSleep/other physics bindings here do: an entity
+// with no physics object (not yet initialised, or a static/none solid) is a
+// no-op rather than a throw.  In practice only the SERVER reaches it for this
+// entity, because ENT:Initialize returns immediately under CLIENT and
+// OnBallSizeChanged is inside `if ( SERVER )` (sent_ball.lua:104).
+static int CBaseEntity_PhysWake (lua_State *L) {
+  IPhysicsObject *pPhysics = luaL_checkentity(L, 1)->VPhysicsGetObject();
+  if (pPhysics != NULL) {
+    pPhysics->Wake();
+  }
+  return 0;
+}
+
 static int CBaseEntity_VPhysicsGetObjectList (lua_State *L) {
   IPhysicsObject *pList[VPHYSICS_MAX_OBJECT_LIST_COUNT];
   int count = luaL_checkentity(L, 1)->VPhysicsGetObjectList( pList, ARRAYSIZE(pList) );
@@ -2516,6 +2552,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetGroundChangeTime", CBaseEntity_GetGroundChangeTime},
   {"GetGroundEntity", CBaseEntity_GetGroundEntity},
   {"GetHealth", CBaseEntity_GetHealth},
+  {"Health", CBaseEntity_Health},
   {"GetInternalVariable", CBaseEntity_GetInternalVariable},
   {"GetKeyValue", CBaseEntity_GetKeyValue},
   {"GetLastThink", CBaseEntity_GetLastThink},
@@ -2690,6 +2727,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"VPhysicsDestroyObject", CBaseEntity_VPhysicsDestroyObject},
   {"VPhysicsGetObject", CBaseEntity_VPhysicsGetObject},
 {"GetPhysicsObject", CBaseEntity_GetPhysicsObject},
+  {"PhysWake", CBaseEntity_PhysWake},
   {"VPhysicsGetObjectList", CBaseEntity_VPhysicsGetObjectList},
   {"VPhysicsInitNormal", CBaseEntity_VPhysicsInitNormal},
   // HL2SB GMod compat: PhysicsInitSphere + SetPhysicsAttacker (see the
