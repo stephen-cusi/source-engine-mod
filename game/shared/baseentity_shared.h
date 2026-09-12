@@ -307,4 +307,16 @@ inline bool IsEntityQAngleVelReasonable( const QAngle &q )
 
 extern bool CheckEmitReasonablePhysicsSpew();
 
+// HL2SB: the tracer effect name a scripted weapon asked for on its most recent
+// shot (GMod's bullet.TracerName).
+//
+// The Lua Entity:FireBullets() binding publishes it immediately before it calls
+// CBaseEntity::FireBullets() -- the same call stack -- and FireBullets()
+// consumes it (one shot).  A SWEP's explicit tracer name therefore reaches the
+// shot even when the shooter's "active weapon" lookup is stale or lagging, which
+// is one of the ways the Nyan Gun's rainbow tracer went missing; consuming it
+// also means a stock weapon's shot can never inherit somebody else's name.
+void HL2SB_SetNextBulletTracerName( const char *pszName );   // NULL or "" clears it
+const char *HL2SB_ConsumeBulletTracerName( void );           // valid until the next consume
+
 #endif // BASEENTITY_SHARED_H

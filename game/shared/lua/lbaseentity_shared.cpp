@@ -487,10 +487,17 @@ static int CBaseEntity_FireBullets (lua_State *L) {
   ** (the client in prediction), so each realm's weapon instance learns the name,
   ** which is also what makes the client's TE_HL2MPFireBullets path work.
   */
+  // HL2SB: hand this shot's tracer name to the engine (see
+  // HL2SB_SetNextBulletTracerName in baseentity_shared.h/.cpp).  Cleared first,
+  // so a shot with no TracerName cannot inherit the previous shot's name.
+  HL2SB_SetNextBulletTracerName( NULL );
+
   if (lua_istable(L, 2)) {
     lua_getfield(L, 2, "TracerName");
     if (lua_type(L, -1) == LUA_TSTRING) {
       const char *pszTracerName = lua_tostring(L, -1);
+
+      HL2SB_SetNextBulletTracerName( pszTracerName );
 
 #ifdef CLIENT_DLL
       const char *pszRealm = "client";
