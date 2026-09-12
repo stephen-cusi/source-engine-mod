@@ -126,7 +126,12 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 						// sounds and damage all worked.
 						const char *pTracerName = NULL;
 
-						if ( m_iTracerName > 0 && g_StringTableEffectDispatch != NULL )
+						// Bounds-checked: the index arrives over the network, and
+						// the engine's GetString() asserts on an out-of-range one
+						// (its own DT_TEEffectDispatch relies on the string table
+						// update landing first; don't make this path depend on it).
+						if ( m_iTracerName > 0 && g_StringTableEffectDispatch != NULL &&
+							 m_iTracerName < g_StringTableEffectDispatch->GetNumStrings() )
 						{
 							pTracerName = g_StringTableEffectDispatch->GetString( m_iTracerName );
 						}
@@ -142,16 +147,23 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 						}
 
 						// HL2SB diagnostic: names the source of the tracer name in
-						// ds_debug.log, once per DLL load (Warning, not DevMsg --
-						// DevMsg needs developer 1 and is then missing exactly when
-						// we need it).
-						HL2SB_WarnOnce( "te-firebullets-tracer",
-							"TE_HL2MPFireBullets: tracers=%d impacts=%d tracer='%s' (from %s) weapon='%s'\n",
-							m_bDoTracers ? 1 : 0,
-							m_bDoImpacts ? 1 : 0,
-							pTracerName,
-							( m_iTracerName > 0 ) ? "server TE" : "weapon GetTracerType",
-							pWpn->GetClassname() );
+						// ds_debug.log, once per weapon per DLL load (Warning, not
+						// DevMsg -- DevMsg needs developer 1 and is then missing
+						// exactly when we need it).  Keyed by weapon class so a
+						// shot with another weapon in hand cannot hide this one.
+						{
+							char szKey[ 160 ];
+							Q_snprintf( szKey, sizeof( szKey ), "te-firebullets-tracer:%s", pWpn->GetClassname() );
+							HL2SB_WarnOnce( szKey,
+								"TE_HL2MPFireBullets: tracers=%d impacts=%d tracer='%s' (from %s, table index %d) weapon='%s' shooter=%d\n",
+								m_bDoTracers ? 1 : 0,
+								m_bDoImpacts ? 1 : 0,
+								pTracerName,
+								( m_iTracerName > 0 ) ? "server TE" : "weapon GetTracerType",
+								m_iTracerName,
+								pWpn->GetClassname(),
+								m_iPlayer );
+						}
 
 						CEffectData data;
 						data.m_vStart = tr.startpos;

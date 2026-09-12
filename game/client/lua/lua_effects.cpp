@@ -38,6 +38,7 @@
 #include "c_baseanimating.h"
 #include "c_baseplayer.h"
 #include "c_baseviewmodel.h"
+#include "c_basecombatweapon.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -73,6 +74,22 @@ static int LuaEffect_SetRenderBoundsWS( lua_State *L )
 // GMod's tracer effects start at the muzzle, not at the shooter's eyes:
 // rb655_nyan_tracer.lua does
 //     self.StartPos = self:GetTracerShootPos( self.Position, self.WeaponEnt, self.Attachment )
+//
+// HL2SB: the entity GMod hands these effects is whatever the caller put in the
+// effect data, and the two callers differ:
+//   * util.Effect() from a SWEP's DoImpactEffect / a script: whatever the script set;
+//   * the engine's own tracer path -- HL2MP's C_TEHL2MPFireBullets::CreateEffects()
+//     sets m_hEntity = pWpn->GetRefEHandle(), i.e. THE WEAPON (not the player).
+//
+// The first cut only special-cased "the entity IS the local player", so the
+// shooter's own shots fell into the generic branch and took the WORLD MODEL
+// weapon's attachment.  A weapon the local client never simulates has no
+// meaningful world position there, so the Nyan Gun's rainbow tracer was drawn
+// from the wrong place: invisible against near walls, and visibly offset
+// ("misplaced") when it hit something at range.
+//
+// So resolve the owner too: a weapon held by the local player draws from the
+// VIEWMODEL's muzzle, which is where GMod's own tracers start.
 static int LuaEffect_GetTracerShootPos( lua_State *L )
 {
 	Vector vecPosition = luaL_checkvector( L, 2 );
@@ -80,10 +97,32 @@ static int LuaEffect_GetTracerShootPos( lua_State *L )
 	int iAttachment = luaL_optinteger( L, 4, 0 );
 
 	Vector vecResult = vecPosition;
+	const char *pszSource = "position (no entity)";
+	const char *pszEntity = "none";
 
 	if ( pEntity != NULL )
 	{
+		pszEntity = pEntity->GetClassname();
+
 		C_BasePlayer *pPlayer = ToBasePlayer( pEntity );
+		CBaseCombatWeapon *pWeapon = NULL;
+
+		if ( pPlayer == NULL )
+		{
+			pWeapon = dynamic_cast<CBaseCombatWeapon *>( pEntity );
+
+			if ( pWeapon != NULL )
+			{
+				// The engine's tracer path hands us the weapon: the interesting
+				// entity for "where does this shot come from" is its owner.
+				CBaseCombatCharacter *pOwner = pWeapon->GetOwner();
+
+				if ( pOwner != NULL )
+				{
+					pPlayer = ToBasePlayer( pOwner );
+				}
+			}
+		}
 
 		if ( pPlayer != NULL && pPlayer->IsLocalPlayer() )
 		{
@@ -93,21 +132,55 @@ static int LuaEffect_GetTracerShootPos( lua_State *L )
 			if ( pViewModel != NULL && iAttachment > 0 )
 			{
 				Vector vecOrigin;
+
 				if ( pViewModel->GetAttachment( iAttachment, vecOrigin ) )
+				{
 					vecResult = vecOrigin;
+					pszSource = "local player viewmodel attachment";
+				}
+				else
+				{
+					pszSource = "position (viewmodel attachment missing)";
+				}
+			}
+			else
+			{
+				pszSource = "position (local player, no viewmodel/attachment)";
 			}
 		}
 		else
 		{
-			C_BaseAnimating *pAnimating = pEntity->GetBaseAnimating();
+			// Third person (another player's or an NPC's weapon): the model that
+			// is actually on screen is the right place to start from.
+			C_BaseAnimating *pAnimating = ( pWeapon != NULL ) ? pWeapon->GetBaseAnimating() : pEntity->GetBaseAnimating();
 
 			if ( pAnimating != NULL && iAttachment > 0 )
 			{
 				Vector vecOrigin;
+
 				if ( pAnimating->GetAttachment( iAttachment, vecOrigin ) )
+				{
 					vecResult = vecOrigin;
+					pszSource = ( pWeapon != NULL ) ? "weapon model attachment" : "entity model attachment";
+				}
+				else
+				{
+					pszSource = "position (attachment missing)";
+				}
+			}
+			else
+			{
+				pszSource = "position (no animating model/attachment)";
 			}
 		}
+	}
+
+	// HL2SB diagnostic: says which branch supplied the tracer's start point,
+	// once per branch per DLL load (see AGENTS.md 9.7).
+	{
+		char szKey[ 128 ];
+		Q_snprintf( szKey, sizeof( szKey ), "tracer-start:%s", pszSource );
+		HL2SB_WarnOnce( szKey, "GetTracerShootPos: '%s' (attachment %d) -> %s\n", pszEntity, iAttachment, pszSource );
 	}
 
 	lua_pushvector( L, vecResult );
@@ -304,6 +377,19 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 		return false;
 
 	clienteffects->AddEffect( new CLuaEffect( pszName, nRef, data ) );
+
+	// HL2SB diagnostic: one line per effect name per DLL load, so ds_debug.log
+	// says whether an effect really reached this client and with what geometry.
+	{
+		char szKey[ 128 ];
+		Q_snprintf( szKey, sizeof( szKey ), "lua-effect-created:%s", pszName );
+		HL2SB_WarnOnce( szKey,
+			"Lua effect '%s' created: start=(%.0f %.0f %.0f) origin=(%.0f %.0f %.0f) entindex=%d flags=0x%X attach=%d\n",
+			pszName,
+			data.m_vStart.x, data.m_vStart.y, data.m_vStart.z,
+			data.m_vOrigin.x, data.m_vOrigin.y, data.m_vOrigin.z,
+			data.entindex(), (unsigned int)data.m_fFlags, data.m_nAttachmentIndex );
+	}
 
 	return true;
 }

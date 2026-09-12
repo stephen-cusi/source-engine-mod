@@ -528,7 +528,11 @@ static int CBaseEntity_FireBullets (lua_State *L) {
         ** "client" line = the rainbow tracer had no name to draw with.
         */
         if (bPublished) {
-          HL2SB_WarnOnce("firebullets-tracername-ok",
+          // Keyed by weapon class: with one key for everything, a shot fired
+          // with another weapon in hand hid the interesting line (measured).
+          char szKey[160];
+          Q_snprintf(szKey, sizeof(szKey), "firebullets-tracername-ok:%s", pWeapon->GetClassname());
+          HL2SB_WarnOnce(szKey,
             "FireBullets: %s learned TracerName '%s' for '%s'\n",
             pszRealm, pszTracerName, pWeapon->GetClassname());
         } else {
