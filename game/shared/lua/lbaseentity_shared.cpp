@@ -1387,7 +1387,22 @@ static int CBaseEntity_SetModel (lua_State *L) {
   lua_pushboolean(L, luaL_checkentity(L, 1)->SetModel(luaL_checkstring(L, 2)));
   return 1;
 #else
-  luaL_checkentity(L, 1)->SetModel(luaL_checkstring(L, 2));
+  // HL2SB GMod compat: GMod's Entity:SetModel( model ) may name a model the map
+  // never precached, and GMod copes with that; this fork's UTIL_SetModel() path
+  // raises a fatal Engine Error instead:
+  //     110/ - ent_nyan_bomb: UTIL_SetModel: not precached:
+  //     models/props_c17/SuitCase001a.mdl
+  // which is exactly what happened when the Nyan Gun's R threw its bomb.  The
+  // binding precaches the name first, which is what GMod effectively does.
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszModel = luaL_checkstring(L, 2);
+
+  if ( pszModel != NULL && pszModel[0] != '\0' )
+  {
+    pEntity->PrecacheModel( pszModel );
+  }
+
+  pEntity->SetModel( pszModel );
   return 0;
 #endif
 }
