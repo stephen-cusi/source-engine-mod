@@ -200,6 +200,37 @@ static int Panel_GetChildCount (lua_State *L) {
   return 1;
 }
 
+/*
+** HL2SB: Panel:GetChildren() -- GMod's list-of-children accessor, which this
+** fork never bound.  GMod's own lua/includes/extensions/client/panel.lua uses it
+** in InvalidateChildren/Clear/MoveToAfter/MoveToBefore/GetClosestChild, and the
+** ported Derma controls use it in their layout/animation code:
+**
+**   dcategorycollapse.lua:255  #self.Contents:GetChildren() > 0  (spawnmenu
+**                              categories -- decides whether the open category
+**                              sizes itself to its contents)
+**   dcategorycollapse.lua:291  sums child heights while sliding open
+**   diconlayout.lua / dtilelayout.lua / dmenu.lua / dtree_node.lua / ...
+**
+** Same push as Panel_GetChild/Panel_GetParent (a fresh wrapper per call; the
+** engine has no per-panel userdata cache), which is enough for the way GMod uses
+** the result: iterate, read sizes, SetZPos, Remove, InvalidateChildren.
+*/
+static int Panel_GetChildren (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  int nChildren = pPanel->GetChildCount();
+
+  lua_createtable(L, nChildren, 0);
+  for (int i = 0; i < nChildren; ++i) {
+    Panel *pChild = pPanel->GetChild(i);
+    if (pChild == NULL)
+      continue;
+    lua_pushpanel(L, pChild);
+    lua_rawseti(L, -2, i + 1);
+  }
+  return 1;
+}
+
 static int Panel_GetClassName (lua_State *L) {
   lua_pushstring(L, luaL_checkpanel(L, 1)->GetClassName());
   return 1;
@@ -1089,7 +1120,12 @@ static int Panel_SetTabPosition (lua_State *L) {
 }
 
 static int Panel_SetTall (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetTall(luaL_checkint(L, 2));
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  pPanel->SetTall(luaL_checkint(L, 2));
+  // HL2SB: GMod's Lua reads the plain x/y/w/h fields for cheap geometry checks
+  // (DFrame's drag code, DListLayout ...), so a SetTall/SetWide that skips this
+  // leaves them stale.  Same sync SetPos/SetSize already do.
+  Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
 
@@ -1104,7 +1140,10 @@ static int Panel_SetVisible (lua_State *L) {
 }
 
 static int Panel_SetWide (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetWide(luaL_checkint(L, 2));
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  pPanel->SetWide(luaL_checkint(L, 2));
+  // HL2SB: keep x/y/w/h in step, see Panel_SetTall.
+  Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
 
@@ -1446,14 +1485,75 @@ static int Panel_GetDockMargin (lua_State *L) {
   return 4;
 }
 
+//=============================================================================
+// HL2SB: the layout half of GMod's Panel API, which GMod's own lua/vgui/*.lua
+// controls call on every layout pass and which this fork never bound:
+//
+//   Panel:SizeToChildren( bWidth, bHeight )   dlistlayout.lua:24,
+//       dsizetocontents.lua:17, dproperties.lua:166/167/217,
+//       dcategorycollapse.lua:188/255/256, dscrollpanel.lua:71,
+//       diconlayout.lua:122, DPanPanel.lua:141, propselect.lua:165
+//   Panel:ChildrenSize() / Panel:GetChildrenSize()   dtilelayout.lua:169,
+//       gmod_compatibility/sh_init.lua
+//   Panel:InvalidateParentLayout()
+//
+// Without these the Derma control throws on the first line of its
+// PerformLayout() and keeps whatever height it started with -- which is exactly
+// the "Dock(TOP) is not sized to the correct height" report.
+//
+// SetDock / SetDockMargin / SetDockPadding are registered as well: they are the
+// engine names GMod's lua/includes/modules/gmod_compatibility/sh_init.lua
+// aliases to Dock / DockMargin / DockPadding, and that file is inert here today
+// (GMOD_COMPATIBILITY = false) but would overwrite the working aliases with nil
+// the day it gets switched on.
+//=============================================================================
+static int Panel_SizeToChildren (lua_State *L) {
+  luaL_checkpanel(L, 1)->SizeToChildren(lua_toboolean(L, 2) != 0, lua_toboolean(L, 3) != 0);
+  return 0;
+}
+
+static int Panel_GetChildrenSize (lua_State *L) {
+  int w = 0, h = 0;
+  luaL_checkpanel(L, 1)->GetChildrenSize(w, h);
+  lua_pushinteger(L, w); lua_pushinteger(L, h);
+  return 2;
+}
+
+static int Panel_InvalidateParentLayout (lua_State *L) {
+  luaL_checkpanel(L, 1)->InvalidateParentLayout(luaL_optboolean(L, 2, 0), luaL_optboolean(L, 3, 0));
+  return 0;
+}
+
+static int Panel_SetDock (lua_State *L) {
+  luaL_checkpanel(L, 1)->SetDock(luaL_checkint(L, 2));
+  return 0;
+}
+
+static int Panel_SetDockMargin (lua_State *L) {
+  luaL_checkpanel(L, 1)->SetDockMargin(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5));
+  return 0;
+}
+
+static int Panel_SetDockPadding (lua_State *L) {
+  luaL_checkpanel(L, 1)->SetDockPadding(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5));
+  return 0;
+}
+
 
 static const luaL_Reg Panelmeta[] = {
   {"Dock", Panel_Dock},
+  {"SetDock", Panel_SetDock},
   {"GetDock", Panel_GetDock},
   {"DockPadding", Panel_DockPadding},
+  {"SetDockPadding", Panel_SetDockPadding},
   {"GetDockPadding", Panel_GetDockPadding},
   {"DockMargin", Panel_DockMargin},
+  {"SetDockMargin", Panel_SetDockMargin},
   {"GetDockMargin", Panel_GetDockMargin},
+  {"SizeToChildren", Panel_SizeToChildren},
+  {"GetChildrenSize", Panel_GetChildrenSize},
+  {"ChildrenSize", Panel_GetChildrenSize},
+  {"InvalidateParentLayout", Panel_InvalidateParentLayout},
   {"AddKeyBinding", Panel_AddKeyBinding},
   {"AddActionSignalTarget", Panel_AddActionSignalTarget},
   {"CanStartDragging", Panel_CanStartDragging},
@@ -1475,6 +1575,7 @@ static const luaL_Reg Panelmeta[] = {
   {"GetBounds", Panel_GetBounds},
   {"GetChild", Panel_GetChild},
   {"GetChildCount", Panel_GetChildCount},
+  {"GetChildren", Panel_GetChildren},
   {"GetClassName", Panel_GetClassName},
   {"GetClipRect", Panel_GetClipRect},
   {"GetCornerTextureSize", Panel_GetCornerTextureSize},

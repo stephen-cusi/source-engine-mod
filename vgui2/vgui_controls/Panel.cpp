@@ -49,6 +49,11 @@
 
 using namespace vgui;
 
+// HL2SB: the dock registry lives further down this file, next to the dock code,
+// but ~Panel() has to unregister from it (see HL2SBDockInfo_Remove) so a recycled
+// Panel address cannot inherit a dead panel's dock type/margins.
+static void HL2SBDockInfo_Remove( vgui::Panel *pPanel );
+
 #define TRIPLE_PRESS_MSEC	300
 
 const char *g_PinCornerStrings [] =
@@ -750,6 +755,10 @@ void Panel::Init( int x, int y, int wide, int tall )
 //-----------------------------------------------------------------------------
 Panel::~Panel()
 {
+	// HL2SB: drop our dock info before anything can be reallocated into this
+	// address (the registry is keyed by Panel pointer).
+	HL2SBDockInfo_Remove( this );
+
 	// @note Tom Bui: only cleanup if we've created it
 	if ( !m_bToolTipOverridden )
 	{
@@ -1035,7 +1044,17 @@ void Panel::OnScreenSizeChanged(int nOldWide, int nOldTall)
 //-----------------------------------------------------------------------------
 void Panel::SetVisible(bool state)
 {
+	// HL2SB: an invisible docked child stops consuming space in its parent's dock
+	// pass, so showing/hiding one has to make the parent run again.  (VPanel's
+	// SetVisible does not tell the client panel, so this is the only hook.)
+	bool bWasVisible = IsVisible();
+
 	ipanel()->SetVisible(GetVPanel(), state);
+
+	if ( bWasVisible != state && IsDockedInParent() )
+	{
+		InvalidateParentLayout( false );
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -1499,6 +1518,19 @@ void Panel::OnChildAdded(VPANEL child)
 void Panel::OnSizeChanged(int newWide, int newTall)
 {
 	InvalidateLayout(); // our size changed so force us to layout again
+
+	// HL2SB: for a TOP/BOTTOM/LEFT/RIGHT docked panel our own size IS the input to
+	// the parent's dock pass (the parent reserves GetTall()/GetWide() for us).
+	// Without this the parent keeps the size it computed the first time and a
+	// control that derives its height from its contents -- DListLayout,
+	// DSizeToContents, DProperties, DCollapsibleCategory, DIconLayout ... all of
+	// which end up in Panel:SizeToChildren() -- is left with a stale height.
+	// The parent only records the request (layoutNow = false), and the next pass
+	// is a no-op once the sizes settle, so this cannot spin.
+	if ( IsDockedInParent() )
+	{
+		InvalidateParentLayout( false );
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -3843,20 +3875,12 @@ Color Panel::GetFgColor()
 }
 
 //=============================================================================
-// HL2SB: GMod docking.
-//
-// Values from https://wiki.facepunch.com/gmod/Enums/DOCK -- GMod's DOCK enum is
-// the one enum that has no DOCK_ prefix in Lua (NODOCK/FILL/LEFT/RIGHT/TOP/BOTTOM).
+// HL2SB: GMod docking.  The DOCK enum itself lives in Panel.h
+// (Panel::HL2SBDockType_t) because the dock pass is reached from functions that
+// sit above this point in the file; the values are GMod's and are shared with
+// Lua, which - uniquely for GMod - spells them without the DOCK_ prefix
+// (NODOCK/FILL/LEFT/RIGHT/TOP/BOTTOM).  https://wiki.facepunch.com/gmod/Enums/DOCK
 //=============================================================================
-#ifndef DOCK_NONE
-#define DOCK_NONE	0
-#define DOCK_FILL	1
-#define DOCK_LEFT	2
-#define DOCK_RIGHT	3
-#define DOCK_TOP	4
-#define DOCK_BOTTOM	5
-#endif
-
 namespace
 {
 	struct HL2SBDockInfo_t
@@ -3871,6 +3895,11 @@ namespace
 	// Panels that never call SetDock() are absent, so every existing C++ panel
 	// (viewports, HUD elements, ...) behaves exactly as before -- GetDock()
 	// reports DOCK_NONE and PerformDocking() skips them.
+	//
+	// ~Panel() removes the entry again (see HL2SBDockInfo_Remove).  That is not
+	// cosmetic: the allocator recycles Panel addresses, so a leaked entry would
+	// hand some later, unrelated panel the dead panel's dock type and margins --
+	// i.e. exactly the "docking does not RELIABLY size correctly" symptom.
 	CUtlMap< vgui::Panel *, HL2SBDockInfo_t > g_HL2SBDockInfo( 8, 8, DefLessFunc( vgui::Panel * ) );
 
 	HL2SBDockInfo_t *FindDockInfo( vgui::Panel *pPanel )
@@ -3885,7 +3914,7 @@ namespace
 		if ( i == g_HL2SBDockInfo.InvalidIndex() )
 		{
 			HL2SBDockInfo_t info;
-			info.iDockType = DOCK_NONE;
+			info.iDockType = vgui::Panel::DOCK_NONE;
 			for ( int k = 0; k < 4; ++k )
 			{
 				info.iMargin[ k ] = 0;
@@ -3897,16 +3926,55 @@ namespace
 	}
 }
 
-void Panel::SetDock( int iDockType )
+// HL2SB: forget a panel's dock info.  Called from ~Panel() so the side table
+// cannot hand a recycled address someone else's dock type.
+static void HL2SBDockInfo_Remove( vgui::Panel *pPanel )
 {
-	EnsureDockInfo( this ).iDockType = iDockType;
+	int i = g_HL2SBDockInfo.Find( pPanel );
+	if ( i != g_HL2SBDockInfo.InvalidIndex() )
+	{
+		g_HL2SBDockInfo.RemoveAt( i );
+	}
+}
 
-	// GMod: after docking, invalidate the parent so the new bounds are computed.
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - is this panel docked so that its own size feeds its parent's
+// dock pass?  FILL is excluded: a FILL child just gets the leftover rectangle,
+// so its own size cannot move its siblings.
+//-----------------------------------------------------------------------------
+bool Panel::IsDockedInParent( void )
+{
+	int iDock = GetDock();
+	return ( iDock == DOCK_TOP || iDock == DOCK_BOTTOM || iDock == DOCK_LEFT || iDock == DOCK_RIGHT );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - mark the parent for a dock recompute.
+// GMod's own controls call InvalidateLayout() on themselves after they rearrange
+// their children; the enclosing dock container has to run again too, otherwise a
+// Dock(TOP) child keeps the height it had before its contents changed.
+//-----------------------------------------------------------------------------
+void Panel::InvalidateParentLayout( bool layoutNow, bool reloadScheme )
+{
 	Panel *pParent = GetParent();
 	if ( pParent )
-		pParent->InvalidateLayout( false );
-	else
-		InvalidateLayout( false );
+	{
+		pParent->InvalidateLayout( layoutNow, reloadScheme );
+	}
+}
+
+void Panel::SetDock( int iDockType )
+{
+	int iOld = GetDock();
+	if ( iOld == iDockType )
+		return;
+
+	EnsureDockInfo( this ).iDockType = iDockType;
+
+	// Our own children's area changes when we go from/to DOCK_FILL or change
+	// edges, and the parent consumes a different rectangle for us.
+	InvalidateLayout( false );
+	InvalidateParentLayout( false );
 }
 
 int Panel::GetDock( void )
@@ -3921,6 +3989,7 @@ void Panel::SetDockPadding( int iLeft, int iTop, int iRight, int iBottom )
 	info.iPad[ 0 ] = iLeft;  info.iPad[ 1 ] = iTop;
 	info.iPad[ 2 ] = iRight; info.iPad[ 3 ] = iBottom;
 	InvalidateLayout( false );
+	InvalidateParentLayout( false );
 }
 
 void Panel::GetDockPadding( int &iLeft, int &iTop, int &iRight, int &iBottom )
@@ -3938,9 +4007,10 @@ void Panel::SetDockMargin( int iLeft, int iTop, int iRight, int iBottom )
 	info.iMargin[ 0 ] = iLeft;  info.iMargin[ 1 ] = iTop;
 	info.iMargin[ 2 ] = iRight; info.iMargin[ 3 ] = iBottom;
 
-	Panel *pParent = GetParent();
-	if ( pParent )
-		pParent->InvalidateLayout( false );
+	// The margin is the space our parent has to reserve around us, so it changes
+	// the parent's pass -- and it changes the rectangle our own children get.
+	InvalidateLayout( false );
+	InvalidateParentLayout( false );
 }
 
 void Panel::GetDockMargin( int &iLeft, int &iTop, int &iRight, int &iBottom )
@@ -3963,8 +4033,16 @@ void Panel::GetDockMargin( int &iLeft, int &iTop, int &iRight, int &iBottom )
 // GMod semantics (https://wiki.facepunch.com/gmod/Panel:Dock):
 //   * DockPadding is the inner spacing, applied to the area docked children get;
 //   * DockMargin is this child's outer spacing;
-//   * children are processed in ZPos order, each consuming an edge of the
-//     remaining rectangle; FILL takes whatever is left.
+//   * TOP/BOTTOM/LEFT/RIGHT children are processed in ZPos order, each consuming
+//     an edge of the remaining rectangle;
+//   * FILL takes whatever is left, and is laid out LAST regardless of ZPos.
+//
+// The TOP/BOTTOM/LEFT/RIGHT branches use the CHILD's own height/width (that is
+// what Panel:SetTall/SetWide on a docked panel means in GMod).  The old
+// experiment-source RecurseLayout() this fork's dock pass is modelled on has a
+// sign bug in its Bottom branch (it subtracts the margins from the consumed
+// height instead of adding them); this implementation does not, all four edges
+// consume `size + near margin + far margin`.
 //-----------------------------------------------------------------------------
 void Panel::PerformDocking( void )
 {
@@ -3986,95 +4064,197 @@ void Panel::PerformDocking( void )
 	if ( x1 <= x0 || y1 <= y0 )
 		return;
 
-	// Collect the docked children (ZPos order is applied below).
-	Panel *pDocked[ 256 ];
-	int    iDockedZ[ 256 ];
-	int    nDocked = 0;
-	int    nChildren = GetChildCount();
+	// Two passes.  Pass 0 handles the edge docks (TOP/BOTTOM/LEFT/RIGHT), pass 1
+	// handles FILL with whatever rectangle is left.  FILL must NOT be processed in
+	// ZPos order together with the others: a FILL child created before an edge
+	// child would swallow the whole remaining rectangle and the edge child would
+	// be laid out on top of it.
+	for ( int iPass = 0; iPass < 2; ++iPass )
+	{
+		const bool bFillPass = ( iPass == 1 );
 
-	for ( int i = 0; i < nChildren && nDocked < 256; ++i )
+		// Collect this pass's children.
+		Panel *pDocked[ 256 ];
+		int    iDockedZ[ 256 ];
+		int    nDocked = 0;
+		int    nChildren = GetChildCount();
+
+		for ( int i = 0; i < nChildren && nDocked < 256; ++i )
+		{
+			Panel *pChild = GetChild( i );
+			if ( !pChild || !pChild->IsVisible() )
+				continue;
+
+			HL2SBDockInfo_t *pInfo = FindDockInfo( pChild );
+			if ( !pInfo || pInfo->iDockType == DOCK_NONE )
+				continue;
+
+			if ( ( pInfo->iDockType == DOCK_FILL ) != bFillPass )
+				continue;
+
+			pDocked[ nDocked ] = pChild;
+			iDockedZ[ nDocked ] = pChild->GetZPos();
+			++nDocked;
+		}
+
+		if ( nDocked <= 0 )
+			continue;
+
+		// Selection sort on ZPos - small counts, and it keeps vgui2 free of STL.
+		for ( int a = 0; a < nDocked - 1; ++a )
+		{
+			int iMin = a;
+			for ( int b = a + 1; b < nDocked; ++b )
+			{
+				if ( iDockedZ[ b ] < iDockedZ[ iMin ] )
+					iMin = b;
+			}
+			if ( iMin != a )
+			{
+				Panel *pTmp = pDocked[ a ]; pDocked[ a ] = pDocked[ iMin ]; pDocked[ iMin ] = pTmp;
+				int iTmp = iDockedZ[ a ]; iDockedZ[ a ] = iDockedZ[ iMin ]; iDockedZ[ iMin ] = iTmp;
+			}
+		}
+
+		for ( int i = 0; i < nDocked; ++i )
+		{
+			Panel *pChild = pDocked[ i ];
+			HL2SBDockInfo_t *pInfo = FindDockInfo( pChild );
+			if ( !pInfo )
+				continue;
+
+			const int iL = pInfo->iMargin[ 0 ];
+			const int iT = pInfo->iMargin[ 1 ];
+			const int iR = pInfo->iMargin[ 2 ];
+			const int iB = pInfo->iMargin[ 3 ];
+
+			int iW = pChild->GetWide();
+			int iH = pChild->GetTall();
+
+			switch ( pInfo->iDockType )
+			{
+			case DOCK_FILL:
+				pChild->SetPos( x0 + iL, y0 + iT );
+				pChild->SetSize( ( x1 - x0 ) - iL - iR, ( y1 - y0 ) - iT - iB );
+				break;
+
+			case DOCK_TOP:
+				if ( iH < 0 ) iH = 0;
+				pChild->SetPos( x0 + iL, y0 + iT );
+				pChild->SetSize( ( x1 - x0 ) - iL - iR, iH );
+				y0 += iH + iT + iB;
+				break;
+
+			case DOCK_BOTTOM:
+				if ( iH < 0 ) iH = 0;
+				pChild->SetPos( x0 + iL, y1 - iH - iB );
+				pChild->SetSize( ( x1 - x0 ) - iL - iR, iH );
+				y1 -= iH + iT + iB;
+				break;
+
+			case DOCK_LEFT:
+				if ( iW < 0 ) iW = 0;
+				pChild->SetPos( x0 + iL, y0 + iT );
+				pChild->SetSize( iW, ( y1 - y0 ) - iT - iB );
+				x0 += iW + iL + iR;
+				break;
+
+			case DOCK_RIGHT:
+				if ( iW < 0 ) iW = 0;
+				pChild->SetPos( x1 - iW - iR, y0 + iT );
+				pChild->SetSize( iW, ( y1 - y0 ) - iT - iB );
+				x1 -= iW + iL + iR;
+				break;
+			}
+
+			// GWEN/GMod recurse into the child right here, so a child that itself
+			// contains docked panels gets them positioned against the bounds we just
+			// gave it in this same pass instead of one frame later.
+			pChild->PerformDocking();
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - force the layout of our children (deepest first) and then
+// report how much room they occupy.
+//
+// This is the "size before layout" half of the Dock(TOP) bug: SizeToChildren()
+// asks how big the children are, and a child that has not been laid out yet still
+// reports its old (often 0) bounds, so the panel would size itself to nothing and
+// every Dock(TOP) sibling below it would be moved to the wrong place.
+//-----------------------------------------------------------------------------
+void Panel::GetChildrenSize( int &wide, int &tall )
+{
+	wide = 0;
+	tall = 0;
+
+	// Our own dock pass may not have run yet either.
+	if ( _flags.IsFlagSet( NEEDS_LAYOUT ) && !_flags.IsFlagSet( IN_PERFORM_LAYOUT ) )
+	{
+		InternalPerformLayout();
+	}
+
+	for ( int i = 0; i < GetChildCount(); i++ )
 	{
 		Panel *pChild = GetChild( i );
 		if ( !pChild || !pChild->IsVisible() )
 			continue;
 
-		HL2SBDockInfo_t *pInfo = FindDockInfo( pChild );
-		if ( !pInfo || pInfo->iDockType == DOCK_NONE )
+		// A child that is still invalid would report its stale bounds, which is
+		// exactly the number we are not allowed to measure.
+		if ( pChild->_flags.IsFlagSet( NEEDS_LAYOUT ) && !pChild->_flags.IsFlagSet( IN_PERFORM_LAYOUT ) )
+		{
+			pChild->InternalPerformLayout();
+		}
+
+		int x = 0, y = 0, childWide = 0, childTall = 0;
+		pChild->GetBounds( x, y, childWide, childTall );
+
+		if ( x + childWide > wide ) wide = x + childWide;
+		if ( y + childTall > tall ) tall = y + childTall;
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - GMod's Panel:SizeToChildren( bWidth, bHeight ): resize this
+// panel to fit its children, keeping the axis the caller did not ask for.
+//
+// GMod calls this from every Derma control whose height is derived from its
+// contents (DListLayout, DSizeToContents, DProperties, DCollapsibleCategory,
+// DIconLayout, DTileLayout, DScrollPanel's canvas, PropSelect, DPanPanel) -- and
+// every one of those is usually itself Dock(TOP)/Dock(FILL) inside another panel,
+// which is why a missing implementation shows up as a wrongly sized Dock(TOP).
+//-----------------------------------------------------------------------------
+void Panel::SizeToChildren( bool sizeWide, bool sizeTall )
+{
+	// Make sure the children have real bounds before we measure them.
+	RecurseInternalPerformChildrenLayout();
+
+	int wide = 0, tall = 0;
+	GetChildrenSize( wide, tall );
+
+	SetSize( sizeWide ? wide : GetWide(), sizeTall ? tall : GetTall() );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - perform layout on every child that still needs it, deepest
+// child first, so a parent that measures its children sees final bounds.
+//-----------------------------------------------------------------------------
+void Panel::RecurseInternalPerformChildrenLayout( bool bForce )
+{
+	for ( int i = 0; i < GetChildCount(); i++ )
+	{
+		Panel *pChild = GetChild( i );
+		if ( !pChild )
 			continue;
 
-		pDocked[ nDocked ] = pChild;
-		iDockedZ[ nDocked ] = pChild->GetZPos();
-		++nDocked;
-	}
+		pChild->RecurseInternalPerformChildrenLayout( bForce );
 
-	if ( nDocked <= 0 )
-		return;
-
-	// Selection sort on ZPos - small counts, and it keeps vgui2 free of STL.
-	for ( int a = 0; a < nDocked - 1; ++a )
-	{
-		int iMin = a;
-		for ( int b = a + 1; b < nDocked; ++b )
+		if ( bForce
+			|| ( pChild->_flags.IsFlagSet( NEEDS_LAYOUT ) && !pChild->_flags.IsFlagSet( IN_PERFORM_LAYOUT ) ) )
 		{
-			if ( iDockedZ[ b ] < iDockedZ[ iMin ] )
-				iMin = b;
-		}
-		if ( iMin != a )
-		{
-			Panel *pTmp = pDocked[ a ]; pDocked[ a ] = pDocked[ iMin ]; pDocked[ iMin ] = pTmp;
-			int iTmp = iDockedZ[ a ]; iDockedZ[ a ] = iDockedZ[ iMin ]; iDockedZ[ iMin ] = iTmp;
-		}
-	}
-
-	for ( int i = 0; i < nDocked; ++i )
-	{
-		Panel *pChild = pDocked[ i ];
-		HL2SBDockInfo_t *pInfo = FindDockInfo( pChild );
-		if ( !pInfo )
-			continue;
-
-		const int iL = pInfo->iMargin[ 0 ];
-		const int iT = pInfo->iMargin[ 1 ];
-		const int iR = pInfo->iMargin[ 2 ];
-		const int iB = pInfo->iMargin[ 3 ];
-
-		int iW = pChild->GetWide();
-		int iH = pChild->GetTall();
-
-		switch ( pInfo->iDockType )
-		{
-		case DOCK_FILL:
-			pChild->SetPos( x0 + iL, y0 + iT );
-			pChild->SetSize( ( x1 - x0 ) - iL - iR, ( y1 - y0 ) - iT - iB );
-			break;
-
-		case DOCK_TOP:
-			if ( iH < 0 ) iH = 0;
-			pChild->SetPos( x0 + iL, y0 + iT );
-			pChild->SetSize( ( x1 - x0 ) - iL - iR, iH );
-			y0 += iH + iT + iB;
-			break;
-
-		case DOCK_BOTTOM:
-			if ( iH < 0 ) iH = 0;
-			pChild->SetPos( x0 + iL, y1 - iH - iB );
-			pChild->SetSize( ( x1 - x0 ) - iL - iR, iH );
-			y1 -= iH + iT + iB;
-			break;
-
-		case DOCK_LEFT:
-			if ( iW < 0 ) iW = 0;
-			pChild->SetPos( x0 + iL, y0 + iT );
-			pChild->SetSize( iW, ( y1 - y0 ) - iT - iB );
-			x0 += iW + iL + iR;
-			break;
-
-		case DOCK_RIGHT:
-			if ( iW < 0 ) iW = 0;
-			pChild->SetPos( x1 - iW - iR, y0 + iT );
-			pChild->SetSize( iW, ( y1 - y0 ) - iT - iB );
-			x1 -= iW + iL + iR;
-			break;
+			pChild->InternalPerformLayout();
 		}
 	}
 }

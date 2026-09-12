@@ -707,7 +707,21 @@ public:
 	//
 	// The dock pass runs in InternalPerformLayout(), BEFORE the virtual
 	// PerformLayout(), so a Lua PANEL:PerformLayout override cannot skip it.
+	//
+	// GMod's DOCK enum, spelled out here because the dock pass needs it from
+	// several functions that sit ABOVE the dock implementation in Panel.cpp.
+	// The numbers are part of the Lua API and must never change.
 	//=========================================================================
+	enum HL2SBDockType_t
+	{
+		DOCK_NONE	= 0,
+		DOCK_FILL	= 1,
+		DOCK_LEFT	= 2,
+		DOCK_RIGHT	= 3,
+		DOCK_TOP	= 4,
+		DOCK_BOTTOM	= 5,
+	};
+
 	void SetDock( int iDockType );
 	int  GetDock( void );
 	void SetDockPadding( int iLeft, int iTop, int iRight, int iBottom );
@@ -715,6 +729,33 @@ public:
 	void SetDockMargin( int iLeft, int iTop, int iRight, int iBottom );
 	void GetDockMargin( int &iLeft, int &iTop, int &iRight, int &iBottom );
 	void PerformDocking( void );
+
+	// True when this panel is docked (and therefore consumes space in, and takes
+	// its size from, its parent's dock pass).  FILL is excluded on purpose: the
+	// parent's dock pass gives a FILL child the leftover rectangle, so a FILL
+	// child changing its own size cannot change its siblings' geometry.
+	bool IsDockedInParent( void );
+
+	//=========================================================================
+	// HL2SB: the rest of GMod's layout API.
+	//
+	// GMod's own lua/vgui/*.lua controls call these on EVERY layout pass --
+	// dlistlayout.lua:24, dsizetocontents.lua:17, dproperties.lua:166/167/217,
+	// dcategorycollapse.lua:188/255/256, dscrollpanel.lua:71, dtilelayout.lua:169,
+	// diconlayout.lua:122, DPanPanel.lua:141, propselect.lua:165 -- and so does
+	// GMod's lua/includes/modules/gmod_compatibility/sh_init.lua, which aliases
+	// ChildrenSize = GetChildrenSize.  They are engine methods in GMod (they are
+	// declared in the same header the Lua bindings use), so "missing method" here
+	// means the Derma control throws on every layout and keeps a stale height --
+	// which is exactly the reported Dock(TOP) symptom.
+	//
+	// Non-virtual on purpose: no vtable change, so the deployed vgui2.dll (whose
+	// Panel vtable predates these) keeps working.
+	//=========================================================================
+	void InvalidateParentLayout( bool layoutNow = false, bool reloadScheme = false );
+	void RecurseInternalPerformChildrenLayout( bool bForce = false );
+	void GetChildrenSize( int &wide, int &tall );
+	void SizeToChildren( bool sizeWide = false, bool sizeTall = false );
 
 	void SetNavUp( const char* controlName );
 	void SetNavDown( const char* controlName );
