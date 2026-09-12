@@ -4307,6 +4307,35 @@ void Panel::InvalidateLayout( bool layoutNow, bool reloadScheme )
 	
 	if (layoutNow)
 	{
+		// HL2SB: "layout now" has to mean now.
+		//
+		// InternalPerformLayout() deliberately returns early while
+		// NEEDS_SCHEME_UPDATE is set, and a panel only loses that flag inside
+		// ApplySchemeSettings() -- which the surface calls from
+		// SolveTraverse(), i.e. once per frame, on the way to Think().
+		//
+		// A panel created from Lua (vgui.Create) still HAS the flag when script
+		// calls InvalidateLayout( true ) in the same frame it created it, which
+		// is precisely what Derma does.  The old code therefore did nothing at
+		// all: PerformDocking() never ran, so
+		//
+		//     p:SetSize( 400, 300 )
+		//     a:Dock( TOP )  a:SetTall( 40 )
+		//     b:Dock( FILL )
+		//     p:InvalidateLayout( true )
+		//
+		// left A at 0,40 and B at its untouched 64x24 default instead of
+		// B at 40,260 -- the "Dock( TOP ) sizes wrongly / does not RELIABLY
+		// size" report, and also why a DListLayout measured 24 instead of 90.
+		//
+		// SolveTraverse() applies the scheme before Think() for the same
+		// reason, so do it here as well.  PerformApplySchemeSettings() is
+		// already called below for reloadScheme, so this is a no-op then.
+		if ( _flags.IsFlagSet( NEEDS_SCHEME_UPDATE ) )
+		{
+			PerformApplySchemeSettings();
+		}
+
 		InternalPerformLayout();
 		Repaint();
 	}

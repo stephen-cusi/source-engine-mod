@@ -131,9 +131,26 @@ void LPanel::PaintBuildOverlay()
 void LPanel::OnChildAdded(VPANEL child)
 {
 #ifdef LUA_SDK
+	// HL2SB: the argument count here was 0 while one value (the child) is pushed
+	// on top of the receiver.  BEGIN_LUA_CALL_PANEL_METHOD only counts the
+	// receiver, so the pcall was handed nargs = 1 for a [func, self, child]
+	// stack: it took SELF (a Panel) as the function and the child as its
+	// argument, and died with
+	//
+	//     attempt to call a Panel value
+	//     stack traceback:
+	//         [C]: in function 'vgui.Label'      <- whichever C frame created the
+	//         [C]: in function 'vgui.CreateX'       child; the C++ call tree under
+	//         ...scriptedpanels.lua:50 ...          it is the current Lua frame
+	//
+	// The error is swallowed (luasrc_pcall only Warnings it), so the child was
+	// still added and the only visible damage was that the Lua method never ran
+	// at all.  For DDragBase/DListLayout -- the controls whose OnChildAdded does
+	// `child:Dock( TOP )` -- that is exactly why a list layout's rows were never
+	// docked and the layout kept its 64x24 default height.
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnChildAdded" );
 		lua_pushpanel( m_lua_State, child );
-	END_LUA_CALL_PANEL_METHOD( 0, 1 );
+	END_LUA_CALL_PANEL_METHOD( 1, 1 );
 
 	RETURN_LUA_PANEL_NONE();
 #endif

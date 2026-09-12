@@ -90,7 +90,16 @@ void LFrame::OnMousePressed( MouseCode code )
 {
 	BaseClass::OnMousePressed( code );
 #if defined( LUA_SDK )
+	// HL2SB: the value the dispatch declares has to be on the stack.  These eight
+	// handlers passed END_LUA_CALL_PANEL_METHOD( nArgs ) without pushing anything,
+	// so the pcall was handed one argument too many: lua_pcall() took the value
+	// BELOW the function as the function to call, left the traceback handler
+	// sitting in the argument list, and then removed the wrong slot.  Every
+	// scripted Frame handler therefore ran with a function object in place of its
+	// real argument (mouse code, coordinates, command string, ...) and with no
+	// error handler attached.  Same class of bug as LPanel::OnChildAdded.
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnMousePressed" );
+		lua_pushinteger( m_lua_State, (int)code );
 	END_LUA_CALL_PANEL_METHOD( 1, 0 );
 #endif
 }
@@ -100,6 +109,7 @@ void LFrame::OnMouseReleased( MouseCode code )
 	BaseClass::OnMouseReleased( code );
 #if defined( LUA_SDK )
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnMouseReleased" );
+		lua_pushinteger( m_lua_State, (int)code );
 	END_LUA_CALL_PANEL_METHOD( 1, 0 );
 #endif
 }
@@ -109,6 +119,8 @@ void LFrame::OnCursorMoved( int x, int y )
 	BaseClass::OnCursorMoved( x, y );
 #if defined( LUA_SDK )
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnCursorMoved" );
+		lua_pushinteger( m_lua_State, x );
+		lua_pushinteger( m_lua_State, y );
 	END_LUA_CALL_PANEL_METHOD( 2, 0 );
 #endif
 }
@@ -136,6 +148,7 @@ void LFrame::OnMouseWheeled( int delta )
 	BaseClass::OnMouseWheeled( delta );
 #if defined( LUA_SDK )
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnMouseWheeled" );
+		lua_pushinteger( m_lua_State, delta );
 	END_LUA_CALL_PANEL_METHOD( 1, 1 );
 #endif
 }
@@ -145,6 +158,7 @@ void LFrame::OnKeyCodePressed( KeyCode code )
 	BaseClass::OnKeyCodePressed( code );
 #if defined( LUA_SDK )
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnKeyCodePressed" );
+		lua_pushinteger( m_lua_State, (int)code );
 	END_LUA_CALL_PANEL_METHOD( 1, 1 );
 #endif
 }
@@ -154,6 +168,7 @@ void LFrame::OnKeyCodeTyped( KeyCode code )
 	BaseClass::OnKeyCodeTyped( code );
 #if defined( LUA_SDK )
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnKeyCodeTyped" );
+		lua_pushinteger( m_lua_State, (int)code );
 	END_LUA_CALL_PANEL_METHOD( 1, 1 );
 #endif
 }
@@ -163,6 +178,7 @@ void LFrame::OnKeyCodeReleased( KeyCode code )
 	BaseClass::OnKeyCodeReleased( code );
 #if defined( LUA_SDK )
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnKeyCodeReleased" );
+		lua_pushinteger( m_lua_State, (int)code );
 	END_LUA_CALL_PANEL_METHOD( 1, 1 );
 #endif
 }
@@ -181,6 +197,7 @@ void LFrame::OnCommand( const char *command )
 	BaseClass::OnCommand( command );
 #if defined( LUA_SDK )
 	BEGIN_LUA_CALL_PANEL_METHOD( "OnCommand" );
+		lua_pushstring( m_lua_State, command );
 	END_LUA_CALL_PANEL_METHOD( 1, 1 );
 #endif
 }
