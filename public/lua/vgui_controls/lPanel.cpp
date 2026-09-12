@@ -712,6 +712,43 @@ static int Panel_MoveToFront (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Panel:MoveToBack().
+//
+// GMod's Lua API has both MoveToFront and MoveToBack; this fork only ever bound
+// MoveToFront (the entry just above).  vgui_controls::Panel has no MoveToBack()
+// of its own -- but the interface underneath it does, and that is exactly what
+// vgui2's own Frame.cpp:990 calls:
+//
+//     public/vgui/IPanel.h:65   virtual void MoveToBack(VPANEL vguiPanel) = 0;
+//
+// Needed by the GMod spawnmenu: gamemodes/sandbox/gamemode/spawnmenu/
+// creationmenu/content/contenttypes/custom.lua:223 does `node:MoveToBack()` in
+// the spawnlist right-click handler, and lua/includes/modules/menubar.lua:22
+// does the same while re-parenting the menubar.
+//-----------------------------------------------------------------------------
+static int Panel_MoveToBack (lua_State *L) {
+  vgui::Panel *pPanel = luaL_checkpanel(L, 1);
+  if (pPanel != NULL)
+    vgui::ipanel()->MoveToBack(pPanel->GetVPanel());
+  return 0;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Panel:FocusNext().
+//
+// lua/vgui/dtextentry.lua:78 calls it when Enter is pressed -- the GMod text
+// entry hands the keyboard on to the next control.  The vgui2 primitive is
+// Panel::RequestFocusNext() (public/vgui_controls/Panel.h:322), which is what
+// vgui2's own panels call to do the same thing.
+//-----------------------------------------------------------------------------
+static int Panel_FocusNext (lua_State *L) {
+  vgui::Panel *pPanel = luaL_checkpanel(L, 1);
+  if (pPanel != NULL)
+    pPanel->RequestFocusNext();
+  return 0;
+}
+
 static int Panel_OnCommand (lua_State *L) {
   luaL_checkpanel(L, 1)->OnCommand(luaL_checkstring(L, 2));
   return 0;
@@ -1666,6 +1703,8 @@ static const luaL_Reg Panelmeta[] = {
   {"MakePopup", Panel_MakePopup},
   {"MakeReadyForUse", Panel_MakeReadyForUse},
   {"MarkForDeletion", Panel_MarkForDeletion},
+  {"MoveToBack", Panel_MoveToBack},
+  {"FocusNext", Panel_FocusNext},
   {"MoveToFront", Panel_MoveToFront},
   {"OnCommand", Panel_OnCommand},
   {"OnCursorEntered", Panel_OnCursorEntered},
