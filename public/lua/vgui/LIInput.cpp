@@ -55,15 +55,32 @@ static int input_GetCurrentIMEHandle (lua_State *L) {
   return 1;
 }
 
-/*
-static int input_GetCursorPos__USE_VCR_MODE (lua_State *L) {
+// HL2SB: GMod's input.GetCursorPos -- this was the ONE binding the GMod spawn
+// menu cannot open without.
+//
+// The block below used to be commented out because it called
+// input()->GetCursorPos__USE_VCR_MODE(), which this fork's IInput never
+// declared (public/vgui/IInput.h only has GetCursorPos at :62).  The name was
+// a GMod-ism; the plain one is what exists here.
+//
+// Why it is load-critical: GMod's lua/includes/util.lua:520 defines
+//
+//     function RememberCursorPosition()  local x, y = input.GetCursorPos() ...
+//     function RestoreCursorPosition()   input.SetCursorPos( x, y ) ...
+//
+// and gamemodes/sandbox/gamemode/spawnmenu/spawnmenu.lua:90 calls
+// RestoreCursorPosition() as the FIRST statement of PANEL:Open().  A nil
+// input.GetCursorPos made RememberCursorPosition throw, so PANEL:Open() aborted
+// before self:SetVisible( true ) / self:MakePopup() ever ran -- "+menu" would
+// appear to do nothing at all.  (RememberCursorPosition is called from
+// spawnmenu.lua:126 and contextmenu.lua:74 in the same way.)
+static int input_GetCursorPos (lua_State *L) {
   int x, y;
-  input()->GetCursorPos__USE_VCR_MODE(x, y);
+  input()->GetCursorPos(x, y);
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
   return 2;
 }
-*/
 
 static int input_GetCursorPosition (lua_State *L) {
   int x, y;
@@ -288,7 +305,8 @@ static const luaL_Reg inputlib[] = {
   {"GetCandidateListSelectedItem",   input_GetCandidateListSelectedItem},
   {"GetCurrentIMEHandle",   input_GetCurrentIMEHandle},
 //  {"GetCursorPos__USE_VCR_MODE",   input_GetCursorPos__USE_VCR_MODE},
-//  {"GetCursorPos",   input_GetCursorPos__USE_VCR_MODE},
+  // HL2SB: GMod's spelling.  See the comment on input_GetCursorPos above.
+  {"GetCursorPos",   input_GetCursorPos},
   {"GetCursorPosition",   input_GetCursorPosition},
   {"GetEnglishIMEHandle",   input_GetEnglishIMEHandle},
   {"GetFocus",   input_GetFocus},

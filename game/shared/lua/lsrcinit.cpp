@@ -791,6 +791,51 @@ static int lua_MsgN (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: ErrorNoHalt( ... ) and ErrorNoHaltWithStack( ... ).
+//
+// GMod's non-fatal error print.  Neither existed in this fork (the only
+// definitions were in lua/includes/modules/gmod_compatibility/sh_init.lua,
+// which is inert behind GMOD_COMPATIBILITY = false), so every GMod file that
+// reports a soft failure died on the report itself:
+//
+//   gamemodes/sandbox/gamemode/spawnmenu/creationmenu/content/contentsearch.lua:118
+//       ErrorNoHalt( "..." )
+//   lua/includes/modules/spawnmenu.lua:292
+//       ErrorNoHaltWithStack( "spawnmenu.GetContentType got an invalid value\n" )
+//
+// and several pre-existing fork files call them too.  Behaviour matches GMod /
+// this fork's Msg: the arguments are concatenated with tostring() and written to
+// the console, and nothing halts.  ErrorNoHaltWithStack additionally writes a
+// Lua traceback, which is the reason GMod scripts reach for it.
+//-----------------------------------------------------------------------------
+static int lua_ErrorNoHalt (lua_State *L) {
+  int nArgs = lua_gettop( L );
+
+  for ( int i = 1; i <= nArgs; ++i ) {
+    const char *pszText = luaL_tolstring( L, i, NULL );
+    Msg( "%s", pszText ? pszText : "" );
+    lua_pop( L, 1 );
+  }
+
+  return 0;
+}
+
+static int lua_ErrorNoHaltWithStack (lua_State *L) {
+  lua_ErrorNoHalt( L );
+  Msg( "\n" );
+
+  // luaL_traceback( L, L, NULL, 1 ) writes "stack traceback:" plus the frames
+  // into a new string on the stack.  NULL for the message is legal in 5.4.
+  luaL_traceback( L, L, NULL, 1 );
+  const char *pszTrace = lua_tostring( L, -1 );
+  if ( pszTrace != NULL )
+    Msg( "%s\n", pszTrace );
+  lua_pop( L, 1 );
+
+  return 0;
+}
+
 #ifndef CLIENT_DLL
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: SuppressHostEvents( ent ).
@@ -1035,6 +1080,12 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_setglobal( L, "Msg" );
   lua_pushcfunction( L, lua_MsgN );
   lua_setglobal( L, "MsgN" );
+
+  /* HL2SB: GMod's non-fatal error prints (see lua_ErrorNoHalt above). */
+  lua_pushcfunction( L, lua_ErrorNoHalt );
+  lua_setglobal( L, "ErrorNoHalt" );
+  lua_pushcfunction( L, lua_ErrorNoHaltWithStack );
+  lua_setglobal( L, "ErrorNoHaltWithStack" );
 
   lua_pushcfunction( L, lua_IsFirstTimePredicted );
   lua_setglobal( L, "IsFirstTimePredicted" );

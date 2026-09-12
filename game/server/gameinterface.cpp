@@ -1012,10 +1012,26 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	//luasrc_LoadEffects();
 
 	//Andrew; loadup base gamemode.
+	//
+	// HL2SB: GMod's gamemode-lifecycle hooks, same three as the client
+	// (cdll_client_int.cpp).  The server half of GMod's base gamemode defines
+	// GM:PreGamemodeLoaded / OnGamemodeLoaded / PostGamemodeLoaded
+	// (gamemodes/base/gamemode/shared.lua), so leaving them undispatched is a
+	// silent no-op on this side -- but addons hook them, and the client's
+	// spawnmenu is created from OnGamemodeLoaded, so both realms stay in step.
+	BEGIN_LUA_CALL_HOOK( "PreGamemodeLoaded" );
+	END_LUA_CALL_HOOK( 0, 0 );
+
 	luasrc_LoadGamemode( LUA_BASE_GAMEMODE );
 
 	luasrc_LoadGamemode( gamemode.GetString() );
 	luasrc_SetGamemode( gamemode.GetString() );
+
+	BEGIN_LUA_CALL_HOOK( "OnGamemodeLoaded" );
+	END_LUA_CALL_HOOK( 0, 0 );
+
+	BEGIN_LUA_CALL_HOOK( "PostGamemodeLoaded" );
+	END_LUA_CALL_HOOK( 0, 0 );
 
 	if ( gpGlobals->maxClients > 1 )
 	{

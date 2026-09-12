@@ -1715,10 +1715,40 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 	luasrc_LoadEffects();
 
 	//Andrew; loadup base gamemode.
+	//
+	// HL2SB: GMod's three gamemode-lifecycle hooks.  Nothing in this fork ever
+	// fired them, and they are not decoration -- the sandbox spawnmenu is
+	// created from one of them:
+	//
+	//   gamemodes/sandbox/gamemode/spawnmenu/spawnmenu.lua:236
+	//       hook.Add( "OnGamemodeLoaded", "CreateSpawnMenu", CreateSpawnMenu )
+	//   lua/includes/modules/menubar.lua:35
+	//       hook.Add( "OnGamemodeLoaded", "CreateMenuBar", ... )
+	//   gamemodes/sandbox/gamemode/shared.lua (GMod's) defines GM:OnGamemodeLoaded
+	//
+	// Without this dispatch both files register a hook that can never run, the
+	// global g_SpawnMenu is never created, and GM:OnSpawnMenuOpen (also from
+	// spawnmenu.lua) has no menu to open -- the console command "+menu" that
+	// gamemodes/base/gamemode/cl_spawnmenu.lua:10 registers would then call
+	// hook.Run("OnSpawnMenuOpen") and land on an empty stub.
+	//
+	// Order matches GMod (wiki: Lua Loading Order): PreGamemodeLoaded before any
+	// gamemode file is read, OnGamemodeLoaded once BOTH the base and the active
+	// gamemode tables are registered (so GAMEMODE exists and its methods are
+	// reachable through the hook.Call fallback), PostGamemodeLoaded last.
+	BEGIN_LUA_CALL_HOOK( "PreGamemodeLoaded" );
+	END_LUA_CALL_HOOK( 0, 0 );
+
 	luasrc_LoadGamemode( LUA_BASE_GAMEMODE );
 
 	luasrc_LoadGamemode( gamemode.GetString() );
 	luasrc_SetGamemode( gamemode.GetString() );
+
+	BEGIN_LUA_CALL_HOOK( "OnGamemodeLoaded" );
+	END_LUA_CALL_HOOK( 0, 0 );
+
+	BEGIN_LUA_CALL_HOOK( "PostGamemodeLoaded" );
+	END_LUA_CALL_HOOK( 0, 0 );
 
 	BEGIN_LUA_CALL_HOOK( "LevelInitPreEntity" );
 		lua_pushstring( L, pMapName );
