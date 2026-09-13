@@ -25,6 +25,11 @@ C_ScriptedBaseGameUIPanel *g_pScriptedBaseGameUIPanel = NULL;
 //-----------------------------------------------------------------------------
 void VGUI_CreateGameUIRootPanel( void )
 {
+	// Idempotent: VGui_GetGameUIPanel() also creates this on demand, so a second
+	// call must not leak the first panel (or orphan the tick signal it registered).
+	if ( g_pScriptedBaseGameUIPanel != NULL )
+		return;
+
 	g_pScriptedBaseGameUIPanel = new C_ScriptedBaseGameUIPanel( enginevgui->GetPanel( PANEL_GAMEUIDLL ) );
 }
 
@@ -66,6 +71,29 @@ vgui::VPANEL VGui_GetClientDLLRootPanel( void )
 #ifdef LUA_SDK
 vgui::Panel *VGui_GetGameUIPanel( void )
 {
+	// HL2SB: created on demand.
+	//
+	// Nothing in this fork ever called VGUI_CreateGameUIRootPanel(), so this
+	// pointer stayed NULL forever and the function handed back an invalid panel.
+	// That is not the same as returning nil: lua_pushpanel() wraps NULL in a
+	// PHandle userdata, so luaL_optpanel()'s default never applied and any script
+	// that did
+	//
+	//     vgui.CContentDialog( VGui_GetGameUIPanel(), "ContentDialog" )
+	//
+	// died before constructing anything:
+	//
+	//     vgui.lua:37: bad argument #1 to '?' (Panel expected, got INVALID_PANEL)
+	//
+	// That is the "click Content and it errors" report.  Building it here rather
+	// than at DLL init also avoids depending on the engine's GameUI panel already
+	// existing that early; the parent may legitimately be 0, and the wrapper is
+	// still a real vgui Panel either way.
+	if ( g_pScriptedBaseGameUIPanel == NULL )
+	{
+		VGUI_CreateGameUIRootPanel();
+	}
+
 	return g_pScriptedBaseGameUIPanel;
 }
 
