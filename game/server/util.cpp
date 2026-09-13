@@ -1416,11 +1416,36 @@ void UTIL_SetModel( CBaseEntity *pEntity, const char *pModelName )
 {
 	// check to see if model was properly precached
 	int i = modelinfo->GetModelIndex( pModelName );
+
 	if ( i == -1 )	
 	{
-		Error("%i/%s - %s:  UTIL_SetModel:  not precached: %s\n", pEntity->entindex(),
-			STRING( pEntity->GetEntityName() ),
-			pEntity->GetClassname(), pModelName);
+		// HL2SB GMod SENT compat: load the model on demand.
+		//
+		// GMod's engine loads (precaches) a model at the moment a script calls
+		// self:SetModel( path ), because GMod scripted entities routinely name
+		// their model for the first time in ENT:Initialize() and declare no
+		// ENT.Model -- lua/entities/sent_ball.lua:70 is exactly that shape, so
+		// nothing could have precached it during the precache pass.
+		//
+		// This must not be left to the Error() below.  Without DBG_INTERFACE that
+		// Error() is the empty inline in public/tier0/dbg.h:474, so execution
+		// falls through to SetModelIndex( -1 ): the entity then silently has no
+		// model at all, with nothing in the log to say so.
+		//
+		// NOTE: this is defence, not a fix for the sent_ball "invisible ball"
+		// report.  Diagnostics run against that report showed the ball's model
+		// resolving normally (UTIL_SetModel -> index=208), so this branch was
+		// never taken there.  It closes the silent -1 hole for any script that
+		// does hit it.
+		engine->PrecacheModel( pModelName, true );
+		i = modelinfo->GetModelIndex( pModelName );
+
+		if ( i == -1 )
+		{
+			Error("%i/%s - %s:  UTIL_SetModel:  not precached: %s\n", pEntity->entindex(),
+				STRING( pEntity->GetEntityName() ),
+				pEntity->GetClassname(), pModelName);
+		}
 	}
 
 	CBaseAnimating *pAnimating = pEntity->GetBaseAnimating();
