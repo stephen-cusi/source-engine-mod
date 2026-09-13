@@ -164,6 +164,9 @@ public:
 
 protected:
 	CConsolePanel *m_pConsolePanel;
+	// HL2SB: "Clear All", drawn on the title bar row (child of the dialog/frame,
+	// not of the panel -- the caption is outside the panel's client area).
+	vgui::Button *m_pClear;
 };
 
 } // end namespace vgui

@@ -317,6 +317,15 @@ CConsolePanel::CConsolePanel( vgui::Panel *pParent, const char *pName, bool bSta
 	m_pSubmit->SetCommand("submit");
 	m_pSubmit->SetVisible( !m_bStatusVersion );
 
+	// HL2SB: the "Clear All" button lives on the TITLE BAR ROW, right-aligned
+	// beside the close button -- the position Garry's Mod puts its console menu
+	// items in, and the reason this exists at all.
+	//
+	// It has to be created as a child of the DIALOG, not of this panel: the title
+	// bar belongs to the Frame, and a child of the panel is clipped to the panel's
+	// own client area, which starts below the caption.  CConsoleDialog creates it
+	// and forwards clicks here via the "ClearAll" command.
+
 	CNonFocusableMenu *pCompletionList = new CNonFocusableMenu( this, "CompletionList" );
 	m_pCompletionList = pCompletionList;
 	m_pCompletionList->SetVisible(false);
@@ -729,6 +738,15 @@ void CConsolePanel::OnTextChanged(Panel *panel)
 //-----------------------------------------------------------------------------
 void CConsolePanel::OnCommand(const char *command)
 {
+	// HL2SB: the "Clear All" button.  Clearing the dialog is a local UI action,
+	// not an engine command, so it must not be posted as one -- and it also must
+	// not fall through to BaseClass::OnCommand, which would try to run it.
+	if ( !Q_stricmp( command, "ClearAll" ) )
+	{
+		Clear();
+		return;
+	}
+
 	if ( !Q_stricmp( command, "Submit" ) )
 	{
 		// submit the entry as a console commmand
@@ -1151,6 +1169,14 @@ CConsoleDialog::CConsoleDialog( vgui::Panel *pParent, const char *pName, bool bS
 	SetTitle( "#Console_Title", true );
 	m_pConsolePanel = new CConsolePanel( this, "ConsolePage", bStatusVersion );
 	m_pConsolePanel->AddActionSignalTarget( this );
+
+	// HL2SB: "Clear All", on the title bar row (see the note in CConsolePanel's
+	// constructor for why it is parented to the dialog rather than the panel).
+	// #Console_Clear is defined in the vgui_*.txt resource files.
+	m_pClear = new Button( this, "ConsoleClear", "#Console_Clear" );
+	m_pClear->SetCommand( "ClearAll" );
+	m_pClear->AddActionSignalTarget( m_pConsolePanel );
+	m_pClear->SetVisible( !bStatusVersion );
 }
 
 void CConsoleDialog::OnScreenSizeChanged( int iOldWide, int iOldTall )
@@ -1189,6 +1215,34 @@ void CConsoleDialog::PerformLayout()
 	int x, y, w, h;
 	GetClientArea( x, y, w, h );
 	m_pConsolePanel->SetBounds( x, y, w, h );
+
+	// HL2SB: place "Clear All" on the caption row, immediately left of the close
+	// button.  Frame::PerformLayout puts the close button's right edge at
+	// (wide - 5*scale) and gives each caption button 20*scale of pitch with
+	// top_border_offset (5+3)*scale, so mirror those numbers to sit flush with it.
+	if ( m_pClear && m_pClear->IsVisible() )
+	{
+		float scale = 1;
+		if ( IsProportional() )
+		{
+			int screenW, screenH, proW, proH;
+			surface()->GetScreenSize( screenW, screenH );
+			surface()->GetProportionalBase( proW, proH );
+			scale = ( (float)screenH / (float)proH );
+		}
+
+		const int sideBorder   = (int)( 5 * scale );
+		const int captionPitch = (int)( 20 * scale );
+		const int captionTop   = (int)( ( 5 + 3 ) * scale );
+		const int captionTall  = GetCaptionHeight() - (int)( 5 * scale );
+
+		// One pitch in from the close button, which occupies the rightmost slot.
+		int clearWide = (int)( 76 * scale );
+		int clearX = ( GetWide() - sideBorder - captionPitch ) - clearWide - (int)( 4 * scale );
+
+		m_pClear->SetPos( clearX, captionTop );
+		m_pClear->SetSize( clearWide, captionTall );
+	}
 }
 
 
