@@ -912,6 +912,45 @@ static int luasrc_Channel_IsPlaying (lua_State *L) {
   return 1;
 }
 
+// GMod CSoundPatch:ChangePitch( pitch, time )
+static int luasrc_Channel_ChangePitch (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  const float flPitch = (float)luaL_checknumber( L, 2 );
+  const float flDeltaTime = (float)luaL_optnumber( L, 3, 0.0f );
+
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
+    CSoundEnvelopeController::GetController().SoundChangePitch( pPatch, flPitch, flDeltaTime );
+
+  return 0;
+}
+
+// GMod CSoundPatch:FadeOut( seconds ) -- ramp to 0 then Stop.
+static int luasrc_Channel_FadeOut (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  const float flSeconds = (float)luaL_optnumber( L, 2, 0.5f );
+
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL ) {
+    float flDur = flSeconds;
+    if ( flDur < 0.01f ) flDur = 0.01f;
+    CSoundEnvelopeController::GetController().SoundChangeVolume( pPatch, 0.0f, flDur );
+  }
+
+  HL2SB_ChannelSetVolume( L, 1, 0.0f );
+  return 0;
+}
+
+// GMod CSoundPatch:IsFinished() -- not playing and not paused = finished.
+static int luasrc_Channel_IsFinished (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  bool bPlaying = HL2SB_ChannelBool( L, 1, HL2SB_CHANNEL_FIELD_PLAYING );
+  bool bPaused  = HL2SB_ChannelBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED );
+  bool bValid   = ( HL2SB_ChannelEntity( L, 1 ) != NULL );
+  lua_pushboolean( L, bValid && !bPlaying && !bPaused );
+  return 1;
+}
+
 static int luasrc_Channel_IsPaused (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   lua_pushboolean( L, HL2SB_ChannelBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED ) );
@@ -1000,7 +1039,10 @@ static int luasrc_CreateSound (lua_State *L) {
     { "GetPitch",     luasrc_Channel_GetPitch },
     { "IsPlaying",    luasrc_Channel_IsPlaying },
     { "IsPaused",     luasrc_Channel_IsPaused },
+    { "IsFinished",   luasrc_Channel_IsFinished },
     { "IsValid",      luasrc_Channel_IsValid },
+    { "FadeOut",      luasrc_Channel_FadeOut },
+    { "ChangePitch",  luasrc_Channel_ChangePitch },
     { "Is3D",         luasrc_Channel_False },
     { "GetTime",      luasrc_Channel_Zero },
     { "GetState",     luasrc_Channel_Zero },

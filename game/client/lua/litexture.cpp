@@ -509,6 +509,63 @@ static int HL2SB_Material( lua_State *L )
 }
 
 /*
+** HL2SB: CreateMaterial( name, paramsTable ) -- GMod's runtime material builder.
+**
+** paramsTable is a flat Lua table.  Key "shader" picks the shader (default
+** "UnlitGeneric"); every other key becomes a VMT variable.  Numbers go in as
+** floats, booleans as 0/1, strings verbatim.  The material is created (or
+** replaced) via IMaterialSystem::CreateMaterial so subsequent Material( name )
+** finds it.
+*/
+static int HL2SB_CreateMaterial( lua_State *L )
+{
+    const char *pName = luaL_checkstring( L, 1 );
+    luaL_checktype( L, 2, LUA_TTABLE );
+
+    const char *pszShader = "UnlitGeneric";
+    lua_getfield( L, 2, "shader" );
+    if ( lua_type( L, -1 ) == LUA_TSTRING )
+        pszShader = lua_tostring( L, -1 );
+    lua_pop( L, 1 );
+
+    KeyValues *pKV = new KeyValues( pszShader );
+
+    // Walk the params table, skipping the "shader" key.
+    lua_pushnil( L );
+    while ( lua_next( L, 2 ) != 0 )
+    {
+        // key at -2, value at -1
+        if ( lua_type( L, -2 ) == LUA_TSTRING )
+        {
+            const char *pszKey = lua_tostring( L, -2 );
+            if ( pszKey[0] != '\0' && Q_stricmp( pszKey, "shader" ) != 0 )
+            {
+                if ( lua_type( L, -1 ) == LUA_TNUMBER )
+                    pKV->SetFloat( pszKey, (float)lua_tonumber( L, -1 ) );
+                else if ( lua_type( L, -1 ) == LUA_TBOOLEAN )
+                    pKV->SetInt( pszKey, lua_toboolean( L, -1 ) ? 1 : 0 );
+                else if ( lua_type( L, -1 ) == LUA_TSTRING )
+                    pKV->SetString( pszKey, lua_tostring( L, -1 ) );
+            }
+        }
+        lua_pop( L, 1 );
+    }
+
+    IMaterial *pMaterial = materials->CreateMaterial( pName, pKV );
+    // CreateMaterial takes ownership of pKV; do not deleteThis().
+
+    if ( !pMaterial || pMaterial->IsErrorMaterial() )
+    {
+        lua_pushnil( L );
+        return 1;
+    }
+
+    pMaterial->IncrementReferenceCount();
+    lua_pushmaterial( L, pMaterial );
+    return 1;
+}
+
+/*
 ** Open render ITexture metatable
 */
 LUALIB_API int luaopen_ITexture( lua_State *L )
@@ -548,6 +605,18 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
     /* HL2SB: GMod's Material( path ) constructor. */
     lua_pushcfunction( L, HL2SB_Material );
     lua_setglobal( L, "Material" );
+
+    /* HL2SB: GMod's CreateMaterial( name, paramsTable ).
+    **
+    ** paramsTable keys map to VMT variables; the "shader" key selects the
+    ** shader (default UnlitGeneric).  Creates or replaces a named material
+    ** at runtime -- useful for addons that build materials from params
+    ** instead of shipping .vmt files.
+    **
+    ** Minimal but real: reads string/number/bool from the Lua table into a
+    ** KeyValues tree, then materials->CreateMaterial(). */
+    lua_pushcfunction( L, HL2SB_CreateMaterial );
+    lua_setglobal( L, "CreateMaterial" );
 
     return 1;
 }
