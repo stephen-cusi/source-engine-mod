@@ -43,3 +43,13 @@ shots/
 
 # --- local agent notes (kept on disk, never committed) ---
 AGENTS.md
+
+# --- local backups and working docs (kept on disk, never committed) ---
+# Header/source snapshots taken before a risky edit.  Committing these would
+# put a second copy of tree sources under common/ and lua/.
+*_backup/
+common/_lua51_headers_backup/
+lua/_src_51_backup/
+
+# Working plans: this repo tracks no .md at all (AGENTS.md is local notes).
+GMod_SWEP_compat_plan.md
