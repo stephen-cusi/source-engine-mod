@@ -1627,6 +1627,129 @@ void CMDLCache::ConvertFlexData( studiohdr_t *pStudioHdr )
 	}
 }
 
+// HL2SB -----------------------------------------------------------------------
+// Decide the .vtx strip layout from the file itself.
+//
+// OptimizedModel::StripGroupHeader_t / StripHeader_t (pre-49, 25 / 27 bytes) and their
+// _v49_t variants (33 / 35 bytes, pack(1)) differ only in their stride and in the two
+// extra topology fields appended at the end, and the engine's accessors pick between
+// them with the MESH_IS_MDL49 / STRIPGROUP_IS_MDL49 flags.  BuildHardwareData() used to
+// set those flags purely from pStudioHdr->version == 49, so a model stamped 49 whose
+// .vtx still holds pre-49 strips made every accessor read with the wrong stride:
+// numIndices / indexOffset come out as garbage and studiorender then walks
+// pStripGroup->pIndex(curr) off the end of the buffer (observed as an access violation
+// in CStudioRenderContext::ComputeMeshGroupStats, studiorendercontext.cpp:793).
+// The .vtx header checks in BuildHardwareData cannot catch it - the vtx file version is
+// 7 for both layouts and the checksum matches the .mdl.
+//
+// The test below is the layout's own invariant: the group counts/offsets must be
+// plausible and every strip must index *inside* its own strip group ("indexOffset
+// offsets into the mesh's index array").  With the wrong stride, group 2.. and mesh 2..
+// land mid-record and fail these checks.  Returns true when nVtxLen is unusable so that
+// nothing changes for models we cannot measure.
+static bool VtxStripLayoutIsSane( OptimizedModel::FileHeader_t *pVtxHdr, int nVtxLen, bool bMDL49 )
+{
+	if ( !pVtxHdr || nVtxLen <= (int)sizeof( OptimizedModel::FileHeader_t ) )
+		return true;
+
+	const int nGroupSize = bMDL49 ? 33 : 25;	// StripGroupHeader_v49_t / StripGroupHeader_t
+	const int nStripSize = bMDL49 ? 35 : 27;	// StripHeader_v49_t     / StripHeader_t
+
+	byte *pBase = (byte *)pVtxHdr;
+	byte *pEnd	= pBase + nVtxLen;
+
+	if ( pVtxHdr->numBodyParts <= 0 || pVtxHdr->numBodyParts > 4096 )
+		return false;
+
+	for ( int i = 0; i < pVtxHdr->numBodyParts; ++i )
+	{
+		OptimizedModel::BodyPartHeader_t *pBodyPart = pVtxHdr->pBodyPart( i );
+		if ( (byte *)( pBodyPart + 1 ) > pEnd )
+			return false;
+
+		for ( int j = 0; j < pBodyPart->numModels; ++j )
+		{
+			OptimizedModel::ModelHeader_t *pModel = pBodyPart->pModel( j );
+			if ( (byte *)( pModel + 1 ) > pEnd )
+				return false;
+
+			for ( int k = 0; k < pModel->numLODs; ++k )
+			{
+				OptimizedModel::ModelLODHeader_t *pLOD = pModel->pLOD( k );
+				if ( (byte *)( pLOD + 1 ) > pEnd )
+					return false;
+
+				for ( int l = 0; l < pLOD->numMeshes; ++l )
+				{
+					OptimizedModel::MeshHeader_t *pMesh = pLOD->pMesh( l );
+					if ( (byte *)( pMesh + 1 ) > pEnd )
+						return false;
+					if ( pMesh->numStripGroups <= 0 || pMesh->numStripGroups > 65536 )
+						return false;
+
+					for ( int m = 0; m < pMesh->numStripGroups; ++m )
+					{
+						byte *pGroup = (byte *)pMesh + pMesh->stripGroupHeaderOffset
+							 + (size_t)m * nGroupSize;
+						if ( pGroup + nGroupSize > pEnd )
+							return false;
+
+						int numVerts	= *(int *)( pGroup + 0 );
+						int vertOffset	= *(int *)( pGroup + 4 );
+						int numIndices	= *(int *)( pGroup + 8 );
+						int indexOffset = *(int *)( pGroup + 12 );
+						int numStrips	= *(int *)( pGroup + 16 );
+						int stripOffset = *(int *)( pGroup + 20 );
+
+						if ( numVerts < 0 || numIndices <= 0 || numStrips <= 0 )
+							return false;
+						if ( numVerts > ( 1 << 20 ) || numIndices > ( 1 << 20 ) || numStrips > 65536 )
+							return false;
+						if ( stripOffset < nGroupSize || indexOffset < nGroupSize || vertOffset < nGroupSize )
+							return false;
+						if ( (size_t)indexOffset + (size_t)numIndices * 2 > (size_t)nVtxLen )
+							return false;
+						if ( (size_t)stripOffset + (size_t)numStrips * nStripSize > (size_t)nVtxLen )
+							return false;
+
+						int nCheck = numStrips < 8 ? numStrips : 8;
+						for ( int n = 0; n < nCheck; ++n )
+						{
+							byte *pStrip = pGroup + stripOffset + (size_t)n * nStripSize;
+							if ( pStrip + nStripSize > pEnd )
+								return false;
+
+							int	  sNumIndices = *(int *)( pStrip + 0 );
+							int	  sIndexOffset = *(int *)( pStrip + 4 );
+							int	  sNumVerts = *(int *)( pStrip + 8 );
+							int	  sVertOffset = *(int *)( pStrip + 12 );
+							short sNumBones = *(short *)( pStrip + 16 );
+							byte  sFlags	= *( pStrip + 18 );
+							int	  sNumBSC = *(int *)( pStrip + 19 );
+							int	  sBSCOffset = *(int *)( pStrip + 23 );
+
+							if ( sNumIndices < 0 || sNumIndices > numIndices )
+								return false;
+							if ( sNumVerts < 0 || sNumVerts > numVerts )
+								return false;
+							if ( sIndexOffset < 0 || sVertOffset < 0 )
+								return false;
+							if ( sNumBones < 0 || sNumBones > 4096 )
+								return false;
+							if ( sFlags & ~( OptimizedModel::STRIP_IS_TRILIST | OptimizedModel::STRIP_IS_TRISTRIP ) )
+								return false;
+							if ( sNumBSC < 0 || sNumBSC > 4096 || sBSCOffset < 0 || sBSCOffset > nVtxLen )
+								return false;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return true;
+}
+
 //-----------------------------------------------------------------------------
 //
 //-----------------------------------------------------------------------------
@@ -1680,7 +1803,43 @@ bool CMDLCache::BuildHardwareData( MDLHandle_t handle, studiodata_t *pStudioData
 
 	Assert( GetVertexData( handle ) );
 
-	if( pStudioHdr->version == 49 )
+	// HL2SB: the pre-49 / 49 strip layout used to be chosen purely from the .mdl
+	// version.  Validate the .vtx instead - see VtxStripLayoutIsSane() above.
+	bool bUseMDL49 = ( pStudioHdr->version == 49 );
+	if ( bUseMDL49 )
+	{
+		char szVtxName[MAX_PATH];
+		MakeFilename( handle, GetVTXExtension(), szVtxName, sizeof( szVtxName ) );
+		int nVtxLen = g_pFullFileSystem->Size( szVtxName, "GAME" );
+		const bool bSane49 = VtxStripLayoutIsSane( pVtxHdr, nVtxLen, true );
+		const bool bSane48 = bSane49 ? false : VtxStripLayoutIsSane( pVtxHdr, nVtxLen, false );
+
+		// HL2SB: unconditional - this is the proof that the patched datacache is loaded
+		// and what it decided about the strip layout.  Only version-49 models print.
+		Msg( "[HL2SB][vtx] %s vtxlen=%d sane49=%d sane48=%d -> %s\n",
+			 pStudioHdr->pszName(), nVtxLen, bSane49, bSane48,
+			 bUseMDL49 ? "MDL49" : "pre-49" );
+
+		if ( !bSane49 )
+		{
+			if ( bSane48 )
+			{
+				Warning( "MDLCache: '%s' is a version-49 .mdl whose .vtx strips are pre-49 "
+						 "layout - using the pre-49 layout\n", pStudioHdr->pszName() );
+				bUseMDL49 = false;
+			}
+			else if ( nVtxLen > (int)sizeof( OptimizedModel::FileHeader_t ) )
+			{
+				// Neither layout is self-consistent: refuse the meshes instead of letting
+				// studiorender walk off the end of the buffer.
+				Warning( "MDLCache: '%s' .vtx strip data is inconsistent with both known "
+						 "layouts - model meshes disabled\n", pStudioHdr->pszName() );
+				pStudioData->m_nFlags |= STUDIODATA_FLAGS_NO_STUDIOMESH;
+				return false;
+			}
+		}
+	}
+	if ( bUseMDL49 )
 	{
 		for( int i = 0; i < pVtxHdr->numBodyParts; i++)
 		{
@@ -1710,9 +1869,11 @@ bool CMDLCache::BuildHardwareData( MDLHandle_t handle, studiodata_t *pStudioData
 		}
 	}
 
+	Msg( "[HL2SB][vtx] %s -> StudioRender::LoadModel (build HW meshes)\n", pStudioHdr->pszName() );
 	BeginLock();
 	bool bLoaded = g_pStudioRender->LoadModel( pStudioHdr, pVtxHdr, &pStudioData->m_HardwareData );
 	EndLock();
+	Msg( "[HL2SB][vtx] %s <- StudioRender::LoadModel = %d\n", pStudioHdr->pszName(), bLoaded );
 
 	if ( bLoaded )
 	{
