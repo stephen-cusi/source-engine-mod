@@ -31,6 +31,21 @@ public:
 protected:
 	MESSAGE_FUNC( OnCheckButtonChecked, "CheckButtonChecked" );
 
+	/*
+	** HL2SB: dispatch the toggle to Lua from SetSelected itself (body in
+	** lCheckButton.cpp -- lua_pushcheckbutton is only declared after this
+	** class, so the override cannot be defined inline here).
+	**
+	** OnCheckButtonChecked only fires when the "CheckButtonChecked" action signal
+	** comes back to this panel, and PostActionSignal delivers to
+	** AddActionSignalTarget listeners -- with none registered (always the case for
+	** a Lua-created CheckButton) the message is dropped and the Lua hook never
+	** runs.  SetSelected is the single choke point for both user clicks
+	** (ToggleButton::DoClick) and programmatic SetChecked, so dispatching right
+	** after the base call covers everything without any signal plumbing.
+	*/
+	virtual void SetSelected( bool state );
+
 public:
 #if defined( LUA_SDK )
 	lua_State *m_lua_State;

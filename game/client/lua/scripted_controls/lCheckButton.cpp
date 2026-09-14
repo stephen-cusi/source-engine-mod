@@ -150,6 +150,113 @@ static int CheckButton_SetCheckButtonCheckable (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB: GMod's DCheckBox spells the state pair SetChecked / GetChecked.
+** Same storage as SetSelected / IsSelected (CheckButton wraps ToggleButton's
+** selected flag), just GMod's names, so the custom panel layer does not need a
+** Lua wrapper per call.
+*/
+static int CheckButton_SetChecked (lua_State *L) {
+  luaL_checkcheckbutton(L, 1)->SetSelected(luaL_checkboolean(L, 2));
+  return 0;
+}
+
+static int CheckButton_GetChecked (lua_State *L) {
+  lua_pushboolean(L, luaL_checkcheckbutton(L, 1)->IsSelected());
+  return 1;
+}
+
+static int CheckButton_IsChecked (lua_State *L) {
+  lua_pushboolean(L, luaL_checkcheckbutton(L, 1)->IsSelected());
+  return 1;
+}
+
+/*
+** HL2SB: the caption lives on vgui::Label and CheckButton derives from it
+** (CheckButton : ToggleButton : Button : Label), but the Lua side CANNOT reach
+** Label's bindings through a checkbox panel:
+**
+**   luaL_checklabel() validates the METATABLE NAME ("Label") via
+**   luaL_checkudata before lua_tolabel()'s dynamic_cast ever runs, so calling
+**   Label:SetText( checkboxPanel ) fails with
+**
+**       bad argument #1 to 'EngineSetText' (Label expected, got INVALID_PANEL)
+**
+** These four forwarders publish the same methods on the CheckButton metatable,
+** which is exactly what a GMod script expects from a checkbox:
+** panel:SetText / GetText / SizeToContents.  They are plain Label calls -- no
+** ABI change, no vgui2 rebuild.
+*/
+static int CheckButton_SetText (lua_State *L) {
+  luaL_checkcheckbutton(L, 1)->SetText(luaL_checkstring(L, 2));
+  return 0;
+}
+
+static int CheckButton_GetText (lua_State *L) {
+  char buffer[1024];
+  luaL_checkcheckbutton(L, 1)->GetText(buffer, sizeof(buffer));
+  lua_pushstring(L, buffer);
+  return 1;
+}
+
+static int CheckButton_SizeToContents (lua_State *L) {
+  luaL_checkcheckbutton(L, 1)->SizeToContents();
+  return 0;
+}
+
+static int CheckButton_GetContentSize (lua_State *L) {
+  int wide = 0, tall = 0;
+  luaL_checkcheckbutton(L, 1)->GetContentSize(wide, tall);
+  lua_pushinteger(L, wide);
+  lua_pushinteger(L, tall);
+  return 2;
+}
+
+/* The caption's text inset -- what Derma's SetIndent is built on. */
+static int CheckButton_GetTextInset (lua_State *L) {
+  int xInset = 0, yInset = 0;
+  luaL_checkcheckbutton(L, 1)->GetTextInset(&xInset, &yInset);
+  lua_pushinteger(L, xInset);
+  lua_pushinteger(L, yInset);
+  return 2;
+}
+
+static int CheckButton_SetTextInset (lua_State *L) {
+  luaL_checkcheckbutton(L, 1)->SetTextInset(luaL_checkint(L, 2), luaL_checkint(L, 3));
+  return 0;
+}
+
+/*
+** HL2SB: see the comment on the declaration in lCheckButton.h -- every check /
+** uncheck funnels through SetSelected (the user click via ToggleButton::DoClick,
+** scripts via SetChecked), so the Lua hook is dispatched here rather than
+** waiting for a "CheckButtonChecked" action signal that is never posted to
+** anything when no AddActionSignalTarget listener exists.
+*/
+void LCheckButton::SetSelected( bool state )
+{
+	BaseClass::SetSelected( state );
+
+#ifdef LUA_SDK
+	if ( m_nTableReference >= 0 )
+	{
+		lua_getref( m_lua_State, m_nTableReference );
+		lua_getfield( m_lua_State, -1, "OnCheckButtonChecked" );
+		lua_remove( m_lua_State, -2 );
+		if ( lua_isfunction( m_lua_State, -1 ) )
+		{
+			lua_pushcheckbutton( m_lua_State, this );
+			lua_pushboolean( m_lua_State, state );
+			luasrc_pcall( m_lua_State, 2, 0, 0 );
+		}
+		else
+		{
+			lua_pop( m_lua_State, 1 );
+		}
+	}
+#endif
+}
+
 static int CheckButton_SetSelected (lua_State *L) {
   luaL_checkcheckbutton(L, 1)->SetSelected(luaL_checkboolean(L, 2));
   return 0;
@@ -294,6 +401,15 @@ static const luaL_Reg CheckButtonmeta[] = {
   {"KB_ChainToMap", CheckButton_KB_ChainToMap},
   {"SetCheckButtonCheckable", CheckButton_SetCheckButtonCheckable},
   {"SetSelected", CheckButton_SetSelected},
+  {"SetChecked", CheckButton_SetChecked},
+  {"GetChecked", CheckButton_GetChecked},
+  {"IsChecked", CheckButton_IsChecked},
+  {"SetText", CheckButton_SetText},
+  {"GetText", CheckButton_GetText},
+  {"SizeToContents", CheckButton_SizeToContents},
+  {"GetContentSize", CheckButton_GetContentSize},
+  {"GetTextInset", CheckButton_GetTextInset},
+  {"SetTextInset", CheckButton_SetTextInset},
   {"__index", CheckButton___index},
   {"__newindex", CheckButton___newindex},
   {"__gc", CheckButton___gc},
