@@ -109,6 +109,62 @@ static CUtlDict< ConCommand*, unsigned short > m_GameUIConCommandDatabase;
 #endif
 static CUtlDict< ConCommand*, unsigned short > m_ConCommandDatabase;
 
+// HL2SB: the two helpers below make Lua concommands speak GMod.
+//
+// GMod's engine calls concommand.Run( ply, cmd, arguments, argumentsStr ) with
+// `arguments` a TABLE of everything after the command name (arguments[1] is the
+// first argument) and argumentsStr the raw tail.  HL2SB only called
+// Dispatch( ply, cmd, argString ), i.e. the raw string sat in the arguments
+// slot, so every GMod-style callback that indexes arguments[1] silently did
+// nothing:
+//
+//     lua/autorun/server/hl2sb_spawn_undo.lua  concommand.Add( "hl2sb_spawnprop", ... )
+//         if ( args == nil or args[ 1 ] == nil ... ) then Dbg( "hl2sb_spawnprop <model>" ) end
+//     lua/includes/modules/undo.lua            "gmod_undonum" -> tonumber( args[ 1 ] )
+//     lua/includes/modules/cleanup.lua         args[ 1 ] (the filter name)
+//
+// All three just printed usage and returned.  The engine now asks for Run first
+// and falls back to Dispatch (old signature) when a Lua state only defines that
+// one, so an older lua/ tree keeps working with a newer client.dll.
+static void lua_pushcommandarguments (lua_State *L, const CCommand& args) {
+  lua_newtable(L);
+  // arguments[1..n] -- NOT args[0], the command name is passed separately.
+  for (int i = 1; i < args.ArgC(); ++i) {
+    lua_pushstring(L, args.Arg(i));
+    lua_rawseti(L, -2, i);
+  }
+}
+
+// Leaves exactly one value on the stack: the dispatcher function to call, or
+// nothing (returns false) when the Lua state has no usable concommand library.
+// bRunMode reports which calling convention that function expects.
+static bool lua_pushconcommanddispatcher (lua_State *L, bool &bRunMode) {
+  lua_getglobal(L, "concommand");              // [concommand]
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return false;
+  }
+
+  lua_getfield(L, -1, "Run");                  // [concommand, Run]
+  if (lua_isfunction(L, -1)) {
+    lua_remove(L, -2);                         // [Run]
+    bRunMode = true;
+    return true;
+  }
+
+  lua_pop(L, 1);                               // [concommand]
+  lua_getfield(L, -1, "Dispatch");             // [concommand, Dispatch]
+  bool bIsFunction = lua_isfunction(L, -1) != 0;
+  lua_remove(L, -2);                           // [Dispatch]
+  if (!bIsFunction) {
+    lua_pop(L, 1);
+    return false;
+  }
+
+  bRunMode = false;
+  return true;
+}
+
 #ifdef CLIENT_DLL
 // Andrew; ugh.
 void CC_GameUIConCommand( const CCommand& args )
@@ -122,35 +178,34 @@ void CC_GameUIConCommand( const CCommand& args )
 
 	MDLCACHE_CRITICAL_SECTION();
 
-	lua_getglobal( LGameUI, "concommand" );
-	if ( lua_istable( LGameUI, -1 ) )
+	bool bRunMode = false;
+	if ( lua_pushconcommanddispatcher( LGameUI, bRunMode ) )
 	{
-		lua_getfield( LGameUI, -1, "Dispatch" );
-		if ( lua_isfunction( LGameUI, -1 ) )
+		lua_pushplayer( LGameUI, pPlayer );
+		lua_pushstring( LGameUI, pCmd );
+		if ( bRunMode )
 		{
-			lua_remove( LGameUI, -2 );
-			lua_pushplayer( LGameUI, pPlayer );
-			lua_pushstring( LGameUI, pCmd );
+			lua_pushcommandarguments( LGameUI, args );
 			lua_pushstring( LGameUI, args.ArgS() );
-			luasrc_pcall( LGameUI, 3, 1, 0 );
-			if ( lua_isboolean( LGameUI, -1 ) )
+		}
+		else
+		{
+			lua_pushstring( LGameUI, args.ArgS() );
+		}
+		luasrc_pcall( LGameUI, bRunMode ? 4 : 3, 1, 0 );
+		if ( lua_isboolean( LGameUI, -1 ) )
+		{
+			bool res = (bool)luaL_checkboolean( LGameUI, -1 );
+			lua_pop( LGameUI, 1 );
+			if ( !res )
 			{
-				bool res = (bool)luaL_checkboolean( LGameUI, -1 );
-				lua_pop( LGameUI, 1 );
-				if ( !res )
-				{
-				}
-			}
-			else
-			{
-				lua_pop( LGameUI, 1 );
 			}
 		}
 		else
-			lua_pop( LGameUI, 2 );
+		{
+			lua_pop( LGameUI, 1 );
+		}
 	}
-	else
-		lua_pop( LGameUI, 1 );
 }
 #endif
 
@@ -169,46 +224,45 @@ void CC_ConCommand( const CCommand& args )
 
 	MDLCACHE_CRITICAL_SECTION();
 
-	lua_getglobal( L, "concommand" );
-	if ( lua_istable( L, -1 ) )
+	bool bRunMode = false;
+	if ( lua_pushconcommanddispatcher( L, bRunMode ) )
 	{
-		lua_getfield( L, -1, "Dispatch" );
-		if ( lua_isfunction( L, -1 ) )
+		lua_pushplayer( L, pPlayer );
+		lua_pushstring( L, pCmd );
+		if ( bRunMode )
 		{
-			lua_remove( L, -2 );
-			lua_pushplayer( L, pPlayer );
-			lua_pushstring( L, pCmd );
+			lua_pushcommandarguments( L, args );
 			lua_pushstring( L, args.ArgS() );
-			luasrc_pcall( L, 3, 1, 0 );
-			if ( lua_isboolean( L, -1 ) )
+		}
+		else
+		{
+			lua_pushstring( L, args.ArgS() );
+		}
+		luasrc_pcall( L, bRunMode ? 4 : 3, 1, 0 );
+		if ( lua_isboolean( L, -1 ) )
+		{
+			bool res = (bool)luaL_checkboolean( L, -1 );
+			lua_pop( L, 1 );
+			if ( !res )
 			{
-				bool res = (bool)luaL_checkboolean( L, -1 );
-				lua_pop( L, 1 );
-				if ( !res )
-				{
 #ifndef CLIENT_DLL
-					if ( Q_strlen( pCmd ) > 128 )
-					{
-						ClientPrint( pPlayer, HUD_PRINTCONSOLE, "Console command too long.\n" );
-					}
-					else
-					{
-						// tell the user they entered an unknown command
-						ClientPrint( pPlayer, HUD_PRINTCONSOLE, UTIL_VarArgs( "Unknown command: %s\n", pCmd ) );
-					}
-#endif
+				if ( Q_strlen( pCmd ) > 128 )
+				{
+					ClientPrint( pPlayer, HUD_PRINTCONSOLE, "Console command too long.\n" );
 				}
-			}
-			else
-			{
-				lua_pop( L, 1 );
+				else
+				{
+					// tell the user they entered an unknown command
+					ClientPrint( pPlayer, HUD_PRINTCONSOLE, UTIL_VarArgs( "Unknown command: %s\n", pCmd ) );
+				}
+#endif
 			}
 		}
 		else
-			lua_pop( L, 2 );
+		{
+			lua_pop( L, 1 );
+		}
 	}
-	else
-		lua_pop( L, 1 );
 }
 
 static int luasrc_ConCommand (lua_State *L) {
