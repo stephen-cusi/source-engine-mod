@@ -2783,9 +2783,14 @@ void CHLClient::WriteSaveGameScreenshotOfSize( const char *pFilename, int width,
 }
 
 // See RenderViewInfo_t
+extern void HL2SB_NotifyAlive( void );	// HL2SB: see game/client/hl2sb_crash_handler.cpp
+
 void CHLClient::RenderView( const CViewSetup &setup, int nClearFlags, int whatToDraw )
 {
 	VPROF("RenderView");
+#ifdef _WIN32
+	HL2SB_NotifyAlive();		// HL2SB: hang watchdog tick (rendered frame == alive)
+#endif
 	view->RenderView( setup, nClearFlags, whatToDraw );
 }
 

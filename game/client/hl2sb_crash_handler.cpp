@@ -456,6 +456,65 @@ static void __cdecl HL2SB_MiniDumpChain( unsigned int uStructuredExceptionCode,
 		g_pHL2SBInnerMiniDumpFunction( uStructuredExceptionCode, pExceptionInfo, pszFilenameSuffix );
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: The last net - a vectored (first-chance) handler for the non-continuable
+//		 codes that reach neither the CRT hooks above nor SetUnhandledExceptionFilter.
+//		 ntdll's heap manager reports corruption, and __fastfail(), by raising
+//		 STATUS_STACK_BUFFER_OVERRUN / STATUS_HEAP_CORRUPTION straight through the
+//		 exception dispatch; the process can then be torn down before the unhandled
+//		 filter ever runs.  The field symptom of exactly that is engine.log simply
+//		 stopping mid-sentence with no minidump and no hl2sb_crash.log entry.
+//		 Vectored handlers run before SEH, so this sees it while the stacks are
+//		 still intact and the raw engine.log writer still works.
+//-----------------------------------------------------------------------------
+#ifndef STATUS_HEAP_CORRUPTION
+	#define STATUS_HEAP_CORRUPTION		( (DWORD)0xC0000374 )
+#endif
+#ifndef STATUS_STACK_BUFFER_OVERRUN
+	#define STATUS_STACK_BUFFER_OVERRUN	( (DWORD)0xC0000409 )
+#endif
+#ifndef STATUS_ASSERTION_FAILURE
+	#define STATUS_ASSERTION_FAILURE	( (DWORD)0xC0000420 )
+#endif
+
+static volatile LONG g_bHL2SBVehFired = 0;
+
+static LONG CALLBACK HL2SB_VectoredHandler( PEXCEPTION_POINTERS pExceptionInfo )
+{
+	if ( !pExceptionInfo || !pExceptionInfo->ExceptionRecord )
+		return EXCEPTION_CONTINUE_SEARCH;
+
+	const DWORD code = pExceptionInfo->ExceptionRecord->ExceptionCode;
+
+	// First-chance dispatch sees plenty of benign exceptions; only these few are
+	// process-ending and get past the other hooks.
+	if ( code != STATUS_STACK_BUFFER_OVERRUN
+	  && code != STATUS_HEAP_CORRUPTION
+	  && code != STATUS_ASSERTION_FAILURE
+	  && code != EXCEPTION_STACK_OVERFLOW )
+	{
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+
+	if ( InterlockedCompareExchange( &g_bHL2SBVehFired, 1, 0 ) != 0 )
+		return EXCEPTION_CONTINUE_SEARCH;	// already reported in this process
+
+	// engine.log only, deliberately: no Msg()/Warning() (they allocate, and the heap
+	// may be the thing that just died) and no MessageBox (it would block teardown).
+	HL2SB_EngineLogCrashBlock( "veh fastfail/heap", (unsigned int)code,
+		pExceptionInfo->ExceptionRecord->ExceptionAddress, NULL, 0 );
+
+	// A stack overflow has no stack left to run a dump writer on; the log block is
+	// all it can get.  For the others, write a real minidump.
+	if ( code != EXCEPTION_STACK_OVERFLOW )
+	{
+		WriteMiniDumpUsingExceptionInfo( (unsigned int)code, pExceptionInfo,
+			HL2SB_MINIDUMP_TYPE, "veh" );
+	}
+
+	return EXCEPTION_CONTINUE_SEARCH;	// let the normal teardown / WER run as well
+}
+
 static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS lpExceptionInfo )
 {
 	// engine.log first (raw append, no CRT): this is the one place that always
@@ -515,9 +574,88 @@ static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS lpExceptionInfo )
 	return EXCEPTION_EXECUTE_HANDLER;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: Hang watchdog.  Every exception path above needs an exception; a deadlock
+//		 or an infinite loop produces none, and the field symptom is exactly that:
+//		 engine.log stops mid-sentence, no minidump, no hl2sb_crash.log entry, no WER
+//		 report - because nothing ever faulted.  The main thread ticks here once per
+//		 rendered frame (CHLClient::RenderView), and this watcher thread writes a dump
+//		 of the still-frozen process from its own healthy stack when the ticks stop.
+//-----------------------------------------------------------------------------
+static volatile LONG64 g_llHL2SBAliveTick = 0;
+static volatile LONG	 g_bHL2SBHangDumped = 0;
+
+#define HL2SB_HANG_TIMEOUT_MS ( 30 * 1000 )	// longer than any legitimate level load
+
+void HL2SB_NotifyAlive( void )
+{
+	InterlockedExchange64( &g_llHL2SBAliveTick, (LONG64)GetTickCount64() );
+}
+
+static DWORD WINAPI HL2SB_HangWatchdogThread( LPVOID pArg )
+{
+	( void )pArg;
+
+	for (;;)
+	{
+		Sleep( 2000 );
+
+		LONG64 llAlive = InterlockedCompareExchange64( &g_llHL2SBAliveTick, 0, 0 );
+		if ( llAlive == 0 )
+			continue;							// never ticked: still in the first load
+
+		LONG64 llSilent = (LONG64)GetTickCount64() - llAlive;
+		if ( llSilent < HL2SB_HANG_TIMEOUT_MS )
+			continue;
+
+		if ( InterlockedCompareExchange( &g_bHL2SBHangDumped, 1, 0 ) != 0 )
+			continue;							// one report per process
+
+		HL2SB_EngineLogCrashBlock( "hang-watchdog", (unsigned int)llSilent, NULL,
+			"no rendered frame for this long", 0 );
+
+		HMODULE hDbgHelp = LoadLibrary( "dbghelp.dll" );
+		if ( hDbgHelp )
+		{
+			typedef int (WINAPI *MiniDumpWriteDumpFn)( void *, unsigned long, void *,
+				unsigned long, void *, void *, void * );
+			MiniDumpWriteDumpFn pfnWrite = (MiniDumpWriteDumpFn)GetProcAddress( hDbgHelp, "MiniDumpWriteDump" );
+			if ( pfnWrite )
+			{
+				CreateDirectoryA( "dumps", NULL );
+
+				char szPath[ 260 ];
+				Q_snprintf( szPath, sizeof( szPath ), "dumps\\hl2sb_hang_%lu.mdmp", GetTickCount() );
+
+				HANDLE hFile = CreateFileA( szPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+					FILE_ATTRIBUTE_NORMAL, NULL );
+				if ( hFile != INVALID_HANDLE_VALUE )
+				{
+					pfnWrite( GetCurrentProcess(), GetCurrentProcessId(), hFile,
+						HL2SB_MINIDUMP_TYPE, NULL, NULL, NULL );
+					CloseHandle( hFile );
+				}
+			}
+		}
+
+		return 0;
+	}
+}
+
 void HL2SB_InstallCrashHandler( void )
 {
 	SetUnhandledExceptionFilter( HL2SB_ExceptionFilter );
+
+	// First-chance net: __fastfail / heap corruption / stack overflow never reach the
+	// filter above, and without this the process just vanishes with engine.log
+	// stopping mid-sentence and no dump anywhere.
+	AddVectoredExceptionHandler( 1, HL2SB_VectoredHandler );
+
+	// Hang net: a deadlock or an infinite loop raises no exception, so nothing above
+	// would ever fire - watch the main thread's ticks instead.
+	HANDLE hWatchdog = CreateThread( NULL, 0, HL2SB_HangWatchdogThread, NULL, 0, NULL );
+	if ( hWatchdog )
+		CloseHandle( hWatchdog );
 
 	// The abort paths that never reach the filter above.
 	std::set_terminate( HL2SB_TerminateHandler );
