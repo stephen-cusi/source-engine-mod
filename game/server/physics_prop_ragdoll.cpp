@@ -24,6 +24,18 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+// HL2SB: MAXSTUDIOBONES is 128, but community models carry more bones; every buffer
+// below is filled by SetupBones()/the ragdoll code per numbones(), so a fixed 128-entry
+// stack array ran off the frame and /GS fast-failed the process (STATUS_STACK_BUFFER_OVERRUN
+// in __report_gsfailure).  CBoneStackBuffer keeps the stack fast path and spills to the
+// heap only for the models that need it.
+static inline int RagdollBoneCount( CBaseAnimating *pEnt )
+{
+	CStudioHdr *pHdr = pEnt ? pEnt->GetModelPtr() : NULL;
+	int n = pHdr ? pHdr->numbones() : 0;
+	return ( n < 1 ) ? MAXSTUDIOBONES : n;
+}
+
 //-----------------------------------------------------------------------------
 // Forward declarations
 //-----------------------------------------------------------------------------
@@ -192,7 +204,8 @@ void CRagdollProp::Spawn( void )
 		m_flFadeScale = m_flDefaultFadeScale;
 	}
 
-	matrix3x4_t pBoneToWorld[MAXSTUDIOBONES];
+	CBoneStackBuffer< matrix3x4_t, MAXSTUDIOBONES > boneToWorldBuf( RagdollBoneCount( this ) );
+	matrix3x4_t *pBoneToWorld = boneToWorldBuf.Base();
 	BaseClass::SetupBones( pBoneToWorld, BONE_USED_BY_ANYTHING ); // FIXME: shouldn't this be a subset of the bones
 	// this is useless info after the initial conditions are set
 	SetAbsAngles( vec3_angle );
@@ -855,8 +868,9 @@ void CRagdollProp::SetupBones( matrix3x4_t *pBoneToWorld, int boneMask )
 
 	MDLCACHE_CRITICAL_SECTION();
 	CStudioHdr *pStudioHdr = GetModelPtr( );
-	bool sim[MAXSTUDIOBONES];
-	memset( sim, 0, pStudioHdr->numbones() );
+	CBoneStackBuffer< bool, MAXSTUDIOBONES > simBuf( pStudioHdr->numbones() < 1 ? MAXSTUDIOBONES : pStudioHdr->numbones(), true );
+	bool *sim = simBuf.Base();
+	// HL2SB: the original memset used the bone COUNT as the byte length (8x too small).
 
 	int i;
 
@@ -990,7 +1004,8 @@ void CRagdollProp::VPhysicsUpdate( IPhysicsObject *pPhysics )
 	m_lastUpdateTickCount = gpGlobals->tickcount;
 	//NetworkStateChanged();
 
-	matrix3x4_t boneToWorld[MAXSTUDIOBONES];
+	CBoneStackBuffer< matrix3x4_t, MAXSTUDIOBONES > boneToWorldBuf( RagdollBoneCount( this ) );
+	matrix3x4_t *boneToWorld = boneToWorldBuf.Base();
 	QAngle angles;
 	Vector surroundingMins, surroundingMaxs;
 
@@ -1298,7 +1313,10 @@ CBaseAnimating *CreateServerRagdollSubmodel( CBaseAnimating *pOwner, const char 
 	CRagdollProp *pRagdoll = (CRagdollProp *)CBaseEntity::CreateNoSpawn( "prop_ragdoll", position, angles, pOwner );
 	pRagdoll->SetModelName( AllocPooledString( pModelName ) );
 	pRagdoll->SetModel( STRING(pRagdoll->GetModelName()) );
-	matrix3x4_t pBoneToWorld[MAXSTUDIOBONES], pBoneToWorldNext[MAXSTUDIOBONES];
+	int nSubBones = RagdollBoneCount( pRagdoll );
+	CBoneStackBuffer< matrix3x4_t, MAXSTUDIOBONES > pBoneToWorldBuf( nSubBones ), pBoneToWorldNextBuf( nSubBones );
+	matrix3x4_t *pBoneToWorld = pBoneToWorldBuf.Base();
+	matrix3x4_t *pBoneToWorldNext = pBoneToWorldNextBuf.Base();
 	pRagdoll->ResetSequence( 0 );
 
 	// let bone merging do the work of copying everything over for us
@@ -1307,7 +1325,7 @@ CBaseAnimating *CreateServerRagdollSubmodel( CBaseAnimating *pOwner, const char 
 	// HACKHACK: don't want this parent anymore
 	pRagdoll->SetParent( NULL );
 
-	memcpy( pBoneToWorldNext, pBoneToWorld, sizeof(pBoneToWorld) );
+	memcpy( pBoneToWorldNext, pBoneToWorld, sizeof( matrix3x4_t ) * nSubBones );
 
 	pRagdoll->InitRagdoll( vec3_origin, -1, vec3_origin, pBoneToWorld, pBoneToWorldNext, 0.1, collisionGroup, true );
 	return pRagdoll;
@@ -1326,7 +1344,10 @@ CBaseEntity *CreateServerRagdoll( CBaseAnimating *pAnimating, int forceBone, con
 	pRagdoll->SetOwnerEntity( pAnimating );
 
 	pRagdoll->InitRagdollAnimation();
-	matrix3x4_t pBoneToWorld[MAXSTUDIOBONES], pBoneToWorldNext[MAXSTUDIOBONES];
+	int nSrBones = RagdollBoneCount( pAnimating );
+	CBoneStackBuffer< matrix3x4_t, MAXSTUDIOBONES > pBoneToWorldBuf( nSrBones ), pBoneToWorldNextBuf( nSrBones );
+	matrix3x4_t *pBoneToWorld = pBoneToWorldBuf.Base();
+	matrix3x4_t *pBoneToWorldNext = pBoneToWorldNextBuf.Base();
 	
 	float dt = 0.1f;
 
@@ -1606,7 +1627,8 @@ CRagdollProp *CreateServerRagdollAttached( CBaseAnimating *pAnimating, const Vec
 	pRagdoll->CopyAnimationDataFrom( pAnimating );
 
 	pRagdoll->InitRagdollAnimation();
-	matrix3x4_t pBoneToWorld[MAXSTUDIOBONES];
+	CBoneStackBuffer< matrix3x4_t, MAXSTUDIOBONES > boneToWorldBuf( RagdollBoneCount( pAnimating ) );
+	matrix3x4_t *pBoneToWorld = boneToWorldBuf.Base();
 	pAnimating->SetupBones( pBoneToWorld, BONE_USED_BY_ANYTHING );
 	pRagdoll->InitRagdollAttached( pAttached, vecForce, forceBone, pBoneToWorld, pBoneToWorld, 0.1, collisionGroup, pParentEntity, boneAttach, boneOrigin, parentBoneAttach, originAttached );
 	

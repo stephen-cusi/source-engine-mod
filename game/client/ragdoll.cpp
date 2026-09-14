@@ -570,10 +570,12 @@ void C_ServerRagdoll::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 	if ( !hdr )
 		return;
 	matrix3x4_t bonematrix;
-	bool boneSimulated[MAXSTUDIOBONES];
-
-	// no bones have been simulated
-	memset( boneSimulated, 0, sizeof(boneSimulated) );
+	// HL2SB: indexed by hdr->numbones() below; 128 is not enough for community models.
+	int nSimBones = hdr->numbones();
+	if ( nSimBones < 1 )
+		nSimBones = 1;
+	CBoneStackBuffer< bool, MAXSTUDIOBONES > boneSimulatedBuf( nSimBones, true );
+	bool *boneSimulated = boneSimulatedBuf.Base();
 	mstudiobone_t *pbones = hdr->pBone( 0 );
 
 	mstudioseqdesc_t *pSeqDesc = NULL;
