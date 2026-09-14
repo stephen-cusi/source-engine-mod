@@ -469,6 +469,24 @@ static int Frame_SetSmallCaption (lua_State *L) {
   return 0;
 }
 
+// HL2SB: GMod's DFrame spells these SetDraggable / ShowCloseButton (and IsDraggable);
+// vgui::Frame carries the same state as SetMoveable / SetCloseButtonVisible, so these
+// are thin aliases.  Without them `Frame:SetDraggable(false)` / `ShowCloseButton(true)`
+// threw "attempt to call a nil value" and MakePopup() below was never reached.
+static int Frame_SetDraggable (lua_State *L) {
+  luaL_checkframe(L, 1)->SetMoveable( luaL_optboolean(L, 2, 1) );
+  return 0;
+}
+
+static int Frame_IsDraggable (lua_State *L) {
+  lua_pushboolean(L, luaL_checkframe(L, 1)->IsMoveable());
+  return 1;
+}
+
+static int Frame_ShowCloseButton (lua_State *L) {
+  luaL_checkframe(L, 1)->SetCloseButtonVisible( luaL_optboolean(L, 2, 1) );
+  return 0;
+}
 static int Frame_SetTitle (lua_State *L) {
   // HL2SB: the second argument is optional, because Garry's Mod's Frame:SetTitle
   // takes only the text -- DFrame:Init does `self:SetTitle( "DFrame" )`, and the
@@ -656,6 +674,9 @@ static const luaL_Reg Framemeta[] = {
   {"SetSizeable", Frame_SetSizeable},
   {"SetSmallCaption", Frame_SetSmallCaption},
   {"SetTitle", Frame_SetTitle},
+  {"SetDraggable", Frame_SetDraggable},
+  {"IsDraggable", Frame_IsDraggable},
+  {"ShowCloseButton", Frame_ShowCloseButton},
   {"SetTitleBarVisible", Frame_SetTitleBarVisible},
   {"__index", Frame___index},
   {"__newindex", Frame___newindex},
