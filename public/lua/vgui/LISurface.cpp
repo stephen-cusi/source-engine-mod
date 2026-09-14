@@ -238,10 +238,34 @@ static int surface_CreateFont (lua_State *L) {
   (void)bExtended;
 
   HFont hFont = surface()->CreateFont();
-  if ( !surface()->SetFontGlyphSet( hFont, szFace, iTall, iWeight, iBlur, iScanlines, iFlags ) )
+
+  // HL2SB: a face that does not resolve used to fall back to Verdana SILENTLY, which
+  // is how GMod's skin glyph font (Marlett: r = close, 0 = minimize, 1 = maximize,
+  // 2 = restore) silently became "0 1 r" letters on screen.  Try the requested face,
+  // then the same face without the antialias/weight request (glyph fonts such as
+  // Marlett are stroke fonts and often refuse an anti-aliased/weighted request), and
+  // only then fall back - reporting it so the log says what happened.
+  bool bSet = surface()->SetFontGlyphSet( hFont, szFace, iTall, iWeight, iBlur, iScanlines, iFlags );
+
+  if ( !bSet && ( iFlags & vgui::ISurface::FONTFLAG_ANTIALIAS ) )
   {
-    // The face name did not resolve.  Retry with a face that always exists so
-    // the caller still gets a visible font instead of an empty one.
+    bSet = surface()->SetFontGlyphSet( hFont, szFace, iTall, 400, iBlur, iScanlines,
+                                       iFlags & ~vgui::ISurface::FONTFLAG_ANTIALIAS );
+
+    if ( bSet )
+    {
+      Msg( "[HL2SB] surface.CreateFont( \"%s\" ): face \"%s\" only resolved without "
+           "antialias/weight\n", szName, szFace );
+    }
+  }
+
+  if ( !bSet )
+  {
+    // The face name did not resolve.  Retry with a face that always exists so the
+    // caller still gets a visible font instead of an empty one.
+    Warning( "surface.CreateFont( \"%s\" ): face \"%s\" (size %d, weight %d) did not "
+             "resolve - falling back to Verdana\n", szName, szFace, iTall, iWeight );
+
     surface()->SetFontGlyphSet( hFont, "Verdana", iTall, iWeight, iBlur, iScanlines, iFlags );
   }
 
