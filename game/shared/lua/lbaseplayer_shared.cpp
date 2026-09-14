@@ -1165,6 +1165,10 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"ExitLadder", CBasePlayer_ExitLadder},
   {"EyeAngles", CBasePlayer_EyeAngles},
   {"EyePosition", CBasePlayer_EyePosition},
+  // HL2SB: GMod's public spelling (wiki: Entity:EyePos, inherited by Player).
+  // Same reason as the entity metatable: Team Sandbox published only the C++
+  // name, so ply:EyePos() was nil for every GMod script.
+  {"EyePos", CBasePlayer_EyePosition},
   {"EyePositionAndVectors", CBasePlayer_EyePositionAndVectors},
   {"EyeVectors", CBasePlayer_EyeVectors},
   {"FindUseEntity", CBasePlayer_FindUseEntity},

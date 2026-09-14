@@ -2951,6 +2951,15 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"EntityToWorldSpace", CBaseEntity_EntityToWorldSpace},
   {"EyeAngles", CBaseEntity_EyeAngles},
   {"EyePosition", CBaseEntity_EyePosition},
+  // HL2SB: GMod's public spelling is EyePos (wiki: Entity:EyePos, client and
+  // server), and Team Sandbox only ever published the C++ name EyePosition.  So
+  // every GMod script that asks an entity for its view position died with
+  //
+  //     attempt to call a nil value (method 'EyePos')
+  //
+  // -- lua/autorun/server/hl2sb_spawn_undo.lua:88 (the prop spawner) was one.
+  // Same function; both names stay.
+  {"EyePos", CBaseEntity_EyePosition},
   {"FireBullets", CBaseEntity_FireBullets},
   {"FirstMoveChild", CBaseEntity_FirstMoveChild},
   {"FollowEntity", CBaseEntity_FollowEntity},
