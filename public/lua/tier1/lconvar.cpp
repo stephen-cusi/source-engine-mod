@@ -413,6 +413,29 @@ static int ConVar___tostring (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: the wiki documents SetString/SetFloat/SetInt/SetBool on ConVar
+// (only the polymorphic SetValue was bound). These are what the Derma ConVar binding
+// (Panel:SetConVar) uses to write a control's value back to the console variable.
+static int ConVar_SetString (lua_State *L) {
+  luaL_checkconvar(L, 1)->SetValue( lua_tostring(L, 2) );
+  return 0;
+}
+
+static int ConVar_SetFloat (lua_State *L) {
+  luaL_checkconvar(L, 1)->SetValue( (float)luaL_checknumber(L, 2) );
+  return 0;
+}
+
+static int ConVar_SetInt (lua_State *L) {
+  luaL_checkconvar(L, 1)->SetValue( (int)luaL_checkinteger(L, 2) );
+  return 0;
+}
+
+static int ConVar_SetBool (lua_State *L) {
+  luaL_checkconvar(L, 1)->SetValue( luaL_checkboolean(L, 2) );
+  return 0;
+}
+
 
 static const luaL_Reg ConVarmeta[] = {
   {"AddFlags", ConVar_AddFlags},
@@ -430,6 +453,10 @@ static const luaL_Reg ConVarmeta[] = {
   {"IsRegistered", ConVar_IsRegistered},
   {"Revert", ConVar_Revert},
   {"SetValue", ConVar_SetValue},
+  {"SetString", ConVar_SetString},
+  {"SetFloat", ConVar_SetFloat},
+  {"SetInt", ConVar_SetInt},
+  {"SetBool", ConVar_SetBool},
   {"__tostring", ConVar___tostring},
   {NULL, NULL}
 };
