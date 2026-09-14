@@ -79,12 +79,13 @@ private:
 CBoneSetupMemoryPool<Quaternion> g_QaternionPool;
 CBoneSetupMemoryPool<Vector> g_VectorPool;
 CBoneSetupMemoryPool<matrix3x4_t> g_MatrixPool;
-
-// -----------------------------------------------------------------
 CBoneCache *CBoneCache::CreateResource( const bonecacheparams_t &params )
 {
-	short studioToCachedIndex[MAXSTUDIOBONES];
-	short cachedToStudioIndex[MAXSTUDIOBONES];
+	const int nCacheBones = params.pStudioHdr->numbones();
+	CBoneStackBuffer< short, MAXSTUDIOBONES > studioToCachedIndexBuf( nCacheBones );
+	CBoneStackBuffer< short, MAXSTUDIOBONES > cachedToStudioIndexBuf( nCacheBones );
+	short *studioToCachedIndex = studioToCachedIndexBuf.Base();
+	short *cachedToStudioIndex = cachedToStudioIndexBuf.Base();
 	int cachedBoneCount = 0;
 	for ( int i = 0; i < params.pStudioHdr->numbones(); i++ )
 	{
@@ -2413,8 +2414,11 @@ void CBoneSetup::AccumulatePose(
 	CIKContext *pIKContext
 	)
 {
-	Vector		pos2[MAXSTUDIOBONES];
-	QuaternionAligned	q2[MAXSTUDIOBONES];
+	const int			nBoneCount = ((CStudioHdr *)m_pStudioHdr)->numbones();
+	CBoneStackBuffer< Vector, MAXSTUDIOBONES >		pos2Buf( nBoneCount );
+	CBoneStackBuffer< QuaternionAligned, MAXSTUDIOBONES >	q2Buf( nBoneCount );
+	Vector				*pos2 = pos2Buf.Base();
+	QuaternionAligned		*q2 = q2Buf.Base();
 
 	Assert( flWeight >= 0.0f && flWeight <= 1.0f );
 	// This shouldn't be necessary, but the Assert should help us catch whoever is screwing this up
@@ -2638,14 +2642,14 @@ public:
          X[i] = P[i];
       normalize(X);
 
-// Its y axis is perpendicular to P, so Y = unit( E - X(E·X) ).
+// Its y axis is perpendicular to P, so Y = unit( E - X(EÂ·X) ).
 
       float dDOTx = dot(D,X);
       for (i = 0 ; i < 3 ; i++)
          Y[i] = D[i] - dDOTx * X[i];
       normalize(Y);
 
-// Its z axis is perpendicular to both X and Y, so Z = X×Y.
+// Its z axis is perpendicular to both X and Y, so Z = XÃ—Y.
 
       cross(X,Y,Z);
 
@@ -4526,7 +4530,9 @@ void Studio_BuildMatrices(
 {
 	int i, j;
 
-	int					chain[MAXSTUDIOBONES] = {};
+	int					*chain = NULL;
+	CBoneStackBuffer< int, MAXSTUDIOBONES > chainBuf( pStudioHdr->numbones(), true );
+	chain = chainBuf.Base();
 	int					chainlength = 0;
 
 	if (iBone < -1 || iBone >= pStudioHdr->numbones())

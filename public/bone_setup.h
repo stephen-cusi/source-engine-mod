@@ -446,4 +446,42 @@ bool Studio_PrefetchSequence( const CStudioHdr *pStudioHdr, int iSequence );
 
 void Studio_RunBoneFlexDrivers( float *pFlexController, const CStudioHdr *pStudioHdr, const Vector *pPositions, const matrix3x4_t *pBoneToWorld, const matrix3x4_t &mRootToWorld );
 
+#ifndef HL2SB_BONE_STACK_BUFFER
+#define HL2SB_BONE_STACK_BUFFER
+// HL2SB: MAXSTUDIOBONES is 128, but community models (miku and friends) carry more
+// bones than that, and every buffer below is indexed by numbones().  A fixed 128-entry
+// stack array then runs off the end and /GS tears the process down with
+// STATUS_STACK_BUFFER_OVERRUN (observed as __report_gsfailure, gs_report.c:220, from
+// CBoneSetup::AccumulatePose).  Keep the stack array as the fast path and spill to the
+// heap only for the models that need it.
+template< typename T, int N >
+class CBoneStackBuffer
+{
+public:
+	CBoneStackBuffer( int nCount, bool bZero = false ) : m_pHeap( NULL )
+	{
+		if ( nCount > N )
+		{
+			m_pHeap = new T[ nCount ];
+			if ( bZero )
+				memset( m_pHeap, 0, sizeof( T ) * nCount );
+		}
+		else if ( bZero )
+		{
+			memset( m_Stack, 0, sizeof( m_Stack ) );
+		}
+	}
+
+	~CBoneStackBuffer() { delete[] m_pHeap; }
+
+	T *Base() { return m_pHeap ? m_pHeap : m_Stack; }
+	operator T *() { return Base(); }
+
+private:
+	T	*m_pHeap;
+	T	m_Stack[ N ];
+};
+
+// -----------------------------------------------------------------
+#endif // HL2SB_BONE_STACK_BUFFER
 #endif // BONE_SETUP_H

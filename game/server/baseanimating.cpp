@@ -1795,8 +1795,14 @@ void CBaseAnimating::SetupBones( matrix3x4_t *pBoneToWorld, int boneMask )
 
 	AddEFlags( EFL_SETTING_UP_BONES );
 
-	Vector pos[MAXSTUDIOBONES];
-	Quaternion q[MAXSTUDIOBONES];
+	// HL2SB: same class as GetBoneCache - InitPose/AccumulatePose here write numbones() entries.
+	int nSkelBones = pStudioHdr->numbones();
+	if ( nSkelBones < 1 )
+		nSkelBones = 1;
+	CBoneStackBuffer< Vector, MAXSTUDIOBONES >    posBuf( nSkelBones );
+	CBoneStackBuffer< Quaternion, MAXSTUDIOBONES > qBuf( nSkelBones );
+	Vector     *pos = posBuf.Base();
+	Quaternion *q = qBuf.Base();
 
 	// adjust hit boxes based on IK driven offset
 	Vector adjOrigin = GetAbsOrigin() + Vector( 0, 0, m_flEstIkOffset );
@@ -2613,7 +2619,16 @@ CBoneCache *CBaseAnimating::GetBoneCache( void )
 		}
 	}
 
-	matrix3x4_t bonetoworld[MAXSTUDIOBONES];
+	// HL2SB: was matrix3x4_t bonetoworld[MAXSTUDIOBONES] (128).  SetupBones writes one entry
+	// per numbones() (and UpdateBones below is handed numbones() explicitly), so a model with
+	// more than 128 bones (community models - miku) overran this frame and /GS fast-failed the
+	// process from GetBoneCache - which AI and hitbox traces call every frame.  Stack fast path,
+	// heap spill for the big models.
+	int nBoneCacheBones = pStudioHdr->numbones();
+	if ( nBoneCacheBones < 1 )
+		nBoneCacheBones = 1;
+	CBoneStackBuffer< matrix3x4_t, MAXSTUDIOBONES > bonetoworldBuf( nBoneCacheBones );
+	matrix3x4_t *bonetoworld = bonetoworldBuf.Base();
 	SetupBones( bonetoworld, boneMask );
 
 	if ( pcache )

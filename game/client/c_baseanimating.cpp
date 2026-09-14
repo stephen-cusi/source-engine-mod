@@ -1423,10 +1423,13 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 		return;
 
 	matrix3x4_t bonematrix;
-	bool boneSimulated[MAXSTUDIOBONES];
-
-	// no bones have been simulated
-	memset( boneSimulated, 0, sizeof(boneSimulated) );
+	// HL2SB: was bool boneSimulated[MAXSTUDIOBONES]; indexed by hdr->numbones() below,
+	// so models with more than 128 bones (community models) wrote off the end of the frame.
+	int nSimBones = hdr->numbones();
+	if ( nSimBones < 1 )
+		nSimBones = 1;
+	CBoneStackBuffer< bool, MAXSTUDIOBONES > boneSimulatedBuf( nSimBones, true );
+	bool *boneSimulated = boneSimulatedBuf.Base();
 	mstudiobone_t *pbones = hdr->pBone( 0 );
 
 	if ( m_pRagdoll )
@@ -2870,13 +2873,22 @@ bool C_BaseAnimating::SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, i
 				}
 			}
 
-			Vector		pos[MAXSTUDIOBONES];
-			Quaternion	q[MAXSTUDIOBONES];
+			// HL2SB: these were fixed MAXSTUDIOBONES(128) stack arrays, but StandardBlendingRules,
+			// the IK calls and BuildTransformations all fill them per hdr->numbones(), so a model
+			// with more than 128 bones (community models - miku) overran the stack here and /GS
+			// fast-failed the process (STATUS_STACK_BUFFER_OVERRUN in __report_gsfailure).
+			int nPoseBones = hdr->numbones();
+			if ( nPoseBones < 1 )
+				nPoseBones = 1;
+			CBoneStackBuffer< Vector, MAXSTUDIOBONES >    posBuf( nPoseBones );
+			CBoneStackBuffer< Quaternion, MAXSTUDIOBONES > qBuf( nPoseBones );
+			Vector     *pos = posBuf.Base();
+			Quaternion *q = qBuf.Base();
 #if defined(FP_EXCEPTIONS_ENABLED) || defined(DBGFLAG_ASSERT)
 			// Having these uninitialized means that some bugs are very hard
 			// to reproduce. A memset of 0xFF is a simple way of getting NaNs.
-			memset( pos, 0xFF, sizeof(pos) );
-			memset( q, 0xFF, sizeof(q) );
+			memset( pos, 0xFF, sizeof( Vector ) * nPoseBones );
+			memset( q, 0xFF, sizeof( Quaternion ) * nPoseBones );
 #endif
 
 			int bonesMaskNeedRecalc = boneMask | oldReadableBones; // Hack to always recalc bones, to fix the arm jitter in the new CS player anims until Ken makes the real fix

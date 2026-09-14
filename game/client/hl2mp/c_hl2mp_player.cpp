@@ -987,9 +987,20 @@ void C_HL2MPRagdoll::CreateHL2MPRagdoll( void )
 	// Make us a ragdoll..
 	m_nRenderFX = kRenderFxRagdoll;
 
-	matrix3x4_t boneDelta0[MAXSTUDIOBONES];
-	matrix3x4_t boneDelta1[MAXSTUDIOBONES];
-	matrix3x4_t currentBones[MAXSTUDIOBONES];
+	// HL2SB: these used to be matrix3x4_t boneDelta0/1/currentBones[MAXSTUDIOBONES]
+	// (128).  GetRagdollInitBoneArrays / InitAsClientRagdoll fill them per numbones(),
+	// so any player model with more than 128 bones (community models - miku and
+	// friends) ran off the stack and /GS fast-failed the process as soon as it died
+	// and turned into a ragdoll.  Size them to the model instead.
+	const CStudioHdr *pRagdollHdr = ( pPlayer && !pPlayer->IsDormant() ) ? pPlayer->GetModelPtr() : GetModelPtr();
+	const int nRagdollBones = pRagdollHdr ? pRagdollHdr->numbones() : MAXSTUDIOBONES;
+	CUtlVector<matrix3x4_t> boneDelta0Buf, boneDelta1Buf, currentBonesBuf;
+	boneDelta0Buf.SetSize( nRagdollBones );
+	boneDelta1Buf.SetSize( nRagdollBones );
+	currentBonesBuf.SetSize( nRagdollBones );
+	matrix3x4_t *boneDelta0 = boneDelta0Buf.Base();
+	matrix3x4_t *boneDelta1 = boneDelta1Buf.Base();
+	matrix3x4_t *currentBones = currentBonesBuf.Base();
 	const float boneDt = 0.05f;
 
 	if ( pPlayer && !pPlayer->IsDormant() )
