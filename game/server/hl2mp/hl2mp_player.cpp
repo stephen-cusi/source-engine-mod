@@ -858,16 +858,32 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 			{
 				if ( speed > 0 )
 				{
-					/*
-					if ( bRunning == false )
+					// HL2SB: GMod's walk/run split - "speed > 150 -> RUN,
+					// > 0.5 -> WALK" (gamemodes/base/gamemode/animations.lua:321) -
+					// with 20 units of hysteresis. Switching the activity switches
+					// the sequence and ResetSequence()s it, so a speed sitting right
+					// on the threshold used to restart the legs every frame (the same
+					// failure as AGENTS.md 20).
+					//
+					// Whether WALK can play at all is decided by the model: HL2MP's
+					// own anim models only ship run_*. HL2SB_SelectPlayerSequence()
+					// reports that with ACT_INVALID and the code below then keeps
+					// running.
+					const float flWalkRunThreshold = 150.0f;
+					const float flHysteresis = 20.0f;
+
+					bool bRunning = ( speed > flWalkRunThreshold );
+
+					if ( GetActivity() == ACT_HL2MP_WALK && speed < flWalkRunThreshold + flHysteresis )
 					{
-						idealActivity = ACT_WALK;
+						bRunning = false;
 					}
-					else
-					*/
+					else if ( GetActivity() == ACT_HL2MP_RUN && speed > flWalkRunThreshold - flHysteresis )
 					{
-						idealActivity = ACT_HL2MP_RUN;
+						bRunning = true;
 					}
+
+					idealActivity = bRunning ? ACT_HL2MP_RUN : ACT_HL2MP_WALK;
 				}
 				else
 				{
@@ -895,23 +911,55 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	}
 	else
 	{
-		SetActivity( idealActivity );
+		// HL2SB: pin the sequence by NAME ("run_pistol", "cwalk_ar2",
+		// "idle_gravgun", ... - see HL2SB_SelectPlayerSequence()) instead of
+		// trusting the activity -> hold type -> weighted-random-sequence chain.
+		Activity translatedActivity = Weapon_TranslateActivity( idealActivity );
 
-		animDesired = SelectWeightedSequence( Weapon_TranslateActivity ( idealActivity ) );
+		animDesired = HL2SB_SelectPlayerSequence( this, translatedActivity, idealActivity );
+
+		// A model with no walk animation (HL2MP's own anim models only ship run_*)
+		// answers ACT_INVALID here: keep running instead of dropping to
+		// sequence 0, which is what the old fallback chain would have done.
+		if ( animDesired == -1 && idealActivity == ACT_HL2MP_WALK )
+		{
+			idealActivity = ACT_HL2MP_RUN;
+
+			translatedActivity = Weapon_TranslateActivity( idealActivity );
+			animDesired = HL2SB_SelectPlayerSequence( this, translatedActivity, idealActivity );
+		}
 
 		if (animDesired == -1)
 		{
-			animDesired = SelectWeightedSequence( idealActivity );
+			animDesired = SelectWeightedSequence( translatedActivity );
 
 			if ( animDesired == -1 )
 			{
-				animDesired = 0;
+				animDesired = SelectWeightedSequence( idealActivity );
+
+				if ( animDesired == -1 )
+				{
+					animDesired = 0;
+				}
 			}
 		}
 	
-		// Already using the desired animation?
+		// HL2SB: the pin above is deterministic, so "am I already playing the
+		// sequence the pin wants" is a valid test again - and it has to happen
+		// BEFORE SetActivity(), which selects a sequence for the *base* activity
+		// (ACT_HL2MP_RUN -> the bare "run" sequence) and would otherwise make the
+		// test fail on every single frame: that was the real "legs freeze after a
+		// few frames" bug (AGENTS 20 / 27). ResetSequence() also bumps the sequence
+		// parity, which makes the CLIENT reset its own cycle on the next snapshot,
+		// so the freeze showed up on both realms.
 		if ( GetSequence() == animDesired )
 			return;
+
+		// Activity bookkeeping: GetActivity() is read by the jump case above and by
+		// the walk/run split. Only touch it when it really changes, so the sequence
+		// pinned above is not thrown away every frame.
+		if ( GetActivity() != idealActivity )
+			SetActivity( idealActivity );
 
 		m_flPlaybackRate = 1.0;
 		ResetSequence( animDesired );

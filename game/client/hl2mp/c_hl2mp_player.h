@@ -86,6 +86,10 @@ public:
 
 	virtual void PostThink( void );
 
+	// HL2SB: the client has to run the player animation state every frame, like
+	// C_CSPlayer / C_DODPlayer / C_Portal_Player do (see the .cpp comment).
+	virtual void UpdateClientSideAnimation( void );
+
 	CNetworkVar( float, m_flStartCharge );
 	CNetworkVar( float, m_flAmmoStartCharge );
 	CNetworkVar( float, m_flPlayAftershock );

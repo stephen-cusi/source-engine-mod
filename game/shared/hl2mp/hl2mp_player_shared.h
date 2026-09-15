@@ -34,6 +34,30 @@ enum HL2MPPlayerState
 #define CHL2MP_Player C_HL2MP_Player
 #endif
 
+class CBaseAnimating;
+
+// ---------------------------------------------------------------------------
+// HL2SB: name-pinned player locomotion sequences.
+//
+// Both animation model families name their locomotion sequences
+// "<state>_<holdtype>" - idle_pistol / run_smg1 / walk_ar2 / jump_melee /
+// cidle_pistol (crouch idle) / cwalk_ar2 (crouch walk) / swim_idle_rpg /
+// swimming_fist / sit_camera - and the holdtype-less ones "idle_all_01",
+// "run_all_01", ...  Sequence NAMES are the one thing that survives between the
+// engines, so this picks the sequence by name instead of going through the
+// activity -> holdtype -> weighted-random-sequence chain.
+//
+// Returns ACT_INVALID when the model has no sequence with any name we know, so
+// the caller can fall back to the activity path.
+//
+//   translatedActivity - the weapon-translated activity
+//                        (WEAPON_TranslateActivity(idealActivity), e.g.
+//                        ACT_HL2MP_IDLE_PISTOL - it carries the hold type)
+//   baseActivity       - the untranslated one (ACT_HL2MP_IDLE), used when the
+//                        weapon's table has no opinion
+// ---------------------------------------------------------------------------
+int HL2SB_SelectPlayerSequence( CBaseAnimating *pAnim, Activity translatedActivity, Activity baseActivity );
+
 class CPlayerAnimState
 {
 public:

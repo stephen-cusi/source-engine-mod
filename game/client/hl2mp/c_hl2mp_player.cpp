@@ -284,8 +284,79 @@ void C_HL2MP_Player::UpdateLookAt( void )
 	SetPoseParameter( m_headPitchPoseParam, m_flCurrentHeadPitch );
 }
 
+extern int g_nHL2SBClientSideAnimUpdates;
+extern ConVar hl2sb_anim_debug;
+extern bool HL2SB_GetClientSideAnimListEntry( C_BaseAnimating *pAnim, int *pCount, unsigned int *pFlags );
+extern int g_nHL2SBCycleZeroCount[4];
+
+// HL2SB: last cycle this client advanced to, and the sequence it belongs to. Used
+// to detect a data update / interpolator running the cycle backwards (see the
+// snap-back in C_HL2MP_Player::UpdateClientSideAnimation). The local player is
+// unique, so file-scope state is enough. -1 means "nothing latched yet".
+static float s_flHL2SBLastCycle = -1.0f;
+static int s_nHL2SBLastSeq = -1;
+static int s_nHL2SBRollbacks = 0;
+static float s_flHL2SBLastRollbackMagnitude = 0.0f;
+
 void C_HL2MP_Player::ClientThink( void )
 {
+	// ---------------------------------------------------------------------------
+	// HL2SB: make sure the local player is registered for client-side animation.
+	//
+	// The registration happens in C_BaseAnimating::PostDataUpdate(), and for this
+	// entity it evidently never took effect: with hl2sb_anim_debug on, the client's
+	// cycle sat at 0.011 for the whole run while the server's wrapped normally
+	// (0.241 -> 0.674 -> ...), and UpdateClientSideAnimation() was never called once
+	// (csa=1 csaupdates=0). An entity that is not in g_ClientSideAnimationList never
+	// has its cycle advanced, and because the server believes the client animates
+	// the body it does not send the cycle either - the body freezes after the brief
+	// motion a sequence change causes. See AGENTS.md 27.
+	//
+	// ClientThink() is the one client path guaranteed to run every frame for the
+	// local player (SetNextClientThink(CLIENT_THINK_ALWAYS) in OnDataChanged), so
+	// the registration is repaired from here.
+	// ---------------------------------------------------------------------------
+	if ( m_bClientSideAnimation )
+	{
+		unsigned int nFlags = 0;
+		if ( !HL2SB_GetClientSideAnimListEntry( this, NULL, &nFlags ) )
+		{
+			m_ClientSideAnimationListHandle = INVALID_CLIENTSIDEANIMATION_LIST_HANDLE;
+			AddToClientSideAnimationList();
+		}
+		else if ( nFlags == 0 )
+		{
+			// In the list, but not marked for cycle updates: recompute the flags.
+			ClientSideAnimationChanged();
+		}
+	}
+
+	// HL2SB diagnostic (see hl2sb_anim_debug in hl2mp_player_shared.cpp). csaupdates
+	// counts how often the engine reached C_BaseAnimating::UpdateClientSideAnimation()
+	// for this entity - it must grow once per frame for the body to animate.
+	if ( hl2sb_anim_debug.GetBool() && C_BasePlayer::GetLocalPlayer() == this )
+	{
+		static float s_flNextPrint = 0.0f;
+		if ( gpGlobals->curtime >= s_flNextPrint )
+		{
+			s_flNextPrint = gpGlobals->curtime + 1.0f;
+
+			int iSequence = GetSequence();
+			const char *pszLabel = "?";
+			CStudioHdr *pStudioHdr = GetModelPtr();
+			if ( pStudioHdr && iSequence >= 0 && iSequence < pStudioHdr->GetNumSeq() )
+				pszLabel = pStudioHdr->pSeqdesc( iSequence ).pszLabel();
+
+			int nListCount = 0;
+			unsigned int nFlags = 0;
+			bool bInList = HL2SB_GetClientSideAnimListEntry( this, &nListCount, &nFlags );
+
+			Msg( "[HL2SB anim/cl] ClientThink: csa=%d csaupdates=%d inlist=%d flags=0x%X listcount=%d seq=%d(%s) cycle=%.3f rate=%.2f animtime=%.3f curtime=%.3f\n",
+				 m_bClientSideAnimation ? 1 : 0, g_nHL2SBClientSideAnimUpdates, bInList ? 1 : 0, nFlags, nListCount,
+				 iSequence, pszLabel, GetCycle(), m_flPlaybackRate, m_flAnimTime, gpGlobals->curtime );
+		}
+	}
+
 	bool bFoundViewTarget = false;
 	
 	Vector vForward;
@@ -414,6 +485,140 @@ const QAngle &C_HL2MP_Player::EyeAngles()
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB: the per-frame player animation state update.
+//
+// HL2MP never overrode this. The client therefore ran the player animstate
+// exactly ONCE - from AddEntity(), i.e. when the entity entered the client's
+// list, standing still - so the movement pose parameters (move_x / move_y on
+// GMod's anim models, move_yaw on HL2MP's own), the aim/head parameters and the
+// playback rate were never written again on the client. The legs kept the pose
+// they had at that instant and did not follow the keyboard, while the cycle on
+// its own kept running.
+//
+// C_CSPlayer and C_DODPlayer / C_Portal_Player all override this the same way,
+// and CS's ordering note applies here too: the cycle has to be advanced before
+// the animstate looks at it, or the upper body synchronizes against a stale
+// cycle.
+//-----------------------------------------------------------------------------
+void C_HL2MP_Player::UpdateClientSideAnimation()
+{
+	// HL2SB diagnostic: this override IS the client-side animation entry point for
+	// this entity (it deliberately does not chain to the base class, the same way
+	// C_CSPlayer does not), so the "was it called" counter has to live here.
+	const bool bLocalPlayer = ( C_BasePlayer::GetLocalPlayer() == this );
+	if ( bLocalPlayer )
+		++g_nHL2SBClientSideAnimUpdates;
+
+	float flCycleBefore = GetCycle();
+	float flInterval = 0.0f;
+
+	// HL2SB: the client owns the cycle of the local player (AGENTS.md 27). If a
+	// snapshot, the interpolation var map or a stale m_flOldCycle ran it backwards
+	// inside the same sequence, put it back before advancing: otherwise the visible
+	// pose stays pinned on the first frame of the sequence while the counters still
+	// show frames being processed. A wrap (0.99 -> 0.01) is forward motion, not a
+	// rollback.
+	if ( bLocalPlayer && s_flHL2SBLastCycle >= 0.0f && GetSequence() == s_nHL2SBLastSeq )
+	{
+		const float flNow = GetCycle();
+		const bool bWrapped = ( s_flHL2SBLastCycle > 0.95f ) && ( flNow < 0.05f );
+		if ( !bWrapped && flNow < s_flHL2SBLastCycle - 0.002f )
+		{
+			++s_nHL2SBRollbacks;
+			s_flHL2SBLastRollbackMagnitude = s_flHL2SBLastCycle - flNow;
+			SetCycle( s_flHL2SBLastCycle );
+			flCycleBefore = s_flHL2SBLastCycle;
+		}
+	}
+
+	if ( GetSequence() != -1 )
+	{
+		// HL2SB: keep the cycle out of the interpolation var map. The interpolator
+		// (C_BaseEntity::Interpolate -> m_iv_flCycle.Interpolate) writes *m_pValue
+		// directly, so it can undo FrameAdvance without ever passing through
+		// SetCycle(), and RemoveBaseAnimatingInterpolatedVars() is only reached
+		// through UpdateRelevantInterpolatedVars().
+		RemoveVar( &m_flCycle, false );
+
+		// move frame forward
+		flInterval = FrameAdvance( 0.0f );	// 0 means to use the time we last advanced instead of a constant
+
+		// HL2SB: keep the client's own animation bookkeeping in sync. The engine
+		// relies on C_BaseAnimating::PreDataUpdate() for both of these, and that
+		// function does not run for the local player, so both "restores" were
+		// actively destroying the cycle we just advanced:
+		//   PostDataUpdate() -> SetCycle( m_flOldCycle )        (m_flOldCycle stayed 0)
+		//   OnDataChanged()  -> if ( m_bClientSideFrameReset != m_bLastClientSideFrameReset )
+		//                           ResetClientsideFrame()      (-> SetCycle( 0 ))
+		// The log showed exactly that: "before=0.0000" on every single FrameAdvance
+		// call while the server's cycle advanced normally. See AGENTS.md 27.
+		m_flOldCycle = GetCycle();
+		m_bLastClientSideFrameReset = m_bClientSideFrameReset;
+
+		// HL2SB: and keep the sequence parity bookkeeping in sync as well.
+		// C_BaseAnimating::PostDataUpdate() calls m_iv_flCycle.Reset() when the
+		// parity mismatches. That Reset() is NOT what eats the cycle - it only
+		// clears the history and re-seeds it with the current value
+		// (interpolatedvar.h:739-752, verified). It is kept in sync anyway because
+		// the same mismatch also force-adds a transition layer.
+		ClientSideAnimationChanged();
+
+		m_PlayerAnimState.Update();
+
+		// latch old values
+		OnLatchInterpolatedVariables( LATCH_ANIMATION_VAR );
+
+		// HL2SB: remember the cycle this client advanced to, so the next call can
+		// tell a rollback from a wrap.
+		if ( bLocalPlayer )
+		{
+			s_flHL2SBLastCycle = GetCycle();
+			s_nHL2SBLastSeq = GetSequence();
+		}
+	}
+	else
+	{
+		m_PlayerAnimState.Update();
+	}
+
+	// HL2SB diagnostic: did the cycle move, and how big was the step? "before ==
+	// after" with an interval of ~0 means m_flAnimTime was already curtime when we
+	// were called, i.e. the step is taken away again (see AGENTS.md 27).
+	if ( bLocalPlayer && hl2sb_anim_debug.GetBool() )
+	{
+		static float s_flNextFramePrint = 0.0f;
+		if ( gpGlobals->curtime >= s_flNextFramePrint )
+		{
+			s_flNextFramePrint = gpGlobals->curtime + 1.0f;
+
+			// HL2SB: is m_flCycle still in the interpolation var map? The
+			// interpolator writes *m_pValue directly, so that is the one writer
+			// SetCycle() cannot see.
+			int bCycleInMap = 0;
+			VarMapping_t *pVarMap = GetVarMapping();
+			if ( pVarMap )
+			{
+				for ( int i = 0; i < pVarMap->m_Entries.Count(); ++i )
+				{
+					if ( pVarMap->m_Entries[i].data == &m_flCycle )
+					{
+						bCycleInMap = 1;
+						break;
+					}
+				}
+			}
+
+			Msg( "[HL2SB anim/cl] FrameAdvance: before=%.4f interval=%.4f after=%.4f rate=%.2f animtime=%.3f curtime=%.3f oldcycle=%.4f fsr=%d/%d updates=%d inmap=%d ivcur=%.4f rb=%d rbmag=%.3f z0=%d z1=%d z2=%d\n",
+				 flCycleBefore, flInterval, GetCycle(), m_flPlaybackRate, m_flAnimTime, gpGlobals->curtime,
+				 m_flOldCycle, m_bClientSideFrameReset ? 1 : 0, m_bLastClientSideFrameReset ? 1 : 0,
+				 g_nHL2SBClientSideAnimUpdates, bCycleInMap, m_iv_flCycle.GetCurrent(),
+				 s_nHL2SBRollbacks, s_flHL2SBLastRollbackMagnitude,
+				 g_nHL2SBCycleZeroCount[0], g_nHL2SBCycleZeroCount[1], g_nHL2SBCycleZeroCount[2] );
+		}
+	}
+}
+
 void C_HL2MP_Player::AddEntity( void )
 {
 	BaseClass::AddEntity();

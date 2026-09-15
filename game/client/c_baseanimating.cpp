@@ -685,6 +685,15 @@ C_BaseAnimating::C_BaseAnimating() :
 		m_flEncodedController[ i ] = 0.0f;
 	}
 
+	// HL2SB: this must be set BEFORE AddBaseAnimatingInterpolatedVars(), which
+	// reads it to decide whether m_flCycle is added with EXCLUDE_AUTO_INTERPOLATE
+	// (see AddBaseAnimatingInterpolatedVars below). It used to be assigned further
+	// down in this constructor, so that call read an uninitialized member and the
+	// local player's m_flCycle stayed in the interpolated variable list - the
+	// interpolator then wrote the spawn-time value back every frame, pinning the
+	// visible cycle at ~0.011 (FrameAdvance's work was undone).
+	m_bClientSideAnimation = false;
+
 	AddBaseAnimatingInterpolatedVars();
 
 	m_iMostRecentModelBoneCounter = 0xFFFFFFFF;
@@ -890,7 +899,15 @@ void C_BaseAnimating::RemoveBaseAnimatingInterpolatedVars()
 	// The animation state stuff sets the pose parameters -- so they should interp
 	//  but m_flCycle is not touched, so it's only set during prediction (which occurs on tick boundaries)
 	//  and so needs to continue to be interpolated for smooth rendering of the lower body of the local player in third person, etc.
-	if ( !GetPredictable() )
+	//
+	// HL2SB: that hack is only correct for entities the SERVER animates. A
+	// client-side animated entity gets no m_flCycle from the server at all
+	// (SendProxy_ClientSideAnimation returns NULL, so the value never arrives), so
+	// keeping it in the interpolated list means the interpolator keeps writing the
+	// spawn-time value back and every FrameAdvance is undone - the local player's
+	// visible cycle was pinned at ~0.011 while the server's own cycle wrapped
+	// normally (0.730 -> 0.258).
+	if ( !GetPredictable() || m_bClientSideAnimation )
 #endif
 	{
 		RemoveVar( &m_flCycle, false );
@@ -4523,18 +4540,55 @@ void C_BaseAnimating::NotifyShouldTransmit( ShouldTransmitState_t state )
 // Purpose: 
 // Input  : updateType - 
 //-----------------------------------------------------------------------------
+// HL2SB: declared here because the data-update path below uses them; the
+// definitions live next to C_BaseAnimating::UpdateClientSideAnimation().
+extern ConVar hl2sb_anim_debug;
+extern int g_nHL2SBCycleZeroSrc;
+extern int g_nHL2SBCycleZeroCount[4];
+
 void C_BaseAnimating::PostDataUpdate( DataUpdateType_t updateType )
 {
 	BaseClass::PostDataUpdate( updateType );
 
+	// HL2SB: the snapshot has already been applied at this point, so this is the
+	// value the network just wrote into our cycle.
+	const float flHL2SBCycleEntry = m_flCycle;
+
 	if ( m_bClientSideAnimation )
 	{
+		int nSrcSave = g_nHL2SBCycleZeroSrc;
+		g_nHL2SBCycleZeroSrc = 1;
 		SetCycle( m_flOldCycle );
+		g_nHL2SBCycleZeroSrc = nSrcSave;
 		AddToClientSideAnimationList();
+
+		// HL2SB: AddToClientSideAnimationList() early-outs when we are already in
+		// the list, so it does not (re)run UpdateRelevantInterpolatedVars() and the
+		// m_flCycle removal in RemoveBaseAnimatingInterpolatedVars() never reaches
+		// an entity that was put in the list before its model was locked. Run it
+		// explicitly here.
+		UpdateRelevantInterpolatedVars();
 	}
 	else
 	{
 		RemoveFromClientSideAnimationList();
+	}
+
+	// HL2SB diagnostic (AGENTS.md 27): the local player's visible cycle froze in
+	// multiplayer. This prints the only observation that was missing - whether a
+	// data update moves m_flCycle, whether the rollback to m_flOldCycle undoes it,
+	// and what the interpolated var thinks the value is.
+	if ( hl2sb_anim_debug.GetBool() && C_BasePlayer::GetLocalPlayer() == this )
+	{
+		static float s_flHL2SBPostPrint = 0.0f;
+		if ( gpGlobals->curtime >= s_flHL2SBPostPrint )
+		{
+			s_flHL2SBPostPrint = gpGlobals->curtime + 1.0f;
+			Msg( "[HL2SB anim/cl] PostDataUpdate: csa=%d entry=%.4f oldcycle=%.4f now=%.4f ivcur=%.4f seq=%d z0=%d z1=%d z2=%d\n",
+				 m_bClientSideAnimation ? 1 : 0, flHL2SBCycleEntry, m_flOldCycle, GetCycle(),
+				 m_iv_flCycle.GetCurrent(), GetSequence(),
+				 g_nHL2SBCycleZeroCount[0], g_nHL2SBCycleZeroCount[1], g_nHL2SBCycleZeroCount[2] );
+		}
 	}
 
 	bool bBoneControllersChanged = false;
@@ -4576,7 +4630,21 @@ void C_BaseAnimating::PostDataUpdate( DataUpdateType_t updateType )
 	}
 
 	// reset prev cycle if new sequence
-	if (m_nNewSequenceParity != m_nPrevNewSequenceParity)
+	//
+	// HL2SB: but NOT for a client-side animated entity. Its cycle is advanced
+	// locally (C_BaseAnimating::UpdateClientSideAnimation -> FrameAdvance) and
+	// m_iv_flCycle has no networked history to reset to, so this Reset() threw the
+	// locally advanced cycle back to 0 on every data update.
+	//
+	// The local player hits the mismatch on every snapshot because
+	// m_nPrevNewSequenceParity is only refreshed in
+	// C_BaseAnimating::MaintainSequenceTransitions(), which returns immediately
+	// while prediction is running (c_baseanimating.cpp:1791-1795) - so the parity is
+	// never synced for it. That is why the legs only animated with maxplayers 1,
+	// where the client receives no updates for the local player at all. Evidence:
+	// the diagnostics printed "FrameAdvance: before=0.0000" on every call in
+	// multiplayer and a normally advancing cycle with maxplayers 1 (AGENTS.md 27).
+	if ( ( m_nNewSequenceParity != m_nPrevNewSequenceParity ) && !m_bClientSideAnimation )
 	{
 		// It's important not to call Reset() on a static prop, because if we call
 		// Reset(), then the entity will stay in the interpolated entities list
@@ -4839,7 +4907,10 @@ void C_BaseAnimating::OnDataChanged( DataUpdateType_t updateType )
 		// Check to see if we should reset our frame
 		if ( m_bClientSideFrameReset != m_bLastClientSideFrameReset )
 		{
+			int nSrcSave = g_nHL2SBCycleZeroSrc;
+			g_nHL2SBCycleZeroSrc = 2;
 			ResetClientsideFrame();
+			g_nHL2SBCycleZeroSrc = nSrcSave;
 		}
 	}
 	// build a ragdoll if necessary
@@ -4946,8 +5017,48 @@ unsigned int C_BaseAnimating::ComputeClientSideAnimationFlags()
 	return FCLIENTANIM_SEQUENCE_CYCLE;
 }
 
+// HL2SB diagnostic: how many times the engine actually called the client-side
+// animation update for the LOCAL player. Read by C_HL2MP_Player::ClientThink()
+// so a "not in g_ClientSideAnimationList" case can be told apart from "the cvar
+// was not set on this realm". (See AGENTS.md 27.)
+int g_nHL2SBClientSideAnimUpdates = 0;
+
+// HL2SB diagnostic: C_BaseAnimating::SetCycle() is the only funnel for
+// "m_flCycle = value", so a 0 written through it can be attributed to a call site
+// by tagging the suspect site in g_nHL2SBCycleZeroSrc just before it calls in.
+// 0 = untagged / unknown, 1 = PostDataUpdate: SetCycle( m_flOldCycle ),
+// 2 = OnDataChanged: ResetClientsideFrame().
+int g_nHL2SBCycleZeroSrc = 0;
+int g_nHL2SBCycleZeroCount[4] = { 0, 0, 0, 0 };
+
 void C_BaseAnimating::UpdateClientSideAnimation()
 {
+	if ( C_BasePlayer::GetLocalPlayer() == this )
+		++g_nHL2SBClientSideAnimUpdates;
+	// HL2SB diagnostic (see hl2sb_anim_debug in hl2mp_player_shared.cpp): did the
+	// client-side animation path actually run for the local player, and with which
+	// list flags? If this never prints while hl2sb_anim_debug is 1, the local
+	// player is not in g_ClientSideAnimationList and the client never advances its
+	// cycle at all - which looks exactly like "the legs move a few frames and then
+	// freeze while the key is held".
+	if ( hl2sb_anim_debug.GetBool() && C_BasePlayer::GetLocalPlayer() == this )
+	{
+		static float s_flNextPrint = 0.0f;
+		if ( gpGlobals->curtime >= s_flNextPrint )
+		{
+			s_flNextPrint = gpGlobals->curtime + 1.0f;
+
+			bool bInList = ( m_ClientSideAnimationListHandle != INVALID_CLIENTSIDEANIMATION_LIST_HANDLE );
+			unsigned int nFlags = 0;
+			if ( bInList && (int)m_ClientSideAnimationListHandle < g_ClientSideAnimationList.Count() )
+				nFlags = g_ClientSideAnimationList.Element( m_ClientSideAnimationListHandle ).flags;
+
+			Msg( "[HL2SB anim/cl] UpdateClientSideAnimation: csa=%d inlist=%d flags=0x%X seq=%d cycle=%.3f rate=%.2f animtime=%.3f\n",
+				 m_bClientSideAnimation ? 1 : 0, bInList ? 1 : 0, nFlags,
+				 GetSequence(), GetCycle(), m_flPlaybackRate, m_flAnimTime );
+		}
+	}
+
 	// Update client side animation
 	if ( m_bClientSideAnimation )
 	{
@@ -5092,6 +5203,17 @@ float C_BaseAnimating::GetAnimTimeInterval( void ) const
 //-----------------------------------------------------------------------------
 void C_BaseAnimating::SetCycle( float flCycle )
 {
+	// HL2SB diagnostic (see g_nHL2SBCycleZeroCount): only count writes that
+	// actually erase a non-zero cycle of the local player.
+	if ( flCycle == 0.0f && m_flCycle != 0.0f && C_BasePlayer::GetLocalPlayer() == this )
+	{
+		int nSrc = g_nHL2SBCycleZeroSrc;
+		if ( nSrc < 0 || nSrc > 3 )
+			nSrc = 0;
+		++g_nHL2SBCycleZeroCount[ nSrc ];
+	}
+	g_nHL2SBCycleZeroSrc = 0;
+
 	if ( m_flCycle != flCycle )
 	{
 		m_flCycle = flCycle;
@@ -6106,6 +6228,34 @@ void C_BaseAnimating::ForceClientSideAnimationOn()
 }
 
 
+// HL2SB: is this entity registered in the (file static) client-side animation
+// list, and with which flags? Used by the diagnostic and by the self-heal in
+// C_HL2MP_Player::ClientThink() - see AGENTS.md 27.
+bool HL2SB_GetClientSideAnimListEntry( C_BaseAnimating *pAnim, int *pCount, unsigned int *pFlags )
+{
+	if ( pCount )
+		*pCount = g_ClientSideAnimationList.Count();
+
+	if ( pFlags )
+		*pFlags = 0;
+
+	if ( !pAnim )
+		return false;
+
+	int c = g_ClientSideAnimationList.Count();
+	for ( int i = 0; i < c; ++i )
+	{
+		clientanimating_t &anim = g_ClientSideAnimationList.Element( i );
+		if ( anim.pAnimating == pAnim )
+		{
+			if ( pFlags )
+				*pFlags = anim.flags;
+			return true;
+		}
+	}
+	return false;
+}
+
 void C_BaseAnimating::AddToClientSideAnimationList()
 {
 	// Already in list
@@ -6158,6 +6308,28 @@ void C_BaseAnimating::RemoveFromClientSideAnimationList()
 void C_BaseAnimating::UpdateClientSideAnimations()
 {
 	VPROF_BUDGET( "UpdateClientSideAnimations", VPROF_BUDGETGROUP_CLIENT_ANIMATION );
+
+	// HL2SB diagnostic: is the local player actually in the list? (The client's
+	// cycle sat still while the server's wrapped, which means this loop never
+	// reached the player - see AGENTS.md 27.)
+	if ( hl2sb_anim_debug.GetBool() )
+	{
+		static float s_flNextListPrint = 0.0f;
+		if ( gpGlobals->curtime >= s_flNextListPrint )
+		{
+			s_flNextListPrint = gpGlobals->curtime + 1.0f;
+
+			C_BasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
+			C_BaseAnimating *pLocalAnim = pLocalPlayer;	// implicit upcast, so the protected member is reachable below
+
+			unsigned int nFlags = 0;
+			bool bInList = HL2SB_GetClientSideAnimListEntry( pLocalAnim, NULL, &nFlags );
+
+			Msg( "[HL2SB anim/cl] UpdateClientSideAnimations: listcount=%d inlist=%d flags=0x%X cl_csa=%d\n",
+				 g_ClientSideAnimationList.Count(), bInList ? 1 : 0, nFlags,
+				 pLocalAnim ? ( pLocalAnim->m_bClientSideAnimation ? 1 : 0 ) : -1 );
+		}
+	}
 
 	int c = g_ClientSideAnimationList.Count();
 	for ( int i = 0; i < c ; ++i )
