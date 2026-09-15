@@ -98,6 +98,41 @@ private:
 
 acttable_t	CWeaponFrag::m_acttable[] =
 {
+	// ------------------------------------------------------------------
+	// GMod player layer (ACT_MP_*); GMod's hold type is "grenade".
+	// ------------------------------------------------------------------
+	{ ACT_MP_STAND_IDLE, ACT_HL2MP_IDLE_GRENADE, false },
+	{ ACT_MP_CROUCH_IDLE, ACT_HL2MP_IDLE_CROUCH_GRENADE, false },
+	{ ACT_MP_CROUCHWALK, ACT_HL2MP_WALK_CROUCH_GRENADE, false },
+	{ ACT_MP_WALK, ACT_HL2MP_WALK_GRENADE, false },
+	{ ACT_MP_RUN, ACT_HL2MP_RUN_GRENADE, false },
+	{ ACT_MP_SPRINT, ACT_HL2MP_RUN_FAST, false },
+	{ ACT_MP_SWIM, ACT_HL2MP_SWIM_GRENADE, false },
+	{ ACT_MP_JUMP, ACT_HL2MP_JUMP_GRENADE, false },
+	{ ACT_MP_JUMP_START, ACT_HL2MP_JUMP_GRENADE, false },
+	{ ACT_MP_JUMP_LAND, ACT_HL2MP_JUMP_GRENADE, false },
+	{ ACT_MP_JUMP_FLOAT, ACT_HL2MP_JUMP_GRENADE, false },
+	{ ACT_MP_DOUBLEJUMP, ACT_HL2MP_JUMP_GRENADE, false },
+	{ ACT_MP_ATTACK_STAND_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE, false },
+	{ ACT_MP_ATTACK_CROUCH_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE, false },
+	{ ACT_MP_ATTACK_SWIM_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE, false },
+	{ ACT_MP_RELOAD_STAND, ACT_HL2MP_GESTURE_RELOAD_GRENADE, false },
+	{ ACT_MP_RELOAD_CROUCH, ACT_HL2MP_GESTURE_RELOAD_GRENADE, false },
+	{ ACT_MP_RELOAD_SWIM, ACT_HL2MP_GESTURE_RELOAD_GRENADE, false },
+
+	// ------------------------------------------------------------------
+	// GMod base states this table never had (only on models that include
+	// models/m_anm.mdl - HL2MP's own *_anims.mdl has none of them).
+	// ------------------------------------------------------------------
+	{ ACT_HL2MP_WALK, ACT_HL2MP_WALK_GRENADE, false },
+	{ ACT_HL2MP_SWIM, ACT_HL2MP_SWIM_GRENADE, false },
+	{ ACT_HL2MP_SWIM_IDLE, ACT_HL2MP_SWIM_IDLE_GRENADE, false },
+	{ ACT_HL2MP_SIT, ACT_HL2MP_SIT_GRENADE, false },
+	{ ACT_HL2MP_RUN_FAST, ACT_HL2MP_RUN_GRENADE, false },
+	{ ACT_HL2MP_RUN_CHARGING, ACT_HL2MP_RUN_GRENADE, false },
+	{ ACT_HL2MP_RUN_PANICKED, ACT_HL2MP_RUN_GRENADE, false },
+	{ ACT_HL2MP_RUN_PROTECTED, ACT_HL2MP_RUN_GRENADE, false },
+
 	{ ACT_RANGE_ATTACK1, ACT_RANGE_ATTACK_SLAM, true },
 
 	{ ACT_HL2MP_IDLE, ACT_HL2MP_IDLE_GRENADE, false },

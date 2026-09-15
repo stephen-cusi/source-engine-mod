@@ -60,6 +60,46 @@ PRECACHE_WEAPON_REGISTER( weapon_357 );
 #ifndef CLIENT_DLL
 acttable_t CWeapon357::m_acttable[] = 
 {
+	// ------------------------------------------------------------------
+	// GMod player layer (ACT_MP_*). GMod's hold type ("aim layer") for the
+	// .357 is "revolver" (two handed pistol), not "pistol" - the string is
+	// right next to weapon_357's netvars in GMod's own client/server DLLs.
+	// So the GMod layer uses REVOLVER while the HL2MP layer below keeps
+	// PISTOL: HL2MP's male_anims/female_anims.mdl only has the ten HL2MP
+	// hold types, while models/m_anm.mdl has both.
+	// ------------------------------------------------------------------
+	{ ACT_MP_STAND_IDLE, ACT_HL2MP_IDLE_REVOLVER, false },
+	{ ACT_MP_CROUCH_IDLE, ACT_HL2MP_IDLE_CROUCH_REVOLVER, false },
+	{ ACT_MP_CROUCHWALK, ACT_HL2MP_WALK_CROUCH_REVOLVER, false },
+	{ ACT_MP_WALK, ACT_HL2MP_WALK_REVOLVER, false },
+	{ ACT_MP_RUN, ACT_HL2MP_RUN_REVOLVER, false },
+	{ ACT_MP_SPRINT, ACT_HL2MP_RUN_FAST, false },
+	{ ACT_MP_SWIM, ACT_HL2MP_SWIM_REVOLVER, false },
+	{ ACT_MP_JUMP, ACT_HL2MP_JUMP_REVOLVER, false },
+	{ ACT_MP_JUMP_START, ACT_HL2MP_JUMP_REVOLVER, false },
+	{ ACT_MP_JUMP_LAND, ACT_HL2MP_JUMP_REVOLVER, false },
+	{ ACT_MP_JUMP_FLOAT, ACT_HL2MP_JUMP_REVOLVER, false },
+	{ ACT_MP_DOUBLEJUMP, ACT_HL2MP_JUMP_REVOLVER, false },
+	{ ACT_MP_ATTACK_STAND_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_REVOLVER, false },
+	{ ACT_MP_ATTACK_CROUCH_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_REVOLVER, false },
+	{ ACT_MP_ATTACK_SWIM_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_REVOLVER, false },
+	{ ACT_MP_RELOAD_STAND, ACT_HL2MP_GESTURE_RELOAD_REVOLVER, false },
+	{ ACT_MP_RELOAD_CROUCH, ACT_HL2MP_GESTURE_RELOAD_REVOLVER, false },
+	{ ACT_MP_RELOAD_SWIM, ACT_HL2MP_GESTURE_RELOAD_REVOLVER, false },
+
+	// ------------------------------------------------------------------
+	// GMod base states this table never had, kept on the HL2MP PISTOL
+	// hold type so the weapon still animates on HL2MP animation models.
+	// ------------------------------------------------------------------
+	{ ACT_HL2MP_WALK, ACT_HL2MP_WALK_PISTOL, false },
+	{ ACT_HL2MP_SWIM, ACT_HL2MP_SWIM_PISTOL, false },
+	{ ACT_HL2MP_SWIM_IDLE, ACT_HL2MP_SWIM_IDLE_PISTOL, false },
+	{ ACT_HL2MP_SIT, ACT_HL2MP_SIT_PISTOL, false },
+	{ ACT_HL2MP_RUN_FAST, ACT_HL2MP_RUN_PISTOL, false },
+	{ ACT_HL2MP_RUN_CHARGING, ACT_HL2MP_RUN_PISTOL, false },
+	{ ACT_HL2MP_RUN_PANICKED, ACT_HL2MP_RUN_PISTOL, false },
+	{ ACT_HL2MP_RUN_PROTECTED, ACT_HL2MP_RUN_PISTOL, false },
+
 	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_PISTOL,					false },
 	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_PISTOL,					false },
 	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_PISTOL,			false },

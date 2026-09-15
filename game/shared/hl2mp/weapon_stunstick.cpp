@@ -154,6 +154,43 @@ PRECACHE_WEAPON_REGISTER( weapon_stunstick );
 
 acttable_t	CWeaponStunStick::m_acttable[] =
 {
+	// ------------------------------------------------------------------
+	// GMod player layer (ACT_MP_*). GMod's hold type for this weapon is
+	// "melee" here (same as HL2MP); GMod also has a "melee2" (two handed
+	// melee) aim layer, available as ACT_HL2MP_*_MELEE2 for Lua SWEPs.
+	// ------------------------------------------------------------------
+	{ ACT_MP_STAND_IDLE, ACT_HL2MP_IDLE_MELEE, false },
+	{ ACT_MP_CROUCH_IDLE, ACT_HL2MP_IDLE_CROUCH_MELEE, false },
+	{ ACT_MP_CROUCHWALK, ACT_HL2MP_WALK_CROUCH_MELEE, false },
+	{ ACT_MP_WALK, ACT_HL2MP_WALK_MELEE, false },
+	{ ACT_MP_RUN, ACT_HL2MP_RUN_MELEE, false },
+	{ ACT_MP_SPRINT, ACT_HL2MP_RUN_FAST, false },
+	{ ACT_MP_SWIM, ACT_HL2MP_SWIM_MELEE, false },
+	{ ACT_MP_JUMP, ACT_HL2MP_JUMP_MELEE, false },
+	{ ACT_MP_JUMP_START, ACT_HL2MP_JUMP_MELEE, false },
+	{ ACT_MP_JUMP_LAND, ACT_HL2MP_JUMP_MELEE, false },
+	{ ACT_MP_JUMP_FLOAT, ACT_HL2MP_JUMP_MELEE, false },
+	{ ACT_MP_DOUBLEJUMP, ACT_HL2MP_JUMP_MELEE, false },
+	{ ACT_MP_ATTACK_STAND_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE, false },
+	{ ACT_MP_ATTACK_CROUCH_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE, false },
+	{ ACT_MP_ATTACK_SWIM_PRIMARYFIRE, ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE, false },
+	{ ACT_MP_RELOAD_STAND, ACT_HL2MP_GESTURE_RELOAD_MELEE, false },
+	{ ACT_MP_RELOAD_CROUCH, ACT_HL2MP_GESTURE_RELOAD_MELEE, false },
+	{ ACT_MP_RELOAD_SWIM, ACT_HL2MP_GESTURE_RELOAD_MELEE, false },
+
+	// ------------------------------------------------------------------
+	// GMod base states this table never had (only on models that include
+	// models/m_anm.mdl - HL2MP's own *_anims.mdl has none of them).
+	// ------------------------------------------------------------------
+	{ ACT_HL2MP_WALK, ACT_HL2MP_WALK_MELEE, false },
+	{ ACT_HL2MP_SWIM, ACT_HL2MP_SWIM_MELEE, false },
+	{ ACT_HL2MP_SWIM_IDLE, ACT_HL2MP_SWIM_IDLE_MELEE, false },
+	{ ACT_HL2MP_SIT, ACT_HL2MP_SIT_MELEE, false },
+	{ ACT_HL2MP_RUN_FAST, ACT_HL2MP_RUN_MELEE, false },
+	{ ACT_HL2MP_RUN_CHARGING, ACT_HL2MP_RUN_MELEE, false },
+	{ ACT_HL2MP_RUN_PANICKED, ACT_HL2MP_RUN_MELEE, false },
+	{ ACT_HL2MP_RUN_PROTECTED, ACT_HL2MP_RUN_MELEE, false },
+
 	{ ACT_RANGE_ATTACK1,				ACT_RANGE_ATTACK_SLAM, true },
 	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_MELEE,					false },
 	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_MELEE,					false },
