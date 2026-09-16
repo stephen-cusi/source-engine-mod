@@ -55,6 +55,17 @@ public:
 #ifdef CLIENT_DLL
 	// model specific
 	virtual int DrawModel( int flags );
+
+	// HL2SB GMod compat: answers the script's ENT.RenderGroup, which is what picks
+	// between ENTITY:Draw and ENTITY:DrawTranslucent (and sorts the entity
+	// translucently).  A sprite entity that only defines DrawTranslucent -- the
+	// npc_verity nextbot draws itself with render.DrawQuadEasy -- is invisible
+	// without it: it fell through to the inherited ENT:Draw(), which asks for a
+	// model it does not have.
+	virtual RenderGroup_t GetRenderGroup( void );
+
+	bool m_bLuaRenderGroupRead;		// ENT.RenderGroup has been read (it is a constant)
+	int  m_nLuaRenderGroup;			// ... and its value, -1 when the script has none
 #endif
 
 	virtual void VPhysicsUpdate( IPhysicsObject *pPhysics );

@@ -78,6 +78,11 @@ static const luaL_Reg luasrclibs[] = {
   {LUA_HL2MPPLAYERLIBNAME, luaopen_CHL2MP_Player},
 #endif
   {LUA_HL2MPPLAYERLIBNAME, luaopen_CHL2MP_Player_shared},
+  // HL2SB: ported from Garry's Mod.  Registers the "Vehicle" metatable
+  // (game/shared/lua/lvehicle_shared.cpp) that lua_pushentity() installs for a
+  // drivable vehicle.  One library for both realms; the realm split lives inside
+  // its methods.
+  {LUA_VEHICLELIBNAME, luaopen_Vehicle_shared},
   {LUA_COLORLIBNAME, luaopen_Color},
   {LUA_CONCOMMANDLIBNAME, luaopen_ConCommand},
   {LUA_CONTENTSLIBNAME, luaopen_CONTENTS},
@@ -435,6 +440,9 @@ static const LuaTypeInfo_t s_LuaTypeInfo[] = {
   { LUA_BASEENTITYLIBNAME,      "Entity",          LUA_TYPE_ENTITY,     NULL },
   { LUA_BASEPLAYERLIBNAME,      "Player",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
   { "CHL2MP_Player",            "Player",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+  // HL2SB: GMod reports TYPE_ENTITY for a vehicle and chains it onto Entity, so
+  // isentity() walks it.  type( <vehicle> ) therefore answers "Vehicle".
+  { LUA_VEHICLELIBNAME,         "Vehicle",         LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
   { LUA_BASECOMBATWEAPONLIBNAME,"Weapon",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
   { "CBaseAnimating",           "Entity",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
   { "CBaseFlex",                "Entity",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },

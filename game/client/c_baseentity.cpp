@@ -927,6 +927,12 @@ C_BaseEntity::C_BaseEntity() :
 	m_iParentAttachment = 0;
 	m_nRenderFXBlend = 255;
 
+	// HL2SB GMod compat: Entity:SetRenderBounds() - no override until a script asks
+	// for one (see PushScriptedRenderBounds in c_baseentity.h).
+	m_bScriptedRenderBounds = false;
+	m_vecScriptedRenderBoundsMin.Init();
+	m_vecScriptedRenderBoundsMax.Init();
+
 	SetPredictionEligible( false );
 	m_bPredictable = false;
 
@@ -1711,6 +1717,17 @@ IPVSNotify* C_BaseEntity::GetPVSNotifyInterface()
 //-----------------------------------------------------------------------------
 void C_BaseEntity::GetRenderBounds( Vector& theMins, Vector& theMaxs )
 {
+	// HL2SB GMod compat: a script pinned them with Entity:SetRenderBounds().
+	// Culling goes through GetRenderBoundsWorldspace() -> DefaultRenderBoundsWorldspace()
+	// -> here, so answering the script's box here is what keeps a sprite-drawn entity
+	// in the render list.
+	if ( m_bScriptedRenderBounds )
+	{
+		theMins = m_vecScriptedRenderBoundsMin;
+		theMaxs = m_vecScriptedRenderBoundsMax;
+		return;
+	}
+
 	int nModelType = modelinfo->GetModelType( model );
 	if (nModelType == mod_studio || nModelType == mod_brush)
 	{
@@ -2573,6 +2590,31 @@ void C_BaseEntity::PostDataUpdate( DataUpdateType_t updateType )
 
 	PREDICTION_TRACKVALUECHANGESCOPE_ENTITY( this, "postdataupdate" );
 
+#ifdef LUA_SDK
+	// HL2SB: probe.  The client builds exactly one C++ class per networked entity,
+	// and a Lua nextbot has to come out of this as C_NextBotCombatCharacter --
+	// that is where the RenderGroup/DrawModel hooks live.  Every probe placed
+	// inside that class stayed silent while the bot was alive, so report the class
+	// name the client actually built, which tells "the bot is invisible" apart
+	// from "no client entity of that class exists at all".
+	{
+		static int s_nPostDataReports = 0;
+
+		const char *pszClass = GetClassname();
+		const bool bInteresting = ( pszClass != NULL ) &&
+			( V_stristr( pszClass, "npc" ) != NULL || V_stristr( pszClass, "grin" ) != NULL ||
+			  V_stristr( pszClass, "verity" ) != NULL || V_stristr( pszClass, "scp" ) != NULL ||
+			  V_stristr( pszClass, "NextBot" ) != NULL );
+
+		if ( ( s_nPostDataReports < 25 || bInteresting ) && s_nPostDataReports < 120 )
+		{
+			++s_nPostDataReports;
+			luasrc_LuaWarnMsgF( "[HL2SB] CLIENT entity class='%s' updateType=%d entindex=%d",
+				( pszClass != NULL ) ? pszClass : "(null)", (int)updateType, entindex() );
+		}
+	}
+#endif
+
 	// NOTE: This *has* to happen first. Otherwise, Origin + angles may be wrong 
 	if ( m_nRenderFX == kRenderFxRagdoll && updateType == DATA_UPDATE_CREATED )
 	{
@@ -3046,7 +3088,22 @@ bool C_BaseEntity::ShouldInterpolate()
 	if ( render->GetViewEntity() == index )
 		return true;
 
-	if ( index == 0 || !GetModel() )
+	if ( index == 0 )
+		return false;
+
+	// HL2SB GMod compat: a MODEL-LESS scripted entity has to interpolate too.
+	//
+	// The model test used to exclude every sprite nextbot.  npc_verity has no
+	// ENT.Model at all -- its ENT:DrawTranslucent draws a quad -- so the client
+	// never interpolated its origin and the sprite snapped straight to each
+	// networked position: 10 Hz, and at its 650 u/s run speed that is roughly 65
+	// units per step, which is exactly the stuttering movement.  GMod's sprite
+	// entities move smoothly because they interpolate.
+	//
+	// Entity:SetRenderBounds() is the script saying "I own this entity's
+	// rendering", and it is therefore the right signal to interpolate on; without
+	// it a model-less entity is still skipped, so nothing else changes behaviour.
+	if ( !GetModel() && !m_bScriptedRenderBounds )
 		return false;
 
 	// always interpolate if visible
@@ -5891,12 +5948,61 @@ void C_BaseEntity::EstimateAbsVelocity( Vector& vel )
 
 void C_BaseEntity::Interp_Reset( VarMapping_t *map )
 {
+	// HL2SB: validate the map pointer BEFORE anything dereferences it - including the
+	// prediction macro below.
+	//
+	// GetVarMapping() returns &m_VarMap, i.e. this + offsetof(m_VarMap), so a bogus
+	// value here means the whole entity pointer is bogus: an entity that has already
+	// been destroyed is still being walked by the think list / visibility pass, and
+	// ResetLatched() then faults on its first read.  Observed (four dumps, identical):
+	//
+	//   AV READ map+0x28 with map == 0xE26E7E00  (a 32-bit value - every real pointer
+	//   in this process is a heap address >= 0x100000000 or a module address 0x7FFE....)
+	//     Rip  C_BaseEntity::ResetLatched+0xD0      [c_baseentity.cpp:5943]
+	//     <-   C_BaseAnimating::Simulate+0x7E       [c_baseanimating.cpp:4986]
+	//     <-   C_BasePlayer::Simulate+0x294         [c_baseplayer.cpp:2171]
+	//     <-   C_WeaponPhysCannon::ClientThink+0x1DB
+	//     <-   CClientThinkList::PerformThinkFunctions+0x426
+	//     <-   C_BaseEntity::UpdateVisibility+0x20  [c_baseentity.cpp:1424]
+	//
+	// The report deliberately prints raw pointers only: touching GetClassname() or
+	// entindex() here would dereference the same bogus entity and fault again.
+	if ( map == NULL || (uintptr_t)map < 0x100000000ULL )
+	{
+		static bool s_bHL2SBWarnedBadMap = false;
+		if ( !s_bHL2SBWarnedBadMap )
+		{
+			s_bHL2SBWarnedBadMap = true;
+			Warning( "HL2SB: Interp_Reset called with a bogus var map "
+					 "(map %p, this %p) - skipped\n", (void *)map, (void *)this );
+		}
+		return;
+	}
+
 	PREDICTION_TRACKVALUECHANGESCOPE_ENTITY( this, "reset" );
+
+	// Validate every watcher as well: the same class of bug can leave a truncated
+	// watcher *inside* an otherwise valid map (that is the watcher+0x28 read seen in
+	// the earlier dumps).
 	int c = map->m_Entries.Count();
 	for ( int i = 0; i < c; i++ )
 	{
 		VarMapEntry_t *e = &map->m_Entries[ i ];
 		IInterpolatedVar *watcher = e->watcher;
+
+		if ( (uintptr_t)watcher < 0x100000000ULL )
+		{
+			static bool s_bHL2SBWarnedBadWatcher = false;
+			if ( !s_bHL2SBWarnedBadWatcher )
+			{
+				s_bHL2SBWarnedBadWatcher = true;
+				Warning( "HL2SB: Interp_Reset skipped a bad interpolated watcher "
+						 "(entity %s, index %d, entry %d/%d, watcher %p, this %p)\n",
+						 GetClassname(), entindex(), i, c,
+						 (void *)watcher, (void *)this );
+			}
+			continue;
+		}
 
 		watcher->Reset();
 	}

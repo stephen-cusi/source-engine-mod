@@ -10,6 +10,13 @@
 #include <scripted_controls/lTextEntry.h>
 #include "scripted_controls/lPanel.h"
 
+/*
+** HL2SB: the OnTextChanged / OnEnter dispatches (declared in lTextEntry.h) push
+** their self argument through lua_pushtextentry so callbacks can call
+** self:GetValue() -- see HL2SB_CallLuaTextEntryMethod in the header.
+*/
+
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
 
@@ -335,6 +342,30 @@ LUA_BINDING_BEGIN( TextEntry, SetEditable, "class", "Sets whether the text entry
     lua_TextEntry *textEntry = LUA_BINDING_ARGUMENT( luaL_checktextentry, 1, "textEntry" );
     bool editable = LUA_BINDING_ARGUMENT( lua_toboolean, 2, "editable" );
     textEntry->SetEditable( editable );
+    return 0;
+}
+LUA_BINDING_END()
+
+/*
+** HL2SB: GMod's DTextEntry spells "editable" as SetValue / SetReadOnly.  Both are
+** thin aliases over the stock control -- SetValue sets the buffer (GMod's name for
+** it), SetReadOnly is SetEditable's inverse -- so the custom panel layer can use
+** GMod's names without a Lua-side wrapper per call.
+*/
+LUA_BINDING_BEGIN( TextEntry, SetValue, "class", "Sets the text of the text entry (GMod alias of SetText)" )
+{
+    lua_TextEntry *textEntry = LUA_BINDING_ARGUMENT( luaL_checktextentry, 1, "textEntry" );
+    const char *text = LUA_BINDING_ARGUMENT( luaL_checkstring, 2, "text" );
+    textEntry->SetText( text );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( TextEntry, SetReadOnly, "class", "Sets whether the text entry is read-only" )
+{
+    lua_TextEntry *textEntry = LUA_BINDING_ARGUMENT( luaL_checktextentry, 1, "textEntry" );
+    bool bReadOnly = LUA_BINDING_ARGUMENT( lua_toboolean, 2, "readOnly" );
+    textEntry->SetEditable( !bReadOnly );
     return 0;
 }
 LUA_BINDING_END()

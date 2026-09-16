@@ -22,6 +22,12 @@
 
 #ifdef CLIENT_DLL
 #include "c_baseplayer.h"
+
+// HL2SB: the Lua spawn menu's data sources - the client's class map and the
+// server's published spawn list.  Both are engine-side, so they are reachable
+// only from here (see hl2sb_GetSpawnableClasses below).
+#include "iclassmap.h"
+#include "networkstringtable_clientdll.h"
 #endif
 
 #include "lbaseplayer_shared.h"
@@ -220,6 +226,128 @@ static int hl2sb_IsModelPrecached( lua_State *L )
 	return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB: hl2sb.AddPlayerModel( name, model [, hands] )
+//
+// The engine end of `player_manager.AddValidModel` / `AddValidHands`: a Garry's
+// Mod playermodel addon registers from Lua and ships no cfg/playermodel entry,
+// while the menu, the server precache and hl2sb.SetPlayerModel() all read the
+// engine table - so those Lua calls land here (see
+// HL2SB_AddRuntimeModelConfig for the update-in-place rules).
+//
+//   name  - the key, spelled exactly like a cfg entry's file name
+//   model - model path (optional: nil/"" keeps the current path)
+//   hands - hands model (optional: nil keeps, "" clears; the cfg encoding
+//           "path|skin|bodygroups" is accepted)
+//-----------------------------------------------------------------------------
+static int hl2sb_AddPlayerModel( lua_State *L )
+{
+	const char *pszName = luaL_checkstring( L, 1 );
+	const char *pszModel = luaL_optstring( L, 2, NULL );
+	const char *pszHands = luaL_optstring( L, 3, NULL );
+
+	HL2SB_AddRuntimeModelConfig( pszName, pszModel, pszHands );
+
+	return 0;
+}
+
+#ifdef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// Purpose: hl2sb.GetSpawnableClasses()
+//
+// The "what can I spawn" list, for the Lua spawn menu.  These are the same two
+// sources the C++ menu read, and the only part of it that Lua cannot reach on
+// its own:
+//
+//   * the client's own class map (iclassmap.h) - the scripted entities/weapons
+//     this client registered, plus the engine classes it knows.
+//   * the server's published "SMenuEntityList" network string table
+//     (game/server/gameinterface.cpp: SMenu_PublishEntityList) - every class the
+//     server's entity factory dictionary can build, which is what actually
+//     decides whether `ent_create <class>` works.
+//
+// Returns an array of { class =, cpp =, scripted = }, de-duplicated.  Everything
+// else the menu needs - PrintName, Category, icons, spawn commands - is normal
+// Lua data (list.Get / scripted_ents / language / file.Exists).
+//-----------------------------------------------------------------------------
+#define HL2SB_SMENU_ENTITYLIST_TABLE "SMenuEntityList"
+
+static int hl2sb_GetSpawnableClasses( lua_State *L )
+{
+	CUtlDict< int, unsigned short > seen;
+
+	lua_newtable( L );
+
+	int nOut = 0;
+
+	// 1. the classes this client knows (scripted content included)
+	const int nClasses = ClassMap_GetEntryCount();
+
+	for ( int i = 0; i < nClasses; ++i )
+	{
+		const char *pszClass = ClassMap_GetEntryName( i );
+
+		if ( pszClass == NULL || pszClass[0] == '\0' )
+			continue;
+
+		if ( seen.Find( pszClass ) != seen.InvalidIndex() )
+			continue;
+
+		seen.Insert( pszClass, 1 );
+
+		lua_newtable( L );
+
+		lua_pushstring( L, pszClass );
+		lua_setfield( L, -2, "class" );
+
+		const char *pszCPP = ClassMap_GetEntryCPPName( i );
+		lua_pushstring( L, ( pszCPP != NULL ) ? pszCPP : "" );
+		lua_setfield( L, -2, "cpp" );
+
+		lua_pushboolean( L, ClassMap_IsEntryScripted( i ) ? 1 : 0 );
+		lua_setfield( L, -2, "scripted" );
+
+		lua_rawseti( L, -2, ++nOut );
+	}
+
+	// 2. what the server says its entity factory dictionary can build
+	INetworkStringTable *pTable = networkstringtable ? networkstringtable->FindTable( HL2SB_SMENU_ENTITYLIST_TABLE ) : NULL;
+
+	if ( pTable != NULL )
+	{
+		const int nStrings = pTable->GetNumStrings();
+
+		for ( int i = 0; i < nStrings; ++i )
+		{
+			const char *pszClass = pTable->GetString( i );
+
+			if ( pszClass == NULL || pszClass[0] == '\0' )
+				continue;
+
+			if ( seen.Find( pszClass ) != seen.InvalidIndex() )
+				continue;
+
+			seen.Insert( pszClass, 1 );
+
+			lua_newtable( L );
+
+			lua_pushstring( L, pszClass );
+			lua_setfield( L, -2, "class" );
+
+			lua_pushstring( L, "" );
+			lua_setfield( L, -2, "cpp" );
+
+			lua_pushboolean( L, 0 );
+			lua_setfield( L, -2, "scripted" );
+
+			lua_rawseti( L, -2, ++nOut );
+		}
+	}
+
+	return 1;
+}
+#endif // CLIENT_DLL
+
 static const luaL_Reg hl2sblib[] = {
 	{"GetPlayerModels",			hl2sb_GetPlayerModels},
 	{"GetPlayerModelCount",		hl2sb_GetPlayerModelCount},
@@ -227,6 +355,10 @@ static const luaL_Reg hl2sblib[] = {
 	{"SetPlayerModel",			hl2sb_SetPlayerModel},
 	{"GetCurrentPlayerModel",	hl2sb_GetCurrentPlayerModel},
 	{"IsModelPrecached",		hl2sb_IsModelPrecached},
+	{"AddPlayerModel",			hl2sb_AddPlayerModel},
+#ifdef CLIENT_DLL
+	{"GetSpawnableClasses",		hl2sb_GetSpawnableClasses},
+#endif
 	{NULL, NULL}
 };
 

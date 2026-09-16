@@ -1006,8 +1006,10 @@ void CHL2MPRules::DeathNotice( CBasePlayer *pVictim, const CTakeDamageInfo &info
 	if ( lInfo.GetDamageCustom() )
 	{
 		killer_weapon_name = GetDamageCustomString( lInfo );
-		killer_class_name = pKiller->GetClassname();
-		weapon_class_name = pInflictor->GetClassname();
+		// HL2SB: same NULL hazard as below -- these are reached for any Lua
+		// damage with a custom type, and neither pointer has to be set.
+		killer_class_name = ( pKiller != NULL ) ? pKiller->GetClassname() : "world";
+		weapon_class_name = ( pInflictor != NULL ) ? pInflictor->GetClassname() : killer_class_name;
 #else
 	if ( info.GetDamageCustom() )
 	{
@@ -1062,10 +1064,27 @@ void CHL2MPRules::DeathNotice( CBasePlayer *pVictim, const CTakeDamageInfo &info
 		}
 		else
 		{
-			killer_weapon_name = pInflictor->GetClassname();
+			// HL2SB: neither pointer is guaranteed to exist here.  Lua damage
+			// routinely arrives with no inflictor -- GMod's
+			// Entity:TakeDamage( amount, attacker ) passes two arguments, which is
+			// exactly what SCP-096's melee does -- and these were dereferenced
+			// unconditionally: the first kill it landed read a NULL vtable at
+			// +0x98 and took the server down with it
+			// (dumps/crash_20260916_052513_1_accessviolation.mdmp,
+			// CHL2MPRules::DeathNotice+0x3B2).
+			if ( pInflictor != NULL )
+				killer_weapon_name = pInflictor->GetClassname();
+			else if ( pKiller != NULL )
+				killer_weapon_name = pKiller->GetClassname();
+
 #ifdef LUA_SDK
-			killer_class_name = pKiller->GetClassname();
-			weapon_class_name = pInflictor->GetClassname();
+			if ( pKiller != NULL )
+				killer_class_name = pKiller->GetClassname();
+
+			if ( pInflictor != NULL )
+				weapon_class_name = pInflictor->GetClassname();
+			else
+				weapon_class_name = killer_class_name;	// keeps the strcmp below safe
 
 			if ( !Q_strcmp( killer_class_name, weapon_class_name ) )
 			{

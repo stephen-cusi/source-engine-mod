@@ -430,6 +430,346 @@ bool ClientModeShared::CreateMove( float flInputSampleTime, CUserCmd *cmd )
 	return pPlayer->CreateMove( flInputSampleTime, cmd );
 }
 
+// HL2SB: GMod-style vehicle third person.
+//
+// GMod never uses the engine's third-person camera for vehicles. The vehicle owns the
+// flag - Vehicle:GetThirdPersonMode / SetThirdPersonMode, toggled from the usercmd's
+// IN_DUCK by GM:VehicleMove (gamemodes/base/gamemode/init.lua) - and the camera is built
+// from it in GM:CalcVehicleView (gamemodes/base/gamemode/cl_init.lua) /
+// CalcView_ThirdPerson (lua/drive/drive_base.lua): distance from the vehicle's render
+// bounds, a trace filtered to ignore props/vehicles so the car cannot block its own
+// camera, and view.drawviewer to render the driver.
+//
+// Applied in OverrideView, on top of the final CViewSetup, for two reasons: pSetup is
+// the last word on the view (the engine's own third-person code cannot undo it), and the
+// engine's third-person path is unusable for vehicles here - the desired camera offset is
+// never set anywhere in this tree except CInput::CAM_ToFirstPerson(), which zeroes it
+// (in_camera.cpp:699), so that offset is always zero.
+ConVar hl2sb_veh_thirdperson( "hl2sb_veh_thirdperson", "0", FCVAR_ARCHIVE,
+							  "GMod-style third person camera while inside a vehicle." );
+// 0 keeps GMod's own framing: the camera distance IS the vehicle's render-bounds radius,
+// recomputed every frame from the vehicle being ridden (GMod:
+// gamemodes/base/gamemode/cl_init.lua:320 `local radius = (mn - mx):Length()`), so a
+// chair gets a close camera and a jeep a far one with no magic number.  Anything else is
+// an absolute distance in units - that is what the mouse wheel and hl2sb_veh_zoom write,
+// and it is deliberately NOT archived so a stale saved value cannot pin the camera.
+ConVar hl2sb_veh_thirdperson_dist( "hl2sb_veh_thirdperson_dist", "0", 0,
+								   "Distance of the vehicle third person camera. 0 = GMod's own framing "
+								   "(the vehicle's render-bounds radius); non-zero = that many units." );
+// GMod itself has no vertical offset: the camera sits at eye height, which is already
+// above the vehicle.  Kept as a convar so the old value is still reachable.
+ConVar hl2sb_veh_thirdperson_up( "hl2sb_veh_thirdperson_up", "0", 0,
+								 "Height added on top of the GMod-style vehicle third person camera (GMod uses 0)." );
+ConVar hl2sb_veh_thirdperson_debug( "hl2sb_veh_thirdperson_debug", "0", FCVAR_ARCHIVE,
+								    "Print the vehicle third person camera trace results." );
+
+static bool HL2SB_VehicleThirdPersonActive( C_BasePlayer *pPlayer )
+{
+	return pPlayer != NULL && hl2sb_veh_thirdperson.GetBool() && pPlayer->GetVehicle() != NULL;
+}
+
+static void HL2SB_VehThirdPersonToggle_f( void )
+{
+	hl2sb_veh_thirdperson.SetValue( hl2sb_veh_thirdperson.GetBool() ? 0 : 1 );
+	Msg( "[HL2SB] vehicle third person = %d (distance %.0f)\n",
+		 hl2sb_veh_thirdperson.GetBool() ? 1 : 0, hl2sb_veh_thirdperson_dist.GetFloat() );
+}
+
+static ConCommand hl2sb_veh_thirdperson_toggle( "hl2sb_veh_thirdperson_toggle",
+											    HL2SB_VehThirdPersonToggle_f,
+											    "Toggle the GMod-style vehicle third person camera." );
+
+// HL2SB: the distance the vehicle third person camera really uses.
+//
+// GMod (GM:CalcVehicleView, gamemodes/base/gamemode/cl_init.lua:320):
+//     local mn, mx = Vehicle:GetRenderBounds()
+//     local radius = ( mn - mx ):Length()
+// so the camera clears whatever the vehicle is BY THE VEHICLE'S OWN SIZE - a chair gets a
+// close camera and a jeep a far one, with no magic number anywhere.
+//
+// hl2sb_veh_thirdperson_dist == 0 keeps exactly that.  Anything else is an absolute
+// distance in units, which is what the mouse wheel / hl2sb_veh_zoom write (they READ this
+// function first, so the first notch continues from the automatic distance instead of
+// jumping to it).
+#define HL2SB_VEH3RD_DEFAULT_DIST	480.0f
+#define HL2SB_VEH3RD_MIN_DIST		80.0f
+#define HL2SB_VEH3RD_MAX_DIST		2000.0f
+// One mouse wheel notch / one `hl2sb_veh_zoom 40`.
+#define HL2SB_VEH3RD_WHEEL_STEP		40.0f
+
+static float HL2SB_VehicleCameraDistance( C_BasePlayer *pPlayer )
+{
+	const float flConfigured = hl2sb_veh_thirdperson_dist.GetFloat();
+	if ( flConfigured > 0.0f )
+	{
+		return clamp( flConfigured, HL2SB_VEH3RD_MIN_DIST, HL2SB_VEH3RD_MAX_DIST );
+	}
+
+	// GMod's radius, from the vehicle ENTITY.  C_BasePlayer::GetVehicleEntity() is the
+	// entity the server sends in m_hVehicle (RecvPropEHandle, c_baseplayer.cpp:278); it
+	// is the pod/jeep itself, so its render bounds are the vehicle's.
+	C_BaseEntity *pVehicleEnt = ( pPlayer != NULL ) ? pPlayer->GetVehicleEntity() : NULL;
+	if ( pVehicleEnt != NULL )
+	{
+		Vector vecMin, vecMax;
+		pVehicleEnt->GetRenderBounds( vecMin, vecMax );
+
+		const float flRadius = ( vecMax - vecMin ).Length();
+
+		// A model that has not streamed in, or a degenerate bounds, must not put the
+		// camera inside the vehicle.
+		if ( flRadius >= 16.0f && flRadius <= HL2SB_VEH3RD_MAX_DIST )
+		{
+			return flRadius;
+		}
+	}
+
+	return HL2SB_VEH3RD_DEFAULT_DIST;
+}
+
+// GMod zooms the vehicle camera with the mouse wheel, which is
+// Vehicle:SetCameraDistance() - HL2SB's seats/vehicles expose that through the Lua API,
+// and this is the engine side of it:
+//   console: hl2sb_veh_zoom <delta>
+//   mouse:   taken in ClientModeShared::KeyInput() (no bind needed - see there)
+static float HL2SB_VehThirdPersonZoom( C_BasePlayer *pPlayer, float flDelta )
+{
+	const float flCurrent = HL2SB_VehicleCameraDistance( pPlayer );
+	const float flNew = clamp( flCurrent + flDelta, HL2SB_VEH3RD_MIN_DIST, HL2SB_VEH3RD_MAX_DIST );
+
+	hl2sb_veh_thirdperson_dist.SetValue( flNew );
+
+	Msg( "[HL2SB] vehicle third person distance = %.0f\n", flNew );
+	return flNew;
+}
+
+static void HL2SB_VehThirdPersonZoom_f( const CCommand &args )
+{
+	const int iDelta = ( args.ArgC() > 1 ) ? atoi( args.Arg( 1 ) ) : (int)HL2SB_VEH3RD_WHEEL_STEP;
+
+	HL2SB_VehThirdPersonZoom( C_BasePlayer::GetLocalPlayer(), (float)iDelta );
+}
+
+static ConCommand hl2sb_veh_zoom( "hl2sb_veh_zoom", HL2SB_VehThirdPersonZoom_f,
+							      "Zoom the GMod-style vehicle third person camera by <delta> units." );
+
+// HL2SB: prove the mouse wheel reached ClientModeShared::KeyInput - and say what it was
+// allowed to do there.
+//
+// This exists because "the wheel zoom does nothing" is not diagnosable from a screenshot:
+// the wheel can be lost in three different places before the camera is ever consulted (the
+// engine's vgui filter, a Lua `KeyInput` hook, or the third-person camera simply being
+// off), and all three look identical on screen. So one line is printed for EVERY wheel
+// event that gets this far, whether or not anything is done with it, and the flags name
+// which of those cases it is:
+//
+//   [HL2SB veh3rd/wheel] down=1 MOUSE_WHEEL_UP inVehicle=1 camera=1 third=1 dist=0
+//
+//     inVehicle=0  the wheel got here but we are on foot - not a camera problem
+//     inVehicle=1 camera=0  seated, but hl2sb_veh_thirdperson is 0 (nothing zooms by
+//                  design); press Ctrl in the vehicle, or `hl2sb_veh_thirdperson 1`
+//     inVehicle=1 camera=1  the wheel IS being consumed as a zoom: the following
+//                  "[HL2SB] vehicle third person distance = N" line is the new distance
+//
+// Throttled to one line a second (and the very first few always print) so a scroll wheel
+// spun in the console cannot flood the log. Behind hl2sb_veh_thirdperson_debug like the
+// rest of the vehicle camera logging.
+static void HL2SB_VehicleWheelDebug( bool bDown, ButtonCode_t keynum, bool bInVehicle, bool bCameraOn )
+{
+	if ( !hl2sb_veh_thirdperson_debug.GetBool() )
+	{
+		return;
+	}
+
+	static float s_flNextPrint = 0.0f;
+	static int s_iSeen = 0;
+
+	++s_iSeen;
+
+	// Always print the first few, then at most one a second.
+	if ( s_iSeen > 4 && gpGlobals->curtime < s_flNextPrint )
+	{
+		return;
+	}
+
+	s_flNextPrint = gpGlobals->curtime + 1.0f;
+
+	Msg( "[HL2SB veh3rd/wheel] down=%d %s inVehicle=%d camera=%d third=%d dist=%.0f\n",
+		 bDown ? 1 : 0,
+		 ( keynum == MOUSE_WHEEL_UP ) ? "MOUSE_WHEEL_UP" : "MOUSE_WHEEL_DOWN",
+		 bInVehicle ? 1 : 0, bCameraOn ? 1 : 0, hl2sb_veh_thirdperson.GetBool() ? 1 : 0,
+		 hl2sb_veh_thirdperson_dist.GetFloat() );
+}
+
+// HL2SB: shared debug for the vehicle third person camera. Called twice per frame -
+// once where the camera is computed and once on the final view that gets rendered - so a
+// later stage overwriting the camera can be seen directly. pszDetail is the calc-side
+// geometry (vehicle, distance, trace fraction) and is NULL for the final call.
+//
+// HL2SB: THROTTLED per call site. The old change-detection could not work here: the two
+// call sites alternate (calc / final / calc / final ...) and each frame's values are
+// never bit-identical, so every call looked like a change and the log was ~6 lines per
+// frame at 66 tick (engine.log 2026-09-16 0:37: 191.0s-193.4s is nothing but this line).
+// One print per second per call site keeps the values (eye, distance, trace fraction)
+// readable while driving and cuts the volume by two orders of magnitude.
+void HL2SB_DebugVehicleCamera( const char *pszWhere, const Vector &vecOrigin, const QAngle &angView,
+							   const char *pszDetail )
+{
+	if ( !hl2sb_veh_thirdperson_debug.GetBool() )
+	{
+		return;
+	}
+
+	// Four call sites exist today: OverrideView ("calc"), the second calc from
+	// MP_PostSimulate, SetUpViews ("final") and KeyInput ("wheel").
+	struct HL2SB_VehCamDebugCache_t
+	{
+		const char *pszWhere;
+		float flNextPrint;
+	};
+	static HL2SB_VehCamDebugCache_t s_Cache[8];
+	static int s_nCache = 0;
+
+	// Find (or add) this call site's slot.
+	int iSlot = -1;
+	for ( int i = 0; i < s_nCache; ++i )
+	{
+		if ( s_Cache[i].pszWhere == pszWhere )
+		{
+			iSlot = i;
+			break;
+		}
+	}
+
+	if ( iSlot < 0 )
+	{
+		if ( s_nCache >= (int)ARRAYSIZE( s_Cache ) )
+		{
+			return;		// never happens; do not grow state we cannot own
+		}
+
+		iSlot = s_nCache++;
+		s_Cache[iSlot].pszWhere = pszWhere;
+		s_Cache[iSlot].flNextPrint = 0.0f;
+	}
+
+	if ( gpGlobals->curtime < s_Cache[iSlot].flNextPrint )
+	{
+		return;
+	}
+
+	s_Cache[iSlot].flNextPrint = gpGlobals->curtime + 1.0f;
+
+	if ( pszDetail && pszDetail[0] )
+	{
+		Msg( "[HL2SB veh3rd/%s] origin=(%.1f %.1f %.1f) pitch=%.1f yaw=%.1f | %s\n", pszWhere,
+			 vecOrigin.x, vecOrigin.y, vecOrigin.z, angView[ PITCH ], angView[ YAW ], pszDetail );
+	}
+	else
+	{
+		Msg( "[HL2SB veh3rd/%s] origin=(%.1f %.1f %.1f) pitch=%.1f yaw=%.1f\n", pszWhere,
+			 vecOrigin.x, vecOrigin.y, vecOrigin.z, angView[ PITCH ], angView[ YAW ] );
+	}
+}
+
+// HL2SB: GMod's GM:CalcVehicleView / CalcView_ThirdPerson, as a function of a BARE
+// vehicle EYE position.
+//
+// GMod's own code (gamemodes/base/gamemode/cl_init.lua:305-351):
+//   local radius = ( mn - mx ):Length()
+//   local radius = radius + radius * Vehicle:GetCameraDistance()
+//   local TargetOrigin = view.origin + ( view.angles:Forward() * -radius )
+//   trace a 4x4x4 hull from view.origin to TargetOrigin, filtering props/vehicles
+//   view.origin = tr.HitPos
+//   if ( tr.Hit && !tr.StartSolid ) then view.origin = view.origin + tr.HitNormal * 4 end
+//   view.angles is NOT touched - it stays the PLAYER's own view angles
+//
+// Two things follow from that and both matter here:
+//
+//  * The pull-back is along the FULL view direction - pitch included - and the pitch is
+//    NEVER clamped. GMod does not re-aim the camera; it moves it behind the player along
+//    the direction the player already looks.
+//
+//  * The distance is the VEHICLE's own render-bounds radius, not a constant, so the whole
+//    vehicle is in frame without a magic number (see HL2SB_VehicleCameraDistance).
+//
+// WHY THIS IS A SHARED FUNCTION AND NOT INLINE IN OverrideView:
+//
+// The vehicle eye position is computed TWICE per frame in this tree - once by
+// C_BasePlayer::CalcView (what OverrideView sees) and again at the very end of
+// CViewRender::SetUpViews() by CViewRender::MP_PostSimulate(), which recomputes the
+// vehicle view with a freshly invalidated bone cache and writes it straight back into
+// m_View (view.cpp:1346). That second write happens AFTER OverrideView and therefore used
+// to throw this camera away completely: the rendered view was the bare pod eye and
+// nothing about the third person camera - neither this distance nor the mouse wheel that
+// writes it - could be seen on screen. view.cpp now calls back into this function with the
+// FRESH eye so the offset is applied exactly once, on top of the correct eye.
+bool HL2SB_ApplyVehicleThirdPersonView( const Vector &vecEyeOrigin, const QAngle &angEyeAngles,
+										Vector *pOutOrigin )
+{
+	C_BasePlayer *pPlayer = C_BasePlayer::GetLocalPlayer();
+	if ( !HL2SB_VehicleThirdPersonActive( pPlayer ) )
+	{
+		return false;
+	}
+
+	const float flDist = HL2SB_VehicleCameraDistance( pPlayer );
+
+	Vector vecForward;
+	AngleVectors( angEyeAngles, &vecForward );
+
+	const Vector vecTarget = vecEyeOrigin - vecForward * flDist;
+	const Vector vecHull( 4.0f, 4.0f, 4.0f );
+
+	trace_t tr;
+	// GMod's filter drops props and vehicles so the camera never collides with the car it
+	// rides in; MASK_SOLID_BRUSHONLY is the engine equivalent (world and brush geometry
+	// only). A trace that starts solid is ignored entirely: at a driver's seat that is the
+	// car's own surroundings, and collapsing the camera there is what used to leave the
+	// view inside the cabin.
+	UTIL_TraceHull( vecEyeOrigin, vecTarget, -vecHull, vecHull, MASK_SOLID_BRUSHONLY,
+					pPlayer, COLLISION_GROUP_NONE, &tr );
+
+	float flUsed = flDist;
+	Vector vecCamera = vecTarget;
+
+	if ( !tr.startsolid )
+	{
+		flUsed = flDist * tr.fraction;
+		vecCamera = vecEyeOrigin - vecForward * flUsed;
+
+		// GMod's WallOffset (4): push the camera off the wall it stopped against.
+		if ( tr.fraction < 1.0f )
+		{
+			vecCamera += tr.plane.normal * 4.0f;
+		}
+	}
+
+	vecCamera += Vector( 0.0f, 0.0f, hl2sb_veh_thirdperson_up.GetFloat() );
+
+	// C_BaseEntity::GetClassname() hands back ONE shared static buffer on the client
+	// (c_baseentity.cpp:4813), so two calls inside a single Msg() print the same name -
+	// that is where the old "vehicle=player" on the client came from. Copy it out first.
+	char szVehicle[128];
+	C_BaseEntity *pVehicleEnt = pPlayer->GetVehicleEntity();
+	Q_strncpy( szVehicle, pVehicleEnt ? pVehicleEnt->GetClassname() : "<none>", sizeof( szVehicle ) );
+
+	char szDetail[288];
+	Q_snprintf( szDetail, sizeof( szDetail ),
+				"eye=(%.1f %.1f %.1f) veh=%s dist=%.0f used=%.0f frac=%.3f ss=%d up=%.0f",
+				vecEyeOrigin.x, vecEyeOrigin.y, vecEyeOrigin.z, szVehicle, flDist, flUsed,
+				tr.fraction, tr.startsolid ? 1 : 0, hl2sb_veh_thirdperson_up.GetFloat() );
+
+	HL2SB_DebugVehicleCamera( "calc", vecCamera, angEyeAngles, szDetail );
+
+	if ( pOutOrigin )
+	{
+		*pOutOrigin = vecCamera;
+	}
+
+	return true;
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: 
 // Input  : *pSetup - 
@@ -444,6 +784,11 @@ void ClientModeShared::OverrideView( CViewSetup *pSetup )
 		return;
 
 	pPlayer->OverrideView( pSetup );
+
+	// HL2SB: the true eye position, before any third-person offset is applied. The
+	// GMod-style vehicle camera below is built from this, never from an already offset
+	// view, so the two systems cannot stack.
+	const Vector vecEyeOrigin = pSetup->origin;
 
 	if( ::input->CAM_IsThirdPerson() )
 	{
@@ -485,6 +830,26 @@ void ClientModeShared::OverrideView( CViewSetup *pSetup )
 		pSetup->m_OrthoTop    = -h;
 		pSetup->m_OrthoRight  = w;
 		pSetup->m_OrthoBottom = h;
+	}
+
+	// HL2SB: GMod's GM:CalcVehicleView / CalcView_ThirdPerson, applied last so it wins
+	// over the engine's own offset.
+	//
+	// The forced 38-degree-down pitch that started all of this is fixed at its root in the
+	// pod itself, with GMod's own `limitview 0` key - see
+	// C_PropVehiclePrisonerPod::UpdateViewAngles in game/client/hl2/c_vehicle_prisoner_pod.cpp.
+	//
+	// NOTE: this is NOT the last write to the view. CViewRender::MP_PostSimulate() runs at
+	// the end of SetUpViews() (view.cpp:832) and recomputes the vehicle eye into m_View
+	// after this returns; it calls HL2SB_ApplyVehicleThirdPersonView() again with the fresh
+	// eye, which is why that work lives in a function instead of here. Read the comment on
+	// it before changing this.
+	// vecEyeOrigin was captured before the engine's third-person block above, so the two
+	// systems can never stack.
+	Vector vecVehThirdPerson;
+	if ( HL2SB_ApplyVehicleThirdPersonView( vecEyeOrigin, pSetup->angles, &vecVehThirdPerson ) )
+	{
+		pSetup->origin = vecVehThirdPerson;
 	}
 }
 
@@ -747,6 +1112,60 @@ void ClientModeShared::ProcessInput(bool bActive)
 //-----------------------------------------------------------------------------
 int	ClientModeShared::KeyInput( int down, ButtonCode_t keynum, const char *pszCurrentBinding )
 {
+	// HL2SB: the mouse wheel zooms the vehicle third person camera, with no bind of the
+	// user's own.
+	//
+	// GMod gets the wheel out of the usercmd (GM:VehicleMove:
+	// `ply:GetCurrentCommand():GetMouseWheel()` -> Vehicle:SetCameraDistance) and HL2SB
+	// has no CMoveData in Lua, so it is taken here instead, using the engine's own
+	// contract for this function: "Return 1 to allow engine to process the key, otherwise,
+	// act on it as needed" (CInput::KeyEvent, game/client/in_main.cpp:555).
+	//
+	// Returning 0 is exactly what makes "no bind" work: engine/keys.cpp:756 hands every
+	// key event to the client DLL first and Key_Event() returns without dispatching the
+	// key binding when the client consumes it, so the stock MWHEELUP/MWHEELDOWN binding
+	// (invprev / invnext) never fires while the vehicle camera is up. Outside the vehicle
+	// camera this does nothing at all and the wheel keeps switching weapons.
+	//
+	// IT HAS TO BE THE FIRST THING IN THIS FUNCTION. It used to sit below the Lua
+	// `KeyInput` hook block, and that block ends in RETURN_LUA_INTEGER()
+	// (game/shared/lua/luamanager.h:544), which returns from here as soon as a Lua hook
+	// left a NUMBER on the stack. Any hook or GM:KeyInput that ever returns a number -
+	// GMod's own KeyInput contract is boolean, but addons are not bound by it - would
+	// therefore have made the wheel dead with no error anywhere. Nothing may sit in front
+	// of this except the console guard below.
+	//
+	// The console keeps the wheel while it is open (that is the SDK behaviour, and the
+	// `engine->Con_IsVisible()` early return further down cannot be used to enforce it
+	// from up here without also moving the Lua hook behind the console - a behaviour change
+	// this fix has no business making), so the guard is repeated in the condition.
+	//
+	// The engine's own proof that the wheel reaches this function is stock Valve code:
+	// C_WeaponGravityGun::KeyInput (game/client/hl2/c_weapon_gravitygun.cpp:62) consumes
+	// MOUSE_WHEEL_UP/DOWN and returns 0 on the very same path (ClientModeShared::KeyInput
+	// -> pWeapon->KeyInput). The wheel is posted as IE_ButtonPressed with
+	// code = MOUSE_WHEEL_UP|DOWN by CInputSystem::WindowProc (inputsystem.cpp:1446-1456)
+	// and Key_Event() routes it to IN_KeyEvent -> CInput::KeyEvent -> here
+	// (engine/keys.cpp:583, game/client/in_main.cpp:567).
+	if ( ( keynum == MOUSE_WHEEL_UP || keynum == MOUSE_WHEEL_DOWN ) && !engine->Con_IsVisible() )
+	{
+		C_BasePlayer *pWheelPlayer = C_BasePlayer::GetLocalPlayer();
+		const bool bInVehicle = ( pWheelPlayer != NULL && pWheelPlayer->GetVehicle() != NULL );
+		const bool bCameraOn = HL2SB_VehicleThirdPersonActive( pWheelPlayer );
+
+		// Printed for EVERY wheel event, camera or not, so the log answers "did the wheel
+		// get here at all?" without the user having to change anything else.
+		HL2SB_VehicleWheelDebug( down, keynum, bInVehicle, bCameraOn );
+
+		if ( down && bCameraOn )
+		{
+			HL2SB_VehThirdPersonZoom( pWheelPlayer,
+									  ( keynum == MOUSE_WHEEL_UP ) ? HL2SB_VEH3RD_WHEEL_STEP
+																   : -HL2SB_VEH3RD_WHEEL_STEP );
+			return 0;
+		}
+	}
+
 #ifdef LUA_SDK
 	if ( g_bLuaInitialized )
 	{
@@ -762,7 +1181,7 @@ int	ClientModeShared::KeyInput( int down, ButtonCode_t keynum, const char *pszCu
 
 	if ( engine->Con_IsVisible() )
 		return 1;
-	
+
 	// Should we start typing a message?
 	if ( pszCurrentBinding &&
 		( Q_strcmp( pszCurrentBinding, "messagemode" ) == 0 ||

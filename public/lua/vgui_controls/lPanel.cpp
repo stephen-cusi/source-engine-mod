@@ -1394,6 +1394,26 @@ static int Panel___index (lua_State *L) {
       lua_getmetatable(L, 1);
       lua_pushvalue(L, 2);
       lua_gettable(L, -2);
+
+      // HL2SB: fall back to the Panel metatable here TOO.
+      //
+      // The fallback below (in the non-LPanel branch) was added because every Panel
+      // method was unreachable there - SetPos, SetSize, SetVisible, MakePopup were
+      // all nil.  This branch has the same hole and was never given the same fix:
+      // it only ever consults the panel's OWN metatable, so as soon as a panel
+      // carries a class metatable that does not itself list the method, the read
+      // answers nil.
+      //
+      // That is the whole of the "the panel has no class" failure in the Lua spawn
+      // menu: a row built while the engine was dispatching input came back without
+      // SetText, without SetSize and without OnMousePressed - so it could be drawn
+      // but never clicked, and the next rebuild died on it.
+      if (lua_isnil(L, -1)) {
+        lua_pop(L, 2);
+        luaL_getmetatable(L, "Panel");
+        lua_pushvalue(L, 2);
+        lua_gettable(L, -2);
+      }
     }
   } else {
     /* HL2SB: non-LPanel controls keep their table in the registry. */
@@ -1723,6 +1743,10 @@ static const luaL_Reg Panelmeta[] = {
   {"IsTriplePressAllowed", Panel_IsTriplePressAllowed},
   {"IsValidKeyBindingsContext", Panel_IsValidKeyBindingsContext},
   {"IsVisible", Panel_IsVisible},
+  // HL2SB: GMod spells this IsHovered - DButton and DPanel call self:IsHovered()
+  // throughout derma - but this fork only ever bound IsCursorOver, so every such
+  // call died on a nil method.  Same function, GMod's name.
+  {"IsHovered", Panel_IsCursorOver},
   {"IsWithin", Panel_IsWithin},
   {"IsWithinTraverse", Panel_IsWithinTraverse},
   {"KB_AddBoundKey", Panel_KB_AddBoundKey},

@@ -115,18 +115,42 @@ void PathFollower::AdjustSpeed( INextBot *bot )
 {
 	ILocomotion *mover = bot->GetLocomotionInterface();
 
-	// if we're coming up on a gap jump, or we're in the air, use maximum speed
-	if ( ( m_goal && m_goal->type == JUMP_OVER_GAP ) || !mover->IsOnGround() )
+	// HL2SB diagnostic: this is the one place that rewrites the locomotion's
+	// desired speed every path Update, and a killed-nextbot report ("chase sets
+	// 450, bot stands still, desiredSpeed reads 0") is decided here.  One line per
+	// second, naming the inputs and the value written.
 	{
-		mover->SetDesiredSpeed( mover->GetRunSpeed() );
+		static float s_flNextAdjustReport = 0.0f;
+		float flNow = (float)gpGlobals->curtime;
+		bool bReport = ( flNow >= s_flNextAdjustReport );
+
+		if ( bReport )
+			s_flNextAdjustReport = flNow + 1.0f;
+
+		if ( ( m_goal && m_goal->type == JUMP_OVER_GAP ) || !mover->IsOnGround() )
+		{
+			if ( bReport )
+				Msg( "[HL2SB] AdjustSpeed('%s'): airborne/gap -> desired=%.0f (GetRunSpeed) mover=%p\n",
+					( bot->GetEntity() != NULL ) ? bot->GetEntity()->GetClassname() : "?", mover->GetRunSpeed(), (void*)mover );
+
+			mover->SetDesiredSpeed( mover->GetRunSpeed() );
+			return;
+		}
+
+		MoveCursorToClosestPosition( bot->GetPosition() );
+		const Path::Data &data = GetCursorData();
+
+		if ( bReport )
+			Msg( "[HL2SB] AdjustSpeed('%s'): run=%.0f walk=%.0f curvature=%.2f -> desired=%.0f mover=%p bot=%p\n",
+				( bot->GetEntity() != NULL ) ? bot->GetEntity()->GetClassname() : "?",
+				mover->GetRunSpeed(), mover->GetWalkSpeed(), data.curvature,
+				mover->GetRunSpeed() + fabs( data.curvature ) * ( mover->GetWalkSpeed() - mover->GetRunSpeed() ),
+				(void*)mover, (void*)bot );
+
+		// speed based on curvature
+		mover->SetDesiredSpeed( mover->GetRunSpeed() + fabs( data.curvature ) * ( mover->GetWalkSpeed() - mover->GetRunSpeed() ) );
 		return;
 	}
-
-	MoveCursorToClosestPosition( bot->GetPosition() );
-	const Path::Data &data = GetCursorData();
-	
-	// speed based on curvature
-	mover->SetDesiredSpeed( mover->GetRunSpeed() + fabs( data.curvature ) * ( mover->GetWalkSpeed() - mover->GetRunSpeed() ) );
 }
 
 

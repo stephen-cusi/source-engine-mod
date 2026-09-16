@@ -9,6 +9,8 @@
 #include "cbase.h"
 #include "luamanager.h"
 #include "lbaseentity_shared.h"
+// HL2SB: luaL_checkplayer, for Entity/Player:PrintMessage().
+#include "lbaseplayer_shared.h"
 #include "ltakedamageinfo.h"
 #include "mathlib/lvector.h"
 #include "items.h"
@@ -276,9 +278,75 @@ static int CBaseEntity_OnTakeDamage (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: GMod spells this
+//
+//     Entity:TakeDamage( amount, attacker, inflictor )
+//
+// and that is what GMod addons actually call -- SCP-096's melee is
+// `v:TakeDamage( self.Damage, self )` (init.lua:365/378/855/892).  This fork's
+// binding took a CTakeDamageInfo instead, so every one of those calls raised
+//
+//     bad argument #2 to 'TakeDamage' (CTakeDamageInfo expected, got number)
+//
+// from inside the behaviour coroutine: the bot could not kill anything, and the
+// raise also killed the thread that drives the rest of its AI (base_nextbot's
+// BehaveUpdate drops a thread that errors).  Both spellings are accepted now.
 static int CBaseEntity_TakeDamage (lua_State *L) {
-  luaL_checkentity(L, 1)->TakeDamage(luaL_checkdamageinfo(L, 2));
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  if ( lua_isnumber( L, 2 ) ) {
+    CTakeDamageInfo info;
+
+    CBaseEntity *pAttacker = lua_toentity( L, 3 );
+    CBaseEntity *pInflictor = lua_toentity( L, 4 );
+
+    // HL2SB: GMod callers routinely pass only two arguments -- SCP-096's melee is
+    // `v:TakeDamage( self.Damage, self )` -- and a NULL inflictor is not harmless
+    // downstream: CHL2MPRules::DeathNotice() dereferences it when the killer is
+    // not a player, which read the vtable at +0x98 and crashed the server the
+    // instant the kill landed (dumps/crash_20260916_052513).  The inflictor
+    // defaults to the attacker, which is also what the kill feed then names.
+    if ( pInflictor == NULL )
+      pInflictor = pAttacker;
+
+    info.SetDamage( (float)lua_tonumber( L, 2 ) );
+    info.SetAttacker( pAttacker );
+    info.SetInflictor( pInflictor );
+    info.SetDamageType( DMG_GENERIC );
+
+    pEntity->TakeDamage( info );
+    return 0;
+  }
+
+  pEntity->TakeDamage(luaL_checkdamageinfo(L, 2));
   return 0;
+}
+
+// HL2SB GMod compat: Player:PrintMessage( type, message ).
+//
+// Wiki: server only; prints a message to that one player's HUD/console according
+// to the HUD_PRINT* type, and answers whether it was sent.  The windgrin_npc
+// nextbot prints its "no more windgrin" lines with it, and without the binding
+// the raise surfaced as "attempt to call a nil value (method 'PrintMessage')".
+// Registered on the entity table (the player metatable walks on to it) but it
+// only accepts players, like GMod's.
+static int CBaseEntity_PrintMessage (lua_State *L) {
+#ifndef CLIENT_DLL
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  int nType = luaL_checkinteger(L, 2);
+  const char *pszMessage = luaL_checkstring(L, 3);
+
+  CRecipientFilter filter;
+  filter.AddRecipient(pPlayer);
+  UTIL_ClientPrintFilter(filter, nType, pszMessage);
+
+  lua_pushboolean(L, true);
+#else
+  (void)L;
+  lua_pushboolean(L, false);
+#endif
+
+  return 1;
 }
 
 static int CBaseEntity_TakeHealth (lua_State *L) {
@@ -686,6 +754,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"MakeDormant", CBaseEntity_MakeDormant},
   {"RemoveDeferred", CBaseEntity_RemoveDeferred},
   {"AcceptInput", CBaseEntity_AcceptInput},
+  // HL2SB GMod compat: Player:PrintMessage( type, message ) (see the definition).
+  {"PrintMessage", CBaseEntity_PrintMessage},
   {"GetInputDispatchEffectPosition", CBaseEntity_GetInputDispatchEffectPosition},
   {"EntityText", CBaseEntity_EntityText},
   {"DrawDebugGeometryOverlays", CBaseEntity_DrawDebugGeometryOverlays},

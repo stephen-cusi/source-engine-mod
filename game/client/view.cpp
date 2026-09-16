@@ -720,6 +720,15 @@ void CViewRender::SetUpViews()
 	// give the toolsystem a chance to override the view
 	ToolFramework_SetupEngineView( view.origin, view.angles, view.fov );
 
+	// HL2SB: report the origin that is actually about to be rendered. The vehicle third
+	// person camera is applied inside ClientMode()->OverrideView() just above; if this
+	// line disagrees with the "[HL2SB veh3rd/calc]" line, a later stage is overwriting it.
+	// The last parameter is the calc-side geometry detail (NULL here: this call only has
+	// the final view).
+	extern void HL2SB_DebugVehicleCamera( const char *pszWhere, const Vector &vecOrigin,
+										  const QAngle &angView, const char *pszDetail );
+	HL2SB_DebugVehicleCamera( "final", view.origin, view.angles, NULL );
+
 	if ( engine->IsPlayingDemo() )
 	{
 		if ( cl_demoviewoverride.GetFloat() > 0.0f )
@@ -1335,6 +1344,32 @@ void CViewRender::MP_PostSimulate()
 	//Tony; we have to invalidate the bone cache in order for the attachment lookups to be correct!
 	pVehicleEntity->InvalidateBoneCache();
 	pVehicle->GetVehicleViewPosition( nRole, &m_View.origin, &m_View.angles, &m_View.fov );
+
+	// HL2SB: the two lines above have just REPLACED m_View.origin/m_View.angles with the
+	// bare vehicle eye attachment. This function runs at the very end of
+	// CViewRender::SetUpViews() (view.cpp, the MP_PostSimulate() call below), i.e. AFTER
+	// ClientModeShared::OverrideView() already moved the view out to the GMod vehicle
+	// third person camera - so without this the offset is silently discarded for every
+	// player in a vehicle and the rendered view is the pod's own eye.
+	//
+	// That is precisely why "the wheel zoom does nothing" and why changing
+	// hl2sb_veh_thirdperson_dist "did nothing": both only ever changed the value the
+	// OverrideView pass used, and this call threw that pass away. Re-apply the offset on
+	// top of the FRESH eye so it is applied exactly once and on the correct origin; the
+	// bone cache refresh above (the reason this function exists) is preserved.
+	{
+		extern bool HL2SB_ApplyVehicleThirdPersonView( const Vector &vecEyeOrigin,
+													   const QAngle &angEyeAngles,
+													   Vector *pOutOrigin );
+		// Take a copy: HL2SB_ApplyVehicleThirdPersonView() must not alias its input with
+		// the output it writes.
+		const Vector vecFreshEyeOrigin = m_View.origin;
+		Vector vecThirdPersonOrigin;
+		if ( HL2SB_ApplyVehicleThirdPersonView( vecFreshEyeOrigin, m_View.angles, &vecThirdPersonOrigin ) )
+		{
+			m_View.origin = vecThirdPersonOrigin;
+		}
+	}
 
 	//Tony; everything below is from SetupView - the things that should be recalculated.. are recalculated!
 	pLocal->CalcViewModelView( m_View.origin, m_View.angles );

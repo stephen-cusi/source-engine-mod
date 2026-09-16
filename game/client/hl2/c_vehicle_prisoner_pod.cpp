@@ -89,7 +89,15 @@ private:
 	bool					m_bEnterAnimOn;
 	bool					m_bExitAnimOn;
 	Vector					m_vecEyeExitEndpoint;
-	float					m_flFOV;				// The current FOV (changes during entry/exit anims).
+	float					m_flFOV;				// The current FOV (changes during entry/exit anims);
+
+	// HL2SB: GMod's `limitview` key (Valve's own VDC keyvalue for this entity). The SDK
+	// always clamps the pod's view angles, and that clamp is what pinned the camera pitch
+	// at POD_VIEW_PITCH_MAX (38 degrees down) - reported as "the third person camera is in
+	// the air looking at grass". GMod's engine honours the key and every GMod seat passes
+	// `limitview 0`, so honour it here too. Defaults to true, i.e. the SDK behaviour, for
+	// a pod that was not spawned with the key.
+	bool					m_bLimitView;
 
 	ViewSmoothingData_t		m_ViewSmoothingData;
 };
@@ -100,6 +108,9 @@ IMPLEMENT_CLIENTCLASS_DT(C_PropVehiclePrisonerPod, DT_PropVehiclePrisonerPod, CP
 	RecvPropBool( RECVINFO( m_bEnterAnimOn ) ),
 	RecvPropBool( RECVINFO( m_bExitAnimOn ) ),
 	RecvPropVector( RECVINFO( m_vecEyeExitEndpoint ) ),
+	// HL2SB: must stay LAST on both sides - the send table (game/server/hl2/vehicle_prisoner_pod.cpp)
+	// appends its SendPropBool in the same position.
+	RecvPropBool( RECVINFO( m_bLimitView ) ),
 END_RECV_TABLE()
 
 
@@ -124,6 +135,9 @@ C_PropVehiclePrisonerPod::C_PropVehiclePrisonerPod( void )
 	m_ViewSmoothingData.flFOV = POD_VIEW_FOV;
 
 	m_flFOV = 0;
+
+	// HL2SB: the SDK behaviour until the server says otherwise (see m_bLimitView).
+	m_bLimitView = true;
 }
 
 //-----------------------------------------------------------------------------
@@ -200,6 +214,15 @@ void C_PropVehiclePrisonerPod::GetVehicleViewPosition( int nRole, Vector *pAbsOr
 //-----------------------------------------------------------------------------
 void C_PropVehiclePrisonerPod::UpdateViewAngles( C_BasePlayer *pLocalPlayer, CUserCmd *pCmd )
 {
+	// HL2SB: GMod's `limitview` key. Every GMod seat - and every seat HL2SB's own list
+	// spawns (lua/autorun/hl2sb_gmod_seats.lua:106) - passes `limitview 0`, and GMod's
+	// engine then leaves the player's view angles completely alone. Without this the SDK
+	// clamp below pins the pitch at POD_VIEW_PITCH_MAX (38 degrees down), which is what
+	// made the vehicle camera look at the ground from high in the air no matter where the
+	// mouse pointed.
+	if ( !m_bLimitView )
+		return;
+
 	int eyeAttachmentIndex = LookupAttachment( "vehicle_driver_eyes" );
 	Vector vehicleEyeOrigin;
 	QAngle vehicleEyeAngles;

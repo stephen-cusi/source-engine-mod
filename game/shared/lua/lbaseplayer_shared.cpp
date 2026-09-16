@@ -13,6 +13,10 @@
 #include "lbaseplayer_shared.h"
 #ifdef CLIENT_DLL
 #include "lc_baseanimating.h"
+// HL2SB: complete IClientVehicle for CBasePlayer_GetVehicleEntity's
+// GetVehicleEnt() call.  cbase.h's c_baseplayer.h only uses the type as a
+// pointer, so every client file that dereferences it includes this itself.
+#include "iclientvehicle.h"
 #else
 #include "lbaseanimating.h"
 #endif
@@ -221,6 +225,54 @@ static int CBasePlayer_GetShootPos (lua_State *L) {
 static int CBasePlayer_GetAimVector (lua_State *L) {
   Vector v = luaL_checkplayer(L, 1)->GetAutoaimVector(luaL_optnumber(L, 2, 0.0f));
   lua_pushvector(L, v);
+  return 1;
+}
+
+// HL2SB GMod compat: Player:Name() and Player:GetVehicle().
+//
+// Both are plain GMod spellings of engine calls that already exist
+// (GetPlayerName / GetVehicleEntity), and stock addons use them constantly: the
+// windgrin_npc nextbot prints "nav_generate requested by ..c:Name()".
+// HL2SB GMod compat: Player:KillSilent().
+//
+// Wiki: server only, "kills a player without notifying the rest of the server",
+// and it calls GM:PlayerSilentDeath instead of GM:PlayerDeath.
+//
+// This fork has no silent-death entry point in the engine, so the death itself is
+// an ordinary lethal hit (DMG_GENERIC) and the GMod hook is raised so gamemode
+// code that listens for the silent variant still runs.  The kill feed is NOT
+// suppressed - that is the one part of the GMod contract this cannot promise.
+static int CBasePlayer_KillSilent (lua_State *L) {
+#ifndef CLIENT_DLL
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+
+  if (pPlayer->IsAlive()) {
+    CTakeDamageInfo info;
+
+    info.SetDamage(100000.0f);
+    info.SetDamageType(DMG_GENERIC);
+    pPlayer->TakeDamage(info);
+  }
+
+  BEGIN_LUA_CALL_HOOK("PlayerSilentDeath");
+    lua_pushplayer(L, pPlayer);
+  END_LUA_CALL_HOOK(1, 0);
+#else
+  (void)L;
+#endif
+
+  return 0;
+}
+
+static int CBasePlayer_Name (lua_State *L) {
+  lua_pushstring(L, luaL_checkplayer(L, 1)->GetPlayerName());
+  return 1;
+}
+
+static int CBasePlayer_GetVehicle (lua_State *L) {
+  // GetVehicleEntity() exists on both realms (server player.h:1318, client
+  // c_baseplayer.h:316) and answers the vehicle ENTITY GMod hands back.
+  lua_pushentity(L, luaL_checkplayer(L, 1)->GetVehicleEntity());
   return 1;
 }
 
@@ -527,6 +579,38 @@ static int CBasePlayer_IsHLTV (lua_State *L) {
 
 static int CBasePlayer_IsInAVehicle (lua_State *L) {
   lua_pushboolean(L, luaL_checkplayer(L, 1)->IsInAVehicle());
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB GMod compat - Player:GetVehicleEntity(), i.e. GMod's
+// Player:GetVehicle().
+//
+// The server half already exists (game/server/lua/lplayer.cpp) and the GMod
+// compatibility shim aliases GetVehicle onto it
+// (lua/includes/modules/gmod_compatibility/sh_init.lua:904).  The CLIENT half was
+// missing entirely, so in the client realm the alias resolved to nil and every
+// `ply:GetVehicle()` was nil.  That is not cosmetic: the shipped
+// lua/includes/modules/properties.lua:140 does
+//
+//     local veh = ply:GetVehicle()
+//     if ( veh:IsValid() && ... )
+//
+// so the hovered-entity path raised "attempt to index a nil value" on the client.
+//
+// The entity is pushed through lua_pushentity(), which now hands a drivable
+// vehicle the "Vehicle" metatable (lvehicle_shared.cpp), so this is also the
+// client's route into the Vehicle library.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_GetVehicleEntity (lua_State *L) {
+#ifdef CLIENT_DLL
+  // C_BasePlayer::GetVehicle() answers the IClientVehicle*, and GetVehicleEnt()
+  // the entity behind it (c_baseplayer.h:668).
+  IClientVehicle *pVehicle = luaL_checkplayer(L, 1)->GetVehicle();
+  lua_pushentity(L, pVehicle != NULL ? pVehicle->GetVehicleEnt() : NULL);
+#else
+  lua_pushentity(L, luaL_checkplayer(L, 1)->GetVehicleEntity());
+#endif
   return 1;
 }
 
@@ -1177,6 +1261,11 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetAutoaimVector", CBasePlayer_GetAutoaimVector},
   {"GetShootPos", CBasePlayer_GetShootPos},
   {"GetAimVector", CBasePlayer_GetAimVector},
+  // HL2SB GMod compat: Player:Name() / GetVehicle() / KillSilent()
+  // (see the definitions).
+  {"Name", CBasePlayer_Name},
+  {"GetVehicle", CBasePlayer_GetVehicle},
+  {"KillSilent", CBasePlayer_KillSilent},
   {"GetEyeTrace", CBasePlayer_GetEyeTrace},
   {"GetBonusChallenge", CBasePlayer_GetBonusChallenge},
   {"GetBonusProgress", CBasePlayer_GetBonusProgress},
@@ -1193,6 +1282,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetNextAttack", CBasePlayer_GetNextAttack},
   {"GetObserverMode", CBasePlayer_GetObserverMode},
   {"GetObserverTarget", CBasePlayer_GetObserverTarget},
+  {"GetVehicleEntity", CBasePlayer_GetVehicleEntity},
   {"GetOffset_m_Local", CBasePlayer_GetOffset_m_Local},
   {"GetPlayerLocalData", CBasePlayer_GetPlayerLocalData},
   {"GetPlayerMaxs", CBasePlayer_GetPlayerMaxs},

@@ -17,6 +17,7 @@
 
 	#include "iclientvehicle.h"
 	#include "prediction.h"
+	#include "iinput.h"			// HL2SB: input->CAM_IsThirdPerson() in CalcVehicleView()
 	#include "c_basedoor.h"
 	#include "c_world.h"
 	#include "view.h"
@@ -1711,6 +1712,16 @@ void CBasePlayer::CalcVehicleView(
 		vieweffects->CalcShake();
 		vieweffects->ApplyShake( eyeOrigin, eyeAngles, 1.0 );
 	}
+
+	// HL2SB: the vehicle third-person camera is deliberately NOT implemented here.
+	// The engine applies its third-person offset later, in ClientModeShared::OverrideView
+	// (clientmode_shared.cpp:448-476), from CThirdPersonManager: a trace filter that
+	// drops vehicles plus a vehicle-sized distance (both in cam_thirdperson.cpp). Pulling
+	// the eye back here as well would add a second offset on top of that one - and it was
+	// this function's own code that reported the misleading evidence ("the view is still
+	// inside the jeep") in the first place, because GetVehicleEnt() is player-backed on
+	// the client: "[HL2SB veh/cl] player=player vehicle=player" vs the server's
+	// "vehicle=prop_vehicle_jeep".
 #endif
 
 }

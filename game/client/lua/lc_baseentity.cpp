@@ -11,6 +11,7 @@
 #include "luasrclib.h"
 #include "lbaseentity_shared.h"
 #include "mathlib/lvector.h"
+#include "model_types.h"	// HL2SB: STUDIO_RENDER, the default of Entity:DrawModel()
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -115,8 +116,29 @@ static int CBaseEntity_UsesFullFrameBufferTexture (lua_State *L) {
 }
 
 static int CBaseEntity_DrawModel (lua_State *L) {
-  lua_pushinteger(L, luaL_checkentity(L, 1)->DrawModel(luaL_checkint(L, 2)));
+  // HL2SB GMod compat: `flags` is optional and defaults to STUDIO_RENDER (wiki,
+  // Entity:DrawModel) - see the same fix on C_BaseAnimating.
+  lua_pushinteger(L, luaL_checkentity(L, 1)->DrawModel(luaL_optint(L, 2, STUDIO_RENDER)));
   return 1;
+}
+
+// HL2SB GMod compat: Entity:SetRenderBounds( mins, maxs, add ).
+//
+// Wiki: "Sets the render bounds for the entity", and the third argument (default
+// Vector( 0, 0, 0 )) "adds this vector to maxs and subtracts this vector from mins".
+// Client only, like the wiki says.  There was no such method anywhere in this fork's
+// entity code, so a scripted entity that draws itself (npc_verity draws a 128x128
+// sprite 64 units above its origin, with no model at all) could not widen the box
+// the renderer culls against.
+static int CBaseEntity_SetRenderBounds (lua_State *L) {
+  C_BaseEntity *pEntity = luaL_checkentity(L, 1);
+  Vector mins = luaL_checkvector(L, 2);
+  Vector maxs = luaL_checkvector(L, 3);
+  Vector vecZero( 0.0f, 0.0f, 0.0f );
+  Vector add  = luaL_optvector(L, 4, &vecZero);
+
+  pEntity->SetScriptedRenderBounds( mins - add, maxs + add );
+  return 0;
 }
 
 static int CBaseEntity_ComputeFxBlend (lua_State *L) {
@@ -161,6 +183,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"UsesPowerOfTwoFrameBufferTexture", CBaseEntity_UsesPowerOfTwoFrameBufferTexture},
   {"UsesFullFrameBufferTexture", CBaseEntity_UsesFullFrameBufferTexture},
   {"DrawModel", CBaseEntity_DrawModel},
+  {"SetRenderBounds", CBaseEntity_SetRenderBounds},
   {"ComputeFxBlend", CBaseEntity_ComputeFxBlend},
   {"GetFxBlend", CBaseEntity_GetFxBlend},
   {"LODTest", CBaseEntity_LODTest},

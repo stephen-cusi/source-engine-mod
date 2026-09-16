@@ -30,9 +30,11 @@
 #endif
 
 #ifdef HL2SB
-#include "menu/sm_menu_legacy.h"
+// HL2SB: the C++ SMenu (menu/sm_menu_list.cpp) and its legacy predecessor
+// (menu/sm_menu_legacy.cpp, the old PropertyDialog "SMenu") are gone.  The spawn
+// menu is Lua now -- lua/autorun/client/hl2sb_spawnmenu.lua, on this fork's own
+// Derma framework -- so this file no longer creates or destroys either panel.
 #include "menu/toolgun_menu.h"
-#include "menu/sm_menu_list.h"
 #include "menu/creatempdialog.h"
 #endif
 
@@ -223,8 +225,6 @@ void VGui_CreateGlobalPanels( void )
 #ifdef HL2SB
 	//toolgun menu
 	toolmenu->Create( gameParent );
-	smenu->Create(gameParent);
-	smlmenu->Create(gameParent);
 	maplist->Create(gameParent);
 #endif
 
@@ -260,9 +260,7 @@ void VGui_Shutdown()
 	touch_panel->Destroy();
 
 #ifdef HL2SB
-	smenu->Destroy();
 	toolmenu->Destroy();
-	smlmenu->Destroy();
 	maplist->Destroy();
 #endif
 

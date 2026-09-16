@@ -80,6 +80,17 @@ public:
 	// NVNT added to check if the vehicle needs to aim
 	virtual bool HasGun(void){return m_bHasGun;}
 
+	// HL2SB: read access to the networked vehicle state for the Vehicle Lua
+	// library (game/shared/lua/lvehicle_shared.cpp).  The members stay protected
+	// and none of these is virtual, so no vtable slot is added; they exist because
+	// its bindings are free functions and cannot reach the fields.  These are the
+	// same four values the HL2 vehicle HUD reads.
+	int		HL2SB_Speed( void ) const			{ return m_nSpeed; }
+	int		HL2SB_RPM( void ) const				{ return m_nRPM; }
+	float	HL2SB_Throttle( void ) const		{ return m_flThrottle; }
+	int		HL2SB_BoostTimeLeft( void ) const	{ return m_nBoostTimeLeft; }
+	int		HL2SB_HasBoost( void ) const		{ return m_nHasBoost; }
+
 protected:
 
 	virtual void OnEnteredVehicle( C_BaseCombatCharacter *pPassenger );

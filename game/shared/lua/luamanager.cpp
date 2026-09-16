@@ -32,6 +32,10 @@ extern "C" __declspec( dllimport ) unsigned short __stdcall
 #include "networkstringtabledefs.h"
 #ifndef CLIENT_DLL
 #include "basescriptedtrigger.h"
+// HL2SB GMod compat: ENT.Type = "nextbot" (game/server/lua/luanextbot.h).  Server
+// only - the client half of a nextbot is C_NextBotCombatCharacter, which DP_NextBot
+// pairs with the server's NextBotCombatCharacter.
+#include "luanextbot.h"
 #endif
 #include "basescripted.h"
 #include "weapon_hl2mpbase_scriptedweapon.h"
@@ -404,6 +408,66 @@ void luasrc_shutdown_gameui (void) {
 // Returning from a panic function is undefined behaviour in Lua, so we report
 // and then exit; the process is already unusable at that point.
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// HL2SB: the one place a Lua error is printed.
+//
+// GMod shows Lua errors in RED, and a plain Warning is easy to lose in a
+// scrolling console.  BOTH sinks on purpose: ConColorMsg is what colours the
+// console line, Warning is the channel this fork's diagnosis has always been read
+// from (it lands in engine.log).  A duplicated line is a far smaller problem than
+// a missing one.
+//
+// Level 0 rather than the ConColorMsg( Color&, ... ) overload: that one gates on
+// the "console" spew group at level 1, and IsSpewActive() answers from m_Level,
+// whose default is 0 -- so it would drop every Lua error, console and log alike.
+//-----------------------------------------------------------------------------
+LUA_API void luasrc_LuaErrorMsg (const char *pszText)
+{
+	if ( pszText == NULL )
+		return;
+
+	ConColorMsg( 0, Color( 255, 64, 64, 255 ), "%s\n", pszText );	// red
+	Warning( "%s\n", pszText );
+}
+
+// HL2SB: the warning half.  Orange, and it exists so "this script has no ENT.X"
+// and "that lookup raised" do not read like an error that lost an entity -- they
+// are the same sentence in two different colours.
+LUA_API void luasrc_LuaWarnMsg (const char *pszText)
+{
+	if ( pszText == NULL )
+		return;
+
+	ConColorMsg( 0, Color( 255, 165, 0, 255 ), "%s\n", pszText );	// orange
+	Warning( "%s\n", pszText );
+}
+
+// HL2SB: the printf-style forms (see the declaration for why they exist here
+// rather than at the call site).
+LUA_API void luasrc_LuaErrorMsgF (const char *pszFormat, ...)
+{
+	char szBuffer[2048];
+
+	va_list args;
+	va_start( args, pszFormat );
+	Q_vsnprintf( szBuffer, sizeof( szBuffer ), pszFormat, args );
+	va_end( args );
+
+	luasrc_LuaErrorMsg( szBuffer );
+}
+
+LUA_API void luasrc_LuaWarnMsgF (const char *pszFormat, ...)
+{
+	char szBuffer[2048];
+
+	va_list args;
+	va_start( args, pszFormat );
+	Q_vsnprintf( szBuffer, sizeof( szBuffer ), pszFormat, args );
+	va_end( args );
+
+	luasrc_LuaWarnMsg( szBuffer );
+}
+
 static int HL2SB_LuaPanic( lua_State *pL )
 {
 	const char *pszMsg = lua_tostring( pL, -1 );
@@ -411,14 +475,21 @@ static int HL2SB_LuaPanic( lua_State *pL )
 		pszMsg = "(error object is not a string)";
 
 	// Traceback of where the unprotected error came from.
-	luaL_traceback( pL, pL, pszMsg, 1 );
+	//
+	// HL2SB: level 0, NOT 1.  A panic function is not a frame on the CallInfo
+	// chain -- it is called straight out of luaD_throw -- so level 1 skips the
+	// TOPMOST frame, which is exactly the one that raised the error.  With 1 the
+	// traceback came back as a bare "stack traceback:" and the log named no file,
+	// which is why every one of these reports read as "attempt to call a nil
+	// value" and nothing else.
+	luaL_traceback( pL, pL, pszMsg, 0 );
 	const char *pszTrace = lua_tostring( pL, -1 );
 
-	Msg( "\n[HL2SB] *** LUA PANIC - unprotected Lua error ***\n" );
-	Warning( "[HL2SB] LUA PANIC:\n%s\n", pszTrace ? pszTrace : pszMsg );
+	luasrc_LuaErrorMsg( "\n[HL2SB] *** LUA PANIC - unprotected Lua error ***" );
+	luasrc_LuaErrorMsg( pszTrace ? pszTrace : pszMsg );
 
-	// The Lua traceback above is almost always empty (the CallInfo chain is
-	// already unwound when the panic runs), so capture the NATIVE stack too.
+	// The Lua traceback can still come back empty when the error was raised out of
+	// a pure C chain -- no Lua frames at all -- so capture the NATIVE stack too.
 	// Only the client has a SIGABRT handler that writes a minidump -- a panic on
 	// the server otherwise left no usable information at all.  Printing the
 	// addresses relative to this module's base makes them symbolizable with the
@@ -571,7 +642,11 @@ LUA_API void luasrc_report_error (lua_State *L, const char *pszError) {
   if (!pszError)
     pszError = "(no error message)";
 
-  Warning("%s\n", pszError);
+  // HL2SB: this is THE place a Lua error becomes visible, so it is where the red
+  // comes from (GMod shows Lua errors in colour; a plain Warning is easy to lose in
+  // a scrolling console).  luasrc_LuaErrorMsg() prints coloured AND still Warning()s,
+  // so the text keeps landing in engine.log.
+  luasrc_LuaErrorMsg(pszError);
 
   if (g_bReportingLuaError)
     return;
@@ -583,7 +658,9 @@ LUA_API void luasrc_report_error (lua_State *L, const char *pszError) {
   // pushing hook/call/name/_GAMEMODE underneath it.
   char szTraceback[2048];
   szTraceback[0] = '\0';
-  luaL_traceback(L, L, pszError, 1);
+  // HL2SB: level 0, not 1 -- this runs from C, which is not a CallInfo frame, so
+  // level 1 dropped the topmost frame: the very one that raised the error.
+  luaL_traceback(L, L, pszError, 0);
   if (lua_isstring(L, -1))
     Q_strncpy(szTraceback, lua_tostring(L, -1), sizeof(szTraceback));
   lua_pop(L, 1);
@@ -619,7 +696,7 @@ LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
 			// HL2SB: greppable marker.  Bulk-importing GMod's derma/ or vgui/
 			// (100+ files) has to be triageable from the log alone, so every
 			// load failure names its own file.
-			Warning( "[Lua] FAILED %s: %s\n", filename, lua_tostring(L, -1) );
+			luasrc_LuaErrorMsgF( "[Lua] FAILED %s: %s", filename, lua_tostring(L, -1) );
 			lua_pop(L, 1);
 		}
 		return iFallback;
@@ -760,7 +837,7 @@ LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
 	if ( iError == 0 )
 		iError = lua_pcall( L, 0, LUA_MULTRET, 0 );
 	if ( iError != 0 ) {
-		Warning( "[Lua] FAILED %s: %s\n", filename, lua_tostring(L, -1) );
+		luasrc_LuaErrorMsgF( "[Lua] FAILED %s: %s", filename, lua_tostring(L, -1) );
 		lua_pop(L, 1);
 	}
 	free( pOut );
@@ -1020,21 +1097,20 @@ LUA_API void luasrc_dofolder_sorted (lua_State *L, const char *path, bool bRecur
 ** traced back to a script.
 */
 static int luasrc_traceback (lua_State *L) {
-  lua_getglobal(L, "debug");
-  if (lua_istable(L, -1)) {
-    lua_getfield(L, -1, "traceback");
-    lua_remove(L, -2);            /* drop the debug table */
-    if (lua_isfunction(L, -1)) {
-      lua_pushvalue(L, 1);        /* the error message */
-      lua_pushinteger(L, 2);      /* level: skip this handler frame */
-      lua_call(L, 2, 1);
-      return 1;
-    }
-    lua_pop(L, 1);
-  } else {
-    lua_pop(L, 1);
-  }
-  lua_pushvalue(L, 1);
+  // HL2SB: build the traceback in C, NOT by calling debug.traceback.
+  //
+  // The previous version ran LUA from inside the error handler (lua_getglobal +
+  // lua_call on debug.traceback), and an error handler is the one place that must
+  // not need a healthy Lua stack: it runs while the stack is already in whatever
+  // state produced the error.  The SCP-096 abort dump shows what that costs --
+  // luaD_reallocstack sits directly under HL2SB_LuaPanic, i.e. the REPORT failed,
+  // and all that survived was the original message ("attempt to call a nil
+  // value") with no traceback and no file name.
+  //
+  // luaL_traceback is pure C: it walks the CallInfo chain and cannot raise.
+  // Level 0 because this handler is not a CallInfo frame either -- 1 would skip
+  // the topmost frame, which is the function that raised.
+  luaL_traceback( L, L, lua_tostring( L, 1 ), 0 );
   return 1;
 }
 
@@ -1057,7 +1133,7 @@ LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
     lua_remove(L, errfunc);
 
   if (iError != 0) {
-	Warning( "%s\n", lua_tostring(L, -1) );
+	luasrc_LuaErrorMsg( lua_tostring(L, -1) );
 	lua_pop(L, 1);
   }
   return iError;
@@ -1089,6 +1165,66 @@ LUA_API void luasrc_dumpstack(lua_State *L) {
 	lua_pop(L, 1);  /* pop result */
   }
   lua_pop(L, 1);  /* pop function */
+}
+
+/*
+** HL2SB: a PROTECTED  t[key]  read -- see the declaration in luamanager.h.
+**
+** lua_getfield() from C is not a protected call.  A script table can answer
+** through an __index metamethod, so "just reading a field" can RUN LUA, and an
+** error raised there reaches lua_atpanic, which aborts the process with
+**
+**     attempt to call a nil value
+**     stack traceback:            <- empty: the panic runs with no Lua frame left
+**
+** and no file and no line.  That is what every SCP-096 spawn did, through the
+** ENT:Initialize() lookup in basescripted.cpp.
+*/
+static int luasrc_IndexHelper (lua_State *L)
+{
+	lua_gettable( L, 1 );		// [t][k] -> [t[k]]
+	return 1;
+}
+
+LUA_API bool luasrc_PushScriptField (lua_State *L, int nTableIdx, const char *pszKey,
+                                     bool *pbLookupErrored)
+{
+	if ( pbLookupErrored != NULL )
+		*pbLookupErrored = false;
+
+	if ( L == NULL || pszKey == NULL )
+		return false;
+
+	// The pushes below move the stack, so a relative index has to be resolved
+	// first -- by the time lua_pushvalue() reads it, it would point elsewhere.
+	if ( nTableIdx < 0 )
+		nTableIdx = lua_gettop( L ) + 1 + nTableIdx;
+
+	// Not a table at all (a stale reference yields whatever sits at that registry
+	// index): answer nil rather than raising.  This is the old
+	// "attempt to index a number value" abort, made harmless.
+	if ( !lua_istable( L, nTableIdx ) )
+	{
+		lua_pushnil( L );
+		return false;
+	}
+
+	lua_pushcfunction( L, luasrc_IndexHelper );		// [..][t][helper]
+	lua_pushvalue( L, nTableIdx );					// [..][t][helper][t]
+	lua_pushstring( L, pszKey );					// [..][t][helper][t][k]
+
+	if ( luasrc_pcall( L, 2, 1, 0 ) != 0 )
+	{
+		// luasrc_pcall reported the error with a traceback and popped the message
+		// itself, so the stack is empty here and the caller still gets its value.
+		if ( pbLookupErrored != NULL )
+			*pbLookupErrored = true;
+
+		lua_pushnil( L );
+		return false;
+	}
+
+	return lua_isfunction( L, -1 ) ? true : false;
 }
 
 /*
@@ -1366,6 +1502,48 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 	lua_getglobal( L, "ENT" );
 	if ( lua_istable( L, -1 ) )
 	{
+		// HL2SB GMod compat: GMod nextbot addons do NOT name this fork's
+		// __factory - they say, exactly as the wiki documents,
+		//
+		//     ENT.Base = "base_nextbot"      (and base_nextbot sets Type = "nextbot")
+		//
+		// and the base chain is only merged into an INSTANCE's table later, by
+		// scripted_ents.Get()/baseclass.Set() (scripted_ents.lua:160-194 - it
+		// walks Base with TableInherit).  This code reads the class table at LOAD
+		// time, so without the test below every addon nextbot (SCP-096 included)
+		// was registered as a plain CBaseAnimating scripted entity: no INextBot,
+		// no locomotion, no BehaveUpdate - a bot that just stands there.
+		//
+		// ⚠️ This is also why ENT.Base matters here and not ENT.Type alone:
+		// the addon only sets Base, and Type comes from OUR base_nextbot script.
+		bool bIsNextBot = false;
+
+		lua_getfield( L, -1, "Base" );
+		if ( lua_isstring( L, -1 ) && Q_stricmp( lua_tostring( L, -1 ), "base_nextbot" ) == 0 )
+			bIsNextBot = true;
+		lua_pop( L, 1 );
+
+		if ( !bIsNextBot )
+		{
+			lua_getfield( L, -1, "Type" );
+			if ( lua_isstring( L, -1 ) && Q_stricmp( lua_tostring( L, -1 ), "nextbot" ) == 0 )
+				bIsNextBot = true;
+			lua_pop( L, 1 );
+		}
+
+		if ( bIsNextBot )
+		{
+#ifndef CLIENT_DLL
+			// Server only: the client half of a nextbot is C_NextBotCombatCharacter,
+			// reached through DT_NextBot, not through a per-class client entry.
+			RegisterLuaNextBot( className );
+#endif
+			lua_pop( L, 1 );
+			lua_pushnil( L );
+			lua_setglobal( L, "ENT" );
+			return;
+		}
+
 		lua_getfield( L, -1, "__factory" );
 		if ( lua_isstring( L, -1 ) )
 		{

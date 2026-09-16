@@ -47,7 +47,11 @@ void ThirdPersonChange( IConVar *pConVar, const char *pOldValue, float flOldValu
 	ToggleThirdPerson( var.GetBool() );
 }
 
-ConVar cl_thirdperson( "cl_thirdperson", "0", FCVAR_NOT_CONNECTED | FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_DEVELOPMENTONLY, "Enables/Disables third person", ThirdPersonChange  );
+// HL2SB: dropped FCVAR_DEVELOPMENTONLY so the convar is always registered and the
+// `thirdperson` / `firstperson` commands (game/client/in_camera.cpp) can drive it
+// through ConVarRef. Default stays 0: the game starts in first person, and the commands
+// switch the *preference* so it stays consistent with CThirdPersonManager::Update().
+ConVar cl_thirdperson( "cl_thirdperson", "0", FCVAR_NOT_CONNECTED | FCVAR_USERINFO | FCVAR_ARCHIVE, "Enables/Disables third person", ThirdPersonChange );
 
 #endif
 
@@ -106,7 +110,34 @@ Vector CThirdPersonManager::GetDesiredCameraOffset( void )
 		return Vector( cam_idealdist.GetFloat(), cam_idealdistright.GetFloat(), cam_idealdistup.GetFloat() );
 	}
 
-	return m_vecDesiredCameraOffset; 
+	Vector vecOffset = m_vecDesiredCameraOffset;
+
+#ifdef CLIENT_DLL
+	// HL2SB: in this build the desired camera offset is never actually set - the only
+	// writer in the whole tree is CInput::CAM_ToFirstPerson(), which zeroes it
+	// (in_camera.cpp:699). So the third-person offset was always (0,0,0) and
+	// ClientModeShared::OverrideView subtracted nothing: the camera stayed at the eye,
+	// inside the player's own head, both on foot and in a vehicle (exactly the reported
+	// "third person is on but it is a zoomed-in view"). Derive it from the standard
+	// cam_ideal* cvars instead - the same ones the engine's own third-person controls
+	// (cammousemove / +camdistance) drive, so those keep working.
+	if ( vecOffset[ DIST_FORWARD ] <= 0.0f )
+	{
+		vecOffset = Vector( cam_idealdist.GetFloat(), cam_idealdistright.GetFloat(), cam_idealdistup.GetFloat() );
+	}
+
+	// GMod derives the vehicle camera distance from the vehicle's render bounds
+	// ((mn - mx):Length()); an HL2 vehicle is far bigger than the stock 150 unit
+	// cam_idealdist, so in a vehicle the camera is pushed out far enough to clear the
+	// car. On foot nothing changes and cam_idealdist still rules.
+	C_BasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
+	if ( pLocalPlayer && pLocalPlayer->GetVehicle() && vecOffset[ DIST_FORWARD ] < 280.0f )
+	{
+		vecOffset[ DIST_FORWARD ] = 280.0f;
+	}
+#endif
+
+	return vecOffset; 
 }
 
 Vector CThirdPersonManager::GetFinalCameraOffset( void )
@@ -171,9 +202,24 @@ void CThirdPersonManager::PositionCamera( CBasePlayer *pPlayer, QAngle angles )
 
 		Vector vecCamOffset = endPos + (camForward * - GetDesiredCameraOffset()[DIST_FORWARD]) + (camRight * GetDesiredCameraOffset()[ DIST_RIGHT ]) + (camUp * GetDesiredCameraOffset()[ DIST_UP ] );
 
+		// HL2SB: in a vehicle the camera trace must ignore props and vehicles, or it
+		// collides with the car it rides in, GetDistanceFraction() collapses to a
+		// fraction of cam_idealdist and the view stays at the driver's back - the
+		// reported "thirdperson is on but the view is still inside the jeep". This is
+		// GMod's GM:CalcVehicleView filter (which drops prop_physics / prop_dynamic /
+		// phys_bone_follower / vehicles) expressed as a contents mask: world and brush
+		// geometry only. On foot the stock behaviour is untouched.
+		unsigned int nCameraMask = MASK_SOLID & ~CONTENTS_MONSTER;
+#ifdef CLIENT_DLL
+		if ( pPlayer->GetVehicle() )
+		{
+			nCameraMask = MASK_SOLID_BRUSHONLY;
+		}
+#endif
+
 		// use our previously #defined hull to collision trace
 		CTraceFilterSimple traceFilter( pPlayer, COLLISION_GROUP_NONE );
-		UTIL_TraceHull( endPos, vecCamOffset, CAM_HULL_MIN, CAM_HULL_MAX, MASK_SOLID & ~CONTENTS_MONSTER, &traceFilter, &trace );
+		UTIL_TraceHull( endPos, vecCamOffset, CAM_HULL_MIN, CAM_HULL_MAX, nCameraMask, &traceFilter, &trace );
 		
 		if ( trace.fraction != m_flTargetFraction )
 		{
@@ -196,7 +242,7 @@ void CThirdPersonManager::PositionCamera( CBasePlayer *pPlayer, QAngle angles )
 		{
 			m_vecCameraOffset[ DIST ] *= trace.fraction;
 
-			UTIL_TraceHull( endPos, endPos + (camForward * - GetDesiredCameraOffset()[DIST_FORWARD]), CAM_HULL_MIN, CAM_HULL_MAX, MASK_SOLID & ~CONTENTS_MONSTER, &traceFilter, &trace );
+			UTIL_TraceHull( endPos, endPos + (camForward * - GetDesiredCameraOffset()[DIST_FORWARD]), CAM_HULL_MIN, CAM_HULL_MAX, nCameraMask, &traceFilter, &trace );
 
 			if ( trace.fraction != 1.0f )
 			{

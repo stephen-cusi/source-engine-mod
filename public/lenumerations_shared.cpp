@@ -610,6 +610,25 @@ LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
     lua_pushenum( L, PLAYERANIMEVENT_COUNT, "COUNT" );
     LUA_SET_ENUM_LIB_END( L );
 
+    // HL2SB GMod compat: TEXT_ALIGN.
+    //
+    // GMod publishes TEXT_ALIGN_LEFT / CENTER / RIGHT / TOP / BOTTOM as plain
+    // globals and scripts hand them straight to draw.SimpleText* and surface.*
+    // (npc_verity's nav-generation overlay does: draw.SimpleTextOutlined( ...,
+    // TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, ... )).  The values are GMod's, and
+    // lua/includes/modules/draw.lua declares the same five inside its table.
+    //
+    // nobare on purpose: the short names would publish LEFT / RIGHT / TOP / BOTTOM
+    // as globals, and those belong to GMod's DOCK enum - see the comment on
+    // lua_pushenum_nobare in luamanager.h (that collision is what broke docking).
+    LUA_SET_ENUM_LIB_BEGIN( L, "TEXT_ALIGN" );
+    lua_pushenum_nobare( L, 0, "LEFT" );
+    lua_pushenum_nobare( L, 1, "CENTER" );
+    lua_pushenum_nobare( L, 2, "RIGHT" );
+    lua_pushenum_nobare( L, 3, "TOP" );
+    lua_pushenum_nobare( L, 4, "BOTTOM" );
+    LUA_SET_ENUM_LIB_END( L );
+
     return 0;
 }
 
@@ -636,6 +655,37 @@ LUALIB_API int luaopen_ACTIVITY( lua_State *L )
     // Leaving Andrew's advice here for future reference.
     LUA_SET_ENUM_LIB_BEGIN( L, "ACTIVITY" );
     ActivityList_RegisterSharedActivities();
+
+    // HL2SB: the registry above is the curated HL2 shared-activity list (877
+    // entries), and a handful of members of the ai_activity.h enum are NOT part
+    // of it, so they reached Lua as nothing at all.  GMod exposes the whole
+    // enum, and addons rely on it: SCP-096's nextbot calls
+    // self:StartActivity( ACT_IDLETORUN ), which with the name nil raised
+    // "attempt to call a method 'StartActivity' (a nil value)" from inside the
+    // bot's behaviour coroutine and silently stopped its state machine.
+    //
+    // These are pushed with their real enum values and are deliberately NOT
+    // registered in the shared list -- ActivityList_RegisterSharedActivity()
+    // asserts that shared activities arrive in enum order, and these sit in the
+    // middle of the enum while the registry stops earlier.  A value that no
+    // model maps costs nothing: SelectWeightedSequence() finds no sequence and
+    // CBaseAnimating:StartActivity() skips negative results.  The weapon and
+    // HL2MP spellings (ACT_VM_*, ACT_MP_*) are already published by
+    // lua/includes/extensions/gmod_globals.lua, so they are not repeated here.
+    lua_pushenum( L, ACT_IDLETORUN, "ACT_IDLETORUN" );
+    lua_pushenum( L, ACT_RUNTOIDLE, "ACT_RUNTOIDLE" );
+    lua_pushenum( L, ACT_SPRINT, "ACT_SPRINT" );
+    lua_pushenum( L, ACT_GET_DOWN_STAND, "ACT_GET_DOWN_STAND" );
+    lua_pushenum( L, ACT_GET_UP_STAND, "ACT_GET_UP_STAND" );
+    lua_pushenum( L, ACT_GET_DOWN_CROUCH, "ACT_GET_DOWN_CROUCH" );
+    lua_pushenum( L, ACT_GET_UP_CROUCH, "ACT_GET_UP_CROUCH" );
+    lua_pushenum( L, ACT_PRONE_FORWARD, "ACT_PRONE_FORWARD" );
+    lua_pushenum( L, ACT_PRONE_IDLE, "ACT_PRONE_IDLE" );
+    lua_pushenum( L, ACT_DEEPIDLE1, "ACT_DEEPIDLE1" );
+    lua_pushenum( L, ACT_DEEPIDLE2, "ACT_DEEPIDLE2" );
+    lua_pushenum( L, ACT_DEEPIDLE3, "ACT_DEEPIDLE3" );
+    lua_pushenum( L, ACT_DEEPIDLE4, "ACT_DEEPIDLE4" );
+
     LUA_SET_ENUM_LIB_END( L );
 
     return 0;

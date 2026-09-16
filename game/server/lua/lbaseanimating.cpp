@@ -11,6 +11,7 @@
 #include "lbaseanimating.h"
 #include "mathlib/lvector.h"
 #include "lvphysics_interface.h"
+#include "ltakedamageinfo.h"	// luaL_checkdamageinfo (Entity:BecomeRagdoll)
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -375,8 +376,114 @@ static int CBaseAnimating_SetSequence (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: Entity:StartActivity( activity ) and Entity:GetActivity().
+//
+// GMod scripts animate through these two NAMES - base_nextbot's BodyUpdate()
+// opens with `local act = self:GetActivity()` and NPC-like scripts call
+// `self:StartActivity( ACT_* )` all over their behaviour (SCP-096's
+// Initialize() does, at init.lua:104, and until this existed that call raised
+// "attempt to call a nil value (method 'StartActivity')", which aborted the rest
+// of the function).
+//
+// CBaseAnimating has neither a SetActivity nor a GetActivity, so both are the
+// documented pairing built from what it does have:
+//   StartActivity -> SelectWeightedSequence( act ) then SetSequence( seq )
+//   GetActivity   -> GetSequenceActivity( GetSequence() )
+// A negative sequence means "this model has no sequence for that activity", and
+// setting it anyway would be worse than doing nothing.
+static int CBaseAnimating_StartActivity (lua_State *L) {
+  CBaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  const int sequence = pEntity->SelectWeightedSequence( (Activity)luaL_checkinteger(L, 2) );
+
+  if ( sequence >= 0 )
+  {
+    pEntity->SetSequence( sequence );
+
+    // HL2SB: SetSequence() alone leaves the pose FROZEN.  ResetSequenceInfo() is
+    // what sets m_flPlaybackRate back to 1 (and re-arms the frame counters), and
+    // nothing else in this binding does it -- SCP-096's Initialize() played
+    // ACT_IDLE_ANGRY and the engine reported "sequence=4 activity=6 cycle=0.00
+    // rate=0.00": a sequence selected, and not a single frame of it ever
+    // advanced.  This mirrors CBaseAnimating::SetActivity(), which is the
+    // function GMod's Entity:StartActivity() is.
+    pEntity->ResetSequenceInfo();
+    pEntity->SetCycle( 0.0f );
+  }
+
+  return 0;
+}
+
+static int CBaseAnimating_GetActivity (lua_State *L) {
+  CBaseAnimating *pEntity = luaL_checkanimating(L, 1);
+
+  lua_pushinteger(L, (int)pEntity->GetSequenceActivity( pEntity->GetSequence() ) );
+  return 1;
+}
+
 static int CBaseAnimating_StudioFrameAdvance (lua_State *L) {
   luaL_checkanimating(L, 1)->StudioFrameAdvance();
+  return 0;
+}
+
+// HL2SB GMod compat: the GMod NAME for the same thing.
+//
+// GMod's Lua layer is shared between the realms, so `Entity:FrameAdvance()`
+// exists on its server too - and base_nextbot's own BodyUpdate() is written
+// against it (gamemodes/base/entities/entities/base_nextbot/sv_nextbot.lua:78,
+// "If we're not walking or running we probably just want to update the anim
+// system").  In this fork FrameAdvance() is a CLIENT-side method
+// (C_BaseAnimating::FrameAdvance, bound in
+// game/client/lua/lc_baseanimating.cpp:184), so a server-side nextbot script
+// calling it raised "attempt to call a method 'FrameAdvance'".  The server's
+// equivalent is StudioFrameAdvance().
+static int CBaseAnimating_FrameAdvance (lua_State *L) {
+  luaL_checkanimating(L, 1)->StudioFrameAdvance();
+  return 0;
+}
+
+// HL2SB GMod compat: Entity:BecomeRagdoll( dmginfo, forceVector ).
+//
+// GMod's base_nextbot ends ENT:OnKilled() with `self:BecomeRagdoll( dmginfo )`
+// (gamemodes/base/entities/entities/base_nextbot/sv_nextbot.lua:162), and a
+// nextbot addon does the same, so the call has to exist on the SERVER.  In this
+// fork only BecomeRagdollOnClient() was bound (and that is a client method);
+// what a server entity has is
+//
+//     CBaseCombatCharacter::BecomeRagdoll( const CTakeDamageInfo &info, const Vector &forceVector )
+//     (game/server/basecombatcharacter.h:302)
+//
+// which NextBotCombatCharacter overrides to add the ragdoll-magnet force
+// (NextBot.cpp:444).  Hence the dynamic_cast: every nextbot is a combat
+// character, an entity that is not one simply has nothing to ragdoll.
+static int CBaseAnimating_BecomeRagdoll (lua_State *L) {
+  CBaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  CBaseCombatCharacter *pCharacter = dynamic_cast< CBaseCombatCharacter * >( pEntity );
+
+  if ( pCharacter == NULL )
+    return 0;
+
+  CTakeDamageInfo info;
+
+  if ( lua_gettop(L) >= 2 && !lua_isnil(L, 2) )
+    info = luaL_checkdamageinfo(L, 2);
+
+  Vector forceVector = ( lua_gettop(L) >= 3 ) ? luaL_checkvector(L, 3 ) : vec3_origin;
+
+  pCharacter->BecomeRagdoll( info, forceVector );
+
+  // HL2SB GMod compat: the wiki's contract for NPC:BecomeRagdoll is
+  // "Become a ragdoll AND REMOVE THE ENTITY", and internally it "handles
+  // serverside/clientside ragdoll creation, momentum calculation, ...".
+  //
+  // The engine's CBaseAnimating::BecomeRagdoll() only does the first half: it
+  // creates the ragdoll and hides the entity (EF_NODRAW) but leaves it in the
+  // world.  A killed Lua nextbot therefore stayed behind as an INVISIBLE entity
+  // that could not be removed afterwards -- exactly the "several invisible SCP-096
+  // that cannot be undone" report.  Players are the exception: their entity
+  // survives death and respawns, so it is left alone.
+  if ( !pCharacter->IsPlayer() )
+    UTIL_Remove( pCharacter );
+
   return 0;
 }
 
@@ -503,6 +610,8 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"GetCycle", CBaseAnimating_GetCycle},
   {"GetFlexDescFacs", CBaseAnimating_GetFlexDescFacs},
   {"GetHitboxSet", CBaseAnimating_GetHitboxSet},
+  {"GetActivity", CBaseAnimating_GetActivity},
+  {"StartActivity", CBaseAnimating_StartActivity},
   {"GetHitboxSetCount", CBaseAnimating_GetHitboxSetCount},
   {"GetHitboxSetName", CBaseAnimating_GetHitboxSetName},
 //  {"GetModelWidthScale", CBaseAnimating_GetModelWidthScale},
@@ -543,6 +652,8 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"SetPoseParameter", CBaseAnimating_SetPoseParameter},
   {"SetSequence", CBaseAnimating_SetSequence},
   {"StudioFrameAdvance", CBaseAnimating_StudioFrameAdvance},
+  {"FrameAdvance", CBaseAnimating_FrameAdvance},
+  {"BecomeRagdoll", CBaseAnimating_BecomeRagdoll},
   {"TransferDissolveFrom", CBaseAnimating_TransferDissolveFrom},
   {"UseClientSideAnimation", CBaseAnimating_UseClientSideAnimation},
   {"VPhysicsUpdate", CBaseAnimating_VPhysicsUpdate},

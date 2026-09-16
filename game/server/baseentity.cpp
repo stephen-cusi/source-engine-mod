@@ -7484,12 +7484,37 @@ void CC_Ent_Create( const CCommand& args )
 		// ever getting the chance (CPropThumper, hl2/prop_thumper.cpp:91-99,
 		// defaults to models/props_combine/CombineThumper002.mdl).
 		//
+		// HL2SB: `model`, `health` and `max_health` are remembered here because a
+		// class is free to set its own inside Spawn() and those win - see the
+		// re-apply block after DispatchSpawn().
+		char szRequestedModel[MAX_PATH];
+		szRequestedModel[0] = 0;
+		int nRequestedHealth = 0;
+		int nRequestedMaxHealth = 0;
+		bool bRequestedHealth = false;
+		bool bRequestedMaxHealth = false;
+
 		// Pass in any additional parameters.
 		for ( int i = 2; i + 1 < args.ArgC(); i += 2 )
 		{
 			const char *pKeyName = args[i];
 			const char *pValue = args[i+1];
 			entity->KeyValue( pKeyName, pValue );
+
+			if ( !Q_stricmp( pKeyName, "model" ) )
+			{
+				Q_strncpy( szRequestedModel, pValue, sizeof( szRequestedModel ) );
+			}
+			else if ( !Q_stricmp( pKeyName, "health" ) )
+			{
+				nRequestedHealth = atoi( pValue );
+				bRequestedHealth = true;
+			}
+			else if ( !Q_stricmp( pKeyName, "max_health" ) )
+			{
+				nRequestedMaxHealth = atoi( pValue );
+				bRequestedMaxHealth = true;
+			}
 		}
 
 		entity->Precache();
@@ -7511,6 +7536,44 @@ void CC_Ent_Create( const CCommand& args )
 		// anyway, so stop here.
 		if ( !entity->IsMarkedForDeletion() )
 		{
+			// HL2SB: a class may have decided its own model and health inside
+			// Spawn(), and those overwrite the keyvalues applied above:
+			//
+			//   * CNPC_Citizen::Spawn() picks the model from its citizentype and
+			//     unconditionally does `m_iHealth = sk_citizen_health.GetFloat()`
+			//     (game/server/hl2/npc_citizen17.cpp:488), so
+			//         ent_create npc_citizen model models/NPC/miku_npc.mdl health 150
+			//     produced a stock-looking citizen at the skill's health.
+			//
+			// Re-applying them AFTER the spawn is what GMod's own NPC spawner
+			// does - commands.lua:567-591 calls Spawn()/Activate() first and only
+			// then SetModel/SetHealth/SetMaxHealth, with the comment "For those
+			// NPCs that set their model/skin in Spawn function" - and it is the
+			// only reason a spawnmenu can spawn a custom-model NPC at all.
+			//
+			// These are no-ops for the ordinary case (a property whose model and
+			// health the keyvalues already set), because the model is compared
+			// first and health is only touched when it was asked for.
+			if ( szRequestedModel[0] && Q_stricmp( STRING( entity->GetModelName() ), szRequestedModel ) )
+			{
+				entity->SetModel( szRequestedModel );
+			}
+
+			if ( bRequestedHealth )
+			{
+				entity->SetHealth( nRequestedHealth );
+
+				// GMod sets BOTH (commands.lua:588-591: SetHealth + SetMaxHealth):
+				// leaving max_health at the class's own value would put the entity
+				// above its own maximum, which breaks the health bar and
+				// CBaseEntity::TakeHealth()'s clamp.
+				entity->SetMaxHealth( bRequestedMaxHealth ? nRequestedMaxHealth : nRequestedHealth );
+			}
+			else if ( bRequestedMaxHealth )
+			{
+				entity->SetMaxHealth( nRequestedMaxHealth );
+			}
+
 			// Now attempt to drop into the world
 			trace_t tr;
 			Vector forward;

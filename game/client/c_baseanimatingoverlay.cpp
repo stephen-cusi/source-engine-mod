@@ -87,6 +87,16 @@ void ResizeAnimationLayerCallback( void *pStruct, int offsetToUtlVector, int len
 		pEnt->RemoveVar( &pVec->Element( i ) );
 	}
 
+	// HL2SB: the two vectors MUST stay in lockstep - the crash dump
+	// 20260915_094606 was an AV READ inside pVecIV->RemoveMultiple() below, because
+	// m_AnimOverlay had been grown locally (SetNumAnimOverlays from the noclip pose
+	// code) while m_iv_AnimOverlay was never grown with it, so the shrink branch
+	// removed past the end of the interpolation vector. Re-sync before resizing.
+	if ( pVecIV->Count() != pVec->Count() )
+	{
+		pVecIV->SetCount( pVec->Count() );
+	}
+
 	// adjust vector sizes
 	if ( diff > 0 )
 	{

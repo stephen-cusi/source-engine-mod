@@ -907,12 +907,59 @@ static ConCommand camout( "-camout", CAM_OutUp );
 static ConCommand thirdperson_mayamode( "thirdperson_mayamode", ::CAM_ToThirdPerson_MayaMode, "Switch to thirdperson Maya-like camera controls.", FCVAR_CHEAT );
 
 // TF allows servers to push people into first/thirdperson, for mods
+// HL2SB: dropped FCVAR_CHEAT from `thirdperson`. GMod's act/taunt and vehicle
+// third-person are NOT cheat-gated, and HL2SB runs on a listen server with
+// sv_cheats 0, so the cheat flag made the command silently refuse ("Can't use cheat
+// command thirdperson") and the body never entered the render list. The firstperson
+// command was already un-gated.
 #ifdef TF_CLIENT_DLL
-static ConCommand thirdperson( "thirdperson", ::CAM_ToThirdPerson, "Switch to thirdperson camera.", FCVAR_CHEAT | FCVAR_SERVER_CAN_EXECUTE );
+static ConCommand thirdperson( "thirdperson", ::CAM_ToThirdPerson, "Switch to thirdperson camera.", FCVAR_SERVER_CAN_EXECUTE );
 static ConCommand firstperson( "firstperson", ::CAM_ToFirstPerson, "Switch to firstperson camera.", FCVAR_SERVER_CAN_EXECUTE );
 #else
-static ConCommand thirdperson( "thirdperson", ::CAM_ToThirdPerson, "Switch to thirdperson camera.", FCVAR_CHEAT );
-static ConCommand firstperson( "firstperson", ::CAM_ToFirstPerson, "Switch to firstperson camera." );
+// HL2SB: the on/off commands drive cl_thirdperson instead of calling the camera
+// functions directly. CAM_ToThirdPerson() only takes the standard, collision aware
+// third-person path when cl_thirdperson is 1; with cl_thirdperson 0 it merely sets the
+// "overriding" flag, which is the mode in_camera expects an EXTERNAL camera source to
+// fill in - the view then never leaves the player's own eye position, which is exactly
+// what "thirdperson is on but the camera is still inside the jeep" looked like.
+// Keeping the preference and the live state in sync is also what
+// CThirdPersonManager::Update() re-checks every frame.
+// HL2SB: the vehicle third person camera owns its own switch (it is what GMod calls
+// Vehicle:SetThirdPersonMode, and what the Lua API drives), so the console commands have
+// to move it too - otherwise `firstperson` could not get you back out of the vehicle
+// camera and `thirdperson` could not get you in.
+extern ConVar hl2sb_veh_thirdperson;
+
+static void HL2SB_ThirdPerson_f( void )
+{
+	hl2sb_veh_thirdperson.SetValue( 1 );
+
+	ConVarRef clThirdPerson( "cl_thirdperson" );
+	if ( clThirdPerson.IsValid() )
+	{
+		clThirdPerson.SetValue( 1 );
+		return;
+	}
+
+	::CAM_ToThirdPerson();
+}
+
+static void HL2SB_FirstPerson_f( void )
+{
+	hl2sb_veh_thirdperson.SetValue( 0 );
+
+	ConVarRef clThirdPerson( "cl_thirdperson" );
+	if ( clThirdPerson.IsValid() )
+	{
+		clThirdPerson.SetValue( 0 );
+		return;
+	}
+
+	::CAM_ToFirstPerson();
+}
+
+static ConCommand thirdperson( "thirdperson", HL2SB_ThirdPerson_f, "Switch to thirdperson camera." );
+static ConCommand firstperson( "firstperson", HL2SB_FirstPerson_f, "Switch to firstperson camera." );
 #endif
 static ConCommand camortho( "camortho", ::CAM_ToOrthographic, "Switch to orthographic camera.", FCVAR_CHEAT );
 static ConCommand startcammousemove( "+cammousemove",::CAM_StartMouseMove);

@@ -307,6 +307,14 @@ public:
 	// Vehicles...
 	IClientVehicle			*GetVehicle();
 
+	// HL2SB: the vehicle ENTITY (the pod / jeep itself), not the IClientVehicle.
+	// The friendly equivalent on the server is CBasePlayer::GetVehicleEntity()
+	// (game/server/player.h:507); on the client m_hVehicle is the EHANDLE the server
+	// sends (RecvPropEHandle, c_baseplayer.cpp:278), so this is the real entity and its
+	// render bounds can be used - IClientVehicle::GetVehicleEnt() is the other route to
+	// it, but it cannot be used inside a Msg() (see HL2SB_DebugVehicleCamera).
+	C_BaseEntity			*GetVehicleEntity() { return m_hVehicle.Get(); }
+
 	bool			IsInAVehicle() const	{ return ( NULL != m_hVehicle.Get() ) ? true : false; }
 	virtual void	SetVehicleRole( int nRole );
 	void					LeaveVehicle( void );

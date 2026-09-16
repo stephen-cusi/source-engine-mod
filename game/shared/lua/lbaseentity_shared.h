@@ -28,6 +28,24 @@ LUA_API lua_CBaseEntity     *(lua_toentity) (lua_State *L, int idx);
 */
 LUA_API void  (lua_pushentity) (lua_State *L, lua_CBaseEntity *pEntity);
 
+/*
+** HL2SB: GMod gives a drivable vehicle its own "Vehicle" metatable on top of the
+** per-class push functions above (game/shared/lua/lvehicle_shared.cpp).  These
+** two are the entity-level hooks, and they are declared here rather than in that
+** file's own header so lua_pushentity() can dispatch without pulling the whole
+** prop_vehicle header tree into this translation unit.
+**
+**   lua_pushvehicleentity  pushes the Vehicle metatable and answers true when
+**                          pEntity IS a drivable vehicle whose metatable is
+**                          registered in this Lua state; otherwise it answers
+**                          false and leaves the stack untouched, so the caller
+**                          falls through to its own push.
+**   lua_entityisvehicle    the same predicate without the stack traffic, backing
+**                          Entity:IsVehicle().
+*/
+LUA_API bool  (lua_pushvehicleentity) (lua_State *L, CBaseEntity *pEntity);
+LUA_API bool  (lua_entityisvehicle) (CBaseEntity *pEntity);
+
 
 /*
 ** Experiment: Source pushes every entity through CBaseEntity::PushLuaInstanceSafe(),

@@ -131,9 +131,54 @@ const char *g_ppszRandomCombineModels[] =
 
 #pragma warning( disable : 4355 )
 
+//-----------------------------------------------------------------------------
+// HL2SB: GMod's `act <name>` command, server side.
+//
+// The gesture has to be started HERE, not on the client: the client's overlay layers
+// are overwritten by the networked DT_BaseAnimatingOverlay data on every update, so a
+// client-only layer never rendered - which is exactly why the first attempt looked
+// like "act does nothing / the body gets stuck". CBaseAnimatingOverlay::
+// StudioFrameAdvance() advances the layers and autokills the finished gesture, and the
+// layer is networked, so everyone sees it (GMod does the same through
+// ply:AnimRestartGesture() in gamemodes/base/gamemode/animations.lua).
+//-----------------------------------------------------------------------------
+static void HL2SB_ServerPlayGesture( CHL2MP_Player *pPlayer, const char *pszName )
+{
+	if ( !pPlayer || ( pPlayer->m_lifeState != LIFE_ALIVE ) )
+		return;
+
+	Activity activity = ACT_INVALID;
+	const int iSequence = HL2SB_ResolveGestureSequence( pPlayer, pszName, &activity );
+	if ( iSequence <= 0 )
+	{
+		ClientPrint( pPlayer, HUD_PRINTCONSOLE,
+					 CFmtStr( "act: model %s has no gesture matching '%s' (the m_anm-based models declare the ACT_GMOD_* set)\n",
+							  pPlayer->GetModelName(), pszName ) );
+		return;
+	}
+
+	pPlayer->AddGestureSequence( iSequence, true );
+
+	ClientPrint( pPlayer, HUD_PRINTCONSOLE, CFmtStr( "act: %s\n", pszName ) );
+}
+
+CON_COMMAND_F( hl2sb_act, "Play a gesture on the calling player (GMod-style act <name>).", FCVAR_GAMEDLL )
+{
+	CBasePlayer *pPlayer = UTIL_GetCommandClient();
+	if ( !pPlayer || ( args.ArgC() < 2 ) )
+		return;
+
+	HL2SB_ServerPlayGesture( ToHL2MPPlayer( pPlayer ), args[1] );
+}
+
 CHL2MP_Player::CHL2MP_Player() : m_PlayerAnimState( this )
 {
 	m_angEyeAngles.Init();
+
+	// HL2SB: keep m_iPlayerSoundType valid from construction on. SetupPlayerSoundsByModel()
+	// only assigns it for the three stock model name patterns, so a custom playermodel
+	// used to leave it at uninitialised memory (death sound crash 20260915_091815).
+	m_iPlayerSoundType = (int)PLAYER_SOUNDS_CITIZEN;
 
 	m_iLastWeaponFireUsercmd = 0;
 
@@ -577,6 +622,13 @@ void CHL2MP_Player::SetPlayerModel( void )
 
 void CHL2MP_Player::SetupPlayerSoundsByModel( const char *pModelName )
 {
+	// HL2SB: always land on a valid entry first. The three stock patterns below do
+	// not match a custom playermodel, and without a default the field stayed at
+	// uninitialised memory -> GetPlayerModelSoundPrefix() indexed
+	// g_ppszPlayerSoundPrefixNames[] out of range -> wild pointer -> AV in
+	// DeathSound()/footsteps (crash dump 20260915_091815).
+	m_iPlayerSoundType = (int)PLAYER_SOUNDS_CITIZEN;
+
 	if ( Q_stristr( pModelName, "models/player/human") )
 	{
 		m_iPlayerSoundType = (int)PLAYER_SOUNDS_CITIZEN;
@@ -775,6 +827,46 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 
 	speed = GetAbsVelocity().Length2D();
 
+	// HL2SB: while riding a vehicle a passenger's velocity is the vehicle's, so the
+	// state machine below kept selecting the RUN sequences and the seated model looked
+	// like it was sprinting. GMod poses riders with the seat's OWN animation, which the
+	// seat entity carries as Members.HandleAnimation - for every chair / pod seat in
+	// GMod's list that is `player:SelectWeightedSequence( ACT_GMOD_SIT_ROLLERCOASTER )`
+	// (see HL2SB_SelectVehicleSitSequence). The whole chain - the vehicle's own seat pose
+	// and the sit_<holdtype> fallback - lives in HL2SB_ResolveSeatedSequence() so the
+	// CLIENT can resolve the very same sequence (it needs it to tell "still seated" from
+	// "the exit animation is running" - see UpdateVehicleAnimation()).
+	//
+	// HL2SB: THE PARENT TEST is what ends the seat pose on dismount. Leaving a vehicle
+	// runs the other way round from entering it: CBaseServerVehicle::HandlePassengerExit()
+	// starts the vehicle's exit animation and UNPARENTS the player at its START
+	// (vehicle_baseserver.cpp SetParent( NULL )), while CBasePlayer::LeaveVehicle() - the
+	// only place m_hVehicle is cleared - runs when that animation FINISHES. So for the
+	// 0.2-0.5s in between, IsInAVehicle() is still true and this branch kept re-pinning
+	// the sit sequence: the reported "the model stays in the seat pose for a moment after
+	// dismounting". GMod keys off exactly this condition
+	// (gamemodes/base/gamemode/animations.lua:144: "The player must have a parent to be in
+	// a vehicle. If there's no parent, we are in the exit anim, so don't do sitting in 3rd
+	// person anymore"), and the moment the test fails the normal path below (a few lines
+	// down - idle/walk/run) takes over, so a fresh gait is selected on the same frame.
+	if ( IsInAVehicle() && IsAlive() && GetMoveParent() != NULL )
+	{
+		Activity seatActivity = ACT_INVALID;
+		int animDesired = HL2SB_ResolveSeatedSequence( this, GetVehicleEntity(), &seatActivity );
+
+		if ( ( animDesired > 0 ) && ( animDesired != GetSequence() ) )
+		{
+			if ( GetActivity() != seatActivity )
+				SetActivity( seatActivity );
+
+			m_flPlaybackRate = 1.0f;
+			ResetSequence( animDesired );
+			SetCycle( 0 );
+		}
+
+		return;
+	}
+
 	
 	// bool bRunning = true;
 
@@ -955,6 +1047,16 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		if ( GetSequence() == animDesired )
 			return;
 
+		// HL2SB: remember whether the previous activity was a crouch one, so the
+		// stand<->crouch boundary below can cross-fade instead of hard-cutting. The
+		// client m_SequenceTransitioner only blends when the sequence changes without
+		// ResetSequence() re-zeroing the cycle every time; doing ResetSequence + SetCycle(0)
+		// on the crouch edge is what made ducking look a beat late.
+		const bool bWasCrouch = ( GetActivity() == ACT_HL2MP_IDLE_CROUCH ||
+								  GetActivity() == ACT_HL2MP_WALK_CROUCH );
+		const bool bIsCrouch  = ( idealActivity == ACT_HL2MP_IDLE_CROUCH ||
+								  idealActivity == ACT_HL2MP_WALK_CROUCH );
+
 		// Activity bookkeeping: GetActivity() is read by the jump case above and by
 		// the walk/run split. Only touch it when it really changes, so the sequence
 		// pinned above is not thrown away every frame.
@@ -962,8 +1064,18 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 			SetActivity( idealActivity );
 
 		m_flPlaybackRate = 1.0;
+
+		// GMod-style: on a stand<->crouch transition keep the phase we are on (do not
+		// restart at cycle 0) and let the client blend, so ducking is smooth instead of
+		// snapping to the crouch idles' first frame.
+		const bool bCrouchEdge = ( bWasCrouch != bIsCrouch );
+		const float flKeepCycle = bCrouchEdge ? GetCycle() : 0.0f;
+
 		ResetSequence( animDesired );
-		SetCycle( 0 );
+		if ( bCrouchEdge )
+			SetCycle( flKeepCycle );
+		else
+			SetCycle( 0 );
 		return;
 	}
 

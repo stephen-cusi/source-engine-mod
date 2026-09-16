@@ -2255,19 +2255,51 @@ void CGameMovement::FullObserverMove( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
+// HL2SB: how much +speed (shift) multiplies the noclip speed - see the IN_SPEED
+// block inside FullNoClipMove below. 2.0 = twice as fast while held.
+#define HL2SB_NOCLIP_SPEED_BOOST 2.0f
+
+extern ConVar hl2sb_anim_debug;
+
 void CGameMovement::FullNoClipMove( float factor, float maxacceleration )
 {
 	Vector wishvel;
 	Vector forward, right, up;
 	Vector wishdir;
 	float wishspeed;
+
+	// HL2SB: GMod's noclip flies *faster* while +speed (shift by default) is held -
+	// see https://gmod.fandom.com/wiki/Noclip ("For faster flight, pressing the
+	// shift key is recommended"). Two things matter here:
+	//  1. Valve's original code halved *factor* here (factor /= 2.0f), i.e. shift
+	//     made noclip slower.
+	//  2. It has to be applied BEFORE maxspeed is derived from factor. With the boost
+	//     below the maxspeed line, the clamp stayed at sv_maxspeed*sv_noclipspeed and
+	//     absorbed the whole boost: measured clamp=3200 in the log while the real
+	//     speed stayed at ~1500 (FrameAdvance-era session, AGENTS.md 28).
+	if ( mv->m_nButtons & IN_SPEED )
+	{
+		factor *= HL2SB_NOCLIP_SPEED_BOOST;
+	}
+
 	float maxspeed = sv_maxspeed.GetFloat() * factor;
 
 	AngleVectors (mv->m_vecViewAngles, &forward, &right, &up);  // Determine movement angles
 
-	if ( mv->m_nButtons & IN_SPEED )
+	// HL2SB diagnostic (hl2sb_anim_debug): print the noclip speed inputs whenever
+	// the +speed state changes, so "shift does nothing" can be told apart from "the
+	// new binary is not loaded". maxspeed is the value actually used for the clamp.
+	if ( hl2sb_anim_debug.GetBool() && player && ( player->GetMoveType() == MOVETYPE_NOCLIP ) )
 	{
-		factor /= 2.0f;
+		static bool s_bHL2SBLastBoost = false;
+		const bool bBoost = ( mv->m_nButtons & IN_SPEED ) != 0;
+		if ( bBoost != s_bHL2SBLastBoost )
+		{
+			s_bHL2SBLastBoost = bBoost;
+			Msg( "[HL2SB noclip/sv] ent=%d boost=%d factor=%.2f sv_maxspeed=%.1f maxspeed=%.1f forwardmove=%.1f sidemove=%.1f upmove=%.1f\n",
+				 player->entindex(), bBoost ? 1 : 0, factor, sv_maxspeed.GetFloat(),
+				 maxspeed, mv->m_flForwardMove, mv->m_flSideMove, mv->m_flUpMove );
+		}
 	}
 	
 	// Copy movement amounts

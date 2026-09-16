@@ -147,6 +147,20 @@ static int CGameTrace___index (lua_State *L) {
     lua_pushentity(L, tr.m_pEnt);
   else if (Q_strcmp(field, "Hit") == 0)
     lua_pushboolean(L, tr.fraction < 1.0f);
+  // HL2SB GMod compat: the hitbox / hitgroup under GMod's own capitalisation.
+  // The lowercase spellings above are this fork's, and a Lua script reading the
+  // GMod one got nil -- silently.  SCP-096's nextbot keys its entire aggro on
+  // exactly that:
+  //
+  //     local tr = util.TraceLine( util.GetPlayerTrace( v ) )
+  //     if target == self && tr.HitBox == 0 then      -- init.lua:745
+  //
+  // i.e. "the player's crosshair is on my hitbox 0".  With HitBox nil the test
+  // was false forever, so looking at it never started anything.
+  else if (Q_strcmp(field, "HitBox") == 0)
+    lua_pushinteger(L, tr.hitbox);
+  else if (Q_strcmp(field, "HitGroup") == 0)
+    lua_pushinteger(L, tr.hitgroup);
   else {
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);

@@ -252,10 +252,17 @@
 //
 // from an unprotected context, which aborted the process via __fastfail.  With
 // the guard the call is skipped and the BaseClass:: implementation runs instead.
+//
+// HL2SB: the LOOKUP is a protected read now too (luasrc_PushScriptField).  The
+// lua_istable() guard covers a reference that is not a table; it does NOT cover a
+// table that answers through an __index metamethod -- and that is the one that
+// bit: SCP-096's client entity raised inside the metatable on every spawn and took
+// the whole process down, because lua_getfield() from C is not a protected call.
+// Every BEGIN_LUA_CALL_* below goes through the helper for that reason.
 #define BEGIN_LUA_CALL_WEAPON_METHOD(functionName) \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
-    lua_getfield(L, -1, functionName); \
+    luasrc_PushScriptField(L, -1, functionName); \
     lua_remove(L, -2); \
     if (lua_isfunction(L, -1)) { \
       int args = 0; \
@@ -273,7 +280,7 @@
 #define BEGIN_LUA_CALL_WEAPON_HOOK(functionName, pWeapon) \
   if (pWeapon->IsScripted() && lua_isrefvalid(L, pWeapon->m_nTableReference)) { \
     lua_getref(L, pWeapon->m_nTableReference); \
-    lua_getfield(L, -1, functionName); \
+    luasrc_PushScriptField(L, -1, functionName); \
     lua_remove(L, -2); \
     int args = 0; \
     lua_pushweapon(L, pWeapon); \
@@ -297,7 +304,7 @@
 #define BEGIN_LUA_CALL_ENTITY_METHOD(functionName) \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
-    lua_getfield(L, -1, functionName); \
+    luasrc_PushScriptField(L, -1, functionName); \
     lua_remove(L, -2); \
     if (lua_isfunction(L, -1)) { \
       int args = 0; \
@@ -315,7 +322,7 @@
 #define BEGIN_LUA_CALL_TRIGGER_METHOD(functionName) \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
-    lua_getfield(L, -1, functionName); \
+    luasrc_PushScriptField(L, -1, functionName); \
     lua_remove(L, -2); \
     if (lua_isfunction(L, -1)) { \
       int args = 0; \
@@ -669,6 +676,47 @@ LUA_API int   (luasrc_dofile_includes) (lua_State *L, const char *pszName);
 LUA_API int   (luasrc_pcall) (lua_State *L, int nargs, int nresults, int errfunc);
 LUA_API void  (luasrc_print) (lua_State *L, int narg);
 LUA_API void  (luasrc_dumpstack) (lua_State *L);
+
+// HL2SB: a PROTECTED  t[key]  read on a script table.
+//
+// A script table answers an unknown key through an __index metamethod, and a plain
+// lua_getfield() from C runs that metamethod OUTSIDE any protected call: the error
+// goes straight to lua_atpanic and aborts the process.  The signature is
+// unmistakable --
+//
+//     [HL2SB] *** LUA PANIC - unprotected Lua error ***
+//     attempt to call a nil value
+//     stack traceback:                <- EMPTY, so the log names no file at all
+//
+// -- and it was hit twice before this helper existed: once on a client-side nextbot
+// draw (see the note above LuaNextBot_IndexHelper in
+// game/client/NextBot/C_NextBot.cpp) and once on a stale m_nTableReference
+// (see the BEGIN_LUA_CALL_* notes below).
+//
+// Pushes the field's value, or nil when the lookup raised, and answers whether that
+// value is a function.  Exactly ONE value is left on the stack on every path, so it
+// substitutes for `lua_getfield` + `lua_remove` one for one.  The error is reported
+// (with a traceback) by luasrc_pcall, which is the whole point: the failure names
+// itself instead of killing the process.
+//
+// pbLookupErrored, when given, is set for a lookup that RAISED -- as opposed to one
+// that found nothing.  The two look identical from the outside, and only the first
+// is a bug, so callers that keep counters want the distinction.
+LUA_API bool  (luasrc_PushScriptField) (lua_State *L, int nTableIdx, const char *pszKey,
+                                         bool *pbLookupErrored = NULL);
+
+// HL2SB: the two colours a Lua problem is reported in, so a log is readable at a
+// glance: RED is an error (something was lost), ORANGE is a warning (a script-side
+// complaint that is not fatal).  Both print to the console AND Warning() the same
+// text, so engine.log keeps every line either way.
+LUA_API void  (luasrc_LuaErrorMsg) (const char *pszText);
+LUA_API void  (luasrc_LuaWarnMsg) (const char *pszText);
+
+// printf-style forms.  `va()` is not available in every translation unit that
+// reports (luamanager.cpp and luanextbot.cpp both failed to compile on it), so the
+// formatting lives next to the colour instead of at the call site.
+LUA_API void  (luasrc_LuaErrorMsgF) (const char *pszFormat, ...);
+LUA_API void  (luasrc_LuaWarnMsgF) (const char *pszFormat, ...);
 
 // HL2SB: GMod's lua/effects/*.lua loader.  CLIENT ONLY -- the body is compiled
 // out on the server, where GMod does not load effects either.

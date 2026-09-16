@@ -170,6 +170,148 @@ static int luasrc_SharedRandomAngle (lua_State *L) {
 }
 
 //-----------------------------------------------------------------------------
+// HL2SB: GMod's `filter` field, in all three of its forms.
+//
+//   filter = entity   -> that entity is skipped (what this fork always did)
+//   filter = { ... }  -> the entities in the table are skipped
+//   filter = function( ent ) -> called for every candidate entity; true means
+//                               the trace HITS it, false means skip
+//                               (GMod wiki, Structures/Trace: "Return true to hit
+//                               the entity, false to skip it")
+//
+//   The function form is not optional decoration: SCP-096's SeeMe() decides "a
+//   player is looking at me" by running two eye traces whose *filter* is where
+//   the hit is recorded --
+//
+//       local tr = util.TraceLine( { start = self:EyePos(), endpos = ..., 
+//           filter = function( ent )
+//               if ( ent:IsPlayer() && ent:Alive() ) then ok1 = 1; return true end
+//               return false
+//           end } )
+//
+//   The old parser read `filter` with lua_toentity(), which answers NULL for a
+//   function, so the filter was dropped, the callback never ran, ok1/ok2 stayed
+//   0 and SeeMe() could never return true -- silently, because an ignored filter
+//   is indistinguishable from a trace that simply missed.
+//-----------------------------------------------------------------------------
+class CLuaTraceFilter : public ITraceFilter
+{
+public:
+	CLuaTraceFilter( void ) { m_L = NULL; m_nRef = LUA_NOREF; m_nType = LUA_TNIL; m_pPassEnt = NULL; m_nCollisionGroup = COLLISION_GROUP_NONE; }
+
+	void Setup( lua_State *pL, int nIndex, IHandleEntity *pPassEnt, int nCollisionGroup )
+	{
+		Release();
+
+		m_L = pL;
+		m_pPassEnt = pPassEnt;
+		m_nCollisionGroup = nCollisionGroup;
+		m_nType = lua_type( pL, nIndex );
+
+		if ( m_nType == LUA_TFUNCTION )
+		{
+			lua_pushvalue( pL, nIndex );
+			m_nRef = luaL_ref( pL, LUA_REGISTRYINDEX );
+		}
+		else if ( m_nType == LUA_TTABLE )
+		{
+			// Resolved to handles once, so identity is a pointer compare (each push
+			// of an entity makes a fresh userdata, so Lua-side equality would not
+			// work here).  Both the keys and the values are collected: GMod scripts
+			// write both `filter = { ent }` and `filter = { [ent] = true }`.
+			lua_pushvalue( pL, nIndex );
+
+			lua_pushnil( pL );
+			while ( lua_next( pL, -2 ) != 0 )
+			{
+				CBaseEntity *pKey = lua_toentity( pL, -2 );
+				if ( pKey != NULL )
+					m_ignoreList.AddToTail( pKey );
+
+				CBaseEntity *pValue = lua_toentity( pL, -1 );
+				if ( pValue != NULL )
+					m_ignoreList.AddToTail( pValue );
+
+				lua_pop( pL, 1 );
+			}
+
+			lua_pop( pL, 1 );
+		}
+	}
+
+	void Release( void )
+	{
+		if ( m_L != NULL && m_nRef != LUA_NOREF )
+			luaL_unref( m_L, LUA_REGISTRYINDEX, m_nRef );
+
+		m_L = NULL;
+		m_nRef = LUA_NOREF;
+		m_nType = LUA_TNIL;
+		m_ignoreList.RemoveAll();
+	}
+
+	virtual TraceType_t GetTraceType( void ) const { return TRACE_EVERYTHING; }
+
+	virtual bool ShouldHitEntity( IHandleEntity *pHandleEntity, int contentsMask )
+	{
+		if ( !StandardFilterRules( pHandleEntity, contentsMask ) )
+			return false;
+
+		if ( !PassServerEntityFilter( pHandleEntity, m_pPassEnt ) )
+			return false;
+
+		if ( m_L == NULL )
+			return true;
+
+		CBaseEntity *pEntity = EntityFromEntityHandle( pHandleEntity );
+		if ( pEntity == NULL )
+			return false;
+
+		if ( !pEntity->ShouldCollide( m_nCollisionGroup, contentsMask ) )
+			return false;
+
+		if ( m_ignoreList.Count() > 0 )
+		{
+			for ( int i = 0; i < m_ignoreList.Count(); ++i )
+			{
+				if ( m_ignoreList[ i ] == pEntity )
+					return false;
+			}
+		}
+
+		if ( m_nType != LUA_TFUNCTION )
+			return true;
+
+		const int nTop = lua_gettop( m_L );
+
+		lua_getref( m_L, m_nRef );					// [function]
+		lua_pushvalue( m_L, -1 );					// [function][function]
+		CBaseEntity::PushLuaInstanceSafe( m_L, pEntity );
+
+		bool bHit = false;
+
+		if ( luasrc_pcall( m_L, 1, 1, 0 ) == 0 && lua_isboolean( m_L, -1 ) )
+			bHit = lua_toboolean( m_L, -1 ) != 0;
+
+		lua_settop( m_L, nTop );
+		return bHit;
+	}
+
+private:
+	lua_State				*m_L;
+	int						 m_nRef;
+	int						 m_nType;
+	IHandleEntity			*m_pPassEnt;
+	int						 m_nCollisionGroup;
+	CUtlVector< CBaseEntity * > m_ignoreList;
+};
+
+// The parser hands the filter to the trace callers through these two; a trace is
+// built and used inside a single binding call, so one instance is enough.
+static CLuaTraceFilter s_LuaTraceFilter;
+static bool s_bLuaTraceFilterActive = false;
+
+//-----------------------------------------------------------------------------
 // HL2SB GMod compat: GMod's util.TraceLine / util.TraceHull take a *table*
 //
 //     local tr = util.TraceLine( { start = a, endpos = b, filter = ply,
@@ -184,8 +326,8 @@ static int luasrc_SharedRandomAngle (lua_State *L) {
 //     (CGameTrace expected, got no value)
 // so it never reached ents.Create() below it.
 //
-// Only a single entity filter is honoured (that is what the ported weapons pass);
-// GMod's "filter may also be a table" spelling is not implemented yet.
+// `filter` accepts an entity, a table of entities, or a function (see
+// CLuaTraceFilter above).
 //-----------------------------------------------------------------------------
 static bool luasrc_TraceArgsFromTable (lua_State *L, Vector *pStart, Vector *pEnd, Vector *pMins, Vector *pMaxs,
                                         int *pMask, CBaseEntity **ppFilter, int *pCollisionGroup)
@@ -218,12 +360,26 @@ static bool luasrc_TraceArgsFromTable (lua_State *L, Vector *pStart, Vector *pEn
   if ( lua_isnumber( L, -1 ) ) *pMask = (int)lua_tointeger( L, -1 );
   lua_pop( L, 1 );
 
-  lua_getfield( L, 1, "filter" );
-  *ppFilter = lua_toentity( L, -1 );        // NULL for nil, GMod's NULL sentinel or a table
-  lua_pop( L, 1 );
-
   lua_getfield( L, 1, "collisiongroup" );
   if ( lua_isnumber( L, -1 ) ) *pCollisionGroup = (int)lua_tointeger( L, -1 );
+  lua_pop( L, 1 );
+
+  // `filter` is read LAST: the Lua filter below wants the collision group.
+  s_bLuaTraceFilterActive = false;
+  s_LuaTraceFilter.Release();
+
+  lua_getfield( L, 1, "filter" );
+
+  if ( lua_isfunction( L, -1 ) || lua_istable( L, -1 ) )
+  {
+    s_LuaTraceFilter.Setup( L, -1, NULL, *pCollisionGroup );
+    s_bLuaTraceFilterActive = true;
+  }
+  else
+  {
+    *ppFilter = lua_toentity( L, -1 );      // NULL for nil, GMod's NULL sentinel or a table
+  }
+
   lua_pop( L, 1 );
 
   return true;
@@ -238,7 +394,14 @@ static int luasrc_UTIL_TraceLine (lua_State *L) {
 
     luasrc_TraceArgsFromTable( L, &vecStart, &vecEnd, &vecMins, &vecMaxs, &nMask, &pFilter, &nCollisionGroup );
 
-    UTIL_TraceLine( vecStart, vecEnd, nMask, pFilter, nCollisionGroup, &trace );
+    if ( s_bLuaTraceFilterActive )
+      UTIL_TraceLine( vecStart, vecEnd, nMask, &s_LuaTraceFilter, &trace );
+    else
+      UTIL_TraceLine( vecStart, vecEnd, nMask, pFilter, nCollisionGroup, &trace );
+
+    s_LuaTraceFilter.Release();
+    s_bLuaTraceFilterActive = false;
+
     lua_pushtrace( L, trace );
     return 1;
   }
@@ -256,7 +419,14 @@ static int luasrc_UTIL_TraceHull (lua_State *L) {
 
     luasrc_TraceArgsFromTable( L, &vecStart, &vecEnd, &vecMins, &vecMaxs, &nMask, &pFilter, &nCollisionGroup );
 
-    UTIL_TraceHull( vecStart, vecEnd, vecMins, vecMaxs, nMask, pFilter, nCollisionGroup, &trace );
+    if ( s_bLuaTraceFilterActive )
+      UTIL_TraceHull( vecStart, vecEnd, vecMins, vecMaxs, nMask, &s_LuaTraceFilter, &trace );
+    else
+      UTIL_TraceHull( vecStart, vecEnd, vecMins, vecMaxs, nMask, pFilter, nCollisionGroup, &trace );
+
+    s_LuaTraceFilter.Release();
+    s_bLuaTraceFilterActive = false;
+
     lua_pushtrace( L, trace );
     return 1;
   }
@@ -266,6 +436,47 @@ static int luasrc_UTIL_TraceHull (lua_State *L) {
 }
 
 static int luasrc_UTIL_TraceEntity (lua_State *L) {
+  // HL2SB GMod compat: util.TraceEntity( tracedata, ent ).
+  //
+  // Wiki: "Runs a trace using the entity's collisionmodel between two points.
+  // This does not take the entity's angles into account and will trace its
+  // unrotated collisionmodel." -- so the ENTITY supplies the hull, and the
+  // standard Trace structure supplies start/endpos/filter/mask, and the result is
+  // a TraceResult.
+  //
+  // The old positional Team Sandbox form (entity, start, end, mask, startEnt,
+  // collisionGroup, trace) is kept below for in-tree callers.  windgrin_npc calls
+  // the GMod form every frame (util.TraceEntity( data, self.target )); with only
+  // the positional binding it raised
+  //
+  //     bad argument #5 to 'TraceEntity' (number expected, got no value)
+  //
+  // once per tick and its targeting never ran.
+  if ( lua_istable( L, 1 ) )
+  {
+    CBaseEntity *pEntity = luaL_checkentity( L, 2 );
+    Vector vecStart, vecEnd, vecMins, vecMaxs;
+    CBaseEntity *pFilter = NULL;
+    int nMask = MASK_SHOT, nCollisionGroup = COLLISION_GROUP_NONE;
+    CGameTrace trace;
+
+    luasrc_TraceArgsFromTable( L, &vecStart, &vecEnd, &vecMins, &vecMaxs, &nMask, &pFilter, &nCollisionGroup );
+
+    Vector vecHullMin = pEntity->CollisionProp()->OBBMins();
+    Vector vecHullMax = pEntity->CollisionProp()->OBBMaxs();
+
+    if ( s_bLuaTraceFilterActive )
+      UTIL_TraceHull( vecStart, vecEnd, vecHullMin, vecHullMax, nMask, &s_LuaTraceFilter, &trace );
+    else
+      UTIL_TraceHull( vecStart, vecEnd, vecHullMin, vecHullMax, nMask, pFilter, nCollisionGroup, &trace );
+
+    s_LuaTraceFilter.Release();
+    s_bLuaTraceFilterActive = false;
+
+    lua_pushtrace( L, trace );
+    return 1;
+  }
+
   UTIL_TraceEntity(luaL_checkentity(L, 1), luaL_checkvector(L, 2), luaL_checkvector(L, 3), luaL_checkint(L, 4), luaL_checkentity(L, 5), luaL_checkint(L, 5), &luaL_checktrace(L, 6));
   return 0;
 }
@@ -562,6 +773,28 @@ static int luasrc_UTIL_BlastDamage (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: util.IsInWorld( position ).
+//
+// Wiki: "Returns whether the given position is in the world."  The fork only had
+// Entity:IsInWorld, and the windgrin_npc nextbot calls the util form to validate a
+// trace hit position every time it recomputes its path:
+//
+//     if d.Hit && util.IsInWorld( d.HitPos ) then ...      -- npc_windgrinbot.lua
+//
+// util.IsInWorld answered nil, so its RecomputeTargetPath raised on every tick and
+// no path was ever built.  The test is the engine's own coordinate bounds check
+// (CBaseEntity::IsInWorld), applied to the point.
+static int luasrc_UTIL_IsInWorld (lua_State *L) {
+  Vector vecPos = luaL_checkvector( L, 1 );
+
+  bool bInside = vecPos.x > MIN_COORD_FLOAT && vecPos.x < MAX_COORD_FLOAT &&
+                 vecPos.y > MIN_COORD_FLOAT && vecPos.y < MAX_COORD_FLOAT &&
+                 vecPos.z > MIN_COORD_FLOAT && vecPos.z < MAX_COORD_FLOAT;
+
+  lua_pushboolean( L, bInside );
+  return 1;
+}
+
 static const luaL_Reg util_funcs[] = {
   // {"UTIL_VecToYaw",  luasrc_UTIL_VecToYaw},
   {"VecToYaw",  luasrc_UTIL_VecToYaw},
@@ -575,6 +808,8 @@ static const luaL_Reg util_funcs[] = {
   {"SharedRandomAngle",  luasrc_SharedRandomAngle},
   // {"UTIL_TraceLine",  luasrc_UTIL_TraceLine},
   {"TraceLine",  luasrc_UTIL_TraceLine},
+  // HL2SB GMod compat: util.IsInWorld( position ) (see the definition above).
+  {"IsInWorld",  luasrc_UTIL_IsInWorld},
   // {"UTIL_TraceHull",  luasrc_UTIL_TraceHull},
   {"TraceHull",  luasrc_UTIL_TraceHull},
   // {"UTIL_TraceEntity",  luasrc_UTIL_TraceEntity},

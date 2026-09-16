@@ -13,6 +13,7 @@
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
 #include "mathlib/lvector.h"
+#include "model_types.h"	// HL2SB: STUDIO_RENDER, the default of Entity:DrawModel()
 #include "lvphysics_interface.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -145,7 +146,11 @@ static int CBaseAnimating_DrawClientHitboxes (lua_State *L) {
 }
 
 static int CBaseAnimating_DrawModel (lua_State *L) {
-  lua_pushinteger(L, luaL_checkanimating(L, 1)->DrawModel(luaL_checkint(L, 2)));
+  // HL2SB GMod compat: wiki says `Entity:DrawModel( number flags = STUDIO_RENDER )`
+  // - the flags are OPTIONAL. npc_shaklin_scp096's client ENT:Draw() calls it as
+  // `self.Entity:DrawModel()`, and the old luaL_checkint(L, 2) turned that into
+  // "bad argument #2" on every frame.
+  lua_pushinteger(L, luaL_checkanimating(L, 1)->DrawModel(luaL_optint(L, 2, STUDIO_RENDER)));
   return 1;
 }
 
@@ -807,6 +812,57 @@ static int CBaseAnimating_VPhysicsUpdate (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: on the CLIENT a Lua nextbot has no per-instance script table
+// (m_nTableReference is taken on the server; the client entity is a plain
+// C_NextBotCombatCharacter built from the network).  So a script that reaches for
+// `self.Entity`, or calls one of its own hooks - base_nextbot's default
+// ENTITY:DrawTranslucent does `self:Draw( flags )` - resolved to nil, and calling
+// that nil aborted the game ("attempt to call a nil value" with an EMPTY traceback,
+// because the lookup happened in C, outside any pcall).
+//
+// Give back the two things GMod's ENTITY tables provide:
+//   "Entity"        -> the entity itself (GMod's ENT.Entity is the same object)
+//   anything else   -> the script's class table, scripted_ents.GetStored( c ).t
+//
+// The class-table read goes through a protected call on purpose: a script table can
+// carry an __index FUNCTION, and an error raised by a bare lua_gettable from C is
+// unprotected - it lands in lua_atpanic and kills the process.
+static int LuaGetTableKey (lua_State *L) {  /* [t][k] -> [t[k]] */
+  lua_gettable(L, 1);
+  return 1;
+}
+
+static void LuaPushScriptedEntityField ( lua_State *L, const char *pszClassname, const char *pszKey )
+{
+  if ( pszClassname == NULL || pszClassname[0] == '\0' || pszKey == NULL )
+  {
+    lua_pushnil( L );
+    return;
+  }
+
+  lua_getglobal( L, "scripted_ents" );
+  if ( !lua_istable( L, -1 ) ) { lua_pop( L, 1 ); lua_pushnil( L ); return; }
+
+  lua_getfield( L, -1, "GetStored" );
+  if ( !lua_isfunction( L, -1 ) ) { lua_pop( L, 2 ); lua_pushnil( L ); return; }
+
+  lua_pushstring( L, pszClassname );
+  if ( luasrc_pcall( L, 1, 1, 0 ) != 0 || !lua_istable( L, -1 ) ) { lua_pop( L, 3 ); lua_pushnil( L ); return; }
+
+  lua_getfield( L, -1, "t" );                       // stored.t
+  if ( !lua_istable( L, -1 ) ) { lua_pop( L, 4 ); lua_pushnil( L ); return; }
+  lua_remove( L, -2 );                              // stored
+  lua_remove( L, -2 );                              // GetStored
+  lua_remove( L, -2 );                              // scripted_ents   -> [t]
+
+  lua_pushcfunction( L, LuaGetTableKey );
+  lua_pushvalue( L, -2 );                           // t
+  lua_pushstring( L, pszKey );
+  if ( luasrc_pcall( L, 2, 1, 0 ) != 0 )
+    lua_pushnil( L );
+  lua_remove( L, -2 );                              // leave only the value
+}
+
 static int CBaseAnimating___index (lua_State *L) {
   CBaseAnimating *pEntity = lua_toanimating(L, 1);
   if (pEntity == NULL) {  /* avoid extra test when d is not 0 */
@@ -844,6 +900,25 @@ static int CBaseAnimating___index (lua_State *L) {
       luaL_getmetatable(L, "CBaseEntity");
       lua_pushvalue(L, 2);
       lua_gettable(L, -2);
+    }
+  }
+  // HL2SB GMod compat: nothing in the entity's own table and nothing in the
+  // bindings -> try the script's class table (see LuaPushScriptedEntityField).
+  if ( lua_isnil( L, -1 ) )
+  {
+    const char *pszKey = lua_tostring( L, 2 );
+    lua_pop( L, 1 );
+
+    if ( pszKey != NULL )
+    {
+      if ( Q_strcmp( pszKey, "Entity" ) == 0 )
+      {
+        lua_pushvalue( L, 1 );        // self.Entity == self, like GMod's ENT.Entity
+        return 1;
+      }
+
+      LuaPushScriptedEntityField( L, pEntity->GetClassname(), pszKey );
+      return 1;
     }
   }
   return 1;

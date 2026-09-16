@@ -91,6 +91,13 @@ public:
 
 	IPhysicsObject *GetWheel( int iWheel )				{ return m_pWheels[iWheel]; }
 
+	// HL2SB: public read of the wheel count for the Vehicle Lua library
+	// (game/shared/lua/lvehicle_shared.cpp).  The field stays private and this is
+	// not virtual, so no vtable slot is added.  m_pWheels[] is only
+	// VEHICLE_LUA_MAX_WHEELS (4) entries long, which is why the bindings clamp
+	// their wheel index against both this and that array size.
+	int	GetWheelCount( void ) const						{ return m_wheelCount; }
+
 	int	GetSpeed() const;
 	int GetMaxSpeed() const;
 	int GetRPM() const;

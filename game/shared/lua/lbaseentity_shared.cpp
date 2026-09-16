@@ -20,6 +20,7 @@
 #ifdef CLIENT_DLL
 #include "lc_baseanimating.h"
 #include "lc_recipientfilter.h"
+#include "view.h"					// CurrentViewOrigin - the global EyePos()
 #else
 #include "lbaseanimating.h"
 #include "lrecipientfilter.h"
@@ -31,6 +32,8 @@
 #include "engine/IEngineSound.h"
 #include "lshareddefs.h"
 #include "ltakedamageinfo.h"
+// HL2SB: lua_pushcolor / lua_Color, for GMod's Entity:GetColor / SetColor.
+#include <lColor.h>
 #include "mathlib/lvector.h"
 #include "lvphysics_interface.h"
 // HL2SB: solid_t (public/vcollide_parse.h) + PhysSphereCreate /
@@ -63,6 +66,16 @@ LUA_API lua_CBaseEntity *lua_toentity (lua_State *L, int idx) {
 
 
 LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
+  /* HL2SB: GMod hands a drivable vehicle the Vehicle metatable, and it has to
+  ** happen for EVERY entity push -- ents.FindByClass, trace results,
+  ** Player:GetVehicle(), any binding that returns an entity -- not only for the
+  ** ones that go through PushLuaInstanceSafe().  lua_pushvehicleentity() answers
+  ** false (stack untouched) for everything that is not a vehicle, and for the
+  ** states that never opened the Vehicle library, so the plain push below is
+  ** still what every other entity gets. */
+  if (lua_pushvehicleentity(L, pEntity))
+    return;
+
   CBaseHandle *hEntity = (CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle));
   hEntity->Set(pEntity);
   luaL_getmetatable(L, "CBaseEntity");
@@ -105,6 +118,13 @@ void CBaseEntity::PushLuaInstanceSafe (lua_State *L, CBaseEntity *pEntity) {
       lua_pushweapon(L, static_cast<CBaseCombatWeapon *>(pEntity));
       return;
     }
+  }
+  else if (lua_pushvehicleentity(L, pEntity)) {
+    /* HL2SB: a drivable vehicle IS a CBaseAnimating (CPropVehicleDriveable ->
+    ** CPropVehicle -> CBaseProp), so without this branch it would be pushed with
+    ** the CBaseAnimating metatable and never reach lua_pushentity()'s own
+    ** dispatch.  GMod gives vehicles the Vehicle metatable here. */
+    return;
   }
   else if (pEntity->GetBaseAnimating() != NULL) {
     if (lua_hasmetatable(L, "CBaseAnimating")) {
@@ -914,6 +934,30 @@ static int CBaseEntity_GetModelName (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Entity:GetClass() and Entity:GetModel().
+//
+// GMod's names for what this fork only ever exposed as GetClassname() and
+// GetModelName(), and NOTHING in the tree defined them -- neither the engine nor
+// a game-Lua shim.  They sit on SCP-096's hottest paths:
+//
+//     if v:GetClass() == "func_door" then        -- init.lua:270, every chase frame
+//     if v:GetClass() == "prop_physics" then     -- init.lua:835
+//     if v:GetClass() == "func_breakable" then   -- init.lua:878
+//     if ent:GetModel() == v and ...             -- init.lua:162
+//     door:SetModel( v:GetModel() )              -- init.lua:314
+//
+// and they were unreachable before only because ents.FindInSphere() came back
+// empty (its flag mask, fixed separately): an empty loop hides a nil method.
+static int CBaseEntity_GetClass (lua_State *L) {
+  lua_pushstring(L, luaL_checkentity(L, 1)->GetClassname());
+  return 1;
+}
+
+static int CBaseEntity_GetModel (lua_State *L) {
+  lua_pushstring(L, STRING( luaL_checkentity(L, 1)->GetModelName() ));
+  return 1;
+}
+
 static int CBaseEntity_GetMoveParent (lua_State *L) {
   lua_pushentity(L, luaL_checkentity(L, 1)->GetMoveParent());
   return 1;
@@ -943,6 +987,26 @@ static int CBaseEntity_GetPredictionPlayer (lua_State *L) {
 
 static int CBaseEntity_GetPredictionRandomSeed (lua_State *L) {
   lua_pushinteger(L, CBaseEntity::GetPredictionRandomSeed());
+  return 1;
+}
+
+/* HL2SB: GMod's Entity:GetRangeTo( target ) -- the target being either another
+** entity or a world position -- returns the distance between the two.  This
+** engine only ever had INextBot::GetRangeTo, and GMod addons use the entity
+** method freely: SCP-096's nextbot drives its target tracking and its melee
+** ranges with self:GetRangeTo( pos ), so without this binding every one of
+** those lines raised "attempt to call a nil value (method 'GetRangeTo')".
+**
+** The second argument has to be read with lua_toentity(), not luaL_optentity():
+** the latter calls luaL_checkentity() for anything that is neither none nor nil,
+** so a Vector argument -- which is the common case -- would raise a bogus
+** "CBaseEntity expected" error instead of being used as the position. */
+static int CBaseEntity_GetRangeTo (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  CBaseEntity *pTarget = lua_toentity(L, 2);
+  Vector vTarget = (pTarget != NULL) ? pTarget->GetAbsOrigin() : luaL_checkvector(L, 2);
+
+  lua_pushnumber(L, pEntity->GetAbsOrigin().DistTo(vTarget));
   return 1;
 }
 
@@ -1069,6 +1133,196 @@ static int CBaseEntity_IsAIWalkable (lua_State *L) {
 static int CBaseEntity_IsAlive (lua_State *L) {
   lua_pushboolean(L, luaL_checkentity(L, 1)->IsAlive());
   return 1;
+}
+
+// HL2SB GMod compat: Entity:IsOnGround().
+//
+// GMod's predicate -- "is this entity standing on something" -- and the only
+// spelling this fork had was ILocomotion:IsOnGround() for nextbots, so an ENTITY
+// answered nil.  SCP-096's melee asks it of the player it is hitting:
+//
+//     local moveAdd = Vector( 0, 0, 150 )
+//     if not v:IsOnGround() then moveAdd = Vector( 0, 0, 0 ) end   -- init.lua:369
+//
+// and the nil-method raise killed its behaviour coroutine mid-attack, which is
+// what "still not working normally" looked like once the kill itself stopped
+// crashing the server.  FL_ONGROUND is what the engine maintains; the ground
+// entity test covers the frame it is being set in.
+static int CBaseEntity_IsOnGround (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  lua_pushboolean(L, ( ( pEntity->GetFlags() & FL_ONGROUND ) != 0 ) || ( pEntity->GetGroundEntity() != NULL ) );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat batch: the API surface a stock GMod addon assumes and this
+// fork never had.  Measured against the "windgrin_npc" nextbot (an obfuscated
+// addon that names every API it uses in a string dictionary) - see
+// ACCOUNT/AGENTS notes.  Each one is a plain GMod name for something the engine
+// already does under another spelling.
+//-----------------------------------------------------------------------------
+
+// Entity:SetRenderMode( mode ) -- kRenderTransAlpha & friends (RENDER_MODE in _E).
+static int CBaseEntity_SetRenderMode (lua_State *L) {
+  luaL_checkentity(L, 1)->SetRenderMode((RenderMode_t)luaL_checkinteger(L, 2));
+  return 0;
+}
+
+// Entity:SetModelScale( scale, duration ) / Entity:GetModelScale().
+// The engine keeps model scale on CBaseAnimating, reached the same way SetSkin
+// reaches it (lua_toanimating() RTTI-casts the handle and answers NULL for
+// entities that are not animating, e.g. a brush).
+static int CBaseEntity_SetModelScale (lua_State *L) {
+  lua_CBaseAnimating *pAnimating = lua_toanimating(L, 1);
+
+  if (pAnimating != NULL)
+    pAnimating->SetModelScale((float)luaL_checknumber(L, 2), (float)luaL_optnumber(L, 3, 0.0f));
+
+  return 0;
+}
+
+static int CBaseEntity_GetModelScale (lua_State *L) {
+  lua_CBaseAnimating *pAnimating = lua_toanimating(L, 1);
+
+  lua_pushnumber(L, (pAnimating != NULL) ? pAnimating->GetModelScale() : 1.0f);
+  return 1;
+}
+
+// Entity:GetCollisionBounds() -- GMod returns mins and maxs.
+static int CBaseEntity_GetCollisionBounds (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  lua_pushvector(L, pEntity->CollisionProp()->OBBMins());
+  lua_pushvector(L, pEntity->CollisionProp()->OBBMaxs());
+  return 2;
+}
+
+// Entity:IsLineOfSightClear( target ) -- target is an entity or a position.
+// Blocks on world geometry and other NPCs, which is what a nextbot means by it.
+static int CBaseEntity_IsLineOfSightClear (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  CBaseEntity *pTarget = lua_toentity(L, 2);
+
+  Vector vecTarget = (pTarget != NULL) ? pTarget->WorldSpaceCenter() : luaL_checkvector(L, 2);
+  trace_t tr;
+
+  UTIL_TraceLine(pEntity->EyePosition(), vecTarget, MASK_BLOCKLOS, pEntity, COLLISION_GROUP_NONE, &tr);
+
+  lua_pushboolean(L, tr.fraction == 1.0f);
+  return 1;
+}
+
+// Entity:PhysicsInit( solidType ) -- GMod's "give this entity physics, now".
+static int CBaseEntity_PhysicsInit (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  int nSolidType = luaL_checkinteger(L, 2);
+
+#ifndef CLIENT_DLL
+  pEntity->VPhysicsInitNormal((SolidType_t)nSolidType, 0, false);
+#else
+  (void)pEntity;
+  (void)nSolidType;
+#endif
+
+  return 0;
+}
+
+// Entity:KillSilent() lived here for a moment and was WRONG: the GMod wiki has
+// no such page (it 404s), while Player:KillSilent() is documented -- it is a
+// player method, server only, and it goes through GM:PlayerSilentDeath instead of
+// GM:PlayerDeath.  See CBasePlayer_KillSilent in lbaseplayer_shared.cpp.
+// HL2SB GMod compat: Entity:OBBCenter() and Entity:StopSound( name ).
+//
+// Both are documented GMod entity methods the windgrin_npc nextbot calls on its
+// hot paths (its ceiling-unstick and its chase music), and both raised "attempt
+// to call a nil value".  OBBCenter is this engine's WorldSpaceCenter() under
+// GMod's name; StopSound is CBaseEntity::StopSound().
+static int CBaseEntity_OBBCenter (lua_State *L) {
+  lua_pushvector(L, luaL_checkentity(L, 1)->WorldSpaceCenter());
+  return 1;
+}
+
+static int CBaseEntity_StopSound (lua_State *L) {
+#ifndef CLIENT_DLL
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszSound = luaL_checkstring(L, 2);
+
+  pEntity->StopSound(pszSound);
+#else
+  (void)L;
+#endif
+
+  return 0;
+}
+
+// HL2SB GMod compat: Entity:GetParent(), LocalToWorld(), SetTrigger(),
+// ManipulateBoneAngles(), SetSpawnEffect().
+//
+// The first three have real engine equivalents (GetMoveParent, a rotation into
+// world space, FSOLID_TRIGGER).  The last two do not: this fork has no bone
+// manipulation system and no spawn-effect flag, so they accept their arguments
+// and do nothing rather than raising -- a stock addon calls them in its spawn
+// path (windgrin_npc does) and a nil method there costs the whole entity.
+static int CBaseEntity_GetParent (lua_State *L) {
+  lua_pushentity(L, luaL_checkentity(L, 1)->GetMoveParent());
+  return 1;
+}
+
+static int CBaseEntity_LocalToWorld (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  Vector vecLocal = luaL_checkvector(L, 2);
+  Vector vecWorld;
+
+  VectorRotate(vecLocal, pEntity->GetAbsAngles(), vecWorld);
+  vecWorld += pEntity->GetAbsOrigin();
+
+  lua_pushvector(L, vecWorld);
+  return 1;
+}
+
+static int CBaseEntity_SetTrigger (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  if (lua_toboolean(L, 2))
+    pEntity->AddSolidFlags(FSOLID_TRIGGER);
+  else
+    pEntity->RemoveSolidFlags(FSOLID_TRIGGER);
+
+  pEntity->CollisionRulesChanged();
+  return 0;
+}
+
+static int CBaseEntity_ManipulateBoneAngles (lua_State *L) {
+  // ( entity, bone, angle ) -- accepted and ignored, see the note above.
+  return 0;
+}
+
+static int CBaseEntity_SetSpawnEffect (lua_State *L) {
+  // ( entity, enabled ) -- accepted and ignored, see the note above.
+  return 0;
+}
+
+// HL2SB GMod compat: Entity:SetBloodColor( BLOOD_COLOR ).
+//
+// Wiki: server only, "sets the blood colour this entity uses".  The engine keeps
+// it on CBaseCombatCharacter, so anything that is not one is left alone (GMod
+// behaves the same way).  The windgrin_npc nextbot calls it in its spawn path.
+static int CBaseEntity_SetBloodColor (lua_State *L) {
+#ifndef CLIENT_DLL
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  int nBloodColor = luaL_checkinteger(L, 2);
+
+  CBaseCombatCharacter *pCharacter = pEntity->MyCombatCharacterPointer();
+
+  if (pCharacter != NULL)
+    pCharacter->SetBloodColor(nBloodColor);
+#else
+  (void)L;
+#endif
+
+  return 0;
 }
 
 static int CBaseEntity_IsAnimatedEveryTick (lua_State *L) {
@@ -1678,6 +1932,76 @@ static int CBaseEntity_GetRenderColor (lua_State *L) {
   color32 clr = luaL_checkentity(L, 1)->GetRenderColor();
   lua_pushvector(L, Vector( clr.r / 255.0f, clr.g / 255.0f, clr.b / 255.0f ));
   return 1;
+}
+
+// HL2SB GMod compat: Entity:GetColor() / Entity:SetColor( Color ).
+//
+// GMod's pair.  In-tree GMod Lua already calls them (duplicator.lua:207/299,
+// constraint.lua's ropes) and they were nil, and SCP-096's door-breaking tail
+// copies a door's look onto the debris prop it spawns:
+//
+//     door:SetSkin( v:GetSkin() ); door:SetColor( v:GetColor() );
+//     door:SetMaterial( v:GetMaterial() )
+//
+// so the first broken door killed the bot's AI thread with "attempt to call a nil
+// value (method 'GetColor')".  GetRenderColor() above stays as it is on purpose:
+// it answers a normalised Vector for the sent_ball NetworkVar shim, this one
+// answers GMod's 0..255 Color.
+static int CBaseEntity_GetColor (lua_State *L) {
+  color32 clr = luaL_checkentity(L, 1)->GetRenderColor();
+  lua_pushcolor(L, lua_Color( clr.r, clr.g, clr.b, clr.a ));
+  return 1;
+}
+
+static int CBaseEntity_SetColor (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  lua_Color clr = luaL_checkcolor(L, 2);
+
+  pEntity->SetRenderColor( clr.r(), clr.g(), clr.b(), clr.a() );
+  return 0;
+}
+
+// HL2SB GMod compat: Entity:GetMaterial() / Entity:SetMaterial( name ).
+//
+// This fork has no per-entity material override (the tree's only SetMaterial
+// belongs to Portal's portalgun and to CRopeKeyframe), so the name is remembered
+// on the entity's own Lua table and handed back by the getter: scripts that copy
+// one entity's material onto another get a sane answer instead of a nil-method
+// error.  The visual override is not applied - that part is cosmetic here.
+static int CBaseEntity_GetMaterial (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  if ( pEntity->m_nTableReference == LUA_NOREF ) {
+    lua_pushstring( L, "" );
+    return 1;
+  }
+
+  lua_getref( L, pEntity->m_nTableReference );
+  lua_getfield( L, -1, "HL2SB_Material" );
+
+  if ( !lua_isstring( L, -1 ) ) {
+    lua_pop( L, 1 );
+    lua_pushstring( L, "" );
+  }
+
+  lua_remove( L, -2 );
+  return 1;
+}
+
+static int CBaseEntity_SetMaterial (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszMaterial = luaL_checkstring(L, 2);
+
+  if ( pEntity->m_nTableReference == LUA_NOREF ) {
+    lua_newtable( L );
+    pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
+  }
+
+  lua_getref( L, pEntity->m_nTableReference );
+  lua_pushstring( L, pszMaterial );
+  lua_setfield( L, -2, "HL2SB_Material" );
+  lua_pop( L, 1 );
+  return 0;
 }
 
 // HL2SB GMod compat: Entity:SetSkin( n ) / Entity:GetSkin().
@@ -2342,6 +2666,25 @@ static int CBaseEntity_IsValid (lua_State *L) {
 }
 
 
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB GMod compat - Entity:IsVehicle().
+//
+// GMod answers whether the entity is a vehicle, and shipped HL2SB content calls
+// it: lua/includes/modules/properties.lua:142 gates the hovered-entity filter on
+//
+//     if ( veh:IsValid() && ( !veh:IsVehicle() || !veh:GetThirdPersonMode() ) ) then
+//
+// so without it that whole client path raised "attempt to call a nil value
+// (method 'IsVehicle')".  lua_entityisvehicle() is the same predicate the
+// "Vehicle" metatable is handed out by (lvehicle_shared.cpp), so the two can
+// never disagree.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_IsVehicle (lua_State *L) {
+  lua_pushboolean(L, lua_entityisvehicle(lua_toentity(L, 1)));
+  return 1;
+}
+
+
 // HL2SB GMod compat: GMod's Entity:SetAngles / GetAngles / SetVelocity, which
 // this fork only had as SetLocalAngles and (on the physics object only)
 // SetVelocity.  The ported flechette gun arms its projectile with
@@ -2915,6 +3258,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetAngles", CBaseEntity_GetAngles},
   {"SetVelocity", CBaseEntity_SetVelocity},
   {"IsValid", CBaseEntity_IsValid},
+  {"IsVehicle", CBaseEntity_IsVehicle},
   {"Activate", CBaseEntity_Activate},
   {"AddDataObjectType", CBaseEntity_AddDataObjectType},
   {"AddEffects", CBaseEntity_AddEffects},
@@ -2973,6 +3317,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetBaseVelocity", CBaseEntity_GetBaseVelocity},
   {"GetCheckUntouch", CBaseEntity_GetCheckUntouch},
   {"GetClassname", CBaseEntity_GetClassname},
+  // HL2SB GMod compat: GMod's spellings (see the note at the definitions).
+  {"GetClass", CBaseEntity_GetClass},
   {"GetCollisionGroup", CBaseEntity_GetCollisionGroup},
   {"GetDataObject", CBaseEntity_GetDataObject},
   {"GetDebugName", CBaseEntity_GetDebugName},
@@ -3000,13 +3346,19 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetMaxHealth", CBaseEntity_GetMaxHealth},
   {"GetModelIndex", CBaseEntity_GetModelIndex},
   {"GetModelName", CBaseEntity_GetModelName},
+  {"GetModel", CBaseEntity_GetModel},
   {"GetMoveParent", CBaseEntity_GetMoveParent},
   {"GetMoveType", CBaseEntity_GetMoveType},
   {"GetOwnerEntity", CBaseEntity_GetOwnerEntity},
   {"GetParametersForSound", CBaseEntity_GetParametersForSound},
   {"GetPredictionPlayer", CBaseEntity_GetPredictionPlayer},
   {"GetPredictionRandomSeed", CBaseEntity_GetPredictionRandomSeed},
+  {"GetRangeTo", CBaseEntity_GetRangeTo},
   {"GetRenderColor", CBaseEntity_GetRenderColor},
+  // HL2SB GMod compat: GMod's spellings of the same idea (a Color rather than a
+  // normalised Vector), plus a material name that has no engine-side override.
+  {"GetColor", CBaseEntity_GetColor},
+  {"GetMaterial", CBaseEntity_GetMaterial},
   {"GetSimulatingPlayer", CBaseEntity_GetSimulatingPlayer},
   {"GetSimulationTime", CBaseEntity_GetSimulationTime},
   {"GetSkin", CBaseEntity_GetSkin},
@@ -3030,7 +3382,36 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"IsAbsQueriesValid", CBaseEntity_IsAbsQueriesValid},
   {"IsAIWalkable", CBaseEntity_IsAIWalkable},
   {"IsAlive", CBaseEntity_IsAlive},
+  // HL2SB: GMod spells it Entity:Alive() (the player half is Player:Alive(), and
+  // it is the same question).  Only the IsAlive spelling existed, and a missing
+  // method is silent where an error is not: SCP-096's nextbot asks
+  //
+  //     for k,v in pairs( ents.FindInSphere( self:GetPos(), 100 ) ) do
+  //         if ( v:IsPlayer() && v:Alive() ) then        -- init.lua:684, and 741
+  //
+  // inside SeeMe()/SeeMe2(), i.e. the two functions that decide "a player is
+  // looking at me" and trigger the whole chase.  v:Alive() raised, the raise
+  // killed the RunBehaviour coroutine (base_nextbot's BehaveUpdate drops the
+  // thread on error), and the bot spent the rest of its life standing still -
+  // it reacted to nothing, not even to being shot.
+  {"Alive", CBaseEntity_IsAlive},
   {"IsAnimatedEveryTick", CBaseEntity_IsAnimatedEveryTick},
+  {"IsOnGround", CBaseEntity_IsOnGround},
+  // HL2SB GMod compat batch (see the definitions above).
+  {"SetRenderMode", CBaseEntity_SetRenderMode},
+  {"SetModelScale", CBaseEntity_SetModelScale},
+  {"GetModelScale", CBaseEntity_GetModelScale},
+  {"GetCollisionBounds", CBaseEntity_GetCollisionBounds},
+  {"IsLineOfSightClear", CBaseEntity_IsLineOfSightClear},
+  {"PhysicsInit", CBaseEntity_PhysicsInit},
+  {"OBBCenter", CBaseEntity_OBBCenter},
+  {"StopSound", CBaseEntity_StopSound},
+  {"GetParent", CBaseEntity_GetParent},
+  {"LocalToWorld", CBaseEntity_LocalToWorld},
+  {"SetTrigger", CBaseEntity_SetTrigger},
+  {"ManipulateBoneAngles", CBaseEntity_ManipulateBoneAngles},
+  {"SetSpawnEffect", CBaseEntity_SetSpawnEffect},
+  {"SetBloodColor", CBaseEntity_SetBloodColor},
   {"IsBaseObject", CBaseEntity_IsBaseObject},
   {"IsBaseTrain", CBaseEntity_IsBaseTrain},
   {"IsBSPModel", CBaseEntity_IsBSPModel},
@@ -3133,6 +3514,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetPredictionEligible", CBaseEntity_SetPredictionEligible},
   {"SetPredictionPlayer", CBaseEntity_SetPredictionPlayer},
   {"SetRenderColor", CBaseEntity_SetRenderColor},
+  {"SetColor", CBaseEntity_SetColor},
+  {"SetMaterial", CBaseEntity_SetMaterial},
   {"SetSkin", CBaseEntity_SetSkin},
   {"SetRenderColorA", CBaseEntity_SetRenderColorA},
   {"SetRenderColorB", CBaseEntity_SetRenderColorB},
@@ -3220,6 +3603,37 @@ static int luasrc_ents_GetByIndex (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB GMod compat - the global EyePos(), answering the origin of the
+// current render context exactly as the wiki documents it ("Vector EyePos()", no
+// arguments, "the origin of the current render context, calculated by
+// GM:CalcView").
+//
+// This one hook is what makes npc_verity visible.  Its ENT:DrawTranslucent()
+// builds the billboard orientation from
+//
+//     local normal = EyePos() - pos
+//
+// so with EyePos missing the hook raised "attempt to call a nil value (global
+// 'EyePos')" once per frame (234 in one session) and drew nothing -- while the
+// bot, its script, its render group and its render bounds were all correct.
+//
+// The server has no render context, so it answers with the local player's eye
+// position; scripts that share code between realms then still get a Vector.
+//-----------------------------------------------------------------------------
+static int luasrc_EyePos( lua_State *L )
+{
+#ifdef CLIENT_DLL
+	Vector vecEyes = CurrentViewOrigin();
+#else
+	CBasePlayer *pPlayer = UTIL_GetLocalPlayer();
+	Vector vecEyes = ( pPlayer != NULL ) ? pPlayer->EyePosition() : vec3_origin;
+#endif
+
+	lua_pushvector( L, vecEyes );
+	return 1;
+}
+
 static const luaL_Reg ents_funcs[] = {
   {"Create", luasrc_ents_Create},
   {"GetByIndex", luasrc_ents_GetByIndex},
@@ -3229,6 +3643,7 @@ static const luaL_Reg ents_funcs[] = {
 
 static const luaL_Reg CBaseEntity_funcs[] = {
   {"CreateEntityByName", luasrc_CreateEntityByName},
+  {"EyePos", luasrc_EyePos},
   {NULL, NULL}
 };
 

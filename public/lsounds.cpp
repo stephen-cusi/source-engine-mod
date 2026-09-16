@@ -73,8 +73,20 @@ LUA_BINDING_BEGIN( Sounds, Add, "library", "Creates a sound script." )
     const char *name = luaL_checkstring( L, -1 );
     lua_pop( L, 1 );  // pop the name value
 
-    GET_FIELD_WITH_COMPATIBILITY_OR_ERROR( L, 1, "Channel", "channel", lua_isnumber );
-    parameters.SetChannel( luaL_checknumber( L, -1 ) );
+    // HL2SB GMod compat: GMod's sound.Add() table has channel/level/volume/pitch
+    // all OPTIONAL (only `name` and `sound` are required), and nextbot addons
+    // write the short form:
+    //
+    //     sound.Add( { name = "windgrinbot.hit", sound = "windgrinbot/hit.mp3" } )
+    //
+    // Requiring Channel turned that into "bad argument #1 to 'Add' (expected field
+    // 'Channel')" on the first call -- the windgrin_npc nextbot's whole load.  A
+    // missing channel is CHAN_AUTO, which is what GMod does.
+    GET_FIELD_WITH_COMPATIBILITY( L, 1, "Channel", "channel" );
+    if ( lua_isnumber( L, -1 ) )
+        parameters.SetChannel( luaL_checknumber( L, -1 ) );
+    else
+        parameters.SetChannel( CHAN_AUTO );
     lua_pop( L, 1 );  // pop the channel value
 
     GET_FIELD_WITH_COMPATIBILITY( L, 1, "Level", "level" );

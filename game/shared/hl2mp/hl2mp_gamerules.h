@@ -106,6 +106,15 @@ public:
 
 	virtual void Precache( void );
 	virtual bool ShouldCollide( int collisionGroup0, int collisionGroup1 );
+
+	// HL2SB: GMod parity - third person is always allowed (GMod is not sv_cheats gated
+	// either). This is load bearing, not cosmetic: CThirdPersonManager::Update() runs
+	// every frame and, while sv_cheats is 0 and this returns false, it calls
+	// input->CAM_ToFirstPerson() and returns - so `thirdperson` (and the whole vehicle
+	// third-person camera) was silently switched back to first person every single frame
+	// on a listen server running sv_cheats 0. The base CGameRules returns false.
+	virtual bool AllowThirdPersonCamera( void ) { return true; }
+
 	virtual bool ClientCommand( CBaseEntity *pEdict, const CCommand &args );
 
 	virtual float FlWeaponRespawnTime( CBaseCombatWeapon *pWeapon );

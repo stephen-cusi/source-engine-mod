@@ -134,7 +134,9 @@ static	kbutton_t	in_attack;
 static	kbutton_t	in_attack2;
 static	kbutton_t	in_up;
 static	kbutton_t	in_down;
-static	kbutton_t	in_duck;
+// HL2SB: not static - C_HL2MP_Player::ClientThink() reads it for the in-vehicle
+// first/third person toggle (declared in in_main.h).
+kbutton_t	in_duck;
 static	kbutton_t	in_reload;
 static	kbutton_t	in_alt1;
 static	kbutton_t	in_alt2;

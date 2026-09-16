@@ -4390,6 +4390,24 @@ int C_BaseAnimating::RestoreData( const char *context, int slot, int type )
 
 void C_BaseAnimating::GetRenderBounds( Vector& theMins, Vector& theMaxs )
 {
+	// HL2SB GMod compat: a script pinned them with Entity:SetRenderBounds().
+	//
+	// C_BaseEntity::GetRenderBounds() honours that box, but this override -- which
+	// every C_BaseAnimating-derived entity goes through, nextbots included -- did
+	// not, and a MODEL-LESS entity (every sprite nextbot: npc_verity draws itself
+	// with render.DrawQuadEasy and has no ENT.Model at all) fell all the way through
+	// to the vec3_origin case at the bottom.
+	//
+	// Culling then tested a zero-size box, so the bot winked in and out of existence
+	// as the camera turned -- exactly the "sometimes visible, sometimes not" the
+	// script's own SetRenderBounds( +-64, 0..128 ) was written to prevent.
+	if ( m_bScriptedRenderBounds )
+	{
+		theMins = m_vecScriptedRenderBoundsMin;
+		theMaxs = m_vecScriptedRenderBoundsMax;
+		return;
+	}
+
 	if ( IsRagdoll() )
 	{
 		m_pRagdoll->GetRagdollBounds( theMins, theMaxs );
@@ -4422,8 +4440,24 @@ void C_BaseAnimating::GetRenderBounds( Vector& theMins, Vector& theMaxs )
 	}
 	else
 	{
-		theMins = vec3_origin;
-		theMaxs = vec3_origin;
+		// HL2SB GMod compat: no model -- do NOT answer with a zero-size box.
+		//
+		// Culling goes through here for every C_BaseAnimating-derived entity, and
+		// a model-less one (every sprite/scripted entity, and every Lua nextbot:
+		// npc_windgrinbot has no ENT.Model either) was culled against a box of no
+		// size at all, so it winked in and out of view as the camera turned.
+		//
+		// C_BaseEntity::GetRenderBounds() is the sensible answer -- the script's
+		// pinned box when Entity:SetRenderBounds() set one, and otherwise the
+		// entity's collision bounds, which is what GMod culls a model-less entity
+		// by.
+		BaseClass::GetRenderBounds( theMins, theMaxs );
+
+		// Scale this up depending on if our model is currently scaling
+		const float flScale = GetModelScale();
+		theMaxs *= flScale;
+		theMins *= flScale;
+		return;
 	}
 
 	// Scale this up depending on if our model is currently scaling

@@ -70,6 +70,10 @@ END_DATADESC()
 
 //-----------------------------------------------------------------------------------------------------
 IMPLEMENT_SERVERCLASS_ST( NextBotCombatCharacter, DT_NextBot )
+	// HL2SB GMod compat: the Lua classname, so the client half of a nextbot script
+	// can be found at all.  Mirrored by RecvPropString in
+	// game/client/NextBot/C_NextBot.cpp.  See the note in NextBot.h.
+	SendPropString( SENDINFO( m_iScriptedClassname ) ),
 END_SEND_TABLE()
 
 

@@ -105,6 +105,14 @@ public:
 #if defined(TF_DLL) || defined(TF_CLIENT_DLL)
 	#define TIME_TO_DUCK		0.2
 	#define TIME_TO_DUCK_MS		200.0f
+#elif defined( HL2MP ) || defined( HL2MP_CLIENT_DLL ) || defined( HL2SB )
+	// HL2SB: GMod-style snappy crouch. The stock HL2 number is 0.4s, and
+	// CGameMovement::CheckDuck keeps the player in m_bDucking (eye offset sliding, hull
+	// not shrunk / FL_DUCKING not set) for that whole time - the "press crouch, wait
+	// ~0.4s" delay. Uncrouch was always 0.2s, hence the asymmetry. 0.15s removes the
+	// perceived lag without deleting the transition.
+	#define TIME_TO_DUCK		0.15f
+	#define TIME_TO_DUCK_MS		150.0f
 #else
 	#define TIME_TO_DUCK		0.4
 	#define TIME_TO_DUCK_MS		400.0f

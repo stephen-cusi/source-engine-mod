@@ -462,6 +462,23 @@ bool HL2SB_HasLuaEffect( const char *pszName )
 	return bFound;
 }
 
+// HL2SB GMod compat: the EFFECT:Set* property setters (see the call site in
+// HL2SB_CreateLuaEffect).  One C closure per name, with the property name as its
+// upvalue, so the value lands on the effect's own table under that name.
+static int LuaEffect_SetParam( lua_State *L )
+{
+	const char *pszName = lua_tostring( L, lua_upvalueindex( 1 ) );
+
+	lua_setfield( L, 1, ( pszName != NULL ) ? pszName : "value" );
+	return 0;
+}
+
+static const char *s_LuaEffectParams[] = {
+	"SetDieTime", "SetLifeTime", "SetStartAlpha", "SetEndAlpha",
+	"SetStartSize", "SetEndSize", "SetRoll", "SetRollDelta",
+	"SetVelocityScale", "SetCollide",
+};
+
 bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 {
 	if ( L == NULL || pszName == NULL || pszName[0] == '\0' )
@@ -489,6 +506,24 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 
 	lua_pushcfunction( L, LuaEffect_GetTracerShootPos );
 	lua_setfield( L, -2, "GetTracerShootPos" );
+
+	// HL2SB GMod compat: the numeric setters a stock GMod effect script opens
+	// with -- every one of them is a CLuaParticle/effect property in GMod, and
+	// this host is HL2SB's own (a Lua table driven by Init/Think/Render), so
+	// there is no engine object behind them.
+	//
+	//     effects/nuke_effect_air/init.lua
+	//         self:SetDieTime( 4 ); self:SetStartAlpha( 255 ) ...
+	//
+	// Without them that script died on its first line.  The value is stored on the
+	// effect's own table (so a script that reads it back gets it) and otherwise
+	// ignored: the effect's lifetime stays ours.
+	for ( int i = 0; i < (int)( sizeof( s_LuaEffectParams ) / sizeof( s_LuaEffectParams[0] ) ); ++i )
+	{
+		lua_pushstring( L, s_LuaEffectParams[ i ] );
+		lua_pushcclosure( L, LuaEffect_SetParam, 1 );
+		lua_setfield( L, -2, s_LuaEffectParams[ i ] );
+	}
 
 	const int nRef = luaL_ref( L, LUA_REGISTRYINDEX );   // pops the copy
 	lua_pop( L, 1 );                                     // the template

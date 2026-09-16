@@ -9,6 +9,8 @@
 
 #include "cbase.h"
 #include "luamanager.h"
+// HL2SB: CHL2MPRules::CleanUpMap(), for game.CleanUpMap().
+#include "hl2mp/hl2mp_gamerules.h"
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
 #include "lgametrace.h"
@@ -512,10 +514,56 @@ static const luaL_Reg util_funcs[] = {
 };
 
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: game.CleanUpMap().
+//
+// Wiki: "Removes most entities, and then respawns entities created by the map, as
+// if the map was just loaded", with players, held weapons and soundscapes among
+// the exclusions, and GM:PreCleanupMap / GM:PostCleanupMap around it.
+//
+// The engine already has that work: CHL2MPRules::CleanUpMap() (public,
+// hl2mp_gamerules.cpp:1686) recreates the map's entities and removes everything
+// else except players, then raises the CleanUpMap hook.  Exposed as an internal
+// global because the `game` table itself is built by Lua after the C libraries
+// open -- lua/includes/extensions/gmod_compat.lua puts the GMod name on it.
+//-----------------------------------------------------------------------------
+static int luasrc_GameCleanUpMap (lua_State *L) {
+#ifndef CLIENT_DLL
+  CHL2MPRules *pRules = dynamic_cast< CHL2MPRules * >( GameRules() );
+
+  if (pRules != NULL)
+    pRules->CleanUpMap();
+#else
+  (void)L;
+#endif
+
+  return 0;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the two AI convars GMod ships and addons read through
+// GetConVar().
+//
+// In GMod both exist, so `GetConVar( "ai_ignoreplayers" )` answers a ConVar
+// object and scripts call r:GetBool() on it.  This fork had neither name, and
+// GetConVar() correctly answers nil for an unknown convar (the GMod contract), so
+// the windgrin_npc nextbot died on its first target test with
+//
+//     npc_windgrinbot.lua:1: attempt to index a nil value (upvalue 'r')
+//
+// Defaults are GMod's: AI respects players, AI is on.
+//-----------------------------------------------------------------------------
+static ConVar ai_ignoreplayers( "ai_ignoreplayers", "0", 0, "AI ignores players." );
+static ConVar ai_disabled( "ai_disabled", "0", 0, "Disables all AI." );
+
 LUALIB_API int luaopen_UTIL (lua_State *L) {
   // luaL_register(L, "_G", util_funcs);
   luaL_register(L, "util", util_funcs);
   lua_pop(L, 1);
+
+  lua_pushcfunction(L, luasrc_GameCleanUpMap);
+  lua_setglobal(L, "HL2SB_GameCleanUpMap");
+
   return 1;
 }
 

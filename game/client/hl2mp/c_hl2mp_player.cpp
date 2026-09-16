@@ -16,6 +16,17 @@
 #include "dlight.h"
 #include "hl2sb_model_scan.h"
 #include "hl2sb_model_config.h"
+#include "in_main.h"			// HL2SB: in_duck, for the in-vehicle camera toggle
+#include "iinput.h"				// HL2SB: input->CAM_ToThirdPerson() / KeyState()
+#include "activitylist.h"		// HL2SB: ActivityList_NameForIndex() for the act command
+
+// HL2SB: the in_camera.cpp free wrappers. These are what the `thirdperson` /
+// `firstperson` console commands call; unlike CInput::CAM_ToThirdPerson() they also
+// run g_ThirdPersonManager.SetOverridingThirdPerson(), which is the bit CAM_Think()
+// honours - calling only the CInput member gets reverted every frame (log evidence:
+// "actcam=1 thirdperson=0" and the local player never entered the render list).
+extern void CAM_ToThirdPerson( void );
+extern void CAM_ToFirstPerson( void );
 
 #if defined( LUA_SDK )
 #include "luamanager.h"
@@ -298,6 +309,217 @@ static int s_nHL2SBLastSeq = -1;
 static int s_nHL2SBRollbacks = 0;
 static float s_flHL2SBLastRollbackMagnitude = 0.0f;
 
+// ---------------------------------------------------------------------------
+// HL2SB: GMod's "act <name>" command.
+//
+// GMod plays these over the gesture system (upper body layer) while holding a camera
+// in front of the player until the gesture is done. The names below are GMod's act
+// list; the activities are the ACT_GMOD_GESTURE_* / ACT_GMOD_TAUNT_* set that
+// models/m_anm.mdl declares (added to the shared activity table in AGENTS.md 28).
+// They are played in gesture slot 6 (GESTURE_SLOT_CUSTOM in multiplayer_animstate.h),
+// the same slot GMod uses for player gestures.
+//
+// The layer's cycle is driven from wall clock here on purpose - the HL2MP client
+// does not advance overlay layers for the local player, and the layer data is not
+// networked for a client-side animated entity.
+// ---------------------------------------------------------------------------
+#define HL2SB_GESTURE_SLOT_ACT 6
+
+struct HL2SBActEntry_t
+{
+	const char	*pszName;
+	Activity	activity;
+};
+
+static const HL2SBActEntry_t s_HL2SBActList[] =
+{
+	{ "agree",	ACT_GMOD_GESTURE_AGREE },
+	{ "bow",	ACT_GMOD_GESTURE_BOW },
+	{ "cheer",	ACT_GMOD_TAUNT_CHEER },
+	{ "dance",	ACT_GMOD_TAUNT_DANCE },
+	{ "laugh",	ACT_GMOD_TAUNT_LAUGH },
+	{ "muscle",	ACT_GMOD_TAUNT_MUSCLE },
+	{ "robot",	ACT_GMOD_TAUNT_ROBOT },
+	{ "salute",	ACT_GMOD_TAUNT_SALUTE },
+	{ "wave",	ACT_GMOD_GESTURE_WAVE },
+	{ "zombie",	ACT_GMOD_GESTURE_TAUNT_ZOMBIE },
+};
+
+static float	s_flHL2SBActStartTime = 0.0f;
+static float	s_flHL2SBActEndTime = 0.0f;
+static bool		s_bHL2SBActCameraActive = false;
+static bool		s_bHL2SBActSavedThirdPerson = false;
+// HL2SB: GMod's taunt_camera.lua locks the player's angles and rotates a separate
+// CustomAngles with the mouse, so the body stays still and you orbit it 360 deg to
+// watch the gesture from the front. We store the view we started from; the body is
+// frozen to it while the camera orbits by the mouse delta from it.
+static QAngle	s_angHL2SBActLock = vec3_angle;			// frozen body/eye angles
+static QAngle	s_angHL2SBActCam = vec3_angle;			// orbiting camera angles
+static QAngle	s_angHL2SBActCamPrevRaw = vec3_angle;	// raw view last frame (CreateMove)
+
+static void HL2SB_PrintActList( void )
+{
+	Msg( "act <" );
+	for ( int i = 0; i < ARRAYSIZE( s_HL2SBActList ); ++i )
+		Msg( "%s%s", ( i > 0 ) ? "|" : "", s_HL2SBActList[i].pszName );
+	Msg( ">\n" );
+}
+
+static void HL2SB_PlayAct( C_HL2MP_Player *pPlayer, const char *pszName )
+{
+	// Resolve locally to get the camera duration. The CAMERA is started even when this
+	// model cannot resolve the gesture (first attempt bailed here, so "act" appeared
+	// to do nothing at all on custom playermodels without the ACT_GMOD_* set - the
+	// server still prints why the pose itself is missing).
+	Activity activity = ACT_INVALID;
+	const int iSequence = HL2SB_ResolveGestureSequence( pPlayer, pszName, &activity );
+
+	// The gesture has to be played by the SERVER - see HL2SB_ServerPlayGesture() in
+	// server/hl2mp/hl2mp_player.cpp: the client's overlay layers are overwritten by the
+	// networked DT_BaseAnimatingOverlay data on every update, so a client-side layer
+	// never renders (that is why the first attempt showed no animation at all).
+	char szCommand[128];
+	Q_snprintf( szCommand, sizeof( szCommand ), "hl2sb_act %s\n", pszName );
+	engine->ServerCmd( szCommand );
+
+	float flDuration = 2.0f;
+	if ( iSequence > 0 )
+	{
+		flDuration = pPlayer->SequenceDuration( iSequence );
+		if ( ( flDuration <= 0.0f ) || ( flDuration > 10.0f ) )
+			flDuration = 2.0f;
+	}
+
+	s_flHL2SBActEndTime = gpGlobals->curtime + flDuration + 0.15f;
+
+	if ( !s_bHL2SBActCameraActive )
+	{
+		s_bHL2SBActSavedThirdPerson = ( input->CAM_IsThirdPerson() != 0 );
+		s_bHL2SBActCameraActive = true;
+
+		// Start the camera orbit from the current view (GMod's CustomAngles/PlayerLockAngles).
+		s_angHL2SBActLock = pPlayer->EyeAngles();
+		s_angHL2SBActCam = s_angHL2SBActLock;
+		s_angHL2SBActCamPrevRaw = s_angHL2SBActLock;
+	}
+
+	// HL2SB: full third-person switch via the real wrapper (SetOverridingThirdPerson +
+	// CAM_ToThirdPerson + ThirdPersonSwitch). This is the path that actually puts the
+	// local player model into the render list, so the act gesture is visible.
+	::CAM_ToThirdPerson();
+
+	Msg( "act: %s (%.2fs%s)\n", pszName, flDuration, ( iSequence > 0 ) ? "" : ", no sequence on this model" );
+}
+
+// HL2SB: C_BasePlayer::ShouldDrawLocalPlayer() consults this so the act taunt camera
+// keeps the body in the render list. (The engine third-person flag does it too, but
+// this stays as a belt-and-braces for the frames where CAM_Think has not run yet.)
+bool HL2SB_CustomThirdPersonActive( void )
+{
+	return s_bHL2SBActCameraActive && ( gpGlobals->curtime < s_flHL2SBActEndTime );
+}
+
+// GMod taunt_camera.lua CAM.CreateMove: feed the mouse into a separate orbiting camera
+// and lock the player's own view + movement so the body stays still while you spin the
+// camera around it. (s_angHL2SBActCamPrevRaw is declared with the other act statics
+// above, because HL2SB_PlayAct already needs it.)
+//
+// HL2SB: the vehicle camera convar, so the in-vehicle IN_DUCK toggle below can flip it.
+// The camera itself is built from this convar in ClientModeShared::OverrideView
+// (game/client/clientmode_shared.cpp).
+extern ConVar hl2sb_veh_thirdperson;
+
+// HL2SB: previous frame's IN_DUCK, for GMod's edge-triggered toggle. Updated on every
+// frame (also on foot), so entering a vehicle while Ctrl is already held does not fire
+// the toggle spuriously.
+static bool s_bHL2SBVehDuckLastFrame = false;
+
+bool C_HL2MP_Player::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
+{
+	if ( !BaseClass::CreateMove( flInputSampleTime, pCmd ) )
+		return false;
+
+	if ( s_bHL2SBActCameraActive && ( gpGlobals->curtime < s_flHL2SBActEndTime ) && IsAlive() )
+	{
+		// mouse delta since the engine wrote this frame's view angles
+		QAngle angDelta = pCmd->viewangles - s_angHL2SBActCamPrevRaw;
+		angDelta[ YAW ]   = AngleNormalize( angDelta[ YAW ] );
+		angDelta[ PITCH ] = clamp( angDelta[ PITCH ], -89.0f, 89.0f );
+
+		s_angHL2SBActCam[ YAW ]   = AngleNormalize( s_angHL2SBActCam[ YAW ]   + angDelta[ YAW ] );
+		s_angHL2SBActCam[ PITCH ] = clamp( s_angHL2SBActCam[ PITCH ] + angDelta[ PITCH ], -89.0f, 89.0f );
+
+		// Lock the body: restore the view to what it was at act start and freeze motion.
+		pCmd->viewangles = s_angHL2SBActLock;
+		pCmd->forwardmove = 0.0f;
+		pCmd->sidemove = 0.0f;
+		pCmd->buttons &= ~( IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_JUMP | IN_DUCK );
+	}
+
+	// ---------------------------------------------------------------------------
+	// HL2SB: the in-vehicle third person toggle, GMod's GM:VehicleMove
+	// (gamemodes/base/gamemode/init.lua:151):
+	//
+	//     if ( mv:KeyPressed( IN_DUCK ) && vehicle.SetThirdPersonMode ) then
+	//         vehicle:SetThirdPersonMode( !vehicle:GetThirdPersonMode() )
+	//     end
+	//
+	// CMoveData does not exist in HL2SB's Lua, and the toggle is a purely local camera,
+	// so it happens right here on the client: mv:KeyPressed() is edge-triggered, hence
+	// the previous frame's duck state. It only runs while seated, so crouching on foot
+	// is untouched (no IN_DUCK is ever cleared from the command).
+	// ---------------------------------------------------------------------------
+	{
+		// pCmd->buttons is GMod's own source (CMoveData carries the same bits), and
+		// in_duck is the raw +duck key state as belt-and-braces: HL2SB's input layer is
+		// the only place that can tell whether a command cleared the bit first. Either
+		// one counts; the edge filter below is what makes it a single press.
+		const bool bDuckDown = ( ( pCmd->buttons & IN_DUCK ) != 0 ) || ( ( in_duck.state & 1 ) != 0 );
+
+		if ( IsInAVehicle() && bDuckDown && !s_bHL2SBVehDuckLastFrame )
+		{
+			hl2sb_veh_thirdperson.SetValue( hl2sb_veh_thirdperson.GetBool() ? 0 : 1 );
+			Msg( "[HL2SB] vehicle third person = %d (IN_DUCK, vehicle camera)\n",
+				 hl2sb_veh_thirdperson.GetBool() ? 1 : 0 );
+		}
+
+		s_bHL2SBVehDuckLastFrame = bDuckDown;
+	}
+
+	s_angHL2SBActCamPrevRaw = pCmd->viewangles;
+	return true;
+}
+
+static void CC_HL2SB_Act( const CCommand &args )
+{
+	C_HL2MP_Player *pPlayer = static_cast<C_HL2MP_Player *>( C_BasePlayer::GetLocalPlayer() );
+	if ( !pPlayer )
+		return;
+
+	if ( args.ArgC() < 2 )
+	{
+		HL2SB_PrintActList();
+		return;
+	}
+
+	HL2SB_PlayAct( pPlayer, args[1] );
+}
+
+static ConCommand hl2sb_act( "act", CC_HL2SB_Act, "Play a GMod gesture on the local player, seen from a camera in front.", FCVAR_CLIENTDLL );
+
+// HL2SB: explicit first/third person toggle (bindable, e.g. bind F "hl2sb_vcam").
+// Vehicle third-person was removed again - it needed a per-vehicle flag and its own
+// camera/trace work and kept misbehaving, so this is on-foot only.
+static void CC_HL2SB_VCam( const CCommand &args )
+{
+	if ( input->CAM_IsThirdPerson() )
+		::CAM_ToFirstPerson();
+	else
+		::CAM_ToThirdPerson();
+}
+
+static ConCommand hl2sb_vcam( "hl2sb_vcam", CC_HL2SB_VCam, "Toggle first/third person.", FCVAR_CLIENTDLL );
+
 void C_HL2MP_Player::ClientThink( void )
 {
 	// ---------------------------------------------------------------------------
@@ -354,6 +576,41 @@ void C_HL2MP_Player::ClientThink( void )
 			Msg( "[HL2SB anim/cl] ClientThink: csa=%d csaupdates=%d inlist=%d flags=0x%X listcount=%d seq=%d(%s) cycle=%.3f rate=%.2f animtime=%.3f curtime=%.3f\n",
 				 m_bClientSideAnimation ? 1 : 0, g_nHL2SBClientSideAnimUpdates, bInList ? 1 : 0, nFlags, nListCount,
 				 iSequence, pszLabel, GetCycle(), m_flPlaybackRate, m_flAnimTime, gpGlobals->curtime );
+		}
+	}
+
+	// ---------------------------------------------------------------------------
+	// HL2SB: per-frame bookkeeping for the in-vehicle camera toggle and the act
+	// camera (see the act command above this function).
+	// ---------------------------------------------------------------------------
+	if ( C_BasePlayer::GetLocalPlayer() == this )
+	{
+		if ( s_bHL2SBActCameraActive )
+		{
+			// The gesture layer is owned by the server (see HL2SB_ServerPlayGesture);
+			// the camera is local and its timer always expires, so the view can never be
+			// left parked in front of the player.
+			if ( ( gpGlobals->curtime >= s_flHL2SBActEndTime ) || !IsAlive() )
+			{
+				s_bHL2SBActCameraActive = false;
+				// Restore first person the same way (full wrapper).
+				if ( !s_bHL2SBActSavedThirdPerson )
+					::CAM_ToFirstPerson();
+			}
+		}
+
+		// Diagnostic (hl2sb_anim_debug): does the act camera have the engine third-person
+		// flag (that is what draws the body), and is the entity in the anim list?
+		if ( hl2sb_anim_debug.GetBool() )
+		{
+			static float s_flNextVehPrint = 0.0f;
+			if ( gpGlobals->curtime >= s_flNextVehPrint )
+			{
+				s_flNextVehPrint = gpGlobals->curtime + 1.0f;
+				Msg( "[HL2SB vcam/cl] invehicle=%d thirdperson=%d actcam=%d\n",
+					 IsInAVehicle() ? 1 : 0,
+					 input->CAM_IsThirdPerson() ? 1 : 0, s_bHL2SBActCameraActive ? 1 : 0 );
+			}
 		}
 	}
 
@@ -563,6 +820,23 @@ void C_HL2MP_Player::UpdateClientSideAnimation()
 		// (interpolatedvar.h:739-752, verified). It is kept in sync anyway because
 		// the same mismatch also force-adds a transition layer.
 		ClientSideAnimationChanged();
+
+		// HL2SB: the shared animstate derives the feet/body yaw from
+		// GetAnimEyeAngles() (= m_angEyeAngles) - see ComputePoseParam_BodyYaw().
+		// The client only refreshed that in C_HL2MP_Player::PostThink(), which does not
+		// run for the local player, so the whole yaw chain ran on 0 and the visible
+		// body stayed at yaw 0 in third person (it did not follow the view).
+		// Measured before this fix: client local/eye = 35.1 but render/feet/goal = 0.0,
+		// while the server had all of them at 35.1.
+		//
+		// NOTE: EyeAngles(), NOT LocalEyeAngles(). The 21:47 log still showed
+		// "[HL2SB yaw/cl] local=27.2 eye=27.2 render=0.0 feet=0.0 goal=0.0" - the eye
+		// value printed there IS EyeAngles(), while LocalEyeAngles() fed 0 into
+		// m_angEyeAngles, so EstimateYaw() left the feet yaw at 0 and the body faced
+		// world yaw 0 ("in third person the character faces sideways and cannot be
+		// corrected", also visible on foot, not just in a vehicle).
+		if ( bLocalPlayer )
+			m_angEyeAngles = EyeAngles();
 
 		m_PlayerAnimState.Update();
 
@@ -957,6 +1231,43 @@ C_BaseAnimating *C_HL2MP_Player::BecomeRagdollOnClient()
 
 void C_HL2MP_Player::CalcView( Vector &eyeOrigin, QAngle &eyeAngles, float &zNear, float &zFar, float &fov )
 {
+	// HL2SB: the "act" command parks the camera in front of the player while the
+	// gesture plays (GMod's taunt_camera.lua view) - see the act command at the top.
+	//
+	// GMod locks the body angles and rotates a SEPARATE camera angle with the mouse,
+	// so you can orbit 360 deg and see the front of the gesture. We do the camera half
+	// here (mouse orbits the camera, not the body); the body-lock half needs a
+	// CreateMove view-freeze because the entity yaw is server-authoritative in HL2MP.
+	if ( s_bHL2SBActCameraActive && ( gpGlobals->curtime < s_flHL2SBActEndTime ) && IsAlive() && !IsInAVehicle() )
+	{
+		// The orbit lives in s_angHL2SBActCam, fed by CreateMove from the mouse while
+		// the body is locked. Here we only turn it into a position in front of the body.
+		const Vector vecTarget = GetAbsOrigin() + Vector( 0.0f, 0.0f, 64.0f );
+
+		QAngle angCamFlat = s_angHL2SBActCam;
+		angCamFlat[ PITCH ] = 0.0f;
+		Vector vecForward;
+		AngleVectors( angCamFlat, &vecForward );
+
+		// yaw orbits the camera horizontally, pitch lifts/lowers it around the head
+		float flDist = 110.0f;
+		Vector vecCam = vecTarget
+			- vecForward * ( flDist * cos( DEG2RAD( s_angHL2SBActCam[ PITCH ] ) ) )
+			+ Vector( 0.0f, 0.0f, 16.0f + flDist * sin( DEG2RAD( s_angHL2SBActCam[ PITCH ] ) ) );
+
+		trace_t tr;
+		UTIL_TraceLine( vecTarget, vecCam, MASK_SOLID, this, COLLISION_GROUP_NONE, &tr );
+		if ( tr.fraction < 1.0f )
+			vecCam = tr.endpos;
+
+		eyeOrigin = vecCam;
+		VectorAngles( vecTarget - vecCam, eyeAngles );
+
+		zNear = 7.0f;
+		zFar = 12000.0f;
+		return;
+	}
+
 	if ( m_lifeState != LIFE_ALIVE && !IsObserver() )
 	{
 		Vector origin = EyePosition();			

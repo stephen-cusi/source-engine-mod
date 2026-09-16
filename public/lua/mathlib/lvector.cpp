@@ -115,6 +115,43 @@ static int Vector_GetNormalized (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the rest of the Vector methods the wiki documents.
+//
+// GetNormal() matters most: it is GMod's spelling of GetNormalized(), and
+// SCP-096's melee uses it to aim its knockback --
+//
+//     v:SetVelocity( moveAdd + ( self.Enemy:GetPos() - self:GetPos() ):GetNormal() * 100 )
+//                                                                     init.lua:372
+//
+// so the first hit it landed raised "attempt to call a nil value (method
+// 'GetNormal')", which killed the behaviour coroutine: the bot kept playing its
+// run animation with no AI left behind it, i.e. running on the spot.
+//-----------------------------------------------------------------------------
+static int Vector_GetNormal (lua_State *L) {
+  Vector vec = luaL_checkvector(L, 1);
+  vec.NormalizeInPlace();
+  lua_pushvector(L, vec);
+  return 1;
+}
+
+static int Vector_Unpack (lua_State *L) {
+  Vector vec = luaL_checkvector(L, 1);
+  lua_pushnumber(L, vec.x);
+  lua_pushnumber(L, vec.y);
+  lua_pushnumber(L, vec.z);
+  return 3;
+}
+
+static int Vector_IsEqualTol (lua_State *L) {
+  Vector vec = luaL_checkvector(L, 1);
+  Vector other = luaL_checkvector(L, 2);
+  float flTolerance = (float)luaL_optnumber(L, 3, 0.0);
+
+  lua_pushboolean(L, fabs(vec.x - other.x) <= flTolerance && fabs(vec.y - other.y) <= flTolerance && fabs(vec.z - other.z) <= flTolerance);
+  return 1;
+}
+
 // GMod's Vector:Normalize() normalises the vector IN PLACE.  This used to return
 // the normalised value without touching the receiver, which is visibly wrong for
 // the canonical GMod idiom
@@ -381,6 +418,10 @@ static const luaL_Reg Vectormeta[] = {
   {"Angle", Vector_Angle},
   {"ToTable", Vector_ToTable},
   {"GetNormalized", Vector_GetNormalized},
+// HL2SB GMod compat: GMod's documented Vector surface (see the definitions above).
+{"GetNormal", Vector_GetNormal},
+{"Unpack", Vector_Unpack},
+{"IsEqualTol", Vector_IsEqualTol},
   {"Normalize", Vector_Normalize},
   {"Rotate", Vector_Rotate},
   {"Distance", Vector_Distance},

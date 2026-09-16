@@ -18,6 +18,11 @@ int g_nHL2SB_ModelConfigCount = 0;
 // reloads.  Prevents console commands from re-reading the cfg dir every call.
 static bool g_bModelConfigsLoaded = false;
 
+// HL2SB: the szConfigFile marker of an entry that came from Lua
+// (HL2SB_AddRuntimeModelConfig) rather than from cfg/playermodel/<name>.cfg.
+// It is how a rescan tells the two apart - see HL2SB_LoadAllModelConfigs.
+#define HL2SB_RUNTIME_CONFIG_FILE	"<lua>"
+
 //-----------------------------------------------------------------------------
 // Purpose: Lazy-load the model config table if it hasn't been populated yet.
 //-----------------------------------------------------------------------------
@@ -28,6 +33,32 @@ void HL2SB_EnsureModelConfigsLoaded( void )
 
 	HL2SB_LoadAllModelConfigs();
 	g_bModelConfigsLoaded = true;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: precache one config's models (server only - no-op on the client)
+//-----------------------------------------------------------------------------
+static void HL2SB_PrecacheModelConfig( const HL2SB_ModelConfig_t &config )
+{
+#if !defined( CLIENT_DLL )
+	if ( config.szPlayerModel[0] )
+	{
+		CBaseEntity::PrecacheModel( config.szPlayerModel );
+	}
+
+	if ( config.szHandsModel[0] )
+	{
+		// The hands value may encode skin/body after the path:
+		//   "models/weapons/c_arms_citizen.mdl|2|0000000"
+		// Precache the bare model path only.
+		char szBare[ HL2SB_MAX_MODEL_PATH ];
+		Q_strncpy( szBare, config.szHandsModel, sizeof(szBare) );
+		char *pPipe = strchr( szBare, '|' );
+		if ( pPipe )
+			*pPipe = '\0';
+		CBaseEntity::PrecacheModel( szBare );
+	}
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -77,25 +108,7 @@ bool HL2SB_LoadModelConfigFromKV( const char *pszFilePath, const char *pszConfig
 
 	g_nHL2SB_ModelConfigCount++;
 
-#if !defined( CLIENT_DLL )
-	// Server: precache all models referenced by this config
-	if ( config.szPlayerModel[0] )
-	{
-		CBaseEntity::PrecacheModel( config.szPlayerModel );
-	}
-	if ( config.szHandsModel[0] )
-	{
-		// The hands value may encode skin/body after the path:
-		//   "models/weapons/c_arms_citizen.mdl|2|0000000"
-		// Precache the bare model path only.
-		char szBare[ HL2SB_MAX_MODEL_PATH ];
-		Q_strncpy( szBare, config.szHandsModel, sizeof(szBare) );
-		char *pPipe = strchr( szBare, '|' );
-		if ( pPipe )
-			*pPipe = '\0';
-		CBaseEntity::PrecacheModel( szBare );
-	}
-#endif
+	HL2SB_PrecacheModelConfig( config );
 
 	Msg( "[HL2SB] Loaded: %s -> %s\n", config.szName, config.szPlayerModel );
 	return true;
@@ -106,6 +119,20 @@ bool HL2SB_LoadModelConfigFromKV( const char *pszFilePath, const char *pszConfig
 //-----------------------------------------------------------------------------
 void HL2SB_LoadAllModelConfigs( void )
 {
+	// HL2SB: entries registered from Lua (HL2SB_AddRuntimeModelConfig) are not
+	// files in cfg/playermodel/, and they have to SURVIVE this rescan.  Lua runs
+	// at level init while this scan runs from the server's Precache or the
+	// client's first menu open, so the order is not fixed - dropping a user's
+	// playermodel here would show up as "the addon works randomly".
+	static HL2SB_ModelConfig_t s_RuntimeConfigs[HL2SB_MAX_MODELS];
+	int nRuntime = 0;
+
+	for ( int i = 0; i < g_nHL2SB_ModelConfigCount; ++i )
+	{
+		if ( !Q_stricmp( g_HL2SB_ModelConfigs[i].szConfigFile, HL2SB_RUNTIME_CONFIG_FILE ) )
+			s_RuntimeConfigs[nRuntime++] = g_HL2SB_ModelConfigs[i];
+	}
+
 	g_nHL2SB_ModelConfigCount = 0;
 	g_bModelConfigsLoaded = false;
 
@@ -123,31 +150,123 @@ void HL2SB_LoadAllModelConfigs( void )
 	if ( !pszFilename )
 	{
 		Msg( "[HL2SB] No model configs found in %s/\n", pszPath );
-		return;
 	}
-
-	while ( pszFilename && g_nHL2SB_ModelConfigCount < HL2SB_MAX_MODELS )
+	else
 	{
-		char szFullPath[MAX_PATH];
-		Q_snprintf( szFullPath, sizeof(szFullPath), "%s/%s", pszPath, pszFilename );
-
-		char szConfigName[HL2SB_MAX_MODEL_NAME];
-		Q_strncpy( szConfigName, pszFilename, sizeof(szConfigName) );
-		int len = Q_strlen( szConfigName );
-		if ( len > 4 && !Q_stricmp( &szConfigName[len - 4], ".cfg" ) )
+		while ( pszFilename && g_nHL2SB_ModelConfigCount < HL2SB_MAX_MODELS )
 		{
-			szConfigName[len - 4] = '\0';
+			char szFullPath[MAX_PATH];
+			Q_snprintf( szFullPath, sizeof(szFullPath), "%s/%s", pszPath, pszFilename );
+
+			char szConfigName[HL2SB_MAX_MODEL_NAME];
+			Q_strncpy( szConfigName, pszFilename, sizeof(szConfigName) );
+			int len = Q_strlen( szConfigName );
+			if ( len > 4 && !Q_stricmp( &szConfigName[len - 4], ".cfg" ) )
+			{
+				szConfigName[len - 4] = '\0';
+			}
+
+			Msg( "[HL2SB] Loading: %s\n", szFullPath );
+			HL2SB_LoadModelConfigFromKV( szFullPath, szConfigName );
+
+			pszFilename = filesystem->FindNext( findHandle );
 		}
 
-		Msg( "[HL2SB] Loading: %s\n", szFullPath );
-		HL2SB_LoadModelConfigFromKV( szFullPath, szConfigName );
-
-		pszFilename = filesystem->FindNext( findHandle );
+		filesystem->FindClose( findHandle );
 	}
 
-	filesystem->FindClose( findHandle );
+	// HL2SB: put the runtime entries back.  ⚠️ The duplicate check must NOT go
+	// through HL2SB_GetModelConfigByName(): that helper lazy-loads, and we are
+	// inside the load - it would recurse forever.
+	int nRestored = 0;
 
-	Msg( "[HL2SB] Loaded %d configs\n", g_nHL2SB_ModelConfigCount );
+	for ( int i = 0; i < nRuntime && g_nHL2SB_ModelConfigCount < HL2SB_MAX_MODELS; ++i )
+	{
+		bool bDefinedByCfg = false;
+		for ( int j = 0; j < g_nHL2SB_ModelConfigCount; ++j )
+		{
+			if ( !Q_stricmp( g_HL2SB_ModelConfigs[j].szName, s_RuntimeConfigs[i].szName ) )
+			{
+				bDefinedByCfg = true;
+				break;
+			}
+		}
+
+		// A cfg file with the same name wins: it is the explicit, file-driven
+		// declaration of that model.
+		if ( bDefinedByCfg )
+			continue;
+
+		HL2SB_ModelConfig_t &config = g_HL2SB_ModelConfigs[g_nHL2SB_ModelConfigCount++];
+		config = s_RuntimeConfigs[i];
+		HL2SB_PrecacheModelConfig( config );
+		++nRestored;
+	}
+
+	Msg( "[HL2SB] Loaded %d configs (%d registered from Lua)\n", g_nHL2SB_ModelConfigCount, nRestored );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB: register or update a model at RUNTIME, i.e. from Lua.
+//
+// Garry's Mod playermodel addons do not ship a cfg/playermodel/<name>.cfg - they
+// call `player_manager.AddValidModel( name, model )` (and AddValidHands) from a
+// lua/autorun file.  The menu (hl2sb.GetPlayerModels), the validation inside
+// hl2sb.SetPlayerModel(), the server precache and the c_hands lookup all read
+// THIS table, so those registrations have to land here or the addon is invisible.
+//
+//   pszName        - the key, spelled exactly like a cfg entry's file name: it is
+//                    what cl_playermodel / hl2sb.SetPlayerModel() take.
+//   pszPlayerModel - model path; NULL/"" keeps whatever the entry already has.
+//   pszHandsModel  - "" for none, NULL to keep; the cfg encoding
+//                    "path|skin|bodygroups" is accepted.
+//
+// Updating an existing entry is the whole point: AddValidModel runs first and
+// AddValidHands immediately after it, so the hands always arrive in a second call.
+//-----------------------------------------------------------------------------
+void HL2SB_AddRuntimeModelConfig( const char *pszName, const char *pszPlayerModel, const char *pszHandsModel )
+{
+	if ( !pszName || !pszName[0] )
+		return;
+
+	HL2SB_EnsureModelConfigsLoaded();
+
+	HL2SB_ModelConfig_t *pConfig = NULL;
+
+	for ( int i = 0; i < g_nHL2SB_ModelConfigCount; ++i )
+	{
+		if ( !Q_stricmp( g_HL2SB_ModelConfigs[i].szName, pszName ) )
+		{
+			pConfig = &g_HL2SB_ModelConfigs[i];
+			break;
+		}
+	}
+
+	if ( !pConfig )
+	{
+		if ( g_nHL2SB_ModelConfigCount >= HL2SB_MAX_MODELS )
+		{
+			Warning( "[HL2SB] Runtime model '%s' ignored: table full (%d)\n", pszName, HL2SB_MAX_MODELS );
+			return;
+		}
+
+		pConfig = &g_HL2SB_ModelConfigs[g_nHL2SB_ModelConfigCount++];
+		Q_memset( pConfig, 0, sizeof( *pConfig ) );
+		Q_strncpy( pConfig->szConfigFile, HL2SB_RUNTIME_CONFIG_FILE, sizeof( pConfig->szConfigFile ) );
+		Q_strncpy( pConfig->szName, pszName, sizeof( pConfig->szName ) );
+	}
+
+	if ( pszPlayerModel && pszPlayerModel[0] )
+		Q_strncpy( pConfig->szPlayerModel, pszPlayerModel, sizeof( pConfig->szPlayerModel ) );
+
+	if ( pszHandsModel )
+		Q_strncpy( pConfig->szHandsModel, pszHandsModel, sizeof( pConfig->szHandsModel ) );
+
+	HL2SB_PrecacheModelConfig( *pConfig );
+
+	Msg( "[HL2SB] Runtime model '%s' -> %s (hands: '%s')\n",
+		 pConfig->szName, pConfig->szPlayerModel,
+		 pConfig->szHandsModel[0] ? pConfig->szHandsModel : "none" );
 }
 
 //-----------------------------------------------------------------------------

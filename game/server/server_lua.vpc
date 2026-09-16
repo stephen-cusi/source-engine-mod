@@ -9,14 +9,41 @@ $Macro GAMENAME 	"hl2mp" [!$SOURCESDK]
 $Macro GAMENAME 	"mod_hl2mp" [$SOURCESDK]
 
 $Include "$SRCDIR\game\server\server_base.vpc"
-$Include "$SRCDIR\game\server\nav_mesh.vpc" [$SOURCESDK]
+
+//-----------------------------------------------------------------------------
+// HL2SB: the nav mesh and the NextBot stack are listed HERE, flat, on purpose.
+//
+// Two other ways were tried and both fail:
+//   * adding 'nav_mesh.vpc'/'nextbot.vpc' to game/server/wscript's vpcs list -
+//     that edits a WSCRIPT, and waf's reconfigure tool then re-runs configure,
+//     which is the long silent phase (minutes of CPU, no output, no cl.exe) that
+//     looks exactly like a hang;
+//   * include-ing those vpc files from here - this fork's vpc parser honours a
+//     nested configuration block but NOT the file entries of a nested project
+//     block, so every navmesh/NextBot symbol came out unresolved (LNK2019).
+//
+// A flat list in a file that is already in the build cannot fail either way:
+// no wscript changes, so no reconfigure.
+//
+// ⚠️ waf caches the task graph in build/.wafpickle-*; deleting that file makes
+// it re-read these lists without touching a wscript.
+//
+// ⚠️ Do NOT write a dollar-sign directive name inside a comment in this file:
+// vpc_parser.py tests every LINE for the substring "File" and then splits it on
+// a double quote, so a comment mentioning the file directive raises
+// IndexError: list index out of range (that is not hypothetical - it happened).
+//
+// USE_NAV_MESH and NEXT_BOT themselves are in the preprocessor-definition line
+// below (the former is what gameinterface.cpp's nav mesh load/update hooks need,
+// the latter is what makes it call TheNextBots().Update()).
+//-----------------------------------------------------------------------------
 
 $Configuration
 {
 	$Compiler
 	{
 		$AdditionalIncludeDirectories	"$BASE;$SRCDIR\game\shared\hl2,.\hl2,.\hl2mp,$SRCDIR\game\shared\hl2mp;.\lua;.\shared\lua"
-		$PreprocessorDefinitions		"$BASE;HL2MP;HL2_DLL;HL2SB;ARGG;LUA_SDK"
+		$PreprocessorDefinitions		"$BASE;HL2MP;HL2_DLL;HL2SB;ARGG;LUA_SDK;USE_NAV_MESH;NEXT_BOT"
 	}
 }
 
@@ -53,6 +80,90 @@ $Project "Server (HL2MP)"
 		$File "lua/basescriptedtrigger.cpp"
 		$File "lua/lhl2_player.cpp"
 		$File "lua/leffects.cpp"
+		// HL2SB GMod compat: ENT.Type = "nextbot" - the Lua host over the NextBot
+		// stack and the navmesh it paths on.
+		$File "lua/luanextbot.cpp"
+		$File "lua/luanextbot.h"
+		$File "lua/lnavmesh.cpp"
+		$File "lua/lnavmesh.h"
+
+		//---------------------------------------------------------------------
+		// GMod-compat navigation mesh (the base one, subversion 0 - the same
+		// TheNavMesh GMod itself uses; the CS:GO bot mesh is a different class).
+		// Same list as game/server/nav_mesh.vpc, compiled into this target
+		// because USE_NAV_MESH is defined above.
+		//---------------------------------------------------------------------
+		$File "nav.h"
+		$File "nav_area.cpp"
+		$File "nav_area.h"
+		$File "nav_colors.cpp"
+		$File "nav_colors.h"
+		$File "nav_edit.cpp"
+		$File "nav_entities.cpp"
+		$File "nav_entities.h"
+		$File "nav_file.cpp"
+		$File "nav_generate.cpp"
+		$File "nav_ladder.cpp"
+		$File "nav_ladder.h"
+		$File "nav_merge.cpp"
+		$File "nav_mesh.cpp"
+		$File "nav_mesh.h"
+		$File "nav_mesh_factory.cpp"
+		$File "nav_node.cpp"
+		$File "nav_node.h"
+		$File "nav_pathfind.h"
+		$File "nav_simplify.cpp"
+
+		//---------------------------------------------------------------------
+		// The NextBot stack (Source 2013's, the one GMod's nextbot system is
+		// built on): INextBot, its components (body/vision/intention/
+		// locomotion), the path follower a base_nextbot drives itself with, and
+		// CSimpleBot - the engine's own minimal nextbot entity, which doubles as
+		// a smoke test (`simple_bot_add`, see nextbot.vpc's note).
+		//---------------------------------------------------------------------
+		$File "NextBot\Behavior\BehaviorBackUp.h"
+		$File "NextBot\Behavior\BehaviorMoveTo.h"
+		$File "NextBot\NavMeshEntities\func_nav_prerequisite.cpp"
+		$File "NextBot\NavMeshEntities\func_nav_prerequisite.h"
+		$File "NextBot\NextBot.cpp"
+		$File "NextBot\NextBot.h"
+		$File "NextBot\NextBotBehavior.h"
+		$File "NextBot\NextBotBodyInterface.cpp"
+		$File "NextBot\NextBotBodyInterface.h"
+		$File "NextBot\NextBotComponentInterface.cpp"
+		$File "NextBot\NextBotComponentInterface.h"
+		$File "NextBot\NextBotContextualQueryInterface.h"
+		$File "NextBot\NextBotEventResponderInterface.h"
+		$File "NextBot\NextBotGroundLocomotion.cpp"
+		$File "NextBot\NextBotGroundLocomotion.h"
+		$File "NextBot\NextBotHearingInterface.h"
+		$File "NextBot\NextBotIntentionInterface.cpp"
+		$File "NextBot\NextBotIntentionInterface.h"
+		$File "NextBot\NextBotInterface.cpp"
+		$File "NextBot\NextBotInterface.h"
+		$File "NextBot\NextBotKnownEntity.h"
+		$File "NextBot\NextBotLocomotionInterface.cpp"
+		$File "NextBot\NextBotLocomotionInterface.h"
+		$File "NextBot\NextBotManager.cpp"
+		$File "NextBot\NextBotManager.h"
+		$File "NextBot\NextBotUtil.h"
+		$File "NextBot\NextBotVisionInterface.cpp"
+		$File "NextBot\NextBotVisionInterface.h"
+		$File "NextBot\Path\NextBotChasePath.cpp"
+		$File "NextBot\Path\NextBotChasePath.h"
+		$File "NextBot\Path\NextBotPath.cpp"
+		$File "NextBot\Path\NextBotPath.h"
+		$File "NextBot\Path\NextBotPathFollow.cpp"
+		$File "NextBot\Path\NextBotPathFollow.h"
+		$File "NextBot\Path\NextBotRetreatPath.h"
+		$File "NextBot\Player\NextBotPlayer.cpp"
+		$File "NextBot\Player\NextBotPlayer.h"
+		$File "NextBot\Player\NextBotPlayerBody.cpp"
+		$File "NextBot\Player\NextBotPlayerBody.h"
+		$File "NextBot\Player\NextBotPlayerLocomotion.cpp"
+		$File "NextBot\Player\NextBotPlayerLocomotion.h"
+		$File "NextBot\simple_bot.cpp"
+		$File "NextBot\simple_bot.h"
 		
 		$File "$SRCDIR/game/shared/lua/lbaseplayer_shared.cpp"
 		$File "$SRCDIR/game/shared/lua/lbaseentity_shared.cpp"
@@ -63,6 +174,9 @@ $Project "Server (HL2MP)"
 		$File "$SRCDIR/game/shared/lua/lnet.cpp"
 		$File "$SRCDIR/game/shared/lua/leffect_dispatch_data.cpp"
 		$File "$SRCDIR/game/shared/lua/lhl2mp_player_shared.cpp"
+		// HL2SB: GMod's Vehicle Lua library (the "Vehicle" metatable).
+		$File "$SRCDIR/game/shared/lua/lvehicle_shared.cpp"
+		$File "$SRCDIR/game/shared/lua/lvehicle_shared.h"
 		$File "$SRCDIR/game/shared/lua/limovehelper.cpp"
 		$File "$SRCDIR/game/shared/lua/lipredictionsystem.cpp"
 		$File "$SRCDIR/game/shared/lua/lin_buttons.cpp"
@@ -104,6 +218,11 @@ $Project "Server (HL2MP)"
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.h"
 		$File "$SRCDIR/game/server/hl2sb_undo.cpp"
 		$File "$SRCDIR/game/server/hl2sb_undo.h"
+
+		// HL2SB: GMod's spawn commands, in the engine (gm_giveswep / gm_spawn /
+		// gm_spawnvehicle / gm_spawnnpc / gm_spawnprop) - one spawn path for every
+		// client, recording undo through HL2SB_UndoRecord.
+		$File "$SRCDIR/game/server/hl2sb_gm_commands.cpp"
 	}
 
 	$Folder "Gunmod"

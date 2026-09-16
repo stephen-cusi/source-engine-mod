@@ -121,7 +121,12 @@ LUA_BINDING_BEGIN( Entities, GetInSphere, "library", "Finds all entities in the 
 
     Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
     float radius = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "radius" );
-    int flagMask = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optinteger, 3, PARTITION_CLIENT_NON_STATIC_EDICTS, "flagMask" );
+
+    // HL2SB: 0 means "no flag filter" -- the server reads a non-zero mask as a
+    // requirement (util.cpp:317) and this defaulted to
+    // PARTITION_CLIENT_NON_STATIC_EDICTS = 1<<7 = FL_ATCONTROLS, so on the server
+    // every call came back empty.  See the note on FindInSphere below.
+    int flagMask = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optinteger, 3, 0, "flagMask" );
 
 #ifdef CLIENT_DLL
     int partitionMask = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optinteger, 4, PARTITION_CLIENT_NON_STATIC_EDICTS, "partitionMask" );
@@ -351,16 +356,55 @@ LUA_BINDING_BEGIN( Entities, FindGenericWithin, "library", "Finds an entity by i
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
 
-LUA_BINDING_BEGIN( Entities, FindInSphere, "library", "Finds an entity within a radius", "server" )
+// HL2SB: GMod's ents.FindInSphere() answers a TABLE of every entity in the
+// sphere; this fork's version answered the single one gEntList happened to find
+// first.  That is not a difference a script can survive:
+//
+//     for k, v in pairs( ents.FindInSphere( self:GetPos(), 100 ) ) do
+//
+// SCP-096's FindEnemy() opens with exactly that line (init.lua:201-202) and the
+// userdata it got instead raised
+//
+//     init.lua:202: bad argument #1 to 'for iterator' (table expected, got CBaseAnimating)
+//
+// on the behaviour coroutine's FIRST frame -- which base_nextbot's BehaveUpdate
+// answers by dropping the thread, so the bot never ran a line of its AI again and
+// stood still with a clean log.  The GMod-compatible table implementation already
+// existed right above as Entities.GetInSphere() (and sh_init.lua:139 aliased one
+// to the other, but that file is not loaded); it is used here now.
+LUA_BINDING_BEGIN( Entities, FindInSphere, "library", "Finds all entities within a radius", "server" )
 {
+    CBaseEntity *pList[MAX_ENTITYARRAY];
+
     Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
     float radius = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "radius" );
-    CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 3, NULL, "startEntity" );
 
-    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityInSphere( startEntity, position, radius ) );
-    return 1;
+    // HL2SB: the flag mask must default to 0 ("do not filter").  The server's
+    // UTIL_EntitiesInSphere() reads a non-zero mask as a requirement --
+    //     util.cpp:317  if ( m_flagMask && !( pEntity->GetFlags() & m_flagMask ) ) continue;
+    // -- and every engine caller passes 0.  This used to default to
+    // PARTITION_CLIENT_NON_STATIC_EDICTS, which is (1 << 7) = FL_ATCONTROLS on the
+    // server: the table came back EMPTY for every query, and SCP-096's attack
+    // loop, SeeMe, SeeMe2, its prop/door scans and playernear() all iterate it --
+    // an empty table is silent, which is how "it never looks at me" and "it never
+    // hits me" survived every other fix.
+    int flagMask = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optinteger, 3, 0, "flagMask" );
+
+    int count = UTIL_EntitiesInSphere( pList, MAX_ENTITYARRAY, position, radius, flagMask );
+
+    lua_newtable( L );
+
+    for ( int i = 0; i < count; i++ )
+    {
+        lua_pushinteger( L, i );
+        CBaseEntity::PushLuaInstanceSafe( L, pList[i] );
+        lua_settable( L, -3 );
+    }
+
+    lua_pushinteger( L, count );
+    return 2;
 }
-LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
+LUA_BINDING_END( "table", "A table of every entity found, plus the count." )
 
 LUA_BINDING_BEGIN( Entities, FindNearestFacing, "library", "Finds the nearest entity facing a direction", "server" )
 {

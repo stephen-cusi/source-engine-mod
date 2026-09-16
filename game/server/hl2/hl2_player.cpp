@@ -492,7 +492,12 @@ void CHL2_Player::HandleSpeedChanges( void )
 
 	bool bCanSprint = CanSprint();
 	bool bIsSprinting = IsSprinting();
-	bool bWantSprint = ( bCanSprint && IsSuitEquipped() && (m_nButtons & IN_SPEED) );
+	// HL2SB: noclip has its own speed control (sv_noclipspeed, plus the +speed boost
+	// in CGameMovement::FullNoClipMove). The HL2 sprint must not kick in while
+	// flying - it played the sprint sound (and its own suit/stamina bookkeeping)
+	// during noclip, which GMod does not do.
+	bool bWantSprint = ( bCanSprint && IsSuitEquipped() && (m_nButtons & IN_SPEED) &&
+						 GetMoveType() != MOVETYPE_NOCLIP );
 	if ( bIsSprinting != bWantSprint && (buttonsChanged & IN_SPEED) )
 	{
 		// If someone wants to sprint, make sure they've pressed the button to do so. We want to prevent the

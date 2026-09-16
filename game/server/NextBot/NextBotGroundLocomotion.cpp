@@ -424,7 +424,14 @@ void NextBotGroundLocomotion::ApplyAccumulatedApproach( void )
 		// limit maximum forward speed from self-acceleration
 		float forwardSpeed = DotProduct( m_velocity, m_moveVector );
 		
-		float maxSpeed = MIN( m_desiredSpeed, GetSpeedLimit() );
+		// HL2SB: read the speed through the VIRTUAL getter, not the member.
+		// This is the one place the locomotion turns "desired speed" into movement,
+		// and a subclass that owns its speed (GMod's CLuaLocomotion, which the Lua
+		// scripts drive through loco:SetDesiredSpeed) can only take part if the
+		// engine asks it polymorphically.  For every locomotion in this tree
+		// GetDesiredSpeed() returns its own m_desiredSpeed, so this changes nothing
+		// for the stock bots.
+		float maxSpeed = MIN( GetDesiredSpeed(), GetSpeedLimit() );
 		
 		if ( forwardSpeed < maxSpeed )
 		{

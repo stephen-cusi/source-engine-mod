@@ -7,6 +7,7 @@
 #define _C_NEXT_BOT_H_
 
 #include "c_ai_basenpc.h"
+#include "networkvar.h"
 
 //----------------------------------------------------------------------------------------------------------------
 /**
@@ -43,7 +44,33 @@ public:
 	virtual void Spawn( void );
 	virtual void UpdateClientSideAnimation( void );
 	virtual ShadowType_t ShadowCastType( void );
+	// HL2SB GMod compat: the client half of a Lua nextbot script.  OnDataChanged()
+	// adopts the networked Lua classname and runs ENT:Initialize(); DrawModel()
+	// dispatches ENTITY:RenderOverride() / ENTITY:DrawTranslucent() / ENTITY:Draw();
+	// GetRenderGroup() answers the script's ENT.RenderGroup field.
+	virtual void OnDataChanged( DataUpdateType_t updateType );
+	virtual RenderGroup_t GetRenderGroup( void );
+	virtual int DrawModel( int flags );
 	virtual bool IsNextBot() { return true; }
+
+	// HL2SB GMod compat: interpolate even though a Lua nextbot has no model.
+	//
+	// C_BaseEntity::ShouldInterpolate() answers false for anything without a model,
+	// which is every sprite nextbot (npc_verity and npc_windgrinbot both have
+	// model='(null)').  Their origins were therefore never interpolated and the
+	// sprite snapped to each networked position -- 10 Hz, and at a 650 u/s run
+	// speed that is a ~65 unit jump per step, i.e. visibly stuttering movement.
+	virtual bool ShouldInterpolate( void );
+
+	// HL2SB: the Lua classname, networked from NextBotCombatCharacter (see the note
+	// in game/server/NextBot/NextBot.h).  Mirrored by RecvPropString in the .cpp.
+	CNetworkString( m_iScriptedClassname, 255 );
+
+	const char *GetScriptedClassname( void )
+	{
+		const char *pszName = m_iScriptedClassname.Get();
+		return ( pszName != NULL && pszName[0] != '\0' ) ? pszName : GetClassname();
+	}
 	void ForceShadowCastType( bool bForce, ShadowType_t forcedShadowType = SHADOWS_NONE ) { m_bForceShadowType = bForce; m_forcedShadowType = forcedShadowType; }
 	bool GetForcedShadowCastType( ShadowType_t* pForcedShadowType ) const;
 
@@ -61,6 +88,13 @@ private:
 	ShadowType_t	m_forcedShadowType;
 	bool			m_bForceShadowType;
 	void UpdateShadowLOD( void );
+
+	// HL2SB GMod compat, client half of a Lua nextbot script.
+	bool m_bLuaInitialized;		// ENT:Initialize() has been dispatched
+	bool m_bInLuaDraw;			// inside a Lua draw hook (self:DrawModel() re-entry guard)
+	bool m_bLuaRenderGroupRead;	// ENT.RenderGroup has been read (it is a constant)
+	int  m_nLuaRenderGroup;		// ... and its value, -1 when the script has none
+	bool PushLuaScriptTable( void );	// leaves the script's ENT table on the stack
 
 	// Local In View Data.
 	int			m_nInFrustumFrame;

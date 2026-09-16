@@ -56,4 +56,24 @@ const HL2SB_ModelConfig_t *HL2SB_FindModelConfigByPath( const char *pszPlayerMod
 // Returns NULL if no hands should be shown
 const char *HL2SB_GetHandsModelForPlayer( const char *pszPlayerModelPath );
 
+// HL2SB: register or update a model at RUNTIME, i.e. from Lua.
+//
+// A Garry's Mod playermodel addon ships no cfg/playermodel/<name>.cfg - it calls
+// `player_manager.AddValidModel( name, model )` / `AddValidHands( ... )` from a
+// lua/autorun file.  This table is what the playermodel menu
+// (hl2sb.GetPlayerModels), the check inside hl2sb.SetPlayerModel(), the server
+// precache and the c_hands lookup all read, so a Lua registration has to land
+// here or the addon never shows up.
+//
+//   pszName        - the key, spelled like a cfg entry's file name (it is what
+//                    cl_playermodel / hl2sb.SetPlayerModel() take).
+//   pszPlayerModel - model path; NULL/"" keeps the existing entry's path.
+//   pszHandsModel  - hands model; "" = none, NULL = keep.  The cfg encoding
+//                    "path|skin|bodygroups" is accepted.
+//
+// An entry of that name is UPDATED in place: AddValidModel runs first and
+// AddValidHands right after it.  Runtime entries survive a cfg rescan
+// (HL2SB_LoadAllModelConfigs) unless a cfg file of the same name exists.
+void HL2SB_AddRuntimeModelConfig( const char *pszName, const char *pszPlayerModel, const char *pszHandsModel );
+
 #endif // HL2SB_MODEL_CONFIG_H

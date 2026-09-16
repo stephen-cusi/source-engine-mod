@@ -441,6 +441,19 @@ static int net_Broadcast( lua_State *L )
 	return 0;
 }
 
+// HL2SB GMod compat: net.SendToServer().
+//
+// GMod's client -> server channel.  This fork's net library is the server ->
+// client one (net.Start ... net.Send/Broadcast): there is no message the client
+// can send back, so this accepts the call and does nothing.  Addons that use it
+// for a request -- the windgrin_npc nextbot asks the server to generate a nav
+// mesh -- therefore stay alive instead of dying on a nil method; the request is
+// simply not delivered.
+static int net_SendToServer( lua_State *L )
+{
+	return 0;
+}
+
 static const luaL_Reg net_funcs[] = {
 	{ "Start",       net_Start },
 	{ "WriteBit",    net_WriteBit },
@@ -454,6 +467,8 @@ static const luaL_Reg net_funcs[] = {
 	{ "WriteEntity", net_WriteEntity },
 	{ "Send",        net_Send },
 	{ "Broadcast",   net_Broadcast },
+	// HL2SB GMod compat: accepted and ignored (see net_SendToServer above).
+	{ "SendToServer", net_SendToServer },
 	{ NULL, NULL }
 };
 

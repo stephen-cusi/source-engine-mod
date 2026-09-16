@@ -82,6 +82,14 @@ public:
 	CPropVehiclePrisonerPod( void )
 	{
 		m_ServerVehicle.SetVehicle( this );
+
+		// HL2SB: GMod's `limitview` key. true = the SDK's clamped pod view; GMod (and
+		// HL2SB's own seat list) spawn every seat with `limitview 0` so the player's view
+		// angles stay free - that is what lets the vehicle third person camera sit behind
+		// the vehicle instead of being pinned to the pod's own downward pitch.
+		// Set HERE, in the constructor: the keyvalue is applied after construction and
+		// before Spawn(), so a default written in Spawn() would clobber it.
+		m_bLimitView = true;
 	}
 
 	~CPropVehiclePrisonerPod( void )
@@ -171,6 +179,11 @@ private:
 	CNetworkVector(		m_vecEyeExitEndpoint );
 	bool				m_bForcedExit;
 
+	// HL2SB: GMod's `limitview` key (Valve's own VDC keyvalue for prop_vehicle_prisoner_pod).
+	// Networked because the clamp it controls lives on the CLIENT
+	// (C_PropVehiclePrisonerPod::UpdateViewAngles, game/client/hl2/c_vehicle_prisoner_pod.cpp).
+	CNetworkVar( bool,	m_bLimitView );
+
 	// Vehicle script filename
 	string_t			m_vehicleScript;
 
@@ -205,6 +218,8 @@ BEGIN_DATADESC( CPropVehiclePrisonerPod )
 
 	DEFINE_KEYFIELD( m_vehicleScript, FIELD_STRING, "vehiclescript" ),
 	DEFINE_KEYFIELD( m_bLocked, FIELD_BOOLEAN, "vehiclelocked" ),
+	// HL2SB: GMod's `limitview` key (`ent_create prop_vehicle_prisoner_pod ... limitview 0`).
+	DEFINE_KEYFIELD( m_bLimitView, FIELD_BOOLEAN, "limitview" ),
 
 	DEFINE_OUTPUT( m_playerOn, "PlayerOn" ),
 	DEFINE_OUTPUT( m_playerOff, "PlayerOff" ),
@@ -218,6 +233,10 @@ IMPLEMENT_SERVERCLASS_ST(CPropVehiclePrisonerPod, DT_PropVehiclePrisonerPod)
 	SendPropBool(SENDINFO(m_bEnterAnimOn)),
 	SendPropBool(SENDINFO(m_bExitAnimOn)),
 	SendPropVector(SENDINFO(m_vecEyeExitEndpoint), -1, SPROP_COORD),
+	// HL2SB: must stay LAST - the recv table
+	// (game/client/hl2/c_vehicle_prisoner_pod.cpp) appends its RecvPropBool in the same
+	// position.
+	SendPropBool(SENDINFO(m_bLimitView)),
 END_SEND_TABLE();
 
 

@@ -85,6 +85,64 @@ class LTextEntry : public TextEntry
             lua_pushinteger( m_lua_State, ( int )code );
         LUA_CALL_PANEL_METHOD_END( 1, 0 );
     }
+
+    /*
+    ** HL2SB: OnTextChanged / OnEnter dispatch for the custom Derma layer.
+    **
+    ** The stock control reports edits only as vgui action signals ("TextChanged"
+    ** posted by FireActionSignal to AddActionSignalTarget listeners), which a Lua
+    ** panel never sees.  FireActionSignal is the single choke point every edit
+    ** path funnels through -- typing (OnKeyTyped / OnKeyCodeTyped), paste,
+    ** delete, undo, IME replacement all end there -- so overriding it covers
+    ** every way the buffer can change without polling.  The base still posts
+    ** its signal, so C++ consumers keep working; the Lua hook just runs after.
+    **
+    ** Both hooks push the self argument through lua_pushtextentry rather than the
+    ** BEGIN_LUA_CALL_PANEL_METHOD macro: the macro hands out a "Panel"-metatable
+    ** userdata, and a callback doing self:GetValue() -- GMod's DTextEntry idiom --
+    ** would resolve through the Panel chain only and hit nil, because GetValue /
+    ** GetText live on the TextEntry metatable.
+    */
+    virtual void FireActionSignal()
+    {
+        BaseClass::FireActionSignal();
+        HL2SB_CallLuaTextEntryMethod( "OnTextChanged" );
+    }
+
+    /*
+    ** Enter has no action signal of its own: the base either swallows it
+    ** (single-line) or turns it into a newline (multiline / _sendNewLines).
+    ** Intercept the key before the base consumes it so an OnEnter hook always
+    ** runs, then let the base do its normal thing.
+    */
+    virtual void OnKeyCodeTyped( KeyCode code )
+    {
+        if ( code == KEY_ENTER )
+            HL2SB_CallLuaTextEntryMethod( "OnEnter" );
+
+        BaseClass::OnKeyCodeTyped( code );
+    }
+
+    void HL2SB_CallLuaTextEntryMethod( const char *pszName )
+    {
+#if defined( LUA_SDK )
+        if ( !lua_isrefvalid( m_lua_State, m_nTableReference ) )
+            return;
+
+        lua_getref( m_lua_State, m_nTableReference );
+        lua_getfield( m_lua_State, -1, pszName );
+        lua_remove( m_lua_State, -2 );
+        if ( lua_isfunction( m_lua_State, -1 ) )
+        {
+            lua_pushtextentry( m_lua_State, this );
+            luasrc_pcall( m_lua_State, 1, 0, 0 );
+        }
+        else
+        {
+            lua_pop( m_lua_State, 1 );
+        }
+#endif
+    }
 };
 
 }  // namespace vgui

@@ -2353,6 +2353,46 @@ typedef enum
 	ACT_SPELL_VM_ARM, 
 	ACT_SPELL_VM_FIRE,
 
+	// HL2SB: the ACT_GMOD_* set. models/m_anm.mdl (and the GMod player models)
+	// declare exactly these 32 by name, so they can only be reached through
+	// ActivityList_IndexForName(). GMod plays two of them as gesture layers:
+	// ACT_GMOD_NOCLIP_LAYER for the noclip pose
+	// (gamemodes/base/gamemode/animations.lua:HandlePlayerNoClipping) and the
+	// ACT_GMOD_GESTURE_* ones for +ACT gestures. Appended at the very end of the
+	// shared block on purpose: nothing after this point is referenced by value.
+	ACT_GMOD_DEATH,
+	ACT_GMOD_GESTURE_AGREE,
+	ACT_GMOD_GESTURE_BECON,
+	ACT_GMOD_GESTURE_BOW,
+	ACT_GMOD_GESTURE_DISAGREE,
+	ACT_GMOD_GESTURE_ITEM_DROP,
+	ACT_GMOD_GESTURE_ITEM_GIVE,
+	ACT_GMOD_GESTURE_ITEM_PLACE,
+	ACT_GMOD_GESTURE_ITEM_THROW,
+	ACT_GMOD_GESTURE_MELEE_SHOVE_1HAND,
+	ACT_GMOD_GESTURE_MELEE_SHOVE_2HAND,
+	ACT_GMOD_GESTURE_RANGE_FRENZY,
+	ACT_GMOD_GESTURE_RANGE_ZOMBIE,
+	ACT_GMOD_GESTURE_RANGE_ZOMBIE_SPECIAL,
+	ACT_GMOD_GESTURE_TAUNT_ZOMBIE,
+	ACT_GMOD_GESTURE_WAVE,
+	ACT_GMOD_IN_CHAT,
+	ACT_GMOD_NOCLIP_LAYER,
+	ACT_GMOD_SHOWOFF_DUCK_01,
+	ACT_GMOD_SHOWOFF_DUCK_02,
+	ACT_GMOD_SHOWOFF_STAND_01,
+	ACT_GMOD_SHOWOFF_STAND_02,
+	ACT_GMOD_SHOWOFF_STAND_03,
+	ACT_GMOD_SHOWOFF_STAND_04,
+	ACT_GMOD_SIT_ROLLERCOASTER,
+	ACT_GMOD_TAUNT_CHEER,
+	ACT_GMOD_TAUNT_DANCE,
+	ACT_GMOD_TAUNT_LAUGH,
+	ACT_GMOD_TAUNT_MUSCLE,
+	ACT_GMOD_TAUNT_PERSISTENCE,
+	ACT_GMOD_TAUNT_ROBOT,
+	ACT_GMOD_TAUNT_SALUTE,
+
 	// this is the end of the global activities, private per-monster activities start here.
 	LAST_SHARED_ACTIVITY,
 } Activity;

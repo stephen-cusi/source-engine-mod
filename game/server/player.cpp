@@ -5517,7 +5517,54 @@ bool CBasePlayer::GetInVehicle( IServerVehicle *pVehicle, int nRole )
 	// We cannot be ducking -- do all this before SetPassenger because it
 	// saves our view offset for restoration when we exit the vehicle.
 	RemoveFlag( FL_DUCKING );
-	SetViewOffset( VEC_VIEW_SCALED( this ) );
+
+	// HL2SB: the SEATED eye offset, taken from the vehicle model's own attachment pair.
+	//
+	// A rider has two eye positions and they used to disagree by 32-39 units, because
+	// the view the client renders from is the vehicle model's `vehicle_driver_eyes`
+	// attachment (SharedVehicleViewSmoothing, vehicle_viewblend_shared.cpp:218) while
+	// this line gave the player the STANDING VEC_VIEW (64) on top of the seat point:
+	//   nova/chair_office02 (measured with hl2sb_veh_thirdperson_debug, engine.log 88.5s)
+	//       seat (vehicle_feet_passenger0) world z 38.4 / local z 22.5
+	//       vehicle_driver_eyes      world z 64.4 / local z 48.0   -> 26.0 above the seat
+	//       player eye as it was     = 38.4 + 64 = 102.4            -> 38.0 above the camera
+	//   prop_vehicle_jeep (191.1s)
+	//       seat world z 24.7, vehicle eye world z 56.7 -> 32.0 above the seat
+	//       player eye as it was = 24.7 + 64 = 88.7 -> 32.0 above the camera
+	// Everything that asks the PLAYER for its eye (weapon/muzzle traces, EyePosition(),
+	// the aim the head is pitched with) therefore pointed well above the camera, which
+	// is what "the first person camera is inside the model's face" looks like: the
+	// camera sits at the model's eye level with the model drawn around it.
+	//
+	// The pair (feet -> eyes) IS the sitting eye height for a seat (26.0 on the chair,
+	// 32.0 on the jeep) and the GMod anim models are authored for exactly that (their
+	// sit_/drive_ poses put the eyes ~26/~32 above the model origin - see
+	// HL2SB_SelectVehicleSitSequence), so the two eye positions become identical by
+	// construction. Nothing here is a model name, and a vehicle whose model carries no
+	// `vehicle_driver_eyes` keeps the SDK's VEC_VIEW.
+	//
+	// The offset is stored the same way the engine reads it back
+	// (CBaseEntity::EyePosition() = GetAbsOrigin() + GetViewOffset()), i.e. a world-space
+	// delta from the seat point, and it is restored on exit by the vehicle's saved copy
+	// (CBaseServerVehicle::m_savedViewOffset).
+	Vector vecSeatedViewOffset = VEC_VIEW_SCALED( this );
+	CBaseAnimating *pSeatModel = pEnt ? pEnt->GetBaseAnimating() : NULL;
+	if ( pSeatModel )
+	{
+		const int nEyeAttachment = pSeatModel->LookupAttachment( "vehicle_driver_eyes" );
+		if ( nEyeAttachment > 0 )
+		{
+			Vector vecEyeLocalOrigin;
+			QAngle angEyeLocalAngles;
+			if ( pSeatModel->GetAttachmentLocal( nEyeAttachment, vecEyeLocalOrigin, angEyeLocalAngles ) )
+			{
+				UTIL_ParentToWorldSpace( pSeatModel, vecEyeLocalOrigin, angEyeLocalAngles );
+				vecSeatedViewOffset = vecEyeLocalOrigin - vSeatOrigin;
+			}
+		}
+	}
+
+	SetViewOffset( vecSeatedViewOffset );
 	m_Local.m_bDucked = false;
 	m_Local.m_bDucking  = false;
 	m_Local.m_flDucktime = 0.0f;

@@ -313,6 +313,25 @@ public:
 	virtual int						GetFxBlend( void );
 	virtual bool					LODTest() { return true; }   // NOTE: UNUSED
 	virtual void					GetRenderBounds( Vector& mins, Vector& maxs );
+
+	// HL2SB GMod compat: Entity:SetRenderBounds( mins, maxs, add ).
+	//
+	// GMod lets a script pin the entity's render bounds (wiki: the third argument is
+	// "added to maxs and subtracted from mins"), and render bounds are not cosmetic:
+	// "ENTITY:Draw ... will not be called if the entity's render bounds are not in
+	// player's view".  This fork had no equivalent at all, so the binding stores the
+	// box here and GetRenderBounds() answers it.  npc_verity's client half sets
+	// (+-64, 0..128) around a sprite that is bigger than its collision box.
+	void							SetScriptedRenderBounds( const Vector &mins, const Vector &maxs )
+	{
+		m_vecScriptedRenderBoundsMin = mins;
+		m_vecScriptedRenderBoundsMax = maxs;
+		m_bScriptedRenderBounds = true;
+	}
+	bool							HasScriptedRenderBounds( void ) const { return m_bScriptedRenderBounds; }
+	const Vector					&GetScriptedRenderBoundsMin( void ) const { return m_vecScriptedRenderBoundsMin; }
+	const Vector					&GetScriptedRenderBoundsMax( void ) const { return m_vecScriptedRenderBoundsMax; }
+
 	virtual IPVSNotify*				GetPVSNotifyInterface();
 	virtual void					GetRenderBoundsWorldspace( Vector& absMins, Vector& absMaxs );
 
@@ -1281,6 +1300,11 @@ public:
 
 	// Entity flags that are only for the client (ENTCLIENTFLAG_ defines).
 	unsigned short					m_EntClientFlags;
+
+	// HL2SB GMod compat: Entity:SetRenderBounds() (see the setter above).
+	bool							m_bScriptedRenderBounds;
+	Vector							m_vecScriptedRenderBoundsMin;
+	Vector							m_vecScriptedRenderBoundsMax;
 
 	CNetworkColor32( m_clrRender );
 

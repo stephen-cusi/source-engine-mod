@@ -90,6 +90,11 @@ public:
 	// C_CSPlayer / C_DODPlayer / C_Portal_Player do (see the .cpp comment).
 	virtual void UpdateClientSideAnimation( void );
 
+	// HL2SB: GMod's taunt camera locks the body angles and feeds the mouse into a
+	// separate orbiting camera (taunt_camera.lua CAM.CreateMove). This override does
+	// exactly that while an "act" gesture plays.
+	virtual bool CreateMove( float flInputSampleTime, CUserCmd *pCmd );
+
 	CNetworkVar( float, m_flStartCharge );
 	CNetworkVar( float, m_flAmmoStartCharge );
 	CNetworkVar( float, m_flPlayAftershock );

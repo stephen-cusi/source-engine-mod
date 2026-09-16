@@ -20,6 +20,15 @@
 #include "animation.h"
 #include "env_player_surface_trigger.h"
 #include "rumble_shared.h"
+// HL2SB: HL2SB_GetRestingAttachmentLocal() (the attachment in the model's resting
+// sequence pose).
+// hl2mp_player_shared.h expects the includer to have forward-declared CHL2MP_Player (it
+// only ever names it in the CPlayerAnimState constructor) - the same thing
+// game/server/hl2mp/hl2mp_player.h:12 and game/server/hl2mp/weapon_hl2mpbase.h:28 do.
+// Same include spelling every other server file uses (game/shared/hl2mp is on the include
+// path via server_hl2mp.vpc).
+class CHL2MP_Player;
+#include "hl2mp_player_shared.h"
 
 #ifdef HL2_DLL
 	#include "hl2_player.h"
@@ -499,6 +508,100 @@ void CBaseServerVehicle::SetPassenger( int nRole, CBaseCombatCharacter *pPasseng
 }
 	
 //-----------------------------------------------------------------------------
+// HL2SB: which branch produced the seat point, and the point + orientation itself.
+//
+// The seat point is the difference between "a GMod chair looks right" and "the player
+// stands inside the floorboard", and the four branches of GetPassengerSeatPoint below
+// (animated idle attachment / bind-pose attachment / current-pose attachment / vehicle
+// origin) are indistinguishable from a screenshot - the player is simply in the wrong
+// place. Behind hl2sb_vehicle_anim_debug, the existing vehicle debug convar
+// (game/shared/hl2mp/hl2mp_player_shared.cpp, FCVAR_REPLICATED, so it exists in server.dll
+// too), one line per seat answers it:
+//
+//   [HL2SB veh/sv] seat veh=prop_vehicle_prisoner_pod att=vehicle_feet_passenger0
+//                  src=resting sequence anim (no ACT_IDLE) local=(0.0 0.0 27.7)
+//                  local_ang=(0.0 -90.0 0.0) world=(...) world_ang=(...)
+//
+//   src=ACT_IDLE anim                       a vehicle with an ACT_IDLE: the seat at cycle 0
+//                                           of that sequence (SDK behaviour, the jeep)
+//   src=resting sequence anim (no ACT_IDLE) a model with no ACT_IDLE: the seat in its own
+//                                           resting sequence ("idle" by label, else
+//                                           sequence 0) - GMod chairs/seats (the "sits
+//                                           below the chair" fix) AND Valve's airboat
+//   src=current pose attachment             last resort: the pose it is playing right now
+//   src=vehicle origin (no attachment)      no seat data at all (e.g. xqm coaster seats)
+//
+// The ANGLES are printed because the seat yaw is what the seated body is rendered at
+// (CPlayerAnimState::UpdateVehicleAnimation); a seat point that jumped onto the vehicle's
+// entry path used to be visible here as a yaw that did not match the vehicle's.
+//
+// HL2SB: THROTTLED. GetPassengerSeatPoint() is called from the player's animation
+// update as well as on entry, which produced 3434 identical lines in one session
+// (engine.log: "[HL2SB veh/sv] seat veh=prop_vehicle_prisoner_pod ... local=(-0.0 4.0
+// 22.5)" x3434). One line per second, and only when the rounded answer changed, keeps
+// it useful without owning the log.
+//-----------------------------------------------------------------------------
+static void HL2SB_DebugSeatPoint( CBaseEntity *pVehicle, const char *pszAttachment, const char *pszSource,
+								  const Vector &vecLocalOrigin, const QAngle &angLocal,
+								  const Vector &vecWorldOrigin, const QAngle &angWorld )
+{
+	extern ConVar hl2sb_vehicle_anim_debug;
+	if ( !hl2sb_vehicle_anim_debug.GetBool() )
+	{
+		return;
+	}
+
+	// Round to 0.1 so a jittering cover driver does not defeat the change test.
+	const int nLocalX = (int)( vecLocalOrigin.x * 10.0f );
+	const int nLocalY = (int)( vecLocalOrigin.y * 10.0f );
+	const int nLocalZ = (int)( vecLocalOrigin.z * 10.0f );
+	const int nWorldX = (int)( vecWorldOrigin.x * 10.0f );
+	const int nWorldY = (int)( vecWorldOrigin.y * 10.0f );
+	const int nWorldZ = (int)( vecWorldOrigin.z * 10.0f );
+	// Whole degrees: a seat that has wandered onto the vehicle's entry animation shows up
+	// as a wrong YAWW here long before anything moves a whole unit.
+	const int nLocalYaw = (int)angLocal[YAW];
+	const int nWorldYaw = (int)angWorld[YAW];
+
+	static int s_nLastLocalX = 0, s_nLastLocalY = 0, s_nLastLocalZ = 0;
+	static int s_nLastWorldX = 0, s_nLastWorldY = 0, s_nLastWorldZ = 0;
+	static int s_nLastLocalYaw = 0, s_nLastWorldYaw = 0;
+	static const char *s_pszLastSource = NULL;
+	static const char *s_pszLastAttachment = NULL;
+	static float s_flNextPrint = 0.0f;
+
+	const bool bChanged = ( nLocalX != s_nLastLocalX ) || ( nLocalY != s_nLastLocalY ) ||
+						  ( nLocalZ != s_nLastLocalZ ) || ( nWorldX != s_nLastWorldX ) ||
+						  ( nWorldY != s_nLastWorldY ) || ( nWorldZ != s_nLastWorldZ ) ||
+						  ( nLocalYaw != s_nLastLocalYaw ) || ( nWorldYaw != s_nLastWorldYaw ) ||
+						  ( pszSource != s_pszLastSource ) || ( pszAttachment != s_pszLastAttachment );
+
+	if ( !bChanged || gpGlobals->curtime < s_flNextPrint )
+	{
+		return;
+	}
+
+	s_flNextPrint = gpGlobals->curtime + 1.0f;
+	s_nLastLocalX = nLocalX;
+	s_nLastLocalY = nLocalY;
+	s_nLastLocalZ = nLocalZ;
+	s_nLastWorldX = nWorldX;
+	s_nLastWorldY = nWorldY;
+	s_nLastWorldZ = nWorldZ;
+	s_nLastLocalYaw = nLocalYaw;
+	s_nLastWorldYaw = nWorldYaw;
+	s_pszLastSource = pszSource;
+	s_pszLastAttachment = pszAttachment;
+
+	Msg( "[HL2SB veh/sv] seat veh=%s att=%s src=%s local=(%.1f %.1f %.1f) local_ang=(%.1f %.1f %.1f) world=(%.1f %.1f %.1f) world_ang=(%.1f %.1f %.1f)\n",
+		 pVehicle ? pVehicle->GetClassname() : "<none>", pszAttachment, pszSource,
+		 vecLocalOrigin.x, vecLocalOrigin.y, vecLocalOrigin.z,
+		 angLocal[PITCH], angLocal[YAW], angLocal[ROLL],
+		 vecWorldOrigin.x, vecWorldOrigin.y, vecWorldOrigin.z,
+		 angWorld[PITCH], angWorld[YAW], angWorld[ROLL] );
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Get a position in *world space* inside the vehicle for the player to start at
 //-----------------------------------------------------------------------------
 void CBaseServerVehicle::GetPassengerSeatPoint( int nRole, Vector *pPoint, QAngle *pAngles )
@@ -511,15 +614,94 @@ void CBaseServerVehicle::GetPassengerSeatPoint( int nRole, Vector *pPoint, QAngl
 		char pAttachmentName[32];
 		Q_snprintf( pAttachmentName, sizeof( pAttachmentName ), "vehicle_feet_passenger%d", nRole );
 		int nFeetAttachmentIndex = pAnimating->LookupAttachment(pAttachmentName);
-		int nIdleSequence = pAnimating->SelectWeightedSequence( ACT_IDLE );
-		if ( nFeetAttachmentIndex > 0 && nIdleSequence != -1 )
+
+		if ( nFeetAttachmentIndex > 0 )
 		{
-			// FIXME: This really wants to be a faster query than this implementation!
 			Vector vecOrigin;
 			QAngle vecAngles;
-			if ( GetLocalAttachmentAtTime( nIdleSequence, nFeetAttachmentIndex, 0.0f, &vecOrigin, &vecAngles ) )
+
+			// HL2SB: GMod's seats are STATIC PROPS that carry Valve's own
+			// `vehicle_feet_passenger0` attachment - the exact same convention the jeep
+			// and airboat use - but they have no animated idle. Measured out of the
+			// shipped GMod models (models/nova/chair_office01.mdl, chair_office02,
+			// chair_wood01, chair_plastic01, jeep_seat, airboat_seat, jalopy_seat,
+			// props_phx/carseat2, carseat3): one sequence, no activity NAME at all, so
+			// SelectWeightedSequence( ACT_IDLE ) returns ACTIVITY_NOT_AVAILABLE (-1) for
+			// every one of them. (For contrast models/buggy.mdl does name its idle
+			// sequence `activity ACT_IDLE`, which is the case this SDK path was written
+			// for.)
+			//
+			// The SDK only ever asked for the attachment AT A POINT IN THE IDLE
+			// ANIMATION (GetLocalAttachmentAtTime) and so gated the whole branch on an
+			// ACT_IDLE sequence existing. On a chair that gate always failed and the seat
+			// point silently collapsed to the entity origin - the floor at the foot of
+			// the chair, 27.7 units below the office chair's seat. That is the reported
+			// "the player sits below the chair", and it is also why the third person
+			// camera framed the cushion instead of the player.
+			//
+			// WITHOUT ACT_IDLE THE CURRENT POSE IS NOT THE SEAT. HL2SB used to take
+			// GetAttachmentLocal() here, which evaluates the pose the vehicle happens to
+			// be playing - and this function runs from CBasePlayer::GetInVehicle(), i.e.
+			// immediately after HandlePassengerEntry() told the vehicle to play its ENTER
+			// sequence (vehicle_baseserver.cpp:1190-1197). On Valve's vehicles the seat
+			// attachments hang off the animated driver-view bone, which the enter/exit
+			// sequences drive along the ENTRY PATH:
+			//     models/airboat.mdl  enter1..enter8 / exit1..exit10 animate bone 1
+			//                         `Airboat.view` (ANIMPOS|ANIMROT), the bone that
+			//                         vehicle_feet_passenger0 and vehicle_driver_eyes are
+			//                         both attached to; the model's own idle and
+			//                         propeller_spin1 do NOT touch it at all. Frame 0 of
+			//                         enter1 lands the seat at model x -64, while the hull
+			//                         only reaches x -44.7 -> "seated outside the boat,
+			//                         rotated with it".
+			//     models/buggy.mdl    same shape (enter1..4/exit1..8 animate bone 12
+			//                         `Rig_Buggy.view`), but the jeep never gets read in
+			//                         that state because its ACT_IDLE branch stomps the
+			//                         sequence to `idle` first - which is exactly why the
+			//                         jeep has always been right and the airboat was not.
+			// (measured with tools/mdl_seq_bones.py + tools/mdl_attach_at_frame.py.)
+			//
+			// So the fallback reads the attachment in the model's RESTING sequence pose
+			// instead (HL2SB_GetRestingAttachmentLocal: "idle" by label, else sequence 0) -
+			// the same pose the ACT_IDLE branch reads on a vehicle that has an idle named
+			// as such. A GMod seat model has exactly one sequence, so a chair reads
+			// precisely the pose it was already reading and nothing about it changes.
+			int nIdleSequence = pAnimating->SelectWeightedSequence( ACT_IDLE );
+
+			bool bFoundSeat = false;
+			const char *pszSeatSource = NULL;
+
+			if ( nIdleSequence != -1 )
 			{
+				pszSeatSource = "ACT_IDLE anim";
+				// FIXME: This really wants to be a faster query than this implementation!
+				bFoundSeat = GetLocalAttachmentAtTime( nIdleSequence, nFeetAttachmentIndex, 0.0f, &vecOrigin, &vecAngles );
+			}
+			else
+			{
+				pszSeatSource = "resting sequence anim (no ACT_IDLE)";
+				bFoundSeat = HL2SB_GetRestingAttachmentLocal( pAnimating, pAttachmentName, &vecOrigin, &vecAngles );
+			}
+
+			if ( !bFoundSeat && pAnimating->GetAttachmentLocal( nFeetAttachmentIndex, vecOrigin, vecAngles ) )
+			{
+				// Last resort: the pose it is playing right now (what this used to do
+				// unconditionally - kept so a model whose sequence data is unusable still
+				// gets a seat point instead of collapsing to the entity origin).
+				pszSeatSource = "current pose attachment";
+				bFoundSeat = true;
+			}
+
+			if ( bFoundSeat )
+			{
+				// Same local -> world conversion the animated branch performs above, so
+				// the two paths cannot disagree about what "model space" means.
+				const Vector vecLocalOrigin = vecOrigin;
+				const QAngle angLocal = vecAngles;
 				UTIL_ParentToWorldSpace( pAnimating, vecOrigin, vecAngles );
+				HL2SB_DebugSeatPoint( pAnimating, pAttachmentName, pszSeatSource,
+									  vecLocalOrigin, angLocal, vecOrigin, vecAngles );
+
 				if ( pPoint )
 				{
 					*pPoint = vecOrigin;
@@ -545,6 +727,9 @@ void CBaseServerVehicle::GetPassengerSeatPoint( int nRole, Vector *pPoint, QAngl
 	{
 		*pAngles = m_pVehicle->GetAbsAngles();
 	}
+
+	HL2SB_DebugSeatPoint( m_pVehicle, "(none)", "vehicle origin (no attachment)",
+						  vec3_origin, vec3_angle, m_pVehicle->GetAbsOrigin(), m_pVehicle->GetAbsAngles() );
 }
 
 //---------------------------------------------------------------------------------

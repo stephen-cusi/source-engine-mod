@@ -21,6 +21,28 @@ $Configuration
 
 $Project "Client (HL2SB)"
 {
+	//---------------------------------------------------------------------
+	// HL2SB: the client half of a NextBot.
+	//
+	// C_NextBotCombatCharacter is what pairs with the server's
+	// NextBotCombatCharacter through DT_NextBot.  Without it a server NextBot
+	// reaches the client as an UNKNOWN network class - it spawns as a bare
+	// C_BaseEntity, i.e. no model, no animation, no shadow.
+	//
+	// Listed here rather than through game/client/wscript's vpcs list because
+	// that edits a WSCRIPT, and waf's reconfigure tool then re-runs configure
+	// (the long silent phase that looks like a hang); and include-ing a vpc does
+	// not work in this fork's parser (it reads a nested configuration block but
+	// not the file entries of a nested project block - every symbol came out
+	// unresolved).  See the note in game/server/server_lua.vpc, including the
+	// warning about dollar-sign directive names in comments.
+	//---------------------------------------------------------------------
+	$Folder "NextBot"
+	{
+		$File "NextBot\C_NextBot.cpp"
+		$File "NextBot\C_NextBot.h"
+	}
+
 	$Folder "Client Lua"
 	{
 		$File "$SRCDIR/game/shared/lua/luamanager.cpp"
@@ -91,6 +113,9 @@ $Project "Client (HL2SB)"
 		$File "$SRCDIR/game/shared/lua/basescripted.cpp"
 		$File "$SRCDIR/game/shared/lua/leffect_dispatch_data.cpp"
 		$File "$SRCDIR/game/shared/lua/lhl2mp_player_shared.cpp"
+		// HL2SB: GMod's Vehicle Lua library (the "Vehicle" metatable).
+		$File "$SRCDIR/game/shared/lua/lvehicle_shared.cpp"
+		$File "$SRCDIR/game/shared/lua/lvehicle_shared.h"
 		$File "$SRCDIR/game/shared/lua/limovehelper.cpp"
 		$File "$SRCDIR/game/shared/lua/lipredictionsystem.cpp"
 		$File "$SRCDIR/game/shared/lua/lin_buttons.cpp"
@@ -139,8 +164,6 @@ $Project "Client (HL2SB)"
 
 	$Folder "SMenu"
 	{
-		$File "menu/sm_menu_list.cpp"
-		$File "menu/sm_menu_legacy.cpp"
 		$File "menu/toolgun_menu.cpp"
 		$File "menu/vgui_imagebutton.cpp"
 		$File "menu/creatempdialog.cpp"

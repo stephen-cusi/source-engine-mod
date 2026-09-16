@@ -99,6 +99,14 @@ CBaseScripted::CBaseScripted( void )
 	// UNDONE: We're done in CBaseEntity
 	m_nTableReference = LUA_NOREF;
 #endif
+
+#ifdef CLIENT_DLL
+	// HL2SB: the script's render group is only read once, and "not read yet" has to
+	// be distinguishable from "read and absent" -- uninitialised memory would make
+	// the first GetRenderGroup() answer with garbage.
+	m_bLuaRenderGroupRead = false;
+	m_nLuaRenderGroup = -1;
+#endif
 }
 
 CBaseScripted::~CBaseScripted( void )
@@ -205,6 +213,16 @@ void CBaseScripted::InitScriptedEntity( void )
 		// which keeps entities that do not use NetworkVar working.
 		if ( lua_istable( L, -1 ) )
 		{
+			// HL2SB GMod compat: `self.Entity` is the entity, exactly as GMod's
+			// scripted-entity tables have it (GMod's engine sets it, and addons
+			// call self.Entity:Foo() as freely as self:Foo()).  It has to be in
+			// place before ENT:Initialize() runs - that is where a script
+			// usually reaches for it first (SCP-096's nextbot opens its
+			// Initialize() with self.Entity:SetCollisionBounds(...), and with
+			// the field nil that raised on line one and skipped the whole setup).
+			lua_pushanimating( L, this );
+			lua_setfield( L, -2, "Entity" );
+
 			lua_getglobal( L, "HL2SB_EntityNetworkVar" );
 			if ( lua_isfunction( L, -1 ) )
 			{
@@ -305,7 +323,7 @@ void CBaseScripted::InitScriptedEntity( void )
 			lua_getref( L, m_nTableReference );
 			if ( lua_istable( L, -1 ) )
 			{
-				lua_getfield( L, -1, "Type" );
+				luasrc_PushScriptField( L, -1, "Type" );
 				if ( lua_type( L, -1 ) == LUA_TSTRING )
 					pszType = lua_tostring( L, -1 );
 			}
@@ -325,7 +343,7 @@ void CBaseScripted::InitScriptedEntity( void )
 				lua_getref( L, m_nTableReference );
 				if ( lua_istable( L, -1 ) )
 				{
-					lua_getfield( L, -1, "Base" );
+					luasrc_PushScriptField( L, -1, "Base" );
 					if ( lua_type( L, -1 ) == LUA_TSTRING &&
 					     !Q_stricmp( lua_tostring( L, -1 ), "base_anim" ) )
 						pszType = "anim";
@@ -351,25 +369,81 @@ void CBaseScripted::InitScriptedEntity( void )
 }
 
 #ifdef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB: is this render group drawn in the translucent pass?
+//-----------------------------------------------------------------------------
+static bool CBaseScripted_IsTranslucentGroup( RenderGroup_t group )
+{
+	return group == RENDER_GROUP_TRANSLUCENT_ENTITY
+		|| group == RENDER_GROUP_VIEW_MODEL_TRANSLUCENT
+		|| group == RENDER_GROUP_TWOPASS;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: Entity:GetRenderGroup() answers the script's ENT.RenderGroup field.
+//
+// Reading it also decides whether the entity is put into the translucent render
+// list, which is what makes a sprite-drawn entity (npc_verity: no model at all,
+// drawn with render.SetMaterial + render.DrawQuadEasy) end up in a pass that
+// draws it.
+//-----------------------------------------------------------------------------
+RenderGroup_t CBaseScripted::GetRenderGroup( void )
+{
+#ifdef LUA_SDK
+	if ( L != NULL && !m_bLuaRenderGroupRead && m_nTableReference >= 0 )
+	{
+		lua_getref( L, m_nTableReference );
+
+		if ( lua_istable( L, -1 ) )
+		{
+			m_bLuaRenderGroupRead = true;
+			m_nLuaRenderGroup = -1;
+
+			// Protected read: the table can answer through an __index metamethod,
+			// and an error raised there from C is not protected by anything.
+			luasrc_PushScriptField( L, -1, "RenderGroup" );
+
+			if ( lua_isnumber( L, -1 ) )
+			{
+				const int nGroup = (int)lua_tonumber( L, -1 );
+
+				if ( nGroup >= 0 && nGroup < RENDER_GROUP_COUNT )
+					m_nLuaRenderGroup = nGroup;
+			}
+
+			lua_pop( L, 1 );
+		}
+
+		lua_pop( L, 1 );
+	}
+
+	if ( m_nLuaRenderGroup >= 0 )
+		return (RenderGroup_t)m_nLuaRenderGroup;
+#endif
+
+	return BaseClass::GetRenderGroup();
+}
+
 int CBaseScripted::DrawModel( int flags )
 {
 #ifdef LUA_SDK
-	// HL2SB: GMod's ENT:Draw() REPLACES the default model draw -- the example on
-	// GMod's own wiki is
+	// HL2SB: the script decides which of the draw hooks runs, exactly as GMod's
+	// wiki describes it -- ENTITY:RenderOverride() first, then the render group
+	// picks between ENTITY:DrawTranslucent() and ENTITY:Draw().
 	//
-	//     function ENT:Draw()
-	//         self:DrawModel()          -- ask for the model explicitly
-	//     end
-	//
-	// so a scripted entity that renders itself and never calls DrawModel (the
-	// nyan bomb draws two textured quads and nothing else) must not also have its
-	// model drawn underneath.  Nothing dispatched "Draw" before this, and the
-	// entity's own ENT:Draw never ran at all -- which for weapon_nyangun's bomb
-	// meant no visible rendering of any kind.
+	// Dispatching "Draw" alone was enough for entities that draw a model, because
+	// GMod's ENT:Draw() REPLACES the model draw and the inherited implementation
+	// asks for the model explicitly.  It is not enough for a sprite entity that
+	// defines ONLY DrawTranslucent: npc_verity draws itself with
+	// render.SetMaterial + render.DrawQuadEasy and has no model at all, so it fell
+	// through to the inherited ENT:Draw() -> self:DrawModel() -> nothing to draw,
+	// and the bot was invisible while behaving perfectly.
 	//
 	// The method's PRESENCE decides, because the dispatch macro cannot tell "no
 	// such method" from "the method returned nil".  An explicit `false` is
 	// honoured as "also draw the model".
+	bool bHasOverride = false;
+	bool bHasTranslucent = false;
 	bool bHasDraw = false;
 
 	if ( L != NULL && m_nTableReference >= 0 )
@@ -377,16 +451,33 @@ int CBaseScripted::DrawModel( int flags )
 		lua_getref( L, m_nTableReference );
 		if ( lua_istable( L, -1 ) )
 		{
-			lua_getfield( L, -1, "Draw" );
-			bHasDraw = lua_isfunction( L, -1 ) != 0;
+			// Protected: this runs from DrawModel() on every frame, and the script
+			// table can answer through an __index metamethod -- an error there used
+			// to reach lua_atpanic and abort the process with an empty traceback.
+			bHasOverride = luasrc_PushScriptField( L, -1, "RenderOverride" );
+			lua_pop( L, 1 );
+
+			bHasTranslucent = luasrc_PushScriptField( L, -1, "DrawTranslucent" );
+			lua_pop( L, 1 );
+
+			bHasDraw = luasrc_PushScriptField( L, -1, "Draw" );
 			lua_pop( L, 1 );
 		}
 		lua_pop( L, 1 );
 	}
 
-	if ( bHasDraw )
+	const char *pszFunc = NULL;
+
+	if ( bHasOverride )
+		pszFunc = "RenderOverride";
+	else if ( CBaseScripted_IsTranslucentGroup( GetRenderGroup() ) && bHasTranslucent )
+		pszFunc = "DrawTranslucent";
+	else if ( bHasDraw )
+		pszFunc = "Draw";
+
+	if ( pszFunc != NULL )
 	{
-		BEGIN_LUA_CALL_ENTITY_METHOD( "Draw" );
+		BEGIN_LUA_CALL_ENTITY_METHOD( pszFunc );
 		END_LUA_CALL_ENTITY_METHOD( 0, 1 );
 
 		if ( !( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) == 0 ) )
@@ -414,6 +505,20 @@ void CBaseScripted::OnDataChanged( DataUpdateType_t updateType )
 
 	if ( updateType == DATA_UPDATE_CREATED )
 	{
+		// HL2SB: probe.  A Lua nextbot's client entity has to be a
+		// C_NextBotCombatCharacter (that is where the RenderGroup/DrawModel hooks
+		// live); if it shows up here instead, it was built as a plain scripted
+		// entity and the whole nextbot draw path is unreachable.
+		static int s_nScriptedReports = 0;
+
+		if ( s_nScriptedReports < 40 )
+		{
+			++s_nScriptedReports;
+			luasrc_LuaWarnMsgF( "[HL2SB] CLIENT CBaseScripted created: classname='%s' networkedScriptClass='%s'",
+				GetClassname(),
+				( m_iScriptedClassname.Get() != NULL ) ? m_iScriptedClassname.Get() : "(none)" );
+		}
+
 		if ( m_iScriptedClassname.Get() )
 		{
 			SetClassname( m_iScriptedClassname.Get() );
@@ -435,6 +540,17 @@ void CBaseScripted::Spawn( void )
 	BaseClass::Spawn();
 
 #ifndef CLIENT_DLL
+	// HL2SB GMod compat: a scripted entity reaches the client even with no model.
+	//
+	// CBaseEntity::UpdateTransmitState() drops anything without a model index or
+	// model name unless it carries EFL_FORCE_CHECK_TRANSMIT, and plenty of Lua
+	// entities are model-less by design: windgrin_npc's attack spawns
+	// ent_windgrin_blaster / ent_windgrin_throw, which draw themselves from a script
+	// the client never got to run because the entity was never sent -- the attack
+	// simply did nothing on screen.  (CLuaNextBot::Spawn() sets the same flag for
+	// nextbots.)  GMod transmits scripted entities regardless of a model.
+	AddEFlags( EFL_FORCE_CHECK_TRANSMIT );
+
 	InitScriptedEntity();
 #endif
 }

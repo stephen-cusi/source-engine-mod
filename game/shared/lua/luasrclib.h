@@ -43,6 +43,13 @@ LUALIB_API int (luaopen_CGameTrace) (lua_State *L);
 LUALIB_API int (luaopen_CHL2MP_Player) (lua_State *L);
 LUALIB_API int (luaopen_CHL2MP_Player_shared) (lua_State *L);
 
+// HL2SB: GMod's Vehicle library (game/shared/lua/lvehicle_shared.cpp).  The
+// library name IS the metatable name, exactly like CHL2MP_Player above, and it
+// matches s_LuaMetatableAliases ("Vehicle" -> "Vehicle") so that
+// FindMetaTable("Vehicle") resolves without a second spelling.
+#define LUA_VEHICLELIBNAME				"Vehicle"
+LUALIB_API int (luaopen_Vehicle_shared) (lua_State *L);
+
 #define LUA_COLORLIBNAME				"Color"
 LUALIB_API int (luaopen_Color) (lua_State *L);
 

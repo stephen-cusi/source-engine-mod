@@ -30,7 +30,26 @@ public:
 	DECLARE_CLASS( NextBotCombatCharacter, CBaseCombatCharacter );
 	DECLARE_SERVERCLASS();
 	DECLARE_DATADESC();
-	
+
+	// HL2SB GMod compat: the Lua classname of the script this bot runs, e.g.
+	// "npc_verity".
+	//
+	// A Lua nextbot deliberately has no DECLARE_SERVERCLASS of its own (see
+	// luanextbot.h), so it is networked as this base class and the CLIENT's
+	// classname is "NextBotCombatCharacter".  Every client-side lookup a nextbot
+	// script relies on keys off the classname -- scripted_ents.GetStored(
+	// GetClassname() ) for ENT:DrawTranslucent / ENT:RenderOverride, and the
+	// lua/entities table for ENT:Initialize -- so all of them missed, and a Lua
+	// nextbot could not be drawn by its own script on the client.  CBaseScripted
+	// networks the same string for the same reason (basescripted.cpp:34).
+	CNetworkString( m_iScriptedClassname, 255 );
+
+	const char *GetScriptedClassname( void )
+	{
+		const char *pszName = m_iScriptedClassname.Get();
+		return ( pszName != NULL && pszName[0] != '\0' ) ? pszName : GetClassname();
+	}
+
 	NextBotCombatCharacter( void );
 	virtual ~NextBotCombatCharacter() { }
 
