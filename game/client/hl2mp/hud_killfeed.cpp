@@ -122,6 +122,30 @@ static const char *KillFeed_DisplayName( const char *szClass, char *szOut, int n
 }
 
 //-----------------------------------------------------------------------------
+// The RAW entity class, for the Lua feed.
+//
+// KillFeed_DisplayName above is a C++ cosmetic guess ("npc_zombie" -> "Zombie").
+// It is right for the game's own NPCs, which is why the C++ draw path keeps it, but
+// it is LOSSY for content: GMod takes a name from the content itself
+// (scripted_ents / list registrations / language), so the script has to see the class
+// the engine actually used.  Handing Lua the mangled string is what made an addon NPC
+// read as "Shaklin_scp096" instead of its own ENT.PrintName ("SCP 096") - by then
+// "_096" was the only part of the class left, and no registry is keyed by that.
+//
+// Only the "class " prefix some attacker names carry is stripped here; everything
+// else is passed through untouched.
+//-----------------------------------------------------------------------------
+static const char *KillFeed_RawClassName( const char *szClass, char *szOut, int nOutSize )
+{
+	Q_strncpy( szOut, szClass, nOutSize );
+
+	if ( !Q_strnicmp( szOut, "class ", 6 ) )
+		Q_strncpy( szOut, szClass + 6, nOutSize );
+
+	return szOut;
+}
+
+//-----------------------------------------------------------------------------
 // Kill feed HUD element.
 //-----------------------------------------------------------------------------
 class CHudKillFeed : public CHudElement, public vgui::Panel
@@ -513,6 +537,13 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 	deathMsg.bUseSkull = false;
 	deathMsg.szWeaponClass[0] = 0;
 
+	// The UNMANGLED class strings for the Lua path (see KillFeed_RawClassName).  A
+	// player's name is already human and stays empty here, so Lua gets the name.
+	char szKillerClass[MAX_PLAYER_NAME_LENGTH];
+	char szVictimClass[MAX_PLAYER_NAME_LENGTH];
+	szKillerClass[0] = 0;
+	szVictimClass[0] = 0;
+
 	if ( !Q_stricmp( pszName, "entity_killed" ) )
 	{
 		// A non-player entity (NPC / combat character) was killed. The victim is
@@ -522,6 +553,7 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		if ( !Q_strnicmp( pszVictimClass, "player", 6 ) )
 			return;		// player-vs-player handled via player_death
 
+		KillFeed_RawClassName( pszVictimClass, szVictimClass, sizeof( szVictimClass ) );
 		KillFeed_DisplayName( pszVictimClass, deathMsg.Victim.szName, sizeof( deathMsg.Victim.szName ) );
 		deathMsg.Victim.iEntIndex = 0;
 		deathMsg.bVictimIsNPC = true;
@@ -549,6 +581,7 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		{
 			// An NPC killed the entity (NPC-vs-NPC scrapping).
 			char szKillerDisplay[MAX_PLAYER_NAME_LENGTH];
+			KillFeed_RawClassName( pszAttackerName, szKillerClass, sizeof( szKillerClass ) );
 			KillFeed_DisplayName( pszAttackerName, szKillerDisplay, sizeof( szKillerDisplay ) );
 
 			deathMsg.Killer.iEntIndex = 0;
@@ -619,6 +652,7 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		{
 			// A non-player entity (NPC / world) killed the victim.
 			char szKillerDisplay[MAX_PLAYER_NAME_LENGTH];
+			KillFeed_RawClassName( pszAttackerName, szKillerClass, sizeof( szKillerClass ) );
 			KillFeed_DisplayName( pszAttackerName, szKillerDisplay, sizeof( szKillerDisplay ) );
 
 			deathMsg.Killer.iEntIndex = 0;
@@ -679,11 +713,14 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		}
 
 		BEGIN_LUA_CALL_HOOK( "AddDeathNotice" );
-			lua_pushstring( L, deathMsg.Killer.szName );
+			// The RAW class when we have one (an NPC / entity), the display name
+			// otherwise (a player).  Lua resolves names from the content - handing it
+			// the C++ cosmetic guess is what made a Lua NPC read as "Shaklin_scp096".
+			lua_pushstring( L, szKillerClass[0] ? szKillerClass : deathMsg.Killer.szName );
 			lua_pushinteger( L, iKillerTeam );
 			lua_pushstring( L, deathMsg.iconDeath && deathMsg.iconDeath->szShortName[0]
 								? deathMsg.iconDeath->szShortName : "" );
-			lua_pushstring( L, deathMsg.Victim.szName );
+			lua_pushstring( L, szVictimClass[0] ? szVictimClass : deathMsg.Victim.szName );
 			lua_pushinteger( L, iVictimTeam );
 			lua_pushboolean( L, deathMsg.iSuicide != 0 );
 			lua_pushboolean( L, deathMsg.bVictimIsNPC );

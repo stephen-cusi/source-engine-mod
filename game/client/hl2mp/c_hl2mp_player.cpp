@@ -68,6 +68,28 @@ END_PREDICTION_DATA()
 static ConVar cl_playermodel( "cl_playermodel", "none", FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_SERVER_CAN_EXECUTE, "Default Player Model");
 static ConVar cl_defaultweapon( "cl_defaultweapon", "weapon_physcannon", FCVAR_USERINFO | FCVAR_ARCHIVE, "Default Spawn Weapon");
 
+/*
+** HL2SB: the rest of GMod's player-editor settings.  GMod's player model selector
+** (garrysmod/gamemodes/sandbox/gamemode/editor_player.lua) writes these, and the server
+** picks them up the same way it already picks up cl_playermodel:
+**
+**     RunConsoleCommand( "cl_playerbodygroups", table.concat( str, " " ) )
+**     RunConsoleCommand( "cl_playerskin", math.floor( val ) )
+**     RunConsoleCommand( "cl_playercolor", tostring( plycol:GetVector() ) )   -- "r g b", 0..1
+**     RunConsoleCommand( "cl_weaponcolor", tostring( wepcol:GetVector() ) )
+**
+** FCVAR_USERINFO is what makes engine->GetClientConVarValue() (server,
+** game/server/hl2sb_player_model_manager.cpp) able to read them.
+**
+** Defaults: "1 1 1" is no tint at all (see HL2SB_ApplyClientAppearance), so a player who
+** never opens the editor looks exactly like before, and an empty bodygroup string means
+** "leave the bodygroups alone" instead of resetting them to 0.
+*/
+static ConVar cl_playerbodygroups( "cl_playerbodygroups", "", FCVAR_USERINFO | FCVAR_ARCHIVE, "Player model bodygroups (space separated)" );
+static ConVar cl_playerskin( "cl_playerskin", "0", FCVAR_USERINFO | FCVAR_ARCHIVE, "Player model skin" );
+static ConVar cl_playercolor( "cl_playercolor", "1 1 1", FCVAR_USERINFO | FCVAR_ARCHIVE, "Player model color (r g b, 0-1)" );
+static ConVar cl_weaponcolor( "cl_weaponcolor", "1 1 1", FCVAR_USERINFO | FCVAR_ARCHIVE, "Weapon color (r g b, 0-1)" );
+
 void SpawnBlood (Vector vecSpot, const Vector &vecDir, int bloodColor, float flDamage);
 
 C_HL2MP_Player::C_HL2MP_Player() : m_PlayerAnimState( this ), m_iv_angEyeAngles( "C_HL2MP_Player::m_iv_angEyeAngles" )

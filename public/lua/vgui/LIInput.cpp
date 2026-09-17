@@ -296,8 +296,77 @@ static int input_WasMouseReleased (lua_State *L) {
 }
 
 
+// ---------------------------------------------------------------------------
+// HL2SB: GMod's input key-trapping API.
+//
+// lua/vgui/dbinder.lua is its main user (StartKeyTrapping on click, then
+// IsKeyTrapping + CheckKeyTrapping every frame until a key arrives), and
+// gamemodes/base/gamemode/cl_spawnmenu.lua:15 calls input.IsKeyTrapping() too.
+//
+// GMod added these to its own copy of vgui's IInput; this fork's
+// public/vgui/IInput.h has none of them, and the only definitions in the tree
+// lived in modules/gmod_compatibility/sh_init.lua, which is inert behind
+// GMOD_COMPATIBILITY = false.  The primitives do exist on the engine side:
+// IVEngineClient::StartKeyTrapMode / CheckDoneKeyTrapping (public/cdll_int.h:278-279)
+// and IInput::GetKeyCodeText (public/vgui/IInput.h:53).
+//
+// GMod's semantics, all kept:
+//   input.StartKeyTrapping() - start trapping the keyboard
+//   input.IsKeyTrapping()    - true until the trapped key has been read
+//   input.CheckKeyTrapping() - the pressed key's code, nil while no key has been
+//                              pressed; reading it ends the trap and the key is
+//                              consumed (GMod's function does the same)
+//   input.GetKeyName( code ) - the key's display name, nil for a code that is not
+//                              a keyboard key
+// ---------------------------------------------------------------------------
+static bool s_bHL2SBKeyTrapping = false;
+
+static int input_StartKeyTrapping (lua_State *L) {
+  engine->StartKeyTrapMode();
+  s_bHL2SBKeyTrapping = true;
+  return 0;
+}
+
+static int input_IsKeyTrapping (lua_State *L) {
+  lua_pushboolean(L, s_bHL2SBKeyTrapping);
+  return 1;
+}
+
+static int input_CheckKeyTrapping (lua_State *L) {
+  if ( !s_bHL2SBKeyTrapping ) return 0;
+
+  ButtonCode_t code = BUTTON_CODE_INVALID;
+  if ( !engine->CheckDoneKeyTrapping(code) ) return 0;
+
+  s_bHL2SBKeyTrapping = false;
+
+  if ( code == BUTTON_CODE_INVALID ) return 0;
+
+  lua_pushinteger(L, (int)code);
+  return 1;
+}
+
+static int input_GetKeyName (lua_State *L) {
+  char buf[ 256 ];
+  buf[ 0 ] = '\0';
+  input()->GetKeyCodeText((KeyCode)luaL_checkint(L, 1), buf, sizeof( buf ));
+
+  if ( buf[ 0 ] == '\0' ) {
+    lua_pushnil(L);
+    return 1;
+  }
+
+  lua_pushstring(L, buf);
+  return 1;
+}
+
+
 static const luaL_Reg inputlib[] = {
   {"CandidateListStartsAtOne",   input_CandidateListStartsAtOne},
+  {"CheckKeyTrapping",   input_CheckKeyTrapping},
+  {"GetKeyName",   input_GetKeyName},
+  {"IsKeyTrapping",   input_IsKeyTrapping},
+  {"StartKeyTrapping",   input_StartKeyTrapping},
   {"GetAppModalSurface",   input_GetAppModalSurface},
   {"GetCandidateListCount",   input_GetCandidateListCount},
   {"GetCandidateListPageSize",   input_GetCandidateListPageSize},

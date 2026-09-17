@@ -223,6 +223,24 @@ LUA_BINDING_BEGIN( CBaseAnimating, SetSkin, "class", "Set the skin of the entity
 }
 LUA_BINDING_END()
 
+// HL2SB: GMod's Entity:SkinCount (https://wiki.facepunch.com/gmod/Entity:SkinCount).
+// The skin slider of the player model editor builds itself from it
+// (garrysmod/gamemodes/sandbox/gamemode/editor_player.lua:205: mdl.Entity:SkinCount()),
+// and this fork had no way to ask for it - only SetSkin/GetSkin existed.
+// A studio model's skin count is its number of skin families
+// (public/studio.h: CStudioHdr::numskinfamilies(), "numskinfamilies" in the header).
+// Entities without a studio model answer 1, so "<= 1 skins" reads as "no skin slider".
+LUA_BINDING_BEGIN( CBaseAnimating, SkinCount, "class", "Returns the amount of skins the entity has" )
+{
+    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
+    CStudioHdr *pStudioHdr = pAnimating->GetModelPtr();
+
+    lua_pushinteger( L, ( pStudioHdr != NULL ) ? pStudioHdr->numskinfamilies() : 1 );
+
+    return 1;
+}
+LUA_BINDING_END( "number", "The amount of skins the entity's model has" )
+
 LUA_BINDING_BEGIN( CBaseAnimating, GetFlexBounds, "class", "Returns the min and max values for the target flex controller" )
 {
     lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );

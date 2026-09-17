@@ -408,12 +408,38 @@ static int Button___newindex (lua_State *L) {
   }
 }
 
+// HL2SB: a dying Lua handle must NOT destroy the C++ panel.
+//
+// This used to `delete` the panel as soon as the last Lua handle was collected.  But
+// a panel that lives in the vgui tree is OWNED BY ITS PARENT (Panel::~Panel deletes
+// its autodelete children), and the Lua GC runs during allocation - i.e. it can run
+// in the middle of Panel::PaintTraverse's children loop.  Deleting a live, parented
+// panel there leaves the traversal reading freed entries, and the crash is a jump to
+// NULL (or, when the memory was reused by a string, into that string) inside
+// vgui::Panel::PaintTraverse -- exactly what every 2026-09-17 minidump shows.  It is
+// also why the Lua spawnmenu kept finding "dead handles" in its panel pools.
+//
+// GMod never does this either: its Lua handle is a weak PHandle and vgui owns the
+// lifetime.  So: a parented panel is handed to the parent (SetAutoDelete, same as
+// GMod's vgui.Create) and kept alive; only a panel nothing owns any more - no parent
+// and no other handle - is queued for deletion.
 static int Button___gc (lua_State *L) {
   LButton *plButton = dynamic_cast<LButton *>(lua_tobutton(L, 1));
   if (plButton) {
     --plButton->m_nRefCount;
-	if (plButton->m_nRefCount <= 0) {
-      delete plButton;
+
+    if (plButton->GetVParent() != 0) {
+      static int s_nParentedGc = 0;
+      if (s_nParentedGc < 12) {
+        ++s_nParentedGc;
+        Msg("[HL2SB] panel gc: '%s' (%p) was still parented (handles left=%d) - kept alive\n",
+          plButton->GetName(), (void *)plButton, plButton->m_nRefCount);
+      }
+
+      plButton->SetAutoDelete(true);
+    }
+    else if (plButton->m_nRefCount <= 0) {
+      plButton->MarkForDeletion();
     }
   }
   return 0;

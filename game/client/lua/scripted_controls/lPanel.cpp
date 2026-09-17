@@ -28,6 +28,28 @@ LPanel::LPanel(Panel *parent, const char *panelName, lua_State *L) : Panel(paren
 	m_nTableReference = LUA_NOREF;
 	m_nRefCount = 0;
 #endif // LUA_SDK
+
+	// HL2SB: GMod calls the Lua field PaintOver after a panel and all of its
+	// children have painted, and a good deal of GMod Lua depends on it:
+	//
+	//   lua/includes/extensions/client/panel/dragdrop.lua:472 SetDropTarget
+	//       (the magenta drop indicator while dragging)
+	//   lua/includes/extensions/client/panel/selections.lua:157 StartBoxSelection
+	//       (the selection rectangle)
+	//   lua/vgui/DColorCube.lua:193 / DColorPalette.lua:267 (this fork's own ports -
+	//       both documented "GMod draws the frame here" and neither ever ran)
+	//   DPanelSelect (highlighting the active entry), SpawnIcon (hover overlay),
+	//       MatSelect, propselect ...
+	//
+	// vgui2 has the exact hook for that point in the frame: Panel::PaintTraverse()
+	// calls PostChildPaint() once all children are done -- but only when the panel
+	// has POST_CHILD_PAINT_ENABLED set (vgui2/vgui_controls/Panel.cpp:1291), and
+	// SetPostChildPaintEnabled() does NOT propagate to children
+	// (Panel.cpp:3786).  Only the root panel set it until now
+	// (hl2/vgui_rootpanel_hl2.cpp:124), so the Lua dispatch in
+	// LPanel::PostChildPaint below -- and therefore every PaintOver in the
+	// codebase -- was dead code.
+	SetPostChildPaintEnabled( true );
 }
 
 //-----------------------------------------------------------------------------
@@ -105,8 +127,19 @@ void LPanel::Paint()
 void LPanel::PostChildPaint()
 {
 #ifdef LUA_SDK
-	BEGIN_LUA_CALL_PANEL_METHOD( "PostChildPaint" );
-	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+	// HL2SB: the Lua name is GMod's PaintOver, and it is handed ( w, h ) exactly
+	// like Paint above (GMod: `function PANEL:PaintOver( w, h )`).  The engine
+	// spelling of this hook -- PostChildPaint -- is dispatched nowhere in this
+	// fork's Lua (checked: zero hits over lua/**), while PaintOver is what
+	// dragdrop.lua, selections.lua, DColorCube and DColorPalette all set, so the
+	// GMod name is the one that has to be called here.  The surrounding
+	// PushMakeCurrent/PopMakeCurrent in Panel::PaintTraverse (Panel.cpp:1293)
+	// already gives us the panel's own drawing origin, which is the space those
+	// GMod implementations paint in.
+	BEGIN_LUA_CALL_PANEL_METHOD( "PaintOver" );
+		lua_pushinteger( m_lua_State, GetWide() );
+		lua_pushinteger( m_lua_State, GetTall() );
+	END_LUA_CALL_PANEL_METHOD( 2, 0 );
 #endif
 }
 

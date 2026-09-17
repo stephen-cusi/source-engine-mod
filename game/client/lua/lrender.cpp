@@ -21,6 +21,8 @@
 #include "materialsystem/limaterial.h"
 #include "iviewrender_beams.h"
 #include <mathlib/lvmatrix.h>
+// HL2SB: g_pStudioRender, for render.SetLocalModelLights (declared in istudiorender.h:383).
+#include "istudiorender.h"
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -424,6 +426,164 @@ LUA_BINDING_BEGIN( Renders, SetLight, "library", "Set a light.", "client" )
 
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->SetLight( LUA_BINDING_ARGUMENT( luaL_checknumber, 6, "lightIndex" ), desc );
+
+    return 0;
+}
+LUA_BINDING_END()
+
+/*
+** HL2SB: GMod's render.SetLocalModelLights( lights )
+**   https://wiki.facepunch.com/gmod/render.SetLocalModelLights
+**   https://wiki.facepunch.com/gmod/Structures/LocalLight
+**   enums: MATERIAL_LIGHT_DISABLE/POINT/DIRECTIONAL/SPOT = 0/1/2/3
+**          (https://wiki.facepunch.com/gmod/Enums/MATERIAL_LIGHT)
+**
+** Up to four lights, used by the player model editor for its three coloured point
+** lights (sandbox/gamemode/editor_player.lua, mdl:PreDrawModel).
+**
+** WARNING: the studio renderer KEEPS THE POINTER, so the array has to outlive the draw
+** call.  It is a file static for that reason: handing it a stack local is exactly the
+** bug that turns every model and brush purple after a CModelPanel overlay closes
+** (game/client/hl2sb_contextmenu.cpp:405-432 documents the same trap).
+*/
+static LightDesc_t g_HL2SBLocalModelLights[4];
+static int g_nHL2SBLocalModelLights = 0;
+
+// Read a Vector field out of the table at the top of the stack.  luaL_checkvector()
+// asserts the metatable, so a table holding something else must not reach it.
+static bool HL2SB_LuaTableVector( lua_State *L, const char *pszField, Vector &out )
+{
+    bool bFound = false;
+
+    lua_getfield( L, -1, pszField );
+
+    if ( luaL_testudata( L, -1, LUA_VECTORLIBNAME ) != NULL )
+    {
+        out = luaL_checkvector( L, -1 );
+        bFound = true;
+    }
+
+    lua_pop( L, 1 );
+    return bFound;
+}
+
+static float HL2SB_LuaTableNumber( lua_State *L, const char *pszField, float flDefault )
+{
+    float flValue = flDefault;
+
+    lua_getfield( L, -1, pszField );
+
+    if ( lua_isnumber( L, -1 ) )
+        flValue = (float)lua_tonumber( L, -1 );
+
+    lua_pop( L, 1 );
+    return flValue;
+}
+
+LUA_BINDING_BEGIN( Renders, SetLocalModelLights, "library", "Sets up local lighting for any upcoming render operation", "client" )
+{
+    g_nHL2SBLocalModelLights = 0;
+
+    if ( lua_istable( L, 1 ) )
+    {
+        for ( int i = 0; i < 4; i++ )
+        {
+            lua_rawgeti( L, 1, i + 1 );
+
+            if ( !lua_istable( L, -1 ) )
+            {
+                lua_pop( L, 1 );
+                break;      // a sequential table ends at the first hole
+            }
+
+            LightDesc_t &desc = g_HL2SBLocalModelLights[g_nHL2SBLocalModelLights];
+            memset( &desc, 0, sizeof( desc ) );
+
+            Vector vecColor = vec3_origin;
+            Vector vecPos = vec3_origin;
+            Vector vecDir = Vector( 0, 1, 0 );
+
+            HL2SB_LuaTableVector( L, "color", vecColor );
+            HL2SB_LuaTableVector( L, "pos", vecPos );
+            HL2SB_LuaTableVector( L, "dir", vecDir );
+
+            const int iType = (int)HL2SB_LuaTableNumber( L, "type", MATERIAL_LIGHT_POINT );
+
+            // Angles are degrees in Lua (the wiki says so) and radians in LightDesc_t.
+            const float flInner = DEG2RAD( HL2SB_LuaTableNumber( L, "innerAngle", 45.0f ) );
+            const float flOuter = DEG2RAD( HL2SB_LuaTableNumber( L, "outerAngle", 45.0f ) );
+
+            if ( iType == MATERIAL_LIGHT_DIRECTIONAL )
+            {
+                desc.InitDirectional( vecDir, vecColor );
+            }
+            else if ( iType == MATERIAL_LIGHT_SPOT )
+            {
+                desc.InitSpot( vecPos, vecColor, vecPos + vecDir * 100.0f, flInner, flOuter );
+                desc.m_Falloff = HL2SB_LuaTableNumber( L, "angularFalloff", 5.0f );
+            }
+            else
+            {
+                desc.InitPoint( vecPos, vecColor );
+            }
+
+            desc.m_Range = HL2SB_LuaTableNumber( L, "range", 0.0f );
+
+            /*
+            ** Falloff, in GMod's documented order of preference
+            ** (Structures/LocalLight): fiftyPercentDistance/zeroPercentDistance win, and
+            ** the explicit constant/linear/quadratic terms are only used without them.
+            **
+            ** GMod's own engine has its own attenuation model that this tree has no
+            ** source for; what is implemented here is the same shape:
+            **   intensity(d) = 1 / ( a0 + a1*d + a2*d^2 )
+            **   - a1 = 1 / fiftyPercentDistance   gives exactly 50% at that distance
+            **   - zeroPercentDistance becomes the light's range (it fades to nothing)
+            ** so the three-light rig the player editor builds (which passes neither) and
+            ** the common addon form both behave.
+            */
+            const float flFifty = HL2SB_LuaTableNumber( L, "fiftyPercentDistance", 0.0f );
+            const float flZero = HL2SB_LuaTableNumber( L, "zeroPercentDistance", 0.0f );
+
+            if ( flFifty > 0.0f || flZero > 0.0f )
+            {
+                desc.m_Attenuation0 = 1.0f;
+                desc.m_Attenuation1 = ( flFifty > 0.0f ) ? ( 1.0f / flFifty ) : 0.0f;
+                desc.m_Attenuation2 = 0.0f;
+                desc.m_Flags |= LIGHTTYPE_OPTIMIZATIONFLAGS_HAS_ATTENUATION0;
+                desc.m_Flags |= LIGHTTYPE_OPTIMIZATIONFLAGS_HAS_ATTENUATION1;
+
+                if ( flZero > 0.0f && desc.m_Range <= 0.0f )
+                    desc.m_Range = flZero;
+            }
+            else
+            {
+                desc.m_Attenuation0 = HL2SB_LuaTableNumber( L, "constantFalloff", 1.0f );
+                desc.m_Attenuation1 = HL2SB_LuaTableNumber( L, "linearFalloff", 0.0f );
+                desc.m_Attenuation2 = HL2SB_LuaTableNumber( L, "quadraticFalloff", 0.0f );
+
+                desc.m_Flags |= LIGHTTYPE_OPTIMIZATIONFLAGS_HAS_ATTENUATION0;
+
+                if ( desc.m_Attenuation1 != 0.0f )
+                    desc.m_Flags |= LIGHTTYPE_OPTIMIZATIONFLAGS_HAS_ATTENUATION1;
+
+                if ( desc.m_Attenuation2 != 0.0f )
+                    desc.m_Flags |= LIGHTTYPE_OPTIMIZATIONFLAGS_HAS_ATTENUATION2;
+            }
+
+            desc.RecalculateDerivedValues();
+
+            g_nHL2SBLocalModelLights++;
+
+            lua_pop( L, 1 );
+        }
+    }
+
+    if ( g_pStudioRender != NULL )
+    {
+        g_pStudioRender->SetLocalLights( g_nHL2SBLocalModelLights,
+            ( g_nHL2SBLocalModelLights > 0 ) ? g_HL2SBLocalModelLights : NULL );
+    }
 
     return 0;
 }
@@ -1137,6 +1297,17 @@ LUALIB_API int luaopen_render( lua_State *L )
     lua_pushenum( L, StencilComparisonFunction_t::STENCILCOMPARISONFUNCTION_NOTEQUAL, "NOT_EQUAL" );
     lua_pushenum( L, StencilComparisonFunction_t::STENCILCOMPARISONFUNCTION_GREATEREQUAL, "GREATER_OR_EQUAL" );
     lua_pushenum( L, StencilComparisonFunction_t::STENCILCOMPARISONFUNCTION_ALWAYS, "ALWAYS" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    // HL2SB: the light types render.SetLocalModelLights takes
+    // (https://wiki.facepunch.com/gmod/Enums/MATERIAL_LIGHT).  lua_pushenum publishes
+    // both the short name ( MATERIAL_LIGHT_POINT ) and the table field
+    // ( MATERIAL_LIGHT.POINT ), so GMod Lua finds the global it expects.
+    LUA_SET_ENUM_LIB_BEGIN( L, "MATERIAL_LIGHT" );
+    lua_pushenum( L, MATERIAL_LIGHT_DISABLE, "DISABLE" );
+    lua_pushenum( L, MATERIAL_LIGHT_POINT, "POINT" );
+    lua_pushenum( L, MATERIAL_LIGHT_DIRECTIONAL, "DIRECTIONAL" );
+    lua_pushenum( L, MATERIAL_LIGHT_SPOT, "SPOT" );
     LUA_SET_ENUM_LIB_END( L );
 
     LUA_SET_ENUM_LIB_BEGIN( L, "STENCIL_OPERATION" );

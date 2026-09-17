@@ -418,8 +418,38 @@ bool CFourWheelVehiclePhysics::Initialize( const char *pVehicleScript, unsigned 
 	m_flMaxSpeed = vehicle.engine.maxSpeed;
 
 	IPhysicsObject *pBody = m_pOuter->VPhysicsInitNormal( SOLID_VPHYSICS, 0, false, &solid );
+
+	if ( !pBody )
+	{
+		// No collision model, no physics body.  A vehicle class with no model at all
+		// reaches this - the engine ships abstract bases such as `prop_vehicle` and
+		// `prop_vehicle_driveable`, and `gm_spawnvehicle prop_vehicle` used to take the
+		// whole server down on the NEXT line:
+		//     AV READ of 0x0 in CFourWheelVehiclePhysics::Initialize+0x27D
+		//     [fourwheelvehiclephysics.cpp:421]   <- PhysSetGameFlags( NULL, ... )
+		// Nothing can be simulated without a body, so drop the vehicle instead of
+		// dereferencing a null pointer (same UTIL_Remove + false contract as the
+		// failed ParseVehicleScript path above).
+		Warning( "CFourWheelVehiclePhysics::Initialize: '%s' has no physics body "
+				 "(no model / no collision model) - vehicle removed\n",
+				 m_pOuter->GetClassname() );
+		UTIL_Remove( m_pOuter );
+		return false;
+	}
+
 	PhysSetGameFlags( pBody, FVPHYSICS_NO_SELF_COLLISIONS | FVPHYSICS_MULTIOBJECT_ENTITY );
 	m_pVehicle = physenv->CreateVehicleController( pBody, vehicle, nVehicleType, physgametrace );
+
+	if ( !m_pVehicle )
+	{
+		// The script described a vehicle vphysics cannot build (no wheels, for
+		// instance).  Same rule: no controller, no vehicle.
+		Warning( "CFourWheelVehiclePhysics::Initialize: '%s' could not create a vehicle "
+				 "controller - vehicle removed\n", m_pOuter->GetClassname() );
+		UTIL_Remove( m_pOuter );
+		return false;
+	}
+
 	m_wheelCount = m_pVehicle->GetWheelCount();
 	for ( int i = 0; i < m_wheelCount; i++ )
 	{

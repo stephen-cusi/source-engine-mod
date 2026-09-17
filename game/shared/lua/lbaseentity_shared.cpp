@@ -187,6 +187,40 @@ static int CBaseEntity_ApplyAbsVelocityImpulse (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB: GMod's Entity:SetEyeTarget( pos )
+**   https://wiki.facepunch.com/gmod/Entity:SetEyeTarget
+** "Sets the position an entity's eyes look toward ... Set to 0,0,0 to disable the
+** override."  The player model editor calls it every frame
+** (garrysmod/gamemodes/sandbox/gamemode/editor_player.lua:352:
+**  mdl.Entity:SetEyeTarget( mdl:GetCamPos() )) so the preview's eyes follow the camera.
+**
+** WARNING: this engine has NO primitive behind it.  GMod added
+** CIKContext::SetEyeTarget to its own engine fork; the CIKContext this tree builds
+** against (public/bone_setup.h:268) has no such method, and the only "eye target"
+** members in the tree are the unrelated vehicle ones (m_vecLastEyeTarget in
+** c_vehicle_jeep.cpp).  A faithful version means writing the eye IK from scratch.
+**
+** So the binding exists, validates its argument like GMod does, and says once on the
+** console that it has no effect - GMod Lua keeps running instead of raising
+** "attempt to call a nil value", and the gap is never silent.
+*/
+static bool g_bHL2SBEyeTargetNoteShown = false;
+
+static int CBaseEntity_SetEyeTarget (lua_State *L) {
+  Vector vecTarget = luaL_checkvector(L, 2);
+
+  if ( !g_bHL2SBEyeTargetNoteShown ) {
+    g_bHL2SBEyeTargetNoteShown = true;
+    Msg( "[HL2SB] Entity:SetEyeTarget( %f %f %f ) was accepted but does nothing: "
+         "CIKContext::SetEyeTarget does not exist in this engine (public/bone_setup.h), "
+         "so eyes will not follow the target.\n",
+         (float)vecTarget.x, (float)vecTarget.y, (float)vecTarget.z );
+  }
+
+  return 0;
+}
+
 static int CBaseEntity_ApplyLocalAngularVelocityImpulse (lua_State *L) {
   luaL_checkentity(L, 1)->ApplyLocalAngularVelocityImpulse((AngularImpulse &)luaL_checkvector(L, 2));
   return 0;
@@ -3644,6 +3678,7 @@ static const luaL_Reg ents_funcs[] = {
 static const luaL_Reg CBaseEntity_funcs[] = {
   {"CreateEntityByName", luasrc_CreateEntityByName},
   {"EyePos", luasrc_EyePos},
+  {"SetEyeTarget", CBaseEntity_SetEyeTarget},   /* HL2SB: GMod name, accepted but inert - see above */
   {NULL, NULL}
 };
 

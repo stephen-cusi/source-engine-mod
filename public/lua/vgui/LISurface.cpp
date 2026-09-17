@@ -9,6 +9,7 @@
 
 #include "cbase.h"
 #include "vgui/ISurface.h"
+#include "vgui/ISystem.h"   // HL2SB: gui.OpenURL -> ISystem::ShellExecute
 #include "vgui/ILocalize.h"
 #include "vgui_controls/Controls.h"
 #include "luamanager.h"
@@ -514,6 +515,19 @@ static int HL2SB_gui_IsConsoleVisible (lua_State *L) {
 static int HL2SB_gui_IsGameUIVisible (lua_State *L) {
   lua_pushboolean(L, (enginevgui != NULL && enginevgui->IsGameUIVisible()) ? 1 : 0);
   return 1;
+}
+
+// GMod: gui.OpenURL( strURL ).  lua/vgui/dlabelurl.lua's click handler and a lot of
+// addon "open the workshop page" code call it.  vgui2's ISystem::ShellExecute is the
+// documented way to hand a URL to the OS (public/vgui/ISystem.h:41).
+static int HL2SB_gui_OpenURL (lua_State *L) {
+  const char *pszURL = luaL_checkstring(L, 1);
+
+  if ( system() != NULL && pszURL != NULL && pszURL[ 0 ] != '\0' ) {
+    system()->ShellExecute("open", pszURL);
+  }
+
+  return 0;
 }
 
 static int surface_DrawSetTextureFile (lua_State *L) {
@@ -1060,6 +1074,15 @@ LUALIB_API int luaopen_surface (lua_State *L) {
   lua_setfield(L, -2, "IsConsoleVisible");
   lua_pushcfunction(L, HL2SB_gui_IsGameUIVisible);
   lua_setfield(L, -2, "IsGameUIVisible");
+  // gui.OpenURL( url ) -- GMod's "open this link in the browser".
+  //
+  // lua/vgui/dlabelurl.lua opens the label's URL on click.  GMod's own gui.OpenURL
+  // went through vgui's ISystem / the Steam overlay; this fork has no Steam overlay
+  // binding reachable from Lua, but vgui2 does ship ISystem::ShellExecute
+  // (public/vgui/ISystem.h:41 -- "use this with the open command to launch web
+  // browsers/explorer windows"), so that is the route taken here.
+  lua_pushcfunction(L, HL2SB_gui_OpenURL);
+  lua_setfield(L, -2, "OpenURL");
   lua_setglobal(L, "gui");
 
   return 1;
