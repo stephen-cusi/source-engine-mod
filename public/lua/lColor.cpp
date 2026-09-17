@@ -259,6 +259,139 @@ static const luaL_Reg Color_funcs[] = {
 
 
 /*
+** HL2SB: GMod's ColorToHSV( color ) -> h, s, v
+**   h in [0, 360], s in [0, 1], v in [0, 1].
+** Required by DColorCube / DColorMixer (lua/vgui/DColorCube.lua:81 etc).
+*/
+static int HL2SB_ColorToHSV (lua_State *L) {
+  lua_Color c = luaL_checkcolor(L, 1);
+  float r = c.r() / 255.0f;
+  float g = c.g() / 255.0f;
+  float b = c.b() / 255.0f;
+
+  float max = r, min = r;
+  if (g > max) max = g;
+  if (b > max) max = b;
+  if (g < min) min = g;
+  if (b < min) min = b;
+
+  float h = 0.0f, s = 0.0f, v = max;
+  float delta = max - min;
+
+  if (delta > 1e-6f) {
+    s = delta / max;
+    if (r >= max)        h = 60.0f * (g - b) / delta;
+    else if (g >= max)   h = 120.0f + 60.0f * (b - r) / delta;
+    else                 h = 240.0f + 60.0f * (r - g) / delta;
+    if (h < 0.0f)        h += 360.0f;
+  }
+
+  lua_pushnumber(L, h);
+  lua_pushnumber(L, s);
+  lua_pushnumber(L, v);
+  return 3;
+}
+
+/*
+** HL2SB: GMod's HSVToColor( h, s, v [, a] ) -> Color table
+*/
+static int HL2SB_HSVToColor (lua_State *L) {
+  float h = (float)luaL_checknumber(L, 1);
+  float s = (float)luaL_checknumber(L, 2);
+  float v = (float)luaL_checknumber(L, 3);
+  int   a = (int)luaL_optnumber(L, 4, 255);
+
+  if (s < 0.0f) s = 0.0f; else if (s > 1.0f) s = 1.0f;
+  if (v < 0.0f) v = 0.0f; else if (v > 1.0f) v = 1.0f;
+
+  float c = v * s;
+  float hp = fmodf(h, 360.0f) / 60.0f;
+  float x  = c * (1.0f - fabsf(fmodf(hp, 2.0f) - 1.0f));
+  float m  = v - c;
+
+  float r = 0, g = 0, b = 0;
+  if      (hp < 1.0f) { r = c; g = x; b = 0; }
+  else if (hp < 2.0f) { r = x; g = c; b = 0; }
+  else if (hp < 3.0f) { r = 0; g = c; b = x; }
+  else if (hp < 4.0f) { r = 0; g = x; b = c; }
+  else if (hp < 5.0f) { r = x; g = 0; b = c; }
+  else                { r = c; g = 0; b = x; }
+
+  lua_newtable(L);
+  lua_pushcolor_field(L, LUA_COLOR_FIELD_R, (int)((r + m) * 255.0f + 0.5f));
+  lua_pushcolor_field(L, LUA_COLOR_FIELD_G, (int)((g + m) * 255.0f + 0.5f));
+  lua_pushcolor_field(L, LUA_COLOR_FIELD_B, (int)((b + m) * 255.0f + 0.5f));
+  lua_pushcolor_field(L, LUA_COLOR_FIELD_A, a);
+  return 1;
+}
+
+/*
+** HL2SB: GMod's ColorToHSL( color ) -> h, s, l
+**   h in [0, 360], s in [0, 1], l in [0, 1].
+*/
+static int HL2SB_ColorToHSL (lua_State *L) {
+  lua_Color c = luaL_checkcolor(L, 1);
+  float r = c.r() / 255.0f;
+  float g = c.g() / 255.0f;
+  float b = c.b() / 255.0f;
+
+  float max = r, min = r;
+  if (g > max) max = g;
+  if (b > max) max = b;
+  if (g < min) min = g;
+  if (b < min) min = b;
+
+  float h = 0.0f, s = 0.0f, l = (max + min) * 0.5f;
+  float delta = max - min;
+
+  if (delta > 1e-6f) {
+    s = (l > 0.5f) ? delta / (2.0f - max - min) : delta / (max + min);
+    if (r >= max)        h = 60.0f * (g - b) / delta;
+    else if (g >= max)   h = 120.0f + 60.0f * (b - r) / delta;
+    else                 h = 240.0f + 60.0f * (r - g) / delta;
+    if (h < 0.0f)        h += 360.0f;
+  }
+
+  lua_pushnumber(L, h);
+  lua_pushnumber(L, s);
+  lua_pushnumber(L, l);
+  return 3;
+}
+
+/*
+** HL2SB: GMod's HSLToColor( h, s, l [, a] ) -> Color table
+*/
+static int HL2SB_HSLToColor (lua_State *L) {
+  float h = (float)luaL_checknumber(L, 1);
+  float s = (float)luaL_checknumber(L, 2);
+  float l = (float)luaL_checknumber(L, 3);
+  int   a = (int)luaL_optnumber(L, 4, 255);
+
+  if (s < 0.0f) s = 0.0f; else if (s > 1.0f) s = 1.0f;
+  if (l < 0.0f) l = 0.0f; else if (l > 1.0f) l = 1.0f;
+
+  float c = (1.0f - fabsf(2.0f * l - 1.0f)) * s;
+  float hp = fmodf(h, 360.0f) / 60.0f;
+  float x  = c * (1.0f - fabsf(fmodf(hp, 2.0f) - 1.0f));
+  float m  = l - c * 0.5f;
+
+  float r = 0, g = 0, b = 0;
+  if      (hp < 1.0f) { r = c; g = x; b = 0; }
+  else if (hp < 2.0f) { r = x; g = c; b = 0; }
+  else if (hp < 3.0f) { r = 0; g = c; b = x; }
+  else if (hp < 4.0f) { r = 0; g = x; b = c; }
+  else if (hp < 5.0f) { r = x; g = 0; b = c; }
+  else                { r = c; g = 0; b = x; }
+
+  lua_newtable(L);
+  lua_pushcolor_field(L, LUA_COLOR_FIELD_R, (int)((r + m) * 255.0f + 0.5f));
+  lua_pushcolor_field(L, LUA_COLOR_FIELD_G, (int)((g + m) * 255.0f + 0.5f));
+  lua_pushcolor_field(L, LUA_COLOR_FIELD_B, (int)((b + m) * 255.0f + 0.5f));
+  lua_pushcolor_field(L, LUA_COLOR_FIELD_A, a);
+  return 1;
+}
+
+/*
 ** Open Color object
 */
 LUALIB_API int luaopen_Color (lua_State *L) {
@@ -292,6 +425,17 @@ LUALIB_API int luaopen_Color (lua_State *L) {
   lua_setglobal( L, "color_black" );
   lua_pushcolor( L, transparent );
   lua_setglobal( L, "color_transparent" );
+
+  // HL2SB: GMod's colour-space conversion globals.  DColorCube / DColorMixer
+  // (and any GMod addon that builds HSV pickers) call these unconditionally.
+  lua_pushcfunction( L, HL2SB_ColorToHSV );
+  lua_setglobal( L, "ColorToHSV" );
+  lua_pushcfunction( L, HL2SB_HSVToColor );
+  lua_setglobal( L, "HSVToColor" );
+  lua_pushcfunction( L, HL2SB_ColorToHSL );
+  lua_setglobal( L, "ColorToHSL" );
+  lua_pushcfunction( L, HL2SB_HSLToColor );
+  lua_setglobal( L, "HSLToColor" );
 
   return 1;
 }

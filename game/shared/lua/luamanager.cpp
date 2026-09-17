@@ -340,6 +340,7 @@ void luasrc_init_gameui (void) {
   luaopen_QAngle(LGameUI);
   luaopen_gpGlobals(LGameUI);
   luaopen_input(LGameUI);
+  luaopen_Color(LGameUI);  // ColorToHSV / HSVToColor / ColorToHSL / HSLToColor
 
   // GMod's file library.  Without it the menu state's only file access is Lua's
   // `io`, which cannot enumerate a folder -- and lua/gameui/contentsubgames.lua
