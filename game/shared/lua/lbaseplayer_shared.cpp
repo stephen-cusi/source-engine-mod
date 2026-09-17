@@ -8,6 +8,7 @@
 #define lbaseplayer_shared_cpp
 
 #include "cbase.h"
+#include "convar.h"
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lbaseplayer_shared.h"
@@ -1236,8 +1237,39 @@ static int CBasePlayer_KeyReleased (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Player:GetInfo( convarName ) -- read a client-side
+// convar (FCVAR_USERINFO).  On the local client this always reads the local
+// player's cvar regardless of which player the method is called on; that is
+// GMod's documented behaviour.
+static int CBasePlayer_GetInfo (lua_State *L) {
+  luaL_checkplayer(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  ConVarRef ref( pszName, true );
+  if ( ref.IsValid() ) {
+    lua_pushstring( L, ref.GetString() );
+  } else {
+    lua_pushnil( L );
+  }
+  return 1;
+}
+
+static int CBasePlayer_GetInfoNum (lua_State *L) {
+  luaL_checkplayer(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  float flDefault = (float)luaL_optnumber(L, 3, 0.0f);
+  ConVarRef ref( pszName, true );
+  if ( ref.IsValid() ) {
+    lua_pushnumber( L, ref.GetFloat() );
+  } else {
+    lua_pushnumber( L, flDefault );
+  }
+  return 1;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"LagCompensation", CBasePlayer_LagCompensation},
+  {"GetInfo", CBasePlayer_GetInfo},
+  {"GetInfoNum", CBasePlayer_GetInfoNum},
   {"IsValid", CBasePlayer_IsValid},
   {"AbortReload", CBasePlayer_AbortReload},
   {"AddToPlayerSimulationList", CBasePlayer_AddToPlayerSimulationList},
