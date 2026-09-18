@@ -23,6 +23,9 @@
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialvar.h"
 #include "c_baseplayer.h"
+// HL2SB: LUA_NOREF / the entity's Lua table reference, for the PlayerColor proxy's
+// "is this a Lua-created clientside model?" test.
+#include "luamanager.h"
 #include "tier0/memdbgon.h"
 
 // Master switch for the c_hands system
@@ -621,7 +624,7 @@ int C_ViewmodelAttachment::ShouldTransmit( const CCheckTransmitInfo *pInfo, cons
 class CPlayerColorProxy : public IMaterialProxy
 {
 public:
-	CPlayerColorProxy( void ) : m_pColor( NULL )
+	CPlayerColorProxy( void ) : m_pColor( NULL ), m_bArmsMaterial( false )
 	{
 		m_flDefault[0] = 0.2f; m_flDefault[1] = 0.4f; m_flDefault[2] = 0.7f;
 	}
@@ -632,6 +635,14 @@ public:
 		bool found = false;
 		const char *pszResultVar = pKeyValues->GetString( "resultVar", "$color2" );
 		m_pColor = pMaterial->FindVar( pszResultVar, &found, false );
+
+		// HL2SB: which colour this material belongs to is a property of the MATERIAL, not
+		// of whoever is drawing it.  The arm/sleeve materials are the c_arms_* chain, and
+		// deciding by entity class broke as soon as the player model selector opened: a
+		// non-matching draw of the same material (the menu's own clientside models) wrote
+		// the default white over the arms (2026-09-17).
+		const char *pszMatName = pMaterial->GetName();
+		m_bArmsMaterial = ( pszMatName != NULL && Q_stristr( pszMatName, "c_arms" ) != NULL );
 
 		// Parse the "default" color (e.g. "0.2 0.4 0.7").
 		const char *pszDefault = pKeyValues->GetString( "default", NULL );
@@ -650,23 +661,132 @@ public:
 
 		float r = m_flDefault[0], g = m_flDefault[1], b = m_flDefault[2];
 
-		// GMod style: the sleeve colour is the player's own colour
-		// (player:GetPlayerColor), defaulting to the teal fallback. The arms are
-		// first-person only, so read the local player.
-		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-		if ( pLocal )
+		// HL2SB: the arm/sleeve chain always wears the WEAPON colour (cl_weaponcolor), and
+		// that is decided by the MATERIAL - so no other entity drawing the same material can
+		// knock it back to white (opening the player model selector did exactly that,
+		// 2026-09-17).
+		if ( m_bArmsMaterial )
 		{
-			Color c = HL2SB_GetPlayerColor( pLocal->GetUserID() );
-			r = c.r() / 255.0f;
-			g = c.g() / 255.0f;
-			b = c.b() / 255.0f;
+			static ConVarRef s_cl_arms_weaponcolor( "cl_weaponcolor" );
+
+			if ( s_cl_arms_weaponcolor.IsValid() )
+			{
+				const char *pszCol = s_cl_arms_weaponcolor.GetString();
+
+				if ( pszCol && pszCol[0] )
+					sscanf( pszCol, "%f %f %f", &r, &g, &b );
+			}
+
+			m_pColor->SetVecValue( clamp( r, 0.0f, 1.5f ), clamp( g, 0.0f, 1.5f ), clamp( b, 0.0f, 1.5f ) );
+			return;
+		}
+
+		// HL2SB: GMod modulates *your* model with *your* colour, so take the player from
+		// the entity being drawn.  The old code always read the LOCAL player's entry of
+		// HL2SB_GetPlayerColor(), which painted every model on screen in the local
+		// player's colour (2026-09-17).
+		C_BaseEntity *pEntity = NULL;
+
+		if ( pBindable != NULL )
+		{
+			IClientRenderable *pRenderable = ( IClientRenderable * )pBindable;
+			IClientUnknown *pUnknown = pRenderable->GetIClientUnknown();
+
+			if ( pUnknown != NULL )
+			{
+				pEntity = pUnknown->GetBaseEntity();
+			}
+		}
+
+		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+		C_BasePlayer *pPlayer = NULL;
+
+		if ( pEntity != NULL )
+		{
+			if ( pEntity->IsPlayer() )
+			{
+				pPlayer = ToBasePlayer( pEntity );
+			}
+			else if ( pLocal != NULL && pEntity->m_nTableReference != LUA_NOREF )
+			{
+				// A Lua-created clientside model (the player model selector's own preview:
+				// lua/vgui/DModelPanel.lua's ClientsideModel, which the editor also gives a
+				// GetPlayerColor field) follows the local player's colour.  The model list's
+				// THUMBNAILS are entities the engine owns and never hand to Lua, so they have
+				// no table and stay untouched - which is what keeps the grid from all turning
+				// one colour (2026-09-17).
+				pPlayer = pLocal;
+			}
+			else if ( pLocal != NULL )
+			{
+				// GMod-style separation, as asked for on 2026-09-17: the ARMS follow the
+				// WEAPON colour (cl_weaponcolor) while the player MODEL follows the player
+				// colour (cl_playercolor).  The arms' VMTs declare "PlayerColor", so they
+				// used to move with the skin mixer and the two were inseparable - the
+				// weapon mixer looked dead.  The weapon sheets keep their own
+				// PlayerWeaponColor proxy.
+				const char *pszClass = pEntity->GetClassname();
+
+				if ( pszClass != NULL &&
+					 ( Q_stristr( pszClass, "viewmodel" ) != NULL ||
+					   Q_stristr( pszClass, "arms" ) != NULL ||
+					   Q_stristr( pszClass, "hands" ) != NULL ) )
+				{
+					static ConVarRef s_cl_weaponcolor( "cl_weaponcolor" );
+
+					if ( s_cl_weaponcolor.IsValid() )
+					{
+						const char *pszCol = s_cl_weaponcolor.GetString();
+
+						if ( pszCol && pszCol[0] )
+							sscanf( pszCol, "%f %f %f", &r, &g, &b );
+					}
+
+					r = clamp( r, 0.0f, 1.5f );
+					g = clamp( g, 0.0f, 1.5f );
+					b = clamp( b, 0.0f, 1.5f );
+
+					m_pColor->SetVecValue( r, g, b );
+					return;
+				}
+			}
+		}
+
+		if ( pPlayer != NULL )
+		{
+			if ( pPlayer == pLocal )
+			{
+				// straight from the convar, so a colour change shows up immediately and
+				// nothing has to write the Lua colour table
+				static ConVarRef s_cl_playercolor( "cl_playercolor" );
+
+				if ( s_cl_playercolor.IsValid() )
+				{
+					const char *pszCol = s_cl_playercolor.GetString();
+
+					if ( pszCol && pszCol[0] )
+					{
+						sscanf( pszCol, "%f %f %f", &r, &g, &b );
+					}
+				}
+			}
+			else
+			{
+				Color c = HL2SB_GetPlayerColor( pPlayer->GetUserID() );
+				r = c.r() / 255.0f;
+				g = c.g() / 255.0f;
+				b = c.b() / 255.0f;
+			}
 		}
 		else
 		{
-			// No player yet - fall back to the hl2sb_player_color convar.
-			const char *pszCol = hl2sb_player_color.GetString();
-			if ( pszCol && pszCol[0] )
-				sscanf( pszCol, "%f %f %f", &r, &g, &b );
+			// Nothing to tint: the material keeps its default value, i.e. the model is
+			// drawn as authored (this is the model list's thumbnails and every other
+			// clientside model).  The old code fell back to the hl2sb_player_color convar
+			// here, whose GMod-teal default tinted them all.
+			r = m_flDefault[0];
+			g = m_flDefault[1];
+			b = m_flDefault[2];
 		}
 
 		// Clamp to the 0.01..1.5 range the sleeve vmt's Clamp proxy expects.
@@ -684,9 +804,87 @@ public:
 private:
 	IMaterialVar	*m_pColor;
 	float			m_flDefault[3];
+	bool			m_bArmsMaterial;
 };
 
 EXPOSE_INTERFACE( CPlayerColorProxy, IMaterialProxy, "PlayerColor" IMATERIAL_PROXY_INTERFACE_VERSION );
+
+//-----------------------------------------------------------------------------
+// HL2SB: "PlayerWeaponColor" material proxy - the same idea for the weapon chain.
+//
+// The GMod weapon sheets and the cstrike / combine arms reference it:
+//
+//     Proxies { PlayerWeaponColor { resultVar $color2 default 1 1 1 } }
+//
+// and NOTHING implemented it, so the material system answered
+//
+//     Error: Material "models/weapons/v_physcannon/v_superphyscannon_sheet"
+//            : proxy "PlayerWeaponColor" not found!
+//
+// and those materials stayed untinted (that is the "weapon colour does nothing /
+// the arms have no colour" report, 2026-09-17).  The colour is cl_weaponcolor, the
+// convar the player model selector's weapon mixer writes.
+//-----------------------------------------------------------------------------
+class CPlayerWeaponColorProxy : public IMaterialProxy
+{
+public:
+	CPlayerWeaponColorProxy( void ) : m_pColor( NULL )
+	{
+		m_flDefault[0] = m_flDefault[1] = m_flDefault[2] = 1.0f;
+	}
+	virtual ~CPlayerWeaponColorProxy( void ) { }
+
+	virtual bool Init( IMaterial *pMaterial, KeyValues *pKeyValues )
+	{
+		bool found = false;
+		const char *pszResultVar = pKeyValues->GetString( "resultVar", "$color2" );
+		m_pColor = pMaterial->FindVar( pszResultVar, &found, false );
+
+		const char *pszDefault = pKeyValues->GetString( "default", NULL );
+		if ( pszDefault )
+		{
+			sscanf( pszDefault, "%f %f %f", &m_flDefault[0], &m_flDefault[1], &m_flDefault[2] );
+		}
+
+		return m_pColor != NULL;
+	}
+
+	virtual void OnBind( void *pBindable )
+	{
+		if ( !m_pColor )
+			return;
+
+		float r = m_flDefault[0], g = m_flDefault[1], b = m_flDefault[2];
+
+		static ConVarRef s_cl_weaponcolor( "cl_weaponcolor" );
+
+		if ( s_cl_weaponcolor.IsValid() )
+		{
+			const char *pszCol = s_cl_weaponcolor.GetString();
+
+			if ( pszCol && pszCol[0] )
+			{
+				sscanf( pszCol, "%f %f %f", &r, &g, &b );
+			}
+		}
+
+		r = clamp( r, 0.0f, 1.0f );
+		g = clamp( g, 0.0f, 1.0f );
+		b = clamp( b, 0.0f, 1.0f );
+
+		m_pColor->SetVecValue( r, g, b );
+	}
+
+	virtual void Release( void ) { }
+
+	virtual IMaterial *GetMaterial( void ) { return NULL; }
+
+private:
+	IMaterialVar	*m_pColor;
+	float			m_flDefault[3];
+};
+
+EXPOSE_INTERFACE( CPlayerWeaponColorProxy, IMaterialProxy, "PlayerWeaponColor" IMATERIAL_PROXY_INTERFACE_VERSION );
 
 // HL2SB: CPlayerColorProxy was only EXPOSE_INTERFACE'd, which never registers it
 // with the material system, so any vmt's "PlayerColor" proxy (the GMod player
@@ -700,6 +898,8 @@ public:
 	{
 		if ( proxyName && !Q_stricmp( proxyName, "PlayerColor" ) )
 			return new CPlayerColorProxy;
+		if ( proxyName && !Q_stricmp( proxyName, "PlayerWeaponColor" ) )
+			return new CPlayerWeaponColorProxy;
 		return m_pOld ? m_pOld->CreateProxy( proxyName ) : NULL;
 	}
 	virtual void DeleteProxy( IMaterialProxy *pProxy )

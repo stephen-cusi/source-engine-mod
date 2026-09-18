@@ -989,7 +989,11 @@ static int CBaseCombatWeapon___newindex (lua_State *L) {
   else if (Q_strcmp(field, "m_nViewModelIndex") == 0)
     pWeapon->m_nViewModelIndex.GetForModify() = luaL_checkint(L, 3);
   else {
-    if (pWeapon->m_nTableReference == LUA_NOREF) {
+    // HL2SB: < 0, not == LUA_NOREF -- LUA_REFNIL (-1) is a legal "no table"
+    // state; the old test let lua_getref(-1) push nil and silently drop the
+    // field write (see CBaseEntity___newindex).  Weapon scripts keep per-weapon
+    // fields here (self.ReloadDelay etc.).
+    if (pWeapon->m_nTableReference < 0) {
       lua_newtable(L);
       pWeapon->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }

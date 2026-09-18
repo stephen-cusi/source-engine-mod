@@ -2824,6 +2824,8 @@ bool CBasePlayer::IsUseableEntity( CBaseEntity *pEntity, unsigned int requiredCa
 bool CBasePlayer::CanPickupObject( CBaseEntity *pObject, float massLimit, float sizeLimit )
 {
 #ifdef LUA_SDK
+	// (GMod's PhysgunPickup hook is fired from CWeaponPhysCannon::CanPickupObject, where the
+	//  owning player is known - this function is static, so it has no player to pass.)
 	BEGIN_LUA_CALL_HOOK( "PlayerCanPickupObject" );
 		lua_pushentity( L, pObject );
 		lua_pushnumber( L, massLimit );

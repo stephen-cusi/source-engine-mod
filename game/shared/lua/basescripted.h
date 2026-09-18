@@ -43,7 +43,11 @@ public:
 	void	Spawn( void );
 	void	Precache( void );
 	void	LoadScriptedEntity( void );
-	void	InitScriptedEntity( void );
+	// HL2SB: bCallInitialize=false binds the Lua class WITHOUT dispatching
+	// ENT:Initialize -- that is the ents.Create path (GMod runs Initialize at
+	// Spawn, after the script has set a model).  The Spawn path keeps the
+	// default true.
+	void	InitScriptedEntity( bool bCallInitialize = true );
 
 	void	StartTouch( CBaseEntity *pOther );
 	void	Touch( CBaseEntity *pOther ); 

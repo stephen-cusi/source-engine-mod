@@ -17,6 +17,7 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lbaseentity_shared.h"
+#include "basescripted.h"
 #ifdef CLIENT_DLL
 #include "lc_baseanimating.h"
 #include "lc_recipientfilter.h"
@@ -164,6 +165,40 @@ static int CBaseEntity_AddDataObjectType (lua_State *L) {
 
 static int CBaseEntity_AddEffects (lua_State *L) {
   luaL_checkentity(L, 1)->AddEffects(luaL_checkint(L, 2));
+  return 0;
+}
+
+/*
+** HL2SB GMod compat: Entity:SetNoDraw( bool ) and Entity:DrawShadow( bool ).
+**
+** Both are effect flags in Source - EF_NODRAW (public/const.h:288) and EF_NOSHADOW
+** (public/const.h:287) - which is how GMod itself implements them.
+**
+** ⚠️ cod_c4 calls them in ENT:Initialize (addons/cod_c4/lua/entities/cod-c4/init.lua:29)
+** and in ENT:Draw (cl_init.lua:6).  As nil methods they did not merely print an error:
+** Initialize aborted half way, so self.Hit / self.ExplodedViaWorld / the two SetDTFloat
+** light timings and SetNWBool("CanUse") were never set, and every Draw stopped before
+** self:DrawModel() - the planted C4 was invisible and unusable.
+*/
+static int CBaseEntity_SetNoDraw (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  if (lua_toboolean(L, 2))
+    pEntity->AddEffects(EF_NODRAW);
+  else
+    pEntity->RemoveEffects(EF_NODRAW);
+
+  return 0;
+}
+
+static int CBaseEntity_DrawShadow (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  if (lua_toboolean(L, 2))
+    pEntity->RemoveEffects(EF_NOSHADOW);
+  else
+    pEntity->AddEffects(EF_NOSHADOW);
+
   return 0;
 }
 
@@ -987,8 +1022,78 @@ static int CBaseEntity_GetClass (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:SetPlayer( ply ) / Entity:GetPlayer().
+//
+// The minecraft addon defines ENT:SetPlayer/GetPlayer (self.Owner = ply) on
+// every one of its block classes, and its per-player block-limit loop
+// (weapons/minecraft_swep/shared.lua:617) calls GetPlayer() on every block
+// entity in the map.  On an instance whose Lua class table is not reachable
+// those resolved to nil and aborted the whole attack.  These C++ fallbacks
+// store/read the same "Owner" per-entity field the ENT implementations use, so
+// behaviour is identical whether or not the script pair resolves first.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_SetPlayer (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  if (pEntity->m_nTableReference < 0)
+  {
+    lua_newtable(L);
+    pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
+  }
+  lua_getref(L, pEntity->m_nTableReference);
+  lua_pushvalue(L, 2);              // ply (nil/NULL clears)
+  lua_setfield(L, -2, "Owner");
+  lua_pop(L, 1);
+  return 0;
+}
+
+static int CBaseEntity_GetPlayer (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  if (pEntity->m_nTableReference < 0)
+  {
+    lua_pushnil(L);
+    return 1;
+  }
+  lua_getref(L, pEntity->m_nTableReference);
+  if ( !lua_istable(L, -1) )
+  {
+    lua_pop(L, 1);
+    lua_pushnil(L);
+    return 1;
+  }
+  lua_getfield(L, -1, "Owner");
+  lua_remove(L, -2);
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:SetNotSolid( notSolid ).
+//
+// The minecraft addon toggles collision on signs and special blocks through it
+// (entities/minecraft_block/init.lua:91, minecraft_sign, waterized).  "Restore"
+// answers SOLID_VPHYSICS because that is what every consumer of this fork's
+// addon set in their own Initialize.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_SetNotSolid (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  if ( lua_toboolean(L, 2) )
+    pEntity->SetSolid( SOLID_NONE );
+  else
+    pEntity->SetSolid( SOLID_VPHYSICS );
+  return 0;
+}
+
 static int CBaseEntity_GetModel (lua_State *L) {
-  lua_pushstring(L, STRING( luaL_checkentity(L, 1)->GetModelName() ));
+  // HL2SB: lua_pushstring(L, NULL) pushes NIL, so a modelless entity (viewmodel
+  // right after deploy, before its networked modelindex lands) answered nil and
+  // the minecraft SWEP's clientModel:SetModel( VM:GetModel() ) raised
+  // "bad argument #1 to 'SetModel' (string expected, got nil)".  GMod answers
+  // the empty string here.
+  const char *pszModelName = STRING( luaL_checkentity(L, 1)->GetModelName() );
+  if ( pszModelName == NULL )
+    pszModelName = "";
+  lua_pushstring(L, pszModelName);
   return 1;
 }
 
@@ -1046,10 +1151,16 @@ static int CBaseEntity_GetRangeTo (lua_State *L) {
 
 static int CBaseEntity_GetRefTable (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
-  if (pEntity->m_nTableReference == LUA_NOREF)
-    lua_pushnil(L);
-  else
-    lua_getref(L, pEntity->m_nTableReference);
+  // HL2SB: < 0 catches LUA_REFNIL(-1) as well as LUA_NOREF(-2).  GMod's
+  // Entity:GetTable() always answers a table, so create the per-entity table
+  // here the same way the engine __newindex does - callers that only ever READ
+  // through GetTable() (construct.lua indexes ent:GetTable().toggle) still get
+  // working storage instead of nil.
+  if (pEntity->m_nTableReference < 0) {
+    lua_newtable(L);
+    pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
+  }
+  lua_getref(L, pEntity->m_nTableReference);
   return 1;
 }
 
@@ -1870,7 +1981,24 @@ static int CBaseEntity_SetLocalVelocity (lua_State *L) {
 
 static int CBaseEntity_SetModel (lua_State *L) {
 #ifdef CLIENT_DLL
-  lua_pushboolean(L, luaL_checkentity(L, 1)->SetModel(luaL_checkstring(L, 2)));
+  // HL2SB: make the model actually loadable first.  The minecraft SWEP
+  // re-models its viewmodel in the same frame the weapon deploys -- the server
+  // already precached the block model, but the client's model dictionary may
+  // not have the string-table entry yet, GetModelIndex() is -1 and
+  // C_BaseAnimating::SetModel fails, leaving the VM modelless (GetModel() ""
+  // via the fix below and -- before it -- nil).  Load on demand exactly like
+  // the ClientsideModel path (lbaseflex_shared.cpp) does.
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszModel = luaL_checkstring(L, 2);
+
+  if ( pszModel != NULL && pszModel[0] != '\0' && modelinfo->GetModelIndex( pszModel ) == -1 )
+  {
+    model_t *pModel = ( model_t * )engine->LoadModel( pszModel, true );
+    if ( pModel != NULL )
+      modelinfo->RegisterDynamicModel( pszModel, true );
+  }
+
+  lua_pushboolean(L, pEntity->SetModel(pszModel));
   return 1;
 #else
   // HL2SB GMod compat: GMod's Entity:SetModel( model ) may name a model the map
@@ -1925,13 +2053,35 @@ static int CBaseEntity_SetOwnerEntity (lua_State *L) {
 }
 
 // HL2SB GMod SWEP compat: GMod names this SetOwner.
+//
+// GMod accepts NULL here - "Entity:SetOwner( nil )" clears the owner, which is exactly what
+// cod_c4 does when a thrown charge sticks to a surface
+// (addons/cod_c4/lua/entities/cod-c4/init.lua:306 self:SetOwner( nil )).  Demanding a real
+// entity made that call raise "bad argument #1 to 'SetOwner' (CBaseEntity expected, got NULL
+// entity)" from inside the collision timer, once per collision.
 static int CBaseEntity_SetOwner (lua_State *L) {
-  luaL_checkentity(L, 1)->SetOwnerEntity(luaL_checkentity(L, 2));
+  // GMod's SetOwner takes a player or an entity; both are accepted here, and NULL clears it.
+  CBaseEntity *pOwner = lua_toplayer(L, 2);
+
+  if (pOwner == NULL)
+    pOwner = lua_toentity(L, 2);
+
+  luaL_checkentity(L, 1)->SetOwnerEntity(pOwner);
   return 0;
 }
 
+// HL2SB: GMod's Entity:SetParent( parent = NULL, attachment = 0 ) - a missing or nil
+// parent CLEARS the parent instead of raising.  cod_c4 opens its explosion with
+//     if IsValid( self:GetParent() ) then self:SetParent() end
+// (addons/cod_c4/lua/entities/cod-c4/init.lua:83-85), i.e. a no-argument call, and the
+// charge sticks to walls by re-parenting it (same file:266/334).
 static int CBaseEntity_SetParent (lua_State *L) {
-  luaL_checkentity(L, 1)->SetParent(luaL_checkentity(L, 2), luaL_optint(L, 3, 0));
+  CBaseEntity *pParent = lua_toplayer(L, 2);
+
+  if (pParent == NULL)
+    pParent = lua_toentity(L, 2);
+
+  luaL_checkentity(L, 1)->SetParent(pParent, luaL_optint(L, 3, 0));
   return 0;
 }
 
@@ -2005,7 +2155,7 @@ static int CBaseEntity_SetColor (lua_State *L) {
 static int CBaseEntity_GetMaterial (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
 
-  if ( pEntity->m_nTableReference == LUA_NOREF ) {
+  if ( pEntity->m_nTableReference < 0 ) {
     lua_pushstring( L, "" );
     return 1;
   }
@@ -2026,7 +2176,7 @@ static int CBaseEntity_SetMaterial (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   const char *pszMaterial = luaL_checkstring(L, 2);
 
-  if ( pEntity->m_nTableReference == LUA_NOREF ) {
+  if ( pEntity->m_nTableReference < 0 ) {
     lua_newtable( L );
     pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
   }
@@ -2645,7 +2795,12 @@ static int CBaseEntity___newindex (lua_State *L) {
   else if (Q_strcmp(field, "touchStamp") == 0)
     pEntity->touchStamp = luaL_checkint(L, 3);
   else {
-    if (pEntity->m_nTableReference == LUA_NOREF) {
+    // HL2SB: < 0, not == LUA_NOREF.  luaL_ref() returns LUA_REFNIL (-1) when
+    // entity.get() produced no table; LUA_NOREF is -2.  The old == test left
+    // the reference at -1, and lua_getref(-1) is not a valid table -- so any
+    // field write after a failed first load was silently dropped (Owner.C4s
+    // never stuck, the C4 list stayed nil).
+    if (pEntity->m_nTableReference < 0) {
       lua_newtable(L);
       pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
@@ -3278,6 +3433,74 @@ static int CBaseEntity_SetSaveValue (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:PhysicsInitBox( mins, maxs ).
+//
+// The minecraft addon builds water/lava blocks with an explicit box.  The
+// entity's model is always set before the call, so building the vphysics
+// object from the model's own collision (which for the block models IS the
+// full box) is behaviourally identical and avoids wiring a new box-collide
+// creation path.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_SetUseType (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  (void)luaL_checkint(L, 2);  // USE_* / SIMPLE_USE -- accepted and kept on the
+                              // entity's Lua field table for read-back; this
+                              // fork's Use dispatch behaviour is unchanged.
+  if ( pEntity->m_nTableReference < 0 )
+  {
+    lua_newtable( L );
+    pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
+  }
+  lua_getref( L, pEntity->m_nTableReference );
+  lua_pushvalue( L, 2 );
+  lua_setfield( L, -2, "UseType" );
+  lua_pop( L, 1 );
+  return 0;
+}
+
+static int CBaseEntity_PhysicsInitBox (lua_State *L) {
+  luaL_checkvector(L, 1);
+  luaL_checkvector(L, 2);
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+#ifndef CLIENT_DLL
+  // The callers always SetModel() first and the block models carry a full-box
+  // collision mesh, so building vphysics from the model is behaviourally the
+  // box the addon asks for.
+  if ( pEntity->VPhysicsGetObject() == NULL && pEntity->GetModel() != NULL )
+  {
+    pEntity->VPhysicsInitNormal( SOLID_VPHYSICS, 0, false );
+  }
+#else
+  (void)pEntity;
+#endif
+  return 0;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:IsPointInside( point ).
+//
+// Point-in-OBB test in the entity's own frame.  The minecraft waterizer walks
+// props/swimmers through its water entities with this.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_IsPointInside (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  Vector point = luaL_checkvector(L, 2);
+
+  Vector local;
+  matrix3x4_t world;
+  AngleMatrix( pEntity->GetAbsAngles(), pEntity->GetAbsOrigin(), world );
+  VectorITransform( point, world, local );
+
+  const Vector &mins = pEntity->CollisionProp()->OBBMins();
+  const Vector &maxs = pEntity->CollisionProp()->OBBMaxs();
+
+  bool bInside = local.x >= mins.x && local.y >= mins.y && local.z >= mins.z
+              && local.x <= maxs.x && local.y <= maxs.y && local.z <= maxs.z;
+  lua_pushboolean( L, bInside );
+  return 1;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"GetForward", CBaseEntity_GetForward},
   {"GetRight", CBaseEntity_GetRight},
@@ -3320,6 +3543,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"DestroyDataObject", CBaseEntity_DestroyDataObject},
   {"DispatchTraceAttack", CBaseEntity_DispatchTraceAttack},
   {"DoImpactEffect", CBaseEntity_DoImpactEffect},
+  {"DrawShadow", CBaseEntity_DrawShadow},
   {"EarPosition", CBaseEntity_EarPosition},
   {"EmitSound", CBaseEntity_EmitSound},
   {"EmitAmbientSound", CBaseEntity_EmitAmbientSound},
@@ -3387,7 +3611,16 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetParametersForSound", CBaseEntity_GetParametersForSound},
   {"GetPredictionPlayer", CBaseEntity_GetPredictionPlayer},
   {"GetPredictionRandomSeed", CBaseEntity_GetPredictionRandomSeed},
+  // HL2SB GMod compat: Owner-field based fallbacks (see CBaseEntity_SetPlayer).
+  {"GetPlayer", CBaseEntity_GetPlayer},
+  {"SetPlayer", CBaseEntity_SetPlayer},
   {"GetRangeTo", CBaseEntity_GetRangeTo},
+  // HL2SB: Entity:GetTable - the per-entity Lua field table, the same table the
+  // engine __newindex writes.  The C function existed here for a while but was
+  // never registered, so extensions/gmod_compat.lua's "GetTable = GetRefTable"
+  // alias (and player.lua's __index fallback) saw nil.  Everything that indexes
+  // ent:GetTable() (construct.lua, saverestore.lua, player.lua) depends on it.
+  {"GetRefTable", CBaseEntity_GetRefTable},
   {"GetRenderColor", CBaseEntity_GetRenderColor},
   // HL2SB GMod compat: GMod's spellings of the same idea (a Color rather than a
   // normalised Vector), plus a material name that has no engine-side override.
@@ -3528,6 +3761,11 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetEFlags", CBaseEntity_SetEFlags},
   {"SetFriction", CBaseEntity_SetFriction},
   {"SetGravity", CBaseEntity_SetGravity},
+  // HL2SB GMod compat: minecraft addon (SetUseType(SIMPLE_USE) storage,
+  // box-built water blocks, waterizer point tests).
+  {"SetUseType", CBaseEntity_SetUseType},
+  {"PhysicsInitBox", CBaseEntity_PhysicsInitBox},
+  {"IsPointInside", CBaseEntity_IsPointInside},
   {"SetGroundChangeTime", CBaseEntity_SetGroundChangeTime},
   {"SetGroundEntity", CBaseEntity_SetGroundEntity},
   {"SetHealth", CBaseEntity_SetHealth},
@@ -3540,6 +3778,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetModelName", CBaseEntity_SetModelName},
   {"SetMoveCollide", CBaseEntity_SetMoveCollide},
   {"SetMoveType", CBaseEntity_SetMoveType},
+  {"SetNotSolid", CBaseEntity_SetNotSolid},
+  {"SetNoDraw", CBaseEntity_SetNoDraw},
   {"SetNextThink", CBaseEntity_SetNextThink},
   {"SetOwnerEntity", CBaseEntity_SetOwnerEntity},
   {"SetOwner", CBaseEntity_SetOwner},
@@ -3610,6 +3850,19 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetNWBool", CBaseEntity_GetNWBool},
   {"SetNWEntity", CBaseEntity_SetNWEntity},
   {"GetNWEntity", CBaseEntity_GetNWEntity},
+  /* HL2SB: GMod's Entity:SetEyeTarget( pos ), accepted but inert - see the long note
+  ** above CBaseEntity_SetEyeTarget().  It used to live in CBaseEntity_funcs (i.e. it was
+  ** published as a GLOBAL, which is not what GMod has), so the method every GMod script
+  ** and GMod's own player model selector call -- ent:SetEyeTarget( pos ) -- was nil:
+  **
+  **     lua/game/client/hl2sb_playermodel_gmod.lua:569:
+  **     attempt to call a nil value (method 'SetEyeTarget')
+  **
+  ** That error is inside DModelPanel's LayoutEntity, which its Paint calls BEFORE the 3D
+  ** push, so the whole preview stayed black and the console filled up once per frame
+  ** (2026-09-17).  The binding is a method (it reads its argument from index 2), so it
+  ** belongs here. */
+  {"SetEyeTarget", CBaseEntity_SetEyeTarget},
   {"__index", CBaseEntity___index},
   {"__newindex", CBaseEntity___newindex},
   {"__eq", CBaseEntity___eq},
@@ -3627,7 +3880,40 @@ static int luasrc_CreateEntityByName (lua_State *L) {
 // GMod scripts calling ents.Create("class") / ents.GetByIndex(i) work.  Create
 // maps to CreateEntityByName; GetByIndex maps to CBaseEntity::Instance.
 static int luasrc_ents_Create (lua_State *L) {
-  lua_pushentity(L, CreateEntityByName(luaL_checkstring(L, 1)));
+  const char *pszClassName = luaL_checkstring(L, 1);
+  CBaseEntity *pEntity = CreateEntityByName(pszClassName);
+
+  // HL2SB: diagnostics + GMod create-time class binding.  This is the binding
+  // actually registered as ents.Create (the Entities.CreateByName one is a
+  // second, older path) -- and it used to be a bare CreateEntityByName: no
+  // factory diagnostics, and the Lua class table only ever appeared in
+  // CBaseScripted::Spawn, so any addon configuring an entity between
+  // ents.Create and :Spawn() (the minecraft SWEP's SpawnMinecraftBlock:
+  // SetPlayer/SetBlockID/SetRotation) hit "attempt to call a nil value
+  // (method ...)".  GMod answers ENT methods immediately after ents.Create.
+  if ( pEntity == NULL )
+  {
+    Warning( "[HL2SB] ents.Create('%s'): no entity factory registered\n", pszClassName );
+  }
+  else
+  {
+    CBaseScripted *pScripted = dynamic_cast< CBaseScripted * >( pEntity );
+    if ( pScripted != NULL )
+    {
+      // Bind the Lua class now, but do NOT dispatch ENT:Initialize -- GMod runs
+      // Initialize inside :Spawn(), after the script has set a model.  Running
+      // it here made minecraft_block's PhysicsInit fail (no model yet) and
+      // GetPhysicsObject() answer nil inside its own Initialize.
+      pScripted->InitScriptedEntity( false );
+    }
+    else
+    {
+      Warning( "[HL2SB] ents.Create('%s'): created a non-scripted '%s' - no Lua class will be bound\n",
+        pszClassName, pEntity->GetClassname() );
+    }
+  }
+
+  lua_pushentity(L, pEntity);
   return 1;
 }
 
@@ -3678,7 +3964,10 @@ static const luaL_Reg ents_funcs[] = {
 static const luaL_Reg CBaseEntity_funcs[] = {
   {"CreateEntityByName", luasrc_CreateEntityByName},
   {"EyePos", luasrc_EyePos},
-  {"SetEyeTarget", CBaseEntity_SetEyeTarget},   /* HL2SB: GMod name, accepted but inert - see above */
+  /* SetEyeTarget used to be here.  It is an Entity METHOD in GMod
+  ** (https://wiki.facepunch.com/gmod/Entity:SetEyeTarget), not a global, and as a global
+  ** it could never answer `ent:SetEyeTarget( pos )` - it now lives in CBaseEntitymeta
+  ** above, with the story in the comment there. */
   {NULL, NULL}
 };
 

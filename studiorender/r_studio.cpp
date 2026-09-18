@@ -16,6 +16,9 @@
 #include "tier0/vprof.h"
 #include "tier3/tier3.h"
 #include "datacache/imdlcache.h"
+// HL2SB: the player colour check below reads the model's VMT once per material.
+#include "filesystem.h"
+#include "utldict.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -201,7 +204,96 @@ IMaterial* CStudioRender::R_StudioSetupSkinAndLighting( IMatRenderContext *pRend
 			pMaterial->AlphaModulate( m_pRC->m_AlphaMod );
 
 			// Try to set the color based on the colormod
-			pMaterial->ColorModulate( m_pRC->m_ColorMod[0], m_pRC->m_ColorMod[1], m_pRC->m_ColorMod[2] );
+			//
+			// HL2SB: GMod's player colour only tints the materials a playermodel declares
+			// as colourable ("$color2" in the VMT) - the shirt and sleeves - while
+			// IMaterial::ColorModulate is effective for EVERY material: it writes the
+			// shader's COLOR parameter (materialsystem/cmaterial.cpp:2075) and that
+			// parameter is created for every material at parse time
+			// (materialsystem/cmaterial.cpp:1731), so a player colour used to tint the
+			// face, hands and boots as well.
+			//
+			// GMod's own playermodel pack marks its colourable parts explicitly (38 of the
+			// 247 VMTs under custom/gmod player/materials carry $color2, e.g.
+			// models/alyx/plyr_sheet.vmt and cstrike/t_arctic.vmt), and the VMT is the only
+			// reliable source for "did the model ask for this?" - FindVar()/IsDefined()
+			// cannot tell (every material owns the parameter).  Read it once per material
+			// and cache it.
+			//
+			// Scoped to models/player/ so HL2 props that rely on rendercolor keep the old,
+			// whole-model behaviour.
+			// (updated: the $color2 rule now applies to every model - see below)
+			{
+				static CUtlDict< bool, unsigned short > s_HL2SBVmtColor2;
+				bool bModulate = true;
+
+				const char *pszMatName = ( pMaterial != NULL ) ? pMaterial->GetName() : NULL;
+
+			// HL2SB: the "$color2 only" rule below is DISABLED (2026-09-17).
+			//
+			// The rule is the right one (it is what GMod does), but reading the VMT with
+			// g_pFullFileSystem->Open() from here is not safe: this runs inside the studio
+			// renderer's setup, while the material system is in its draw path, and the game
+			// froze hard when a panel was dragged off-screen (the open re-enters the
+			// filesystem/mount code).  Until a model's colourable materials can be known
+			// WITHOUT touching the filesystem here - the place for that is material parse
+			// time in materialsystem - the original whole-model modulation is used.
+			if ( false && pszMatName != NULL && pszMatName[0] != '\0' )
+					{
+						unsigned short nIndex = s_HL2SBVmtColor2.Find( pszMatName );
+
+						if ( nIndex != s_HL2SBVmtColor2.InvalidIndex() )
+						{
+							bModulate = s_HL2SBVmtColor2[ nIndex ];
+						}
+						else
+						{
+							char szPath[MAX_PATH];
+							Q_snprintf( szPath, sizeof( szPath ), "materials/%s.vmt", pszMatName );
+
+							FileHandle_t hFile = g_pFullFileSystem->Open( szPath, "rb", "GAME" );
+
+							if ( hFile != FILESYSTEM_INVALID_HANDLE )
+							{
+								int nSize = g_pFullFileSystem->Size( hFile );
+
+								if ( nSize > 0 && nSize < 0x10000 )
+								{
+									char *pBuffer = ( char * )malloc( nSize + 1 );
+
+									if ( pBuffer != NULL )
+									{
+										int nRead = g_pFullFileSystem->Read( pBuffer, nSize, hFile );
+										pBuffer[ ( nRead > 0 ) ? nRead : 0 ] = '\0';
+
+										bModulate = ( Q_stristr( pBuffer, "$color2" ) != NULL );
+
+										free( pBuffer );
+									}
+								}
+
+								g_pFullFileSystem->Close( hFile );
+							}
+
+							s_HL2SBVmtColor2.Insert( pszMatName, bModulate );
+						}
+				}
+
+				if ( bModulate )
+				{
+					pMaterial->ColorModulate( m_pRC->m_ColorMod[0], m_pRC->m_ColorMod[1], m_pRC->m_ColorMod[2] );
+				}
+				else
+				{
+					// ⚠️ NOT "skip": ColorModulate writes the material's $color2, and that
+					// value SURVIVES the draw.  Leaving it alone kept whatever colour the
+					// material was last modulated with, so a part that is not colourable
+					// stayed tinted (the arms went black, and the player colour froze at
+					// its previous value - 2026-09-17).  GMod's meaning is "this part is
+					// not colourable", i.e. white.
+					pMaterial->ColorModulate( 1.0f, 1.0f, 1.0f );
+				}
+			}
 		}
 	}
 

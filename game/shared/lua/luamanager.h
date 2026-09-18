@@ -708,15 +708,25 @@ LUA_API bool  (luasrc_PushScriptField) (lua_State *L, int nTableIdx, const char 
 // HL2SB: the two colours a Lua problem is reported in, so a log is readable at a
 // glance: RED is an error (something was lost), ORANGE is a warning (a script-side
 // complaint that is not fatal).  Both print to the console AND Warning() the same
-// text, so engine.log keeps every line either way.
+// text, so engine.log keeps every line either way.  ICE BLUE is informational
+// (script loads, bind reports).  All three append to hl2sb_lua.log while the
+// hl2sb_lua_log collector cvar is on.
 LUA_API void  (luasrc_LuaErrorMsg) (const char *pszText);
 LUA_API void  (luasrc_LuaWarnMsg) (const char *pszText);
+LUA_API void  (luasrc_LuaInfoMsg) (const char *pszText);
 
 // printf-style forms.  `va()` is not available in every translation unit that
 // reports (luamanager.cpp and luanextbot.cpp both failed to compile on it), so the
 // formatting lives next to the colour instead of at the call site.
+// HL2SB: the single writer for Lua console output (print / Msg / MsgN /
+// Warning / ErrorNoHalt).  Colours by severity and, for complete lines, writes
+// hl2sb_lua.log through the same collector the engine's own diagnostics use.
+// cSeverity: 'E' error (red), 'W' warning (orange), anything else info (blue).
+LUA_API void  luasrc_LuaConsoleMsg (const char *pszText, char cSeverity, bool bNewline);
+
 LUA_API void  (luasrc_LuaErrorMsgF) (const char *pszFormat, ...);
 LUA_API void  (luasrc_LuaWarnMsgF) (const char *pszFormat, ...);
+LUA_API void  (luasrc_LuaInfoMsgF) (const char *pszFormat, ...);
 
 // HL2SB: GMod's lua/effects/*.lua loader.  CLIENT ONLY -- the body is compiled
 // out on the server, where GMod does not load effects either.

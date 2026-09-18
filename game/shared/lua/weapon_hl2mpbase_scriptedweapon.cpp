@@ -1323,9 +1323,46 @@ bool CHL2MPScriptedWeapon::Reload( void )
 // Purpose: 
 // Output : Returns true on success, false on failure.
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: GMod keeps self.Owner / self.Weapon on the weapon's Lua
+// table for every SWEP method call.  Old addons reach for self.Owner directly
+// (the minecraft SWEP: self.Owner:GetEyeTrace(), self.Owner:ConCommand(...)),
+// so the fields have to exist.  Refreshed on Deploy, which covers every owner
+// change (a weapon that changed hands redeploys first).
+//-----------------------------------------------------------------------------
+void HL2SB_WeaponUpdateLuaOwnerFields( CHL2MPScriptedWeapon *pWeapon )
+{
+#if defined ( LUA_SDK )
+	if ( L == NULL || !lua_isrefvalid( L, pWeapon->m_nTableReference ) )
+		return;
+
+	lua_getref( L, pWeapon->m_nTableReference );
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return;
+	}
+
+	lua_pushweapon( L, pWeapon );
+	lua_setfield( L, -2, "Weapon" );
+
+	CBasePlayer *pPlayer = ToBasePlayer( pWeapon->GetOwner() );
+	if ( pPlayer != NULL )
+		lua_pushplayer( L, pPlayer );
+	else
+		lua_pushnil( L );
+	lua_setfield( L, -2, "Owner" );
+
+	lua_pop( L, 1 );
+#endif
+}
+
 bool CHL2MPScriptedWeapon::Deploy( void )
 {
 #if defined ( LUA_SDK )
+	// HL2SB: refresh self.Owner / self.Weapon BEFORE the script sees the deploy.
+	HL2SB_WeaponUpdateLuaOwnerFields( this );
+
 	// GMod: SWEP:Deploy() returning true is the NORMAL case (weapon_base
 	// returns true) and does NOT mean "skip the engine default" - only an
 	// explicit false cancels the deploy. The engine's DefaultDeploy() has to

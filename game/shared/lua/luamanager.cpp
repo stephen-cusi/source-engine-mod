@@ -41,6 +41,7 @@ extern "C" __declspec( dllimport ) unsigned short __stdcall
 #include "weapon_hl2mpbase_scriptedweapon.h"
 #include "ammodef.h"
 #include "luamanager.h"
+#include "mountaddons.h"
 #include "luasrclib.h"
 #include "luacachefile.h"
 #include "tier1/lconvar.h"
@@ -89,6 +90,10 @@ bool g_bLuaInitialized;
 static int luasrc_print (lua_State *L) {
   int n = lua_gettop(L);  /* number of arguments */
   int i;
+  char szLine[2048];
+  int nOut = 0;
+  szLine[0] = '\0';
+
   lua_getglobal(L, "tostring");
   for (i=1; i<=n; i++) {
     const char *s;
@@ -99,14 +104,20 @@ static int luasrc_print (lua_State *L) {
     if (s == NULL)
       return luaL_error(L, LUA_QL("tostring") " must return a string to "
                            LUA_QL("print"));
-    // HL2SB: Msg is printf-style, so the value has to go through a format string.
-    // Passing it straight in made Lua output a format string -- `print("%d")`
-    // read a vararg that was never pushed.
-    if (i>1) Msg("%s", "\t");
-    Msg("%s", s);
+
+    // HL2SB: the whole line is assembled first so it can go through the shared
+    // message writer (colour + hl2sb_lua.log) in ONE piece -- printing per
+    // argument put each fragment in the log as its own line.
+    nOut += Q_snprintf( szLine + nOut, sizeof( szLine ) - nOut, "%s%s",
+                        ( i > 1 ) ? "\t" : "", s );
+    if ( nOut >= (int)sizeof( szLine ) - 1 )
+      break;
     lua_pop(L, 1);  /* pop result */
   }
-  Msg("\n");
+
+  // Same writer the engine uses for its own Lua diagnostics: ice blue, and in
+  // the log with an [I] marker when hl2sb_lua_log_colors is on.
+  luasrc_LuaConsoleMsg( szLine, 'I', true );
   return 0;
 }
 
@@ -148,6 +159,83 @@ static bool LuaFileExists (const char *pszPath) {
   return g_pFullFileSystem && g_pFullFileSystem->FileExists( pszPath, "MOD" );
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB: MOD-relative paths only.  The engine filesystem resolves a path
+// against the search paths of the given pathID ("MOD"), so an ABSOLUTE path
+// finds nothing -- FileExists answers false and Open fails with
+//     cannot open d:/.../lua/includes/extensions/vgui.lua: No such file or directory
+// for a file that is plainly there.
+//
+// Two callers produce absolute paths: include() derives its candidate from the
+// calling chunk's name, and a chunk loaded through RelativePathToFullPath
+// (lsrcinit's bootstrap pass, luasrc_dofolder_sorted) has an absolute name.
+//
+// ⚠️ The game directory prefix is stripped BY HAND.  IFileSystem::
+// FullPathToRelativePath() strips the *base* directory instead
+// ("d:/srceng/hl2sb/lua/x.lua" -> "hl2sb/lua/x.lua"), and a path that still
+// carries the game directory name is not MOD-relative either -- every file it
+// named failed with "cannot open hl2sb/lua/...: No such file or directory".
+//-----------------------------------------------------------------------------
+static void LuaMakeRelative (char *pszPath, int nSize) {
+  if ( filesystem == NULL || pszPath == NULL || !V_IsAbsolutePath( pszPath ) )
+    return;
+
+  char szGameDir[MAX_PATH] = { 0 };
+#ifdef CLIENT_DLL
+  const char *pszGameDir = engine->GetGameDirectory();
+  Q_strncpy( szGameDir, ( pszGameDir != NULL ) ? pszGameDir : "", sizeof( szGameDir ) );
+#else
+  engine->GetGameDir( szGameDir, sizeof( szGameDir ) );
+#endif
+
+  if ( szGameDir[0] )
+  {
+    // normalise separators on both sides so the compare is meaningful
+    for ( char *p = szGameDir; *p; ++p )
+      if ( *p == '\\' ) *p = '/';
+
+    int nLen = Q_strlen( szGameDir );
+    if ( !Q_strnicmp( pszPath, szGameDir, nLen ) )
+    {
+      const char *pRest = pszPath + nLen;
+      while ( *pRest == '/' || *pRest == '\\' )
+        ++pRest;
+      Q_strncpy( pszPath, pRest, nSize );
+      for ( char *p = pszPath; *p; ++p )
+        if ( *p == '\\' ) *p = '/';
+      return;
+    }
+  }
+
+  // Not under the game directory: whatever the filesystem can make of it.
+  char szRelative[MAX_PATH];
+  if ( filesystem->FullPathToRelativePath( pszPath, szRelative, sizeof( szRelative ) ) && szRelative[0] )
+    Q_strncpy( pszPath, szRelative, nSize );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: collapse "a/./b" and "a/../b".  Relative resolution is what makes
+// include( "../autorun/x.lua" ) work at all, but the literal path it builds
+// ("lua/includes/../autorun/x.lua") is not something the filesystem opens, so
+// every candidate has to be normalised before it is tested.
+//-----------------------------------------------------------------------------
+static void LuaNormalizeDots (const char *pszIn, char *pszOut, int nOutSize) {
+  int nOut = 0;
+  const char *p = pszIn;
+
+  while (*p && nOut < nOutSize - 2) {
+    if (p[0] == '.' && (p[1] == '/' || p[1] == '\\')) { p += 2; continue; }
+    if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\\')) {
+      while (nOut > 0 && pszOut[nOut - 1] != '/' && pszOut[nOut - 1] != '\\') --nOut;
+      if (nOut > 0) --nOut;                /* drop the separator as well */
+      p += 3;
+      continue;
+    }
+    pszOut[nOut++] = *p++;
+  }
+  pszOut[nOut] = '\0';
+}
+
 static int luasrc_include (lua_State *L) {
   lua_Debug ar1;
   lua_getstack(L, 1, &ar1);
@@ -163,7 +251,12 @@ static int luasrc_include (lua_State *L) {
 
   // 1. relative to the calling file (Team Sandbox / existing HL2SB scripts).
   char filename[MAX_PATH];
+  char normalized[MAX_PATH];
   Q_snprintf( filename, sizeof( filename ), "%s/%s", source, pszName );
+  LuaNormalizeDots( filename, normalized, sizeof( normalized ) );
+  Q_strncpy( filename, normalized, sizeof( filename ) );
+  LuaMakeRelative( filename, sizeof( filename ) );
+
   if ( !LuaFileExists( filename ) )
   {
     // 2. GMod's roots.  lua/ is the one GMod's own engine defaults to; the
@@ -174,9 +267,11 @@ static int luasrc_include (lua_State *L) {
     {
       char candidate[MAX_PATH];
       Q_snprintf( candidate, sizeof( candidate ), s_pRoots[i], pszName );
-      if ( LuaFileExists( candidate ) )
+      LuaNormalizeDots( candidate, normalized, sizeof( normalized ) );
+      LuaMakeRelative( normalized, sizeof( normalized ) );
+      if ( LuaFileExists( normalized ) )
       {
-        Q_strncpy( filename, candidate, sizeof( filename ) );
+        Q_strncpy( filename, normalized, sizeof( filename ) );
         break;
       }
     }
@@ -337,10 +432,29 @@ void luasrc_init_gameui (void) {
   ** extensions/vgui.lua calls, and both must precede the modules that use them.
   */
 #ifdef CLIENT_DLL
+  // HL2SB: the menu realm's own library (game/client/lua/lua_gameui_menu.cpp): the vgui
+  // layout pass this realm never runs, so menu dialogs come up with every control at
+  // (0,0).  Declared here rather than in a shared header because the file is client-only
+  // (LUALIB_API already carries the linkage, so no extra "extern" - that combination
+  // raised C2159).
+  LUALIB_API int luaopen_gameui_menu (lua_State *L);
+
   luaopen_QAngle(LGameUI);
   luaopen_gpGlobals(LGameUI);
   luaopen_input(LGameUI);
   luaopen_Color(LGameUI);  // ColorToHSV / HSVToColor / ColorToHSL / HSLToColor
+  // HL2SB: Vector/VMatrix too.  lua/includes/util.lua runs
+  // `vector_origin = Vector( 0, 0, 0 )` AT LOAD TIME (util.lua:240), and
+  // without the constructor the whole file aborts half way -- taking
+  // AccessorFunc / DEFINE_BASECLASS / IsValid with it, which is what left the
+  // derma controls unregistered in the menu realm.
+  luaopen_Vector(LGameUI);
+
+  // HL2SB: HL2SB_MenuLayout( panel ) / HL2SB_MenuDumpLayout( panel ) - see the header
+  // comment in lua_gameui_menu.cpp.  The menu dialogs call the first one after opening:
+  // without it SetPos() never lands and every control stacks at (0,0).
+  luaopen_gameui_menu(LGameUI);
+  luaopen_VMatrix(LGameUI);
 
   // GMod's file library.  Without it the menu state's only file access is Lua's
   // `io`, which cannot enumerate a folder -- and lua/gameui/contentsubgames.lua
@@ -363,9 +477,19 @@ void luasrc_init_gameui (void) {
   luaopen_Label(LGameUI);
   luaopen_TextEntry(LGameUI);
 
+  // HL2SB: the main-menu Addons dialog talks straight to the mount layer
+  // (mountaddons.cpp) instead of going through a console command -- it needs
+  // the "did it take effect now?" answer back.
+  HL2SB_LuaRegisterAddons(LGameUI);
+
   static const char *const menuFiles[] = {
     LUA_PATH_EXTENSIONS "/table.lua",     // table.merge, used by vgui.register
     LUA_PATH_EXTENSIONS "/vgui.lua",      // vgui.register
+    // HL2SB: the panel extension defines the GMod global ToPanel, which
+    // lua/gameui/basepanel.lua calls (basepanel.lua:29) and the derma controls
+    // rely on.  Without it the Content dialog died on
+    // "attempt to call a nil value (global 'ToPanel')".
+    LUA_PATH_EXTENSIONS "/panel.lua",
     LUA_PATH_EXTENSIONS "/gmod_globals.lua",  // CurTime, ScrW, ScrH, GetConVar, ...
     LUA_PATH_MODULES "/hook.lua",         // hook.add("LuaError", ...)
     LUA_PATH_MODULES "/concommand.lua",   // concommand.Create
@@ -380,6 +504,82 @@ void luasrc_init_gameui (void) {
     if (luasrc_dofile(LGameUI, menuFiles[i]) != 0)
       Warning("HL2SB: main menu module failed to load: %s\n", menuFiles[i]);
   }
+
+  // ---------------------------------------------------------------------------
+  // HL2SB: the GMod-style derma stack in the menu realm, so main-menu dialogs
+  // are real DFrames (the Addons dialog is built on DFrame/DScrollPanel/
+  // DCheckBoxLabel/DButton/DTextEntry).  derma/init.lua's realm guard already
+  // accepts _GAMEUI; what the menu state lacks versus the client realm is the
+  // loader and two globals:
+  //
+  //   * FindMetaTable -- DFrame.lua captures the Panel metatable with it at
+  //     load time (lsrcinit.cpp's lua_metatable_funcs),
+  //   * include()     -- derma/init.lua and includes/vgui_base.lua load
+  //     lua-root relative files through it.
+  //
+  // Both load steps are non-fatal: a control file that cannot load must not
+  // take the main menu down (the same rule the menuFiles loop follows).
+  // ---------------------------------------------------------------------------
+  luasrc_register_metatable_globals(LGameUI);
+
+  // NOTE: include() is NOT shimmed here.  base_open() already published the
+  // engine's own luasrc_include, which does the same caller-relative-then-roots
+  // search; an earlier menu shim replaced it (and lost the lua/includes/ root).
+  // What it did need is ".." normalisation, which now lives in luasrc_include.
+
+  // GMod's type helpers (isstring / istable / ispanel / isentity, and the
+  // GMod `type` override) live in lua/includes/util.lua, which the client
+  // realm loads from init.lua and the menu realm never did -- derma calls
+  // istable at load time and died with
+  // "attempt to call a nil value (global 'istable')" (hl2sb_derma.lua:190).
+  if (luasrc_dofile(LGameUI, LUA_ROOT "/includes/util.lua") != 0)
+    Warning("HL2SB: menu realm: GMod type helpers (lua/includes/util.lua) failed to load\n");
+
+  // GMod's DEFINE_BASECLASS is a PREPROCESSOR keyword here (see the rewrite pass
+  // below): it expands to `local BaseClass = baseclass.Get( "X" )`, so the
+  // module has to exist in whatever realm runs such a file.
+  if (luasrc_dofile(LGameUI, LUA_ROOT "/includes/modules/baseclass.lua") != 0)
+    Warning("HL2SB: menu realm: baseclass module failed to load\n");
+
+  // NOTE: the full derma stack (lua/derma + lua/includes/vgui_base.lua) is NOT
+  // loaded here any more.  It registered nothing in this realm -- every control
+  // died in vgui.Register with
+  //     base class 'Panel' is not an engine class and not a registered control
+  // -- which produced a wall of load failures on every start, and the menu UI
+  // (the Addons dialog's default front end, the Content page) is built from the
+  // engine controls and never asks for a DFrame.  derma stays a client-realm
+  // feature; the addons dialog's derma front end is opt-in and simply falls
+  // back when the stack is absent.
+
+  // ---------------------------------------------------------------------------
+  // HL2SB: menu-realm self check.  Every UI bug in this realm so far had the
+  // same shape: something the CLIENT realm loads (a library, a global, a
+  // loader rule) was missing HERE, and it surfaced much later as "a panel
+  // behaves strangely" -- a nil DLabel, a monochrome error window, an invisible
+  // frame.  One line at startup naming what is missing is worth more than any
+  // of those symptoms: it says whether the environment is complete.
+  // ---------------------------------------------------------------------------
+  static const char *const s_pMenuSelfCheck =
+    "local need = { 'include', 'istable', 'isfunction', 'ispanel', 'AccessorFunc',"
+    " 'ToPanel', 'IsValid', 'Msg', 'MsgN', 'Warning', 'ErrorNoHalt', 'surface',"
+    " 'vgui', 'file', 'baseclass' }\n"
+    "local missing = {}\n"
+    "for _, n in ipairs( need ) do\n"
+    "  if ( _G[ n ] == nil ) then missing[ #missing + 1 ] = n end\n"
+    "end\n"
+    "-- The engine control factories the menu UI is built from.\n"
+    "if ( vgui ~= nil ) then\n"
+    "  for _, c in ipairs( { 'Frame', 'Label', 'Button', 'CheckButton', 'TextEntry', 'Panel' } ) do\n"
+    "    if ( rawget( vgui, c ) == nil ) then missing[ #missing + 1 ] = 'factory:vgui.' .. c end\n"
+    "  end\n"
+    "end\n"
+    "if ( #missing > 0 ) then\n"
+    "  Msg( '[HL2SB] menu realm: MISSING ' .. table.concat( missing, ', ' ) .. '\\n' )\n"
+    "else\n"
+    "  Msg( '[HL2SB] menu realm: OK (control factories + globals + loaders complete)\\n' )\n"
+    "end\n";
+
+  luasrc_dostring(LGameUI, s_pMenuSelfCheck);
 #endif
 
   Msg("Lua Menu initialized (" LUA_VERSION ")\n");
@@ -422,13 +622,57 @@ void luasrc_shutdown_gameui (void) {
 // the "console" spew group at level 1, and IsSpewActive() answers from m_Level,
 // whose default is 0 -- so it would drop every Lua error, console and log alike.
 //-----------------------------------------------------------------------------
+
+// HL2SB: the Lua log collector.  When hl2sb_lua_log is on, EVERY message that
+// goes through luasrc_Lua{Error,Warn,Info}Msg lands in hl2sb_lua.log next to
+// ds_debug.log -- one file holding the whole session's Lua activity, instead of
+// thousands of console lines mixed with engine spam.  Appends per line (the
+// volume is modest and this survives crashes without a close hook).
+// HL2SB: FCVAR_CLIENTDLL is not decoration here -- luamanager.cpp is compiled
+// into BOTH dlls, and without it the engine rejects the server-side twin with
+//     Parent Cvar in server.dll not allowed (hl2sb_lua_log)
+// on every start.  The flag is what tells it the cvar belongs to the client.
+static ConVar hl2sb_lua_log( "hl2sb_lua_log", "1", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
+	"Write all Lua console output (errors/warnings/diagnostics) to hl2sb_lua.log" );
+static ConVar hl2sb_lua_log_colors( "hl2sb_lua_log_colors", "0", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
+	"Prefix each hl2sb_lua.log line with [E]/[W]/[I] severity markers" );
+
+static const char *s_pszLuaLogFile = "hl2sb_lua.log";
+
+void luasrc_LuaLogToFile( const char *pszText, char cSeverity )
+{
+	if ( !hl2sb_lua_log.GetBool() || !g_pFullFileSystem || pszText == NULL )
+		return;
+
+	char szLine[ 2048 ];
+	int nLen = Q_strlen( pszText );
+	while ( nLen > 0 && ( pszText[ nLen - 1 ] == '\n' || pszText[ nLen - 1 ] == '\r' ) )
+		--nLen;
+	if ( nLen >= (int)sizeof( szLine ) )
+		nLen = sizeof( szLine ) - 1;
+
+	if ( hl2sb_lua_log_colors.GetBool() )
+		Q_snprintf( szLine, sizeof( szLine ), "[%c] %.*s", cSeverity, nLen, pszText );
+	else
+		Q_snprintf( szLine, sizeof( szLine ), "%.*s", nLen, pszText );
+
+	FileHandle_t fh = g_pFullFileSystem->Open( s_pszLuaLogFile, "at", "MOD" );
+	if ( fh == FILESYSTEM_INVALID_HANDLE )
+		return;
+	g_pFullFileSystem->FPrintf( fh, "%s\n", szLine );
+	g_pFullFileSystem->Close( fh );
+}
+// HL2SB: ONE console write per message.  These helpers used to print twice --
+// ConColorMsg for the colour and Warning/Msg for the engine log -- and the
+// console showed every Lua line doubled.  The file channel is hl2sb_lua.log
+// (luasrc_LuaLogToFile below), so the plain write is gone.
 LUA_API void luasrc_LuaErrorMsg (const char *pszText)
 {
 	if ( pszText == NULL )
 		return;
 
 	ConColorMsg( 0, Color( 255, 64, 64, 255 ), "%s\n", pszText );	// red
-	Warning( "%s\n", pszText );
+	luasrc_LuaLogToFile( pszText, 'E' );
 }
 
 // HL2SB: the warning half.  Orange, and it exists so "this script has no ENT.X"
@@ -440,7 +684,51 @@ LUA_API void luasrc_LuaWarnMsg (const char *pszText)
 		return;
 
 	ConColorMsg( 0, Color( 255, 165, 0, 255 ), "%s\n", pszText );	// orange
-	Warning( "%s\n", pszText );
+	luasrc_LuaLogToFile( pszText, 'W' );
+}
+
+// HL2SB: the informational half (script loads, bind reports, folder summaries).
+// GMod prints these in the console's default colour; here they additionally land
+// in hl2sb_lua.log when the collector is on, so a whole session's Lua activity
+// is one greppable file.
+LUA_API void luasrc_LuaInfoMsg (const char *pszText)
+{
+	if ( pszText == NULL )
+		return;
+
+	ConColorMsg( 0, Color( 200, 236, 255, 255 ), "%s\n", pszText );	// ice blue
+	luasrc_LuaLogToFile( pszText, 'I' );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: THE writer for everything Lua prints, so console colour and the
+// hl2sb_lua.log are decided in ONE place:
+//
+//     print / Msg / MsgN            -> info   (ice blue)
+//     Warning / dbg.Warning         -> warn   (orange)
+//     ErrorNoHalt / Lua errors      -> error  (red)
+//
+// Msg is a building block -- GMod code writes half a line and finishes it with
+// MsgN -- so the trailing newline stays the caller's decision, and only
+// complete lines go into the log (a half line would be split at the wrong
+// place in the file).
+//-----------------------------------------------------------------------------
+LUA_API void luasrc_LuaConsoleMsg (const char *pszText, char cSeverity, bool bNewline)
+{
+	if ( pszText == NULL )
+		return;
+
+	Color clr = Color( 200, 236, 255, 255 );	// info: ice blue
+	if ( cSeverity == 'E' )
+		clr = Color( 255, 64, 64, 255 );		// error: red
+	else if ( cSeverity == 'W' )
+		clr = Color( 255, 165, 0, 255 );		// warning: orange
+
+	ConColorMsg( 0, clr, "%s%s", pszText, bNewline ? "\n" : "" );
+
+	// The console write above is the ONLY one (see luasrc_LuaErrorMsg).
+	if ( bNewline )
+		luasrc_LuaLogToFile( pszText, cSeverity );
 }
 
 // HL2SB: the printf-style forms (see the declaration for why they exist here
@@ -467,6 +755,18 @@ LUA_API void luasrc_LuaWarnMsgF (const char *pszFormat, ...)
 	va_end( args );
 
 	luasrc_LuaWarnMsg( szBuffer );
+}
+
+LUA_API void luasrc_LuaInfoMsgF (const char *pszFormat, ...)
+{
+	char szBuffer[2048];
+
+	va_list args;
+	va_start( args, pszFormat );
+	Q_vsnprintf( szBuffer, sizeof( szBuffer ), pszFormat, args );
+	va_end( args );
+
+	luasrc_LuaInfoMsg( szBuffer );
 }
 
 static int HL2SB_LuaPanic( lua_State *pL )
@@ -508,10 +808,19 @@ static int HL2SB_LuaPanic( lua_State *pL )
 		unsigned short nFrames = RtlCaptureStackBackTrace( 1, 64, pStack, NULL );
 		const unsigned char *pBase = &__ImageBase;
 
-		Msg( "[HL2SB] native stack (%u frames), module base %p:\n", nFrames, pBase );
+		char szStackLine[ 128 ];
+		Q_snprintf( szStackLine, sizeof( szStackLine ),
+			"[HL2SB] native stack (%u frames), module base %p:", nFrames, pBase );
+		Msg( "%s\n", szStackLine );
+		luasrc_LuaLogToFile( szStackLine, 'E' );
 		for ( unsigned short i = 0; i < nFrames; i++ )
-			Msg( "[HL2SB]   %02u: base+0x%llX  (%p)\n", i,
-			     (unsigned long long)( (const unsigned char *)pStack[ i ] - pBase ), pStack[ i ] );
+		{
+			Q_snprintf( szStackLine, sizeof( szStackLine ),
+				"[HL2SB]   %02u: base+0x%llX  (%p)", i,
+				(unsigned long long)( (const unsigned char *)pStack[ i ] - pBase ), pStack[ i ] );
+			Msg( "%s\n", szStackLine );
+			luasrc_LuaLogToFile( szStackLine, 'E' );
+		}
 
 		if ( FILE *fp = fopen( "hl2sb_lua_panic.log", "a" ) )
 		{
@@ -559,6 +868,21 @@ void luasrc_init (void) {
   if (g_bLuaInitialized)
 	  return;
   g_bLuaInitialized = true;
+
+  // HL2SB: session marker for the Lua log collector - every state init starts
+  // one of these (state init happens per level load and per realm).
+  {
+    char szBanner[ 128 ];
+    Q_snprintf( szBanner, sizeof( szBanner ),
+      "=== Lua log session (state init, %s) ===",
+#ifdef CLIENT_DLL
+      "client"
+#else
+      "server"
+#endif
+    );
+    luasrc_LuaLogToFile( szBanner, 'I' );
+  }
 
   L = lua_open();
 
@@ -684,6 +1008,16 @@ LUA_API int luasrc_dostring (lua_State *L, const char *string) {
 }
 
 LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
+	// HL2SB: an ABSOLUTE path cannot be opened with pathID "MOD" (see
+	// LuaMakeRelative) -- several loaders hand us RelativePathToFullPath output,
+	// and every one of those reported
+	//     [Lua] FAILED d:/...vgui.lua: cannot open ...: No such file or directory
+	// for a file that exists.  Convert first; the check below then sees it.
+	char szRelative[MAX_PATH];
+	if ( filesystem != NULL && filename != NULL && V_IsAbsolutePath( filename ) &&
+		 filesystem->FullPathToRelativePath( filename, szRelative, sizeof( szRelative ) ) && szRelative[0] )
+		filename = szRelative;
+
 	// GLua syntax compat: stock GMod scripts (and many workshop SWEPs) use
 	// C-style `//` line comments and the `!=` operator, which standard Lua 5.1
 	// rejects. Rewrite them in memory before loading: `//` -> `--`,
@@ -907,7 +1241,7 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 		char loadname[ 512 ];
 		filesystem->RelativePathToFullPath( relative, "MOD", loadname, sizeof( loadname ) );
 
-		Msg( "[Lua]   %s  (prerequisite)\n", relative );
+		luasrc_LuaInfoMsgF( "[Lua]   %s  (prerequisite)\n", relative );
 		if ( luasrc_dofile( L, loadname ) != 0 )
 			++nFailed;
 		lua_settop( L, nTop );
@@ -946,7 +1280,7 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 				Q_snprintf( relative, sizeof( relative ), "%s/%s", path, fn );
 				filesystem->RelativePathToFullPath( relative, "MOD", loadname, sizeof( loadname ) );
 				// HL2SB: load diagnostics - "which Lua files actually ran".
-				Msg( "[Lua]   %s\n", relative );
+				luasrc_LuaInfoMsgF( "[Lua]   %s\n", relative );
 				if ( luasrc_dofile( L, loadname ) != 0 )
 					++nFailed;
 				lua_settop( L, nTop );
@@ -958,7 +1292,7 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 	}
 	g_pFullFileSystem->FindClose( fh );
 	if ( nFailed > 0 )
-		Warning( "[Lua] %s -> %d file(s), %d FAILED\n", path, nLoaded, nFailed );
+		luasrc_LuaWarnMsgF( "[Lua] %s -> %d file(s), %d FAILED\n", path, nLoaded, nFailed );
 	else
 		Msg( "[Lua] %s -> %d file(s)\n", path, nLoaded );
 }
@@ -1048,7 +1382,7 @@ LUA_API int luasrc_dofile_includes (lua_State *L, const char *pszName)
 
 	if ( !LuaFileExists( relative ) )
 	{
-		Warning( "[Lua] %s: not found -- GMod bootstrap NOT loaded\n", relative );
+		luasrc_LuaWarnMsgF( "[Lua] %s: not found -- GMod bootstrap NOT loaded\n", relative );
 		return 1;
 	}
 
@@ -1084,7 +1418,7 @@ LUA_API void luasrc_dofolder_sorted (lua_State *L, const char *path, bool bRecur
 	}
 
 	if ( nFailed > 0 )
-		Warning( "[Lua] %s -> %d file(s), %d FAILED%s\n", path, files.Count(), nFailed, bRecurse ? " (recursive, A-Z)" : " (A-Z)" );
+		luasrc_LuaWarnMsgF( "[Lua] %s -> %d file(s), %d FAILED%s\n", path, files.Count(), nFailed, bRecurse ? " (recursive, A-Z)" : " (A-Z)" );
 	else
 		Msg( "[Lua] %s -> %d file(s)%s\n", path, files.Count(), bRecurse ? " (recursive, A-Z)" : " (A-Z)" );
 }
@@ -1400,7 +1734,7 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 		return;
 
 	filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
-	Msg( "[Lua] entity '%s' <- %s\n", className, fullpath );
+	luasrc_LuaInfoMsgF( "[Lua] entity '%s' <- %s\n", className, fullpath );
 
 	// HL2SB: this is the one place that knows which addon (or the tree's own
 	// lua/) a scripted class came from -- see luasrc_NoteClassScript.
@@ -1419,6 +1753,10 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 
 	if ( luasrc_dofile( L, fullpath ) != 0 )
 	{
+		// HL2SB: a failed entity script used to fail SILENTLY here -- no factory,
+		// no registration, and the addon only saw "method is nil" at spawn time.
+		luasrc_LuaErrorMsgF( "[HL2SB] entity '%s': script FAILED, no Lua class or factory registered (%s)\n",
+			className, fullpath );
 		lua_pushnil( L );
 		lua_setglobal( L, "ENT" );
 		return;
@@ -1436,7 +1774,22 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 			lua_remove( L, -2 );
 			lua_getglobal( L, "ENT" );
 			lua_pushstring( L, className );
-			luasrc_pcall( L, 2, 0, 0 );
+			// HL2SB: bReload = true.  entity.register skips when a class of the
+			// same name is already registered; a fresh full load (init.lua after
+			// shared.lua, or a console reload) must always overwrite, otherwise a
+			// partial registration from any earlier pass freezes the class
+			// without its ENT methods ("attempt to call a nil value (method
+			// 'SetBlockID')" on minecraft_block).
+			//
+			// ⚠️ nargs here MUST match the pushed arguments: the first version of
+			// this change raised luasrc_pcall's nargs to 3 without pushing the
+			// third value, so the traceback handler was lua_inserted at an
+			// out-of-stack index and every entity load ended in an unprotected
+			// Lua panic ("attempt to call a nil value", empty traceback) right
+			// after the "[Lua] entity 'cod-c4' <-" line -- a deterministic crash
+			// at every map load.
+			lua_pushboolean( L, 1 );   // bReload: the fresh load always wins
+			luasrc_pcall( L, 3, 0, 0 );
 		}
 		else
 		{
@@ -1812,7 +2165,7 @@ void luasrc_LoadEffects (const char *path)
 			if ( filesystem->FileExists( filename, "MOD" ) )
 			{
 				filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
-				Msg( "[Lua] effect '%s' <- %s\n", className, fullpath );
+				luasrc_LuaInfoMsgF( "[Lua] effect '%s' <- %s\n", className, fullpath );
 
 				lua_newtable( L );
 				char effDir[ MAX_PATH ];
@@ -2040,6 +2393,45 @@ bool luasrc_SetGamemode (const char *gamemode) {
 		lua_settop(L, 0);  /* clear stack */
 	}
 #endif
+
+//-----------------------------------------------------------------------------
+// HL2SB: GMod-style script reload.
+//
+// GMod's lua_reloadents re-runs the entity scripts on the LIVE state; this fork
+// re-runs its entity/weapon loaders on every map load but had no way to do it
+// without leaving the map -- iterating on an addon therefore meant a full map
+// reload each time.
+//
+// This runs the same loader sequence the map-load path runs (gameinterface.cpp
+// for the server, cdll_client_int.cpp for the client), without the state reset:
+// re-registering hooks/concommands overwrites by name (what those registries
+// expect), and entity.register( ..., true ) overwrites the class table -- that
+// bReload argument exists for exactly this.
+//-----------------------------------------------------------------------------
+static void HL2SB_LuaReloadCmd( const CCommand &args )
+{
+	if ( !g_bLuaInitialized )
+	{
+		Warning( "[HL2SB] lua_reloadents: Lua is not initialized yet\n" );
+		return;
+	}
+
+	luasrc_LuaInfoMsgF( "[HL2SB] lua_reloadents: reloading scripted entities/weapons...\n" );
+
+	luasrc_LoadWeapons();
+	luasrc_LoadEntities();
+#ifdef CLIENT_DLL
+	luasrc_LoadEffects();
+#endif
+
+	luasrc_LuaInfoMsgF( "[HL2SB] lua_reloadents: done\n" );
+}
+
+// GMod's command name, plus the fork's own alias for discoverability.
+static ConCommand lua_reloadents_cmd( "lua_reloadents", HL2SB_LuaReloadCmd,
+	"Reload all scripted entities (and weapons/effects) on the live state." );
+static ConCommand hl2sb_lua_reload_cmd( "hl2sb_lua_reload", HL2SB_LuaReloadCmd,
+	"Reload all scripted entities (and weapons/effects) on the live state." );
 
 static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLETION_MAXITEMS ][ COMMAND_COMPLETION_ITEM_LENGTH ] )
 {

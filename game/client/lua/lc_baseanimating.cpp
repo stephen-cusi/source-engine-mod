@@ -15,6 +15,8 @@
 #include "mathlib/lvector.h"
 #include "model_types.h"	// HL2SB: STUDIO_RENDER, the default of Entity:DrawModel()
 #include "lvphysics_interface.h"
+#include "mathlib/lvmatrix.h"	// HL2SB: lua_pushvmatrix for Entity:GetBoneMatrix()
+#include "studio.h"			// HL2SB: studiohdr_t for Entity:GetBoneCount()
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -145,13 +147,167 @@ static int CBaseAnimating_DrawClientHitboxes (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB: the player-model colour, i.e. the piece the 3D preview needs.
+**
+** GMod draws a clientside model with the colour the entity's Lua GetPlayerColor
+** answers, which is exactly why GMod's player model selector writes
+**
+**     mdl.Entity.GetPlayerColor = function() return Vector( GetConVarString( "cl_playercolor" ) ) end
+**
+** (garrysmod/gamemodes/sandbox/gamemode/editor_player.lua, UpdateFromConvars).  In
+** this fork nothing ever asked the entity for it, so moving the Colors tab wrote
+** cl_playercolor and the preview model never changed.
+**
+** Only a Lua-provided GetPlayerColor is honoured: an entity without one is drawn
+** with whatever modulation the caller set (lua/vgui/DModelPanel.lua:Paint sets its
+** own Color), so nothing else changes behaviour.
+**
+** Returns true when a colour was applied; the caller must restore pflPrev (3 floats)
+** after the draw.
+*/
+static bool HL2SB_IsLuaVector (lua_State *L, int idx) {
+  if (!lua_isuserdata(L, idx))
+    return false;
+  if (lua_getmetatable(L, idx) == 0)
+    return false;
+  luaL_getmetatable(L, "Vector");
+  bool bVector = lua_rawequal(L, -1, -2) != 0;
+  lua_pop(L, 2);
+  return bVector;
+}
+
+static bool HL2SB_ApplyLuaPlayerColor (lua_State *L, int nEntity, float *pflPrev) {
+  lua_CBaseAnimating *pEntity = lua_toanimating(L, nEntity);
+
+  if (pEntity == NULL || !lua_isrefvalid(L, pEntity->m_nTableReference))
+    return false;
+
+  lua_getref(L, pEntity->m_nTableReference);
+  lua_getfield(L, -1, "GetPlayerColor");
+  lua_remove(L, -2);                       // leave only the field
+
+  if (!lua_isfunction(L, -1)) {
+    lua_pop(L, 1);
+    return false;
+  }
+
+  lua_pushvalue(L, nEntity);               // self
+
+  if (luasrc_pcall(L, 1, 1, 0) != 0) {     // the pcall leaves the error message
+    lua_pop(L, 1);
+    return false;
+  }
+
+  if (!HL2SB_IsLuaVector(L, -1)) {
+    lua_pop(L, 1);
+    return false;
+  }
+
+  const Vector &vecColor = luaL_checkvector(L, -1);
+  lua_pop(L, 1);
+
+  render->GetColorModulation(pflPrev);
+
+  float color[3] = { vecColor.x, vecColor.y, vecColor.z };
+  render->SetColorModulation(color);
+
+  return true;
+}
+
 static int CBaseAnimating_DrawModel (lua_State *L) {
   // HL2SB GMod compat: wiki says `Entity:DrawModel( number flags = STUDIO_RENDER )`
   // - the flags are OPTIONAL. npc_shaklin_scp096's client ENT:Draw() calls it as
   // `self.Entity:DrawModel()`, and the old luaL_checkint(L, 2) turned that into
   // "bad argument #2" on every frame.
-  lua_pushinteger(L, luaL_checkanimating(L, 1)->DrawModel(luaL_optint(L, 2, STUDIO_RENDER)));
+  lua_CBaseAnimating *pEntity = luaL_checkanimating(L, 1);
+
+  float flPrevColor[3] = { 1.0f, 1.0f, 1.0f };
+  bool bTinted = false;
+
+  /*
+  ** HL2SB: DISABLED (2026-09-17).  This read the entity's Lua GetPlayerColor and pushed
+  ** it through render->SetColorModulation(), i.e. through the ENGINE's per-draw
+  ** modulation - which writes $color2 on EVERY material of the model
+  ** (studiorender/r_studio.cpp) and therefore overrode the real mechanism.
+  **
+  ** The real one is the player-model VMTs' own proxy:
+  **
+  **     Proxies { PlayerColor { resultVar $color2 ... } }      // "pass the player color
+  **                                                           //  value to Gmod"
+  **
+  ** 42 materials in the GMod playermodel pack declare it, and the matching proxy
+  ** implementation lives in game/client/c_viewmodel_attachment.cpp.  Tinting by VMT
+  ** declaration is exactly GMod's behaviour ("what can be coloured, changes; what
+  ** cannot, does not"), so the whole-model modulation must NOT be applied on top.
+  */
+  if ( false )
+  {
+    bTinted = HL2SB_ApplyLuaPlayerColor(L, 1, flPrevColor);
+  }
+
+  int nResult = 0;
+
+  // HL2SB: NOT the virtual DrawModel() -- for a C_BaseScripted that virtual
+  // re-dispatches ENT:Draw(), so "ENT:Draw() { self:DrawModel() }" recursed
+  // into itself until the Lua C-stack limit aborted the chain.  Every level's
+  // pcall swallowed the abort, so the real model draw NEVER ran and the entity
+  // rendered nothing at all: the thrown cod-c4 was invisible while its red
+  // blink sprite (drawn without going through DrawModel) still flashed.
+  // GMod's Entity:DrawModel draws the model directly and never re-enters
+  // RenderOverride / ENT:Draw -- InternalDrawModel is this fork's
+  // non-dispatching path (C_BaseScripted does not override it).
+  nResult = pEntity->InternalDrawModel(luaL_optint(L, 2, STUDIO_RENDER));
+
+  if (bTinted)
+    render->SetColorModulation(flPrevColor);
+
+  lua_pushinteger(L, nResult);
   return 1;
+}
+
+// HL2SB GMod compat: bone accessors the minecraft SWEP's world model needs
+// (the ClientsideModel world model is drawn from the player's hand bone
+// matrix, and every bone is scaled to 0.4).
+static int CBaseAnimating_GetBoneCount (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  const model_t *pModel = pEntity->GetModel();
+  studiohdr_t *pHdr = pModel ? modelinfo->GetStudiomodel( pModel ) : NULL;
+  lua_pushinteger(L, pHdr ? pHdr->numbones : 0);
+  return 1;
+}
+
+static int CBaseAnimating_GetBoneMatrix (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
+
+  matrix3x4_t bones[128];
+  if ( nBone < 0 || nBone >= 128 )
+  {
+    lua_pushnil(L);
+    return 1;
+  }
+  if ( !pEntity->SetupBones( bones, 128, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
+  {
+    lua_pushnil(L);
+    return 1;
+  }
+  VMatrix vm;
+  vm.CopyFrom3x4( bones[nBone] );
+  lua_pushvmatrix(L, vm);
+  return 1;
+}
+
+static int CBaseAnimating_ManipulateBoneScale (lua_State *L) {
+  // HL2SB: the client C_BaseAnimating has no per-bone scale storage (that is
+  // a server-side bonemanip feature this fork never ported).  The minecraft
+  // world model sets the SAME uniform scale on every bone, which is exactly
+  // Entity:SetModelScale -- apply it there so the held block shrinks; any
+  // non-uniform per-bone scale degrades to whole-model scaling.
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  Vector scale = luaL_checkvector(L, 3);
+  pEntity->SetModelScale( scale.x, 0.0f );
+  return 0;
 }
 
 static int CBaseAnimating_FindBodygroupByName (lua_State *L) {
@@ -885,9 +1041,25 @@ static int CBaseAnimating___index (lua_State *L) {
       lua_gettable(L, -2);
       if (lua_isnil(L, -1)) {
         lua_pop(L, 2);
-        luaL_getmetatable(L, "CBaseEntity");
+
+        /*
+        ** HL2SB: the object's own metatable was already tried above, but for a clientside
+        ** model (Entities.CreateClientEntity / ClientsideModel) that metatable is
+        ** CBaseFlex -- while every animating method (LookupSequence, ResetSequence,
+        ** GetNumBodyGroups, SetBodygroup, SkinCount, LookupBone, ...) lives on THIS class's
+        ** metatable.  Look there before giving up on CBaseEntity, otherwise
+        **     lua/vgui/DModelPanel.lua:138: attempt to call a nil value (method 'LookupSequence')
+        ** stops the player model selector half-built (2026-09-17).
+        */
+        luaL_getmetatable(L, LUA_BASEANIMATINGLIBNAME);
         lua_pushvalue(L, 2);
         lua_gettable(L, -2);
+        if (lua_isnil(L, -1)) {
+          lua_pop(L, 2);
+          luaL_getmetatable(L, "CBaseEntity");
+          lua_pushvalue(L, 2);
+          lua_gettable(L, -2);
+        }
       }
     }
   }
@@ -897,9 +1069,17 @@ static int CBaseAnimating___index (lua_State *L) {
     lua_gettable(L, -2);
     if (lua_isnil(L, -1)) {
       lua_pop(L, 2);
-      luaL_getmetatable(L, "CBaseEntity");
+
+      /* the same CBaseAnimating-metatable step as above */
+      luaL_getmetatable(L, LUA_BASEANIMATINGLIBNAME);
       lua_pushvalue(L, 2);
       lua_gettable(L, -2);
+      if (lua_isnil(L, -1)) {
+        lua_pop(L, 2);
+        luaL_getmetatable(L, "CBaseEntity");
+        lua_pushvalue(L, 2);
+        lua_gettable(L, -2);
+      }
     }
   }
   // HL2SB GMod compat: nothing in the entity's own table and nothing in the
@@ -947,7 +1127,10 @@ static int CBaseAnimating___newindex (lua_State *L) {
   else if (Q_strcmp(field, "m_nSkin") == 0)
     pEntity->m_nSkin = luaL_checkint(L, 3);
   else {
-    if (pEntity->m_nTableReference == LUA_NOREF) {
+    // HL2SB: < 0, not == LUA_NOREF -- LUA_REFNIL (-1) is a legal "no table"
+    // state; the old test let lua_getref(-1) push nil and silently drop the
+    // field write (see CBaseEntity___newindex).
+    if (pEntity->m_nTableReference < 0) {
       lua_newtable(L);
       pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
@@ -993,6 +1176,10 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"DoMuzzleFlash", CBaseAnimating_DoMuzzleFlash},
   {"DrawClientHitboxes", CBaseAnimating_DrawClientHitboxes},
   {"DrawModel", CBaseAnimating_DrawModel},
+  // HL2SB GMod compat: bone accessors (minecraft SWEP world model).
+  {"GetBoneCount", CBaseAnimating_GetBoneCount},
+  {"GetBoneMatrix", CBaseAnimating_GetBoneMatrix},
+  {"ManipulateBoneScale", CBaseAnimating_ManipulateBoneScale},
   {"FindBodygroupByName", CBaseAnimating_FindBodygroupByName},
   {"FindFollowedEntity", CBaseAnimating_FindFollowedEntity},
   {"FindTransitionSequence", CBaseAnimating_FindTransitionSequence},

@@ -1059,6 +1059,49 @@ static int IPhysicsObject_SetVelocityInstantaneous (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB: GMod's angular-velocity trio.
+**
+**     PhysObj:SetAngleVelocity( Vector angVel )   -- set ONLY the angular part
+**     PhysObj:AddAngleVelocity( Vector angVel )   -- add ONLY the angular part
+**     PhysObj:GetAngleVelocity() -> Vector
+**
+** IPhysicsObject has no standalone angular setter: the angular velocity is the second
+** parameter of SetVelocity / AddVelocity / GetVelocity (public/vphysics_interface.h:775-788),
+** and neither spelling ("Angle" or "Angular") was bound - the metatable went straight from
+** AddVelocity to ApplyForceCenter.  cod_c4 needs it after a throw
+** (addons/cod_c4/lua/weapons/seal6-c4/shared.lua:252 "phys:SetAngleVelocity(Vector(...))"),
+** where the nil method aborted the throw before ents.Create() ran.
+**
+** The NULL-safety of the vphysics side is not documented, so the linear half is always
+** passed a real (zero) vector.
+*/
+static int IPhysicsObject_SetAngleVelocity (lua_State *L) {
+  IPhysicsObject *pObject = luaL_checkphysicsobject(L, 1);
+  AngularImpulse angularVelocity = luaL_checkvector(L, 2);
+  Vector velocity, ignoredAngular;
+
+  pObject->GetVelocity(&velocity, &ignoredAngular);
+  pObject->SetVelocity(&velocity, &angularVelocity);
+  return 0;
+}
+
+static int IPhysicsObject_AddAngleVelocity (lua_State *L) {
+  AngularImpulse angularVelocity = luaL_checkvector(L, 2);
+  Vector noVelocity = vec3_origin;
+
+  luaL_checkphysicsobject(L, 1)->AddVelocity(&noVelocity, &angularVelocity);
+  return 0;
+}
+
+static int IPhysicsObject_GetAngleVelocity (lua_State *L) {
+  Vector velocity, angularVelocity;
+
+  luaL_checkphysicsobject(L, 1)->GetVelocity(&velocity, &angularVelocity);
+  lua_pushvector(L, angularVelocity);
+  return 1;
+}
+
 static int IPhysicsObject_Sleep (lua_State *L) {
   luaL_checkphysicsobject(L, 1)->Sleep();
   return 0;
@@ -1091,6 +1134,7 @@ static int IPhysicsObject___tostring (lua_State *L) {
 
 static const luaL_Reg IPhysicsObjectmeta[] = {
   {"AddVelocity", IPhysicsObject_AddVelocity},
+  {"AddAngleVelocity", IPhysicsObject_AddAngleVelocity},
   {"ApplyForceCenter", IPhysicsObject_ApplyForceCenter},
   {"ApplyForceOffset", IPhysicsObject_ApplyForceOffset},
   {"ApplyTorqueCenter", IPhysicsObject_ApplyTorqueCenter},
@@ -1104,6 +1148,7 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"EnableDrag", IPhysicsObject_EnableDrag},
   {"EnableGravity", IPhysicsObject_EnableGravity},
   {"EnableMotion", IPhysicsObject_EnableMotion},
+  {"GetAngleVelocity", IPhysicsObject_GetAngleVelocity},
   {"GetCallbackFlags", IPhysicsObject_GetCallbackFlags},
   {"GetContactPoint", IPhysicsObject_GetContactPoint},
   {"GetContents", IPhysicsObject_GetContents},
@@ -1144,6 +1189,7 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"RemoveHinged", IPhysicsObject_RemoveHinged},
   {"RemoveShadowController", IPhysicsObject_RemoveShadowController},
   {"RemoveTrigger", IPhysicsObject_RemoveTrigger},
+  {"SetAngleVelocity", IPhysicsObject_SetAngleVelocity},
   {"SetBuoyancyRatio", IPhysicsObject_SetBuoyancyRatio},
   {"SetCallbackFlags", IPhysicsObject_SetCallbackFlags},
   {"SetContents", IPhysicsObject_SetContents},

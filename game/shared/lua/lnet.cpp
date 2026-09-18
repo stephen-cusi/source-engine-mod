@@ -287,6 +287,154 @@ static int net_ReadEntity( lua_State *L )
 	return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB: client -> server net transport.
+//
+// Source usermessages only travel server -> client, so the client's write half
+// rides the console-command channel instead: net.SendToServer() hex-encodes
+// "name\0payload" and issues `hl2sb_netmsg <hex>`; the server decodes it in
+// HL2SB_NetMsgCmd (server section below) and dispatches to the Lua
+// net.Receive exactly like the "LuaNet" usermessage does in reverse.
+//
+// Size cap: clc stringcmd is ~1024 chars and hex doubles the bytes, so the
+// payload is capped at 255 and the name at 63 (worst case ~653 chars).
+// The minecraft SWEP's block-change message (one int) fits trivially.
+//-----------------------------------------------------------------------------
+static char g_cnetBuf[ HL2SB_NET_MAX_SIZE ];
+static bf_write g_cnetWrite;
+static CUtlString g_cnetName;
+static bool g_cnetActive = false;
+
+// net.Start( name )
+static int net_Start( lua_State *L )
+{
+	const char *pszName = luaL_checkstring( L, 1 );
+	g_cnetName = pszName;
+	g_cnetWrite.StartWriting( g_cnetBuf, sizeof( g_cnetBuf ) );
+	g_cnetActive = true;
+	return 0;
+}
+
+// net.WriteBit( int )
+static int net_WriteBit( lua_State *L )
+{
+	int val = luaL_checkint( L, 1 );
+	g_cnetWrite.WriteOneBit( val ? 1 : 0 );
+	return 0;
+}
+
+// net.WriteInt( int, bits )
+static int net_WriteInt( lua_State *L )
+{
+	int val = luaL_checkint( L, 1 );
+	int bits = luaL_optint( L, 2, 32 );
+	g_cnetWrite.WriteSBitLong( val, bits );
+	return 0;
+}
+
+// net.WriteUInt( uint, bits )
+static int net_WriteUInt( lua_State *L )
+{
+	unsigned int val = (unsigned int)luaL_checkint( L, 1 );
+	int bits = luaL_optint( L, 2, 32 );
+	g_cnetWrite.WriteUBitLong( val, bits );
+	return 0;
+}
+
+// net.WriteString( str )
+static int net_WriteString( lua_State *L )
+{
+	const char *sz = luaL_checkstring( L, 1 );
+	g_cnetWrite.WriteString( sz );
+	return 0;
+}
+
+// net.WriteFloat( number )
+static int net_WriteFloat( lua_State *L )
+{
+	g_cnetWrite.WriteFloat( (float)luaL_checknumber( L, 1 ) );
+	return 0;
+}
+
+// net.WriteDouble( number )
+static int net_WriteDouble( lua_State *L )
+{
+	g_cnetWrite.WriteLongLong( (int64)luaL_checknumber( L, 1 ) );
+	return 0;
+}
+
+// net.WriteVector( vec )
+static int net_WriteVector( lua_State *L )
+{
+	Vector v = luaL_checkvector( L, 1 );
+	g_cnetWrite.WriteBitVec3Coord( v );
+	return 0;
+}
+
+// net.WriteAngle( angle )
+static int net_WriteAngle( lua_State *L )
+{
+	QAngle a = luaL_checkangle( L, 1 );
+	g_cnetWrite.WriteBitAngles( a );
+	return 0;
+}
+
+// net.WriteEntity( ent )
+static int net_WriteEntity( lua_State *L )
+{
+	CBaseEntity *pEnt = luaL_checkentity( L, 1 );
+	g_cnetWrite.WriteShort( pEnt ? pEnt->entindex() : 0 );
+	return 0;
+}
+
+static const char *s_HexChars = "0123456789abcdef";
+
+// net.SendToServer()
+static int net_SendToServer( lua_State *L )
+{
+	if ( !g_cnetActive )
+	{
+		Msg( "[net] SendToServer called without a Start\n" );
+		return 0;
+	}
+	g_cnetActive = false;
+
+	const char *pszName = g_cnetName.Get();
+	int nNameLen = Q_strlen( pszName );
+	int nBytes = g_cnetWrite.GetNumBytesWritten();
+
+	// HL2SB: a zero-byte payload is a legal GMod message (the minecraft SWEP's
+	// "MinecraftSwepBlockChange" carries its data in userinfo convars and sends
+	// an empty net message purely as a notification).  Only the transport-size
+	// caps are enforced.
+	if ( nNameLen < 1 || nNameLen >= 64 || nBytes < 0 || nBytes > 255 )
+	{
+		Warning( "[net] SendToServer: message '%s' out of transport range (name %d, payload %d bytes)\n",
+			pszName, nNameLen, nBytes );
+		return 0;
+	}
+
+	// wire = name \0 payload, hex-encoded
+	char szHex[ 2 * ( 64 + 1 + 255 ) + 1 ];
+	int nTotal = nNameLen + 1 + nBytes;
+	char szWire[ 64 + 1 + 255 ];
+	Q_memcpy( szWire, pszName, nNameLen );
+	szWire[ nNameLen ] = '\0';
+	Q_memcpy( szWire + nNameLen + 1, g_cnetBuf, nBytes );
+
+	for ( int i = 0; i < nTotal; ++i )
+	{
+		szHex[ 2 * i ]     = s_HexChars[ ( szWire[ i ] >> 4 ) & 0xF ];
+		szHex[ 2 * i + 1 ] = s_HexChars[ szWire[ i ] & 0xF ];
+	}
+	szHex[ 2 * nTotal ] = '\0';
+
+	char szCmd[ sizeof( szHex ) + 32 ];
+	Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_netmsg %s", szHex );
+	engine->ClientCmd( szCmd );
+	return 0;
+}
+
 static const luaL_Reg net_funcs[] = {
 	{ "Receive",     net_Receive },
 	{ "ReadHeader",  net_ReadHeader },
@@ -299,6 +447,18 @@ static const luaL_Reg net_funcs[] = {
 	{ "ReadVector",  net_ReadVector },
 	{ "ReadAngle",   net_ReadAngle },
 	{ "ReadEntity",  net_ReadEntity },
+	// HL2SB: real client -> server transport (was an accepted-and-ignored stub).
+	{ "Start",       net_Start },
+	{ "WriteBit",    net_WriteBit },
+	{ "WriteInt",    net_WriteInt },
+	{ "WriteUInt",   net_WriteUInt },
+	{ "WriteString", net_WriteString },
+	{ "WriteFloat",  net_WriteFloat },
+	{ "WriteDouble", net_WriteDouble },
+	{ "WriteVector", net_WriteVector },
+	{ "WriteAngle",  net_WriteAngle },
+	{ "WriteEntity", net_WriteEntity },
+	{ "SendToServer", net_SendToServer },
 	{ NULL, NULL }
 };
 
@@ -441,18 +601,213 @@ static int net_Broadcast( lua_State *L )
 	return 0;
 }
 
-// HL2SB GMod compat: net.SendToServer().
+// HL2SB: server side of the client -> server net transport.
 //
-// GMod's client -> server channel.  This fork's net library is the server ->
-// client one (net.Start ... net.Send/Broadcast): there is no message the client
-// can send back, so this accepts the call and does nothing.  Addons that use it
-// for a request -- the windgrin_npc nextbot asks the server to generate a nav
-// mesh -- therefore stay alive instead of dying on a nil method; the request is
-// simply not delivered.
-static int net_SendToServer( lua_State *L )
+// The client hex-encodes "name\0payload" and issues `hl2sb_netmsg <hex>`
+// (see net_SendToServer in the client section).  Clients can execute any
+// non-cheat server ConCommand, and IVEngineServer::GetCommandClient() tells us
+// whose command this is -- so a plain ConCommand here is the whole bridge.
+// The payload is presented to Lua through the same bf_read + g_pNetRead-style
+// state the client's usermessage dispatch uses, so net.ReadInt / ReadString /
+// ReadHeader behave identically on both realms.
+
+static bf_read *g_pNetReadSv = NULL;
+
+struct CNetReceiverSv
 {
+	CUtlString m_Name;
+	int m_Ref; // registry reference to the Lua function
+};
+static CUtlVector< CNetReceiverSv > g_NetReceiversSv;
+
+// net.Receive( name, func )
+static int net_Receive( lua_State *L )
+{
+	const char *pszName = luaL_checkstring( L, 1 );
+	luaL_checktype( L, 2, LUA_TFUNCTION );
+
+	for ( int i = 0; i < g_NetReceiversSv.Count(); i++ )
+	{
+		if ( !Q_stricmp( g_NetReceiversSv[i].m_Name.Get(), pszName ) )
+		{
+			luaL_unref( L, LUA_REGISTRYINDEX, g_NetReceiversSv[i].m_Ref );
+			lua_pushvalue( L, 2 );
+			g_NetReceiversSv[i].m_Ref = luaL_ref( L, LUA_REGISTRYINDEX );
+			return 0;
+		}
+	}
+
+	CNetReceiverSv rec;
+	rec.m_Name = pszName;
+	lua_pushvalue( L, 2 );
+	rec.m_Ref = luaL_ref( L, LUA_REGISTRYINDEX );
+	g_NetReceiversSv.AddToTail( rec );
 	return 0;
 }
+
+// net.ReadHeader() -> name (the wire still leads with name \0, like LuaNet)
+static int net_ReadHeader( lua_State *L )
+{
+	if ( !g_pNetReadSv )
+	{
+		lua_pushnil( L );
+		return 1;
+	}
+	char szName[ 256 ];
+	int iNameLen = 255;
+	g_pNetReadSv->ReadString( szName, iNameLen );
+	lua_pushstring( L, szName );
+	return 1;
+}
+
+static int net_ReadBit( lua_State *L )
+{
+	lua_pushinteger( L, g_pNetReadSv ? g_pNetReadSv->ReadOneBit() : 0 );
+	return 1;
+}
+
+static int net_ReadInt( lua_State *L )
+{
+	int bits = luaL_optint( L, 1, 32 );
+	lua_pushinteger( L, g_pNetReadSv ? g_pNetReadSv->ReadSBitLong( bits ) : 0 );
+	return 1;
+}
+
+static int net_ReadUInt( lua_State *L )
+{
+	int bits = luaL_optint( L, 1, 32 );
+	lua_pushinteger( L, g_pNetReadSv ? (int)g_pNetReadSv->ReadUBitLong( bits ) : 0 );
+	return 1;
+}
+
+static int net_ReadString( lua_State *L )
+{
+	if ( !g_pNetReadSv )
+	{
+		lua_pushstring( L, "" );
+		return 1;
+	}
+	char szBuf[ 512 ];
+	int iLen = sizeof( szBuf ) - 1;
+	g_pNetReadSv->ReadString( szBuf, iLen );
+	lua_pushstring( L, szBuf );
+	return 1;
+}
+
+static int net_ReadFloat( lua_State *L )
+{
+	lua_pushnumber( L, g_pNetReadSv ? g_pNetReadSv->ReadFloat() : 0.0f );
+	return 1;
+}
+
+static int net_ReadDouble( lua_State *L )
+{
+	lua_pushnumber( L, g_pNetReadSv ? g_pNetReadSv->ReadLongLong() : 0.0 );
+	return 1;
+}
+
+static int net_ReadVector( lua_State *L )
+{
+	Vector v = vec3_origin;
+	if ( g_pNetReadSv )
+		g_pNetReadSv->ReadBitVec3Coord( v );
+	lua_pushvector( L, v );
+	return 1;
+}
+
+static int net_ReadAngle( lua_State *L )
+{
+	QAngle a = vec3_angle;
+	if ( g_pNetReadSv )
+		g_pNetReadSv->ReadBitAngles( a );
+	lua_pushangle( L, a );
+	return 1;
+}
+
+static int net_ReadEntity( lua_State *L )
+{
+	int idx = g_pNetReadSv ? g_pNetReadSv->ReadShort() : 0;
+	CBaseEntity *pEnt = idx ? UTIL_EntityByIndex( idx ) : NULL;
+	lua_pushentity( L, pEnt );
+	return 1;
+}
+
+static int HexVal( char c )
+{
+	if ( c >= '0' && c <= '9' ) return c - '0';
+	if ( c >= 'a' && c <= 'f' ) return c - 'a' + 10;
+	if ( c >= 'A' && c <= 'F' ) return c - 'A' + 10;
+	return -1;
+}
+
+// ConCommand handler: hl2sb_netmsg <hex-of "name\0payload">
+static void HL2SB_NetMsgCmd( const CCommand &args )
+{
+	if ( args.ArgC() < 2 || !L )
+		return;
+
+	CBasePlayer *pPlayer = UTIL_GetCommandClient();
+
+	// decode hex into the wire buffer
+	const char *pszHex = args[ 1 ];
+	int nHexLen = Q_strlen( pszHex );
+	if ( nHexLen < 2 || ( nHexLen & 1 ) || nHexLen > 2 * ( 64 + 1 + 255 ) )
+		return;
+
+	static char szWire[ 64 + 1 + 255 ];
+	int nTotal = nHexLen / 2;
+	for ( int i = 0; i < nTotal; ++i )
+	{
+		int hi = HexVal( pszHex[ 2 * i ] );
+		int lo = HexVal( pszHex[ 2 * i + 1 ] );
+		if ( hi < 0 || lo < 0 )
+			return;
+		szWire[ i ] = ( char )( ( hi << 4 ) | lo );
+	}
+
+	// name must be a NUL-terminated prefix; an empty payload (nTotal ==
+	// nNameLen + 1) is legal -- see net_SendToServer on the client
+	szWire[ sizeof( szWire ) - 1 ] = '\0';
+	int nNameLen = Q_strlen( szWire );
+	if ( nNameLen < 1 || nNameLen + 1 > nTotal )
+		return;
+
+	char szName[ 64 ];
+	Q_strncpy( szName, szWire, sizeof( szName ) );
+
+	static bf_read s_NetRead;
+	s_NetRead.StartReading( szWire, nTotal );
+
+	for ( int i = 0; i < g_NetReceiversSv.Count(); i++ )
+	{
+		if ( !Q_stricmp( g_NetReceiversSv[i].m_Name.Get(), szName ) )
+		{
+			s_NetRead.Seek( 0 );
+			g_pNetReadSv = &s_NetRead;
+
+			lua_rawgeti( L, LUA_REGISTRYINDEX, g_NetReceiversSv[i].m_Ref );
+			if ( lua_isfunction( L, -1 ) )
+			{
+				// GMod contract: fn( length, player )
+				lua_pushinteger( L, nTotal );
+				lua_pushentity( L, pPlayer );
+
+				// luasrc_pcall consumes the function and its arguments.
+				luasrc_pcall( L, 2, 0, 0 );
+			}
+			else
+			{
+				lua_pop( L, 1 );
+			}
+
+			g_pNetReadSv = NULL;
+			return;
+		}
+	}
+}
+
+static ConCommand hl2sb_netmsg_cmd( "hl2sb_netmsg", HL2SB_NetMsgCmd,
+	"HL2SB Lua net client->server transport (hex payload); do not call by hand.", 0 );
 
 static const luaL_Reg net_funcs[] = {
 	{ "Start",       net_Start },
@@ -467,8 +822,18 @@ static const luaL_Reg net_funcs[] = {
 	{ "WriteEntity", net_WriteEntity },
 	{ "Send",        net_Send },
 	{ "Broadcast",   net_Broadcast },
-	// HL2SB GMod compat: accepted and ignored (see net_SendToServer above).
-	{ "SendToServer", net_SendToServer },
+	// HL2SB: server half of the client -> server transport (see HL2SB_NetMsgCmd).
+	{ "Receive",     net_Receive },
+	{ "ReadHeader",  net_ReadHeader },
+	{ "ReadBit",     net_ReadBit },
+	{ "ReadInt",     net_ReadInt },
+	{ "ReadUInt",    net_ReadUInt },
+	{ "ReadString",  net_ReadString },
+	{ "ReadFloat",   net_ReadFloat },
+	{ "ReadDouble",  net_ReadDouble },
+	{ "ReadVector",  net_ReadVector },
+	{ "ReadAngle",   net_ReadAngle },
+	{ "ReadEntity",  net_ReadEntity },
 	{ NULL, NULL }
 };
 

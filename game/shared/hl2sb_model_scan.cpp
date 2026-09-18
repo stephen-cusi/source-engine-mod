@@ -11,14 +11,34 @@
 
 //-----------------------------------------------------------------------------
 // Purpose: Validate player model path
+//
+// HL2SB: the cfg/playermodel/<name>.cfg table is no longer the gate.  Player models
+// come from the GMod side now - player_manager.AddValidModel / AddValidHands reach
+// HL2SB_AddRuntimeModelConfig (see lua/autorun/client/hl2sb_playermodels.lua, which
+// scans models/player/ and registers what it finds) - and an addon that ships only a
+// .mdl must work without any cfg at all.
+//
+// Accepted:
+//   * a registered entry (cfg or Lua) - keeps the old behaviour and the hands lookup
+//   * anything under models/player/ - the custom models an addon drops in place,
+//     which the server precaches on spawn (CHL2MP_Player::SetPlayerModel).
+// Everything else (a prop, an NPC, "none", ...) is still refused, so cl_playermodel
+// cannot turn a player into a crate.
 //-----------------------------------------------------------------------------
 bool HL2SB_IsValidPlayerModel( const char *pszModelPath )
 {
 	if ( !pszModelPath || !pszModelPath[0] )
 		return false;
 
-	// Check if model config exists for this path
-	return ( HL2SB_FindModelConfigByPath( pszModelPath ) != NULL );
+	if ( HL2SB_FindModelConfigByPath( pszModelPath ) != NULL )
+		return true;
+
+	if ( Q_stristr( pszModelPath, "models/player/" ) != NULL )
+		return true;
+
+	// A path that is already loaded (the stock HL2MP models are precached before the
+	// player exists) is fair game too.
+	return ( modelinfo != NULL && modelinfo->GetModelIndex( pszModelPath ) != -1 );
 }
 
 //-----------------------------------------------------------------------------
@@ -45,8 +65,7 @@ bool HL2SB_ApplyPlayerModel( void *pPlayer, const char *pszRequestedModel, const
 			Q_strncpy( szNormalized, szTemp, sizeof(szNormalized) );
 		}
 
-		// Check if config exists for this model
-		if ( HL2SB_FindModelConfigByPath( szNormalized ) )
+		if ( HL2SB_IsValidPlayerModel( szNormalized ) )
 		{
 			pszFinalModel = szNormalized;
 		}

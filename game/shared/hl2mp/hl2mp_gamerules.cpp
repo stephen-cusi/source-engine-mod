@@ -327,6 +327,21 @@ bool CHL2MPRules::IsIntermission( void )
 void CHL2MPRules::PlayerKilled( CBasePlayer *pVictim, const CTakeDamageInfo &info )
 {
 #ifndef CLIENT_DLL
+#if defined( LUA_SDK )
+	// HL2SB: GMod's PlayerDeath( victim, inflictor, attacker ).
+	//
+	// The gamemode hook GMod addons react to a death with, and the only place the engine
+	// knows the inflictor/attacker pair.  Nothing in the tree fired it: cod_c4's "clear the
+	// ownership of every C4 the dead player planted" (addons/cod_c4/lua/weapons/seal6-c4/
+	// shared.lua:152) never ran, so the charges of a dead player stayed owned and could not
+	// be picked up by anyone else.
+	BEGIN_LUA_CALL_HOOK( "PlayerDeath" );
+		lua_pushplayer( L, pVictim );
+		lua_pushentity( L, info.GetInflictor() );
+		lua_pushentity( L, info.GetAttacker() );
+	END_LUA_CALL_HOOK( 3, 0 );
+#endif
+
 	if ( IsIntermission() )
 		return;
 	BaseClass::PlayerKilled( pVictim, info );

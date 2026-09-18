@@ -348,6 +348,11 @@ LUALIB_API void (luasrc_openlibs) (lua_State *L);
 ** luasrc_openlibs -- the main menu state (luasrc_init_gameui) is the one. */
 LUALIB_API void (luasrc_install_gmod_lib_aliases) (lua_State *L);
 
+// HL2SB: registers FindMetaTable/RegisterMetaTable into _G (lsrcinit.cpp).
+// The GameUI realm calls it because the derma control files resolve the Panel
+// metatable through FindMetaTable at load time (lua/vgui/DFrame.lua).
+LUALIB_API void luasrc_register_metatable_globals (lua_State *L);
+
 
 
 // HL2SB: Experiment: Source declares its binding macros in this header; they live in

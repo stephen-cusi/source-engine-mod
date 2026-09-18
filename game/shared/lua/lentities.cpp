@@ -12,6 +12,18 @@ LUA_REGISTRATION_INIT( Entities );
 
 #define MAX_ENTITYARRAY 1024
 
+// HL2SB GMod compat: GMod's find* functions accept a trailing-asterisk
+// wildcard ("minecraft_block*", "mcblock*"); stock class-name matching broke
+// every addon that relies on it (the minecraft SWEP cleans up with
+// ents.FindByName("mcblock*") / ents.FindByClass("minecraft_block*")).
+static bool HL2SB_EntityNameMatch( const char *pszName, const char *pszPattern )
+{
+	int nPattern = Q_strlen( pszPattern );
+	if ( nPattern > 0 && pszPattern[ nPattern - 1 ] == '*' )
+		return !Q_strncmp( pszName, pszPattern, nPattern - 1 );
+	return !Q_strcmp( pszName, pszPattern );
+}
+
 LUA_BINDING_BEGIN( Entities, Find, "library", "Finds the entity by its entity index" )
 {
     int iEntity = LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "entityIndex" );
@@ -37,8 +49,38 @@ LUA_BINDING_BEGIN( Entities, CreateByName, "library", "Creates an entity by the 
     CBaseEntity *pEntity = CreateEntityByName( pszClassName );
     LUA_EXPECTED_SCRIPTED_LIBRARY_END( LUA_SCRIPTEDENTITIESLIBNAME );
 
-    if ( dynamic_cast< CBaseScripted * >( pEntity ) != NULL )
+    // HL2SB: make "the addon got something it cannot script" diagnosable.  A
+    // NULL here (no factory registered for the classname) and a non-scripted
+    // fallback both used to surface only as "attempt to call a nil value
+    // (method ...)" back in the addon.
+    if ( pEntity == NULL )
+    {
+        Warning( "[HL2SB] ents.Create('%s'): no entity factory registered\n", pszClassName );
+    }
+
+    CBaseScripted *pScripted = dynamic_cast< CBaseScripted * >( pEntity );
+    if ( pScripted != NULL )
+    {
+        // HL2SB GMod compat: bind the Lua class table at CREATE time, not at
+        // Spawn.  GMod's ents.Create returns an entity that already answers its
+        // ENT methods; here the binding happened in CBaseScripted::Spawn, so any
+        // addon that configures the entity between ents.Create and :Spawn()
+        // (the minecraft SWEP's SpawnMinecraftBlock: SetPlayer / SetBlockID /
+        // SetRotation before ent:Spawn()) hit "attempt to call a nil value
+        // (method ...)".  InitScriptedEntity() is idempotent (guards on
+        // m_nTableReference < 0), so the later Spawn is a no-op re-entry.
+        // bCallInitialize=false: ENT:Initialize must run at :Spawn(), after the
+        // script has set a model (GMod semantics) -- running it here made
+        // minecraft_block's PhysicsInit fail with no model set yet.
+        pScripted->InitScriptedEntity( false );
+
         DispatchSpawn( pEntity );
+    }
+    else if ( pEntity != NULL )
+    {
+        Warning( "[HL2SB] ents.Create('%s'): created a non-scripted '%s' - no Lua class will be bound\n",
+            pszClassName, pEntity->GetClassname() );
+    }
 
     CBaseEntity::PushLuaInstanceSafe( L, pEntity );
     return 1;
@@ -225,15 +267,35 @@ LUA_BINDING_BEGIN( Entities, Clear, "library", "Clears the entity list.", "serve
 }
 LUA_BINDING_END()
 
-LUA_BINDING_BEGIN( Entities, FindByClass, "library", "Finds an entity by its class name", "server" )
+// HL2SB GMod compat: ents.FindByClass( pattern ) answers a TABLE of every
+// matching entity and accepts GMod's trailing-asterisk wildcard
+// ("minecraft_block*", "mcblock*").  SHARED -- the minecraft addon filters
+// entities on the client too.
+LUA_BINDING_BEGIN( Entities, FindAllByClass, "library", "Finds all entities whose class name matches (trailing * = prefix wildcard)" )
 {
-    const char *className = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "className" );
-    CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 2, NULL, "startEntity" );
+    const char *pszPattern = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "className" );
 
-    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByClassname( startEntity, className ) );
+    lua_newtable( L );
+
+    CBaseEntity *pEnt = NULL;
+    int i = 0;
+#ifdef CLIENT_DLL
+    while ( ( pEnt = ClientEntityList().NextBaseEntity( pEnt ) ) != NULL )
+#else
+    while ( ( pEnt = gEntList.NextEnt( pEnt ) ) != NULL )
+#endif
+    {
+        if ( HL2SB_EntityNameMatch( pEnt->GetClassname(), pszPattern ) )
+        {
+            lua_pushinteger( L, ++i );
+            CBaseEntity::PushLuaInstanceSafe( L, pEnt );
+            lua_settable( L, -3 );
+        }
+    }
+
     return 1;
 }
-LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
+LUA_BINDING_END( "table", "A table of every entity whose class name matches." )
 
 LUA_BINDING_BEGIN( Entities, FindByClassNearest, "library", "Finds the nearest entity by its class name", "server" )
 {
@@ -268,15 +330,31 @@ LUA_BINDING_BEGIN( Entities, FindByModel, "library", "Finds an entity by its mod
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
 
-LUA_BINDING_BEGIN( Entities, FindByName, "library", "Finds an entity by its name", "server" )
+// HL2SB GMod compat: ents.FindByName( pattern ) answers a TABLE of every
+// entity whose targetname matches and accepts GMod's trailing-asterisk
+// wildcard ("mcblock*" -- the minecraft addon tags every block with it).
+// Server-only: the client entity list carries no targetnames.
+LUA_BINDING_BEGIN( Entities, FindByName, "library", "Finds all entities whose name matches (trailing * = prefix wildcard)", "server" )
 {
-    const char *name = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "name" );
-    CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 2, NULL, "startEntity" );
+    const char *pszPattern = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "name" );
 
-    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByName( startEntity, name ) );
+    lua_newtable( L );
+
+    CBaseEntity *pEnt = NULL;
+    int i = 0;
+    while ( ( pEnt = gEntList.NextEnt( pEnt ) ) != NULL )
+    {
+        if ( HL2SB_EntityNameMatch( STRING( pEnt->GetEntityName() ), pszPattern ) )
+        {
+            lua_pushinteger( L, ++i );
+            CBaseEntity::PushLuaInstanceSafe( L, pEnt );
+            lua_settable( L, -3 );
+        }
+    }
+
     return 1;
 }
-LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
+LUA_BINDING_END( "table", "A table of every entity whose name matches." )
 
 LUA_BINDING_BEGIN( Entities, FindByNameNearest, "library", "Finds the nearest entity by its name", "server" )
 {
@@ -355,56 +433,6 @@ LUA_BINDING_BEGIN( Entities, FindGenericWithin, "library", "Finds an entity by i
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
-
-// HL2SB: GMod's ents.FindInSphere() answers a TABLE of every entity in the
-// sphere; this fork's version answered the single one gEntList happened to find
-// first.  That is not a difference a script can survive:
-//
-//     for k, v in pairs( ents.FindInSphere( self:GetPos(), 100 ) ) do
-//
-// SCP-096's FindEnemy() opens with exactly that line (init.lua:201-202) and the
-// userdata it got instead raised
-//
-//     init.lua:202: bad argument #1 to 'for iterator' (table expected, got CBaseAnimating)
-//
-// on the behaviour coroutine's FIRST frame -- which base_nextbot's BehaveUpdate
-// answers by dropping the thread, so the bot never ran a line of its AI again and
-// stood still with a clean log.  The GMod-compatible table implementation already
-// existed right above as Entities.GetInSphere() (and sh_init.lua:139 aliased one
-// to the other, but that file is not loaded); it is used here now.
-LUA_BINDING_BEGIN( Entities, FindInSphere, "library", "Finds all entities within a radius", "server" )
-{
-    CBaseEntity *pList[MAX_ENTITYARRAY];
-
-    Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
-    float radius = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "radius" );
-
-    // HL2SB: the flag mask must default to 0 ("do not filter").  The server's
-    // UTIL_EntitiesInSphere() reads a non-zero mask as a requirement --
-    //     util.cpp:317  if ( m_flagMask && !( pEntity->GetFlags() & m_flagMask ) ) continue;
-    // -- and every engine caller passes 0.  This used to default to
-    // PARTITION_CLIENT_NON_STATIC_EDICTS, which is (1 << 7) = FL_ATCONTROLS on the
-    // server: the table came back EMPTY for every query, and SCP-096's attack
-    // loop, SeeMe, SeeMe2, its prop/door scans and playernear() all iterate it --
-    // an empty table is silent, which is how "it never looks at me" and "it never
-    // hits me" survived every other fix.
-    int flagMask = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optinteger, 3, 0, "flagMask" );
-
-    int count = UTIL_EntitiesInSphere( pList, MAX_ENTITYARRAY, position, radius, flagMask );
-
-    lua_newtable( L );
-
-    for ( int i = 0; i < count; i++ )
-    {
-        lua_pushinteger( L, i );
-        CBaseEntity::PushLuaInstanceSafe( L, pList[i] );
-        lua_settable( L, -3 );
-    }
-
-    lua_pushinteger( L, count );
-    return 2;
-}
-LUA_BINDING_END( "table", "A table of every entity found, plus the count." )
 
 LUA_BINDING_BEGIN( Entities, FindNearestFacing, "library", "Finds the nearest entity facing a direction", "server" )
 {
@@ -560,6 +588,67 @@ LUA_BINDING_END( "boolean", "True if the entity is valid, false otherwise." )
 
 #endif  // GAME_DLL
 
+// HL2SB: GMod's ents.FindInSphere() answers a TABLE of every entity in the
+// sphere; this fork's version answered the single one gEntList happened to find
+// first.  That is not a difference a script can survive:
+//
+//     for k, v in pairs( ents.FindInSphere( self:GetPos(), 100 ) ) do
+//
+// SCP-096's FindEnemy() opens with exactly that line (init.lua:201-202) and the
+// userdata it got instead raised
+//
+//     init.lua:202: bad argument #1 to 'for iterator' (table expected, got CBaseAnimating)
+//
+// on the behaviour coroutine's FIRST frame -- which base_nextbot's BehaveUpdate
+// answers by dropping the thread, so the bot never ran a line of its AI again and
+// stood still with a clean log.  The GMod-compatible table implementation already
+// existed right above as Entities.GetInSphere() (and sh_init.lua:139 aliased one
+// to the other, but that file is not loaded); it is used here now.
+//
+// 2026-09-18: moved OUT of the GAME_DLL block below and given a client branch.
+// GMod's ents.FindInSphere is SHARED, and SWEP:Reload runs on both realms --
+// cod_c4's pickup (weapons/seal6-c4/shared.lua:317) raised "attempt to call a
+// nil value (field 'FindInSphere')" on the client because the binding did not
+// exist there at all.
+LUA_BINDING_BEGIN( Entities, FindInSphere, "library", "Finds all entities within a radius" )
+{
+    CBaseEntity *pList[MAX_ENTITYARRAY];
+
+    Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
+    float radius = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "radius" );
+
+    // HL2SB: the flag mask must default to 0 ("do not filter").  The server's
+    // UTIL_EntitiesInSphere() reads a non-zero mask as a requirement --
+    //     util.cpp:317  if ( m_flagMask && !( pEntity->GetFlags() & m_flagMask ) ) continue;
+    // -- and every engine caller passes 0.  This used to default to
+    // PARTITION_CLIENT_NON_STATIC_EDICTS, which is (1 << 7) = FL_ATCONTROLS on the
+    // server: the table came back EMPTY for every query, and SCP-096's attack
+    // loop, SeeMe, SeeMe2, its prop/door scans and playernear() all iterate it --
+    // an empty table is silent, which is how "it never looks at me" and "it never
+    // hits me" survived every other fix.
+    int flagMask = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optinteger, 3, 0, "flagMask" );
+
+#ifdef CLIENT_DLL
+    int partitionMask = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optinteger, 4, PARTITION_CLIENT_NON_STATIC_EDICTS, "partitionMask" );
+    int count = UTIL_EntitiesInSphere( pList, MAX_ENTITYARRAY, position, radius, flagMask, partitionMask );
+#else
+    int count = UTIL_EntitiesInSphere( pList, MAX_ENTITYARRAY, position, radius, flagMask );
+#endif
+
+    lua_newtable( L );
+
+    for ( int i = 0; i < count; i++ )
+    {
+        lua_pushinteger( L, i );
+        CBaseEntity::PushLuaInstanceSafe( L, pList[i] );
+        lua_settable( L, -3 );
+    }
+
+    lua_pushinteger( L, count );
+    return 2;
+}
+LUA_BINDING_END( "table", "A table of every entity found, plus the count." )
+
 LUA_BINDING_BEGIN( Entities, FirstInList, "library", "Gets the first entity in the list" )
 {
 #ifdef CLIENT_DLL
@@ -618,6 +707,35 @@ LUA_BINDING_BEGIN( Entities, GetByClass, "library", "Gets all entities in the li
     return 1;
 }
 LUA_BINDING_END( "table", "A table of all entities in the entity list with the given class name." )
+
+LUA_BINDING_BEGIN( Entities, FindInBox, "library", "Finds all entities whose origin is inside the given box" )
+{
+	Vector mins = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "mins" );
+	Vector maxs = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "maxs" );
+
+	lua_newtable( L );
+
+	CBaseEntity *pEnt = NULL;
+	int i = 0;
+#ifdef CLIENT_DLL
+	while ( ( pEnt = ClientEntityList().NextBaseEntity( pEnt ) ) != NULL )
+#else
+	while ( ( pEnt = gEntList.NextEnt( pEnt ) ) != NULL )
+#endif
+	{
+		const Vector &pos = pEnt->GetAbsOrigin();
+		if ( pos.x >= mins.x && pos.y >= mins.y && pos.z >= mins.z
+			&& pos.x <= maxs.x && pos.y <= maxs.y && pos.z <= maxs.z )
+		{
+			lua_pushinteger( L, ++i );
+			CBaseEntity::PushLuaInstanceSafe( L, pEnt );
+			lua_settable( L, -3 );
+		}
+	}
+
+	return 1;
+}
+LUA_BINDING_END( "table", "A table of every entity whose origin is inside the box." )
 
 LUA_BINDING_BEGIN( Entities, NextInList, "library", "Gets the next entity in the list" )
 {

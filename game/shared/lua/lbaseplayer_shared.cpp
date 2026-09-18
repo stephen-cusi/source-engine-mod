@@ -12,6 +12,9 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lbaseplayer_shared.h"
+// HL2SB: Player:SteamID / SteamID64 - CSteamID is not in this file's usual include chain
+// (c_baseplayer.h only forward-declares it in its method signature).
+#include "steam/steamclientpublic.h"
 #ifdef CLIENT_DLL
 #include "lc_baseanimating.h"
 // HL2SB: complete IClientVehicle for CBasePlayer_GetVehicleEntity's
@@ -1084,7 +1087,13 @@ static int CBasePlayer___newindex (lua_State *L) {
   else if (Q_strcmp(field, "m_szAnimExtension") == 0)
     Q_strcpy(pPlayer->m_szAnimExtension, luaL_checkstring(L, 3));
   else {
-    if (pPlayer->m_nTableReference == LUA_NOREF) {
+    // HL2SB: < 0, not == LUA_NOREF.  LUA_REFNIL (-1) is a legal value here
+    // (entity.get() had no table when the ref was first taken), and with the
+    // old == test the write below went through lua_getref(-1), which pushes
+    // nil, so lua_setfield stored the value on itself and the field write was
+    // silently dropped.  That kept Owner.C4s nil and broke the cod_c4 addon
+    // explosion chain (shared.lua:255 "#Owner.C4s" on a nil field).
+    if (pPlayer->m_nTableReference < 0) {
       lua_newtable(L);
       pPlayer->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
@@ -1099,6 +1108,42 @@ static int CBasePlayer___newindex (lua_State *L) {
 static int CBasePlayer___eq (lua_State *L) {
   lua_pushboolean(L, lua_toplayer(L, 1) == lua_toplayer(L, 2));
   return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Player:IsListenServerHost().
+//
+// The minecraft SWEP routes its menu console command through it (singleplayer
+// path).  On a listen server the host is always player index 1.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_IsListenServerHost (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  // On a listen server the host's client entity index is always 1.
+  lua_pushboolean(L, pPlayer->entindex() == 1);
+#else
+  lua_pushboolean(L, !engine->IsDedicatedServer() && pPlayer->entindex() == 1);
+#endif
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Player:ConCommand( command ).
+//
+// The minecraft SWEP drives everything through it (menu open, block-count
+// bookkeeping, "remove my blocks"): server side the command must execute on
+// that player's console, client side it runs locally.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_ConCommand (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const char *pszCommand = luaL_checkstring(L, 2);
+#ifndef CLIENT_DLL
+  engine->ClientCommand( pPlayer->edict(), "%s", pszCommand );
+#else
+  (void)pPlayer;
+  engine->ClientCmd( pszCommand );
+#endif
+  return 0;
 }
 
 static int CBasePlayer___tostring (lua_State *L) {
@@ -1136,15 +1181,96 @@ void HL2SB_SetPlayerColor( int iUserID, const Color &clr )
 	s_PlayerColor.InsertOrReplace( iUserID, clr );
 }
 
+// GMod's weapon colour, the other half of the pair (Player:SetWeaponColor /
+// GetWeaponColor, sandbox/gamemode/player_class/player_sandbox.lua:111-115).  GMod's
+// "PlayerWeaponColor" material proxy reads it; HL2SB's arms already follow the client's
+// cl_weaponcolor directly (c_viewmodel_attachment.cpp), so this is storage + API
+// compatibility - but GMod's player class calls it on every spawn, so it has to exist.
+static CUtlMap<int, Color> s_WeaponColor;
+static bool s_WeaponColorInit = false;
+
+Color HL2SB_GetWeaponColor( int iUserID )
+{
+	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
+	int idx = s_WeaponColor.Find( iUserID );
+	if ( idx == s_WeaponColor.InvalidIndex() )
+		return Color( 76, 255, 255, 255 );	// GMod's cl_weaponcolor default 0.30 1.80 2.10, clamped
+	return s_WeaponColor[ idx ];
+}
+
+void HL2SB_SetWeaponColor( int iUserID, const Color &clr )
+{
+	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
+	s_WeaponColor.InsertOrReplace( iUserID, clr );
+}
+
+// GMod's Player:SetPlayerColor / SetWeaponColor take a NORMALIZED Vector:
+//   sandbox/gamemode/player_class/player_sandbox.lua:108-115
+//       self.Player:SetPlayerColor( Vector( plyclr ) )      -- plyclr = cl_playercolor
+//   terrortown/gamemode/player.lua:270
+//       ply:SetPlayerColor( Vector( clr.r/255.0, clr.g/255.0, clr.b/255.0 ) )
+// while this fork's original binding took a 0-255 Color table.  Both are accepted now
+// (the "r g b" 0-1 string the convars carry works too), so GMod gamemode/addon code
+// that passes a Vector works unchanged.  Values are clamped: GMod's default
+// cl_weaponcolor is "0.30 1.80 2.10", i.e. deliberately above 1.
+static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
+{
+  switch ( lua_type( L, narg ) )
+  {
+    case LUA_TSTRING:
+    {
+      float r = 0.0f, g = 0.0f, b = 0.0f;
+      if ( sscanf( lua_tostring( L, narg ), "%f %f %f", &r, &g, &b ) < 3 )
+        return false;
+
+      out = Color( (int)clamp( r * 255.0f, 0.0f, 255.0f ),
+                   (int)clamp( g * 255.0f, 0.0f, 255.0f ),
+                   (int)clamp( b * 255.0f, 0.0f, 255.0f ), 255 );
+      return true;
+    }
+
+    case LUA_TTABLE:
+    {
+      if ( !lua_iscolor( L, narg ) )
+        return false;
+
+      out = luaL_checkcolor( L, narg );
+      return true;
+    }
+
+    case LUA_TUSERDATA:
+    {
+      Vector v = luaL_checkvector( L, narg );
+
+      out = Color( (int)clamp( v.x * 255.0f, 0.0f, 255.0f ),
+                   (int)clamp( v.y * 255.0f, 0.0f, 255.0f ),
+                   (int)clamp( v.z * 255.0f, 0.0f, 255.0f ), 255 );
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
 static int CBasePlayer_GetPlayerColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  lua_pushcolor(L, HL2SB_GetPlayerColor( pPlayer->GetUserID() ));
+  Color clr = HL2SB_GetPlayerColor( pPlayer->GetUserID() );
+
+  // GMod answers a NORMALIZED Vector, not a Color: lua/matproxy/player_color.lua only
+  // accepts a vector ("if ( isvector( col ) ) then mat:SetVector(...)"), and the sandbox
+  // / TTT player classes feed the result straight back into SetPlayerColor.
+  lua_pushvector(L, Vector( clr.r() / 255.0f, clr.g() / 255.0f, clr.b() / 255.0f ));
   return 1;
 }
 
 static int CBasePlayer_SetPlayerColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr = luaL_checkcolor(L, 2);
+  Color clr;
+
+  if ( !HL2SB_LuaColorArg( L, 2, clr ) )
+    return 0;
+
   HL2SB_SetPlayerColor( pPlayer->GetUserID(), clr );
 #ifndef CLIENT_DLL
   // Mirror the colour to the player's client so the PlayerColor material proxy
@@ -1156,6 +1282,95 @@ static int CBasePlayer_SetPlayerColor (lua_State *L) {
   engine->ClientCommand( pPlayer->edict(), szCmd );
 #endif
   return 0;
+}
+
+// GMod: Player:GetWeaponColor() / SetWeaponColor( Vector ) -- the arm/sleeve colour
+// (see HL2SB_GetWeaponColor above).  Same normalized-Vector / Color / string contract
+// as SetPlayerColor, and likewise answered as a normalized Vector.
+static int CBasePlayer_GetWeaponColor (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  Color clr = HL2SB_GetWeaponColor( pPlayer->GetUserID() );
+
+  lua_pushvector(L, Vector( clr.r() / 255.0f, clr.g() / 255.0f, clr.b() / 255.0f ));
+  return 1;
+}
+
+static int CBasePlayer_SetWeaponColor (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  Color clr;
+
+  if ( HL2SB_LuaColorArg( L, 2, clr ) )
+    HL2SB_SetWeaponColor( pPlayer->GetUserID(), clr );
+
+  return 0;
+}
+
+// GMod: Player:SteamID() / SteamID64().  Both exist on BOTH realms in GMod, and GMod code
+// compares the client's answer with the server's: cod_c4's C4 HUD does
+//     visible_entity:GetNWString( "OwnerID" ) == LocalPlayerEntity:SteamID()
+// (addons/cod_c4/lua/entities/cod-c4/cl_init.lua:58) against the OwnerID the server stored
+// from Owner:SteamID() (weapons/seal6-c4/shared.lua:225).
+//
+// This fork only had SteamID aliased onto GetNetworkIDString, which is bound on the SERVER
+// alone (game/server/lua/lplayer.cpp:584) - on the client the method did not exist at all,
+// so that HUD line raised "attempt to call a nil value (method 'SteamID')".
+//
+// CBasePlayer::GetSteamID is available in both realms (server player.cpp:9481, client
+// c_baseplayer.cpp:2888).  CSteamID::Render() is NOT used: this SDK prints the newer
+// "[U:1:12345]" form, GMod prints the old Steam2 "STEAM_0:1:12345" one that addons parse,
+// and Render()'s implementation (common/steamid.cpp) is not linked into the game DLLs
+// (LNK2019).  The string is built from the inline accessors with Valve's own arithmetic
+// (common/steamid.cpp:508-517: accountID = Low32 * 2 + High32).
+static void HL2SB_PushSteamID( lua_State *L, CBasePlayer *pPlayer ) {
+  CSteamID steamID;
+
+  if ( pPlayer->GetSteamID( &steamID ) && steamID.IsValid() )
+  {
+    unsigned unUniverse = (unsigned)steamID.GetEUniverse();
+    char szID[ 32 ];
+
+    if ( unUniverse >= (unsigned)k_EUniversePublic )
+      unUniverse -= (unsigned)k_EUniversePublic;
+    else
+      unUniverse = 0;
+
+    Q_snprintf( szID, sizeof( szID ), "STEAM_%u:%u:%u", unUniverse,
+                (unsigned)( steamID.GetAccountID() & 1 ), (unsigned)( steamID.GetAccountID() >> 1 ) );
+    lua_pushstring( L, szID );
+    return;
+  }
+
+  // No Steam (this fork also runs standalone): a string both realms derive from the same
+  // networked value, so the client/server comparison above still holds.
+  char szFallback[ 32 ];
+
+  Q_snprintf( szFallback, sizeof( szFallback ), "STEAM_0:0:%d", pPlayer->entindex() );
+  lua_pushstring( L, szFallback );
+}
+
+static int CBasePlayer_SteamID (lua_State *L) {
+  HL2SB_PushSteamID( L, luaL_checkplayer(L, 1) );
+  return 1;
+}
+
+static int CBasePlayer_SteamID64 (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  CSteamID steamID;
+  char szID[ 32 ];
+
+  if ( pPlayer->GetSteamID( &steamID ) && steamID.IsValid() )
+  {
+    Q_snprintf( szID, sizeof( szID ), "%llu", (unsigned long long)steamID.ConvertToUint64() );
+  }
+  else
+  {
+    // The individual-account base of the 64-bit id space, offset by the entity index.
+    Q_snprintf( szID, sizeof( szID ), "%llu",
+                76561197960265728ULL + (unsigned long long)pPlayer->entindex() );
+  }
+
+  lua_pushstring( L, szID );
+  return 1;
 }
 
 //-----------------------------------------------------------------------------
@@ -1269,6 +1484,8 @@ static int CBasePlayer_GetInfoNum (lua_State *L) {
 static const luaL_Reg CBasePlayermeta[] = {
   {"LagCompensation", CBasePlayer_LagCompensation},
   {"GetInfo", CBasePlayer_GetInfo},
+  {"IsListenServerHost", CBasePlayer_IsListenServerHost},
+  {"ConCommand", CBasePlayer_ConCommand},
   {"GetInfoNum", CBasePlayer_GetInfoNum},
   {"IsValid", CBasePlayer_IsValid},
   {"AbortReload", CBasePlayer_AbortReload},
@@ -1331,6 +1548,10 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetUserID", CBasePlayer_GetUserID},
   {"GetPlayerColor", CBasePlayer_GetPlayerColor},
   {"SetPlayerColor", CBasePlayer_SetPlayerColor},
+  {"GetWeaponColor", CBasePlayer_GetWeaponColor},
+  {"SetWeaponColor", CBasePlayer_SetWeaponColor},
+  {"SteamID", CBasePlayer_SteamID},
+  {"SteamID64", CBasePlayer_SteamID64},
 
   {"GetViewModel", CBasePlayer_GetViewModel},
   {"GetWaterJumpTime", CBasePlayer_GetWaterJumpTime},

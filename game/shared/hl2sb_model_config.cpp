@@ -344,22 +344,30 @@ const char *HL2SB_GetHandsModelForPlayer( const char *pszPlayerModelPath )
 	HL2SB_EnsureModelConfigsLoaded();
 
 	const HL2SB_ModelConfig_t *pConfig = HL2SB_FindModelConfigByPath( pszPlayerModelPath );
-	if ( pConfig && pConfig->szHandsModel[0] )
+	if ( pConfig && pConfig->szHandsModel[0] && Q_stricmp( pConfig->szHandsModel, "none" ) != 0 )
 		return pConfig->szHandsModel;
 
-	return NULL;
+	// HL2SB: GMod gives EVERY playermodel arms - a model with no hands entry of its own
+	// uses the default citizen arms.  Returning NULL here is what left the first-person
+	// view with no arms at all for everything the models/player scan registered (the
+	// "hands: none" entries in the log, 2026-09-17), so fall back instead of answering
+	// "nothing".
+	return "models/weapons/c_arms_citizen.mdl";
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Print the loaded model config list to the console.
-//          Shared by hl2sb_listmodels and hl2sb_modelmenu.
+//
+// HL2SB: the console commands that called this (hl2sb_listmodels / hl2sb_setmodel /
+// hl2sb_modelmenu) are gone - the player model selector is the interface now
+// (lua/game/client/hl2sb_playermodel_gmod.lua) - so this is diagnostic only.
 //-----------------------------------------------------------------------------
 void HL2SB_PrintModelList( void )
 {
 	HL2SB_EnsureModelConfigsLoaded();
 
 	Msg( "=== HL2SB Player Models ===\n" );
-	Msg( "Use: hl2sb_setmodel <name>\n" );
+	Msg( "Pick one in the player model selector (open_playermodel_selector).\n" );
 	Msg( "Config Count: %d\n", g_nHL2SB_ModelConfigCount );
 
 	Msg( "\n  Available models:\n" );

@@ -18,6 +18,12 @@ LUA_API void lua_pushlabel ( lua_State *L, vgui::Label *pLabel );
 namespace vgui
 {
 
+// HL2SB: standard look for every Lua-created text control (lLabel.cpp).  Fixes,
+// at the root, the two stock-vgui defaults that made every Lua-built dialog
+// look broken: northwest text alignment (the caption rides the top edge of
+// buttons and rows) and the scheme's tiny "Default" bitmap font.
+void HL2SB_ApplyTextDefaults( Label *pLabel );
+
 class LLabel : public Label
 {
     DECLARE_CLASS_SIMPLE( LLabel, Label );

@@ -10,6 +10,8 @@
 #include <scripted_controls/lButton.h>
 #include <vgui/LVGUI.h>
 #include <tier1/LKeyValues.h>
+#include <vgui/IScheme.h>
+#include <vgui/ISurface.h>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
@@ -39,8 +41,37 @@ LLabel::LLabel( Panel *parent, const char *panelName, const char *text, lua_Stat
     // LUA_CALL_PANEL_METHOD_BEGIN looks at.
     m_lua_State = L;
     m_nTableReference = LUA_NOREF;
+
+    HL2SB_ApplyTextDefaults( this );
 #endif
 }
+
+//-----------------------------------------------------------------------------
+// HL2SB: standard look for Lua-created text controls.
+//
+// Only the ALIGNMENT is set here.  Stock vgui::Label aligns northwest, so
+// captions rode the top edge of buttons, check rows and labels -- the "text
+// sits too high" bug.
+//
+// The font is deliberately NOT touched: an earlier version of this helper
+// stepped labels up to the scheme's "DefaultLarge", which is a menu font and
+// far too big for dialog rows, and it leaked into every derma control that does
+// not set a font of its own.  Fonts belong to the UI layer, GMod-style: derma
+// defines DermaDefault (13px, CJK-capable) in lua/derma/init.lua and each
+// control picks what it wants.
+//-----------------------------------------------------------------------------
+namespace vgui
+{
+
+void HL2SB_ApplyTextDefaults( Label *pLabel )
+{
+	if ( pLabel == NULL )
+		return;
+
+	pLabel->SetContentAlignment( Label::a_west );
+}
+
+} // namespace vgui
 
 LLabel::~LLabel()
 {
@@ -198,6 +229,27 @@ LUA_BINDING_BEGIN( Label, SetText, "class", "Sets the text of the label" )
     lua_Label *label = LUA_BINDING_ARGUMENT( luaL_checklabel, 1, "label" );
     label->SetText( LUA_BINDING_ARGUMENT( luaL_checkstring, 2, "text" ) );
     return 0;
+}
+LUA_BINDING_END()
+
+//-----------------------------------------------------------------------------
+// HL2SB: GMod spells the text colour SetTextColor; vgui::Label spell it
+// SetFgColor, and the binding had no colour setter AT ALL -- so the main menu's
+// Lua error window (lua/includes/modules/hl2sb_lua_errors.lua, which is built
+// from these engine controls) could not colour anything, error text or not.
+//-----------------------------------------------------------------------------
+LUA_BINDING_BEGIN( Label, SetTextColor, "class", "Sets the colour the text is drawn in" )
+{
+    lua_Label *label = LUA_BINDING_ARGUMENT( luaL_checklabel, 1, "label" );
+    label->SetFgColor( LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "colour" ) );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Label, GetTextColor, "class", "Gets the colour the text is drawn in" )
+{
+    lua_pushcolor( L, LUA_BINDING_ARGUMENT( luaL_checklabel, 1, "label" )->GetFgColor() );
+    return 1;
 }
 LUA_BINDING_END()
 

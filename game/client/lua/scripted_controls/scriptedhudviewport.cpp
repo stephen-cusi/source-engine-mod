@@ -52,4 +52,15 @@ void CScriptedHudViewport::Paint()
 {
 	BEGIN_LUA_CALL_HOOK( "HudViewportPaint" );
 	END_LUA_CALL_HOOK( 0, 0 );
+
+	// HL2SB: GMod's name for the same event.
+	//
+	// GMod addons write hook.Add( "HUDPaint", ... ) to draw a HUD (GMod passes no
+	// arguments and ignores the return value), and nothing in this tree ever fired that
+	// name: the only registration, lua/includes/extensions/client/player.lua:76, was dead.
+	// Every ported GMod HUD was silently inert - cod_c4's C4 pick-up prompt among them
+	// (addons/cod_c4/lua/entities/cod-c4/cl_init.lua:39), which is why the prompt never
+	// appeared even once its input.LookupBinding call was fixed.
+	BEGIN_LUA_CALL_HOOK( "HUDPaint" );
+	END_LUA_CALL_HOOK( 0, 0 );
 }

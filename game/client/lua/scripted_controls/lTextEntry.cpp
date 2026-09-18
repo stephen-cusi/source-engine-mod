@@ -811,5 +811,16 @@ LUALIB_API int luaopen_TextEntry( lua_State *L )
     lua_pop( L, 1 );  // Pop the panel library off the stack
     lua_pop( L, 1 );  // Pop the TextEntry metatable
 
+    /*
+    ** HL2SB: LTextEntry now dispatches Paint / PerformLayout / OnThink / the focus pair /
+    ** mouse / cursor / key hooks to Lua (see lTextEntry.h), which is what GMod's
+    ** DTextEntry writes against.  This global tells the Lua layer so, and it is set here
+    ** -- during library registration, before any script is loaded -- because
+    ** lua/vgui/DTextEntry.lua decides at load time whether it needs its old
+    ** hook.Add("Think") focus poller (it does not, any more).
+    */
+    lua_pushboolean( L, true );
+    lua_setglobal( L, "HL2SB_TEXTENTRY_DISPATCH" );
+
     return 0;
 }

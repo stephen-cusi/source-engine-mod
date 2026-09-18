@@ -348,6 +348,17 @@ static const luaL_Reg lua_metatable_funcs[] = {
   {NULL, NULL}
 };
 
+/*
+** HL2SB: the GameUI realm needs FindMetaTable/RegisterMetaTable too -- the
+** derma control files (lua/vgui/DFrame.lua) capture the Panel metatable
+** through FindMetaTable at load time, and the main menu now builds on that
+** stack.  Same registration the game-state init runs above.
+*/
+void luasrc_register_metatable_globals (lua_State *L) {
+  luaL_register(L, "_G", lua_metatable_funcs);
+  lua_pop(L, 1);
+}
+
 /* Publish registry[gmodName] = the native metatable, so `_R.Entity` resolves. */
 static void luasrc_install_metatable_aliases (lua_State *L) {
   for (int i = 0; s_LuaMetatableAliases[i].pszGModName; ++i) {
@@ -813,22 +824,45 @@ static int lua_type_gmod (lua_State *L) {
 //     attempt to call a nil value (global 'Msg')
 //     attempt to call a nil value (global 'MsgN')
 //-----------------------------------------------------------------------------
-static int lua_Msg (lua_State *L) {
-  int nArgs = lua_gettop( L );
+//-----------------------------------------------------------------------------
+// HL2SB: Msg/MsgN/Warning/ErrorNoHalt all funnel into luasrc_LuaConsoleMsg, so
+// a script's output is coloured by severity and (with hl2sb_lua_log on) lands
+// in hl2sb_lua.log exactly like the engine's own Lua diagnostics.
+//-----------------------------------------------------------------------------
+static void LuaConcatArgs (lua_State *L, char *pOut, int nOutSize) {
+  int nOut = 0;
+  pOut[0] = '\0';
 
+  int nArgs = lua_gettop( L );
   for ( int i = 1; i <= nArgs; ++i ) {
     size_t nLength = 0;
     const char *pszText = luaL_tolstring( L, i, &nLength );
-    Msg( "%s", pszText ? pszText : "" );
+    nOut += Q_snprintf( pOut + nOut, nOutSize - nOut, "%s", pszText ? pszText : "" );
     lua_pop( L, 1 );
+    if ( nOut >= nOutSize - 1 )
+      break;
   }
+}
 
+static int lua_Msg (lua_State *L) {
+  char szText[2048];
+  LuaConcatArgs( L, szText, sizeof( szText ) );
+  luasrc_LuaConsoleMsg( szText, 'I', false );
   return 0;
 }
 
 static int lua_MsgN (lua_State *L) {
-  lua_Msg( L );
-  Msg( "\n" );
+  char szText[2048];
+  LuaConcatArgs( L, szText, sizeof( szText ) );
+  luasrc_LuaConsoleMsg( szText, 'I', true );
+  return 0;
+}
+
+// GMod's bare Warning(): orange, and collected in the log like everything else.
+static int lua_Warning (lua_State *L) {
+  char szText[2048];
+  LuaConcatArgs( L, szText, sizeof( szText ) );
+  luasrc_LuaConsoleMsg( szText, 'W', true );
   return 0;
 }
 
@@ -851,27 +885,21 @@ static int lua_MsgN (lua_State *L) {
 // Lua traceback, which is the reason GMod scripts reach for it.
 //-----------------------------------------------------------------------------
 static int lua_ErrorNoHalt (lua_State *L) {
-  int nArgs = lua_gettop( L );
-
-  for ( int i = 1; i <= nArgs; ++i ) {
-    const char *pszText = luaL_tolstring( L, i, NULL );
-    Msg( "%s", pszText ? pszText : "" );
-    lua_pop( L, 1 );
-  }
-
+  char szText[2048];
+  LuaConcatArgs( L, szText, sizeof( szText ) );
+  luasrc_LuaConsoleMsg( szText, 'E', true );
   return 0;
 }
 
 static int lua_ErrorNoHaltWithStack (lua_State *L) {
   lua_ErrorNoHalt( L );
-  Msg( "\n" );
 
   // luaL_traceback( L, L, NULL, 1 ) writes "stack traceback:" plus the frames
   // into a new string on the stack.  NULL for the message is legal in 5.4.
   luaL_traceback( L, L, NULL, 1 );
   const char *pszTrace = lua_tostring( L, -1 );
   if ( pszTrace != NULL )
-    Msg( "%s\n", pszTrace );
+    luasrc_LuaConsoleMsg( pszTrace, 'E', true );
   lua_pop( L, 1 );
 
   return 0;
@@ -1616,6 +1644,11 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_setglobal( L, "Msg" );
   lua_pushcfunction( L, lua_MsgN );
   lua_setglobal( L, "MsgN" );
+
+  /* HL2SB: GMod's bare Warning() -- orange on the console and collected in
+  ** hl2sb_lua.log, i.e. the same treatment as everything else Lua prints. */
+  lua_pushcfunction( L, lua_Warning );
+  lua_setglobal( L, "Warning" );
 
   /* HL2SB: GMod's non-fatal error prints (see lua_ErrorNoHalt above). */
   lua_pushcfunction( L, lua_ErrorNoHalt );

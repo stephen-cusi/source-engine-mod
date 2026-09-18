@@ -12,6 +12,7 @@
 #include "lbaseentity_shared.h"
 #include "mathlib/lvector.h"
 #include "model_types.h"	// HL2SB: STUDIO_RENDER, the default of Entity:DrawModel()
+#include "c_baseanimating.h"	// HL2SB: non-dispatching DrawModel path, see CBaseEntity_DrawModel
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -118,7 +119,23 @@ static int CBaseEntity_UsesFullFrameBufferTexture (lua_State *L) {
 static int CBaseEntity_DrawModel (lua_State *L) {
   // HL2SB GMod compat: `flags` is optional and defaults to STUDIO_RENDER (wiki,
   // Entity:DrawModel) - see the same fix on C_BaseAnimating.
-  lua_pushinteger(L, luaL_checkentity(L, 1)->DrawModel(luaL_optint(L, 2, STUDIO_RENDER)));
+  //
+  // HL2SB: like CBaseAnimating_DrawModel, this must NOT go through the virtual
+  // DrawModel() -- on a C_BaseScripted that re-enters ENT:Draw() and the model
+  // is never actually drawn (the cod_c4 thrown entity rendered nothing while
+  // its ENT:Draw ran every frame).  Route through InternalDrawModel, which
+  // draws the model without the script dispatch.
+  C_BaseEntity *pEntity = luaL_checkentity(L, 1);
+  int nFlags = luaL_optint(L, 2, STUDIO_RENDER);
+
+  int nResult = 0;
+  C_BaseAnimating *pAnim = dynamic_cast<C_BaseAnimating *>(pEntity);
+  if (pAnim != NULL)
+    nResult = pAnim->InternalDrawModel(nFlags);
+  else
+    nResult = pEntity->DrawModel(nFlags);
+
+  lua_pushinteger(L, nResult);
   return 1;
 }
 

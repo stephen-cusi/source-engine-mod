@@ -255,6 +255,53 @@ static int CBaseFlex___index( lua_State *L )
 }
 
 /*
+** HL2SB: GMod entities accept arbitrary field writes, and GMod's own player model
+** selector relies on it:
+**
+**     mdl.Entity.GetPlayerColor = function() return Vector( GetConVarString( "cl_playercolor" ) ) end
+**     (garrysmod/gamemodes/sandbox/gamemode/editor_player.lua, UpdateFromConvars)
+**
+** The CBaseFlex metatable below only ever got an __index chain, so that assignment
+** raised
+**
+**     hl2sb_playermodel_gmod.lua:444: attempt to index a CBaseFlex value (field 'Entity')
+**
+** and aborted BuildEditor() half way through: the Bodygroups sliders, the colour
+** callbacks and the preview tint that follow that line never ran (2026-09-17).
+**
+** Delegate to CBaseAnimating's __newindex, which stores unknown fields in the entity's
+** own Lua table - the same handler a scripted entity gets
+** (game/client/lua/lc_baseanimating.cpp, game/server/lua/lbaseanimating.cpp).
+*/
+static int CBaseFlex___newindex( lua_State *L )
+{
+    luaL_getmetatable( L, LUA_BASEANIMATINGLIBNAME );
+
+    if ( lua_istable( L, -1 ) )
+    {
+        lua_getfield( L, -1, "__newindex" );
+
+        if ( lua_isfunction( L, -1 ) )
+        {
+            lua_pushvalue( L, 1 );
+            lua_pushvalue( L, 2 );
+            lua_pushvalue( L, 3 );
+            lua_call( L, 3, 0 );
+            return 0;
+        }
+
+        lua_pop( L, 1 ); /* the nil field */
+    }
+
+    lua_pop( L, 1 ); /* the metatable */
+
+    /* Unreachable while CBaseAnimating installs the handler; keep the message the
+    ** engine used to raise so the failure is still recognisable. */
+    luaL_error( L, "attempt to index a CBaseFlex value" );
+    return 0;
+}
+
+/*
 ** Open CBaseFlex object
 */
 LUALIB_API int luaopen_CBaseFlex_shared( lua_State *L )
@@ -267,6 +314,8 @@ LUALIB_API int luaopen_CBaseFlex_shared( lua_State *L )
     lua_setfield( L, -2, "__index" ); /* default __index = metatable */
     lua_pushcfunction( L, CBaseFlex___index );
     lua_setfield( L, -2, "__index" ); /* ... replaced by the chain above */
+    lua_pushcfunction( L, CBaseFlex___newindex );
+    lua_setfield( L, -2, "__newindex" ); /* field writes -> entity's Lua table */
     lua_pushstring( L, "entity" );
     lua_setfield( L, -2, "__type" );
     lua_pop( L, 1 );  /* drop the metatable; the entity table is the return value */

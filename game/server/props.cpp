@@ -210,20 +210,20 @@ void CBaseProp::Spawn( void )
 			{
 				
 #if HL2SB
-				CBaseEntity *pEntity = CreateEntityByName( "prop_physics_override" );
-				if ( pEntity )
-				{
-					pEntity->SetAbsOrigin( GetAbsOrigin() );
-					pEntity->PrecacheModel( szModel );
-					pEntity->SetModel( szModel );
-					DispatchSpawn( pEntity );
-					pEntity->Activate();
-				}
-
-				DevWarning( "%s at %.0f %.0f %0.f uses model %s, which has no propdata which means it must be used on a prop_static. I make prop_physics_override variant for you :').\n", GetClassname(), GetAbsOrigin().x, GetAbsOrigin().y, GetAbsOrigin().z, szModel );
-				Msg( "Removed prop_physics and spawned prop_physics_override" );
-				UTIL_Remove( this );
-				return;
+				// HL2SB: convert THIS entity in place instead of spawning a
+				// replacement and deleting this one.  The replacement orphaned
+				// every existing handle: cod_c4 spawns a prop_physics with
+				// w_c4.mdl purely to read its collision bounds and :Remove()s it
+				// -- the replacement survived that Remove(), so every throw left
+				// a phantom C4 at the throw origin and the real C4 spent its
+				// whole life colliding with it (bouncing "like a metal block",
+				// never sticking; hl2sb_physicscollide_debug showed the thrown
+				// C4 hitting 'prop_physics' five times per throw).  GMod simply
+				// lets a no-propdata prop_physics work, which is exactly the
+				// override behaviour; converting in place also keeps keyvalues
+				// (angles, skin, ...) that the copy only dropped.
+				SetClassname( "prop_physics_override" );
+				Msg( "prop_physics without propdata converted to prop_physics_override in place (no orphan entity)\n" );
 #else					
 				DevWarning( "%s at %.0f %.0f %0.f uses model %s, which has no propdata which means it must be used on a prop_static. DELETED.\n", GetClassname(), GetAbsOrigin().x, GetAbsOrigin().y, GetAbsOrigin().z, szModel );
 				UTIL_Remove( this );

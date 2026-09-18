@@ -57,6 +57,12 @@ enum PhysGunForce_t
 #endif
 #endif
 
+// HL2SB: the Lua hook macros (GMod's PhysgunPickup in CWeaponPhysCannon::CanPickupObject)
+// and the two pushers that hook needs - lua_pushplayer / lua_pushentity.
+#include "luamanager.h"
+#include "lbaseentity_shared.h"
+#include "lbaseplayer_shared.h"
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -2931,6 +2937,40 @@ bool CWeaponPhysCannon::CanPickupObject( CBaseEntity *pTarget )
 	
 	if ( pOwner && pOwner->GetGroundEntity() == pTarget )
 		return false;
+
+#ifdef LUA_SDK
+	// HL2SB: GMod's PhysgunPickup( ply, ent ) - "return false to prevent the pickup".
+	//
+	// Nothing in this tree fired the name: the only definition of it lived in
+	// modules/gmod_compatibility/sh_init.lua, which never loads.  HL2's gravity gun is the
+	// physgun-like weapon here (this is the file server_hl2mp.vpc actually builds - the
+	// copy under game/server/hl2/ belongs to server_hl2.vpc and is not in this mod), and
+	// every pickup - trace, force-open and attach - funnels through this function.
+	//
+	// cod_c4 registers it to keep a planted charge from being dragged around
+	// (addons/cod_c4/lua/entities/cod-c4/init.lua:54).  A hook that returns anything else -
+	// or no hook at all - leaves the pickup to the checks below.
+	if ( pOwner != NULL )
+	{
+		bool bBlocked = false;
+
+		BEGIN_LUA_CALL_HOOK( "PhysgunPickup" );
+			lua_pushplayer( L, pOwner );
+			lua_pushentity( L, pTarget );
+		END_LUA_CALL_HOOK( 2, 1 );
+
+		// END_LUA_CALL_HOOK leaves exactly one value on the stack on every path (the hook's
+		// answer, or nil when there is no hook table / no hook.call function), so this pop
+		// is balanced.
+		if ( lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
+			bBlocked = true;
+
+		lua_pop( L, 1 );
+
+		if ( bBlocked )
+			return false;
+	}
+#endif
 
 	if ( pTarget->VPhysicsIsFlesh( ) )
 		return false;

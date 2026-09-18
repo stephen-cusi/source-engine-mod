@@ -90,8 +90,7 @@ static void HL2SB_ApplyClientAppearance( CBasePlayer *pPlayer )
 
 	const char *pszSkin = engine->GetClientConVarValue( iClient, "cl_playerskin" );
 
-	if ( pszSkin && pszSkin[0] )
-	{
+	if ( pszSkin && pszSkin[0] )	{
 		// m_nSkin is the networked skin (game/server/baseanimating.h:349).  There is no
 		// SetSkin() accessor in this tree - the Lua binding writes the member too
 		// (game/shared/lua/lbaseanimating_shared.cpp:220) - and assigning a CNetworkVar
@@ -99,24 +98,46 @@ static void HL2SB_ApplyClientAppearance( CBasePlayer *pPlayer )
 		pPlayer->m_nSkin = atoi( pszSkin );
 	}
 
-	// Colors go through m_clrRender, which is networked: the renderer modulates the model
-	// with it (CBaseEntity::GetColorModulation -> render.SetColorModulation), the same
-	// channel GMod's cl_playercolor ends up in.  "1 1 1" leaves the model unchanged.
+	// Colors: NOT through m_clrRender any more (2026-09-17).
+	//
+	// m_clrRender reaches render->SetColorModulation(), and the studio renderer writes
+	// that into $color2 for EVERY material of the model - i.e. the whole model tinted,
+	// face and boots included, which is not what GMod does.
+	//
+	// GMod's player colour and weapon colour are applied by the VMTs' own proxies:
+	//
+	//     Proxies { PlayerColor       { resultVar $color2 ... } }
+	//     Proxies { PlayerWeaponColor { resultVar $color2 ... } }
+	//
+	// (42 materials of the GMod playermodel pack declare PlayerColor), implemented in
+	// game/client/c_viewmodel_attachment.cpp.  So the server leaves the render colour
+	// alone - white means "no whole-model tint" - and only the bodygroups and the skin
+	// are applied here.
 	float r, g, b;
 
-	HL2SB_ParseColor( engine->GetClientConVarValue( iClient, "cl_playercolor" ), r, g, b );
-	pPlayer->SetRenderColor( (byte)( r * 255.0f ), (byte)( g * 255.0f ), (byte)( b * 255.0f ) );
+	(void)r; (void)g; (void)b;
 
-	// The weapon in the world takes the weapon color.  WARNING: GMod also tints the
-	// first-person viewmodel; that is a client-side entity the server cannot reach, so
-	// only the model other players see changes here (recorded in AGENTS.md).
 	CBaseCombatWeapon *pWeapon = pPlayer->GetActiveWeapon();
+	(void)pWeapon;
 
-	if ( pWeapon )
-	{
-		HL2SB_ParseColor( engine->GetClientConVarValue( iClient, "cl_weaponcolor" ), r, g, b );
-		pWeapon->SetRenderColor( (byte)( r * 255.0f ), (byte)( g * 255.0f ), (byte)( b * 255.0f ) );
-	}
+	// HL2SB diagnostic (2026-09-17): "the clothing colour only ever applies once" needs
+	// the raw userinfo values next to what was written.  One line per spawn/respawn.
+	Msg( "[HL2SB] appearance: bodygroups='%s' skin='%s' color='%s' weapon='%s'\n",
+		pszBodygroups ? pszBodygroups : "", pszSkin ? pszSkin : "",
+		engine->GetClientConVarValue( iClient, "cl_playercolor" ),
+		engine->GetClientConVarValue( iClient, "cl_weaponcolor" ) );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Apply the appearance (bodygroups / skin / colours) to a player.
+//          Exported because CHL2MP_Player::SetPlayerModel() needs it: the two
+//          manager entry points below are dead code (nothing in the tree calls
+//          them), so before this the sliders of the player model selector only
+//          ever changed the *preview* (2026-09-17).
+//-----------------------------------------------------------------------------
+void HL2SB_ModelManager_ApplyAppearance( CBasePlayer *pPlayer )
+{
+	HL2SB_ApplyClientAppearance( pPlayer );
 }
 
 //-----------------------------------------------------------------------------

@@ -414,6 +414,13 @@ void CHL2MP_Player::Spawn(void)
 	{
 		SetPlayerModel();
 	}
+	else
+	{
+		// HL2SB: with respawn-only OFF the model is applied when the convar changes, so
+		// the appearance (bodygroups / skin / colours) has to be applied here instead -
+		// otherwise nothing ever calls it and the sliders do nothing at all.
+		HL2SB_ModelManager_ApplyAppearance( this );
+	}
 #endif
 }
 
@@ -478,6 +485,21 @@ bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )
 	{
 		return true;
 	}
+
+	// HL2SB: and any player model the client has, without a cfg.
+	//
+	// The list is built the GMod way now - lua/autorun/client/hl2sb_playermodels.lua
+	// scans models/player/ and calls player_manager.AddValidModel, which reaches
+	// HL2SB_AddRuntimeModelConfig - but an addon that ships nothing but the .mdl (a
+	// GMod playermodel addon does exactly that) has to be accepted as well, or picking
+	// it in the new player model menu would be silently reverted to the team model.
+	// The server precaches it on spawn (SetPlayerModel -> PrecacheModel), and only
+	// player-model paths are accepted, so cl_playermodel still cannot turn the player
+	// into a crate.
+	if ( Q_stristr( pModel, "models/player/" ) != NULL )
+	{
+		return true;
+	}
 #endif
 
 	return false;
@@ -528,6 +550,12 @@ void CHL2MP_Player::SetPlayerTeamModel( void )
 	
 	SetModel( szModelName );
 	SetupPlayerSoundsByModel( szModelName );
+
+#ifdef HL2SB
+	// HL2SB: the appearance the player editor wrote (see SetPlayerModel below).
+	// Must stay AFTER SetModel() - that is what resets the bodygroups.
+	HL2SB_ModelManager_ApplyAppearance( this );
+#endif
 
 	m_flNextModelChangeTime = gpGlobals->curtime + MODEL_CHANGE_INTERVAL;
 }
@@ -616,6 +644,20 @@ void CHL2MP_Player::SetPlayerModel( void )
 
 	SetModel( szModelName );
 	SetupPlayerSoundsByModel( szModelName );
+
+#ifdef HL2SB
+	// HL2SB: and then the appearance - cl_playerbodygroups / cl_playerskin /
+	// cl_playercolor / cl_weaponcolor, written by the player model selector's
+	// Bodygroups and Colors tabs.
+	//
+	// ⚠️ It has to be HERE, and AFTER SetModel(): SetModel() resets the bodygroups to
+	// the model's own defaults.  Nothing in the tree called
+	// HL2SB_ApplyClientAppearance() before (the manager entry points it hangs off,
+	// HL2SB_ModelManager_PlayerSpawn / _ClientSettingsChanged, are never called), so
+	// the sliders only ever changed the preview - the world model kept its hat even
+	// after respawning (2026-09-17, user report).
+	HL2SB_ModelManager_ApplyAppearance( this );
+#endif
 
 	m_flNextModelChangeTime = gpGlobals->curtime + MODEL_CHANGE_INTERVAL;
 }

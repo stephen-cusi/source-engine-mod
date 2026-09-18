@@ -13,6 +13,7 @@
 #include <lColor.h>
 
 #include <scripted_controls/lCheckButton.h>
+#include <scripted_controls/lLabel.h>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
@@ -28,6 +29,11 @@ LCheckButton::LCheckButton(Panel *parent, const char *panelName, const char *tex
 	m_lua_State = L;
 	m_nTableReference = LUA_NOREF;
 	m_nRefCount = 0;
+
+	// HL2SB: same standard text defaults as LLabel -- the check row caption
+	// rode the top edge in the tiny scheme font (see HL2SB_ApplyTextDefaults
+	// in lLabel.cpp).
+	HL2SB_ApplyTextDefaults( this );
 #endif // LUA_SDK
 }
 
@@ -189,6 +195,12 @@ static int CheckButton_IsChecked (lua_State *L) {
 */
 static int CheckButton_SetText (lua_State *L) {
   luaL_checkcheckbutton(L, 1)->SetText(luaL_checkstring(L, 2));
+  return 0;
+}
+
+/* Same reason as SetText: the caption colour setter is on vgui::Label. */
+static int CheckButton_SetTextColor (lua_State *L) {
+  luaL_checkcheckbutton(L, 1)->SetFgColor(luaL_checkcolor(L, 2));
   return 0;
 }
 
@@ -431,6 +443,7 @@ static const luaL_Reg CheckButtonmeta[] = {
   {"GetChecked", CheckButton_GetChecked},
   {"IsChecked", CheckButton_IsChecked},
   {"SetText", CheckButton_SetText},
+  {"SetTextColor", CheckButton_SetTextColor},
   {"GetText", CheckButton_GetText},
   {"SizeToContents", CheckButton_SizeToContents},
   {"GetContentSize", CheckButton_GetContentSize},

@@ -14,6 +14,9 @@
 #include "luasrclib.h"
 #include "lvector.h"
 #include "mathlib.h"
+// HL2SB: Angle:RotateAroundAxis needs MatrixBuildRotationAboutAxis( VMatrix&, ... ),
+// which is an inline in vmatrix.h (mathlib.h does not pull it in).
+#include "vmatrix.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -626,7 +629,16 @@ static int QAngle___sub (lua_State *L) {
 }
 
 static int QAngle___mul (lua_State *L) {
-  lua_pushangle(L, luaL_checkangle(L, 1) * luaL_checknumber(L, 2));
+  // HL2SB: both operand orders, like Vector___mul above.  `number * Angle` reaches this
+  // metamethod with the NUMBER first (cod_c4 throws its charge with
+  // `angvel:Rotate( -1 * ent:EyeAngles() )`, addons/cod_c4/lua/weapons/seal6-c4/shared.lua:244),
+  // and the one-order-only version answered
+  //     bad argument #1 to 'mul' (QAngle expected, got number)
+  // which aborted the throw timer before the charge was registered in Owner.C4s.
+  if (lua_isnumber(L, 1))
+    lua_pushangle(L, luaL_checknumber(L, 1) * luaL_checkangle(L, 2));
+  else
+    lua_pushangle(L, luaL_checkangle(L, 1) * luaL_checknumber(L, 2));
   return 1;
 }
 
@@ -641,6 +653,38 @@ static int QAngle___unm (lua_State *L) {
 }
 
 
+/*
+** HL2SB GMod compat: Angle:RotateAroundAxis( Vector axis, number degrees ).
+**
+** Rotates the angle around a world-space axis, in place (GMod returns nothing).  Source's
+** QAngle has no such helper, so the angle's forward/up basis is rotated by a matrix built
+** for that axis and the angle is rebuilt from the result (mathlib's 3-argument
+** VectorAngles keeps the roll, which is what the callers need):
+**
+**   - cod_c4's SWEP:DrawWorldModel orients the C4 in the hand with three of these
+**     (addons/cod_c4/lua/weapons/seal6-c4/shared.lua:64-66), i.e. the world model was not
+**     drawn at all while the method was nil;
+**   - the throw (shared.lua:238) and the door knock (cod-c4/init.lua:303) use it too.
+*/
+static int QAngle_RotateAroundAxis (lua_State *L) {
+  QAngle &ang = luaL_checkangle(L, 1);
+  Vector axis = luaL_checkvector(L, 2);
+  float degrees = luaL_checknumber(L, 3);
+
+  Vector forward, right, up;
+
+  AngleVectors( ang, &forward, &right, &up );
+
+  VMatrix rotation;
+
+  MatrixBuildRotationAboutAxis( rotation, axis, degrees );
+
+  VectorAngles( rotation * forward, rotation * up, ang );
+
+  return 0;
+}
+
+
 static const luaL_Reg QAnglemeta[] = {
   {"Init", QAngle_Init},
   {"Invalidate", QAngle_Invalidate},
@@ -651,6 +695,7 @@ static const luaL_Reg QAnglemeta[] = {
   {"Forward", QAngle_Forward},
   {"Right", QAngle_Right},
   {"Up", QAngle_Up},
+  {"RotateAroundAxis", QAngle_RotateAroundAxis},
   {"__index", QAngle___index},
   {"__newindex", QAngle___newindex},
   {"__tostring", QAngle___tostring},

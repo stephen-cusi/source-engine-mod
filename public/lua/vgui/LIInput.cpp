@@ -360,11 +360,43 @@ static int input_GetKeyName (lua_State *L) {
   return 1;
 }
 
+/*
+** HL2SB: GMod's input.LookupBinding( binding, exact ).
+**
+** The engine primitive is right there - IVEngineClient::Key_LookupBinding strips a leading
+** '+' ("+use" -> "E"), Key_LookupBindingExact keeps it (public/cdll_int.h:272 + :549) - and
+** public/lua/lcdll_int.cpp:333 already exposes it as engine.Key_LookupBinding.  GMod spells
+** it on the input library, which is why the call was a nil method here.
+**
+** ⚠️ cod_c4 reads the pick-up key with it while drawing its HUD prompt
+** (addons/cod_c4/lua/entities/cod-c4/cl_init.lua:60):
+**     local useKey = input.LookupBinding( "+reload" ) or "R"
+** As a nil method the call raised instead of returning nil, so the HUD callback died on
+** that line and the "Press R to Pick Up C4" text was never drawn.
+*/
+static int input_LookupBinding (lua_State *L) {
+  const char *pszBinding = luaL_checkstring(L, 1);
+  const char *pszKey;
+
+  if ( lua_toboolean(L, 2) )
+    pszKey = engine->Key_LookupBindingExact(pszBinding);
+  else
+    pszKey = engine->Key_LookupBinding(pszBinding);
+
+  if ( pszKey == NULL )
+    lua_pushnil(L);
+  else
+    lua_pushstring(L, pszKey);
+
+  return 1;
+}
+
 
 static const luaL_Reg inputlib[] = {
   {"CandidateListStartsAtOne",   input_CandidateListStartsAtOne},
   {"CheckKeyTrapping",   input_CheckKeyTrapping},
   {"GetKeyName",   input_GetKeyName},
+  {"LookupBinding",   input_LookupBinding},
   {"IsKeyTrapping",   input_IsKeyTrapping},
   {"StartKeyTrapping",   input_StartKeyTrapping},
   {"GetAppModalSurface",   input_GetAppModalSurface},

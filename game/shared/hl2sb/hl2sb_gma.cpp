@@ -1173,6 +1173,24 @@ void HL2SB_MountGMAAddons()
 			const int nLength = Q_strlen( pszFound );
 			if ( nLength > 4 && !V_stricmp( pszFound + nLength - 4, ".gma" ) )
 			{
+				// HL2SB: honour the main-menu Addons dialog.  The extracted FOLDER
+				// is what the game mounts, and MountAddons() already skips a
+				// disabled folder -- but an archive that is switched off should not
+				// be parsed or extracted again either.
+				char szArchiveBase[ 256 ];
+				Q_strncpy( szArchiveBase, pszFound, sizeof( szArchiveBase ) );
+				if ( nLength - 4 < (int)sizeof( szArchiveBase ) )
+				{
+					szArchiveBase[ nLength - 4 ] = '\0';
+
+					if ( HL2SB_IsAddonDisabled( szArchiveBase ) )
+					{
+						Msg( "[HL2SB] GMA: '%s' disabled by addons_disabled.txt - skipped\n", pszFound );
+						pszFound = filesystem->FindNext( hFind );
+						continue;
+					}
+				}
+
 				CUtlString &archive = archives[ archives.AddToTail() ];
 				archive = pszFound;
 			}

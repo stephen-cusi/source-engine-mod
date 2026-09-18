@@ -159,7 +159,7 @@ void CBaseScripted::LoadScriptedEntity( void )
 	}
 }
 
-void CBaseScripted::InitScriptedEntity( void )
+void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 {
 #if defined ( LUA_SDK )
 #if 0
@@ -200,6 +200,35 @@ void CBaseScripted::InitScriptedEntity( void )
 	{
 		LoadScriptedEntity();
 
+		// HL2SB: diagnostic for the "attempt to call a nil value (method ...)"
+		// family on freshly created scripted entities.  Reports exactly what
+		// entity.get() produced: no table at all, or a table with how many
+		// functions -- a count of 0..2 against an addon class that defines a
+		// dozen ENT methods means the registration was PARTIAL (e.g. shared.lua
+		// registered without init.lua's methods).
+		{
+			const bool bGotTable = lua_istable( L, -1 ) != 0;
+			int nFuncs = 0;
+			if ( bGotTable )
+			{
+				lua_pushnil( L );
+				while ( lua_next( L, -2 ) != 0 )
+				{
+					if ( lua_isfunction( L, -1 ) )
+						++nFuncs;
+					lua_pop( L, 1 );
+				}
+			}
+
+			static int s_nBindReports = 0;
+			if ( s_nBindReports < 40 )
+			{
+				++s_nBindReports;
+				luasrc_LuaWarnMsgF( "[HL2SB] bind '%s': table=%d funcs=%d\n",
+					className, bGotTable ? 1 : 0, nFuncs );
+			}
+		}
+
 		// HL2SB GMod SENT compat: GMod's engine calls ENT:SetupDataTables() while
 		// it sets a scripted entity up, and that is where ENT:NetworkVar()
 		// declares the per-instance accessors the script uses.  GMod's sent_ball
@@ -237,6 +266,22 @@ void CBaseScripted::InitScriptedEntity( void )
 			if ( lua_isfunction( L, -1 ) )
 			{
 				lua_setfield( L, -2, "NetworkVarNotify" );
+			}
+			else
+			{
+				lua_pop( L, 1 );
+			}
+
+			// HL2SB: GMod's Entity:DTVar needs the same treatment as NetworkVar above, and
+			// for the same reason: SetupDataTables() is invoked with the entity's LUA TABLE
+			// (lua_pushvalue below, "self: the entity's Lua table"), not with the entity
+			// userdata - so a method that lives only on the entity metatable is invisible
+			// inside it.  cod_c4's ENT:SetupDataTables calls self:DTVar( "Float", 0, ... )
+			// and raised "attempt to call a nil value (method 'DTVar')" on every C4 spawn.
+			lua_getglobal( L, "HL2SB_EntityDTVar" );
+			if ( lua_isfunction( L, -1 ) )
+			{
+				lua_setfield( L, -2, "DTVar" );
 			}
 			else
 			{
@@ -363,8 +408,17 @@ void CBaseScripted::InitScriptedEntity( void )
 	}
 #endif
 
-	BEGIN_LUA_CALL_ENTITY_METHOD( "Initialize" );
-	END_LUA_CALL_ENTITY_METHOD( 0, 0 );
+	// HL2SB GMod compat: Initialize dispatches at SPAWN, not at create.  GMod's
+	// ents.Create does not run ENT:Initialize -- scripts configure the entity
+	// (SetModel/SetPos) AFTER ents.Create and Initialize runs inside :Spawn(),
+	// where PhysicsInit can actually build vphysics against the model.  The
+	// create-time binding call passes bCallInitialize=false; the Spawn call
+	// keeps the default true.
+	if ( bCallInitialize )
+	{
+		BEGIN_LUA_CALL_ENTITY_METHOD( "Initialize" );
+		END_LUA_CALL_ENTITY_METHOD( 0, 0 );
+	}
 #endif
 }
 
@@ -631,6 +685,7 @@ void CBaseScripted::VPhysicsUpdate( IPhysicsObject *pPhysics )
 }
 
 #ifndef CLIENT_DLL
+#include "world.h"
 //-----------------------------------------------------------------------------
 // Purpose: HL2SB GMod compat: ENT:PhysicsCollide( data, physObj ).
 //
@@ -643,6 +698,10 @@ void CBaseScripted::VPhysicsUpdate( IPhysicsObject *pPhysics )
 // The table carries GMod's documented keys.  (The script here only reads self,
 // but the shape is what addons are written against.)
 //-----------------------------------------------------------------------------
+static ConVar hl2sb_physicscollide_debug(
+	"hl2sb_physicscollide_debug", "0", FCVAR_ARCHIVE,
+	"Log every ENT:PhysicsCollide dispatch (entity hit, speed, contact point)" );
+
 void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent )
 {
 	BaseClass::VPhysicsCollision( index, pEvent );
@@ -663,9 +722,16 @@ void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent 
 		HL2SB_WarnOnce( "physicscollide-noobject",
 			"ENT:PhysicsCollide: pObjects[%d] is NULL (no physics object for this side of the collision)", index );
 	}
-	if ( pEvent->pEntities[ nOther ] == NULL ) {
-		HL2SB_WarnOnce( "physicscollide-noentity",
-			"ENT:PhysicsCollide: pEntities[%d] is NULL (the collision was against the world)", nOther );
+
+	// HL2SB: GMod pushes the world entity (worldspawn) when the other side of
+	// the collision is the world -- pEntities[nOther] is NULL for world hits.
+	// Pushing NULL made data.HitEntity a NULL handle userdata, so addons that
+	// check `if IsValid(ent) and ent:IsWorld()` (the C4 sticker, for example)
+	// fell through to the wrong branch and the entity never stuck to surfaces.
+	CBaseEntity *pHitEntity = pEvent->pEntities[ nOther ];
+	if ( pHitEntity == NULL )
+	{
+		pHitEntity = GetWorldEntity();
 	}
 
 	Vector vecHitPos = vec3_origin;
@@ -674,6 +740,31 @@ void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent 
 	{
 		pEvent->pInternalData->GetContactPoint( vecHitPos );
 		pEvent->pInternalData->GetSurfaceNormal( vecHitNormal );
+		// HL2SB: push the RAW vphysics normal -- it IS GMod's convention.  For a
+		// C4 landing on the floor it points INTO the surface ((0,0,-1)), and the
+		// addons are written against that: stock VectorAngles maps (0,0,-1) to
+		// pitch 90, cod_c4 adds 270 -> 360 == flat face-up, and the SetPos
+		// offset seats the model ON the surface.  An earlier fix of mine negated
+		// it for index == 0 "to match GMod" -- that was wrong: with (0,0,1) the
+		// chain became pitch 270 + 270 = 540, the RotateAroundAxis basis rebuild
+		// rolled the model 180 (c4check: ang=(0,-164,180)) and the planted C4
+		// sat upside-down/buried -- invisible.  Reverted; keep the raw sign.
+	}
+
+	// HL2SB: a scripted projectile that "sticks" by disabling its physics motion
+	// (cod_c4) looks identical to one whose stick logic silently never ran if
+	// nobody can see the dispatches.  With this cvar on, every collision prints:
+	// repeated dispatches for the same entity = it is still moving (the Lua side
+	// never froze it); a single dispatch then silence = the stick took effect.
+	if ( hl2sb_physicscollide_debug.GetBool() )
+	{
+		Msg( "[HL2SB][PhysicsCollide] %s#%d hit '%s' speed %.1f pos (%.1f %.1f %.1f) normal (%.2f %.2f %.2f) phys=%s\n",
+			GetClassname(), entindex(),
+			pHitEntity ? pHitEntity->GetClassname() : "<NULL>",
+			pEvent->collisionSpeed,
+			vecHitPos.x, vecHitPos.y, vecHitPos.z,
+			vecHitNormal.x, vecHitNormal.y, vecHitNormal.z,
+			pEvent->pObjects[ index ] ? "ok" : "NULL" );
 	}
 
 	BEGIN_LUA_CALL_ENTITY_METHOD( "PhysicsCollide" );
@@ -681,7 +772,7 @@ void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent 
 			lua_newtable( L );
 
 			lua_pushstring( L, "HitEntity" );
-			lua_pushentity( L, pEvent->pEntities[ nOther ] );
+			lua_pushentity( L, pHitEntity );
 			lua_settable( L, -3 );
 
 			lua_pushstring( L, "HitPos" );

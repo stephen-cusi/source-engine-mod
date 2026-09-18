@@ -204,6 +204,23 @@ LUA_BINDING_BEGIN( Renders, PushView3D, "library", "Push a 3D view.", "client" )
     viewSetup.zNear = zNear;
     viewSetup.zFar = zFar;
 
+    /*
+    ** HL2SB: the view setup above is copied from the PLAYER's, and that one carries the
+    ** SCREEN's aspect ratio in m_flAspectRatio (1920/1280 = 1.5 in game).
+    **
+    ** CRender::Push3DView prefers that field over the rect when it builds the projection
+    ** (engine/gl_rmain.cpp:552-556) and MatrixBuildPerspectiveX makes the vertical FOV
+    ** `fovX` scaled by 1/aspect (public/mathlib/vmatrix.h:2027-2028).  A vgui subrect
+    ** therefore inherited the screen's proportions and both symptoms of the player model
+    ** preview follow (2026-09-17 screenshot): the model came out squashed sideways and
+    ** cropped top-to-bottom - a 72-unit model in a 765x984 pane asking for FOV ~37 (which
+    ** the engine turned into a ~25 degree vertical lens instead of ~46).
+    **
+    ** GMod's cam.Start3D() lets the rect decide the aspect; 0 is exactly that, because
+    ** ComputeViewMatrices then derives it from width/height (gl_rmain.cpp:553-555).
+    */
+    viewSetup.m_flAspectRatio = 0.0f;
+
     render->Push3DView( viewSetup, 0, NULL, view->GetFrustum() );
 
     return 0;
@@ -584,6 +601,40 @@ LUA_BINDING_BEGIN( Renders, SetLocalModelLights, "library", "Sets up local light
         g_pStudioRender->SetLocalLights( g_nHL2SBLocalModelLights,
             ( g_nHL2SBLocalModelLights > 0 ) ? g_HL2SBLocalModelLights : NULL );
     }
+
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, BindLocalCubemap, "library", "Binds a cubemap for the upcoming model draws.", "client" )
+{
+    /*
+    ** GMod: render.BindLocalCubemap( name ) -- "Binds a local cubemap to be used in the
+    ** next render operations" (wiki).  Its own player model selector calls it with
+    ** "editor/cubemap" so the preview does not inherit the map's reflections:
+    **
+    **     render.BindLocalCubemap( "editor/cubemap" )
+    **     (garrysmod/gamemodes/sandbox/gamemode/editor_player.lua, mdl:PreDrawModel)
+    **
+    ** The texture is the one the engine's own CModelPanel already loads for every model
+    ** preview (game/client/game_controls/basemodelpanel.cpp:511), so it is present in
+    ** this fork's content.
+    **
+    ** Deviation: nil clears the binding again.  The bind is global render state and the
+    ** Lua model panel draws inside a vgui paint, so leaving the preview's cubemap bound
+    ** would leak it into the world pass - the same class of leak documented in
+    ** game/client/hl2sb_contextmenu.cpp:405-432.
+    */
+    CMatRenderContextPtr pRenderContext( materials );
+
+    if ( lua_isnoneornil( L, 1 ) )
+    {
+        pRenderContext->BindLocalCubemap( NULL );
+        return 0;
+    }
+
+    const char *pszName = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "name" );
+    pRenderContext->BindLocalCubemap( materials->FindTexture( pszName, NULL, true ) );
 
     return 0;
 }

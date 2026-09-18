@@ -321,6 +321,15 @@ static int VMatrix___unm (lua_State *L) {
 }
 
 
+// HL2SB GMod compat: VMatrix:GetAngles() -- the minecraft SWEP reads the hand
+// bone matrix back as angles to place its world model.
+static int VMatrix_GetAngles (lua_State *L) {
+  QAngle angles;
+  MatrixToAngles( luaL_checkvmatrix(L, 1).As3x4(), angles );
+  lua_pushangle( L, angles );
+  return 1;
+}
+
 static const luaL_Reg VMatrixmeta[] = {
   {"ApplyRotation", VMatrix_ApplyRotation},
   {"As3x4", VMatrix_As3x4},
@@ -331,6 +340,7 @@ static const luaL_Reg VMatrixmeta[] = {
   {"GetLeft", VMatrix_GetLeft},
   {"GetScale", VMatrix_GetScale},
   {"GetTranslation", VMatrix_GetTranslation},
+  {"GetAngles", VMatrix_GetAngles},
   {"GetUp", VMatrix_GetUp},
   {"Identity", VMatrix_Identity},
   {"Init", VMatrix_Init},
@@ -390,6 +400,7 @@ static int luasrc_VMatrix (lua_State *L) {
 
 static const luaL_Reg _G_funcs[] = {
   {"VMatrix", luasrc_VMatrix},
+  {"Matrix", luasrc_VMatrix},  // HL2SB GMod compat: GMod's global Matrix() constructor
   {NULL, NULL}
 };
 

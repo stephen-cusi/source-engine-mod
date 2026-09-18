@@ -184,7 +184,10 @@ static int CHL2MP_Player___newindex (lua_State *L) {
       Msg("QQWEE");//    pPlayer->m_fNextThinkPushAway = luaL_checknumber(L, 3);
   else {
 #endif
-    if (pPlayer->m_nTableReference == LUA_NOREF) {
+    // HL2SB: < 0, not == LUA_NOREF -- LUA_REFNIL (-1) is not LUA_NOREF (-2);
+    // with the old test lua_getref(-1) pushed nil and lua_setfield dropped the
+    // write silently (same root cause as the CBaseEntity___newindex fix).
+    if (pPlayer->m_nTableReference < 0) {
       lua_newtable(L);
       pPlayer->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }

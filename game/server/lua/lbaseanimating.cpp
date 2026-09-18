@@ -524,9 +524,23 @@ static int CBaseAnimating___index (lua_State *L) {
       lua_gettable(L, -2);
       if (lua_isnil(L, -1)) {
         lua_pop(L, 2);
-        luaL_getmetatable(L, "CBaseEntity");
+
+        /*
+        ** HL2SB: the object's own metatable was already tried above, but for a clientside
+        ** model that metatable is CBaseFlex, while every animating method (LookupSequence,
+        ** ResetSequence, GetNumBodyGroups, SetBodygroup, SkinCount, ...) lives on THIS
+        ** class's metatable.  Look there before giving up on CBaseEntity (same fix as the
+        ** client-side copy in game/client/lua/lc_baseanimating.cpp).
+        */
+        luaL_getmetatable(L, "CBaseAnimating");
         lua_pushvalue(L, 2);
         lua_gettable(L, -2);
+        if (lua_isnil(L, -1)) {
+          lua_pop(L, 2);
+          luaL_getmetatable(L, "CBaseEntity");
+          lua_pushvalue(L, 2);
+          lua_gettable(L, -2);
+        }
       }
     }
   }
@@ -536,9 +550,18 @@ static int CBaseAnimating___index (lua_State *L) {
     lua_gettable(L, -2);
     if (lua_isnil(L, -1)) {
       lua_pop(L, 2);
-      luaL_getmetatable(L, "CBaseEntity");
+
+      /* the same CBaseAnimating-metatable step as above (literal name: this file does not
+   pull in luasrclib.h) */
+      luaL_getmetatable(L, "CBaseAnimating");
       lua_pushvalue(L, 2);
       lua_gettable(L, -2);
+      if (lua_isnil(L, -1)) {
+        lua_pop(L, 2);
+        luaL_getmetatable(L, "CBaseEntity");
+        lua_pushvalue(L, 2);
+        lua_gettable(L, -2);
+      }
     }
   }
   return 1;
@@ -565,7 +588,10 @@ static int CBaseAnimating___newindex (lua_State *L) {
   else if (Q_strcmp(field, "m_nSkin") == 0)
     pEntity->m_nSkin = luaL_checkint(L, 3);
   else {
-    if (pEntity->m_nTableReference == LUA_NOREF) {
+    // HL2SB: < 0, not == LUA_NOREF -- LUA_REFNIL (-1) is a legal "no table"
+    // state; the old test let lua_getref(-1) push nil and silently drop the
+    // field write (see CBaseEntity___newindex).
+    if (pEntity->m_nTableReference < 0) {
       lua_newtable(L);
       pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }

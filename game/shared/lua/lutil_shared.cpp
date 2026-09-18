@@ -593,6 +593,66 @@ static int luasrc_util_PrecacheModel (lua_State *L) {
 }
 
 /*
+** HL2SB GMod compat: util.GetModelInfo( modelname ) -> table | nil.
+**
+** GMod answers a table (at least { SkinCount = n }) for any loadable model and
+** the minecraft SWEP's block menu builds its skin variants from it
+** (cl_init.lua:322, `test["SkinCount"] > 1`).  With no binding at all the whole
+** createBlockMenu() aborted there, leaving mc_blockCounter and every later
+** control nil -- the "menu opens basically empty" symptom.
+**
+** Client realm: the block models are never precached at map load, so force the
+** same on-demand load ClientsideModel uses (engine->LoadModel +
+** RegisterDynamicModel, see lbaseflex_shared.cpp).  Server realm: only models
+** already in the precache table are answerable.
+*/
+static int luasrc_util_GetModelInfo (lua_State *L) {
+  const char *pszName = luaL_checkstring(L, 1);
+
+  model_t *pModel = NULL;
+
+#ifdef CLIENT_DLL
+  int nModelIndex = modelinfo->GetModelIndex( pszName );
+  if ( nModelIndex != -1 )
+  {
+    pModel = ( model_t * )modelinfo->GetModel( nModelIndex );
+    if ( modelinfo->GetStudiomodel( pModel ) == NULL )
+      pModel = NULL;    // stale pointer after a map change
+  }
+  if ( pModel == NULL )
+  {
+    pModel = ( model_t * )engine->LoadModel( pszName, true );
+    if ( pModel != NULL )
+      modelinfo->RegisterDynamicModel( pszName, true );
+  }
+#else
+  int nModelIndex = modelinfo->GetModelIndex( pszName );
+  if ( nModelIndex != -1 )
+    pModel = ( model_t * )modelinfo->GetModel( nModelIndex );
+#endif
+
+  if ( pModel == NULL )
+  {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  const studiohdr_t *pHdr = modelinfo->GetStudiomodel( pModel );
+  int nSkins = ( pHdr != NULL ) ? pHdr->numskinfamilies : 1;
+  if ( nSkins < 1 )
+    nSkins = 1;
+
+  lua_newtable( L );
+  lua_pushstring( L, "SkinCount" );
+  lua_pushinteger( L, nSkins );
+  lua_rawset( L, -3 );
+  lua_pushstring( L, "ModelName" );
+  lua_pushstring( L, pszName );
+  lua_rawset( L, -3 );
+  return 1;
+}
+
+/*
 ** HL2SB GMod compat: util.Effect( name, effectData [, allowOverride] ).
 **
 ** GMod's util.Effect is the script-facing way to run an effect by name:
@@ -843,6 +903,7 @@ static const luaL_Reg util_funcs[] = {
   // HL2SB GMod SWEP compat
   {"PrecacheSound",  luasrc_util_PrecacheSound},
   {"PrecacheModel",  luasrc_util_PrecacheModel},
+  {"GetModelInfo",   luasrc_util_GetModelInfo},
   // HL2SB GMod effect compat (lua/effects/*.lua, sprite trails, radius damage)
   {"Effect",  luasrc_UTIL_Effect},
   {"SpriteTrail",  luasrc_UTIL_SpriteTrail},

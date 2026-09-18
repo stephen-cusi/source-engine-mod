@@ -234,6 +234,23 @@ void LModelPanel::SetFOV( int nFOV )
 
 void LModelPanel::RefitCamera()
 {
+	// HL2SB: LoadModel() prepares both things the fit needs - it calls EnsureModelInfo()
+	// and SwapModel() before FitCameraToModel() - but the RefitCamera() binding skipped
+	// them, and FitCameraToModel() returns SILENTLY when either is missing:
+	//
+	//     if ( !m_pModelInfo || !m_hModel.Get() ) return;
+	//
+	// That is why the spawn-icon thumbnails kept the default camera and framed the head
+	// only, and why not one "ModelPanel fit" line ever appeared in the log with
+	// RefitCamera() being called after every SetModel (2026-09-17).  Prepare them here so
+	// the binding can stand on its own.
+	EnsureModelInfo();
+
+	if ( !m_hModel.Get() && m_pModelInfo != NULL && m_pModelInfo->m_pszModelName[0] )
+	{
+		SwapModel( m_pModelInfo->m_pszModelName );
+	}
+
 	FitCameraToModel();
 }
 

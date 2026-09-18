@@ -29,4 +29,10 @@
 // their Lua passes so an addon's Lua is picked up as early as possible.
 void HL2SB_MountGMAAddons();
 
+// HL2SB: is this addon switched off in <gamedir>/addons_disabled.txt?  The list
+// is written by the main menu's Addons dialog (lua/gameui/addonsdialog.lua);
+// MountAddons() uses it to skip folders, HL2SB_MountGMAAddons() to skip the
+// archives whose extracted folder would be skipped anyway.
+bool HL2SB_IsAddonDisabled( const char *pszAddonName );
+
 #endif // HL2SB_GMA_H

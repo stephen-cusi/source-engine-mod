@@ -101,6 +101,10 @@ $Project "Client (HL2SB)"
 		$File "lua/scripted_controls/scriptedhudviewport.cpp"
 		$File "lua/scripted_controls/lPanel.cpp"
 			$File "lua/scripted_controls/lModelPanel.cpp"
+
+		// HL2SB: the main-menu (GameUI) realm's own library - HL2SB_MenuLayout /
+		// HL2SB_MenuDumpLayout (the layout pass that realm never runs).
+		$File "lua/lua_gameui_menu.cpp"
 		
 		$File "$SRCDIR/game/shared/lua/lsrcinit.cpp"
 		$File "$SRCDIR/game/shared/lua/lnet.cpp"

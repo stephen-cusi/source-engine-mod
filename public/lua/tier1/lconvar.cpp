@@ -520,6 +520,30 @@ static CUtlDict< ConVar*, unsigned short > m_ConVarDatabase;
 
 static int luasrc_ConVar (lua_State *L) {
   const char *pName = luaL_checkstring(L, 1);
+
+  // HL2SB: GMod's global ConVar( name ) is a LOOKUP when called with one
+  // argument.  ConVarExists() (extensions/gmod_globals.lua) builds on exactly
+  // that and cod_c4 gates every CreateConVar on ConVarExists -- with the old
+  // unconditional luaL_checkstring(L, 2) the single-argument call raised
+  // "bad argument #2 to 'ConVar' (string expected, got no value)", the whole
+  // cod-c4 shared.lua failed to load, and the C4_* convars, the
+  // "C4_Convars_Change" net string and the client callbacks never existed.
+  if ( lua_gettop( L ) < 2 )
+  {
+    unsigned short existing = m_ConVarDatabase.Find( pName );
+    ConVar *pFound = ( existing != m_ConVarDatabase.InvalidIndex() )
+      ? m_ConVarDatabase[ existing ]
+      : cvar->FindVar( pName );
+
+    if ( pFound )
+    {
+      lua_pushconvar( L, pFound );
+      return 1;
+    }
+    lua_pushnil( L );
+    return 1;
+  }
+
   // Complain about duplicately defined ConVar names...
   unsigned short lookup = m_ConVarDatabase.Find( pName );
   if ( lookup != m_ConVarDatabase.InvalidIndex() || cvar->FindVar(pName) )
@@ -528,7 +552,15 @@ static int luasrc_ConVar (lua_State *L) {
     return 1;
   }
 
-  ConVar *pConVar = new ConVar(strdup(pName), luaL_checkstring(L, 2), luaL_optint(L, 3, 0), strdup(luaL_optstring(L, 4, 0)), luaL_optboolean(L, 5, 0), luaL_optnumber(L, 6, 0.0), luaL_optboolean(L, 7, 0), luaL_optnumber(L, 8, 0));
+  // HL2SB: GMod accepts a number (or boolean) default -- cod_c4 writes
+  // CreateConVar( "C4_Infinite", 0, ... ).  The engine ConVar takes a string.
+  const char *pDefault;
+  if ( lua_isboolean( L, 2 ) )
+    pDefault = lua_toboolean( L, 2 ) ? "1" : "0";
+  else
+    pDefault = luaL_checkstring( L, 2 );  // numbers auto-convert
+
+  ConVar *pConVar = new ConVar(strdup(pName), pDefault, luaL_optint(L, 3, 0), strdup(luaL_optstring(L, 4, 0)), luaL_optboolean(L, 5, 0), luaL_optnumber(L, 6, 0.0), luaL_optboolean(L, 7, 0), luaL_optnumber(L, 8, 0));
 
   lookup = m_ConVarDatabase.Insert( pName, pConVar );
   Assert( lookup != m_ConVarDatabase.InvalidIndex() );

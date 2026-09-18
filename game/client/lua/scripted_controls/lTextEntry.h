@@ -64,8 +64,7 @@ class LTextEntry : public TextEntry
         */
         BaseClass::ApplySchemeSettings( pScheme );
 
-        LUA_CALL_PANEL_METHOD_BEGIN( "ApplySchemeSettings" );
-        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+        HL2SB_CallLuaTextEntryMethod( "ApplySchemeSettings" );
     }
 
     /*
@@ -81,9 +80,124 @@ class LTextEntry : public TextEntry
     {
         BaseClass::OnMousePressed( code );
 
-        LUA_CALL_PANEL_METHOD_BEGIN( "OnMousePressed" );
-            lua_pushinteger( m_lua_State, ( int )code );
-        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+        HL2SB_CallLuaTextEntryMethod( "OnMousePressed", 1, ( int )code );
+    }
+
+    /*
+    ** HL2SB: the rest of the scripted surface.
+    **
+    ** Until now LTextEntry forwarded only ApplySchemeSettings / OnMousePressed /
+    ** OnTextChanged / OnEnter.  Every other hook a GMod text entry writes was dead:
+    **
+    **   PANEL:Paint          never ran, so the Derma skin box and the placeholder text
+    **                        (lua/vgui/DTextEntry.lua:186) were never drawn - the entry
+    **                        showed the vanilla HL2 field instead, and a placeholder
+    **                        string was printed raw
+    **   OnThink              never ran, so DNumberWang's convar polling had to be driven
+    **                        from Lua
+    **   OnGetFocus/OnLoseFocus (GMod) and OnSetFocus/OnKillFocus (this engine's spelling)
+    **                        never ran, so lua/vgui/DTextEntry.lua installed a
+    **                        hook.Add("Think") poller to fake them
+    **
+    ** The ordering follows lua/vgui/scripted_controls/lLabel.h: Paint dispatches Lua
+    ** FIRST and then lets the base draw (the entry's own text is the base's job, exactly
+    ** like a Label's), everything else runs the base first so the script sees the final
+    ** state.
+    */
+    virtual void Paint()
+    {
+        // 1. Lua first: GMod's Derma skin draws the field chrome and the placeholder
+        //    from here (lua/vgui/DTextEntry.lua:195).
+        HL2SB_CallLuaTextEntryMethod( "Paint", 2, GetWide(), GetTall() );
+
+        // 2. and then the control's own text, which THIS tree draws in PaintBackground()
+        //    (vgui2/vgui_controls/TextEntry.cpp:638-697 - the opaque fill in there is
+        //    commented out, the function is the text/selection/IME renderer) while
+        //    Panel::PaintTraverse() runs PaintBackground() BEFORE Paint()
+        //    (Panel.cpp:1217-1229).  Without this the Lua skin would be painted on top of
+        //    the text and the user would see an empty box.
+        BaseClass::PaintBackground();
+    }
+
+    virtual void PerformLayout()
+    {
+        BaseClass::PerformLayout();
+
+        HL2SB_CallLuaTextEntryMethod( "PerformLayout", 2, GetWide(), GetTall() );
+    }
+
+    virtual void OnThink()
+    {
+        BaseClass::OnThink();
+
+        HL2SB_CallLuaTextEntryMethod( "OnThink" );
+    }
+
+    virtual void OnSetFocus()
+    {
+        BaseClass::OnSetFocus();
+
+        HL2SB_CallLuaTextEntryMethod( "OnSetFocus" );
+
+        HL2SB_CallLuaTextEntryMethod( "OnGetFocus" );
+    }
+
+    virtual void OnKillFocus()
+    {
+        BaseClass::OnKillFocus();
+
+        HL2SB_CallLuaTextEntryMethod( "OnKillFocus" );
+
+        HL2SB_CallLuaTextEntryMethod( "OnLoseFocus" );
+    }
+
+    virtual void OnMouseReleased( MouseCode code )
+    {
+        BaseClass::OnMouseReleased( code );
+
+        HL2SB_CallLuaTextEntryMethod( "OnMouseReleased", 1, ( int )code );
+    }
+
+    virtual void OnMouseWheeled( int delta )
+    {
+        BaseClass::OnMouseWheeled( delta );
+
+        HL2SB_CallLuaTextEntryMethod( "OnMouseWheeled", 1, delta );
+    }
+
+    virtual void OnCursorEntered()
+    {
+        BaseClass::OnCursorEntered();
+
+        HL2SB_CallLuaTextEntryMethod( "OnCursorEntered" );
+    }
+
+    virtual void OnCursorExited()
+    {
+        BaseClass::OnCursorExited();
+
+        HL2SB_CallLuaTextEntryMethod( "OnCursorExited" );
+    }
+
+    virtual void OnCursorMoved( int x, int y )
+    {
+        BaseClass::OnCursorMoved( x, y );
+
+        HL2SB_CallLuaTextEntryMethod( "OnCursorMoved", 2, x, y );
+    }
+
+    virtual void OnKeyCodePressed( KeyCode code )
+    {
+        BaseClass::OnKeyCodePressed( code );
+
+        HL2SB_CallLuaTextEntryMethod( "OnKeyCodePressed", 1, ( int )code );
+    }
+
+    virtual void OnKeyCodeReleased( KeyCode code )
+    {
+        BaseClass::OnKeyCodeReleased( code );
+
+        HL2SB_CallLuaTextEntryMethod( "OnKeyCodeReleased", 1, ( int )code );
     }
 
     /*
@@ -121,9 +235,13 @@ class LTextEntry : public TextEntry
             HL2SB_CallLuaTextEntryMethod( "OnEnter" );
 
         BaseClass::OnKeyCodeTyped( code );
+
+        // HL2SB: the typed key also goes to Lua now, so GMod's DTextEntry can handle
+        // escape / tab / arrow keys itself (it used to be C++-only here).
+        HL2SB_CallLuaTextEntryMethod( "OnKeyCodeTyped", 1, ( int )code );
     }
 
-    void HL2SB_CallLuaTextEntryMethod( const char *pszName )
+    void HL2SB_CallLuaTextEntryMethod( const char *pszName, int nArgs = 0, int nArg1 = 0, int nArg2 = 0 )
     {
 #if defined( LUA_SDK )
         if ( !lua_isrefvalid( m_lua_State, m_nTableReference ) )
@@ -135,7 +253,13 @@ class LTextEntry : public TextEntry
         if ( lua_isfunction( m_lua_State, -1 ) )
         {
             lua_pushtextentry( m_lua_State, this );
-            luasrc_pcall( m_lua_State, 1, 0, 0 );
+
+            if ( nArgs > 0 )
+                lua_pushinteger( m_lua_State, nArg1 );
+            if ( nArgs > 1 )
+                lua_pushinteger( m_lua_State, nArg2 );
+
+            luasrc_pcall( m_lua_State, 1 + nArgs, 0, 0 );
         }
         else
         {

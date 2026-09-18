@@ -13,6 +13,7 @@
 #include <lColor.h>
 
 #include <scripted_controls/lButton.h>
+#include <scripted_controls/lLabel.h>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
@@ -28,6 +29,11 @@ LButton::LButton(Panel *parent, const char *panelName, const char *text, Panel *
 	m_lua_State = L;
 	m_nTableReference = LUA_NOREF;
 	m_nRefCount = 0;
+
+	// HL2SB: same standard text defaults as LLabel -- Button derives from
+	// Label, so without this its caption still rode the top edge in the tiny
+	// scheme font (see HL2SB_ApplyTextDefaults in lLabel.cpp).
+	HL2SB_ApplyTextDefaults( this );
 #endif // LUA_SDK
 }
 
