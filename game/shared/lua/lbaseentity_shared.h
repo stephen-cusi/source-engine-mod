@@ -28,6 +28,13 @@ LUA_API lua_CBaseEntity     *(lua_toentity) (lua_State *L, int idx);
 */
 LUA_API void  (lua_pushentity) (lua_State *L, lua_CBaseEntity *pEntity);
 
+/* HL2SB: the shared NULL branch for every entity-class __index (Player,
+** CHL2MP_Player, CBaseAnimating): pushes GMod's NULL-sentinel answer --
+** boolean false for the key "IsValid", a method that returns false for
+** everything else -- instead of raising "attempt to index a NULL entity"
+** on every read (which killed IsValid() callers like the pickup HUD hook). */
+void HL2SB_PushNullEntityIndex (lua_State *L, const char *pszField);
+
 /*
 ** HL2SB: GMod gives a drivable vehicle its own "Vehicle" metatable on top of the
 ** per-class push functions above (game/shared/lua/lvehicle_shared.cpp).  These

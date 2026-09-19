@@ -1032,13 +1032,13 @@ static int CBasePlayer_WeaponCount (lua_State *L) {
 static int CBasePlayer___index (lua_State *L) {
   CBasePlayer *pPlayer = lua_toplayer(L, 1);
   if (pPlayer == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+    /* HL2SB: GMod's NULL sentinel answers reads instead of raising -- raising
+    ** here is what made the global IsValid() (util.lua:318) throw
+    ** "attempt to index a NULL entity" from every hook probing a player who
+    ** has already left (HUDItemPickedUp).  Same contract as
+    ** CBaseEntity___index's NULL branch above lbaseentity_shared.cpp:2695. */
+    HL2SB_PushNullEntityIndex( L, lua_tostring( L, 2 ) );
+    return 1;
   }
   const char *field = luaL_checkstring(L, 2);
   if (Q_strcmp(field, "m_afButtonLast") == 0)

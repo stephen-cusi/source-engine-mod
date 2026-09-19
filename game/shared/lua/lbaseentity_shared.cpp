@@ -1334,6 +1334,24 @@ static int CBaseEntity_GetModelScale (lua_State *L) {
   return 1;
 }
 
+// Entity:OBBMins() / Entity:OBBMaxs() -- GMod returns the entity-space OBB.
+// These two were missing entirely, so any GMod-derived script calling them
+// (SpawnIcon's camera fit, addon code) errored with "attempt to call a nil
+// value (method 'OBBMins')" on every call.
+static int CBaseEntity_OBBMins (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  lua_pushvector(L, pEntity->CollisionProp()->OBBMins());
+  return 1;
+}
+
+static int CBaseEntity_OBBMaxs (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  lua_pushvector(L, pEntity->CollisionProp()->OBBMaxs());
+  return 1;
+}
+
 // Entity:GetCollisionBounds() -- GMod returns mins and maxs.
 static int CBaseEntity_GetCollisionBounds (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
@@ -2690,6 +2708,19 @@ static int HL2SB_NullEntityMethod (lua_State *L) {
   return 1;
 }
 
+// HL2SB: the shared NULL branch for every entity-class __index (Player,
+// CHL2MP_Player, CBaseAnimating on both realms).  GMod's NULL sentinel answers
+// IsValid with a boolean false and every other key with a method that returns
+// false -- it does NOT raise.  Raising on reads made the global IsValid()
+// (util.lua:318, `object.IsValid`) throw "attempt to index a NULL entity"
+// from every hook that probes a player who has already left.
+void HL2SB_PushNullEntityIndex (lua_State *L, const char *pszField) {
+  if (pszField != NULL && Q_stricmp(pszField, "IsValid") == 0)
+    lua_pushboolean(L, false);
+  else
+    lua_pushcfunction(L, HL2SB_NullEntityMethod);
+}
+
 static int CBaseEntity___index (lua_State *L) {
   CBaseEntity *pEntity = lua_toentity(L, 1);
   if (pEntity == NULL) {
@@ -3674,6 +3705,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetModelScale", CBaseEntity_SetModelScale},
   {"GetModelScale", CBaseEntity_GetModelScale},
   {"GetCollisionBounds", CBaseEntity_GetCollisionBounds},
+  {"OBBMins", CBaseEntity_OBBMins},
+  {"OBBMaxs", CBaseEntity_OBBMaxs},
   {"IsLineOfSightClear", CBaseEntity_IsLineOfSightClear},
   {"PhysicsInit", CBaseEntity_PhysicsInit},
   {"OBBCenter", CBaseEntity_OBBCenter},
