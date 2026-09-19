@@ -83,7 +83,14 @@ static void HL2SB_CallUndoFunc( lua_State *pL, const char *pszFunc, int nArgs )
 // Purpose: HL2SB_UndoRecord - register a freshly spawned entity with GMod's
 //          Lua undo module as one undoable action.
 //-----------------------------------------------------------------------------
+// 2-arg overload for the pre-existing callers (props.cpp, baseentity.cpp):
+// classname label, exactly the old behavior.
 void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
+{
+	HL2SB_UndoRecord( pOwner, pEnt, NULL );
+}
+
+void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt, const char *pszLabel )
 {
 	// HL2SB: log every entry, not just the failures.
 	//
@@ -130,8 +137,11 @@ void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
 	if ( !pL )
 		return;
 
-	const char *pszName = pEnt->GetClassname();
-	if ( !pszName || !pszName[0] )
+	// HL2SB: the spawn menu passes the display name the entry was registered
+	// with ("Jeep", "wood_crate001a", the NPC pack's own label) -- a menu-spawned
+	// prop otherwise undid as "prop_physics" no matter which prop it was.
+	const char *pszName = ( pszLabel != NULL && pszLabel[ 0 ] != '\0' ) ? pszLabel : pEnt->GetClassname();
+	if ( !pszName || !pszName[ 0 ] )
 		pszName = "entity";
 
 	const int nBase = lua_gettop( pL );

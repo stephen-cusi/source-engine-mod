@@ -31,6 +31,10 @@ class CBaseEntity;
 // Finish in Lua.  pOwner may be NULL (console), in which case nothing is
 // recorded -- GMod's undo.Finish() drops ownerless actions too.
 //-----------------------------------------------------------------------------
+void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt, const char *pszLabel );
+// 2-arg overload: pre-existing translation units (props.cpp, baseentity.cpp)
+// were compiled against it -- keep the symbol alive instead of forcing a full
+// rebuild for a label parameter.
 void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt );
 
 #endif // HL2SB_UNDO_H

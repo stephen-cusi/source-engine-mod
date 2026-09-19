@@ -61,7 +61,8 @@ static void GM_PlaceAtEyeTrace( CBasePlayer *pPlayer, CBaseEntity *pEnt )
 
 static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszClass,
                                         const char *pszModel, const char *pszEquipment,
-                                        const char *pszVehicleScript = NULL )
+                                        const char *pszVehicleScript = NULL, const char *pszName = NULL,
+                                        const CCommand *pKVArgs = NULL, int iKVStart = 0 )
 {
 	CBaseEntity *pEnt = CreateEntityByName( pszClass );
 
@@ -81,6 +82,23 @@ static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszCla
 	if ( pszVehicleScript != NULL && pszVehicleScript[ 0 ] != '\0' )
 		pEnt->KeyValue( "vehiclescript", pszVehicleScript );
 
+	// the display name rides as the entity's name, and the undo record shows
+	// it instead of the class ("Jeep" / "wood_crate001a" instead of
+	// "prop_vehicle_jeep" / "prop_physics")
+	if ( pszName != NULL && pszName[ 0 ] != '\0' )
+		pEnt->SetName( AllocPooledString( pszName ) );
+
+	// registry KeyValues ride as trailing name/value pairs (gm_spawnnpc).  They
+	// have to be on the entity before DispatchSpawn, which is when the NPC reads
+	// them -- the hutao pack's citizentype = 4 (CT_UNIQUE) is the difference
+	// between npc_citizen keeping the reskin model and rewriting the path into
+	// models/Humans/Group01/<file> (a file that does not exist -> ERROR model).
+	if ( pKVArgs != NULL )
+	{
+		for ( int i = iKVStart; i + 1 < pKVArgs->ArgC(); i += 2 )
+			pEnt->KeyValue( pKVArgs->Arg( i ), pKVArgs->Arg( i + 1 ) );
+	}
+
 	// equipment is a KEYVALUE - it has to be set before DispatchSpawn, which is when
 	// the NPC reads it.  "none" is GMod's "unarmed" and is honoured the same way.
 	if ( pszEquipment != NULL && pszEquipment[ 0 ] != '\0' )
@@ -94,12 +112,12 @@ static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszCla
 	return pEnt;
 }
 
-static void GM_Record( CBasePlayer *pPlayer, CBaseEntity *pEnt )
+static void GM_Record( CBasePlayer *pPlayer, CBaseEntity *pEnt, const char *pszLabel = NULL )
 {
 	if ( pPlayer == NULL || pEnt == NULL )
 		return;
 
-	HL2SB_UndoRecord( pPlayer, pEnt );
+	HL2SB_UndoRecord( pPlayer, pEnt, pszLabel );
 }
 
 //-----------------------------------------------------------------------------
@@ -128,9 +146,10 @@ CON_COMMAND( gm_spawn, "Spawn an entity: gm_spawn <class> [model]  (GMod)" )
 		return;
 
 	CBaseEntity *pEnt = GM_SpawnAtEyeTrace( pPlayer, args[ 1 ],
-		( args.ArgC() > 2 ) ? args[ 2 ] : NULL, NULL );
+		( args.ArgC() > 2 ) ? args[ 2 ] : NULL, NULL, NULL,
+		( args.ArgC() > 3 ) ? args[ 3 ] : NULL );
 
-	GM_Record( pPlayer, pEnt );
+	GM_Record( pPlayer, pEnt, ( args.ArgC() > 3 ) ? args[ 3 ] : NULL );
 }
 
 //-----------------------------------------------------------------------------
@@ -147,9 +166,10 @@ CON_COMMAND( gm_spawnvehicle, "Spawn a vehicle: gm_spawnvehicle <class> [model] 
 
 	CBaseEntity *pEnt = GM_SpawnAtEyeTrace( pPlayer, args[ 1 ],
 		( args.ArgC() > 2 ) ? args[ 2 ] : NULL, NULL,
-		( args.ArgC() > 3 ) ? args[ 3 ] : NULL );
+		( args.ArgC() > 3 ) ? args[ 3 ] : NULL,
+		( args.ArgC() > 4 ) ? args[ 4 ] : NULL );
 
-	GM_Record( pPlayer, pEnt );
+	GM_Record( pPlayer, pEnt, ( args.ArgC() > 4 ) ? args[ 4 ] : NULL );
 }
 
 //-----------------------------------------------------------------------------
@@ -164,10 +184,18 @@ CON_COMMAND( gm_spawnnpc, "Spawn an NPC: gm_spawnnpc <class> [weapon]  (GMod)" )
 		return;
 
 	const char *pszWeapon = ( args.ArgC() > 2 ) ? args[ 2 ] : gmod_npcweapon.GetString();
+	const char *pszName = ( args.ArgC() > 3 ) ? args[ 3 ] : NULL;
+	// reskin packs register Class = a stock NPC with their own Model (the
+	// hutao pack: npc_combine_s wearing the hutao model) -- without the model
+	// only the stock NPC comes out and the reskin "cannot be spawned".
+	const char *pszModel = ( args.ArgC() > 4 ) ? args[ 4 ] : NULL;
 
-	CBaseEntity *pEnt = GM_SpawnAtEyeTrace( pPlayer, args[ 1 ], NULL, pszWeapon );
+	// args[5..] are the NPC registry's KeyValues as name/value pairs
+	// (the menu forwards list.Set( "NPC", ... ) data.KeyValues).
+	CBaseEntity *pEnt = GM_SpawnAtEyeTrace( pPlayer, args[ 1 ], pszModel, pszWeapon, NULL, pszName,
+	                                        ( args.ArgC() > 5 ) ? &args : NULL, 5 );
 
-	GM_Record( pPlayer, pEnt );
+	GM_Record( pPlayer, pEnt, pszName );
 }
 
 //-----------------------------------------------------------------------------
