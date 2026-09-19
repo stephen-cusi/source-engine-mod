@@ -760,7 +760,7 @@ inline float C_BaseAnimating::GetCycle() const
 //-----------------------------------------------------------------------------
 
 inline CStudioHdr *C_BaseAnimating::GetModelPtr() const
-{ 
+{
 	if ( IsDynamicModelLoading() )
 		return NULL;
 
@@ -772,6 +772,22 @@ inline CStudioHdr *C_BaseAnimating::GetModelPtr() const
 	if ( !m_pStudioHdr )
 	{
 		const_cast<C_BaseAnimating *>(this)->LockStudioHdr();
+	}
+	else if ( m_hStudioHdr != MDLHANDLE_INVALID )
+	{
+		// The MDL cache can be flushed underneath live entities (addon
+		// re-mount / model rescan / precache purge): GetStudioHdr then returns
+		// NULL or a different buffer while our wrapper still points at the
+		// old one, and every deref of the stale CStudioHdr was an AV
+		// (2026-09-20 physcannon after re-enabling miku + map reload).
+		// Detect staleness and rebuild: LockStudioHdr re-loads the model data
+		// from disk on demand.
+		studiohdr_t *pCacheHdr = mdlcache->GetStudioHdr( m_hStudioHdr );
+		if ( pCacheHdr == NULL || m_pStudioHdr->GetRenderHdr() != pCacheHdr )
+		{
+			const_cast<C_BaseAnimating *>(this)->InvalidateMdlCache();
+			const_cast<C_BaseAnimating *>(this)->LockStudioHdr();
+		}
 	}
 	Assert( m_pStudioHdr ? m_pStudioHdr->GetRenderHdr() == mdlcache->GetStudioHdr(m_hStudioHdr) : m_hStudioHdr == MDLHANDLE_INVALID );
 	return m_pStudioHdr;

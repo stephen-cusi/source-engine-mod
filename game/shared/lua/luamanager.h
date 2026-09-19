@@ -337,8 +337,16 @@
   } \
   else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); }
 
+/*
+** A scripted panel outlives the Lua state that created it: the client state L
+** is closed and recreated on every map load (luasrc_shutdown/luasrc_init), but
+** vgui panels survive - disabling an addon in-map then reloading the map left
+** every Derma panel holding a freed lua_State, and the next OnThink crashed in
+** lua_rawgeti (2026-09-20).  Only call into the panel's state while it is one
+** of the live states; stale panels become inert instead of crashing.
+*/
 #define BEGIN_LUA_CALL_PANEL_METHOD(functionName) \
-  if (lua_isrefvalid(m_lua_State, m_nTableReference)) { \
+  if ( m_lua_State != NULL && ( m_lua_State == L || m_lua_State == LGameUI ) && lua_isrefvalid(m_lua_State, m_nTableReference) ) { \
     lua_getref(m_lua_State, m_nTableReference); \
     lua_getfield(m_lua_State, -1, functionName); \
     lua_remove(m_lua_State, -2); \

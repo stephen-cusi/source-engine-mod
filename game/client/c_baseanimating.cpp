@@ -959,6 +959,16 @@ void C_BaseAnimating::UnlockStudioHdr()
 	if ( m_hStudioHdr != MDLHANDLE_INVALID )
 	{
 		studiohdr_t *pStudioHdr = mdlcache->GetStudioHdr( m_hStudioHdr );
+		if ( pStudioHdr == NULL )
+		{
+			// The model data was flushed from the MDL cache (addon re-scan /
+			// precache purge) while entities still held handles: disabling an
+			// addon in-map then reloading the map hit this in every remaining
+			// entity's destructor (2026-09-20, NULL GetVirtualModel AV).  The
+			// cache entry is gone, so there is nothing left to unlock.
+			m_hStudioHdr = MDLHANDLE_INVALID;
+			return;
+		}
 		Assert( m_pStudioHdr && m_pStudioHdr->GetRenderHdr() == pStudioHdr );
 
 #if 0
