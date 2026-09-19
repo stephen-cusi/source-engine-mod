@@ -26,31 +26,64 @@
 static bool s_bDisabledAddonsLoaded = false;
 static CUtlVector< CUtlString > s_DisabledAddons;
 
+static void HL2SB_AddonsDisabledPath( char *pOut, int nOutSize );
+
 static void HL2SB_LoadDisabledAddons( void )
 {
 	if ( s_bDisabledAddonsLoaded )
 		return;
 	s_bDisabledAddonsLoaded = true;
 
-	char gamePath[ 512 ] = { 0 };
-#ifdef CLIENT_DLL
-	const char *pszGameDir = engine->GetGameDirectory();
-	Q_strncpy( gamePath, ( pszGameDir != NULL ) ? pszGameDir : "", sizeof( gamePath ) );
-#else
-	engine->GetGameDir( gamePath, sizeof( gamePath ) );
-#endif
-	if ( !gamePath[0] )
-		return;
+	// Read through the filesystem (pathID MOD) so "where is the mod dir" is
+	// the ENGINE's answer, not ours.  The old form built the path from
+	// GetGameDirectory() and fopen()ed it -- the prime suspect for "the menu
+	// disabled an addon but it still loads": a wrong/relative gamedir or the
+	// CWD juggling in MountAddons silently failed the open and every addon
+	// stayed enabled.  The fopen form stays as a fallback.
+	FileHandle_t fhFile = g_pFullFileSystem->Open( "addons_disabled.txt", "r", "MOD" );
+	if ( fhFile == FILESYSTEM_INVALID_HANDLE )
+	{
+		char szFull[ 512 ];
+		HL2SB_AddonsDisabledPath( szFull, sizeof( szFull ) );
+		FILE *fp = ( szFull[0] != '\0' ) ? fopen( szFull, "r" ) : NULL;
+		if ( fp == NULL )
+		{
+			Msg( "[HL2SB] addons: no addons_disabled.txt found (nothing disabled)\n" );
+			return;
+		}
 
-	char szFull[ 512 ];
-	Q_snprintf( szFull, sizeof( szFull ), "%s/addons_disabled.txt", gamePath );
+		Msg( "[HL2SB] addons: reading disabled list from %s (fallback fopen)\n", szFull );
 
-	FILE *fp = fopen( szFull, "r" );
-	if ( fp == NULL )
+		char szLine[ 256 ];
+		while ( fgets( szLine, sizeof( szLine ), fp ) != NULL )
+		{
+			char *p = szLine;
+			while ( *p == ' ' || *p == '\t' )
+				++p;
+			if ( *p == '\0' || *p == '\r' || *p == '\n' || *p == '#' || *p == ';' )
+				continue;
+
+			char *pEnd = p + Q_strlen( p );
+			while ( pEnd > p && ( pEnd[-1] == '\r' || pEnd[-1] == '\n' || pEnd[-1] == ' ' || pEnd[-1] == '\t' ) )
+				--pEnd;
+			*pEnd = '\0';
+
+			if ( *p != '\0' )
+			{
+				CUtlString &entry = s_DisabledAddons[ s_DisabledAddons.AddToTail() ];
+				entry = p;
+				Msg( "[HL2SB] addons: '%s' disabled by addons_disabled.txt - not mounted\n", p );
+			}
+		}
+
+		fclose( fp );
 		return;
+	}
+
+	Msg( "[HL2SB] addons: reading disabled list from addons_disabled.txt (MOD)\n" );
 
 	char szLine[ 256 ];
-	while ( fgets( szLine, sizeof( szLine ), fp ) != NULL )
+	while ( g_pFullFileSystem->ReadLine( szLine, sizeof( szLine ), fhFile ) != NULL )
 	{
 		char *p = szLine;
 		while ( *p == ' ' || *p == '\t' )
@@ -71,7 +104,7 @@ static void HL2SB_LoadDisabledAddons( void )
 		}
 	}
 
-	fclose( fp );
+	g_pFullFileSystem->Close( fhFile );
 }
 
 bool HL2SB_IsAddonDisabled( const char *pszAddonName )
@@ -216,18 +249,24 @@ bool HL2SB_SetAddonEnabled( const char *pszAddonName, bool bEnabled )
 	if ( bEnabled )
 	{
 		// Mirror MountAddons() exactly, then let the GMA pass pick up an
-		// archive the user just re-enabled (extraction is skipped when its
-		// marker file exists, so re-running it costs nothing).
+		// archive the user just re-enabled (mounting is idempotent).
 		filesystem->AddSearchPath( relativepath, "MOD", PATH_ADD_TO_TAIL );
 		HL2SB_MountGMAAddons();
 	}
 	else
 	{
-		// Folders come from MountAddons() (MOD), extracted archives add MOD and
-		// GAME -- take both off so nothing keeps resolving out of a disabled
-		// addon.  RemoveSearchPath() answers whether it found the path.
+		// Folder addons come from MountAddons() (MOD, plus GAME when the GMA
+		// pass used to extract) -- and .gma archives are mounted directly as
+		// "addons/<name>.gma".  Take both forms off so nothing keeps resolving
+		// out of a disabled addon.
 		bool bRemoved = filesystem->RemoveSearchPath( relativepath, "MOD" );
 		filesystem->RemoveSearchPath( relativepath, "GAME" );
+
+		char szArchiveRelative[ 512 ];
+		Q_snprintf( szArchiveRelative, sizeof( szArchiveRelative ), LUA_PATH_ADDONS "/%s.gma", pszAddonName );
+		if ( filesystem->RemoveSearchPath( szArchiveRelative, "MOD" ) )
+			bRemoved = true;
+		filesystem->RemoveSearchPath( szArchiveRelative, "GAME" );
 
 		if ( !bRemoved && !filesystem->IsDirectory( relativepath, "MOD" ) )
 			bRemoved = true;    // nothing was mounted: nothing to do
@@ -274,6 +313,7 @@ void MountAddons()
 				// a disabled one is not mounted (see HL2SB_IsAddonDisabled).
 				if ( HL2SB_IsAddonDisabled( addonName ) )
 				{
+					Msg( "[HL2SB] addons: '%s' is disabled - not mounted this session\n", addonName );
 					fn = g_pFullFileSystem->FindNext( fh );
 					continue;
 				}
@@ -338,4 +378,36 @@ void HL2SB_LuaRegisterAddons( lua_State *L )
 
 	lua_pushcfunction( L, HL2SB_LuaAddonsLive );
 	lua_setglobal( L, "hl2sb_addons_live" );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: verdict tool for "the menu disabled an addon but it still loads".
+// Prints the disabled list exactly as THIS dll read it, plus every addons/
+// entry with its folder/file state and whether the disable applies to it.
+// Run from the console after a start where a disabled addon showed up: a wrong
+// read (empty list), a name mismatch (entry not flagged) or a missed mount is
+// immediately visible instead of guessed at.
+//-----------------------------------------------------------------------------
+CON_COMMAND( hl2sb_addons_dump, "Dump the addon disabled list and mount state" )
+{
+	HL2SB_LoadDisabledAddons();
+
+	Msg( "[HL2SB] addons: %d disabled entr%s:\n", s_DisabledAddons.Count(),
+		( s_DisabledAddons.Count() == 1 ) ? "y" : "ies" );
+	for ( int i = 0; i < s_DisabledAddons.Count(); ++i )
+		Msg( "[HL2SB] addons:   disabled: '%s'\n", s_DisabledAddons[ i ].String() );
+
+	FileFindHandle_t fh;
+	char const *fn = g_pFullFileSystem->FindFirstEx( LUA_PATH_ADDONS "/*", "MOD", &fh );
+	while ( fn )
+	{
+		if ( fn[0] != '.' )
+		{
+			Msg( "[HL2SB] addons:   addons/%s (%s)%s\n", fn,
+				g_pFullFileSystem->FindIsDirectory( fh ) ? "folder" : "file",
+				HL2SB_IsAddonDisabled( fn ) ? "  [DISABLED]" : "" );
+		}
+		fn = g_pFullFileSystem->FindNext( fh );
+	}
+	g_pFullFileSystem->FindClose( fh );
 }

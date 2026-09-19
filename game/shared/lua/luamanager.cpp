@@ -42,6 +42,13 @@ extern "C" __declspec( dllimport ) unsigned short __stdcall
 #include "ammodef.h"
 #include "luamanager.h"
 #include "mountaddons.h"
+
+// HL2SB: defined in mountaddons.cpp but deliberately kept out of its header --
+// a local declaration here keeps this a .cpp-only change (AGENTS.md §2: editing
+// a .h triggers a full tree rebuild).
+bool HL2SB_IsAddonDisabled( const char *pszAddonName );
+
+static bool luasrc_PathInDisabledAddon (const char *fullpath);
 #include "luasrclib.h"
 #include "luacachefile.h"
 #include "tier1/lconvar.h"
@@ -1456,6 +1463,15 @@ LUA_API void luasrc_dofolder_sorted (lua_State *L, const char *path, bool bRecur
 	{
 		char loadname[ 512 ];
 		filesystem->RelativePathToFullPath( files[i].Get(), "MOD", loadname, sizeof( loadname ) );
+
+		// HL2SB: a disabled addon must not autorun even if something still
+		// mounts it (see luasrc_PathInDisabledAddon)
+		if ( luasrc_PathInDisabledAddon( loadname ) )
+		{
+			Msg( "[Lua]   %s: addon is DISABLED - skipped\n", files[i].Get() );
+			continue;
+		}
+
 		Msg( "[Lua]   %s\n", files[i].Get() );
 		if ( luasrc_dofile( L, loadname ) != 0 )
 			++nFailed;
@@ -1773,6 +1789,55 @@ const char *luasrc_GetClassScriptFile (const char *pszClassName)
 ** GMod treats "lua/entities/<name>.lua" and "lua/entities/<name>/shared.lua" as
 ** the same entity class, so both paths funnel through here.
 */
+//-----------------------------------------------------------------------------
+// HL2SB: belt-and-suspenders for "the menu disabled an addon but it still
+// loads".  MountAddons() skips the disabled folder when building search paths,
+// and every loader here walks those same search paths -- but one stale or
+// parallel mount brings the class up anyway.  This gates the RESOLVED path
+// instead: anything under "<...>/addons/<disabled-name>/..." is skipped at
+// load time, whatever mounted it.
+//-----------------------------------------------------------------------------
+static bool luasrc_PathInDisabledAddon (const char *fullpath)
+{
+  if ( fullpath == NULL || fullpath[0] == '\0' )
+    return false;
+
+  const char *p = fullpath;
+  while ( ( p = Q_stristr( p, "addons" ) ) != NULL )
+  {
+    // the hit must be its own path segment: not the tail of "myaddons"
+    if ( p != fullpath && p[-1] != '\\' && p[-1] != '/' )
+    {
+      ++p;
+      continue;
+    }
+
+    const char *name = p + 6;
+    if ( name[0] != '\\' && name[0] != '/' )
+    {
+      ++p;
+      continue;
+    }
+    ++name;
+
+    char addon[MAX_PATH];
+    int n = 0;
+    while ( name[n] != '\0' && name[n] != '\\' && name[n] != '/' && n < MAX_PATH - 1 )
+    {
+      addon[n] = name[n];
+      ++n;
+    }
+    addon[n] = '\0';
+
+    if ( addon[0] != '\0' && HL2SB_IsAddonDisabled( addon ) )
+      return true;
+
+    ++p;
+  }
+
+  return false;
+}
+
 static void luasrc_LoadOneEntity (const char *filename, const char *className)
 {
 	char fullpath[ MAX_PATH ] = { 0 };
@@ -1781,6 +1846,13 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 		return;
 
 	filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
+
+	if ( luasrc_PathInDisabledAddon( fullpath ) )
+	{
+		luasrc_LuaInfoMsgF( "[Lua] entity '%s' <- %s: addon is DISABLED - skipped\n", className, fullpath );
+		return;
+	}
+
 	luasrc_LuaInfoMsgF( "[Lua] entity '%s' <- %s\n", className, fullpath );
 
 	// HL2SB: this is the one place that knows which addon (or the tree's own
@@ -2038,6 +2110,12 @@ static void luasrc_LoadOneWeapon (const char *filename, const char *className)
 
 	filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
 
+	if ( luasrc_PathInDisabledAddon( fullpath ) )
+	{
+		luasrc_LuaInfoMsgF( "[Lua] weapon '%s' <- %s: addon is DISABLED - skipped\n", className, fullpath );
+		return;
+	}
+
 	// HL2SB: say which script a weapon was built from, and from which file on
 	// disk.  The loader used to be silent here, so "did an addon's SWEP actually
 	// get picked up?" could only be answered by walking the file system by hand --
@@ -2212,6 +2290,13 @@ void luasrc_LoadEffects (const char *path)
 			if ( filesystem->FileExists( filename, "MOD" ) )
 			{
 				filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
+
+				if ( luasrc_PathInDisabledAddon( fullpath ) )
+				{
+					luasrc_LuaInfoMsgF( "[Lua] effect '%s' <- %s: addon is DISABLED - skipped\n", className, fullpath );
+					continue;
+				}
+
 				luasrc_LuaInfoMsgF( "[Lua] effect '%s' <- %s\n", className, fullpath );
 
 				lua_newtable( L );
