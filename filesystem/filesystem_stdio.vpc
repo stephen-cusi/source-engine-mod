@@ -58,6 +58,7 @@ $Project "FileSystem_Stdio"
 	{
 		$File	"basefilesystem.cpp"
 		$File	"packfile.cpp"
+		$File	"gmafile.cpp"
 		$File	"filetracker.cpp"
 		$File	"filesystem_async.cpp"
 		$File	"filesystem_stdio.cpp"

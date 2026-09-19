@@ -943,6 +943,110 @@ bool CBaseFileSystem::AddPackFileFromPath( const char *pPath, const char *pakfil
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: HL2SB - mount a Garry's Mod .gma addon archive, read-only and in
+// place (GMod style: files are read on demand out of the archive, nothing is
+// extracted).  Routed here from AddSearchPathInternal() when the path ends
+// in ".gma", so game DLLs only need the plain AddSearchPath/RemoveSearchPath
+// interface to mount and unmount addons.
+//-----------------------------------------------------------------------------
+void CBaseFileSystem::AddGmaFile( const char *pPath, const char *pPathID, SearchPathAdd_t addType )
+{
+	Assert( ThreadInMainThread() );
+
+	char newPath[ MAX_FILEPATH ];
+	if ( Q_IsAbsolutePath( pPath ) )
+	{
+		Q_strncpy( newPath, pPath, sizeof( newPath ) );
+	}
+	else
+	{
+		// Resolve through the search paths first (cwd-independent), falling
+		// back to a plain absolutization against the current directory.
+		if ( RelativePathToFullPath( pPath, pPathID, newPath, sizeof( newPath ) ) == NULL || !newPath[0] )
+		{
+			Q_MakeAbsolutePath( newPath, sizeof( newPath ), pPath );
+		}
+	}
+#ifdef _WIN32
+	Q_strlower( newPath );
+#endif
+	Q_FixSlashes( newPath );
+
+	CUtlSymbol pathSym = g_PathIDTable.AddString( newPath );
+	CUtlSymbol pathIDSym = g_PathIDTable.AddString( pPathID );
+
+	// Already mounted as a search path?  (Same archive + same path ID = no-op,
+	// so re-running the addon mount pass is cheap and idempotent.)
+	for ( int i = 0; i < m_SearchPaths.Count(); i++ )
+	{
+		CSearchPath *pSearchPath = &m_SearchPaths[i];
+		if ( pSearchPath->GetPackFile() &&
+			pSearchPath->GetPath() == pathSym &&
+			pSearchPath->GetPathID() == pathIDSym )
+		{
+			return;
+		}
+	}
+
+	CGmaPackFile *pf = NULL;
+
+	// Reuse the archive if it is already mounted under another path ID, so
+	// MOD + GAME share one open FILE* (mirrors AddVPKFile).
+	for ( int i = 0; i < m_SearchPaths.Count() && pf == NULL; i++ )
+	{
+		CPackFile *pExisting = m_SearchPaths[i].GetPackFile();
+		if ( pExisting && pExisting->IsGmaArchive() && !V_stricmp( pExisting->m_ZipName, newPath ) )
+		{
+			pExisting->AddRef();
+			pf = ( CGmaPackFile * )pExisting;
+		}
+	}
+
+	if ( pf == NULL )
+	{
+		struct _stat buf;
+		if ( FS_stat( newPath, &buf ) == -1 )
+		{
+			Warning( FILESYSTEM_WARNING, "Cannot mount '%s' - file not found\n", pPath );
+			return;
+		}
+
+		pf = new CGmaPackFile( this );
+		pf->m_ZipName = newPath;
+		pf->m_hPackFileHandleFS = Trace_FOpen( newPath, "rb", 0, NULL );
+		if ( !pf->m_hPackFileHandleFS )
+		{
+			delete pf;
+			Warning( FILESYSTEM_WARNING, "Cannot open GMA addon archive '%s'\n", pPath );
+			return;
+		}
+
+		FS_fseek( pf->m_hPackFileHandleFS, 0, FILESYSTEM_SEEK_TAIL );
+		int64 len = FS_ftell( pf->m_hPackFileHandleFS );
+		FS_fseek( pf->m_hPackFileHandleFS, 0, FILESYSTEM_SEEK_HEAD );
+
+		if ( !pf->Prepare( len ) )
+		{
+			Trace_FClose( pf->m_hPackFileHandleFS );
+			pf->m_hPackFileHandleFS = NULL;
+			delete pf;
+			Warning( FILESYSTEM_WARNING, "'%s' is not a readable GMA archive; skipped\n", pPath );
+			return;
+		}
+
+		pf->m_lPackFileTime = GetFileTime( newPath );
+	}
+
+	CSearchPath *sp = &m_SearchPaths[ ( addType == PATH_ADD_TO_TAIL ) ? m_SearchPaths.AddToTail() : m_SearchPaths.AddToHead() ];
+	sp->SetPackFile( pf );
+	sp->m_storeId = g_iNextSearchPathID++;
+	sp->SetPath( pathSym );
+	sp->m_pPathIDInfo = FindOrAddPathIDInfo( pathIDSym, -1 );
+
+	Msg( "Mounted GMA addon '%s' on the %s search path\n", pPath, pPathID );
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Search pPath for pak?.pak files and add to search path if found
 // Input  : *pPath - 
 //-----------------------------------------------------------------------------
@@ -1412,6 +1516,13 @@ void CBaseFileSystem::AddSearchPathInternal( const char *pPath, const char *path
 		return;
 	}
 
+	// HL2SB: and Garry's Mod .gma addon archives, mounted read-only in place
+	if ( V_stristr( pPath, ".gma" ) )
+	{
+		AddGmaFile( pPath, pathID, addType );
+		return;
+	}
+
 	// Clean up the name
 	char newPath[ MAX_FILEPATH ];
 	if ( pPath[0] == 0 )
@@ -1657,6 +1768,21 @@ bool CBaseFileSystem::RemoveSearchPath( const char *pPath, const char *pathID )
 		else if ( V_stristr( newPath, ".vpk" ) )
 		{
 			return RemoveVPKFile( newPath, pathID );
+		}
+		else if ( V_stristr( newPath, ".gma" ) )
+		{
+			// HL2SB: mirror the normalization AddGmaFile() used when mounting
+			// (lowercase was already applied above).
+			if ( !Q_IsAbsolutePath( newPath ) )
+			{
+				char absPath[ MAX_FILEPATH ];
+				if ( RelativePathToFullPath( pPath, pathID, absPath, sizeof( absPath ) ) == NULL || !absPath[0] )
+				{
+					Q_MakeAbsolutePath( absPath, sizeof( absPath ), pPath );
+				}
+				Q_strncpy( newPath, absPath, sizeof( newPath ) );
+			}
+			Q_FixSlashes( newPath );
 		}
 		else
 		{
@@ -4038,7 +4164,10 @@ const char *CBaseFileSystem::FindFirstHelper( const char *pWildCardT, const char
 				//            looking for misc files suddenly finding them in the (untrusted) BSP and causing security
 				//            nightmares. For now, restricting FindFirst() support to BSPs only when the BSP search path
 				//            is explicitly requested, but this would otherwise work fine.
-				if ( !pPathID || V_strcmp( pPathID, "BSP" ) != 0 )
+				// HL2SB: user-installed archives (GMod .gma addons) are trusted the
+				// same way VPKs are and may always be enumerated.
+				if ( !pSearchPath->GetPackFile()->IsTrustedArchive() &&
+					 ( !pPathID || V_strcmp( pPathID, "BSP" ) != 0 ) )
 				{
 					continue;
 				}
@@ -4151,11 +4280,10 @@ bool CBaseFileSystem::FindNextFileHelper( FindData_t *pFindData, int *pFoundStor
 
 		if ( pSearchPath->GetPackFile() )
 		{
-			// XXX(johns) This support didn't exist for a long time, and I'm now worried about various things
-			//            looking for misc files suddenly finding them in the (untrusted) BSP and causing security
-			//            nightmares. For now, restricting FindFirst() support to BSPs only when the BSP search path
-			//            is explicitly requested, but this would otherwise work fine.
-			if ( !pFindData->m_FilterPathID || V_strcmp( g_PathIDTable.String( pFindData->m_FilterPathID ), "BSP" ) != 0 )
+			// XXX(johns) See FindFirstHelper() for the BSP restriction backstory.
+			// HL2SB: trusted archives (GMod .gma addons) may always be enumerated.
+			if ( !pSearchPath->GetPackFile()->IsTrustedArchive() &&
+				 ( !pFindData->m_FilterPathID || V_strcmp( g_PathIDTable.String( pFindData->m_FilterPathID ), "BSP" ) != 0 ) )
 			{
 				continue;
 			}

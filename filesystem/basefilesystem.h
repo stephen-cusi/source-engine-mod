@@ -227,6 +227,9 @@ abstract_class CBaseFileSystem : public CTier1AppSystem< IFileSystem >
 	friend class CZipPackFileHandle;
 	friend class CPackFile;
 	friend class CZipPackFile;
+	friend class CGmaPackFile;
+	friend class CGmaPackFileHandle;
+	friend class CGmaReader;
 	friend class CFileHandle;
 	friend class CFileTracker;
 	friend class CFileTracker2;
@@ -792,6 +795,9 @@ protected:
 	bool						PreparePackFile( CPackFile &packfile, int offsetofpackinmetafile, int64 filelen );
 	void						AddVPKFile( const char *pPath, const char *pPathID, SearchPathAdd_t addType );
 	bool						RemoveVPKFile( const char *pPath, const char *pPathID );
+
+	// HL2SB: mount a Garry's Mod .gma addon archive, read-only and in place
+	void						AddGmaFile( const char *pPath, const char *pPathID, SearchPathAdd_t addType );
 
 	void						HandleOpenRegularFile( CFileOpenInfo &openInfo, bool bIsAbsolutePath );
 

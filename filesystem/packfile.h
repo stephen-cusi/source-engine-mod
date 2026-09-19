@@ -30,6 +30,7 @@
 
 class CPackFile;
 class CZipPackFile;
+class CGmaPackFile;
 
 // A pack file handle - essentially represents a file inside the pack file.
 class CPackFileHandle
@@ -120,6 +121,13 @@ public:
 
 	// The means by which you open files:
 	virtual CFileHandle *OpenFile( const char *pFileName, const char *pOptions = "rb" ) = 0;
+
+	// Archives whose content is user-installed (VPKs, GMod .gma addons) may be
+	// enumerated by FindFirst()/FindNext(); untrusted ones (BSP pak files) may not.
+	virtual bool IsTrustedArchive() const { return false; }
+
+	// Type probe without RTTI
+	virtual bool IsGmaArchive() const { return false; }
 
 	// Check for existance in pack
 	virtual bool ContainsFile( const char *pFileName ) = 0;
@@ -272,6 +280,91 @@ protected:
 #if defined ( _X360 )
 	void						*m_pSection;
 #endif
+};
+
+//-----------------------------------------------------------------------------
+
+// A Garry's Mod .gma addon archive, mounted read-only and read in place
+// (GMod style: no extraction).  Format (v3, little-endian):
+//     char[4] magic "GMAD", uint8 version,
+//     v3+: uint64 steamid, uint64 timestamp,
+//     cstring requiredcontent(s), NUL-list ended by an empty one,
+//     cstring name, cstring description, cstring author,
+//     v3+: int32 addonversion,
+//     index: repeated { uint32 filenumber (!=0), cstring name, int64 size, uint32 crc },
+//     then the raw (uncompressed) file bytes in index order.
+class CGmaPackFileHandle : public CPackFileHandle
+{
+public:
+	CGmaPackFileHandle( CGmaPackFile* pOwner, int64 nBase, unsigned int nLength, unsigned int nIndex = -1, unsigned int nFilePointer = 0 );
+	virtual ~CGmaPackFileHandle();
+
+	virtual int Read( void* pBuffer, int nDestSize, int nBytes ) OVERRIDE;
+	virtual int Seek( int nOffset, int nWhence )                 OVERRIDE;
+
+	virtual int Tell() OVERRIDE { return m_nFilePointer; }
+	virtual int Size() OVERRIDE { return m_nLength; }
+
+	virtual void   SetBufferSize( int nBytes ) OVERRIDE;
+	virtual int    GetSectorSize()             OVERRIDE;
+	virtual int64  AbsoluteBaseOffset()        OVERRIDE { return m_nBase; }
+
+protected:
+	int64          m_nBase;        // Absolute offset of the file inside the .gma
+	unsigned int   m_nFilePointer; // Current seek pointer (0 based from the beginning of the file)
+	CGmaPackFile*  m_pOwner;       // Pack file that owns this handle
+	unsigned int   m_nLength;      // Length of this file
+	unsigned int   m_nIndex;       // Index into the pack's directory table
+};
+
+class CGmaPackFile : public CPackFile
+{
+	friend class CGmaPackFileHandle;
+public:
+	CGmaPackFile( CBaseFileSystem* fs );
+	virtual ~CGmaPackFile();
+
+	// A directory entry for one file inside the .gma
+	class CGmaFileEntry
+	{
+	public:
+		CUtlString		m_Name;         // Normalized ('/', no dot-slashes) entry path
+		int64			m_nPosition;    // Absolute offset of the file data inside the .gma
+		unsigned int	m_nOriginalSize;
+		unsigned int	m_HashName;
+	};
+
+	class CGmaFileLessFunc
+	{
+	public:
+		bool Less( CGmaFileEntry const& src1, CGmaFileEntry const& src2, void *pCtx );
+	};
+
+	virtual bool Prepare( int64 fileLen = -1, int64 nFileOfs = 0 ) OVERRIDE;
+	virtual bool ContainsFile( const char *pFileName ) OVERRIDE;
+	virtual CFileHandle *OpenFile( const char *pFileName, const char *pOptions = "rb" ) OVERRIDE;
+
+	virtual void GetFileAndDirLists( const char *pFindWildCard, CUtlStringList &outDirnames, CUtlStringList &outFilenames, bool bSortedOutput ) OVERRIDE;
+
+	virtual int64 GetPackFileBaseOffset() OVERRIDE { return m_nBaseOffset; }
+
+	virtual bool IndexToFilename( int nIndex, char *pBuffer, int nBufferSize ) OVERRIDE;
+
+	virtual bool IsTrustedArchive() const OVERRIDE { return true; }
+
+	virtual bool IsGmaArchive() const OVERRIDE { return true; }
+
+	// Addon header metadata (may be empty for malformed headers)
+	const char *GetAddonName() const { return m_szName; }
+
+protected:
+	virtual int  ReadFromPack( int nIndex, void* buffer, int nDestBytes, int nBytes, int64 nOffset ) OVERRIDE;
+
+	const CGmaFileEntry* FindEntry( const char* pFileName );
+
+	CUtlSortVector< CGmaFileEntry, CGmaFileLessFunc > m_PackFiles;
+
+	char m_szName[ 128 ];
 };
 
 #endif // PACKFILE_H

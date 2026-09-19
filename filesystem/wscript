@@ -22,6 +22,7 @@ def build(bld):
 	source = [
 		'basefilesystem.cpp',
 		'packfile.cpp',
+		'gmafile.cpp',
 		'filetracker.cpp',
 		'filesystem_async.cpp',
 		'filesystem_stdio.cpp',
