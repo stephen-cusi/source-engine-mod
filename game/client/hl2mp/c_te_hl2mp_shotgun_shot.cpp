@@ -20,6 +20,10 @@
 // helper is declared here.
 void HL2SB_WarnOnce( const char *pszKey, const char *pszFormat, ... );
 
+// HL2SB: same include-path reason -- the unbounded, colour-tagged Lua console
+// message used by the PostDataUpdate diagnostic below.
+void luasrc_LuaInfoMsgF( const char *pszFormat, ... );
+
 class C_TEHL2MPFireBullets : public C_BaseTempEntity
 {
 public:
@@ -264,6 +268,13 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 
 void C_TEHL2MPFireBullets::PostDataUpdate( DataUpdateType_t updateType )
 {
+	// HL2SB: InfoMsg (unbounded) on purpose -- the WarnOnce budget was spent
+	// before this ever fired, and the recv side of the chain then had no trace
+	// at all.  One line per received TE names every field that matters.
+	luasrc_LuaInfoMsgF(
+		"[HL2SB] TE_HL2MPFireBullets RECV: shooter=%d weapon=%d tracers=%d impacts=%d tracerIndex=%d\n",
+		m_iPlayer, m_iWeaponIndex, m_bDoTracers ? 1 : 0, m_bDoImpacts ? 1 : 0, m_iTracerName );
+
 	if ( m_bDoTracers || m_bDoImpacts )
 	{
 		CreateEffects();

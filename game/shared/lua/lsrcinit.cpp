@@ -1363,6 +1363,27 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
   return 1;
 }
 
+/*
+** HL2SB: the engine console command executor behind RunConsoleCommand's final
+** fallback (lua/includes/extensions/gmod_globals.lua).  GMod Lua calls
+** RunConsoleCommand for engine commands all the time -- gmod_camera fires
+** "jpeg" to save a screenshot -- and those are neither a Lua concommand nor a
+** ConVar, so the Lua-side fallback could not run them.  Server realm: the
+** line executes on the server console; client realm: on the local console,
+** which is the realm "jpeg" needs.
+*/
+static int HL2SB_Lua_EngineCommand (lua_State *L) {
+  const char *pszCommand = luaL_checkstring( L, 1 );
+  if ( pszCommand == NULL || pszCommand[ 0 ] == '\0' )
+    return 0;
+#ifndef CLIENT_DLL
+  engine->ServerCommand( pszCommand );
+#else
+  engine->ClientCmd( pszCommand );
+#endif
+  return 0;
+}
+
 // self:NetworkVar( type, slot, name [, options] )
 static int HL2SB_Lua_EntityNetworkVar (lua_State *L) {
   const char *pszType = luaL_checkstring( L, 2 );
@@ -1669,6 +1690,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_setglobal( L, "HL2SB_EntityNetworkVar" );
   lua_pushcfunction( L, HL2SB_Lua_EntityNetworkVarNotify );
   lua_setglobal( L, "HL2SB_EntityNetworkVarNotify" );
+  lua_pushcfunction( L, HL2SB_Lua_EngineCommand );
+  lua_setglobal( L, "HL2SB_EngineCommand" );
 
   /* HL2SB: GMod's `achievements` table, as a STUB.
   **

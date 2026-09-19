@@ -49,6 +49,10 @@ public:
 	virtual Activity		GetDrawActivity( void );
 	virtual bool			SendWeaponAnim( int iActivity );
 
+	// HL2SB: GMod's SWEP:Equip( newOwner ) -- override of the EXISTING
+	// CBaseCombatWeapon::Equip virtual (same vtable slot, no layout change).
+	virtual void			Equip( CBaseCombatCharacter *pOwner );
+
 	// Default calls through to m_hOwner, but plasma weapons can override and shoot projectiles here.
 	// HL2SB: GMod's client-side weapon view hooks (SWEP:TranslateFOV / SWEP:CalcView).
 	// Deliberately NON-virtual: waf does not track header changes (AGENTS.md 5.0), so
@@ -57,6 +61,18 @@ public:
 	// through IsScripted() + static_cast instead.
 	float	TranslateFOV( float flFOV );
 	void	CalcView( CBasePlayer *pPlayer, Vector &vecOrigin, QAngle &vecAngles, float &flFOV );
+
+	// HL2SB: GMod's weapon input/HUD hooks, same NON-virtual contract as the
+	// pair above.  Call sites: CInput::MouseMove (in_mouse.cpp) for
+	// FreezeMovement / AdjustMouseSensitivity, CHudElement::ShouldDraw
+	// (hud.cpp) for HUDShouldDraw -- all through IsScripted() + static_cast.
+	bool	DispatchFreezeMovement( void );
+	// GMod's signature: WEAPON:AdjustMouseSensitivity( defaultSensitivity, localFOV, defaultFOV )
+	// (wiki: defaultSensitivity "in general this will be 0"; localFOV is the
+	// player's current FOV; defaultFOV the player's default FOV).  Addons do
+	// arithmetic on all three, so they must always arrive as numbers.
+	float	DispatchAdjustMouseSensitivity( float flDefaultSensitivity, float flLocalFOV, float flDefaultFOV );
+	bool	DispatchHUDShouldDraw( const char *pszElementName );
 
 	virtual void	ItemPostFrame( void );
 	virtual void	ItemBusyFrame( void );

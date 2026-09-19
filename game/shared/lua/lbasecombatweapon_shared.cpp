@@ -177,7 +177,16 @@ static int CBaseCombatWeapon_DefaultDeploy (lua_State *L) {
 }
 
 static int CBaseCombatWeapon_DefaultReload (lua_State *L) {
-  lua_pushboolean(L, luaL_checkweapon(L, 1)->DefaultReload(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4)));
+  CBaseCombatWeapon *pWeapon = luaL_checkweapon(L, 1);
+  // HL2SB GMod compat: GMod's SWEPs call DefaultReload( act ) with a single
+  // activity and the engine fills in both clips; the Source signature is
+  // DefaultReload( iClip1, iClip2, act ).  Accept both.
+  if ( lua_gettop( L ) == 2 )
+  {
+    lua_pushboolean( L, pWeapon->DefaultReload( pWeapon->GetMaxClip1(), pWeapon->GetMaxClip2(), luaL_checkint( L, 2 ) ) );
+    return 1;
+  }
+  lua_pushboolean(L, pWeapon->DefaultReload(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4)));
   return 1;
 }
 

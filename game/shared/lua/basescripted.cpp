@@ -531,6 +531,18 @@ int CBaseScripted::DrawModel( int flags )
 
 	if ( pszFunc != NULL )
 	{
+		// HL2SB diagnostic: InfoMsg, not WarnOnce -- the one-shot budget was
+		// already spent whenever this first fired, so "no line" was unreadable.
+		// Bounded by count instead: 40 lines across all classes is plenty to
+		// tell a "has no model" bomb from an "ENT:Draw never ran" one.
+		static int s_nDrawReports = 0;
+		if ( s_nDrawReports < 40 )
+		{
+			++s_nDrawReports;
+			luasrc_LuaInfoMsgF( "[HL2SB] script DrawModel '%s': hook=%s group=%d modelIndex=%d\n",
+				GetClassname(), pszFunc, (int)GetRenderGroup(), GetModelIndex() );
+		}
+
 		BEGIN_LUA_CALL_ENTITY_METHOD( pszFunc );
 		END_LUA_CALL_ENTITY_METHOD( 0, 1 );
 

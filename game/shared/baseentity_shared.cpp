@@ -20,6 +20,13 @@
 #include "coordsize.h"
 #include "vphysics/performance.h"
 
+// HL2SB: diagnostic helper (defined in lutil_shared.cpp)
+void HL2SB_WarnOnce( const char *pszKey, const char *pszFormat, ... );
+
+// HL2SB: luamanager.h is not on this file's include path; the per-shot tracer
+// diagnostic below needs the unbounded console message, not the one-shot one.
+void luasrc_LuaInfoMsgF( const char *pszFormat, ... );
+
 #ifdef CLIENT_DLL
 	#include "c_te_effect_dispatch.h"
 #else
@@ -1634,6 +1641,16 @@ typedef CTraceFilterSimpleList CBulletsTraceFilter;
 //-----------------------------------------------------------------------------
 static char s_szHL2SB_BulletTracerName[ 64 ] = { 0 };
 
+// HL2SB: the tracer name for the FireBullets() call currently on the stack.
+// MakeTracer() has no way to receive bullet.TracerName (it is a virtual with a
+// fixed signature), and GetTracerType() only works when THIS realm published
+// the name onto the firing weapon -- which the client often fails to do because
+// GetActiveWeapon() lags prediction (measured: client published rb655_nyan_tracer
+// onto seal6-c4 while weapon_nyangun was firing).  The local shooter's tracer is
+// drawn from MakeTracer() during prediction (bDoServerEffects is true on the
+// client), so this shot-scoped name is what makes rainbow tracers appear.
+static char s_szHL2SB_ShotTracerName[ 64 ] = { 0 };
+
 void HL2SB_SetNextBulletTracerName( const char *pszName )
 {
 	// Too long to carry: keep nothing rather than a truncated name, which would
@@ -1654,6 +1671,11 @@ const char *HL2SB_ConsumeBulletTracerName( void )
 	return s_szConsumed;
 }
 
+bool HL2SB_HasShotTracerName( void )
+{
+	return s_szHL2SB_ShotTracerName[ 0 ] != '\0';
+}
+
 void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 {
 	static int	tracerCount;
@@ -1667,10 +1689,21 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 	// HL2SB: consume the tracer effect name a scripted weapon published for this
 	// shot (see HL2SB_SetNextBulletTracerName).  Consumed unconditionally, even
 	// on paths that never use it, so a stale name can never attach itself to a
-	// later shot.
+	// later shot.  Also parked in the shot-scoped buffer MakeTracer() reads.
 	const char *pszScriptedTracerName = HL2SB_ConsumeBulletTracerName();
+	Q_strncpy( s_szHL2SB_ShotTracerName, pszScriptedTracerName, sizeof( s_szHL2SB_ShotTracerName ) );
 
-#if defined( HL2MP ) && defined( GAME_DLL )
+#if defined( HL2MP ) && defined( GAME_DLL ) && !defined( CLIENT_DLL )
+	// HL2SB: server-side HL2MP players ship the shot as a TE instead of doing
+	// server effects (the receiving client draws it).  The CLIENT must KEEP
+	// bDoServerEffects = true: during prediction it draws its own impacts and
+	// tracers locally (DoImpactEffect + MakeTracer -> UTIL_Tracer ->
+	// DispatchEffect), which is exactly GMod's contract -- you see your own
+	// shots from prediction, everyone else's from the TE.  This build's client
+	// compiles with GAME_DLL defined, so without the !CLIENT_DLL guard the
+	// local shooter drew NOTHING: the measured session showed serverFx=0 on the
+	// client, every tracer branch swallowed, and only the first shot's bounce
+	// arriving (before the prediction suppress kicked in).
 	bDoServerEffects = false;
 #endif
 
@@ -2048,10 +2081,37 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 #endif
 		}
 
+		// HL2SB: per-shot, unbounded -- this one line decides between
+		// "the tracer branch never ran" (freq=0 / glass) and "it ran and
+		// MakeTracer is at fault".  Sits BEFORE the branch so a false
+		// condition still explains itself.  The realm tag is compile-time:
+		// both DLLs write the same log, and every round so far has had to
+		// guess which realm a line came from.
+#ifdef CLIENT_DLL
+		luasrc_LuaInfoMsgF(
+			"[HL2SB] cl FireBullets shot: freq=%d count=%d serverFx=%d impacted=%d water=%d glass=%d shotTracer='%s'\n",
+			info.m_iTracerFreq, tracerCount, bDoServerEffects ? 1 : 0,
+			( tr.m_pEnt != NULL ) ? 1 : 0, bHitWater ? 1 : 0, bHitGlass ? 1 : 0,
+			s_szHL2SB_ShotTracerName );
+#else
+		luasrc_LuaInfoMsgF(
+			"[HL2SB] sv FireBullets shot: freq=%d count=%d serverFx=%d impacted=%d water=%d glass=%d shotTracer='%s'\n",
+			info.m_iTracerFreq, tracerCount, bDoServerEffects ? 1 : 0,
+			( tr.m_pEnt != NULL ) ? 1 : 0, bHitWater ? 1 : 0, bHitGlass ? 1 : 0,
+			s_szHL2SB_ShotTracerName );
+#endif
+
 		if ( ( info.m_iTracerFreq != 0 ) && ( tracerCount++ % info.m_iTracerFreq ) == 0 && ( bHitGlass == false ) )
 		{
 			if ( bDoServerEffects == true )
 			{
+#ifdef CLIENT_DLL
+				// HL2SB: splits "the branch did not run" (no line) from
+				// "MakeTracer ran and its own line vanished" -- the 2026-09-19
+				// rounds had serverFx=1 on every client shot with zero
+				// MakeTracer lines, which the source above says is impossible.
+				luasrc_LuaInfoMsgF( "[HL2SB] cl tracer branch: firing MakeTracer\n" );
+#endif
 				Vector vecTracerSrc = vec3_origin;
 				ComputeTracerStartPosition( info.m_vecSrc, &vecTracerSrc );
 
@@ -2109,6 +2169,10 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 
 		iSeed++;
 	}
+
+	// HL2SB: the shot is done; do not let this name bleed into a later
+	// MakeTracer() from a different FireBullets() that never published one.
+	s_szHL2SB_ShotTracerName[ 0 ] = '\0';
 
 #if defined( HL2MP ) && defined( GAME_DLL )
 	if ( bDoServerEffects == false )
@@ -2337,7 +2401,35 @@ void CBaseEntity::ComputeTracerStartPosition( const Vector &vecShotSrc, Vector *
 //-----------------------------------------------------------------------------
 void CBaseEntity::MakeTracer( const Vector &vecTracerSrc, const trace_t &tr, int iTracerType )
 {
+	// HL2SB: prefer the name THIS FireBullets() call carried (bullet.TracerName).
+	// GetTracerType() only works if this realm published onto the active weapon;
+	// the client's GetActiveWeapon() can lag prediction and publish onto the
+	// wrong weapon entirely.  The TE path already ships the shot name to other
+	// clients; this is the local shooter's half of the same contract.
 	const char *pszTracerName = GetTracerType();
+
+	if ( s_szHL2SB_ShotTracerName[ 0 ] != '\0' )
+	{
+		pszTracerName = s_szHL2SB_ShotTracerName;
+	}
+
+	// HL2SB diagnostic: per-shot, unbounded InfoMsg (NOT WarnOnce -- in the
+	// 2026-09-19 Nyan Gun session this exact line never reached ds_debug.log
+	// even though the branch provably ran: impacts on the same bDoServerEffects
+	// gate drew, while every WarnOnce on the tracer path stayed invisible).
+	// Separates "MakeTracer never ran" from "ran with an empty name" from
+	// "ran and handed the name to UTIL_Tracer".
+#ifdef CLIENT_DLL
+	luasrc_LuaInfoMsgF(
+		"[HL2SB] cl MakeTracer type=%d name='%s' shot='%s' get='%s'\n",
+#else
+	luasrc_LuaInfoMsgF(
+		"[HL2SB] sv MakeTracer type=%d name='%s' shot='%s' get='%s'\n",
+#endif
+		iTracerType,
+		( pszTracerName != NULL ) ? pszTracerName : "(null)",
+		s_szHL2SB_ShotTracerName,
+		( GetTracerType() != NULL ) ? GetTracerType() : "(null)" );
 
 	// HL2SB GMod compat: an explicit tracer name is a request to draw THAT
 	// tracer, and GMod's engine does not second-guess it with the ammo's tracer

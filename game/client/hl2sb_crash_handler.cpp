@@ -423,6 +423,12 @@ static void __cdecl HL2SB_InvalidParameterHandler(
 //-----------------------------------------------------------------------------
 static void __cdecl HL2SB_PurecallHandler( void )
 {
+	// Same re-entry reasoning as g_bHL2SBMiniDumpChainActive (2026-09-19):
+	// a purecall raised while writing this dump must not recurse here.
+	static volatile LONG s_bPurecallEntered = 0;
+	if ( InterlockedCompareExchange( &s_bPurecallEntered, 1, 0 ) != 0 )
+		_exit( 3 );
+
 	HL2SB_WriteAbortDump( "pure virtual function call", NULL );
 	abort();
 }
@@ -442,9 +448,19 @@ static void __cdecl HL2SB_PurecallHandler( void )
 //-----------------------------------------------------------------------------
 static FnMiniDump g_pHL2SBInnerMiniDumpFunction = NULL;
 
+// 2026-09-19 gmod_camera crash: a pure virtual call made the engine's VPureCall
+// write a minidump; the dump writer's own printf/malloc path raised ANOTHER
+// purecall, re-entering this chain - 17 x 30MB dumps in 2 seconds (the "freeze"),
+// every engine.log block capturing only the recursion, the original caller lost.
+// Re-entries skip everything so the first entry's capture stays clean and dies fast.
+static volatile LONG g_bHL2SBMiniDumpChainActive = 0;
+
 static void __cdecl HL2SB_MiniDumpChain( unsigned int uStructuredExceptionCode,
 	_EXCEPTION_POINTERS *pExceptionInfo, const char *pszFilenameSuffix )
 {
+	if ( InterlockedCompareExchange( &g_bHL2SBMiniDumpChainActive, 1, 0 ) != 0 )
+		return;
+
 	const void *pAddress = NULL;
 	if ( pExceptionInfo && pExceptionInfo->ExceptionRecord )
 		pAddress = pExceptionInfo->ExceptionRecord->ExceptionAddress;
@@ -454,6 +470,8 @@ static void __cdecl HL2SB_MiniDumpChain( unsigned int uStructuredExceptionCode,
 
 	if ( g_pHL2SBInnerMiniDumpFunction )
 		g_pHL2SBInnerMiniDumpFunction( uStructuredExceptionCode, pExceptionInfo, pszFilenameSuffix );
+
+	g_bHL2SBMiniDumpChainActive = 0;
 }
 
 //-----------------------------------------------------------------------------

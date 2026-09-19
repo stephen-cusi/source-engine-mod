@@ -16,6 +16,10 @@
 #include "iinput.h"
 #include "clientmode.h"
 #include "in_buttons.h"
+#include "c_basecombatweapon.h"
+// HL2SB GMod SWEP compat: CHL2MPScriptedWeapon::DispatchHUDShouldDraw for the
+// local player's deployed weapon (see CHudElement::ShouldDraw below).
+#include "weapon_hl2mpbase_scriptedweapon.h"
 #include <vgui_controls/Controls.h>
 #include <vgui/ISurface.h>
 #include <KeyValues.h>
@@ -344,6 +348,26 @@ bool CHudElement::ShouldDraw( void )
 		{
 			if ( gHUD.IsRenderGroupLockedFor( this, m_HudRenderGroups.Element(iGroupIndex ) ) )
 				return false;
+		}
+	}
+
+	// HL2SB GMod SWEP compat: the deployed weapon can hide HUD elements by
+	// name -- SWEP:HUDShouldDraw( name ) returning false vetoes the element
+	// (gmod_camera hides everything but the weapon selection and the chat
+	// while it is out).  Only the scripted weapon can answer; consulted
+	// through IsScripted() + static_cast, the same as the view hooks.
+	if ( bShouldDraw )
+	{
+		C_BasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
+		if ( pLocalPlayer )
+		{
+			C_BaseCombatWeapon *pWeapon = pLocalPlayer->GetActiveWeapon();
+			if ( pWeapon && pWeapon->IsScripted() )
+			{
+				CHL2MPScriptedWeapon *pScripted = static_cast<CHL2MPScriptedWeapon *>( pWeapon );
+				if ( !pScripted->DispatchHUDShouldDraw( GetName() ) )
+					return false;
+			}
 		}
 	}
 

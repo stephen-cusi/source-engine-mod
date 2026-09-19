@@ -91,7 +91,12 @@ void HL2SB_WarnOnce (const char *pszKey, const char *pszFormat, ...) {
   if ( s_pHL2SBWarned == NULL )
     s_pHL2SBWarned = new CUtlDict<int, int>();
 
-  if ( s_pHL2SBWarned->Count() >= 32 )
+  // HL2SB: this was 32 -- a single session with a few addons burns through
+  // that in the first minute, and EVERY later diagnostic (tracer chain,
+  // effect templates, ...) is then silently swallowed.  That cost a whole
+  // debugging round: "no line in the log" was read as "the code never ran"
+  // when it only meant "the one-shot budget was spent".
+  if ( s_pHL2SBWarned->Count() >= 256 )
     return;
 
   if ( s_pHL2SBWarned->Find( pszKey ) != s_pHL2SBWarned->InvalidIndex() )

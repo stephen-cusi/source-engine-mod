@@ -778,6 +778,21 @@ void CBaseCombatWeapon::OnPickedUp( CBaseCombatCharacter *pNewOwner )
 //-----------------------------------------------------------------------------
 void CBaseCombatWeapon::MakeTracer( const Vector &vecTracerSrc, const trace_t &tr, int iTracerType )
 {
+	// HL2SB GMod compat: the shooter's MakeTracer lands here through
+	// CBasePlayer::MakeTracer -> GetActiveWeapon()->MakeTracer().  The stock
+	// switch below has no TRACER_NONE case, so a scripted weapon firing an
+	// addon-declared ammo (weapon_nyangun: game.AddAmmoType("rb655_nyan") is
+	// TRACER_NONE) silently drew nothing even though bullet.TracerName carried
+	// the effect.  During the FireBullets() that published a shot tracer name,
+	// route to CBaseEntity::MakeTracer, which prefers that name and upgrades
+	// TRACER_NONE to a drawn tracer (GMod's contract).  Stock weapons, whose
+	// shots never publish a name, keep the path below unchanged.
+	if ( HL2SB_HasShotTracerName() )
+	{
+		BaseClass::MakeTracer( vecTracerSrc, tr, iTracerType );
+		return;
+	}
+
 	CBaseEntity *pOwner = GetOwner();
 
 	if ( pOwner == NULL )

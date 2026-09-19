@@ -994,6 +994,20 @@ LUA_BINDING_BEGIN( Renders, DrawQuadEasy, "library", "Draws a quad with the curr
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 5, lua_Color( 255, 255, 255, 255 ), "color" );
     float rotation = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 6, 0.0f, "rotation" );
 
+    // HL2SB diagnostic: the nyan bomb only draws via DrawQuadEasy -- if this
+    // never runs, ENT:Draw is silent and the entity looks like it has "no model".
+    {
+        char szKey[ 192 ];
+        Q_snprintf( szKey, sizeof( szKey ), "drawquad:%s",
+            ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none>" );
+        HL2SB_WarnOnce( szKey,
+            "DrawQuadEasy mat='%s' pos=(%.0f %.0f %.0f) n=(%.1f %.1f %.1f) %.0fx%.0f a=%d\n",
+            ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none>",
+            position.x, position.y, position.z,
+            normal.x, normal.y, normal.z,
+            width, height, color.a() );
+    }
+
     VectorNormalize( normal );
 
     // A basis perpendicular to the quad's normal.
@@ -1106,15 +1120,13 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     float textureEnd = LUA_BINDING_ARGUMENT( luaL_checknumber, 5, "textureEnd" );
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 6, lua_Color( 255, 255, 255, 255 ), "color" );
 
-    // HL2SB diagnostic: log the first N beam submissions with their full
-    // geometry.  A submitted beam that is never seen is either degenerate (zero
-    // width / length / alpha) or somewhere unexpected -- and "once per material"
-    // hid the second effect's call behind the first one's, which is exactly how
-    // the Nyan Gun's tracer hid behind its own impact effect.
+    // HL2SB diagnostic: a handful of full-geometry lines so a missing beam can
+    // still be distinguished from "never submitted".  Was capped at 120, which
+    // flooded ds_debug.log on one nyan impact (and looked like errors).
     {
         static int s_nDrawBeamLogged = 0;
 
-        if ( s_nDrawBeamLogged < 120 )
+        if ( s_nDrawBeamLogged < 8 )
         {
             ++s_nDrawBeamLogged;
 

@@ -9,6 +9,12 @@
 
 #include "cbase.h"
 #include "convar.h"
+#include "in_buttons.h"
+#ifdef CLIENT_DLL
+#include "iinput.h"	// HL2SB: input->GetButtonBits (live-command fallback)
+// HL2SB: raw per-frame mouse deltas from CInput::MouseMove (in_mouse.cpp)
+void HL2SB_GetLastMouseDeltas( int &dx, int &dy );
+#endif
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lbaseplayer_shared.h"
@@ -145,12 +151,33 @@ static int CBasePlayer_CmdSetViewAngles (lua_State *L) {
 }
 
 static int CBasePlayer_GetCurrentCommand (lua_State *L) {
+#ifdef CLIENT_DLL
+  // HL2SB GMod compat: on the client realm answer from the LIVE input state.
+  // The stamped predicted command only carries its mouse deltas inside the
+  // StartCommand/FinishCommand window, and reads all-zero outside it (measured
+  // 2026-09-19: ten zero reads while Mouse2 was held and the mouse was moving)
+  // -- which made every SWEP:Tick that integrates cmd:GetMouseY() dead
+  // (gmod_camera's zoom).  GMod's predicted command during Tick carries the
+  // same data as the live input state, so this is the faithful answer.
+  static CUserCmd s_HL2SBLiveCmd;
+  s_HL2SBLiveCmd.Reset();
+  if ( input != NULL )
+  {
+    s_HL2SBLiveCmd.buttons = input->GetButtonBits( 0 );
+    int dx = 0, dy = 0;
+    HL2SB_GetLastMouseDeltas( dx, dy );
+    s_HL2SBLiveCmd.mousedx = dx;
+    s_HL2SBLiveCmd.mousedy = dy;
+  }
+  const CUserCmd *pCmd = &s_HL2SBLiveCmd;
+#else
   const CUserCmd *pCmd = luaL_checkplayer(L, 1)->GetCurrentUserCommand();
 
   if (pCmd == NULL) {
     lua_pushnil(L);
     return 1;
   }
+#endif
 
   lua_newtable(L);
 
@@ -176,6 +203,19 @@ static int CBasePlayer_GetCurrentCommand (lua_State *L) {
   lua_pushcfunction(L, CBasePlayer_CmdGetForwardMove); lua_setfield(L, -2, "GetForwardMove");
   lua_pushcfunction(L, CBasePlayer_CmdGetSideMove);    lua_setfield(L, -2, "GetSideMove");
   lua_pushcfunction(L, CBasePlayer_CmdGetUpMove);      lua_setfield(L, -2, "GetUpMove");
+
+#ifdef CLIENT_DLL
+  // HL2SB TEMPORARY diagnostic: sample the frames Tick actually processes
+  // while Mouse2 is held -- does the predicted command carry the button AND
+  // the raw mouse deltas the camera's zoom integrates?
+  static int s_nCmdDiag = 0;
+  if ( s_nCmdDiag < 10 && ( pCmd->buttons & IN_ATTACK2 ) )
+  {
+    ++s_nCmdDiag;
+    luasrc_LuaInfoMsgF( "[HL2SB] GetCurrentCommand #%d: buttons=%d mousedx=%d mousedy=%d\n",
+      s_nCmdDiag, pCmd->buttons, pCmd->mousedx, pCmd->mousedy );
+  }
+#endif
 
   return 1;
 }
@@ -1146,6 +1186,18 @@ static int CBasePlayer_ConCommand (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Player:SelectWeapon( class ).  GMod's gmod_camera
+// registers a "gmod_camera" console command whose whole body is
+// ply:SelectWeapon( "gmod_camera" ).  Both realms have CBasePlayer::SelectItem.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_SelectWeapon (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const char *pszClass = luaL_checkstring(L, 2);
+  pPlayer->SelectItem( pszClass );
+  return 0;
+}
+
 static int CBasePlayer___tostring (lua_State *L) {
   CBasePlayer *pPlayer = lua_toplayer(L, 1);
   if (pPlayer == NULL)
@@ -1493,6 +1545,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"ClearZoomOwner", CBasePlayer_ClearZoomOwner},
   {"CurrentCommandNumber", CBasePlayer_CurrentCommandNumber},
   {"GetCurrentCommand", CBasePlayer_GetCurrentCommand},
+  {"SelectWeapon", CBasePlayer_SelectWeapon},
   {"DoMuzzleFlash", CBasePlayer_DoMuzzleFlash},
   {"MuzzleFlash", CBasePlayer_MuzzleFlash},
   {"ExitLadder", CBasePlayer_ExitLadder},

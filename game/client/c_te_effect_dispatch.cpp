@@ -21,6 +21,11 @@
 // Implementation: game/client/lua/lua_effects.cpp
 bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data );
 
+// HL2SB: unbounded, dual-channel (console + hl2sb_lua.log) diagnostic -- the
+// 2026-09-19 Nyan Gun round showed WarnOnce lines on this exact path can be
+// absent from ds_debug.log while InfoMsg lines on the same path always arrive.
+void luasrc_LuaInfoMsgF( const char *pszFormat, ... );
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -209,6 +214,32 @@ void TE_DispatchEffect( IRecipientFilter& filter, float delay, const Vector &pos
 // Client version of dispatch effect, for predicted weapons
 void DispatchEffect( const char *pName, const CEffectData &data )
 {
+	// HL2SB: same contract as util.Effect on the client -- a GMod lua/effects
+	// name must run HERE, not through te->DispatchEffect.
+	//
+	// te->DispatchEffect() goes through SuppressTE(); when CanPredict() is
+	// false (or the PAS filter is empty) the whole temp entity is dropped
+	// before TE_DispatchEffect ever sees it.  That is why the Nyan Gun's
+	// bounce (util.Effect -> HL2SB_CreateLuaEffect) drew while its tracer
+	// (MakeTracer -> UTIL_Tracer -> this function) created nothing: no
+	// "Lua effect ... created" line, no TE_HL2MPFireBullets line.
+	//
+	// Server-sent effects still arrive via TE_DispatchEffect's PostDataUpdate
+	// -> DispatchEffectToCallback, which does not take this path, so a remote
+	// client is not double-spawned by creating here.
+
+	// HL2SB: per-call, unbounded -- brackets the tracer chain.  If this line
+	// prints and neither "Lua effect ... created" nor "no Lua effect template"
+	// follows, the name fell into one of the silent exits inside
+	// HL2SB_CreateLuaEffect (ref failure / clienteffects list full).
+	luasrc_LuaInfoMsgF( "[HL2SB] DispatchEffect '%s' flags=0x%X ent=%d\n",
+		pName, (unsigned int)data.m_fFlags, data.entindex() );
+
+	if ( HL2SB_CreateLuaEffect( pName, data ) )
+	{
+		return;
+	}
+
 	CPASFilter filter( data.m_vOrigin );
 	te->DispatchEffect( filter, 0.0, data.m_vOrigin, pName, data );
 }

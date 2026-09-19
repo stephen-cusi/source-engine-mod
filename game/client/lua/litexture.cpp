@@ -364,6 +364,17 @@ static CUtlVector< HL2SB_ImageColorCache_t * > s_ImageColorCache;
 
 static const char *s_pImageTextureExtensions[] = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
 
+// HL2SB: case-insensitive "does pName end with pExt".
+static bool HL2SB_NameEndsWith( const char *pName, const char *pExt )
+{
+    if ( !pName || !pExt )
+        return false;
+
+    const int nNameLen = Q_strlen( pName );
+    const int nExtLen = Q_strlen( pExt );
+    return ( nNameLen > nExtLen ) && ( !Q_stricmp( pName + nNameLen - nExtLen, pExt ) );
+}
+
 static HL2SB_ImageColorCache_t *HL2SB_FindCachedImage( const char *pTextureName )
 {
     for ( int i = 0; i < s_ImageColorCache.Count(); ++i )
@@ -395,7 +406,14 @@ static HL2SB_ImageColorCache_t *HL2SB_GetImageColorCache( const char *pTextureNa
     for ( int i = 0; i < ARRAYSIZE( s_pImageTextureExtensions ); ++i )
     {
         char szPath[MAX_PATH];
-        Q_snprintf( szPath, sizeof( szPath ), "materials/%s%s", pTextureName, s_pImageTextureExtensions[i] );
+        // HL2SB: a name that already carries this image extension probes the
+        // literal file -- image materials name their procedural texture after
+        // the file (extension included), so IMaterial:GetColor hands us
+        // "x/y.png" here and must find materials/x/y.png.
+        if ( HL2SB_NameEndsWith( pTextureName, s_pImageTextureExtensions[i] ) )
+            Q_snprintf( szPath, sizeof( szPath ), "materials/%s", pTextureName );
+        else
+            Q_snprintf( szPath, sizeof( szPath ), "materials/%s%s", pTextureName, s_pImageTextureExtensions[i] );
 
         if ( !g_pFullFileSystem->FileExists( szPath, "GAME" ) )
             continue;
@@ -423,6 +441,79 @@ static HL2SB_ImageColorCache_t *HL2SB_GetImageColorCache( const char *pTextureNa
     }
 
     return NULL;
+}
+
+/*
+** HL2SB GMod compat: real IMaterials for image files (Material( "x.png" )).
+**
+** GMod decodes .png/.jpg/... at runtime and hands out a working material; this
+** engine's FindMaterial only loads .vmt, so image paths came back as the error
+** material and everything drawn with them was invisible (the Nyan Gun's bomb
+** draws itself purely with Material("nyan/cat.png") quads).
+**
+** No image decoding happens here: CTextureManager::LoadTexture already carries
+** the GMod-style image fallback (materialsystem/texturemanager.cpp, logs
+** "[HL2SB] image texture ..."), so a material whose $basetexture points at the
+** file path picks the decoded texture up on first bind.  This function only
+** builds that wrapper material and caches it per path.  A path with no image
+** file is remembered too, so Material() falls through to FindMaterial (error
+** material, same as GMod) without re-probing.
+*/
+struct HL2SB_ImageMaterial_t
+{
+    char m_szName[MAX_PATH];
+    IMaterial *m_pMaterial;
+};
+
+static CUtlVector< HL2SB_ImageMaterial_t > s_ImageMaterials;
+
+// Returns NULL when pMaterialName is not a loadable image file.  pMaterialName
+// must carry the extension ("nyan/cat.png"), which is GMod's documented form.
+static IMaterial *HL2SB_FindOrCreateImageMaterial( const char *pMaterialName )
+{
+    for ( int i = 0; i < s_ImageMaterials.Count(); ++i )
+    {
+        if ( !Q_stricmp( s_ImageMaterials[i].m_szName, pMaterialName ) )
+            return s_ImageMaterials[i].m_pMaterial;
+    }
+
+    IMaterial *pMaterial = NULL;
+
+    char szImageFile[MAX_PATH];
+    Q_snprintf( szImageFile, sizeof( szImageFile ), "materials/%s", pMaterialName );
+
+    if ( g_pFullFileSystem->FileExists( szImageFile, "GAME" ) )
+    {
+        KeyValues *pKV = new KeyValues( "UnlitGeneric" );
+        pKV->SetString( "$basetexture", pMaterialName );
+        pKV->SetInt( "$translucent", 1 );
+        pKV->SetInt( "$vertexcolor", 1 );
+        pKV->SetInt( "$vertexalpha", 1 );
+        // HL2SB: GMod sprite quads (render.DrawQuadEasy) face wherever the
+        // script points them; draw both faces so a back-facing quad is a
+        // mirrored sprite, not a vanish.
+        pKV->SetInt( "$nocull", 1 );
+        pMaterial = materials->CreateMaterial( pMaterialName, pKV );
+        // CreateMaterial takes ownership of pKV; do not deleteThis().
+
+        if ( pMaterial && pMaterial->IsErrorMaterial() )
+            pMaterial = NULL;
+
+        if ( pMaterial )
+        {
+            // The cache holds this material for the process lifetime; without
+            // the reference the material system may cull it (same as
+            // HL2SB_CreateMaterial below).
+            pMaterial->IncrementReferenceCount();
+            luasrc_LuaInfoMsgF( "[HL2SB] Material('%s') -> image material\n", pMaterialName );
+        }
+    }
+
+    HL2SB_ImageMaterial_t &entry = s_ImageMaterials[s_ImageMaterials.AddToTail()];
+    Q_strncpy( entry.m_szName, pMaterialName, sizeof( entry.m_szName ) );
+    entry.m_pMaterial = pMaterial;
+
+    return pMaterial;
 }
 
 static int HL2SB_IMaterial_GetColor( lua_State *L )
@@ -476,6 +567,34 @@ static int HL2SB_IMaterial_GetColor( lua_State *L )
 static int HL2SB_Material( lua_State *L )
 {
     const char *pMaterialName = luaL_checkstring( L, 1 );
+
+    // HL2SB GMod compat: image paths.  GMod hands out a decoded runtime
+    // material for "x.png"/"x.jpg"/..., which the Nyan Gun's bomb sprite and
+    // plenty of other addons rely on.  Only names carrying an image extension
+    // take this path; everything else keeps the VMT lookup below.  (The gate
+    // also keeps VMT names out of the image-material cache.)
+    bool bImageName = false;
+    for ( int i = 0; i < ARRAYSIZE( s_pImageTextureExtensions ); ++i )
+    {
+        if ( HL2SB_NameEndsWith( pMaterialName, s_pImageTextureExtensions[i] ) )
+        {
+            bImageName = true;
+            break;
+        }
+    }
+
+    if ( bImageName )
+    {
+        IMaterial *pImageMaterial = HL2SB_FindOrCreateImageMaterial( pMaterialName );
+        if ( pImageMaterial )
+        {
+            lua_pushmaterial( L, pImageMaterial );
+            return 1;
+        }
+        // Not a loadable image: fall through, FindMaterial returns the error
+        // material -- which is what GMod hands out for a missing image too.
+    }
+
     IMaterial *pMaterial = materials->FindMaterial( pMaterialName, TEXTURE_GROUP_VGUI, false );
 
     if ( !pMaterial )

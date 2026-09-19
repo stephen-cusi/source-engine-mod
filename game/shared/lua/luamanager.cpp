@@ -160,60 +160,6 @@ static bool LuaFileExists (const char *pszPath) {
 }
 
 //-----------------------------------------------------------------------------
-// HL2SB: MOD-relative paths only.  The engine filesystem resolves a path
-// against the search paths of the given pathID ("MOD"), so an ABSOLUTE path
-// finds nothing -- FileExists answers false and Open fails with
-//     cannot open d:/.../lua/includes/extensions/vgui.lua: No such file or directory
-// for a file that is plainly there.
-//
-// Two callers produce absolute paths: include() derives its candidate from the
-// calling chunk's name, and a chunk loaded through RelativePathToFullPath
-// (lsrcinit's bootstrap pass, luasrc_dofolder_sorted) has an absolute name.
-//
-// ⚠️ The game directory prefix is stripped BY HAND.  IFileSystem::
-// FullPathToRelativePath() strips the *base* directory instead
-// ("d:/srceng/hl2sb/lua/x.lua" -> "hl2sb/lua/x.lua"), and a path that still
-// carries the game directory name is not MOD-relative either -- every file it
-// named failed with "cannot open hl2sb/lua/...: No such file or directory".
-//-----------------------------------------------------------------------------
-static void LuaMakeRelative (char *pszPath, int nSize) {
-  if ( filesystem == NULL || pszPath == NULL || !V_IsAbsolutePath( pszPath ) )
-    return;
-
-  char szGameDir[MAX_PATH] = { 0 };
-#ifdef CLIENT_DLL
-  const char *pszGameDir = engine->GetGameDirectory();
-  Q_strncpy( szGameDir, ( pszGameDir != NULL ) ? pszGameDir : "", sizeof( szGameDir ) );
-#else
-  engine->GetGameDir( szGameDir, sizeof( szGameDir ) );
-#endif
-
-  if ( szGameDir[0] )
-  {
-    // normalise separators on both sides so the compare is meaningful
-    for ( char *p = szGameDir; *p; ++p )
-      if ( *p == '\\' ) *p = '/';
-
-    int nLen = Q_strlen( szGameDir );
-    if ( !Q_strnicmp( pszPath, szGameDir, nLen ) )
-    {
-      const char *pRest = pszPath + nLen;
-      while ( *pRest == '/' || *pRest == '\\' )
-        ++pRest;
-      Q_strncpy( pszPath, pRest, nSize );
-      for ( char *p = pszPath; *p; ++p )
-        if ( *p == '\\' ) *p = '/';
-      return;
-    }
-  }
-
-  // Not under the game directory: whatever the filesystem can make of it.
-  char szRelative[MAX_PATH];
-  if ( filesystem->FullPathToRelativePath( pszPath, szRelative, sizeof( szRelative ) ) && szRelative[0] )
-    Q_strncpy( pszPath, szRelative, nSize );
-}
-
-//-----------------------------------------------------------------------------
 // HL2SB: collapse "a/./b" and "a/../b".  Relative resolution is what makes
 // include( "../autorun/x.lua" ) work at all, but the literal path it builds
 // ("lua/includes/../autorun/x.lua") is not something the filesystem opens, so
@@ -234,6 +180,107 @@ static void LuaNormalizeDots (const char *pszIn, char *pszOut, int nOutSize) {
     pszOut[nOut++] = *p++;
   }
   pszOut[nOut] = '\0';
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: MOD-relative paths only.  The engine filesystem resolves a path
+// against the search paths of the given pathID ("MOD"), so an ABSOLUTE path
+// finds nothing -- FileExists answers false and Open fails with
+//     cannot open d:/.../lua/includes/extensions/vgui.lua: No such file or directory
+// for a file that is plainly there.
+//
+// Absolute paths reach the loader from TWO directions: include() derives its
+// candidate from the calling chunk's name (chunks loaded through
+// RelativePathToFullPath have absolute names), and loaders hand
+// luasrc_dofile() the RelativePathToFullPath result directly.
+//
+// How the reverse mapping works, and what NOT to do:
+//   * IFileSystem::FullPathToRelativePath() strips the BASE directory, not the
+//     game directory: "d:/srceng/hl2sb/lua/x.lua" -> "hl2sb/lua/x.lua".  A path
+//     that still names the game directory is not MOD-relative, and every file
+//     it pointed at failed with "cannot open hl2sb/lua/...".
+//   * GetGameDirectory() alone is not enough either -- its exact spelling
+//     varies (trailing separators, case), and files can live under
+//     addons/<name>/lua/..., whose absolute path is NOT under the game dir.
+//
+// So: walk the ACTUAL MOD search-path roots and test the remainder of the
+// path against each one; fall back to the game-directory strip, then to
+// FullPathToRelativePath with the "hl2sb/" step removed.
+//-----------------------------------------------------------------------------
+static void LuaMakeRelative (char *pszPath, int nSize) {
+  if ( filesystem == NULL || pszPath == NULL || !V_IsAbsolutePath( pszPath ) )
+    return;
+
+  char szAbs[MAX_PATH];
+  Q_strncpy( szAbs, pszPath, sizeof( szAbs ) );
+  for ( char *p = szAbs; *p; ++p )
+  {
+    if ( *p == '\\' )
+      *p = '/';
+  }
+
+  char szSearchPaths[ 16384 ] = { 0 };
+  filesystem->GetSearchPath( "MOD", false, szSearchPaths, sizeof( szSearchPaths ) );
+
+  char szCandidate[MAX_PATH];
+  char szNorm[MAX_PATH];
+
+  char *pRoot = szSearchPaths;
+  char *pEnd  = szSearchPaths + Q_strlen( szSearchPaths );
+
+  while ( pRoot < pEnd )
+  {
+    // split on ';' in place: MSVC's strtok has no reentrant form
+    char *pSep = strchr( pRoot, ';' );
+    if ( pSep != NULL )
+      *pSep = '\0';
+
+    int nLen = (int)Q_strlen( pRoot );
+
+    // GetPathString() hands out Windows backslashes; the input side was
+    // normalized above, so the root must be too or the prefix compare below
+    // can never match.
+    for ( int i = 0; i < nLen; ++i )
+    {
+      if ( pRoot[ i ] == '\\' )
+        pRoot[ i ] = '/';
+    }
+
+    while ( nLen > 0 && ( pRoot[ nLen - 1 ] == '/' ) )
+      pRoot[ --nLen ] = '\0';
+
+    if ( nLen > 0 && Q_strnicmp( szAbs, pRoot, nLen ) == 0 && szAbs[ nLen ] == '/' )
+    {
+      Q_strncpy( szCandidate, szAbs + nLen + 1, sizeof( szCandidate ) );
+      LuaNormalizeDots( szCandidate, szNorm, sizeof( szNorm ) );
+      if ( filesystem->FileExists( szNorm, "MOD" ) )
+      {
+        Q_strncpy( pszPath, szNorm, nSize );
+        return;
+      }
+    }
+
+    pRoot = ( pSep != NULL ) ? ( pSep + 1 ) : pEnd;
+  }
+
+  // FullPathToRelativePath fallback.  It strips the BASE directory, so the
+  // result usually still begins with the game directory's own name
+  // ("hl2sb/lua/x.lua") -- try dropping that step too.
+  char szRelative[MAX_PATH];
+  if ( filesystem->FullPathToRelativePath( pszPath, szRelative, sizeof( szRelative ) ) && szRelative[ 0 ] )
+  {
+    const char *pLua = Q_stristr( szRelative, "/lua/" );
+    if ( pLua != NULL )
+    {
+      Q_strncpy( szCandidate, pLua + 1, sizeof( szCandidate ) );
+      if ( filesystem->FileExists( szCandidate, "MOD" ) )
+      {
+        Q_strncpy( pszPath, szCandidate, nSize );
+        return;
+      }
+    }
+    Q_strncpy( pszPath, szRelative, nSize );
+  }
 }
 
 static int luasrc_include (lua_State *L) {

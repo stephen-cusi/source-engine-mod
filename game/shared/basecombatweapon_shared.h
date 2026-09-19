@@ -258,6 +258,12 @@ public:
 #ifdef CLIENT_DLL
 	virtual void			CreateMove( float flInputSampleTime, CUserCmd *pCmd, const QAngle &vecOldViewAngles ) {}
 	virtual int				CalcOverrideModelIndex() OVERRIDE;
+
+	// HL2SB GMod SWEP compat: the three weapon hooks the engine consults on
+	// its own live on CHL2MPScriptedWeapon (see
+	// weapon_hl2mpbase_scriptedweapon.h) and are reached through
+	// IsScripted() + static_cast -- NOT declared here, for the same
+	// no-vtable-shift reason the scripted class cites.
 #endif
 
 	virtual bool			IsWeaponZoomed() { return false; }		// Is this weapon in its 'zoomed in' mode?

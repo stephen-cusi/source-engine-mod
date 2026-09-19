@@ -42,6 +42,7 @@ typedef void *HDC;
 #include "materialsystem/itexture.h"
 #include "materialsystem/imaterialsystemhardwareconfig.h"
 #include "jpeglib/jpeglib.h"
+#include <setjmp.h>
 #include "vgui/ISurface.h"
 #include "vgui_controls/Controls.h"
 #include "gl_shader.h"
@@ -2115,6 +2116,26 @@ GLOBAL(void) jpeg_UtlBuffer_dest (j_compress_ptr cinfo, CUtlBuffer *pBuffer )
 }
 #endif
 
+// libjpeg's default error_exit calls exit(EXIT_FAILURE): during a screenshot
+// that tears the process down while static destructors run, and one of those
+// destructors spews through Con_ColorPrint into a half-destructed object -
+// pure virtual call, instant crash (2026-09-19 gmod_camera photo crash).
+// Convert libjpeg errors into a Msg + graceful failure instead.  Plain C +
+// setjmp, so it behaves the same on Windows/Linux/Android/macOS.
+struct hl2sb_jpeg_error_mgr
+{
+	struct jpeg_error_mgr pub;      // public fields (must stay first)
+	jmp_buf setjmpBuffer;           // return point for the compression scope
+};
+
+static void HL2SB_JpegErrorExit( j_common_ptr cinfo )
+{
+	char szMsg[ JMSG_LENGTH_MAX ];
+	( *cinfo->err->format_message )( cinfo, szMsg );
+	Msg( "JPEG screenshot failed: %s\n", szMsg );
+	longjmp( ( (struct hl2sb_jpeg_error_mgr *)cinfo->err )->setjmpBuffer, 1 );
+}
+
 bool CVideoMode_Common::TakeSnapshotJPEGToBuffer( CUtlBuffer& buf, int quality )
 {
 #if !defined( _X360 ) && HAVE_JPEG
@@ -2138,16 +2159,24 @@ bool CVideoMode_Common::TakeSnapshotJPEGToBuffer( CUtlBuffer& buf, int quality )
     JSAMPROW row_pointer[1];     // pointer to JSAMPLE row[s]
     int row_stride;              // physical row width in image buffer
 
-    // stderr handler
-    struct jpeg_error_mgr jerr;
+    // error handler that reports and unwinds instead of calling exit()
+    struct hl2sb_jpeg_error_mgr jerr;
 
     // compression data structure
     struct jpeg_compress_struct cinfo;
 
     row_stride = GetModeStereoWidth() * 3; // JSAMPLEs per row in image_buffer
 
-    // point at stderr
-    cinfo.err = jpeg_std_error(&jerr);
+    // error handler that reports and unwinds instead of calling exit()
+    cinfo.err = jpeg_std_error( &jerr.pub );
+    jerr.pub.error_exit = HL2SB_JpegErrorExit;
+    if ( setjmp( jerr.setjmpBuffer ) )
+    {
+        // libjpeg error already reported via Msg; release what it allocated
+        jpeg_destroy_compress( &cinfo );
+        delete[] pImage;
+        return false;
+    }
 
     // create compressor
     jpeg_create_compress(&cinfo);
@@ -2203,7 +2232,8 @@ void CVideoMode_Common::TakeSnapshotJPEG( const char *pFilename, int quality )
 
     // Output buffer
     CUtlBuffer buf( 0, 0 );
-    TakeSnapshotJPEGToBuffer( buf, quality );
+    if ( !TakeSnapshotJPEGToBuffer( buf, quality ) )
+        return;
 
     int finalSize = 0;
     FileHandle_t fh = g_pFileSystem->Open( pFilename, "wb" );

@@ -28,6 +28,10 @@
 #include "tier1/convar_serverbounded.h"
 #include "cam_thirdperson.h"
 #include "inputsystem/iinputsystem.h"
+#include "c_baseplayer.h"
+// HL2SB GMod SWEP compat: SWEP:FreezeMovement / SWEP:AdjustMouseSensitivity
+// are consulted from CInput::MouseMove for the local player's active weapon.
+#include "weapon_hl2mpbase_scriptedweapon.h"
 
 #if defined( _X360 )
 #include "xbox/xbox_win32stubs.h"
@@ -35,6 +39,18 @@
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+// HL2SB GMod SWEP compat: the raw per-frame mouse deltas of the most recent
+// MouseMove, for CBasePlayer_GetCurrentCommand's live-command fallback
+// (lbaseplayer_shared.cpp) -- gmod_camera's Tick integrates cmd:GetMouseY().
+static int s_iHL2SBLastMouseDx = 0;
+static int s_iHL2SBLastMouseDy = 0;
+
+void HL2SB_GetLastMouseDeltas( int &dx, int &dy )
+{
+	dx = s_iHL2SBLastMouseDx;
+	dy = s_iHL2SBLastMouseDy;
+}
 
 // up / down
 #define	PITCH	0
@@ -676,11 +692,54 @@ void CInput::MouseMove( CUserCmd *cmd )
 		// Apply scaling factor
 		ScaleMouse( &mouse_x, &mouse_y );
 
+		// HL2SB GMod SWEP compat: the deployed scripted weapon can scale the
+		// applied mouse (SWEP:AdjustMouseSensitivity -- gmod_camera returns
+		// GetZoom()/80 so a zoomed aim moves slower) and hold the view still
+		// (SWEP:FreezeMovement -- the camera locks aiming while Mouse2 zooms).
+		// Consulted through IsScripted() + static_cast, like the view hooks.
+		C_BasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
+		C_BaseCombatWeapon *pSWEPWeapon = pLocalPlayer ? pLocalPlayer->GetActiveWeapon() : NULL;
+		float flSWEMouseScale = 0.0f;
+		bool bFreezeView = false;
+		if ( pSWEPWeapon && pSWEPWeapon->IsScripted() )
+		{
+			CHL2MPScriptedWeapon *pScripted = static_cast<CHL2MPScriptedWeapon *>( pSWEPWeapon );
+			// GMod's WEAPON:AdjustMouseSensitivity( defaultSensitivity, localFOV,
+			// defaultFOV ): the wiki documents defaultSensitivity as generally 0,
+			// localFOV as the player's current FOV and defaultFOV as the default.
+			flSWEMouseScale = pScripted->DispatchAdjustMouseSensitivity(
+				0.0f, pLocalPlayer->GetFOV(), ( float )pLocalPlayer->GetDefaultFOV() );
+			bFreezeView = pScripted->DispatchFreezeMovement();
+		}
+
+		if ( flSWEMouseScale > 0.0f )
+		{
+			mouse_x *= flSWEMouseScale;
+			mouse_y *= flSWEMouseScale;
+		}
+
 		// Let the client mode at the mouse input before it's used
 		g_pClientMode->OverrideMouseInput( &mouse_x, &mouse_y );
 
 		// Add mouse X/Y movement to cmd
-		ApplyMouse( viewangles, cmd, mouse_x, mouse_y );
+		s_iHL2SBLastMouseDx = mx;
+		s_iHL2SBLastMouseDy = my;
+
+		if ( bFreezeView )
+		{
+			// HL2SB GMod SWEP compat: FreezeMovement holds the VIEW, not the
+			// mouse report -- the command still carries the RAW accumulated
+			// deltas (SWEP:Tick reads cmd:GetMouseY() from them; gmod_camera
+			// zooms with exactly that while FreezeMovement is true).  The
+			// post-scale floats truncate to 0 for slow movement, which killed
+			// the zoom.  Only the viewangle application is skipped.
+			cmd->mousedx = mx;
+			cmd->mousedy = my;
+		}
+		else
+		{
+			ApplyMouse( viewangles, cmd, mouse_x, mouse_y );
+		}
 
 		// Re-center the mouse.
 		ResetMouse();

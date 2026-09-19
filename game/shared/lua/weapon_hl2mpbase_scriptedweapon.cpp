@@ -18,8 +18,13 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lbasecombatweapon_shared.h"
+#if defined( CLIENT_DLL ) && defined( LUA_SDK )
+#include "cdll_int.h"	// HL2SB: engine->ClientCmd for the NW seed request (hl2sb_nwrequest)
+#endif
 // HL2SB: SWEP:CalcView pushes/reads the Player, Vector and QAngle userdata.
 #include "lbaseplayer_shared.h"
+// HL2SB: lua_pushentity for the SWEP:Equip dispatch
+#include "lbaseentity_shared.h"
 #include "mathlib/lvector.h"
 // HL2SB: lua_pushtrace(), for SWEP:DoImpactEffect( trace, damageType ).
 #include "lgametrace.h"
@@ -277,6 +282,14 @@ static int lua_getweaponint ( lua_State *L, int ref, const char *tblKey, const c
 	int nResult = lua_isnumber( L, -1 ) ? (int)lua_tointeger( L, -1 ) : nDefault;
 	lua_pop( L, 1 );
 	return nResult;
+}
+
+static float lua_getweaponfloat ( lua_State *L, int ref, const char *tblKey, const char *subKey, const char *flatKey, float flDefault )
+{
+	lua_getweaponfield( L, ref, tblKey, subKey, flatKey );
+	float flResult = lua_isnumber( L, -1 ) ? (float)lua_tonumber( L, -1 ) : flDefault;
+	lua_pop( L, 1 );
+	return flResult;
 }
 
 void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
@@ -563,11 +576,21 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "autoswitchto" );
+	// HL2SB GMod SWEP compat: SWEP.AutoSwitchTo (GMod's name, usually a
+	// boolean) wins; the flat HL2SB autoswitchto key is the fallback.
+	lua_getfield( L, -1, "AutoSwitchTo" );
 	lua_remove( L, -2 );
-	if ( lua_isnumber( L, -1 ) )
+	if ( lua_isnil( L, -1 ) )
 	{
-		m_pLuaWeaponInfo->bAutoSwitchTo = (int)lua_tointeger( L, -1 ) != 0 ? true : false;
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "autoswitchto" );
+		lua_remove( L, -2 );
+	}
+	if ( ( lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
+	     || ( lua_isnumber( L, -1 ) && (int)lua_tointeger( L, -1 ) == 0 ) )
+	{
+		m_pLuaWeaponInfo->bAutoSwitchTo = false;
 	}
 	else
 	{
@@ -575,11 +598,20 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "autoswitchfrom" );
+	// Same contract as AutoSwitchTo above.
+	lua_getfield( L, -1, "AutoSwitchFrom" );
 	lua_remove( L, -2 );
-	if ( lua_isnumber( L, -1 ) )
+	if ( lua_isnil( L, -1 ) )
 	{
-		m_pLuaWeaponInfo->bAutoSwitchFrom = (int)lua_tointeger( L, -1 ) != 0 ? true : false;
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "autoswitchfrom" );
+		lua_remove( L, -2 );
+	}
+	if ( ( lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
+	     || ( lua_isnumber( L, -1 ) && (int)lua_tointeger( L, -1 ) == 0 ) )
+	{
+		m_pLuaWeaponInfo->bAutoSwitchFrom = false;
 	}
 	else
 	{
@@ -696,6 +728,78 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->m_iPlayerDamage = (int)lua_tointeger( L, -1 );
+	}
+	lua_pop( L, 1 );
+
+	// HL2SB GMod SWEP compat: GMod's engine calls SWEP:SetupDataTables() while
+	// it sets a scripted weapon up, and that is where SWEP:NetworkVar()
+	// declares the per-instance accessors the SWEP uses (gmod_camera declares
+	// Zoom/Roll there and calls SetZoom()/GetZoom() from Reload, Tick, Equip,
+	// CalcView and AdjustMouseSensitivity -- without this call every one of
+	// those hooks throws on its first Zoom access).  HL2SB_EntityNetworkVar is
+	// the same accessor factory the scripted-entity path installs
+	// (basescripted.cpp); the accessors store on the weapon's own Lua table.
+	lua_getref( L, m_nTableReference );
+	if ( lua_istable( L, -1 ) )
+	{
+		const int iWeaponTable = lua_gettop( L );
+
+		lua_getglobal( L, "HL2SB_EntityNetworkVar" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_setfield( L, -2, "NetworkVar" );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+
+		lua_getfield( L, -1, "SetupDataTables" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_pushvalue( L, -2 );		// self: the weapon's Lua table
+			luasrc_pcall( L, 1, 0, 0 );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+
+		// HL2SB: record the declared NW names (the __hl2sb_nw_* storage fields
+		// the factory above created) as a list on the weapon's table.  The Lua
+		// seed bridge in weapon_base/shared.lua (hl2sb_nwrequest / hl2sb_nwseed)
+		// uses the list to copy the server's initial values to the predicted
+		// client, whose storage otherwise starts empty (gmod_camera's Zoom).
+		lua_newtable( L );
+		const int iNames = lua_gettop( L );
+		int iName = 1;
+
+		lua_pushnil( L );
+		while ( lua_next( L, iWeaponTable ) != 0 )
+		{
+			if ( lua_type( L, -2 ) == LUA_TSTRING )
+			{
+				const char *pszKey = lua_tostring( L, -2 );
+				if ( Q_strnicmp( pszKey, "__hl2sb_nw_", 11 ) == 0 )
+				{
+					lua_pushstring( L, pszKey + 11 );
+					lua_rawseti( L, iNames, iName++ );
+				}
+			}
+			lua_pop( L, 1 );
+		}
+
+		lua_setfield( L, iWeaponTable, "__hl2sb_nw_names" );
+
+#ifdef CLIENT_DLL
+		// Ask the server realm for the initial NW values now that the names
+		// are known (weapon_base's hl2sb_nwrequest handler answers with
+		// hl2sb_nwseed, written back onto this weapon's storage).
+		char szNWRequest[ 64 ];
+		Q_snprintf( szNWRequest, sizeof( szNWRequest ), "hl2sb_nwrequest %d", entindex() );
+		engine->ClientCmd( szNWRequest );
+		luasrc_LuaInfoMsgF( "[HL2SB] nwseed request sent (create): ent=%d\n", entindex() );
+#endif
 	}
 	lua_pop( L, 1 );
 
@@ -1377,6 +1481,29 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 	return BaseClass::Deploy();
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: SWEP:Equip( newOwner ) -- "Called when a player or NPC has
+// picked the weapon up" (wiki).  gmod_camera uses it to move the networked Zoom
+// to the player's fov_desired the moment the camera is picked up; without this
+// dispatch the zoom only corrects itself after the first Reload.  GMod hands the
+// hook the new owner, which can be a Player or an NPC -- the engine virtual
+// already receives a CBaseCombatCharacter, so push it as a plain entity.
+// Runs AFTER BaseClass::Equip so the owner fields the script may read are set.
+//-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::Equip( CBaseCombatCharacter *pOwner )
+{
+	BaseClass::Equip( pOwner );
+
+#if defined ( LUA_SDK )
+	HL2SB_WeaponUpdateLuaOwnerFields( this );
+
+	BEGIN_LUA_CALL_WEAPON_METHOD( "Equip" );
+		if ( pOwner != NULL )
+			lua_pushentity( L, pOwner );
+	END_LUA_CALL_WEAPON_METHOD( pOwner != NULL ? 1 : 0, 0 );
+#endif
+}
+
 Activity CHL2MPScriptedWeapon::GetDrawActivity( void )
 {
 #if defined ( LUA_SDK )
@@ -1401,9 +1528,27 @@ Activity CHL2MPScriptedWeapon::GetDrawActivity( void )
 float CHL2MPScriptedWeapon::TranslateFOV( float flFOV )
 {
 #if defined ( LUA_SDK )
+#ifdef CLIENT_DLL
+	// HL2SB TEMPORARY diagnostic: the FOV the view actually receives from the
+	// camera's TranslateFOV.  First 10 calls after it starts returning values
+	// different from the input.
+	static float s_flLastDiagFOV = -1.0f;
+#endif
 	BEGIN_LUA_CALL_WEAPON_METHOD( "TranslateFOV" );
 	lua_pushnumber( L, flFOV );
 	END_LUA_CALL_WEAPON_METHOD( 1, 1 );
+#ifdef CLIENT_DLL
+	{
+		float flNew = flFOV;
+		if ( lua_gettop( L ) > 0 && lua_isnumber( L, -1 ) )
+			flNew = ( float )lua_tonumber( L, -1 );
+		if ( flNew != s_flLastDiagFOV )
+		{
+			s_flLastDiagFOV = flNew;
+			luasrc_LuaInfoMsgF( "[HL2SB] TranslateFOV: in=%.1f out=%.1f\n", flFOV, flNew );
+		}
+	}
+#endif
 
 	// HL2SB: deliberately NOT RETURN_LUA_NUMBER().  A weapon's answer has to be a
 	// USABLE field of view before it may replace the engine's, because the camera's
@@ -1467,6 +1612,88 @@ void CHL2MPScriptedWeapon::CalcView( CBasePlayer *pPlayer, Vector &vecOrigin, QA
 	{
 		lua_pop( L, nRet );
 	}
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: SWEP:FreezeMovement() -- "hold the view still".  GMod's
+// CInput asks the deployed weapon before it applies the mouse to the view
+// angles; gmod_camera returns true while Mouse2 is held so the zoomed aim
+// does not drift.  CInput::MouseMove (in_mouse.cpp) consults this through
+// IsScripted() + static_cast, the same path TranslateFOV/CalcView use.
+// No method (the weapon_base default does not define one) -> do not freeze.
+//-----------------------------------------------------------------------------
+bool CHL2MPScriptedWeapon::DispatchFreezeMovement( void )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "FreezeMovement" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
+
+	bool bFreeze = false;
+	if ( lua_gettop( L ) > 0 )
+	{
+		bFreeze = lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+	}
+	return bFreeze;
+#else
+	return false;
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: SWEP:AdjustMouseSensitivity( defaultSensitivity, localFOV,
+// defaultFOV ) -- a number SCALES the normal sensitivity (gmod_camera returns
+// GetZoom()/80 so zooming in slows the aim); returning nothing leaves the
+// sensitivity alone.  CInput::MouseMove applies it after ScaleMouse, before
+// OverrideMouseInput.  GMod's wiki-documented signature passes three numbers;
+// addons compute (localFOV / defaultFOV) ratios, so the args are never optional.
+//-----------------------------------------------------------------------------
+float CHL2MPScriptedWeapon::DispatchAdjustMouseSensitivity( float flDefaultSensitivity, float flLocalFOV, float flDefaultFOV )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "AdjustMouseSensitivity" );
+		lua_pushnumber( L, flDefaultSensitivity );
+		lua_pushnumber( L, flLocalFOV );
+		lua_pushnumber( L, flDefaultFOV );
+	END_LUA_CALL_WEAPON_METHOD( 3, 1 );
+
+	float flScale = 0.0f;
+	if ( lua_gettop( L ) > 0 )
+	{
+		if ( lua_isnumber( L, -1 ) )
+			flScale = ( float )lua_tonumber( L, -1 );
+		lua_pop( L, 1 );
+	}
+	return flScale;
+#else
+	return 0.0f;
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: SWEP:HUDShouldDraw( name ) -- returning false vetoes that
+// HUD element while the weapon is deployed (gmod_camera hides everything but
+// the weapon selection and chat).  CHudElement::ShouldDraw (hud.cpp) consults
+// it for the LOCAL player's active weapon.  No method -> draw as usual.
+//-----------------------------------------------------------------------------
+bool CHL2MPScriptedWeapon::DispatchHUDShouldDraw( const char *pszElementName )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "HUDShouldDraw" );
+	lua_pushstring( L, pszElementName );
+	END_LUA_CALL_WEAPON_METHOD( 1, 1 );
+
+	bool bDraw = true;
+	if ( lua_gettop( L ) > 0 )
+	{
+		if ( lua_isboolean( L, -1 ) )
+			bDraw = lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+	}
+	return bDraw;
+#else
+	return true;
 #endif
 }
 
@@ -1593,6 +1820,58 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Tick" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 
+#ifdef CLIENT_DLL
+	// HL2SB TEMPORARY diagnostic: prove the camera's Tick runs and what its
+	// script sees.  Remove once the zoom is confirmed.
+	static int s_nCameraTickDiag = 0;
+	if ( s_nCameraTickDiag < 12 )
+	{
+		++s_nCameraTickDiag;
+		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+		C_BaseCombatWeapon *pWpn = pLocal ? pLocal->GetActiveWeapon() : NULL;
+		luasrc_LuaInfoMsgF( "[HL2SB] weapon Tick #%d dispatched classname='%s' active='%s' isscripted=%d\n",
+			s_nCameraTickDiag, GetClassname(),
+			( pWpn != NULL ) ? pWpn->GetClassname() : "(none)",
+			( pWpn != NULL && pWpn->IsScripted() ) ? 1 : 0 );
+	}
+#endif
+
+#ifdef CLIENT_DLL
+	// HL2SB: make sure the NW seed request goes out even if the copy sent from
+	// the OnDataChanged/creation context was dropped.  On the first predicted
+	// frame of a weapon that declared NW vars without a seed yet, ask again and
+	// mark it (weapon_base's hl2sb_nwrequest handler answers).
+	if ( m_nTableReference != LUA_NOREF )
+	{
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "__hl2sb_nw_names" );
+		const bool bHasNames = lua_istable( L, -1 ) != 0;
+		lua_pop( L, 1 );
+
+		bool bRequested = false;
+		if ( bHasNames )
+		{
+			lua_getref( L, m_nTableReference );
+			lua_getfield( L, -1, "__hl2sb_nw_requested" );
+			bRequested = lua_toboolean( L, -1 ) != 0;
+			lua_pop( L, 1 );
+		}
+
+		if ( bHasNames && !bRequested )
+		{
+			lua_getref( L, m_nTableReference );
+			lua_pushboolean( L, true );
+			lua_setfield( L, -2, "__hl2sb_nw_requested" );
+			lua_pop( L, 1 );
+
+			char szNWRequest[ 64 ];
+			Q_snprintf( szNWRequest, sizeof( szNWRequest ), "hl2sb_nwrequest %d", entindex() );
+			engine->ClientCmd( szNWRequest );
+			luasrc_LuaInfoMsgF( "[HL2SB] nwseed request sent (first frame): ent=%d\n", entindex() );
+		}
+	}
+#endif
+
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 
 	if ( pOwner != NULL && m_nTableReference >= 0 )
@@ -1683,7 +1962,13 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 
 			if ( m_flNextSecondaryAttack <= flTime )
 			{
-				m_flNextSecondaryAttack = flTime + 0.05f;
+				// HL2SB GMod compat: SWEP.Secondary.Delay is the GMod engine's
+				// fire-rate contract -- a SWEP that only declares the Delay
+				// field (and never calls SetNextSecondaryFire) still fires at
+				// that rate.  Only applies when the SWEP did not set the time
+				// itself; a manual SetNextSecondaryFire inside the hook wins.
+				m_flNextSecondaryAttack = flTime + MAX( 0.0f,
+					lua_getweaponfloat( L, m_nTableReference, "Secondary", "Delay", "Secondary.Delay", 0.05f ) );
 			}
 		}
 		else if ( bPrimaryWants && flTime >= m_flNextPrimaryAttack )
@@ -1692,10 +1977,13 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 
 			// The SWEP is expected to call SetNextPrimaryFire(); this stops a
-			// script that forgets from firing once per frame.
+			// script that forgets from firing once per frame.  Same Delay
+			// contract as the secondary above: SWEP.Primary.Delay applies
+			// unless the hook set the time itself.
 			if ( m_flNextPrimaryAttack <= flTime )
 			{
-				m_flNextPrimaryAttack = flTime + 0.05f;
+				m_flNextPrimaryAttack = flTime + MAX( 0.0f,
+					lua_getweaponfloat( L, m_nTableReference, "Primary", "Delay", "Primary.Delay", 0.05f ) );
 			}
 		}
 		else if ( ( nPressed & IN_RELOAD ) != 0 )

@@ -3569,6 +3569,11 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetAbsAngles", CBaseEntity_GetAbsAngles},
   {"GetAbsOrigin", CBaseEntity_GetAbsOrigin},
   {"GetAbsVelocity", CBaseEntity_GetAbsVelocity},
+  // HL2SB GMod compat: Entity:GetVelocity() is the spelling GMod scripts and
+  // the wiki use (Entity:GetAbsVelocity is the rarer twin).  ent_nyan_bomb's
+  // ENT:Draw opens with self:GetVelocity() -- without this the draw died on
+  // its first line every frame and the flying cat rendered as nothing at all.
+  {"GetVelocity", CBaseEntity_GetAbsVelocity},
   {"GetAnimTime", CBaseEntity_GetAnimTime},
   {"GetBaseAnimating", CBaseEntity_GetBaseAnimating},
   {"GetBaseEntity", CBaseEntity_GetBaseEntity},

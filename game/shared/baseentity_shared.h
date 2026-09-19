@@ -318,5 +318,6 @@ extern bool CheckEmitReasonablePhysicsSpew();
 // also means a stock weapon's shot can never inherit somebody else's name.
 void HL2SB_SetNextBulletTracerName( const char *pszName );   // NULL or "" clears it
 const char *HL2SB_ConsumeBulletTracerName( void );           // valid until the next consume
+bool HL2SB_HasShotTracerName( void );                        // true during the FireBullets() that carried one
 
 #endif // BASEENTITY_SHARED_H

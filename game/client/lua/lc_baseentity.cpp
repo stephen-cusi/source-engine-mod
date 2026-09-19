@@ -158,6 +158,22 @@ static int CBaseEntity_SetRenderBounds (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: Entity:SetRenderBoundsWS( mins, maxs, add ) -- world-space
+// variant (wiki).  Converts to local relative to the entity origin, then reuses
+// the local setter.  EFFECT:SetRenderBoundsWS already exists on effect tables;
+// this is the entity method.
+static int CBaseEntity_SetRenderBoundsWS (lua_State *L) {
+  C_BaseEntity *pEntity = luaL_checkentity(L, 1);
+  Vector mins = luaL_checkvector(L, 2);
+  Vector maxs = luaL_checkvector(L, 3);
+  Vector vecZero( 0.0f, 0.0f, 0.0f );
+  Vector add  = luaL_optvector(L, 4, &vecZero);
+
+  const Vector origin = pEntity->GetAbsOrigin();
+  pEntity->SetScriptedRenderBounds( ( mins - add ) - origin, ( maxs + add ) - origin );
+  return 0;
+}
+
 static int CBaseEntity_ComputeFxBlend (lua_State *L) {
   luaL_checkentity(L, 1)->ComputeFxBlend();
   return 0;
@@ -201,6 +217,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"UsesFullFrameBufferTexture", CBaseEntity_UsesFullFrameBufferTexture},
   {"DrawModel", CBaseEntity_DrawModel},
   {"SetRenderBounds", CBaseEntity_SetRenderBounds},
+  {"SetRenderBoundsWS", CBaseEntity_SetRenderBoundsWS},
   {"ComputeFxBlend", CBaseEntity_ComputeFxBlend},
   {"GetFxBlend", CBaseEntity_GetFxBlend},
   {"LODTest", CBaseEntity_LODTest},

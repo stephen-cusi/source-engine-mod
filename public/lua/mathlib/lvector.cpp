@@ -556,9 +556,11 @@ static int QAngle_LengthSqr (lua_State *L) {
 */
 static bool QAngle_FieldToComponent (const char *field, int *out)
 {
-  if (strcmp(field, "x") == 0 || strcmp(field, "p") == 0 || strcmp(field, "pitch") == 0) { *out = 0; return true; }
-  if (strcmp(field, "y") == 0 || strcmp(field, "yaw") == 0) { *out = 1; return true; }
-  if (strcmp(field, "z") == 0 || strcmp(field, "r") == 0 || strcmp(field, "roll") == 0) { *out = 2; return true; }
+  // HL2SB GMod compat: case-insensitive -- gmod_camera's CalcView writes
+  // `angles.Roll` (capitalised), which strcmp silently dropped before.
+  if (Q_stricmp(field, "x") == 0 || Q_stricmp(field, "p") == 0 || Q_stricmp(field, "pitch") == 0) { *out = 0; return true; }
+  if (Q_stricmp(field, "y") == 0 || Q_stricmp(field, "yaw") == 0) { *out = 1; return true; }
+  if (Q_stricmp(field, "z") == 0 || Q_stricmp(field, "r") == 0 || Q_stricmp(field, "roll") == 0) { *out = 2; return true; }
   return false;
 }
 

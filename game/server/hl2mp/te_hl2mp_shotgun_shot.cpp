@@ -17,6 +17,10 @@
 #include "networkstringtable_gamedll.h"
 #include "effect_dispatch_data.h"
 
+// HL2SB: luamanager.h is not on this file's include path (server_hl2mp.vpc vs
+// server_lua.vpc) -- declare the one function the send-side diagnostic uses.
+void luasrc_LuaInfoMsgF( const char *pszFormat, ... );
+
 
 #define NUM_BULLET_SEED_BITS 8
 
@@ -156,6 +160,15 @@ void TE_HL2MPFireBullets(
 	}
 	
 	Assert( iSeed < (1 << NUM_BULLET_SEED_BITS) );
-	
+
+	// HL2SB: InfoMsg, NOT WarnOnce -- the one-shot dict's old budget of 32 was
+	// already spent by the time this fired, and "no line in the log" was then
+	// misread as "the TE was never sent".  One line per shot is acceptable:
+	// this is the ONLY place that can prove the send side of the tracer chain.
+	luasrc_LuaInfoMsgF(
+		"[HL2SB] TE_HL2MPFireBullets SEND: shooter=%d weapon=%d tracers=%d impacts=%d tracer='%s'\n",
+		iPlayerIndex, iWeaponIndex, bDoTracers ? 1 : 0, bDoImpacts ? 1 : 0,
+		( pszTracerName != NULL && pszTracerName[ 0 ] != '\0' ) ? pszTracerName : "(none)" );
+
 	g_TEHL2MPFireBullets.Create( filter, 0 );
 }

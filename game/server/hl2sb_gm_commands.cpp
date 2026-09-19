@@ -60,7 +60,8 @@ static void GM_PlaceAtEyeTrace( CBasePlayer *pPlayer, CBaseEntity *pEnt )
 }
 
 static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszClass,
-                                        const char *pszModel, const char *pszEquipment )
+                                        const char *pszModel, const char *pszEquipment,
+                                        const char *pszVehicleScript = NULL )
 {
 	CBaseEntity *pEnt = CreateEntityByName( pszClass );
 
@@ -72,6 +73,13 @@ static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszCla
 
 	if ( pszModel != NULL && pszModel[ 0 ] != '\0' )
 		pEnt->SetModel( pszModel );
+
+	// the vehicle script is a KEYVALUE - it has to be on the entity before
+	// DispatchSpawn, which is when prop_vehicle reads it.  A model-less
+	// prop_vehicle is a server crash (CFourWheelVehiclePhysics::Initialize),
+	// so the model and the script ride together from the spawn menu.
+	if ( pszVehicleScript != NULL && pszVehicleScript[ 0 ] != '\0' )
+		pEnt->KeyValue( "vehiclescript", pszVehicleScript );
 
 	// equipment is a KEYVALUE - it has to be set before DispatchSpawn, which is when
 	// the NPC reads it.  "none" is GMod's "unarmed" and is honoured the same way.
@@ -126,16 +134,20 @@ CON_COMMAND( gm_spawn, "Spawn an entity: gm_spawn <class> [model]  (GMod)" )
 }
 
 //-----------------------------------------------------------------------------
-// gm_spawnvehicle
+// gm_spawnvehicle: the spawn menu sends <class> <model> <vehiclescript> -- the
+// model and the script USED to be dropped here, so every menu-spawned vehicle
+// was model-less (the exact shape that crashes the server or spawns nothing).
 //-----------------------------------------------------------------------------
-CON_COMMAND( gm_spawnvehicle, "Spawn a vehicle: gm_spawnvehicle <class>  (GMod)" )
+CON_COMMAND( gm_spawnvehicle, "Spawn a vehicle: gm_spawnvehicle <class> [model] [vehiclescript]  (GMod)" )
 {
 	CBasePlayer *pPlayer = GM_CommandPlayer();
 
 	if ( pPlayer == NULL || args.ArgC() < 2 )
 		return;
 
-	CBaseEntity *pEnt = GM_SpawnAtEyeTrace( pPlayer, args[ 1 ], NULL, NULL );
+	CBaseEntity *pEnt = GM_SpawnAtEyeTrace( pPlayer, args[ 1 ],
+		( args.ArgC() > 2 ) ? args[ 2 ] : NULL, NULL,
+		( args.ArgC() > 3 ) ? args[ 3 ] : NULL );
 
 	GM_Record( pPlayer, pEnt );
 }

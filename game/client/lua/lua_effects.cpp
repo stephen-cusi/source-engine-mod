@@ -485,7 +485,15 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 		return false;
 
 	if ( !HL2SB_FindLuaEffectTemplate( L, pszName ) )
+	{
+		// HL2SB: silent before -- when the TE never delivered the name or the
+		// registry lost it, this returned false and NOTHING said why (the
+		// tracer/bounce then vanished without a word).  Critical path => InfoMsg,
+		// not WarnOnce (the 2026-09-19 Nyan Gun round: this line never surfaced
+		// through Warning while InfoMsg lines on the same path always did).
+		luasrc_LuaInfoMsgF( "[HL2SB] no Lua effect template for '%s'\n", pszName );
 		return false;
+	}
 
 	// stack: template
 	lua_newtable( L );                          // template, copy
@@ -529,7 +537,11 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 	lua_pop( L, 1 );                                     // the template
 
 	if ( nRef < 0 )
+	{
+		// HL2SB: was a silent exit -- exactly the "vanished without a word" class.
+		luasrc_LuaInfoMsgF( "[HL2SB] Lua effect '%s': luaL_ref failed\n", pszName );
 		return false;
+	}
 
 	// CEffectsList::AddEffect() silently drops the effect once its 256 slot list
 	// is full: the registry reference taken above would leak for the lifetime of
@@ -538,6 +550,7 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 	if ( !HL2SB_ClientEffectsHaveRoom() )
 	{
 		lua_unref( L, nRef );
+		luasrc_LuaInfoMsgF( "[HL2SB] Lua effect '%s': clienteffects list full\n", pszName );
 		return false;
 	}
 
