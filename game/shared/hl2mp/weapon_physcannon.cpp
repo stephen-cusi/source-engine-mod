@@ -68,6 +68,57 @@ enum PhysGunForce_t
 
 #define	SPRITE_SCALE	128.0f
 
+#if !defined ( CLIENT_DLL ) && defined ( LUA_SDK )
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the four gamemode hooks GMod's gravity gun raises, all
+// server realm (the physcannon's decision logic lives here):
+//
+//   GM:GravGunPickupAllowed( ply, ent ) -> true/false   polled at pickup time;
+//       the literal false vetoes, nil/true keeps the engine's own rules
+//   GM:GravGunPunt( ply, ent )          -> true/false   veto a launch; the
+//       held object stays held (GMod leaves the grab intact on a veto)
+//   GM:GravGunOnPickedUp( ply, ent )                    notification
+//   GM:GravGunOnDropped( ply, ent )                     notification; fires for
+//       manual drops, distance drops AND punt launches, like GMod's
+//
+// GMod's sandbox gamemode uses these to run the matching ENTITY:GravGun*
+// methods, so addons can veto per entity (hl2sb's base gamemode routes them).
+//-----------------------------------------------------------------------------
+static bool HL2SB_GravGunAllowedHook( const char *pszHookName, CBasePlayer *pPlayer, CBaseEntity *pObject )
+{
+	if ( pPlayer == NULL || pObject == NULL || L == NULL )
+		return true;
+
+	bool bAllowed = true;
+
+	BEGIN_LUA_CALL_HOOK( pszHookName );
+		lua_pushplayer( L, pPlayer );
+		lua_pushentity( L, pObject );
+	END_LUA_CALL_HOOK( 2, 1 );
+
+	if ( lua_gettop( L ) > 0 )
+	{
+		// only the literal false is a veto; nil / nothing / anything else keeps
+		// the engine's own rules
+		if ( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) == 0 )
+			bAllowed = false;
+		lua_pop( L, 1 );
+	}
+	return bAllowed;
+}
+
+static void HL2SB_GravGunNotifyHook( const char *pszHookName, CBasePlayer *pPlayer, CBaseEntity *pObject )
+{
+	if ( pPlayer == NULL || pObject == NULL || L == NULL )
+		return;
+
+	BEGIN_LUA_CALL_HOOK( pszHookName );
+		lua_pushplayer( L, pPlayer );
+		lua_pushentity( L, pObject );
+	END_LUA_CALL_HOOK( 2, 0 );
+}
+#endif
+
 static const char *s_pWaitForUpgradeContext = "WaitForUpgrade";
 
 ConVar	g_debug_physcannon( "g_debug_physcannon", "0", FCVAR_REPLICATED | FCVAR_CHEAT );
@@ -1267,11 +1318,23 @@ protected:
 	float	m_flElementDebounce;
 
 	CSoundPatch			*m_sndMotor;		// Whirring sound for the gun
-	
+
 	CGrabController		m_grabController;
 
 	float	m_flRepuntObjectTime;
 	EHANDLE m_hLastPuntedObject;
+
+#ifndef CLIENT_DLL
+	// HL2SB GMod compat: GMod's gravity gun wraps a held prop in a soft BLUE
+	// glow (the user-visible "gmod style" difference from HL2's plain grab).
+	// Implemented as a server-side additive CSprite parented to the held
+	// entity, so everyone sees the held prop glowing.  Material:
+	// sprites/physcannon_bluelight2 (GMod's own sprite, shipped in its
+	// hl2_misc vpk - copied into hl2sb content).
+	CHandle<CSprite>	m_hHeldGlow;
+	void	HeldGlowCreate( CBaseEntity *pObject );
+	void	HeldGlowDestroy( void );
+#endif
 
 private:
 	CWeaponPhysCannon( const CWeaponPhysCannon & );
@@ -1395,12 +1458,56 @@ CWeaponPhysCannon::CWeaponPhysCannon( void )
 	m_flCheckSuppressTime	= 0.0f;
 	m_EffectState			= (int)EFFECT_NONE;
 	m_flLastDenySoundPlayed	= false;
+#ifndef CLIENT_DLL
+	m_hHeldGlow				= NULL;
+#endif
 
 #ifdef CLIENT_DLL
 	m_nOldEffectState		= EFFECT_NONE;
 	m_bOldOpen				= false;
 #endif
 }
+
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the held prop's blue glow (GMod style).  One additive
+// sprite parented to the held entity, sized from its bounding radius so a can
+// glows tight and a sofa glows wide.  Parented sprites follow rotations and
+// die with their parent, so nothing leaks when the prop breaks mid-grab.
+//-----------------------------------------------------------------------------
+#define HL2SB_GRAVGUN_GLOW_MATERIAL "sprites/physcannon_bluelight2.vmt"
+
+void CWeaponPhysCannon::HeldGlowCreate( CBaseEntity *pObject )
+{
+	HeldGlowDestroy();
+
+	if ( pObject == NULL )
+		return;
+
+	CSprite *pGlow = CSprite::SpriteCreate( HL2SB_GRAVGUN_GLOW_MATERIAL, pObject->WorldSpaceCenter(), FALSE );
+	if ( pGlow == NULL )
+		return;
+
+	pGlow->SetParent( pObject );
+	pGlow->SetRenderMode( kRenderTransAdd );
+	pGlow->SetBrightness( 180 );
+	pGlow->SetScale( MAX( 0.35f, pObject->BoundingRadius() / 96.0f ) );
+	pGlow->SetMoveType( MOVETYPE_NONE );
+	pGlow->SetSolid( SOLID_NONE );
+	pGlow->AddEFlags( EFL_NO_PHYSCANNON_INTERACTION );
+
+	m_hHeldGlow = pGlow;
+}
+
+void CWeaponPhysCannon::HeldGlowDestroy( void )
+{
+	if ( m_hHeldGlow != NULL )
+	{
+		UTIL_Remove( m_hHeldGlow );
+		m_hHeldGlow = NULL;
+	}
+}
+#endif
 
 //-----------------------------------------------------------------------------
 // Purpose: Precache
@@ -1411,6 +1518,11 @@ void CWeaponPhysCannon::Precache( void )
 	PrecacheModel( PHYSCANNON_BEAM_SPRITE_NOZ );
 
 	PrecacheScriptSound( "Weapon_PhysCannon.HoldSound" );
+
+#ifndef CLIENT_DLL
+	// HL2SB GMod compat: the held-prop glow sprite
+	PrecacheModel( HL2SB_GRAVGUN_GLOW_MATERIAL );
+#endif
 
 	BaseClass::Precache();
 }
@@ -1699,6 +1811,18 @@ void CWeaponPhysCannon::Physgun_OnPhysGunPickup( CBaseEntity *pEntity, CBasePlay
 void CWeaponPhysCannon::PuntVPhysics( CBaseEntity *pEntity, const Vector &vecForward, trace_t &tr )
 {
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+
+#ifndef CLIENT_DLL
+	// HL2SB GMod compat: GM:GravGunPunt veto for the NOT-held world punt of a
+	// vphysics prop (LaunchObject below covers the held-object punt).  Repunt
+	// bookkeeping stays above: a denied punt still counts as "just punted" so
+	// holding attack1 cannot hammer the hook every frame.
+	if ( !HL2SB_GravGunAllowedHook( "GravGunPunt", pOwner, pEntity ) )
+	{
+		DryFire();
+		return;
+	}
+#endif
 
 
 	if ( m_hLastPuntedObject == pEntity && gpGlobals->curtime < m_flRepuntObjectTime )
@@ -2075,6 +2199,10 @@ void CWeaponPhysCannon::SecondaryAttack( void )
 			SendWeaponAnim( ACT_VM_PRIMARYATTACK );
 			m_flNextSecondaryAttack = gpGlobals->curtime + 0.5f;
 
+			// HL2SB GMod compat: GM:GravGunOnPickedUp -- the grab is complete
+			// at this point, m_grabController holds the entity.
+			HL2SB_GravGunNotifyHook( "GravGunOnPickedUp", pOwner, m_grabController.GetAttached() );
+
 			// We found an object. Debounce the button
 			m_nAttack2Debounce |= pOwner->m_nButtons;
 			break;
@@ -2125,6 +2253,15 @@ bool CWeaponPhysCannon::AttachObject( CBaseEntity *pObject, const Vector &vPosit
 
 	if ( m_bActive )
 		return false;
+
+#ifndef CLIENT_DLL
+	// HL2SB GMod compat: the gamemode may forbid this pickup
+	// (GM:GravGunPickupAllowed -- the wiki's "called every tick to poll" is
+	// this decision point; the poll repeats because holding attack2 keeps
+	// re-running FindObject -> here).
+	if ( !HL2SB_GravGunAllowedHook( "GravGunPickupAllowed", ToBasePlayer( GetOwner() ), pObject ) )
+		return false;
+#endif
 
 	if ( CanPickupObject( pObject ) == false )
 		return false;
@@ -2185,7 +2322,8 @@ bool CWeaponPhysCannon::AttachObject( CBaseEntity *pObject, const Vector &vPosit
 		(CSoundEnvelopeController::GetController()).SoundChangeVolume( GetMotorSound(), 0.8f, 0.5f );
 	}
 
-
+	// HL2SB GMod compat: wrap the held prop in the blue glow everyone sees.
+	HeldGlowCreate( pObject );
 
 	return true;
 }
@@ -2509,8 +2647,16 @@ void CWeaponPhysCannon::DetachObject( bool playSound, bool wasLaunched )
 
 	m_grabController.DetachEntity( wasLaunched );
 
+	// HL2SB GMod compat: the blue glow goes away with the grab
+	HeldGlowDestroy();
+
 	if ( pObject != NULL )
 	{
+		// HL2SB GMod compat: GM:GravGunOnDropped -- fires for manual drops,
+		// distance drops AND punt launches (DetachObject is the one funnel for
+		// all releases), the same set GMod notifies for.
+		HL2SB_GravGunNotifyHook( "GravGunOnDropped", pOwner, pObject );
+
 		Pickup_OnPhysGunDrop( pObject, pOwner, wasLaunched ? LAUNCHED_BY_CANNON : DROPPED_BY_CANNON );
 	}
 
@@ -2855,6 +3001,17 @@ void CWeaponPhysCannon::LaunchObject( const Vector &vecDir, float flForce )
 		// FIRE!!!
 		if( pObject != NULL )
 		{
+#ifndef CLIENT_DLL
+			// HL2SB GMod compat: GM:GravGunPunt may veto the launch.  GMod
+			// leaves the grab intact when the gamemode denies, so just
+			// dry-fire here -- BEFORE DetachObject, which would end the grab.
+			if ( !HL2SB_GravGunAllowedHook( "GravGunPunt", ToBasePlayer( GetOwner() ), pObject ) )
+			{
+				DryFire();
+				return;
+			}
+#endif
+
 			DetachObject( false, true );
 
 			m_hLastPuntedObject = pObject;
@@ -2972,9 +3129,6 @@ bool CWeaponPhysCannon::CanPickupObject( CBaseEntity *pTarget )
 	}
 #endif
 
-	if ( pTarget->VPhysicsIsFlesh( ) )
-		return false;
-
 	IPhysicsObject *pObj = pTarget->VPhysicsGetObject();	
 
 	if ( pObj && pObj->GetGameFlags() & FVPHYSICS_PLAYER_HELD )
@@ -2985,7 +3139,37 @@ bool CWeaponPhysCannon::CanPickupObject( CBaseEntity *pTarget )
 		return CBasePlayer::CanPickupObject( pTarget, 0, 0 );
 	}
 
-	return CBasePlayer::CanPickupObject( pTarget, physcannon_maxmass.GetFloat(), 0 );
+	// HL2SB GMod-style grab scope.  HL2's CBasePlayer::CanPickupObject only
+	// accepts MOVETYPE_VPHYSICS entities under the mass limit, which silently
+	// excludes every live NPC (MOVETYPE_STEP), every dropped world weapon and
+	// every flesh ragdoll.  GMod's sandbox gravity gun is permissive - props,
+	// ragdolls (flesh or not), dropped weapons, NPCs and generic entities that
+	// own a physics object are all grabbable; players never are.  The mass
+	// limit still applies (physcannon_maxmass, default 250).
+	{
+		if ( pTarget->IsPlayer() )
+			return false;
+
+		IPhysicsObject *pList[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+		int nCount = pTarget->VPhysicsGetObjectList( pList, ARRAYSIZE( pList ) );
+		if ( nCount == 0 )
+			return false;
+
+		float flObjectMass = 0.0f;
+		for ( int i = 0; i < nCount; ++i )
+		{
+			if ( pList[i] == NULL )
+				continue;
+			flObjectMass += pList[i]->GetMass();
+			if ( pList[i]->GetGameFlags() & FVPHYSICS_NO_PLAYER_PICKUP )
+				return false;
+		}
+
+		if ( flObjectMass > physcannon_maxmass.GetFloat() )
+			return false;
+
+		return true;
+	}
 #else
 	return false;
 #endif
