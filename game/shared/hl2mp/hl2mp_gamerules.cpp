@@ -1155,6 +1155,10 @@ void CHL2MPRules::DeathNotice( CBasePlayer *pVictim, const CTakeDamageInfo &info
 		event->SetInt("attacker", killer_ID );
 #ifdef LUA_SDK
 		event->SetString("attackername", killer_class_name );
+		// hl2sb: prefer the killer entity's display name (the spawn menu SetName()s
+		// it at spawn) so a reskin NPC reads as itself, not as its base class
+		if ( pKiller != NULL && pKiller->GetEntityName() != NULL_STRING )
+			event->SetString( "attackerdisplay", STRING( pKiller->GetEntityName() ) );
 #endif
 		event->SetString("weapon", killer_weapon_name );
 #ifdef LUA_SDK

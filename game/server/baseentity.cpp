@@ -1684,6 +1684,18 @@ void CBaseEntity::SendOnKilledGameEvent( const CTakeDamageInfo &info )
 
 		event->SetString( "victimclass", GetClassname() );
 
+		// hl2sb: the DISPLAY name the spawn menu knows.  gm_spawnnpc/gm_spawn
+		// SetName() the entity with the registry's pretty name at spawn ("gi_hutao
+		// - Friendly"); a reskin (Class = npc_citizen + Model) is indistinguishable
+		// from any other citizen through victimclass alone, which is why the kill
+		// feed kept reading class names for addon NPCs.  Empty when unset; the
+		// client prefers these over the derived cosmetics.
+		if ( GetEntityName() != NULL_STRING )
+			event->SetString( "victimname", STRING( GetEntityName() ) );
+
+		if ( pAttacker != NULL && pAttacker->GetEntityName() != NULL_STRING )
+			event->SetString( "attackerdisplay", STRING( pAttacker->GetEntityName() ) );
+
 		// The weapon that dealt the damage. Mirror the player_death logic in
 		// hl2mp_gamerules.cpp so the client's death_<weapon> icon matches:
 		//  - If the inflictor is a distinct damage-dealing entity (a grenade,

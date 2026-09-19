@@ -553,8 +553,25 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		if ( !Q_strnicmp( pszVictimClass, "player", 6 ) )
 			return;		// player-vs-player handled via player_death
 
-		KillFeed_RawClassName( pszVictimClass, szVictimClass, sizeof( szVictimClass ) );
-		KillFeed_DisplayName( pszVictimClass, deathMsg.Victim.szName, sizeof( deathMsg.Victim.szName ) );
+		// hl2sb: the server puts the victim's display name (its targetname, set
+		// by gm_spawnnpc/gm_spawn from the registry) in "victimname".  A reskin
+		// (Class = npc_citizen + model) is indistinguishable from any other
+		// citizen through the class alone, so without this the feed read the
+		// class name (or a wrong registry hit) for every addon NPC that died.
+		const char *pszVictimName = event->GetString( "victimname", "" );
+		if ( pszVictimName && pszVictimName[0] )
+		{
+			// straight into BOTH slots: the display name is already human, and
+			// the Lua path receives it verbatim (PrettyName passes non-class
+			// strings through), so nothing mangles it back into a class
+			Q_strncpy( deathMsg.Victim.szName, pszVictimName, sizeof( deathMsg.Victim.szName ) );
+			Q_strncpy( szVictimClass, pszVictimName, sizeof( szVictimClass ) );
+		}
+		else
+		{
+			KillFeed_RawClassName( pszVictimClass, szVictimClass, sizeof( szVictimClass ) );
+			KillFeed_DisplayName( pszVictimClass, deathMsg.Victim.szName, sizeof( deathMsg.Victim.szName ) );
+		}
 		deathMsg.Victim.iEntIndex = 0;
 		deathMsg.bVictimIsNPC = true;
 
@@ -579,10 +596,20 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		}
 		else if ( pszAttackerName && pszAttackerName[0] )
 		{
-			// An NPC killed the entity (NPC-vs-NPC scrapping).
+			// An NPC killed the entity (NPC-vs-NPC scrapping).  "attackerdisplay"
+			// carries the killer's display name when it has one (see victimname).
+			const char *pszAttackerDisplay = event->GetString( "attackerdisplay", "" );
 			char szKillerDisplay[MAX_PLAYER_NAME_LENGTH];
-			KillFeed_RawClassName( pszAttackerName, szKillerClass, sizeof( szKillerClass ) );
-			KillFeed_DisplayName( pszAttackerName, szKillerDisplay, sizeof( szKillerDisplay ) );
+			if ( pszAttackerDisplay && pszAttackerDisplay[0] )
+			{
+				Q_strncpy( szKillerDisplay, pszAttackerDisplay, sizeof( szKillerDisplay ) );
+				Q_strncpy( szKillerClass, pszAttackerDisplay, sizeof( szKillerClass ) );
+			}
+			else
+			{
+				KillFeed_RawClassName( pszAttackerName, szKillerClass, sizeof( szKillerClass ) );
+				KillFeed_DisplayName( pszAttackerName, szKillerDisplay, sizeof( szKillerDisplay ) );
+			}
 
 			deathMsg.Killer.iEntIndex = 0;
 			Q_strncpy( deathMsg.Killer.szName, szKillerDisplay, MAX_PLAYER_NAME_LENGTH );
@@ -651,9 +678,20 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		else if ( pszAttackerName && pszAttackerName[0] )
 		{
 			// A non-player entity (NPC / world) killed the victim.
+			// "attackerdisplay" carries the killer's display name when it has
+			// one (see the entity_killed path).
+			const char *pszAttackerDisplay = event->GetString( "attackerdisplay", "" );
 			char szKillerDisplay[MAX_PLAYER_NAME_LENGTH];
-			KillFeed_RawClassName( pszAttackerName, szKillerClass, sizeof( szKillerClass ) );
-			KillFeed_DisplayName( pszAttackerName, szKillerDisplay, sizeof( szKillerDisplay ) );
+			if ( pszAttackerDisplay && pszAttackerDisplay[0] )
+			{
+				Q_strncpy( szKillerDisplay, pszAttackerDisplay, sizeof( szKillerDisplay ) );
+				Q_strncpy( szKillerClass, pszAttackerDisplay, sizeof( szKillerClass ) );
+			}
+			else
+			{
+				KillFeed_RawClassName( pszAttackerName, szKillerClass, sizeof( szKillerClass ) );
+				KillFeed_DisplayName( pszAttackerName, szKillerDisplay, sizeof( szKillerDisplay ) );
+			}
 
 			deathMsg.Killer.iEntIndex = 0;
 			Q_strncpy( deathMsg.Killer.szName, szKillerDisplay, MAX_PLAYER_NAME_LENGTH );
