@@ -9,9 +9,11 @@
 #include "cbase.h"
 #include "luamanager.h"
 #include "lbaseanimating.h"
+#include "lbaseentity_shared.h"	// HL2SB: HL2SB_PushNullEntityIndex for the NULL __index branch
 #include "mathlib/lvector.h"
 #include "lvphysics_interface.h"
 #include "ltakedamageinfo.h"	// luaL_checkdamageinfo (Entity:BecomeRagdoll)
+#include "physics_prop_ragdoll.h"	// CreateServerRagdoll (Entity:BecomeRagdoll)
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -469,7 +471,32 @@ static int CBaseAnimating_BecomeRagdoll (lua_State *L) {
 
   Vector forceVector = ( lua_gettop(L) >= 3 ) ? luaL_checkvector(L, 3 ) : vec3_origin;
 
-  pCharacter->BecomeRagdoll( info, forceVector );
+  // GMod's ENTITY:BecomeRagdoll creates a SERVER-side ragdoll and removes the
+  // bot.  The engine default (CBaseCombatCharacter::BecomeRagdoll) falls
+  // through to BecomeRagdollOnClient() for anything that is not an HL2 NPC --
+  // that path relies on the networked death flag being acted on by the CLIENT
+  // entity, which C_NextBotCombatCharacter never does.  A killed Lua nextbot
+  // therefore left NO corpse: the bot was removed and it simply vanished
+  // (2026-09-20: SCP-096 shot with the admin gun).  Build the server ragdoll
+  // here directly, the way the NPC death path does.
+  CTakeDamageInfo info2 = info;
+  info2.SetDamageForce( forceVector );
+
+  CBaseEntity *pRagdoll = CreateServerRagdoll( pCharacter, 0, info2, COLLISION_GROUP_INTERACTIVE_DEBRIS, true );
+  if ( pRagdoll != NULL )
+  {
+    // carry the death momentum over; the ragdoll spawns at rest.  A ragdoll
+    // from a custom model can be MOVETYPE_VPHYSICS with NO vphysics object
+    // (admin gun on a verify NPC, 2026-09-20): ApplyAbsVelocityImpulse
+    // dereferences VPhysicsGetObject() unguarded on that path, so only go
+    // through it when the physics object actually exists.
+    Vector vecImpulse = pCharacter->GetAbsVelocity();
+    IPhysicsObject *pRagdollPhys = pRagdoll->VPhysicsGetObject();
+    if ( pRagdollPhys != NULL )
+      pRagdollPhys->AddVelocity( &vecImpulse, NULL );
+    else
+      Warning( "[HL2SB] BecomeRagdoll: ragdoll for '%s' has no vphysics object, skipping momentum\n", pCharacter->GetClassname() );
+  }
 
   // HL2SB GMod compat: the wiki's contract for NPC:BecomeRagdoll is
   // "Become a ragdoll AND REMOVE THE ENTITY", and internally it "handles
@@ -505,13 +532,10 @@ static int CBaseAnimating_VPhysicsUpdate (lua_State *L) {
 static int CBaseAnimating___index (lua_State *L) {
   CBaseAnimating *pEntity = lua_toanimating(L, 1);
   if (pEntity == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+    /* HL2SB: GMod's NULL sentinel answers reads instead of raising -- same
+    ** contract as CBaseEntity___index / CBasePlayer___index. */
+    HL2SB_PushNullEntityIndex( L, lua_tostring( L, 2 ) );
+    return 1;
   }
   if (lua_isrefvalid(L, pEntity->m_nTableReference)) {
     lua_getref(L, pEntity->m_nTableReference);

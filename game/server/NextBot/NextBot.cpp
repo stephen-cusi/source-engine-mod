@@ -405,6 +405,14 @@ void NextBotCombatCharacter::Event_Killed( const CTakeDamageInfo &info )
 		m_lastAttacker = info.GetAttacker()->MyCombatCharacterPointer();
 	}
 
+	// HL2SB: this override exists to skip CBaseCombatCharacter::Event_Killed's
+	// immediate ragdolling -- but the skip also dropped the kill feed.
+	// SendOnKilledGameEvent() is what fires the entity_killed event the client
+	// HUD listens to, and CBaseCombatCharacter::Event_Killed (the only other
+	// caller) is never reached for a bot: killing a Lua nextbot produced NO
+	// kill feed entry at all (2026-09-20, SCP-096 vs the admin gun).
+	SendOnKilledGameEvent( info );
+
 	// propagate event to my components
 	OnKilled( info );
 	
