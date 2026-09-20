@@ -179,6 +179,26 @@ LUA_BINDING_BEGIN( Renders, UpdateScreenEffectTexture, "library", "Update the sc
 }
 LUA_BINDING_END()
 
+// HL2SB GMod compat: render.UpdateRefractTexture() -- wiki: "Pretty much alias
+// of render.UpdatePowerOfTwoTexture but does not return the texture."  The
+// Nuke Pack's blastwave effect calls it before drawing refract sprites.
+LUA_BINDING_BEGIN( Renders, UpdateRefractTexture, "library", "Updates the refract texture.", "client" )
+{
+    UpdateRefractTexture();
+    return 0;
+}
+LUA_BINDING_END()
+
+// HL2SB GMod compat: render.GetDXLevel() -- wiki: returns the maximum available
+// DirectX version.  This fork is DX9-only (shaderapidx9), so the honest answer
+// is a constant 90.
+LUA_BINDING_BEGIN( Renders, GetDXLevel, "library", "Returns the maximum available DirectX version.", "client" )
+{
+    lua_pushinteger( L, 90 );
+    return 1;
+}
+LUA_BINDING_END()
+
 LUA_BINDING_BEGIN( Renders, PushView3D, "library", "Push a 3D view.", "client" )
 {
     CViewSetup playerView = *view->GetPlayerViewSetup();
@@ -461,7 +481,7 @@ LUA_BINDING_END()
 ** WARNING: the studio renderer KEEPS THE POINTER, so the array has to outlive the draw
 ** call.  It is a file static for that reason: handing it a stack local is exactly the
 ** bug that turns every model and brush purple after a CModelPanel overlay closes
-** (game/client/hl2sb_contextmenu.cpp:405-432 documents the same trap).
+** (the removed C++ context menu hit the same trap in its CModelPanel::Paint override).
 */
 static LightDesc_t g_HL2SBLocalModelLights[4];
 static int g_nHL2SBLocalModelLights = 0;
@@ -623,7 +643,7 @@ LUA_BINDING_BEGIN( Renders, BindLocalCubemap, "library", "Binds a cubemap for th
     ** Deviation: nil clears the binding again.  The bind is global render state and the
     ** Lua model panel draws inside a vgui paint, so leaving the preview's cubemap bound
     ** would leak it into the world pass - the same class of leak documented in
-    ** game/client/hl2sb_contextmenu.cpp:405-432.
+    ** the removed C++ context menu hit the same trap.
     */
     CMatRenderContextPtr pRenderContext( materials );
 

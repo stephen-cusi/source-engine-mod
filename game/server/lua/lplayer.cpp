@@ -51,6 +51,23 @@ static int CBasePlayer_UniqueID (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Player:ChatPrint( message ) -- "Prints a string to the
+// chatbox of the client" (wiki).  GMod addons announce things per-player
+// through it; scp049's infection broadcast sits on line 232 right before the
+// zombie spawn, so without the server binding the whole kill->infect path
+// aborted there.  The client realm has the binding (lc_chat.cpp); the server
+// answers through the same usermessage GMod's own C++ uses
+// (ClientPrint + HUD_PRINTTALK, util.cpp:1281).
+//-----------------------------------------------------------------------------
+static int CBasePlayer_ChatPrint (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  const char *pszMessage = luaL_checkstring( L, 2 );
+
+  ClientPrint( pPlayer, HUD_PRINTTALK, pszMessage );
+  return 0;
+}
+
 static int CBasePlayer_GiveAmmo (lua_State *L) {
   switch(lua_type(L, 3)) {
     case LUA_TNUMBER:
@@ -543,6 +560,29 @@ static int CBasePlayer_LagCompensation (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: Player:SetViewEntity( ent ) / Player:GetViewEntity().
+// GMod wiki (Player:SetViewEntity): "Attaches the players view to the position
+// and angles of the specified entity."  CBasePlayer has had the engine half all
+// along (SetViewEntity/GetViewEntity, player.cpp); only the binding was missing.
+// The Nuke Pack uses it for its missile camera (Owner:SetViewEntity(rocket)).
+// A nil entity detaches back to the player's own view, matching GMod.
+static int CBasePlayer_SetViewEntity (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  CBaseEntity *pViewEntity = lua_toentity( L, 2 );   // NULL = detach
+  pPlayer->SetViewEntity( pViewEntity );
+  return 0;
+}
+
+static int CBasePlayer_GetViewEntity (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  CBaseEntity *pViewEntity = pPlayer->GetViewEntity();
+  if ( pViewEntity )
+    lua_pushentity( L, pViewEntity );
+  else
+    lua_pushnil( L );
+  return 1;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"GiveAmmo", CBasePlayer_GiveAmmo},
   {"SetBodyPitch", CBasePlayer_SetBodyPitch},
@@ -639,6 +679,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"EquipSuit", CBasePlayer_EquipSuit},
   {"RemoveSuit", CBasePlayer_RemoveSuit},
   {"UniqueID", CBasePlayer_UniqueID},
+  {"ChatPrint", CBasePlayer_ChatPrint},
+  {"SetViewEntity", CBasePlayer_SetViewEntity},
+  {"GetViewEntity", CBasePlayer_GetViewEntity},
   {NULL, NULL}
 };
 

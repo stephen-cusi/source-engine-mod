@@ -1033,6 +1033,11 @@ static const luaL_Reg surfacelib[] = {
   {"SurfaceGetCursorPos",   surface_SurfaceGetCursorPos},
   {"SurfaceSetCursorPos",   surface_SurfaceSetCursorPos},
   {"UnlockCursor",   surface_UnlockCursor},
+  // HL2SB GMod compat: surface.ScreenWidth()/ScreenHeight() -- GMod wiki marks
+  // both deprecated in favour of ScrW()/ScrH(), but the Nuke Pack's HUD effects
+  // still call them; same answer as the gui.* pair above.
+  {"ScreenWidth",   HL2SB_gui_ScreenWidth},
+  {"ScreenHeight",   HL2SB_gui_ScreenHeight},
   {NULL, NULL}
 };
 

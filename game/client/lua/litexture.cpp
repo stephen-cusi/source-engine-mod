@@ -516,6 +516,59 @@ static IMaterial *HL2SB_FindOrCreateImageMaterial( const char *pMaterialName )
     return pMaterial;
 }
 
+// HL2SB GMod compat: IMaterial:SetInt( name, value ) / GetInt( name )
+// / SetFloat / GetFloat (wiki: IMaterial).  The Nuke Pack's nukestrike cl_init
+// opens with matTargetLight:SetInt("$spriterendermode", 9) and the whole client
+// file failed to load without it.  Implemented over IMaterial::FindVar, which
+// creates the var when missing (same as the material system's own users).
+static int HL2SB_IMaterial_SetInt( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pszVar = luaL_checkstring( L, 2 );
+    const int iValue = luaL_checkint( L, 3 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    if ( pVar != NULL )
+        pVar->SetIntValue( iValue );
+    return 0;
+}
+
+static int HL2SB_IMaterial_GetInt( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pszVar = luaL_checkstring( L, 2 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    lua_pushinteger( L, ( pVar != NULL ) ? pVar->GetIntValue() : 0 );
+    return 1;
+}
+
+static int HL2SB_IMaterial_SetFloat( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pszVar = luaL_checkstring( L, 2 );
+    const float flValue = (float)luaL_checknumber( L, 3 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    if ( pVar != NULL )
+        pVar->SetFloatValue( flValue );
+    return 0;
+}
+
+static int HL2SB_IMaterial_GetFloat( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pszVar = luaL_checkstring( L, 2 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    lua_pushnumber( L, ( pVar != NULL ) ? pVar->GetFloatValue() : 0.0f );
+    return 1;
+}
+
 static int HL2SB_IMaterial_GetColor( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
@@ -638,20 +691,40 @@ static int HL2SB_Material( lua_State *L )
 */
 static int HL2SB_CreateMaterial( lua_State *L )
 {
+    // HL2SB GMod compat: GMod's signature is
+    //     CreateMaterial( name, shaderName, paramsTable )
+    // (wiki: Global.CreateMaterial).  This host originally shipped a 2-arg form
+    //     CreateMaterial( name, paramsTable )        -- "shader" key in the table
+    // and the Nuke Pack's detpack/missile cl_init called the GMod form, which
+    // failed here with "bad argument #2 (table expected, got string)" and left
+    // the whole entity unregistered.  Dispatch on the runtime types: a string in
+    // slot 2 means the GMod form.
     const char *pName = luaL_checkstring( L, 1 );
-    luaL_checktype( L, 2, LUA_TTABLE );
+    bool bGModForm = ( lua_type( L, 2 ) == LUA_TSTRING );
+    int iParams = bGModForm ? 3 : 2;
+    if ( !lua_istable( L, iParams ) )
+    {
+        luaL_error( L, "CreateMaterial: params table expected (got %s)", lua_typename( L, lua_type( L, iParams ) ) );
+    }
 
     const char *pszShader = "UnlitGeneric";
-    lua_getfield( L, 2, "shader" );
-    if ( lua_type( L, -1 ) == LUA_TSTRING )
-        pszShader = lua_tostring( L, -1 );
-    lua_pop( L, 1 );
+    if ( bGModForm )
+    {
+        pszShader = luaL_checkstring( L, 2 );
+    }
+    else
+    {
+        lua_getfield( L, 2, "shader" );
+        if ( lua_type( L, -1 ) == LUA_TSTRING )
+            pszShader = lua_tostring( L, -1 );
+        lua_pop( L, 1 );
+    }
 
     KeyValues *pKV = new KeyValues( pszShader );
 
     // Walk the params table, skipping the "shader" key.
     lua_pushnil( L );
-    while ( lua_next( L, 2 ) != 0 )
+    while ( lua_next( L, iParams ) != 0 )
     {
         // key at -2, value at -1
         if ( lua_type( L, -2 ) == LUA_TSTRING )
@@ -718,6 +791,15 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
         // images (and therefore samples .png materials as black).
         lua_pushcfunction( L, HL2SB_IMaterial_GetColor );
         lua_setfield( L, -2, "GetColor" );
+
+        lua_pushcfunction( L, HL2SB_IMaterial_SetInt );
+        lua_setfield( L, -2, "SetInt" );
+        lua_pushcfunction( L, HL2SB_IMaterial_GetInt );
+        lua_setfield( L, -2, "GetInt" );
+        lua_pushcfunction( L, HL2SB_IMaterial_SetFloat );
+        lua_setfield( L, -2, "SetFloat" );
+        lua_pushcfunction( L, HL2SB_IMaterial_GetFloat );
+        lua_setfield( L, -2, "GetFloat" );
     }
     lua_pop( L, 1 );
 

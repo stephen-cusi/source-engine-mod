@@ -161,6 +161,21 @@ static int CNavArea_GetID( lua_State *L )
 	return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: CNavArea:IsValid() -- GMod's CNavArea answers it, and GMod
+// addons gate navmesh.GetNearestNavArea() results through the GLOBAL IsValid()
+// (scp0492base's SpawnIn).  Without the method the global's `object.IsValid`
+// lookup yielded nil and IsValid() answered FALSE for a perfectly live area,
+// so every spawned nextbot removed itself the instant it appeared
+// ("spawned too far away from a navmesh!", 2026-09-20).
+//-----------------------------------------------------------------------------
+static int CNavArea_IsValid( lua_State *L )
+{
+	CNavArea **ppArea = (CNavArea **)luaL_testudata( L, 1, "CNavArea" );
+	lua_pushboolean( L, ppArea != NULL && *ppArea != NULL );
+	return 1;
+}
+
 static int CNavArea_GetCenter( lua_State *L )
 {
 	CNavArea *pArea = CheckNavArea( L );
@@ -755,6 +770,15 @@ static int PathFollower_Compute( lua_State *L )
 	// and an ENTITY is accepted too (aim at its origin) - CBaseEntity is tested
 	// first because a Vector's Lua representation is not guaranteed to be a
 	// table, so lua_type() is not the right question here.
+	//
+	// HL2SB fix (2026-09-20, npc_scp_049): the addon passes
+	// self:GetEnemy():GetPos() straight in.  GetEnemy() can answer a NULL
+	// entity, whose GetPos() is the NULL-entity convention's `false` -- and
+	// luaL_argerror on a method call reports the GOAL slot as "#2" (lauxlib
+	// subtracts the self argument), which pointed the traceback away from the
+	// real cause.  A boolean/nil goal is now reported AS that, once per bot
+	// per second, and the path simply stays invalid -- a hard throw here
+	// killed the whole behaviour coroutine and the bot froze mid-chase.
 	Vector vecGoal;
 	CBaseEntity *pSubject = lua_toentity( L, 3 );
 
@@ -762,8 +786,19 @@ static int PathFollower_Compute( lua_State *L )
 	{
 		vecGoal = pSubject->GetAbsOrigin();
 	}
-	else if ( lua_isnoneornil( L, 3 ) )
+	else if ( lua_isnoneornil( L, 3 ) || lua_isboolean( L, 3 ) )
 	{
+		static float s_flNextBadGoal = 0.0f;
+		float flNow = (float)gpGlobals->curtime;
+		if ( flNow >= s_flNextBadGoal )
+		{
+			s_flNextBadGoal = flNow + 1.0f;
+			luasrc_LuaInfoMsgF(
+				"[HL2SB] Path:Compute goal is %s, not a Vector -- ENT:GetEnemy() "
+				"answered an invalid entity (bot '%s')\n",
+				lua_typename( L, lua_type( L, 3 ) ),
+				( pBot->GetEntity() != NULL ) ? pBot->GetEntity()->GetClassname() : "?" );
+		}
 		return 0;
 	}
 	else
@@ -1076,6 +1111,7 @@ void LuaNavMesh_Install( void )
 	lua_setfield( L, -2, "__index" );
 
 	lua_pushcfunction( L, CNavArea_GetID );					lua_setfield( L, -2, "GetID" );
+	lua_pushcfunction( L, CNavArea_IsValid );				lua_setfield( L, -2, "IsValid" );
 	lua_pushcfunction( L, CNavArea_GetCenter );				lua_setfield( L, -2, "GetCenter" );
 	lua_pushcfunction( L, CNavArea_GetSizeX );				lua_setfield( L, -2, "GetSizeX" );
 	lua_pushcfunction( L, CNavArea_GetSizeY );				lua_setfield( L, -2, "GetSizeY" );
@@ -1083,6 +1119,11 @@ void LuaNavMesh_Install( void )
 	lua_pushcfunction( L, CNavArea_GetCorner );				lua_setfield( L, -2, "GetCorner" );
 	lua_pushcfunction( L, CNavArea_Contains );				lua_setfield( L, -2, "Contains" );
 	lua_pushcfunction( L, CNavArea_GetClosestPoint );		lua_setfield( L, -2, "GetClosestPoint" );
+	// HL2SB GMod compat: GMod's method NAME is GetClosestPointOnArea (wiki) --
+	// scp0492base's SpawnIn calls nav:GetClosestPointOnArea( pos ), and with
+	// only "GetClosestPoint" registered that read was nil and every spawned
+	// nextbot aborted its RunBehaviour on the navmesh sanity check.
+	lua_pushcfunction( L, CNavArea_GetClosestPoint );		lua_setfield( L, -2, "GetClosestPointOnArea" );
 	lua_pushcfunction( L, CNavArea_GetRandomPoint );		lua_setfield( L, -2, "GetRandomPoint" );
 	lua_pushcfunction( L, CNavArea_IsFlat );				lua_setfield( L, -2, "IsFlat" );
 	lua_pushcfunction( L, CNavArea_IsUnderwater );			lua_setfield( L, -2, "IsUnderwater" );
