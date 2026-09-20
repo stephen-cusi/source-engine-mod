@@ -369,7 +369,42 @@ static int CBaseAnimating_SetPlaybackRate (lua_State *L) {
 }
 
 static int CBaseAnimating_SetPoseParameter (lua_State *L) {
-  lua_pushnumber(L, luaL_checkanimating(L, 1)->SetPoseParameter(luaL_checkinteger(L, 2), luaL_checknumber(L, 3)));
+  // HL2SB GMod compat: the pose NAME is the form GMod addons use
+  // (scp049's MovementFunctions calls self:SetPoseParameter( "move_x", rate )).
+  switch(lua_type(L, 2)) {
+	case LUA_TNUMBER:
+	  lua_pushnumber(L, luaL_checkanimating(L, 1)->SetPoseParameter(luaL_checkint(L, 2), luaL_checknumber(L, 3)));
+	  break;
+	case LUA_TSTRING:
+	default:
+	  lua_pushnumber(L, luaL_checkanimating(L, 1)->SetPoseParameter(luaL_checkstring(L, 2), luaL_checknumber(L, 3)));
+	  break;
+  }
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:TranslatePhysBoneToBone( physBone ) -- the bone
+// index a physics bone is attached to (wiki).  The C++ classes have no such
+// method in this fork, but the mapping is right there in the studio bone table
+// (mstudiobone_t::physicsbone), so walk it here.  No match answers -1, the
+// GMod value for "not part of the ragdoll".
+//-----------------------------------------------------------------------------
+static int CBaseAnimating_TranslatePhysBoneToBone (lua_State *L) {
+  CBaseAnimating *pEntity = luaL_checkanimating( L, 1 );
+  int nPhysBone = luaL_checkint( L, 2 );
+
+  CStudioHdr *pStudioHdr = pEntity->GetModelPtr();
+  if ( pStudioHdr != NULL ) {
+    for ( int i = 0; i < pStudioHdr->numbones(); i++ ) {
+      if ( pStudioHdr->pBone( i )->physicsbone == nPhysBone ) {
+        lua_pushinteger( L, i );
+        return 1;
+      }
+    }
+  }
+
+  lua_pushinteger( L, -1 );
   return 1;
 }
 
@@ -538,35 +573,57 @@ static int CBaseAnimating___index (lua_State *L) {
     return 1;
   }
   if (lua_isrefvalid(L, pEntity->m_nTableReference)) {
+    // HL2SB (2026-09-20, resolves the two-session collision on this function):
+    // SCRIPT-TABLE FUNCTIONS are overrides and win over C++ methods; a
+    // script-table DATA (non-function) field never shadows a C++ method.
+    //
+    // Both halves matter and neither order alone works:
+    //   * C-methods-first (the previous edit) broke every Lua override of a
+    //     C++ method name: npc_scp_049.lua:107 defines ENT:GetEnemy() (nextbot
+    //     enemies live in the script table as self.Enemy), but the C
+    //     {"GetEnemy"} (the CAI enemy, always NULL for a nextbot) won instead,
+    //     GetPos() on it answered the NULL-entity false, and Path:Compute threw
+    //     once per behaviour tick -- the bot stood still and never attacked.
+    //   * script-table-first (the edit before that) let scp0492base.lua:38's
+    //     ENT.Health = 0 shadow {"Health"}, and self:Health() raised "attempt
+    //     to call a number value" on every CheckValid().
+    //
+    // ⚠️ The metatable reads are lua_rawget on purpose: lua_gettable here would
+    // re-enter THIS __index through the metatable's own __index field and
+    // answer every script-table field with the NULL-sentinel method.
     lua_getref(L, pEntity->m_nTableReference);
     lua_pushvalue(L, 2);
-    lua_gettable(L, -2);
-    if (lua_isnil(L, -1)) {
-      lua_pop(L, 2);
-      lua_getmetatable(L, 1);
-      lua_pushvalue(L, 2);
-      lua_gettable(L, -2);
-      if (lua_isnil(L, -1)) {
-        lua_pop(L, 2);
+    lua_rawget(L, -2);
+    if (lua_isfunction(L, -1))
+      return 1;                    // Lua override beats everything
+    lua_pop(L, 2);
 
-        /*
-        ** HL2SB: the object's own metatable was already tried above, but for a clientside
-        ** model that metatable is CBaseFlex, while every animating method (LookupSequence,
-        ** ResetSequence, GetNumBodyGroups, SetBodygroup, SkinCount, ...) lives on THIS
-        ** class's metatable.  Look there before giving up on CBaseEntity (same fix as the
-        ** client-side copy in game/client/lua/lc_baseanimating.cpp).
-        */
-        luaL_getmetatable(L, "CBaseAnimating");
-        lua_pushvalue(L, 2);
-        lua_gettable(L, -2);
-        if (lua_isnil(L, -1)) {
-          lua_pop(L, 2);
-          luaL_getmetatable(L, "CBaseEntity");
-          lua_pushvalue(L, 2);
-          lua_gettable(L, -2);
-        }
-      }
-    }
+    lua_getmetatable(L, 1);
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    if (lua_isfunction(L, -1))
+      return 1;                    // C++ method beats a data field
+    lua_pop(L, 2);
+
+    luaL_getmetatable(L, "CBaseAnimating");
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    if (lua_isfunction(L, -1))
+      return 1;
+    lua_pop(L, 2);
+
+    luaL_getmetatable(L, "CBaseEntity");
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    if (lua_isfunction(L, -1))
+      return 1;
+    lua_pop(L, 2);
+
+    // (3) script-table data value
+    lua_getref(L, pEntity->m_nTableReference);
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    return 1;                      // value or nil
   }
   else {
     lua_getmetatable(L, 1);
@@ -701,6 +758,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"SetPlaybackRate", CBaseAnimating_SetPlaybackRate},
   {"SetPoseParameter", CBaseAnimating_SetPoseParameter},
   {"SetSequence", CBaseAnimating_SetSequence},
+  {"TranslatePhysBoneToBone", CBaseAnimating_TranslatePhysBoneToBone},
   {"StudioFrameAdvance", CBaseAnimating_StudioFrameAdvance},
   {"FrameAdvance", CBaseAnimating_FrameAdvance},
   {"BecomeRagdoll", CBaseAnimating_BecomeRagdoll},

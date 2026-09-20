@@ -25,6 +25,8 @@
 #else
 #include "lbaseanimating.h"
 #include "lrecipientfilter.h"
+#include "ai_basenpc.h"				// HL2SB: NPC:AddEntityRelationship (CAI_BaseNPC::AddEntityRelationship)
+#include "eventqueue.h"				// HL2SB: Entity:Fire's delay argument (g_EventQueue.AddEvent)
 #endif
 #include "lbaseplayer_shared.h"
 #include "lbasecombatweapon_shared.h"
@@ -1677,8 +1679,19 @@ static int CBaseEntity_Fire (lua_State *L) {
     else if ( nType == LUA_TBOOLEAN )
       valueData.SetBool( lua_toboolean(L, 3) != 0 );
   }
-  CBaseEntity *pActivator = lua_isnoneornil(L, 4) ? NULL : lua_toentity(L, 4);
-  pEntity->AcceptInput( szInput, pActivator, pActivator, valueData, 0 );
+  // HL2SB GMod compat: GMod's signature is Fire( input, param, delay, activator,
+  // caller ).  Arg 4 used to be read as the ACTIVATOR, so scp049's
+  // bleed:Fire( "Kill", "", time ) queued the kill input with a string where an
+  // entity belonged and fired it immediately -- the particle died the frame it
+  // was born.  A delay routes through the server event queue like a real I/O.
+  float flDelay = luaL_optnumber( L, 4, 0 );
+  CBaseEntity *pActivator = lua_isnoneornil(L, 5) ? NULL : lua_toentity(L, 5);
+  CBaseEntity *pCaller = lua_isnoneornil(L, 6) ? NULL : lua_toentity(L, 6);
+
+  if ( flDelay > 0 )
+    g_EventQueue.AddEvent( pEntity, szInput, valueData, flDelay, pActivator, pCaller );
+  else
+    pEntity->AcceptInput( szInput, pActivator, pCaller, valueData, 0 );
   return 0;
 }
 #endif
@@ -2670,6 +2683,102 @@ static int CBaseEntity_GetNWEntity (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:SetVar( name, value ) / Entity:GetVar( name
+// [, default] ).  GMod stores these on the entity for scripts to stash their
+// own state (the Nuke Pack: nuke:SetVar("variation", n)).  We keep the values
+// in the entity's own scripted-variable table under a dedicated sub-table, so
+// any Lua value round-trips and cross-entity reads work, and the table dies
+// with the entity (no entindex-keyed dict to clean up).
+// Only scripted entities have a table; on anything else SetVar stores nothing
+// and GetVar returns the default.
+//-----------------------------------------------------------------------------
+static const char *HL2SB_VARS_SUBTABLE = "__hl2sb_vars";
+
+static bool HL2SB_EntityPushVarsTable( lua_State *L, CBaseEntity *pEntity, bool bCreate )
+{
+  if ( pEntity == NULL || pEntity->m_nTableReference < 0 ||
+       !lua_isrefvalid( L, pEntity->m_nTableReference ) )
+    return false;
+
+  lua_getref( L, pEntity->m_nTableReference );          // [.., enttable]
+  if ( !lua_istable( L, -1 ) )
+  {
+    lua_pop( L, 1 );
+    return false;
+  }
+
+  lua_pushstring( L, HL2SB_VARS_SUBTABLE );             // [.., enttable, key]
+  lua_rawget( L, -2 );                                  // [.., enttable, vartab?]
+  if ( !lua_istable( L, -1 ) )
+  {
+    lua_pop( L, 1 );                                    // [.., enttable]
+    if ( !bCreate )
+    {
+      lua_pop( L, 1 );
+      return false;
+    }
+    lua_newtable( L );                                  // [.., enttable, vartab]
+    lua_pushstring( L, HL2SB_VARS_SUBTABLE );
+    lua_pushvalue( L, -2 );
+    lua_rawset( L, -4 );                                // enttable[key] = vartab
+  }
+  lua_remove( L, -2 );                                  // [.., vartab]
+  return true;
+}
+
+static int CBaseEntity_SetVar (lua_State *L) {
+  CBaseEntity *pEntity = lua_toentity( L, 1 );
+  const char *pszName = luaL_checkstring( L, 2 );
+  if ( pEntity == NULL || pszName[0] == '\0' || !HL2SB_EntityPushVarsTable( L, pEntity, true ) )
+    return 0;
+  // [.., vartab]
+  lua_pushstring( L, pszName );
+  lua_pushvalue( L, 3 );
+  lua_rawset( L, -3 );
+  lua_pop( L, 1 );
+  return 0;
+}
+
+static int CBaseEntity_GetVar (lua_State *L) {
+  CBaseEntity *pEntity = lua_toentity( L, 1 );
+  const char *pszName = luaL_checkstring( L, 2 );
+  if ( pEntity != NULL && pszName[0] != '\0' && HL2SB_EntityPushVarsTable( L, pEntity, false ) )
+  {
+    lua_pushstring( L, pszName );
+    lua_rawget( L, -2 );
+    if ( !lua_isnil( L, -1 ) )
+    {
+      lua_remove( L, -2 );
+      return 1;
+    }
+    lua_pop( L, 2 );   // nil + vartab
+  }
+  lua_pushvalue( L, 3 );   // GMod: GetVar's default is nil when not given
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:SetOverlayText( text ) / Entity:GetOverlayText().
+// GMod shows this text over the entity (wiremod-style); here it is stored so
+// scripts can round-trip it.  Rendering the overlay is not wired up yet --
+// no addon under test reads it back visually.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_SetOverlayText (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszValue = luaL_optstring(L, 2, "");
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, "overlaytext", true );
+  if (p) p->s = pszValue;
+  return 0;
+}
+
+static int CBaseEntity_GetOverlayText (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, "overlaytext", false );
+  lua_pushstring( L, ( p && p->s.Length() ) ? p->s.Get() : "" );
+  return 1;
+}
+
 static int CBaseEntity_WorldAlignMaxs (lua_State *L) {
   Vector v = luaL_checkentity(L, 1)->WorldAlignMaxs();
   lua_pushvector(L, v);
@@ -2779,6 +2888,24 @@ static int CBaseEntity___index (lua_State *L) {
     lua_pushinteger(L, pEntity->m_nModelIndex);
   else if (Q_strcmp(field, "touchStamp") == 0)
     lua_pushinteger(L, pEntity->touchStamp);
+  /* HL2SB GMod compat: instance fields first (script overrides beat C
+  ** methods), EXCEPT a non-function field never shadows a C method.
+  **
+  ** The plain order matters in both directions:
+  **   * npc_scp_049.lua:107 overrides GetEnemy() in Lua and stores the enemy
+  **     in self.Enemy -- nextbots keep their enemy on the script side, so the
+  **     script function MUST win over the C {"GetEnemy"} (reading the CAI
+  **     enemy, always NULL for a nextbot).  A C-method-first order turned
+  **     every GetEnemy into NULL, GetPos() into the NULL-entity false, and
+  **     Path:Compute threw "Vector expected, got boolean" once per behaviour
+  **     tick -- that is what froze the 049 bots mid-chase (2026-09-20).
+  **   * scp0492base.lua:38 declares ENT.Health = 0; the copy on the instance
+  **     table shadowed {"Health"} and self:Health() died with "attempt to
+  **     call a number value (method 'Health')".  So: if the table's value for
+  **     the key is not a function while the C metatable HAS one, the C method
+  **     wins -- data fields (Enemy, C4s, PrintName, ...) still resolve from
+  **     the table, Lua function overrides still override.
+  */
   else if (lua_isrefvalid(L, pEntity->m_nTableReference)) {
     lua_getref(L, pEntity->m_nTableReference);
     lua_getfield(L, -1, field);
@@ -2786,6 +2913,15 @@ static int CBaseEntity___index (lua_State *L) {
       lua_pop(L, 2);
       lua_getmetatable(L, 1);
       lua_getfield(L, -1, field);
+    } else if (!lua_isfunction(L, -1)) {
+      /* data field in the table -- but does a C method own the name?  If it
+      ** does, the method is already on top and is the answer; otherwise drop
+      ** the meta lookup and return the table's value. */
+      lua_getmetatable(L, 1);
+      lua_getfield(L, -1, field);
+      if (lua_isfunction(L, -1))
+        return 1;            /* C method wins over a data field */
+      lua_pop(L, 2);         /* meta + nil -- table value back on top */
     }
   }
   else {
@@ -2977,6 +3113,75 @@ static int CBaseEntity_TakeDamageInfo (lua_State *L) {
   (void)info;
 #endif
 
+  return 0;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:GetOwner() -- the m_hOwnerEntity every GMod spawn
+// script reads back (cod_c4 asks dmginfo:GetInflictor():GetOwner(); undo.lua's
+// carried-weapon check asks ent:GetOwner()).  The WEAPON metatable already had
+// a GetOwner (its owner is a CBaseCombatCharacter); the generic entity had
+// nothing, so those reads raised "attempt to call a nil value".  The shared
+// C++ accessor for the same field is GetOwnerEntity().
+//-----------------------------------------------------------------------------
+static int CBaseEntity_GetOwner (lua_State *L) {
+  lua_pushentity( L, luaL_checkentity( L, 1 )->GetOwnerEntity() );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:GetName() -- the targetname (m_iName), the same
+// answer GMod gives.  The name exists on the server entity only in this fork
+// (baseentity.h), and GMod networks it to the client while we do not, so the
+// client answers the empty string rather than raising.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_GetName (lua_State *L) {
+#ifdef GAME_DLL
+  lua_pushstring( L, STRING( luaL_checkentity( L, 1 )->GetEntityName() ) );
+#else
+  (void)L;
+  luaL_checkentity( L, 1 );
+  lua_pushstring( L, "" );
+#endif
+  return 1;
+}
+
+#ifdef GAME_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: NPC:AddEntityRelationship( target, disposition, priority ).
+// scp049's targeting scheme makes every AI NPC love or hate the bot's hidden
+// npc_bullseye through this call; without it stock NPCs never fight nextbots.
+// Disposition is the D_ enum, whose values are Source's own Disposition_t
+// (D_HT=1 hate, D_FR=2 fear, D_LI=3 like, D_NU=4 neutral) -- addons pass raw
+// numbers.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_AddEntityRelationship (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CBaseEntity *pTarget = lua_toentity( L, 2 );
+  int nDisposition = luaL_checkint( L, 3 );
+  int nPriority = luaL_optint( L, 4, 0 );
+
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL || pTarget == NULL )
+    return 0;
+
+  pNPC->AddEntityRelationship( pTarget, (Disposition_t)nDisposition, nPriority );
+  return 0;
+}
+#endif
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:PhysicsInitShadow( allowMovement, allowRotation )
+// (wiki).  scp049-2's CollisionSetup calls it while booting; without the
+// binding the whole Initialize aborted and the zombie never got up.  Both
+// realms' entity classes carry VPhysicsInitShadow.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_PhysicsInitShadow (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  bool bAllowMovement = luaL_optboolean( L, 2, true );
+  bool bAllowRotation = luaL_optboolean( L, 3, false );
+
+  pEntity->VPhysicsInitShadow( bAllowMovement, bAllowRotation );
   return 0;
 }
 
@@ -3491,21 +3696,31 @@ static int CBaseEntity_SetUseType (lua_State *L) {
 }
 
 static int CBaseEntity_PhysicsInitBox (lua_State *L) {
-  luaL_checkvector(L, 1);
-  luaL_checkvector(L, 2);
+  /* HL2SB fix (2026-09-20, two rounds):
+  ** 1) the old check treated arg 1 as a Vector (FUNCTION-style), but this is
+  **    a METHOD -- arg 1 is the entity -- so every call died with
+  **    "calling 'PhysicsInitBox' on bad self (Vector expected, got
+  **    CBaseAnimating)" and the Nuke Pack's sent_nuke never armed;
+  ** 2) the body only nudged VPhysicsInitNormal (model collision) and left
+  **    GetPhysicsObject() nil whenever the model had no physics mesh, which
+  **    then died on phys:IsValid().  Per the wiki, PhysicsInitBox CREATES a
+  **    solid box vphysics object -- do that for real via PhysModelCreateOBB,
+  **    the same path the engine's own boxes take. */
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
-#ifndef CLIENT_DLL
-  // The callers always SetModel() first and the block models carry a full-box
-  // collision mesh, so building vphysics from the model is behaviourally the
-  // box the addon asks for.
-  if ( pEntity->VPhysicsGetObject() == NULL && pEntity->GetModel() != NULL )
+  const Vector mins = luaL_checkvector(L, 2);
+  const Vector maxs = luaL_checkvector(L, 3);
+
+  pEntity->SetCollisionBounds( mins, maxs );
+
+  IPhysicsObject *pObject = PhysModelCreateOBB( pEntity, mins, maxs, pEntity->GetAbsOrigin(), vec3_angle, false );
+  if ( pObject != NULL )
   {
-    pEntity->VPhysicsInitNormal( SOLID_VPHYSICS, 0, false );
+    pEntity->VPhysicsSetObject( pObject );
+    pObject->Wake();
   }
-#else
-  (void)pEntity;
-#endif
-  return 0;
+
+  lua_pushphysicsobject( L, pObject );
+  return 1;
 }
 
 //-----------------------------------------------------------------------------
@@ -3542,6 +3757,12 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetSaveTable", CBaseEntity_GetSaveTable},
   {"SetSaveValue", CBaseEntity_SetSaveValue},
   {"TakeDamageInfo", CBaseEntity_TakeDamageInfo},
+  {"GetOwner", CBaseEntity_GetOwner},
+  {"GetName", CBaseEntity_GetName},
+#ifdef GAME_DLL
+  {"AddEntityRelationship", CBaseEntity_AddEntityRelationship},
+#endif
+  {"PhysicsInitShadow", CBaseEntity_PhysicsInitShadow},
   {"SetAngles", CBaseEntity_SetAngles},
   {"GetAngles", CBaseEntity_GetAngles},
   {"SetVelocity", CBaseEntity_SetVelocity},
@@ -3888,6 +4109,11 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetNWBool", CBaseEntity_GetNWBool},
   {"SetNWEntity", CBaseEntity_SetNWEntity},
   {"GetNWEntity", CBaseEntity_GetNWEntity},
+  // HL2SB GMod compat: per-entity Lua variables + overlay text.
+  {"SetVar", CBaseEntity_SetVar},
+  {"GetVar", CBaseEntity_GetVar},
+  {"SetOverlayText", CBaseEntity_SetOverlayText},
+  {"GetOverlayText", CBaseEntity_GetOverlayText},
   /* HL2SB: GMod's Entity:SetEyeTarget( pos ), accepted but inert - see the long note
   ** above CBaseEntity_SetEyeTarget().  It used to live in CBaseEntity_funcs (i.e. it was
   ** published as a GLOBAL, which is not what GMod has), so the method every GMod script

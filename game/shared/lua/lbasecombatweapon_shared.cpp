@@ -901,6 +901,13 @@ static int CBaseCombatWeapon___index (lua_State *L) {
     lua_pushinteger(L, pWeapon->m_iWorldModelIndex);
   else if (Q_strcmp(field, "m_nViewModelIndex") == 0)
     lua_pushinteger(L, pWeapon->m_nViewModelIndex);
+  else if (Q_strcmp(field, "Weapon") == 0) {
+    /* HL2SB GMod compat: self.Weapon is the weapon entity
+    ** (weapon_redeemer/shared.lua:126 self.Weapon:Clip1()).  Answer with the
+    ** weapon's own userdata, like GMod's engine field does -- the SWEP table
+    ** is a per-instance copy with no route back here. */
+    lua_pushvalue(L, 1);
+  }
   else if (lua_isrefvalid(L, pWeapon->m_nTableReference)) {
     lua_getref(L, pWeapon->m_nTableReference);
     lua_getfield(L, -1, field);

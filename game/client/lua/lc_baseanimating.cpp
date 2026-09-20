@@ -874,6 +874,29 @@ static int CBaseAnimating_SetSequence (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:TranslatePhysBoneToBone( physBone ) -- the bone
+// index a physics bone is attached to (wiki).  The mapping lives in the studio
+// bone table (mstudiobone_t::physicsbone); no match answers -1.
+//-----------------------------------------------------------------------------
+static int CBaseAnimating_TranslatePhysBoneToBone (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating( L, 1 );
+  int nPhysBone = luaL_checkint( L, 2 );
+
+  CStudioHdr *pStudioHdr = pEntity->GetModelPtr();
+  if ( pStudioHdr != NULL ) {
+    for ( int i = 0; i < pStudioHdr->numbones(); i++ ) {
+      if ( pStudioHdr->pBone( i )->physicsbone == nPhysBone ) {
+        lua_pushinteger( L, i );
+        return 1;
+      }
+    }
+  }
+
+  lua_pushinteger( L, -1 );
+  return 1;
+}
+
 static int CBaseAnimating_SetServerIntendedCycle (lua_State *L) {
   luaL_checkanimating(L, 1)->SetServerIntendedCycle(luaL_checknumber(L, 2));
   return 0;
@@ -1028,37 +1051,45 @@ static int CBaseAnimating___index (lua_State *L) {
     return 1;
   }
   if (lua_isrefvalid(L, pEntity->m_nTableReference)) {
+    // HL2SB (2026-09-20): SCRIPT-TABLE FUNCTIONS are overrides and win over
+    // C++ methods; a script-table DATA (non-function) field never shadows a
+    // C++ method.  Same rule as the server copy in lbaseanimating.cpp -- keep
+    // the two in sync.  Raw reads: lua_gettable on the metatable would
+    // re-enter this __index through its own __index field and answer
+    // script-table fields with the NULL-sentinel method.
     lua_getref(L, pEntity->m_nTableReference);
     lua_pushvalue(L, 2);
-    lua_gettable(L, -2);
-    if (lua_isnil(L, -1)) {
-      lua_pop(L, 2);
-      lua_getmetatable(L, 1);
-      lua_pushvalue(L, 2);
-      lua_gettable(L, -2);
-      if (lua_isnil(L, -1)) {
-        lua_pop(L, 2);
+    lua_rawget(L, -2);
+    if (lua_isfunction(L, -1))
+      return 1;                    // Lua override beats everything
+    lua_pop(L, 2);
 
-        /*
-        ** HL2SB: the object's own metatable was already tried above, but for a clientside
-        ** model (Entities.CreateClientEntity / ClientsideModel) that metatable is
-        ** CBaseFlex -- while every animating method (LookupSequence, ResetSequence,
-        ** GetNumBodyGroups, SetBodygroup, SkinCount, LookupBone, ...) lives on THIS class's
-        ** metatable.  Look there before giving up on CBaseEntity, otherwise
-        **     lua/vgui/DModelPanel.lua:138: attempt to call a nil value (method 'LookupSequence')
-        ** stops the player model selector half-built (2026-09-17).
-        */
-        luaL_getmetatable(L, LUA_BASEANIMATINGLIBNAME);
-        lua_pushvalue(L, 2);
-        lua_gettable(L, -2);
-        if (lua_isnil(L, -1)) {
-          lua_pop(L, 2);
-          luaL_getmetatable(L, "CBaseEntity");
-          lua_pushvalue(L, 2);
-          lua_gettable(L, -2);
-        }
-      }
-    }
+    lua_getmetatable(L, 1);
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    if (lua_isfunction(L, -1))
+      return 1;                    // C++ method beats a data field
+    lua_pop(L, 2);
+
+    luaL_getmetatable(L, LUA_BASEANIMATINGLIBNAME);
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    if (lua_isfunction(L, -1))
+      return 1;
+    lua_pop(L, 2);
+
+    luaL_getmetatable(L, "CBaseEntity");
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    if (lua_isfunction(L, -1))
+      return 1;
+    lua_pop(L, 2);
+
+    // script-table data value
+    lua_getref(L, pEntity->m_nTableReference);
+    lua_pushvalue(L, 2);
+    lua_rawget(L, -2);
+    return 1;                      // value or nil
   }
   else {
     lua_getmetatable(L, 1);
@@ -1266,6 +1297,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"SequenceLoops", CBaseAnimating_SequenceLoops},
   {"SetBodygroup", CBaseAnimating_SetBodygroup},
   {"SetBoneController", CBaseAnimating_SetBoneController},
+  {"TranslatePhysBoneToBone", CBaseAnimating_TranslatePhysBoneToBone},
   {"SetCycle", CBaseAnimating_SetCycle},
   {"SetHitboxSet", CBaseAnimating_SetHitboxSet},
   {"SetHitboxSetByName", CBaseAnimating_SetHitboxSetByName},
