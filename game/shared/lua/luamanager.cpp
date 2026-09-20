@@ -227,7 +227,10 @@ static void LuaMakeRelative (char *pszPath, int nSize) {
   }
 
   char szSearchPaths[ 16384 ] = { 0 };
-  filesystem->GetSearchPath( "MOD", false, szSearchPaths, sizeof( szSearchPaths ) );
+  // bGetPackFiles=true: pack-backed search paths (GMod .gma addons) must show
+  // up as roots, or an absolute path into an archive can never be mapped back
+  // to its "addons/<name>.gma/<inner>" form and every loader-open fails.
+  filesystem->GetSearchPath( "MOD", true, szSearchPaths, sizeof( szSearchPaths ) );
 
   char szCandidate[MAX_PATH];
   char szNorm[MAX_PATH];
@@ -1067,10 +1070,13 @@ LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
 	// and every one of those reported
 	//     [Lua] FAILED d:/...vgui.lua: cannot open ...: No such file or directory
 	// for a file that exists.  Convert first; the check below then sees it.
+	// LuaMakeRelative (not the raw FullPathToRelativePath!) also maps absolute
+	// paths INTO a mounted .gma back to their archive-relative form, which the
+	// pack-backed search path then opens directly.
 	char szRelative[MAX_PATH];
-	if ( filesystem != NULL && filename != NULL && V_IsAbsolutePath( filename ) &&
-		 filesystem->FullPathToRelativePath( filename, szRelative, sizeof( szRelative ) ) && szRelative[0] )
-		filename = szRelative;
+	Q_strncpy( szRelative, ( filename != NULL ) ? filename : "", sizeof( szRelative ) );
+	LuaMakeRelative( szRelative, sizeof( szRelative ) );
+	filename = szRelative;
 
 	// GLua syntax compat: stock GMod scripts (and many workshop SWEPs) use
 	// C-style `//` line comments and the `!=` operator, which standard Lua 5.1
