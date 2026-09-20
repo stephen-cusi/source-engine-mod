@@ -60,6 +60,13 @@ public:
 	// it should GO AWAY SOON!
 	ParticleDraw* GetParticleDraw() const;
 
+	// Quads the current mesh batch can still take.  TestFlushBatch() re-locks
+	// the mesh every NUM_PARTICLES_PER_BATCH particles; effects that write
+	// their own quads (CLuaEmitter) must stay inside this budget - after a
+	// failed mesh re-lock the builder's pointers are stale and one quad too
+	// many is an AV WRITE (2026-09-21 nuke explosion crash).
+	int GetQuadsLeftInBatch() const { return NUM_PARTICLES_PER_BATCH - m_nParticlesInCurrentBatch; }
+
 
 private:
 

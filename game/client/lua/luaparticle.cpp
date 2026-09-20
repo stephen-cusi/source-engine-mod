@@ -233,7 +233,8 @@ public:
 				Vector vAxisUp    = vUp * ca - vRight * sa;
 
 				ParticleDraw *pDraw = pIterator->GetParticleDraw();
-				if ( flAlpha >= 0.001f && pDraw->GetMeshBuilder() )
+				if ( flAlpha >= 0.001f && pDraw->GetMeshBuilder() &&
+					 pIterator->GetQuadsLeftInBatch() > 0 )
 				{
 					CMeshBuilder *pBuilder = pDraw->GetMeshBuilder();
 					unsigned char ubColor[4];
