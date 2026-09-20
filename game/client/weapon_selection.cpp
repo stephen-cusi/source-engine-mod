@@ -431,6 +431,17 @@ void CBaseHudWeaponSelection::UserCmd_Close(void)
 //-----------------------------------------------------------------------------
 void CBaseHudWeaponSelection::UserCmd_NextWeapon(void)
 {
+	// HL2SB GMod compat: with the physics gun holding an object the wheel
+	// pushes it away instead of switching weapons
+	{
+		extern bool HL2SB_PhysgunIsHolding( void );
+		if ( HL2SB_PhysgunIsHolding() )
+		{
+			engine->ClientCmd( "hl2sb_physgun_push" );
+			return;
+		}
+	}
+
 	// If we're not allowed to draw, ignore weapon selections
 	if ( !BaseClass::ShouldDraw() )
 		return;
@@ -448,6 +459,16 @@ void CBaseHudWeaponSelection::UserCmd_NextWeapon(void)
 //-----------------------------------------------------------------------------
 void CBaseHudWeaponSelection::UserCmd_PrevWeapon(void)
 {
+	// HL2SB GMod compat: wheel pull (see above)
+	{
+		extern bool HL2SB_PhysgunIsHolding( void );
+		if ( HL2SB_PhysgunIsHolding() )
+		{
+			engine->ClientCmd( "hl2sb_physgun_pull" );
+			return;
+		}
+	}
+
 	// If we're not allowed to draw, ignore weapon selections
 	if ( !BaseClass::ShouldDraw() )
 		return;

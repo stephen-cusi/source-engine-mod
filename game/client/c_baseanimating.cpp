@@ -3098,11 +3098,31 @@ ConVar r_drawothermodels( "r_drawothermodels", "1", FCVAR_CHEAT, "0=Off, 1=Norma
 // Purpose: Draws the object
 // Input  : flags - 
 //-----------------------------------------------------------------------------
+// HL2SB GMod compat (implemented in hl2sb/weapon_physgun.cpp): the entity the
+// physics gun is holding draws with an additive self-shell - the GMod style
+// soft glow all around the held prop.
+C_BaseEntity *HL2SB_PhysgunHeldEntity( void );
+IMaterial *HL2SB_PhysgunGlowMaterial( void );
+
 int C_BaseAnimating::DrawModel( int flags )
 {
 	VPROF_BUDGET( "C_BaseAnimating::DrawModel", VPROF_BUDGETGROUP_MODEL_RENDERING );
 	if ( !m_bReadyToDraw )
 		return 0;
+
+	// HL2SB GMod compat: the glow shell pass - an unlit additive pass over the
+	// model, then the normal pass below covers the interior, leaving the lit
+	// surface and its edges glowing.
+	if ( HL2SB_PhysgunHeldEntity() == this )
+	{
+		IMaterial *pGlowMaterial = HL2SB_PhysgunGlowMaterial();
+		if ( pGlowMaterial != NULL && !pGlowMaterial->IsErrorMaterial() )
+		{
+			modelrender->ForcedMaterialOverride( pGlowMaterial );
+			InternalDrawModel( flags );
+			modelrender->ForcedMaterialOverride( NULL );
+		}
+	}
 
 	int drawn = 0;
 

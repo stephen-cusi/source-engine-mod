@@ -44,6 +44,11 @@
 // MouseMove, for CBasePlayer_GetCurrentCommand's live-command fallback
 // (lbaseplayer_shared.cpp) -- gmod_camera's Tick integrates cmd:GetMouseY().
 static int s_iHL2SBLastMouseDx = 0;
+
+// HL2SB GMod compat: E-rotate on the physics gun - implemented in
+// weapon_physgun.cpp; true means "the mouse belongs to the held object this
+// frame, freeze the view and report the raw deltas in the command".
+bool HL2SB_PhysgunMouseRotate( void );
 static int s_iHL2SBLastMouseDy = 0;
 
 void HL2SB_GetLastMouseDeltas( int &dx, int &dy )
@@ -733,6 +738,14 @@ void CInput::MouseMove( CUserCmd *cmd )
 			// zooms with exactly that while FreezeMovement is true).  The
 			// post-scale floats truncate to 0 for slow movement, which killed
 			// the zoom.  Only the viewangle application is skipped.
+			cmd->mousedx = mx;
+			cmd->mousedy = my;
+		}
+		else if ( HL2SB_PhysgunMouseRotate() )
+		{
+			// HL2SB GMod compat: E-rotate on the physics gun -- the mouse
+			// belongs to the HELD OBJECT while E is down, so the view stays
+			// still and the raw deltas reach the physgun through the command.
 			cmd->mousedx = mx;
 			cmd->mousedy = my;
 		}
