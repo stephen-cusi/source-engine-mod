@@ -255,7 +255,13 @@ inline void CParticleEffectBinding::StartDrawMaterialParticles(
 
 	pMesh = pRenderContext->GetDynamicMesh( true );
 
-	builder.Begin( pMesh, MATERIAL_QUADS, NUM_PARTICLES_PER_BATCH * 4 );
+	// The mesh must hold every particle this effect will render this frame.
+	// The fixed NUM_PARTICLES_PER_BATCH reservation overflowed the locked
+	// vertex buffer as soon as a Lua emitter went past 200 particles - the
+	// rainbow trail of the nyan gun alone can - and died in AdvanceVertex
+	// with an AV WRITE (2026-09-21 luaparticle.cpp).
+	int nMaxVerts = MAX( NUM_PARTICLES_PER_BATCH, m_nActiveParticles ) * 4;
+	builder.Begin( pMesh, MATERIAL_QUADS, nMaxVerts );
 	particleDraw.Init( &builder, pMaterial->m_pGroup->m_pPageMaterial, flTimeDelta );
 }
 
