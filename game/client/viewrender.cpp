@@ -14,6 +14,10 @@
 #include "clientsideeffects.h"
 #include "particlemgr.h"
 #include "viewrender.h"
+#ifdef LUA_SDK
+#include "luamanager.h"		// HL2SB: luasrc_LuaInfoMsgF for the translucent-draw probe
+#include "basescripted.h"	// HL2SB: dynamic_cast for the translucent-draw probe
+#endif
 #include "iclientmode.h"
 #include "voice_status.h"
 #include "glow_overlay.h"
@@ -4156,17 +4160,75 @@ void CRendering3dView::DrawTranslucentWorldAndDetailPropsInLeaves( int iCurLeafI
 //-----------------------------------------------------------------------------
 // Renders all translucent entities in the render list
 //-----------------------------------------------------------------------------
+#ifdef LUA_SDK
+// HL2SB (2026-09-21): the scripted entities make the translucent draw list
+// ("collate ... ADDED to translucent draw list") yet CBaseScripted::DrawModel
+// never runs for them, while same-list entities WITH an ENT:Draw hook do run.
+// This is the last per-entity gate between the list and the draw call -- name
+// which guard eats each class (blend<=0, ZBuffer mismatch), or prove the call
+// happens.
+static void HL2SB_TranslucentProbe( IClientRenderable *pEnt, float blend, bool bIgnoreDepth, bool bReachedDraw )
+{
+	C_BaseEntity *pEntity = ( pEnt->GetIClientUnknown() ) ? pEnt->GetIClientUnknown()->GetBaseEntity() : NULL;
+	C_BaseScripted *pScripted = dynamic_cast< C_BaseScripted * >( pEntity );
+	if ( !pScripted )
+		return;
+
+	static CUtlVector<CUtlString> s_Probed;
+	static CUtlVector<int> s_Counts;
+	const char *pszClass = pScripted->GetScriptedClassname();
+	int iProbed = -1;
+	for ( int i = 0; i < s_Probed.Count(); ++i )
+	{
+		if ( !Q_stricmp( s_Probed[i], pszClass ) ) { iProbed = i; break; }
+	}
+	if ( iProbed < 0 && s_Probed.Count() < 16 )
+	{
+		s_Probed.AddToTail( pszClass );
+		s_Counts.AddToTail( 0 );
+		iProbed = s_Probed.Count() - 1;
+	}
+	if ( iProbed >= 0 && s_Counts[iProbed] < 3 )
+	{
+		++s_Counts[iProbed];
+		luasrc_LuaInfoMsgF(
+			"[HL2SB] translucent draw '%s' (%d/3): blend=%.2f ignoresZ=%d bIgnoreDepth=%d -> %s\n",
+			pszClass, s_Counts[iProbed], blend,
+			pEnt->IgnoresZBuffer() ? 1 : 0, bIgnoreDepth ? 1 : 0,
+			bReachedDraw ? "calling DrawModel" : "SKIPPED" );
+	}
+}
+#endif
+
 static inline void DrawTranslucentRenderable( IClientRenderable *pEnt, bool twoPass, bool bShadowDepth, bool bIgnoreDepth )
 {
+#ifdef LUA_SDK
+	float flProbeBlend = (float)( pEnt->GetFxBlend() / 255.0f );
+#endif
+
 	// Determine blending amount and tell engine
 	float blend = (float)( pEnt->GetFxBlend() / 255.0f );
 
 	// Totally gone
 	if ( blend <= 0.0f )
+	{
+#ifdef LUA_SDK
+		HL2SB_TranslucentProbe( pEnt, flProbeBlend, bIgnoreDepth, false );
+#endif
 		return;
+	}
 
 	if ( pEnt->IgnoresZBuffer() != bIgnoreDepth )
+	{
+#ifdef LUA_SDK
+		HL2SB_TranslucentProbe( pEnt, flProbeBlend, bIgnoreDepth, false );
+#endif
 		return;
+	}
+
+#ifdef LUA_SDK
+	HL2SB_TranslucentProbe( pEnt, flProbeBlend, bIgnoreDepth, true );
+#endif
 
 	// Tell engine
 	render->SetBlend( blend );
