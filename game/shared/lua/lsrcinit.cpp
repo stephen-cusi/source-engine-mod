@@ -40,6 +40,11 @@
 #endif
 
 
+// HL2SB: local prototype -- deliberately NOT added to luasrclib.h: a header
+// touch there would force a full-tree rebuild (waf has no header dependency
+// propagation), and only lsrcinit.cpp needs to see this.
+LUALIB_API int (luaopen_CSEmitter) (lua_State *L);
+
 static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.  Fills _E with the shared enums.
   {LUA_SHAREDENUMNAME, luaopen_SharedEnumerations},
@@ -201,6 +206,10 @@ static const luaL_Reg luasrclibs[] = {
   {LUA_SURFLIBNAME, luaopen_SURF},
 #ifdef CLIENT_DLL
   {LUA_SURFACELIBNAME, luaopen_surface},
+  // HL2SB: GMod's standalone Lua particle system (ParticleEmitter / CSEmitter /
+  // CLuaParticle) -- Nuke Pack and every effect script that spawns its own
+  // sprites (game/client/lua/luaparticle.cpp).
+  {"CSEmitter", luaopen_CSEmitter},
 #endif
   {LUA_UTILLIBNAME, luaopen_UTIL},
   {LUA_UTILLIBNAME, luaopen_UTIL_shared},
@@ -1465,7 +1474,29 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_call(L, 1, 0);
   }
 
-  /* Every lib is open now, so the metatables exist and can be aliased. */
+  /* HL2SB GMod compat: the Entity( index ) global (wiki: Global.Entity --
+ * "returns the entity with the given entity index").  The Nuke Pack's missile
+ * Initialize does GetVar("owner", Entity(1)); ents.Find/GetByIndex already do
+ * the lookup, so the global is just that same function re-published under
+ * GMod's name.  Registered here so both realms get it after every lib is open.
+ */
+  lua_getglobal( L, "ents" );
+  if ( lua_istable( L, -1 ) )
+  {
+    lua_getfield( L, -1, "GetByIndex" );
+    if ( !lua_isfunction( L, -1 ) )
+    {
+      lua_pop( L, 1 );
+      lua_getfield( L, -1, "Find" );
+    }
+    if ( lua_isfunction( L, -1 ) )
+      lua_setglobal( L, "Entity" );
+    else
+      lua_pop( L, 1 );
+  }
+  lua_pop( L, 1 );
+
+/* Every lib is open now, so the metatables exist and can be aliased. */
   luasrc_install_metatable_aliases(L);
   luasrc_install_type_names(L);
 
