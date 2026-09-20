@@ -756,6 +756,22 @@ void CBaseScripted::UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 	if ( L == NULL || m_nTableReference < 0 )
 		return;
 
+	// HL2SB: one line, once per classname -- the next "E does nothing" round
+	// is settled by this line's presence or absence (dispatch vs script).
+	static CUtlVector<CUtlString> s_UseLogged;
+	const char *pszClass = GetClassname();	// server: the real scripted classname
+	bool bLogged = false;
+	for ( int i = 0; i < s_UseLogged.Count(); ++i )
+	{
+		if ( !Q_stricmp( s_UseLogged[i], pszClass ) ) { bLogged = true; break; }
+	}
+	if ( !bLogged && s_UseLogged.Count() < 16 )
+	{
+		s_UseLogged.AddToTail( pszClass );
+		luasrc_LuaInfoMsgF( "[HL2SB] Use dispatched to '%s' (activator %s)\n",
+			pszClass, pActivator ? pActivator->GetClassname() : "<none>" );
+	}
+
 	lua_getref( L, m_nTableReference );
 	if ( !lua_istable( L, -1 ) )
 	{
@@ -781,8 +797,12 @@ void CBaseScripted::UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 		lua_pushentity( L, pCaller );
 	else
 		lua_pushnil( L );
+	// GMod's full signature is Use( activator, caller, useType, value )
+	// (wiki ENTITY:Use); the nukepack scripts read only the first two.
+	lua_pushinteger( L, (int)useType );
+	lua_pushnumber( L, value );
 
-	luasrc_pcall( L, 3, 0, 0 );
+	luasrc_pcall( L, 5, 0, 0 );
 	lua_pop( L, 1 );						// the entity table
 #endif
 }
