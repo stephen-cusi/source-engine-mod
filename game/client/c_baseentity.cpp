@@ -1428,55 +1428,7 @@ void C_BaseEntity::UpdateVisibility()
 	}
 #endif
 
-	bool bVisShouldDraw = ShouldDraw() && !IsDormant() && ( !ToolsEnabled() || IsEnabledInToolView() );
-
-#ifdef LUA_SDK
-	// HL2SB diagnostic (2026-09-21): the scripted entities spawn with a valid
-	// model and origin, pass ShouldDraw, and still never reach DrawModel().
-	// This is THE decision point between those two facts -- record, once per
-	// classname, which way it went and every input to it.
-	{
-		C_BaseScripted *pScripted = dynamic_cast< C_BaseScripted * >( this );
-		if ( pScripted )
-		{
-			// Key on the SCRIPTED classname: GetClassname() on the client
-			// collapses every SENT to the first-registered name ("cod-c4")
-			// through the classmap's reverse lookup, so the previous one-shot
-			// printed exactly once and hid every other entity (2026-09-21).
-			static CUtlVector<CUtlString> s_VisProbed;
-			static CUtlVector<int> s_VisProbedCount;
-			const char *pszClass = pScripted->GetScriptedClassname();
-			int iProbed = -1;
-			for ( int i = 0; i < s_VisProbed.Count(); ++i )
-			{
-				if ( !Q_stricmp( s_VisProbed[i], pszClass ) ) { iProbed = i; break; }
-			}
-			if ( iProbed < 0 && s_VisProbed.Count() < 16 )
-			{
-				s_VisProbed.AddToTail( pszClass );
-				s_VisProbedCount.AddToTail( 0 );
-				iProbed = s_VisProbed.Count() - 1;
-			}
-			if ( iProbed >= 0 && s_VisProbedCount[iProbed] < 4 )
-			{
-				++s_VisProbedCount[iProbed];
-				luasrc_LuaInfoMsgF(
-					"[HL2SB] UpdateVisibility '%s' #%d: shoulddraw=%d dormant=%d group=%d handle=%s model=%s origin=(%.0f %.0f %.0f) -> %s\n",
-					pszClass,
-					s_VisProbedCount[iProbed],
-					ShouldDraw() ? 1 : 0,
-					IsDormant() ? 1 : 0,
-					(int)GetRenderGroup(),
-					( GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE ) ? "valid" : "invalid",
-					( GetModel() != NULL ) ? "ok" : "NULL",
-					GetAbsOrigin().x, GetAbsOrigin().y, GetAbsOrigin().z,
-					bVisShouldDraw ? "ADD" : "REMOVE" );
-			}
-		}
-	}
-#endif
-
-	if ( bVisShouldDraw )
+	if ( ShouldDraw() && !IsDormant() && ( !ToolsEnabled() || IsEnabledInToolView() ) )
 	{
 		// add/update leafsystem
 		AddToLeafSystem();

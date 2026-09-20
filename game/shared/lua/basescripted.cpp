@@ -17,9 +17,11 @@
 #include "lbaseentity_shared.h"
 #include "lvphysics_interface.h"
 #include "mathlib/lvector.h"
+#include "utlstring.h"	// HL2SB: CUtlString for the client draw-probe classnames
 #ifndef CLIENT_DLL
 // HL2SB: gamevcollisionevent_t, for ENT:PhysicsCollide.
 #include "physics.h"
+#include "luanextbot.h"	// HL2SB: IsLuaNextBot -- nextbots bind via LoadNextBotScript, not here
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -177,6 +179,13 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 	SetNextThink( gpGlobals->curtime );
 
 	SetTouch( &CBaseScripted::Touch );
+#ifndef CLIENT_DLL
+	// HL2SB GMod compat (2026-09-21): route the player's +use to ENT:Use.
+	// GMod scripted entities are always use targets; without SetUse() the
+	// engine's use dispatch never selected them and E did nothing (the Nuke
+	// Pack arms its bombs this way).
+	SetUse( &CBaseScripted::UseHandler );
+#endif
 
 	char className[ 255 ];
 #if defined ( CLIENT_DLL )
@@ -198,6 +207,18 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 	// reference on every subsequent Spawn.
 	if ( m_nTableReference < 0 )
 	{
+#ifndef CLIENT_DLL
+		// HL2SB: a Lua nextbot binds through CLuaNextBot::LoadNextBotScript()
+		// (luanextbot.cpp), which pushes self.loco BEFORE the script ever sees
+		// the table -- the generic bind below cannot do that, and the first
+		// ENT:Initialize indexed a nil self.loco (scp049-2's CollisionSetup at
+		// npc_scp_049-2.lua:120, skipping the model, the collision setup and
+		// everything after it).  CLuaNextBot::Spawn() calls LoadNextBotScript()
+		// right after this function returns; Think/Touch are already wired
+		// above and Think is overridden to CLuaNextBot's own.
+		if ( IsLuaNextBot( className ) )
+			return;
+#endif
 		LoadScriptedEntity();
 
 		// HL2SB: diagnostic for the "attempt to call a nil value (method ...)"
@@ -713,6 +734,58 @@ void CBaseScripted::VPhysicsUpdate( IPhysicsObject *pPhysics )
 static ConVar hl2sb_physicscollide_debug(
 	"hl2sb_physicscollide_debug", "0", FCVAR_ARCHIVE,
 	"Log every ENT:PhysicsCollide dispatch (entity hit, speed, contact point)" );
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-09-21): ENT:Use( activator, caller ).
+//
+// GMod routes the player's +use to every scripted entity: the engine selects
+// use targets among entities advertising FCAP_IMPULSE_USE and calls their use
+// function, which GMod's system dispatches to ENT:Use.  This fork never called
+// SetUse() on scripted entities, so the Nuke Pack's arming flow
+// (mk-82_sent_he_missile/init.lua ENT:Use -> self.isarmed = 1) never ran and
+// the bombs could not be armed, hence never detonated.
+//-----------------------------------------------------------------------------
+int CBaseScripted::ObjectCaps( void )
+{
+	return BaseClass::ObjectCaps() | FCAP_IMPULSE_USE;
+}
+
+void CBaseScripted::UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+{
+#ifdef LUA_SDK
+	if ( L == NULL || m_nTableReference < 0 )
+		return;
+
+	lua_getref( L, m_nTableReference );
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return;
+	}
+
+	if ( !luasrc_PushScriptField( L, -1, "Use" ) )
+	{
+		// GMod: an entity without an ENT:Use simply ignores +use.
+		// PushScriptField pushed a nil; drop it and the table.
+		lua_pop( L, 2 );
+		return;
+	}
+
+	// stack: table, Use
+	lua_pushvalue( L, -3 );					// self
+	if ( pActivator != NULL )
+		lua_pushentity( L, pActivator );
+	else
+		lua_pushnil( L );
+	if ( pCaller != NULL )
+		lua_pushentity( L, pCaller );
+	else
+		lua_pushnil( L );
+
+	luasrc_pcall( L, 3, 0, 0 );
+	lua_pop( L, 1 );						// the entity table
+#endif
+}
 
 void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent )
 {

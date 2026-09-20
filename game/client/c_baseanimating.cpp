@@ -3291,68 +3291,6 @@ void C_BaseAnimating::DoInternalDrawModel( ClientModelRenderInfo_t *pInfo, DrawM
 //-----------------------------------------------------------------------------
 int C_BaseAnimating::InternalDrawModel( int flags )
 {
-	VPROF( "C_BaseAnimating::InternalDrawModel" );
-
-#ifdef LUA_SDK
-	// HL2SB final-link probe (2026-09-21): the spawned scripted entities reach
-	// this call through the script's inherited ENT:Draw -> self:DrawModel().
-	// The draw still produced nothing on screen, and every outer layer probed
-	// clean (list/blend/gates/model handle) -- so measure the model data ITSELF:
-	// which name the handle resolves to, its engine type, and whether the
-	// studio header ever builds.  A wrong name here means the client modelindex
-	// resolves to a different model than the server sent.
-	int nProbeResult = InternalDrawModel_Probed( flags );
-	return nProbeResult;
-#else
-	return InternalDrawModel_Unprobed( flags );
-#endif
-}
-
-#ifdef LUA_SDK
-int C_BaseAnimating::InternalDrawModel_Probed( int flags )
-{
-	const bool bHadModel = ( GetModel() != NULL );
-	const char *pszModelName = bHadModel ? modelinfo->GetModelName( GetModel() ) : "<no model>";
-	const int nModelType = bHadModel ? (int)modelinfo->GetModelType( GetModel() ) : -1;
-	const bool bHdr = ( GetModelPtr() != NULL );
-
-	static CUtlVector<CUtlString> s_Probed;
-	static CUtlVector<int> s_Counts;
-	const char *pszClass = "unknown";
-	C_BaseScripted *pScripted = dynamic_cast< C_BaseScripted * >( this );
-	if ( pScripted )
-		pszClass = pScripted->GetScriptedClassname();
-	int iProbed = -1;
-	for ( int i = 0; i < s_Probed.Count(); ++i )
-	{
-		if ( !Q_stricmp( s_Probed[i], pszClass ) ) { iProbed = i; break; }
-	}
-	if ( iProbed < 0 && s_Probed.Count() < 16 )
-	{
-		s_Probed.AddToTail( pszClass );
-		s_Counts.AddToTail( 0 );
-		iProbed = s_Probed.Count() - 1;
-	}
-	if ( iProbed >= 0 && s_Counts[iProbed] < 3 )
-	{
-		++s_Counts[iProbed];
-		luasrc_LuaInfoMsgF(
-			"[HL2SB] internal draw '%s' (%d/3): name=%s type=%d hdr=%s flags=%d\n",
-			pszClass, s_Counts[iProbed], pszModelName, nModelType,
-			bHdr ? "ok" : "NULL", flags );
-	}
-	int nDrawn = InternalDrawModel_Unprobed( flags );
-	if ( iProbed >= 0 && s_Counts[iProbed] <= 3 )
-	{
-		luasrc_LuaInfoMsgF( "[HL2SB] internal draw '%s': InternalDrawModel returned %d\n",
-			pszClass, nDrawn );
-	}
-	return nDrawn;
-}
-#endif	// LUA_SDK
-
-int C_BaseAnimating::InternalDrawModel_Unprobed( int flags )
-{
 	if ( !GetModel() )
 		return 0;
 

@@ -157,10 +157,6 @@ public:
 	virtual bool ShouldDraw();
 	virtual int DrawModel( int flags );
 	virtual int	InternalDrawModel( int flags );
-	// HL2SB (2026-09-21): the real body moved here so InternalDrawModel can
-	// carry the final-link draw probe; see c_baseanimating.cpp.
-	int InternalDrawModel_Probed( int flags );
-	int InternalDrawModel_Unprobed( int flags );
 	virtual bool OnInternalDrawModel( ClientModelRenderInfo_t *pInfo );
 	virtual bool OnPostInternalDrawModel( ClientModelRenderInfo_t *pInfo );
 	void		DoInternalDrawModel( ClientModelRenderInfo_t *pInfo, DrawModelState_t *pState, matrix3x4_t *pBoneToWorldArray = NULL );

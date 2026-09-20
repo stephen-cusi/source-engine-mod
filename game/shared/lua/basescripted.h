@@ -78,6 +78,13 @@ public:
 	// HL2SB GMod compat: ENT:PhysicsCollide( data, physObj ) -- the callback
 	// weapon_nyangun's bomb entity explodes from.
 	virtual void	VPhysicsCollision( int index, gamevcollisionevent_t *pEvent );
+
+	// HL2SB GMod compat (2026-09-21): ENT:Use( activator, caller ).  GMod
+	// routes the player's +use to every scripted entity's Use handler; this
+	// fork never called SetUse(), so E did nothing on all SENTs (the Nuke
+	// Pack arms its bombs through it -- "cannot arm, cannot detonate").
+	virtual int		ObjectCaps( void );
+	void	UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 #endif
 
 #ifdef CLIENT_DLL

@@ -15,10 +15,6 @@
 #include "ivrenderview.h"
 #include "tier0/vprof.h"
 #include "bsptreedata.h"
-#ifdef LUA_SDK
-#include "luamanager.h"	// HL2SB: luasrc_LuaInfoMsgF for the PreRender probe
-#include "basescripted.h"	// HL2SB: dynamic_cast for the leaf-insert probe
-#endif
 #include "detailobjectsystem.h"
 #include "engine/IStaticPropMgr.h"
 #include "engine/ivdebugoverlay.h"
@@ -534,18 +530,6 @@ void CClientLeafSystem::PreRender()
 
 	int i;
 	int nIterations = 0;
-
-	// HL2SB (2026-09-21): one line, once -- proves the dirty-renderable
-	// pipeline (RenderableChanged -> PreRender -> RemoveFromTree/InsertIntoTree)
-	// is alive at all.  If this never prints, the leaf system is never being
-	// processed and nothing that spawned after map load can ever appear.
-	static bool s_bPreRenderProbed = false;
-	if ( !s_bPreRenderProbed && m_DirtyRenderables.Count() > 0 )
-	{
-		s_bPreRenderProbed = true;
-		luasrc_LuaInfoMsgF( "[HL2SB] ClientLeafSystem::PreRender processing %d dirty renderable(s)\n",
-			m_DirtyRenderables.Count() );
-	}
 
 	while ( m_DirtyRenderables.Count() )
 	{
@@ -1183,37 +1167,6 @@ void CClientLeafSystem::InsertIntoTree( ClientRenderHandle_t &handle )
 	CalcRenderableWorldSpaceAABB_Fast( pRenderable, absMins, absMaxs );
 	Assert( absMins.IsValid() && absMaxs.IsValid() );
 
-#ifdef LUA_SDK
-	// HL2SB diagnostic (2026-09-21): for scripted entities record the world
-	// AABB the leaf insert is computed from.  A renderable whose AABB lands in
-	// ZERO leaves (or in the wrong place) can never be enumerated for drawing,
-	// no matter how correct its model/origin are -- this is the definitive
-	// membership measurement.  Keyed on the scripted classname, which is also
-	// what survives the client classmap's reverse-lookup collapse.
-	{
-		C_BaseEntity *pEnt = pRenderable->GetIClientUnknown() ? pRenderable->GetIClientUnknown()->GetBaseEntity() : NULL;
-		C_BaseScripted *pScripted = dynamic_cast< C_BaseScripted * >( pEnt );
-		if ( pScripted )
-		{
-			static CUtlVector<CUtlString> s_TreeProbed;
-			const char *pszClass = pScripted->GetScriptedClassname();
-			bool bProbed = false;
-			for ( int i = 0; i < s_TreeProbed.Count(); ++i )
-			{
-				if ( !Q_stricmp( s_TreeProbed[i], pszClass ) ) { bProbed = true; break; }
-			}
-			if ( !bProbed && s_TreeProbed.Count() < 16 )
-			{
-				s_TreeProbed.AddToTail( pszClass );
-				luasrc_LuaInfoMsgF(
-					"[HL2SB] leaf insert '%s': aabb=(%.0f %.0f %.0f)-(%.0f %.0f %.0f)\n",
-					pszClass,
-					absMins.x, absMins.y, absMins.z, absMaxs.x, absMaxs.y, absMaxs.z );
-			}
-		}
-	}
-#endif
-
 	ISpatialQuery* pQuery = engine->GetBSPTreeQuery();
 	pQuery->EnumerateLeavesInBox( absMins, absMaxs, this, (intp)&list );
 
@@ -1557,36 +1510,6 @@ static RenderGroup_t DetectBucketedRenderGroup( RenderGroup_t group, float fDime
 // names which collation filter (if any) eats them, or confirms they made the
 // draw list.
 //-----------------------------------------------------------------------------
-#ifdef LUA_SDK
-static void HL2SB_CollateProbe( IClientRenderable *pRenderable, const char *pszReason )
-{
-	C_BaseEntity *pEnt = ( pRenderable && pRenderable->GetIClientUnknown() ) ?
-		pRenderable->GetIClientUnknown()->GetBaseEntity() : NULL;
-	C_BaseScripted *pScripted = dynamic_cast< C_BaseScripted * >( pEnt );
-	if ( !pScripted )
-		return;
-
-	static CUtlVector<CUtlString> s_Probed;
-	static CUtlVector<int> s_Counts;
-	const char *pszClass = pScripted->GetScriptedClassname();
-	int iProbed = -1;
-	for ( int i = 0; i < s_Probed.Count(); ++i )
-	{
-		if ( !Q_stricmp( s_Probed[i], pszClass ) ) { iProbed = i; break; }
-	}
-	if ( iProbed < 0 && s_Probed.Count() < 16 )
-	{
-		s_Probed.AddToTail( pszClass );
-		s_Counts.AddToTail( 0 );
-		iProbed = s_Probed.Count() - 1;
-	}
-	if ( iProbed >= 0 && s_Counts[iProbed] < 3 )
-	{
-		++s_Counts[iProbed];
-		luasrc_LuaInfoMsgF( "[HL2SB] collate '%s' (%d/3): %s\n", pszClass, s_Counts[iProbed], pszReason );
-	}
-}
-#endif
 
 void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafIndex,	const SetupRenderInfo_t &info )
 {
@@ -1647,9 +1570,6 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 			nAlpha = renderable.m_pRenderable->GetFxBlend();
 			if ( nAlpha == 0 )
 			{
-#ifdef LUA_SDK
-				HL2SB_CollateProbe( renderable.m_pRenderable, "SKIPPED alpha==0" );
-#endif
 				continue;
 			}
 		}
@@ -1662,9 +1582,6 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 			VPROF( "r_PortalTestEnts" );
 			if ( !engine->DoesBoxTouchAreaFrustum( absMins, absMaxs, renderable.m_Area ) )
 			{
-#ifdef LUA_SDK
-				HL2SB_CollateProbe( renderable.m_pRenderable, "SKIPPED area-frustum" );
-#endif
 				continue;
 			}
 		}
@@ -1673,9 +1590,6 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 			// cull with main frustum
 			if ( engine->CullBox( absMins, absMaxs ) )
 			{
-#ifdef LUA_SDK
-				HL2SB_CollateProbe( renderable.m_pRenderable, "SKIPPED frustum-cull" );
-#endif
 				continue;
 			}
 		}
@@ -1686,9 +1600,6 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 			// test to see if this renderable is occluded by the engine's occlusion system
 			if ( engine->IsOccluded( absMins, absMaxs ) )
 			{
-#ifdef LUA_SDK
-				HL2SB_CollateProbe( renderable.m_pRenderable, "SKIPPED occluded" );
-#endif
 				continue;
 			}
 		}
@@ -1730,9 +1641,6 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 				Assert( group >= RENDER_GROUP_OPAQUE_STATIC_HUGE && group <= RENDER_GROUP_OPAQUE_ENTITY );
 			}
 
-#ifdef LUA_SDK
-			HL2SB_CollateProbe( renderable.m_pRenderable, "ADDED to opaque draw list" );
-#endif
 			AddRenderableToRenderList( *info.m_pRenderList, renderable.m_pRenderable, 
 				worldListLeafIndex, group, handle);
 		}
@@ -1743,9 +1651,6 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 			// Add to appropriate list if drawing translucent objects (shadow depth mapping will skip this)
 			if ( info.m_bDrawTranslucentObjects ) 
 			{
-#ifdef LUA_SDK
-				HL2SB_CollateProbe( renderable.m_pRenderable, "ADDED to translucent draw list" );
-#endif
 				AddRenderableToRenderList( *info.m_pRenderList, renderable.m_pRenderable, 
 					worldListLeafIndex, (RenderGroup_t)renderable.m_RenderGroup, handle, bTwoPass );
 			}
