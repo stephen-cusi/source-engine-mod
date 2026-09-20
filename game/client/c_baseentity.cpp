@@ -4446,6 +4446,21 @@ void C_BaseEntity::CalcAbsolutePosition( )
 
 	RemoveEFlags( EFL_DIRTY_ABSTRANSFORM );
 
+	// HL2SB (2026-09-21, the "spawned entities have no model" sessions): the
+	// leaf system's contract is "call this when the renderable moves"
+	// (CClientLeafSystem::RenderableChanged), and the notification helper
+	// MarkRenderHandleDirty() existed here with ZERO callers -- nothing ever
+	// re-registered a renderable into its leaves.  A client entity created
+	// before its first origin update (every gm_spawn SENT: the ShouldDraw
+	// probes show it entered the leaf system while origin was still 0,0,0)
+	// therefore stayed in the leaf at the MAP ORIGIN forever; the camera 400
+	// units away never visited that leaf and the entity was never drawn, even
+	// though its model, origin and bounds were all correct an instant later.
+	// HL2's own map-spawned entities escape by luck: their origin is in the
+	// first packet, before they are added to the leaf system.  Recomputing
+	// the absolute transform is exactly the "renderable moved" event.
+	MarkRenderHandleDirty();
+
 	if (!m_pMoveParent)
 	{
 		// Construct the entity-to-world matrix

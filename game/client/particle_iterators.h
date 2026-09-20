@@ -18,7 +18,15 @@
 
 #define NUM_PARTICLES_PER_BATCH 200
 #ifndef _XBOX
-#define MAX_TOTAL_PARTICLES		2048	// Max particles in the world
+// HL2SB (2026-09-21): was 2048.  A single Nuke Pack detonation bursts
+// hundreds of particles per think tick across six effects, and this pool cap
+// hit within seconds -- every emitter:Add() after that returned NULL (the
+// 02:10 build still printed exactly one
+// "ParticleEmitter:Add('particles/smokey'): particle allocation failed"
+// mid-explosion, after the HL2 flamelet materials had already started
+// succeeding).  8192 keeps the sort buffers below trivial and matches what
+// those effects actually ask for.
+#define MAX_TOTAL_PARTICLES		8192	// Max particles in the world
 #else
 #define MAX_TOTAL_PARTICLES		1024
 #endif
