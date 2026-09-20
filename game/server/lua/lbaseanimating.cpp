@@ -14,6 +14,7 @@
 #include "lvphysics_interface.h"
 #include "ltakedamageinfo.h"	// luaL_checkdamageinfo (Entity:BecomeRagdoll)
 #include "physics_prop_ragdoll.h"	// CreateServerRagdoll (Entity:BecomeRagdoll)
+#include "BaseAnimatingOverlay.h"	// Entity:RestartGesture (overlay gestures)
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -699,8 +700,22 @@ static int CBaseAnimating___tostring (lua_State *L) {
 }
 
 
+// HL2SB GMod compat: Entity:RestartGesture( activity ) -- wiki: restarts (or
+// adds and starts) the gesture activity on the entity's animation overlay.
+// npc_scp_049-2.lua:364 plays its attack gesture through it.  Only entities
+// with an overlay can do this; others answer nil like GMod's engine does.
+static int CBaseAnimating_RestartGesture (lua_State *L) {
+  CBaseAnimating *pAnim = luaL_checkanimating( L, 1 );
+  CBaseAnimatingOverlay *pOverlay = dynamic_cast< CBaseAnimatingOverlay * >( pAnim );
+  if ( pOverlay == NULL )
+    return 0;
+  pOverlay->RestartGesture( (Activity)luaL_checkint( L, 2 ) );
+  return 0;
+}
+
 static const luaL_Reg CBaseAnimatingmeta[] = {
   {"CalculateIKLocks", CBaseAnimating_CalculateIKLocks},
+  {"RestartGesture", CBaseAnimating_RestartGesture},
   {"ComputeEntitySpaceHitboxSurroundingBox", CBaseAnimating_ComputeEntitySpaceHitboxSurroundingBox},
   {"ComputeHitboxSurroundingBox", CBaseAnimating_ComputeHitboxSurroundingBox},
   {"DoMuzzleFlash", CBaseAnimating_DoMuzzleFlash},

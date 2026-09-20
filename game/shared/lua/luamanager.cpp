@@ -1838,6 +1838,154 @@ static bool luasrc_PathInDisabledAddon (const char *fullpath)
   return false;
 }
 
+// ===========================================================================
+// HL2SB: SECOND-LEVEL nextbot base chains.
+//
+// scp049's zombie is
+//     ENT.Base = "scp0492base"   ->   ENT.Base = "base_nextbot"
+// and the directory scan is alphabetical: npc_scp_049-2.lua loads BEFORE
+// scp0492base.lua, so at the moment the engine factory decision runs the base
+// table is not registered yet and the chain cannot be walked.  Such classes
+// are parked here and resolved at the end of luasrc_LoadEntities(); one that
+// never resolves (no factory would have existed for it before either) falls
+// back to the plain scripted-entity registration.
+// ===========================================================================
+static CUtlVector< CUtlString > s_PendingNextBotChains;
+
+// scripted_ents.GetType( base ) in Lua walks Base through the registry by
+// RECURSION -- and a cycle anywhere in it (an addon with ENT.Base == its own
+// classname, two classes pointing at each other) recurses forever.  On this
+// ARM64EC host a Lua raise is a hard fault (see undo.lua's note), so the walk
+// is done here ITERATIVELY with a depth cap instead of calling into it.
+// Answers the chain's Type via pszOut; "" means the chain ran into an
+// unregistered base (or cycled past the cap) and says nothing about type.
+static bool luasrc_BaseChainType (const char *pszBase, char *pszOut, size_t nOut)
+{
+	pszOut[0] = '\0';
+	char szCurrent[255];
+	Q_strncpy( szCurrent, pszBase, sizeof( szCurrent ) );
+
+	for ( int i = 0; i < 32; ++i )
+	{
+#ifndef CLIENT_DLL
+		if ( IsLuaNextBot( szCurrent ) )
+		{
+			// the engine already owns this link as a nextbot factory
+			Q_strncpy( pszOut, "nextbot", nOut );
+			return true;
+		}
+#endif
+
+		const int nStack = lua_gettop( L );
+		bool bStored = false;
+		char szType[64] = "";
+		char szNext[255] = "";
+		lua_getglobal( L, "scripted_ents" );
+		lua_getfield( L, -1, "GetStored" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_pushstring( L, szCurrent );
+			if ( luasrc_pcall( L, 1, 1, 0 ) == 0 && lua_istable( L, -1 ) )
+			{
+				bStored = true;
+				lua_getfield( L, -1, "type" );
+				if ( lua_isstring( L, -1 ) )
+					Q_strncpy( szType, lua_tostring( L, -1 ), sizeof( szType ) );
+				lua_pop( L, 1 );
+				if ( szType[0] == '\0' )
+				{
+					// the registry stores the class's own Type under .t as well
+					lua_getfield( L, -1, "t" );
+					if ( lua_istable( L, -1 ) )
+					{
+						lua_getfield( L, -1, "Type" );
+						if ( lua_isstring( L, -1 ) )
+							Q_strncpy( szType, lua_tostring( L, -1 ), sizeof( szType ) );
+						lua_pop( L, 1 );
+					}
+					lua_pop( L, 1 );
+				}
+				lua_getfield( L, -1, "Base" );
+				if ( lua_isstring( L, -1 ) )
+					Q_strncpy( szNext, lua_tostring( L, -1 ), sizeof( szNext ) );
+				lua_pop( L, 1 );
+			}
+		}
+		lua_settop( L, nStack );
+
+		if ( !bStored )
+			return false;						// chain ends: unregistered base
+		if ( szType[0] != '\0' )
+		{
+			Q_strncpy( pszOut, szType, nOut );
+			return true;
+		}
+		if ( szNext[0] == '\0' )
+			return false;						// no Base either: chain over
+		Q_strncpy( szCurrent, szNext, sizeof( szCurrent ) );
+	}
+	return false;								// depth cap: treat as unknown
+}
+
+static void luasrc_ResolvePendingNextBotChains (void)
+{
+	bool bChanged = true;
+	while ( bChanged )
+	{
+		bChanged = false;
+		for ( int i = s_PendingNextBotChains.Count() - 1; i >= 0; --i )
+		{
+			const char *pszClass = s_PendingNextBotChains[i].Get();
+
+			// ⚠️ EVERY Lua touched below restores the stack top before any
+			// decision: this runs between the loader's own Lua frames, and a
+			// leaked slot here derails the caller mid-init (the map-load freeze
+			// of 2026-09-20 was exactly that -- the scripted_ents table of the
+			// GetStored call was never popped, once per pending class).
+			const int nBase = lua_gettop( L );
+
+			char szBase[255] = "";
+			lua_getglobal( L, "scripted_ents" );
+			lua_getfield( L, -1, "GetStored" );
+			if ( lua_isfunction( L, -1 ) )
+			{
+				lua_pushstring( L, pszClass );
+				if ( luasrc_pcall( L, 1, 1, 0 ) == 0 && lua_istable( L, -1 ) )
+				{
+					lua_getfield( L, -1, "Base" );
+					if ( lua_isstring( L, -1 ) )
+						Q_strncpy( szBase, lua_tostring( L, -1 ), sizeof( szBase ) );
+					lua_pop( L, 1 );
+				}
+			}
+			lua_settop( L, nBase );
+
+			char szType[64] = "";
+			if ( szBase[0] != '\0' && luasrc_BaseChainType( szBase, szType, sizeof( szType ) ) )
+			{
+				if ( Q_stricmp( szType, "nextbot" ) == 0 )
+				{
+#ifndef CLIENT_DLL
+					RegisterLuaNextBot( pszClass );
+#endif
+					s_PendingNextBotChains.Remove( i );
+					bChanged = true;
+					continue;
+				}
+
+				// a known PLAIN base: it was never going to be a nextbot
+				RegisterScriptedEntity( pszClass );
+				s_PendingNextBotChains.Remove( i );
+				bChanged = true;
+				continue;
+			}
+			// base still unknown: keep pending for the next pass
+
+			lua_settop( L, nBase );
+		}
+	}
+}
+
 static void luasrc_LoadOneEntity (const char *filename, const char *className)
 {
 	char fullpath[ MAX_PATH ] = { 0 };
@@ -2004,6 +2152,60 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 			lua_pop( L, 1 );
 		}
 
+#ifndef CLIENT_DLL
+		// HL2SB: the class itself says neither -- walk the Base chain through the
+		// Lua registry -- iteratively, see luasrc_BaseChainType.  A base
+		// that has not loaded yet parks the class for
+		// luasrc_ResolvePendingNextBotChains() at the end of the directory scan.
+		bool bDeferNextBotChain = false;
+		if ( !bIsNextBot )
+		{
+			lua_getfield( L, -1, "Base" );
+			if ( lua_isstring( L, -1 ) )
+			{
+				const char *pszBase = lua_tostring( L, -1 );
+				char szBaseType[64] = "";
+				if ( luasrc_BaseChainType( pszBase, szBaseType, sizeof( szBaseType ) ) )
+				{
+					if ( Q_stricmp( szBaseType, "nextbot" ) == 0 )
+						bIsNextBot = true;
+				}
+				else if ( Q_stricmp( pszBase, "base_anim" ) != 0
+					&& Q_stricmp( pszBase, "base_ai" ) != 0
+					&& Q_stricmp( pszBase, "base_point" ) != 0
+					&& Q_stricmp( pszBase, "base_brush" ) != 0
+					&& Q_stricmp( pszBase, "base_filter" ) != 0
+					&& Q_stricmp( pszBase, "base_entity" ) != 0
+					// HL2SB (2026-09-20, Nuke Pack): GMod's plain scripted-entity
+					// base -- entity.lua's GMOD_BASE_ALIASES already maps it onto
+					// prop_scripted.  Missing from this list, every ENT.Base =
+					// "base_gmodentity" class parked in s_PendingNextBotChains,
+					// the resolver never matched the unknown base, and the class
+					// ended up with NO engine factory at all ("gm_spawn: no such
+					// class") while sent_tnt (no Base line) spawned fine.
+					&& Q_stricmp( pszBase, "base_gmodentity" ) != 0 )
+				{
+					// base not registered yet, and not one of the plain GMod
+					// bases that can never be a nextbot
+					bDeferNextBotChain = true;
+				}
+			}
+			lua_pop( L, 1 );
+		}
+
+		if ( bDeferNextBotChain )
+		{
+			// Register NOTHING now: the engine factory dictionary refuses a
+			// correction once a plain factory owns the name, so the decision has
+			// to wait until the whole scan has run and the chain resolves.
+			s_PendingNextBotChains.AddToTail( className );
+			lua_pop( L, 1 );
+			lua_pushnil( L );
+			lua_setglobal( L, "ENT" );
+			return;
+		}
+#endif
+
 		if ( bIsNextBot )
 		{
 #ifndef CLIENT_DLL
@@ -2091,6 +2293,13 @@ void luasrc_LoadEntities (const char *path)
 		fn = g_pFullFileSystem->FindNext( fh );
 	}
 	g_pFullFileSystem->FindClose( fh );
+
+	// HL2SB: the scan for this search path is done -- any ENT.Base chain that
+	// was parked mid-scan can now be walked (the base file has loaded by now),
+	// so decide the parked classes' real factories.  scp049's npc_scp_049-2 is
+	// exactly this case: npc_* < scp_* alphabetically, so the zombie class used
+	// to bind as a plain CBaseScripted with no locomotion and no behaviour.
+	luasrc_ResolvePendingNextBotChains();
 }
 
 /*

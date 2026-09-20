@@ -351,14 +351,17 @@ LUA_API lua_IPhysicsSurfaceProps *lua_tophysicssurfaceprops (lua_State *L, int i
 // Henry wrote up a handle system for this, so if we need to end up using that
 // due to unforeseen logical issues, we will.
 LUA_API void lua_pushphysicsobject (lua_State *L, lua_IPhysicsObject *pPhysicsObject) {
-  if (pPhysicsObject == NULL)
-    lua_pushnil(L);
-  else {
-    lua_IPhysicsObject **ppPhysicsObject = (lua_IPhysicsObject **)lua_newuserdata(L, sizeof(pPhysicsObject));
-    *ppPhysicsObject = pPhysicsObject;
-    luaL_getmetatable(L, "IPhysicsObject");
-    lua_setmetatable(L, -2);
-  }
+  // HL2SB GMod compat (2026-09-20, Nuke Pack): a physics-less entity's
+  // GetPhysicsObject() used to push NIL, so the stock addon idiom
+  //     local phys = ent:GetPhysicsObject()
+  //     if ( phys:IsValid() ) then ... end        -- sent_nuke/init.lua:25
+  // died on "attempt to index a nil value (local 'phys')".  GMod hands back a
+  // NULL physics object whose IsValid() is false and whose other methods throw
+  // the classic "Tried to use a NULL physics object!" -- mirror that here.
+  lua_IPhysicsObject **ppPhysicsObject = (lua_IPhysicsObject **)lua_newuserdata(L, sizeof(pPhysicsObject));
+  *ppPhysicsObject = pPhysicsObject;
+  luaL_getmetatable(L, "IPhysicsObject");
+  lua_setmetatable(L, -2);
 }
 
 
@@ -499,9 +502,14 @@ LUA_API void lua_pushphysicssurfaceprops (lua_State *L, lua_IPhysicsSurfaceProps
 
 
 LUALIB_API lua_IPhysicsObject *luaL_checkphysicsobject (lua_State *L, int narg) {
+  if (lua_type(L, narg) != LUA_TUSERDATA)
+    luaL_argerror(L, narg, "IPhysicsObject expected");
   lua_IPhysicsObject *d = lua_tophysicsobject(L, narg);
-  if (d == NULL)  /* avoid extra test when d is not 0 */
-    luaL_argerror(L, narg, "IPhysicsObject expected, got NULL physicsobject");
+  // HL2SB GMod compat: a NULL physics OBJECT (physics-less entity) is a real
+  // sentinel since lua_pushphysicsobject stopped pushing nil -- anything but
+  // IsValid() throws GMod's message instead of dereferencing it.
+  if (d == NULL)
+    luaL_error(L, "Tried to use a NULL physics object!");
   return d;
 }
 
@@ -677,7 +685,10 @@ LUALIB_API int luaopen_physenv (lua_State *L) {
 ** entity has been removed is still a dangling pointer, exactly as in GMod.
 */
 static int IPhysicsObject_IsValid (lua_State *L) {
-  lua_pushboolean(L, luaL_checkphysicsobject(L, 1) != NULL);
+  // NULL sentinel: IsValid() is the one call that must NOT throw (GMod).  The
+  // raw userdata read here bypasses luaL_checkphysicsobject's throw.
+  lua_IPhysicsObject **pp = (lua_IPhysicsObject **)luaL_checkudata(L, 1, "IPhysicsObject");
+  lua_pushboolean(L, pp != NULL && *pp != NULL);
   return 1;
 }
 

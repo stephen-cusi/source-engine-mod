@@ -448,6 +448,14 @@ static int CBaseEntity_CanStandOn (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Entity:Team() -- wiki: returns the team number of the
+// team this entity is on (0 = no team).  scp0492base.lua:887 calls it from the
+// zombie's behaviour.
+static int CBaseEntity_Team (lua_State *L) {
+  lua_pushinteger( L, luaL_checkentity(L, 1)->GetTeamNumber() );
+  return 1;
+}
+
 static int CBaseEntity_GetEnemy (lua_State *L) {
   lua_pushentity(L, luaL_checkentity(L, 1)->GetEnemy());
   return 1;
@@ -799,6 +807,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"TeamID", CBaseEntity_TeamID},
   {"CanStandOn", CBaseEntity_CanStandOn},
   {"GetEnemy", CBaseEntity_GetEnemy},
+  {"Team", CBaseEntity_Team},
   {"VelocityPunch", CBaseEntity_VelocityPunch},
   {"GetNextTarget", CBaseEntity_GetNextTarget},
   {"Use", CBaseEntity_Use},
