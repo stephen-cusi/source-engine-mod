@@ -15,6 +15,9 @@
 #include "ivrenderview.h"
 #include "tier0/vprof.h"
 #include "bsptreedata.h"
+#ifdef LUA_SDK
+#include "luamanager.h"	// HL2SB: luasrc_LuaInfoMsgF for the PreRender probe
+#endif
 #include "detailobjectsystem.h"
 #include "engine/IStaticPropMgr.h"
 #include "engine/ivdebugoverlay.h"
@@ -530,6 +533,18 @@ void CClientLeafSystem::PreRender()
 
 	int i;
 	int nIterations = 0;
+
+	// HL2SB (2026-09-21): one line, once -- proves the dirty-renderable
+	// pipeline (RenderableChanged -> PreRender -> RemoveFromTree/InsertIntoTree)
+	// is alive at all.  If this never prints, the leaf system is never being
+	// processed and nothing that spawned after map load can ever appear.
+	static bool s_bPreRenderProbed = false;
+	if ( !s_bPreRenderProbed && m_DirtyRenderables.Count() > 0 )
+	{
+		s_bPreRenderProbed = true;
+		luasrc_LuaInfoMsgF( "[HL2SB] ClientLeafSystem::PreRender processing %d dirty renderable(s)\n",
+			m_DirtyRenderables.Count() );
+	}
 
 	while ( m_DirtyRenderables.Count() )
 	{

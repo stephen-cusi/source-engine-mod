@@ -43,6 +43,7 @@
 #ifdef LUA_SDK
 #include "luamanager.h"
 #include "mathlib/lvector.h"
+#include "basescripted.h"	// HL2SB: dynamic_cast for the UpdateVisibility diagnostic
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -1427,7 +1428,42 @@ void C_BaseEntity::UpdateVisibility()
 	}
 #endif
 
-	if ( ShouldDraw() && !IsDormant() && ( !ToolsEnabled() || IsEnabledInToolView() ) )
+	bool bVisShouldDraw = ShouldDraw() && !IsDormant() && ( !ToolsEnabled() || IsEnabledInToolView() );
+
+#ifdef LUA_SDK
+	// HL2SB diagnostic (2026-09-21): the scripted entities spawn with a valid
+	// model and origin, pass ShouldDraw, and still never reach DrawModel().
+	// This is THE decision point between those two facts -- record, once per
+	// classname, which way it went and every input to it.
+	{
+		C_BaseScripted *pScripted = dynamic_cast< C_BaseScripted * >( this );
+		if ( pScripted )
+		{
+			static CUtlVector<CUtlString> s_VisProbed;
+			const char *pszClass = GetClassname();
+			bool bProbed = false;
+			for ( int i = 0; i < s_VisProbed.Count(); ++i )
+			{
+				if ( !Q_stricmp( s_VisProbed[i], pszClass ) ) { bProbed = true; break; }
+			}
+			if ( !bProbed && s_VisProbed.Count() < 16 )
+			{
+				s_VisProbed.AddToTail( pszClass );
+				luasrc_LuaInfoMsgF(
+					"[HL2SB] UpdateVisibility '%s': shoulddraw=%d dormant=%d group=%d handle=%s model=%s -> %s\n",
+					pszClass,
+					ShouldDraw() ? 1 : 0,
+					IsDormant() ? 1 : 0,
+					(int)GetRenderGroup(),
+					( GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE ) ? "valid" : "invalid",
+					( GetModel() != NULL ) ? "ok" : "NULL",
+					bVisShouldDraw ? "ADD" : "REMOVE" );
+			}
+		}
+	}
+#endif
+
+	if ( bVisShouldDraw )
 	{
 		// add/update leafsystem
 		AddToLeafSystem();
