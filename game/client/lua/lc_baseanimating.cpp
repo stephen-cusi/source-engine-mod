@@ -1089,7 +1089,7 @@ static int CBaseAnimating___index (lua_State *L) {
     lua_getref(L, pEntity->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_rawget(L, -2);
-    return 1;                      // value or nil
+    // falls through to the legacy self-reference / scripted-field tail below
   }
   else {
     lua_getmetatable(L, 1);
@@ -1111,7 +1111,11 @@ static int CBaseAnimating___index (lua_State *L) {
     }
   }
   // HL2SB GMod compat: nothing in the entity's own table and nothing in the
-  // bindings -> try the script's class table (see LuaPushScriptedEntityField).
+  // bindings -> try the script's class table (see LuaPushScriptedEntityField),
+  // and answer GMod's deprecated self-reference fields ("Entity", and the
+  // SWEP spelling "Weapon") with the entity itself, like GMod does.  Reaching
+  // here with a bound table now works too: the script-table-data read above
+  // falls through when it produced nil (2026-09-21).
   if ( lua_isnil( L, -1 ) )
   {
     const char *pszKey = lua_tostring( L, 2 );
@@ -1119,7 +1123,7 @@ static int CBaseAnimating___index (lua_State *L) {
 
     if ( pszKey != NULL )
     {
-      if ( Q_strcmp( pszKey, "Entity" ) == 0 )
+      if ( Q_strcmp( pszKey, "Entity" ) == 0 || Q_strcmp( pszKey, "Weapon" ) == 0 )
       {
         lua_pushvalue( L, 1 );        // self.Entity == self, like GMod's ENT.Entity
         return 1;

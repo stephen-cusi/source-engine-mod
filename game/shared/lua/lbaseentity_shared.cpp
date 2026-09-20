@@ -2931,6 +2931,24 @@ static int CBaseEntity___index (lua_State *L) {
     lua_getmetatable(L, 1);
     lua_getfield(L, -1, field);
   }
+
+  /* HL2SB GMod compat: GMod's deprecated entity self-reference fields.
+  ** A large share of old addons open ENT:Initialize with
+  **     self.Entity:SetModel( "models/..." )
+  ** (mk-82_sent_he_missile/init.lua:13, npc_scp_049.lua:98, ...) and SWEPs
+  ** spell the weapon the same way: self.Weapon.  GMod answers both with the
+  ** entity itself.  Unimplemented, the lookup was nil and the first
+  ** Initialize line raised "attempt to index a nil value (field 'Entity')"
+  ** -- before SetModel ran, so the server never precached a model and every
+  ** such entity reached the client invisible (2026-09-21).
+  ** Lowest priority: only when neither the script table nor the C bindings
+  ** answered the key. */
+  if ( lua_isnil( L, -1 ) &&
+       ( Q_stricmp( field, "Entity" ) == 0 || Q_stricmp( field, "Weapon" ) == 0 ) )
+  {
+    lua_pop( L, 1 );
+    lua_pushvalue( L, 1 );       /* self.Entity == self, like GMod */
+  }
   return 1;
 }
 

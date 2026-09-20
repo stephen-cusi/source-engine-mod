@@ -486,12 +486,13 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 
 	if ( !HL2SB_FindLuaEffectTemplate( L, pszName ) )
 	{
-		// HL2SB: silent before -- when the TE never delivered the name or the
-		// registry lost it, this returned false and NOTHING said why (the
-		// tracer/bounce then vanished without a word).  Critical path => InfoMsg,
-		// not WarnOnce (the 2026-09-19 Nyan Gun round: this line never surfaced
-		// through Warning while InfoMsg lines on the same path always did).
-		luasrc_LuaInfoMsgF( "[HL2SB] no Lua effect template for '%s'\n", pszName );
+		// HL2SB: this is NOT fatal and must not read like one -- both dispatch
+		// paths fall through to the engine's DECLARE_CLIENT_EFFECT callbacks
+		// right after, and the lookup there is Q_stricmp, so 'bloodimpact'
+		// runs the engine's "BloodImpact" and 'cball_bounce' its own callback.
+		// The old wording ("no Lua effect template for ...") read as a failure
+		// and sent every debugging session down a wrong trail (2026-09-21).
+		luasrc_LuaInfoMsgF( "[HL2SB] effect '%s': no Lua template -> engine callback\n", pszName );
 		return false;
 	}
 

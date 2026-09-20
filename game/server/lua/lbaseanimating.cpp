@@ -624,7 +624,7 @@ static int CBaseAnimating___index (lua_State *L) {
     lua_getref(L, pEntity->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_rawget(L, -2);
-    return 1;                      // value or nil
+    // falls through to the legacy self-reference tail below (value or nil)
   }
   else {
     lua_getmetatable(L, 1);
@@ -644,6 +644,24 @@ static int CBaseAnimating___index (lua_State *L) {
         lua_pushvalue(L, 2);
         lua_gettable(L, -2);
       }
+    }
+  }
+
+  /* HL2SB GMod compat: GMod's deprecated self-reference fields -- old addons
+  ** open ENT:Initialize with self.Entity:SetModel( ... ) (mk-82_sent_he_missile,
+  ** npc_scp_049.lua:98) and SWEPs spell the weapon self.Weapon.  GMod answers
+  ** both with the entity itself; the nil lookup used to kill Initialize before
+  ** SetModel ran, leaving the entity with no model on the client (2026-09-21).
+  ** Lowest priority: only when nothing else answered. */
+  if ( lua_isnil( L, -1 ) )
+  {
+    const char *pszKey = lua_tostring( L, 2 );
+
+    if ( pszKey != NULL &&
+         ( Q_stricmp( pszKey, "Entity" ) == 0 || Q_stricmp( pszKey, "Weapon" ) == 0 ) )
+    {
+      lua_pop( L, 1 );
+      lua_pushvalue( L, 1 );       /* self.Entity == self, like GMod */
     }
   }
   return 1;

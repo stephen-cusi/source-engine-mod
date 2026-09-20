@@ -1536,6 +1536,16 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
       return 1;
     }, 0 );
     lua_setglobal( L, szName );
+
+    // HL2SB: the gmod_globals.lua probe kept printing DEFINE_BASECLASS=nil
+    // even with this closure in the binary, so record here -- at the exact
+    // registration site -- what the state actually holds.  If this line says
+    // "function" while the Lua probe still says nil, something between
+    // openlibs and the extension scan REMOVES or shadows the global.
+    lua_getglobal( L, szName );
+    Warning( "[HL2SB] openlibs: DEFINE_BASECLASS registered as %s\n",
+             luaL_typename( L, -1 ) );
+    lua_pop( L, 1 );
   }
 
 /* Every lib is open now, so the metatables exist and can be aliased. */
