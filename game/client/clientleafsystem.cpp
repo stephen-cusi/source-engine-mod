@@ -17,6 +17,7 @@
 #include "bsptreedata.h"
 #ifdef LUA_SDK
 #include "luamanager.h"	// HL2SB: luasrc_LuaInfoMsgF for the PreRender probe
+#include "basescripted.h"	// HL2SB: dynamic_cast for the leaf-insert probe
 #endif
 #include "detailobjectsystem.h"
 #include "engine/IStaticPropMgr.h"
@@ -1178,9 +1179,40 @@ void CClientLeafSystem::InsertIntoTree( ClientRenderHandle_t &handle )
 	// NOTE: The render bounds here are relative to the renderable's coordinate system
 	IClientRenderable* pRenderable = m_Renderables[handle].m_pRenderable;
 	Vector absMins, absMaxs;
-	
+
 	CalcRenderableWorldSpaceAABB_Fast( pRenderable, absMins, absMaxs );
 	Assert( absMins.IsValid() && absMaxs.IsValid() );
+
+#ifdef LUA_SDK
+	// HL2SB diagnostic (2026-09-21): for scripted entities record the world
+	// AABB the leaf insert is computed from.  A renderable whose AABB lands in
+	// ZERO leaves (or in the wrong place) can never be enumerated for drawing,
+	// no matter how correct its model/origin are -- this is the definitive
+	// membership measurement.  Keyed on the scripted classname, which is also
+	// what survives the client classmap's reverse-lookup collapse.
+	{
+		C_BaseEntity *pEnt = pRenderable->GetIClientUnknown() ? pRenderable->GetIClientUnknown()->GetBaseEntity() : NULL;
+		C_BaseScripted *pScripted = dynamic_cast< C_BaseScripted * >( pEnt );
+		if ( pScripted )
+		{
+			static CUtlVector<CUtlString> s_TreeProbed;
+			const char *pszClass = pScripted->GetScriptedClassname();
+			bool bProbed = false;
+			for ( int i = 0; i < s_TreeProbed.Count(); ++i )
+			{
+				if ( !Q_stricmp( s_TreeProbed[i], pszClass ) ) { bProbed = true; break; }
+			}
+			if ( !bProbed && s_TreeProbed.Count() < 16 )
+			{
+				s_TreeProbed.AddToTail( pszClass );
+				luasrc_LuaInfoMsgF(
+					"[HL2SB] leaf insert '%s': aabb=(%.0f %.0f %.0f)-(%.0f %.0f %.0f)\n",
+					pszClass,
+					absMins.x, absMins.y, absMins.z, absMaxs.x, absMaxs.y, absMaxs.z );
+			}
+		}
+	}
+#endif
 
 	ISpatialQuery* pQuery = engine->GetBSPTreeQuery();
 	pQuery->EnumerateLeavesInBox( absMins, absMaxs, this, (intp)&list );
