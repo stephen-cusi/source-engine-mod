@@ -828,9 +828,84 @@ LUA_API void luasrc_LuaInfoMsgF (const char *pszFormat, ...)
 
 static int HL2SB_LuaPanic( lua_State *pL )
 {
+	char szPanicLine[ 512 ];
 	const char *pszMsg = lua_tostring( pL, -1 );
 	if ( !pszMsg )
 		pszMsg = "(error object is not a string)";
+
+	// HL2SB (2026-09-21): a pure-C panic ("attempt to index a string value"
+	// out of lua_getfield/settable) carries no Lua frames, so the traceback is
+	// empty and the message names nothing.  Walk the CallInfo chain ourselves
+	// (C frames included) and dump the value-stack slot types - the slot types
+	// show what the C code was actually indexing, and the level list names the
+	// C function that was doing it.
+	{
+		lua_Debug ar;
+		Q_snprintf( szPanicLine, sizeof( szPanicLine ), "[HL2SB] panic callchain:" );
+		luasrc_LuaErrorMsg( szPanicLine );
+		for ( int nLevel = 0; lua_getstack( pL, nLevel, &ar ); ++nLevel )
+		{
+			if ( !lua_getinfo( pL, "Snlf", &ar ) )
+				break;
+			Q_snprintf( szPanicLine, sizeof( szPanicLine ),
+				"[HL2SB]   level %d: what=%s func=%s(%s) source=%s line=%d",
+				nLevel, ar.what,
+				ar.name ? ar.name : "(?)", ar.namewhat ? ar.namewhat : "",
+				ar.short_src[0] ? ar.short_src : "?", ar.currentline );
+			luasrc_LuaErrorMsg( szPanicLine );
+			lua_pop( pL, 1 );	// lua_getinfo("f") pushed the function
+			if ( nLevel >= 15 )
+				break;
+		}
+
+		int nTop = lua_gettop( pL );
+		int nFrom = ( nTop > 10 ) ? nTop - 10 : 1;
+		for ( int i = nFrom; i <= nTop; ++i )
+		{
+			Q_snprintf( szPanicLine, sizeof( szPanicLine ),
+				"[HL2SB]   stack[%d/%d] = %s", i, nTop, lua_typename( pL, lua_type( pL, i ) ) );
+			luasrc_LuaErrorMsg( szPanicLine );
+			// strings carry the answer: a stray init-time leftover names itself
+			if ( lua_type( pL, i ) == LUA_TSTRING )
+			{
+				const char *pszVal = lua_tostring( pL, i );
+				Q_snprintf( szPanicLine, sizeof( szPanicLine ),
+					"[HL2SB]   stack[%d] = \"%s\"", i, pszVal ? pszVal : "?" );
+				luasrc_LuaErrorMsg( szPanicLine );
+			}
+		}
+
+		// which state are we panicking on?  The registration macros index the
+		// GLOBAL L, and the menu state has its own stack - a mismatch shows up
+		// as exactly this kind of bare-state panic.
+		{
+			const char *pszState = "OTHER/UNKNOWN";
+#ifdef CLIENT_DLL
+			if ( pL == L ) pszState = "L (game realm)";
+			else if ( pL == LGameUI ) pszState = "LGameUI (menu realm)";
+#else
+			if ( pL == L ) pszState = "L (game realm)";
+#endif
+			Q_snprintf( szPanicLine, sizeof( szPanicLine ), "[HL2SB]   panic state = %s", pszState );
+			luasrc_LuaErrorMsg( szPanicLine );
+
+			// the enum-lib macros index _E at stack -2; if a late init step
+			// overwrote the _E global with a non-table, END_LUA_SET_ENUM_LIB's
+			// lua_setfield IS this panic.  Name it.
+			lua_getglobal( pL, "_E" );
+			Q_snprintf( szPanicLine, sizeof( szPanicLine ),
+				"[HL2SB]   global _E = %s", lua_typename( pL, lua_type( pL, -1 ) ) );
+			if ( lua_type( pL, -1 ) == LUA_TSTRING )
+			{
+				const char *pszVal = lua_tostring( pL, -1 );
+				Q_snprintf( szPanicLine + Q_strlen( szPanicLine ),
+					sizeof( szPanicLine ) - Q_strlen( szPanicLine ),
+					" (\"%.120s\")", pszVal ? pszVal : "?" );
+			}
+			luasrc_LuaErrorMsg( szPanicLine );
+			lua_pop( pL, 1 );
+		}
+	}
 
 	// Traceback of where the unprotected error came from.
 	//

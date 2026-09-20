@@ -1469,6 +1469,10 @@ static int HL2SB_Lua_EntityNetworkVarNotify (lua_State *L) {
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
+    // HL2SB (2026-09-21): lua_call below is UNPROTECTED - a Lua error in any
+    // luaopen_* goes straight to the atpanic handler with an empty traceback.
+    // Log the module name first so a panic names its library immediately.
+    luasrc_LuaInfoMsgF( "[HL2SB] openlibs: %s\n", lib->name );
     lua_pushcfunction(L, lib->func);
     lua_pushstring(L, lib->name);
     lua_call(L, 1, 0);
