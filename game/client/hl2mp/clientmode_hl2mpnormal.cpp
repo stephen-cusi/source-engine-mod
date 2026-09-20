@@ -18,7 +18,6 @@
 #include "hl2mpclientscoreboard.h"
 #include "hl2mptextwindow.h"
 #include "ienginevgui.h"
-#include "hl2sb_contextmenu.h"
 #ifdef LUA_SDK
 #include "scriptedhudviewport.h"
 #include "scriptedclientluapanel.h"
@@ -88,17 +87,12 @@ IViewPortPanel* CHudViewport::CreatePanelByName( const char *szPanelName )
 	}
 	else if ( Q_strcmp(PANEL_SPECGUI, szPanelName) == 0 )
 	{
-		newpanel = new CHL2MPSpectatorGUI( this );	
-		return newpanel;
-	}
-	else if ( Q_strcmp(PANEL_CONTEXT_MENU, szPanelName) == 0 )
-	{
-		newpanel = new CHL2SBContextMenu( this );
+		newpanel = new CHL2MPSpectatorGUI( this );
 		return newpanel;
 	}
 
-	
-	return BaseClass::CreatePanelByName( szPanelName ); 
+
+	return BaseClass::CreatePanelByName( szPanelName );
 }
 
 //-----------------------------------------------------------------------------

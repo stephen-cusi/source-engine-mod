@@ -137,8 +137,6 @@ $Project "Client (HL2MP)"
 			$File	"$SRCDIR\game\shared\hl2sb_model_config.cpp"
 			$File	"$SRCDIR\game\shared\hl2sb_model_config.h"
 			$File	"$SRCDIR\game\shared\hl2sb_model_commands.cpp"
-			$File	"hl2sb_contextmenu.cpp"
-			$File	"hl2sb_contextmenu.h"
 			$File	"hl2sb_crash_handler.cpp"
 			$File	"hl2sb_crash_handler.h"
 
