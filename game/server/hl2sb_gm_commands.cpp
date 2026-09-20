@@ -62,7 +62,8 @@ static void GM_PlaceAtEyeTrace( CBasePlayer *pPlayer, CBaseEntity *pEnt )
 static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszClass,
                                         const char *pszModel, const char *pszEquipment,
                                         const char *pszVehicleScript = NULL, const char *pszName = NULL,
-                                        const CCommand *pKVArgs = NULL, int iKVStart = 0 )
+                                        const CCommand *pKVArgs = NULL, int iKVStart = 0,
+                                        bool bGmodSeatPod = false )
 {
 	CBaseEntity *pEnt = CreateEntityByName( pszClass );
 
@@ -74,6 +75,16 @@ static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszCla
 
 	if ( pszModel != NULL && pszModel[ 0 ] != '\0' )
 		pEnt->SetModel( pszModel );
+
+	// GMod's seat contract: every pod the SPAWN MENU creates is a seat, not a
+	// prison cell - GMod's own seat list pins `limitview 0` on all of them, and
+	// the pod's per-frame view clamp (C_PropVehiclePrisonerPod::UpdateViewAngles)
+	// holds the yaw to +-60 unless the key is set.  A Hammer-placed pod keeps the
+	// SDK behaviour (the keyfield default is true); only the gm_spawnvehicle path
+	// opts into the seat contract.  Has to ride before DispatchSpawn, like the
+	// other keyvalues here.
+	if ( bGmodSeatPod )
+		pEnt->KeyValue( "limitview", "0" );
 
 	// the vehicle script is a KEYVALUE - it has to be on the entity before
 	// DispatchSpawn, which is when prop_vehicle reads it.  A model-less
@@ -156,8 +167,10 @@ CON_COMMAND( gm_spawn, "Spawn an entity: gm_spawn <class> [model]  (GMod)" )
 // gm_spawnvehicle: the spawn menu sends <class> <model> <vehiclescript> -- the
 // model and the script USED to be dropped here, so every menu-spawned vehicle
 // was model-less (the exact shape that crashes the server or spawns nothing).
+// args[5..] are the Vehicles registry's KeyValues as name/value pairs
+// (the menu forwards list.Set( "Vehicles", ... ) data.KeyValues).
 //-----------------------------------------------------------------------------
-CON_COMMAND( gm_spawnvehicle, "Spawn a vehicle: gm_spawnvehicle <class> [model] [vehiclescript]  (GMod)" )
+CON_COMMAND( gm_spawnvehicle, "Spawn a vehicle: gm_spawnvehicle <class> [model] [vehiclescript] [name] [key value...]  (GMod)" )
 {
 	CBasePlayer *pPlayer = GM_CommandPlayer();
 
@@ -167,7 +180,9 @@ CON_COMMAND( gm_spawnvehicle, "Spawn a vehicle: gm_spawnvehicle <class> [model] 
 	CBaseEntity *pEnt = GM_SpawnAtEyeTrace( pPlayer, args[ 1 ],
 		( args.ArgC() > 2 ) ? args[ 2 ] : NULL, NULL,
 		( args.ArgC() > 3 ) ? args[ 3 ] : NULL,
-		( args.ArgC() > 4 ) ? args[ 4 ] : NULL );
+		( args.ArgC() > 4 ) ? args[ 4 ] : NULL,
+		&args, 5,
+		( Q_stricmp( args[ 1 ], "prop_vehicle_prisoner_pod" ) == 0 ) );
 
 	GM_Record( pPlayer, pEnt, ( args.ArgC() > 4 ) ? args[ 4 ] : NULL );
 }
