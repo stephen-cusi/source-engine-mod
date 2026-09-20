@@ -58,6 +58,14 @@ struct CLuaParticleX : public SimpleParticle
 	float m_flNextThink;
 };
 
+// HL2SB: the particle pool's per-particle stride is PARTICLE_SIZE in
+// game/client/particlemgr.cpp (raised from 96 to 256 for this struct on
+// 2026-09-21 -- at 96 every emitter:Add() was silently rejected and no Lua
+// particle effect could ever render).  Keep the two in sync: if this struct
+// grows past that budget every Lua particle dies again with
+// "ParticleEmitter:Add(...): particle allocation failed".
+static_assert( sizeof( CLuaParticleX ) <= 256, "CLuaParticleX exceeds particlemgr.cpp PARTICLE_SIZE -- raise it" );
+
 class CLuaEmitter;
 static void CLuaParticle_PushWrapper( CLuaEmitter *pEmitter, CLuaParticleX *pParticle );
 

@@ -67,7 +67,17 @@ static ConVar cl_particle_stats_trigger_count( "cl_particle_stats_trigger_count"
 //
 //-----------------------------------------------------------------------------
 
-#define PARTICLE_SIZE	96
+// HL2SB (2026-09-21): was 96.  CParticleEffectBinding::AddParticle() rejects
+// anything larger, and the pool allocates exactly this stride, so 96 bytes is
+// the hard per-particle budget.  SimpleParticle (~88 bytes) still fits, but
+// HL2SB's Lua particle (game/client/lua/luaparticle.cpp CLuaParticleX, which
+// adds the serial, gravity, collision and think fields GMod's emitter:Add
+// scripts set) is ~130 bytes -- EVERY allocation was rejected, every
+// emitter:Add() in every addon came back empty, and not a single Lua particle
+// effect could ever show (the 2026-09-21 "nuke has no effects" sessions).
+// 256 covers CLuaParticleX with headroom; the pool is malloc'd per particle,
+// so the cost is memory, and only when effects actually spawn.
+#define PARTICLE_SIZE	256
 
 CParticleMgr *ParticleMgr()
 {
