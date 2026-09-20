@@ -2861,11 +2861,14 @@ static int CBaseEntity___index (lua_State *L) {
     */
     const char *pszField = lua_tostring(L, 2);
 
-    if (pszField != NULL && Q_stricmp(pszField, "IsValid") == 0) {
-      lua_pushboolean(L, false);
-    } else {
-      lua_pushcfunction(L, HL2SB_NullEntityMethod);
-    }
+    // HL2SB (2026-09-20): IsValid used to be answered with the literal
+    // `false`, so the global IsValid() worked but the METHOD call
+    // Rocket:IsValid() on a NULL entity died with "attempt to call a boolean
+    // value (method 'IsValid')" (weapon_nukestrike/shared.lua:94).  GMod's
+    // NULL entity answers BOTH with a function that returns false -- the
+    // global IsValid() still gets its false back (it CALLS the function), and
+    // direct method calls no longer throw.
+    lua_pushcfunction(L, HL2SB_NullEntityMethod);
 
     return 1;
   }

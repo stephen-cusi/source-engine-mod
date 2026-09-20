@@ -1496,6 +1496,42 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   }
   lua_pop( L, 1 );
 
+/* HL2SB GMod compat: the DEFINE_BASECLASS( name ) global (wiki: it is a
+ * PREPROCESSOR keyword in GMod -- the loader's own GLua rewrite pass expands
+ * call sites into `local BaseClass = baseclass.Get( name )`).  But addons
+ * loaded through paths WITHOUT the rewrite (and scripts that reference the
+ * name at runtime) still need the callable, and a Lua-side definition is
+ * impossible: the rewrite pass replaces the bare token inside the definition
+ * itself, which is exactly how gmod_globals.lua died on 2026-09-20.  Define
+ * it here in C++ where the name is assembled from two literals -- the
+ * rewriter never sees it. */
+  {
+    static const char szName[] = "DEFINE_BASE" "CLASS";
+    lua_getglobal( L, "baseclass" );
+    if ( lua_istable( L, -1 ) )
+    {
+      lua_getfield( L, -1, "Get" );
+      if ( lua_isfunction( L, -1 ) )
+      {
+        lua_pushcclosure( L, []( lua_State *LS ) -> int {
+          lua_getglobal( LS, "baseclass" );
+          lua_getfield( LS, -1, "Get" );
+          lua_remove( LS, -2 );
+          lua_pushvalue( LS, 1 );
+          lua_call( LS, 1, 1 );
+          // GMod's expansion also mirrors onto the global BaseClass
+          lua_setglobal( LS, "BaseClass" );
+          lua_getglobal( LS, "BaseClass" );
+          return 1;
+        }, 0 );
+        lua_setglobal( L, szName );
+      }
+      else
+        lua_pop( L, 1 );
+    }
+    lua_pop( L, 1 );
+  }
+
 /* Every lib is open now, so the metatables exist and can be aliased. */
   luasrc_install_metatable_aliases(L);
   luasrc_install_type_names(L);
