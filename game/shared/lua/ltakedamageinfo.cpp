@@ -237,6 +237,20 @@ static int CTakeDamageInfo___tostring (lua_State *L) {
 }
 
 
+// HL2SB GMod compat (Nuke Pack audit 2026-09-20): the wiki damage-type
+// predicates.  npc_scp_049-2.lua:169/195 call IsBulletDamage on every hit.
+static int CTakeDamageInfo_IsBulletDamage (lua_State *L) {
+  CTakeDamageInfo &pInfo = luaL_checkdamageinfo( L, 1 );
+  lua_pushboolean( L, ( pInfo.GetDamageType() & DMG_BULLET ) != 0 );
+  return 1;
+}
+
+static int CTakeDamageInfo_IsExplosionDamage (lua_State *L) {
+  CTakeDamageInfo &pInfo = luaL_checkdamageinfo( L, 1 );
+  lua_pushboolean( L, ( pInfo.GetDamageType() & DMG_BLAST ) != 0 );
+  return 1;
+}
+
 static const luaL_Reg CTakeDamageInfometa[] = {
   {"AddDamage", CTakeDamageInfo_AddDamage},
   {"AddDamageType", CTakeDamageInfo_AddDamageType},
@@ -255,6 +269,8 @@ static const luaL_Reg CTakeDamageInfometa[] = {
   {"GetDamagePosition", CTakeDamageInfo_GetDamagePosition},
   {"GetDamageStats", CTakeDamageInfo_GetDamageStats},
   {"GetDamageType", CTakeDamageInfo_GetDamageType},
+  {"IsBulletDamage", CTakeDamageInfo_IsBulletDamage},
+  {"IsExplosionDamage", CTakeDamageInfo_IsExplosionDamage},
   {"GetInflictor", CTakeDamageInfo_GetInflictor},
   {"GetMaxDamage", CTakeDamageInfo_GetMaxDamage},
   {"GetReportedPosition", CTakeDamageInfo_GetReportedPosition},

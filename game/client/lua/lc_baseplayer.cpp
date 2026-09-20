@@ -49,9 +49,44 @@ static int CBasePlayer_UniqueID (lua_State *L) {
 }
 
 
+// HL2SB GMod compat (Nuke Pack audit 2026-09-20): the client-side view
+// toggles.  Both write flags the render path consults:
+//   * view.cpp suppresses the viewmodel when g_HL2SB_HideViewModel is set
+//   * hud_crosshair.cpp suppresses the crosshair when
+//     g_HL2SB_CrosshairHidden is set
+// GMod scopes these to the calling player; only the LOCAL player's flag can
+// influence this client's render, so a call from any other player is a no-op
+// (the flags are global on purpose -- one local player per client).
+bool g_HL2SB_HideViewModel = false;
+bool g_HL2SB_CrosshairHidden = false;
+
+static int CBasePlayer_DrawViewModel (lua_State *L) {
+  C_BasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  if ( pPlayer != NULL && pPlayer == C_BasePlayer::GetLocalPlayer() )
+    g_HL2SB_HideViewModel = !luaL_checkboolean( L, 2 );   // bDraw = true -> show
+  return 0;
+}
+
+static int CBasePlayer_CrosshairDisable (lua_State *L) {
+  C_BasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  if ( pPlayer != NULL && pPlayer == C_BasePlayer::GetLocalPlayer() )
+    g_HL2SB_CrosshairHidden = true;
+  return 0;
+}
+
+static int CBasePlayer_CrosshairEnable (lua_State *L) {
+  C_BasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  if ( pPlayer != NULL && pPlayer == C_BasePlayer::GetLocalPlayer() )
+    g_HL2SB_CrosshairHidden = false;
+  return 0;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"GetLocalPlayer", CBasePlayer_GetLocalPlayer},
   {"UniqueID", CBasePlayer_UniqueID},
+  {"DrawViewModel", CBasePlayer_DrawViewModel},
+  {"CrosshairDisable", CBasePlayer_CrosshairDisable},
+  {"CrosshairEnable", CBasePlayer_CrosshairEnable},
   {NULL, NULL}
 };
 

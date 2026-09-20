@@ -78,8 +78,14 @@ void CHudCrosshair::ApplySchemeSettings( IScheme *scheme )
 // costly traversal.  Called per frame, return true if thinking and 
 // painting need to occur.
 //-----------------------------------------------------------------------------
+// HL2SB GMod compat: Player:CrosshairDisable/Enable toggle this (lc_baseplayer.cpp)
+extern bool g_HL2SB_CrosshairHidden;
+
 bool CHudCrosshair::ShouldDraw( void )
 {
+	if ( g_HL2SB_CrosshairHidden )
+		return false;
+
 	bool bNeedsDraw;
 
 	if ( m_bHideCrosshair )

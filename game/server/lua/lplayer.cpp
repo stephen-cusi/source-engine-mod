@@ -583,6 +583,25 @@ static int CBasePlayer_GetViewEntity (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (Nuke Pack audit 2026-09-20):
+// Player:SetEyeAngles( angles ) -- snaps the player's view.  pl.v_angle is the
+// networked eye-angle store the engine reads every frame.
+static int CBasePlayer_SetEyeAngles (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  const QAngle angles = luaL_checkangle( L, 2 );
+  pPlayer->PlayerData()->v_angle = angles;      // PlayerData() already returns &pl
+  pPlayer->SnapEyeAngles( angles );
+  return 0;
+}
+
+// Player:AddFrags( count ) -- negative counts subtract (wiki);
+// IncrementFragCount() is a plain += and takes negatives fine.
+static int CBasePlayer_AddFrags (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  pPlayer->IncrementFragCount( luaL_checkint( L, 2 ) );
+  return 0;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"GiveAmmo", CBasePlayer_GiveAmmo},
   {"SetBodyPitch", CBasePlayer_SetBodyPitch},
@@ -681,6 +700,8 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"UniqueID", CBasePlayer_UniqueID},
   {"ChatPrint", CBasePlayer_ChatPrint},
   {"SetViewEntity", CBasePlayer_SetViewEntity},
+  {"SetEyeAngles", CBasePlayer_SetEyeAngles},
+  {"AddFrags", CBasePlayer_AddFrags},
   {"GetViewEntity", CBasePlayer_GetViewEntity},
   {NULL, NULL}
 };

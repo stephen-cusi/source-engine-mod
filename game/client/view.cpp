@@ -1238,6 +1238,11 @@ void CViewRender::Render( vrect_t *rect )
 	    // Determine if we should draw view model ( client mode override )
 	    bool drawViewModel = g_pClientMode->ShouldDrawViewModel();
 
+    // HL2SB GMod compat: Player:DrawViewModel( false ) (lc_baseplayer.cpp)
+    extern bool g_HL2SB_HideViewModel;
+    if ( g_HL2SB_HideViewModel )
+        drawViewModel = false;
+
 	    if ( cl_leveloverview.GetFloat() > 0 )
 	    {
 		    SetUpOverView();		
