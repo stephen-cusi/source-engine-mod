@@ -1506,30 +1506,36 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
  * it here in C++ where the name is assembled from two literals -- the
  * rewriter never sees it. */
   {
+    // ⚠️ the baseclass module does NOT exist yet at openlibs time (it loads
+    // with the modules/ pass) -- the closure must read it lazily at CALL time.
+    // The first version gated the definition on baseclass being present, which
+    // was always false and left DEFINE_BASECLASS nil (probed 2026-09-20 22:41).
     static const char szName[] = "DEFINE_BASE" "CLASS";
-    lua_getglobal( L, "baseclass" );
-    if ( lua_istable( L, -1 ) )
-    {
-      lua_getfield( L, -1, "Get" );
-      if ( lua_isfunction( L, -1 ) )
+    lua_pushcclosure( L, []( lua_State *LS ) -> int {
+      lua_getglobal( LS, "baseclass" );
+      if ( !lua_istable( LS, -1 ) )
       {
-        lua_pushcclosure( L, []( lua_State *LS ) -> int {
-          lua_getglobal( LS, "baseclass" );
-          lua_getfield( LS, -1, "Get" );
-          lua_remove( LS, -2 );
-          lua_pushvalue( LS, 1 );
-          lua_call( LS, 1, 1 );
-          // GMod's expansion also mirrors onto the global BaseClass
-          lua_setglobal( LS, "BaseClass" );
-          lua_getglobal( LS, "BaseClass" );
-          return 1;
-        }, 0 );
-        lua_setglobal( L, szName );
+        lua_pop( LS, 1 );
+        lua_pushnil( LS );
+        return 1;
       }
-      else
-        lua_pop( L, 1 );
-    }
-    lua_pop( L, 1 );
+      lua_getfield( LS, -1, "Get" );
+      if ( !lua_isfunction( LS, -1 ) )
+      {
+        lua_pop( LS, 2 );
+        lua_pushnil( LS );
+        return 1;
+      }
+      lua_remove( LS, -2 );
+      lua_pushvalue( LS, 1 );
+      lua_call( LS, 1, 1 );
+      // GMod's expansion also mirrors the result onto the global BaseClass,
+      // so BaseClass:Initialize( self ) calls keep resolving.
+      lua_setglobal( LS, "BaseClass" );
+      lua_getglobal( LS, "BaseClass" );
+      return 1;
+    }, 0 );
+    lua_setglobal( L, szName );
   }
 
 /* Every lib is open now, so the metatables exist and can be aliased. */

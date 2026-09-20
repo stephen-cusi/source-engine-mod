@@ -2492,6 +2492,80 @@ void luasrc_LoadEffects (const char *path)
 	char const *fn = g_pFullFileSystem->FindFirstEx( root, "MOD", &fh );
 	while ( fn )
 	{
+		// HL2SB (2026-09-20, Nuke Pack): GMod's STANDARD effect layout is a
+		// FOLDER per effect -- lua/effects/nuke_blastwave/init.lua -- and the
+		// flat-file branch below skipped every directory, so addon effects never
+		// registered ("no Lua effect template for 'nuke_effect_ground'" while the
+		// bomb killed everything around it -- explosion with no visual).  A
+		// directory becomes an effect named after the folder, loaded from
+		// <dir>/init.lua, exactly like GMod.
+		char szDirFile[ MAX_PATH ] = { 0 };
+		if ( fn[0] != '.' && g_pFullFileSystem->FindIsDirectory( fh ) )
+		{
+			bool bIsDirEffect = false;
+			char szDirEffectName[ 255 ] = { 0 };
+			if ( luasrc_IsFlatLuaFile( fn, szDirEffectName, sizeof( szDirEffectName ) ) )
+			{
+				Q_snprintf( szDirFile, sizeof( szDirFile ), "%s" LUA_PATH_EFFECTS "/%s/init.lua", path, fn );
+				if ( filesystem->FileExists( szDirFile, "MOD" ) )
+					bIsDirEffect = true;
+			}
+
+			if ( bIsDirEffect )
+			{
+				Q_snprintf( filename, sizeof( filename ), "%s", szDirFile );
+				filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
+
+				if ( luasrc_PathInDisabledAddon( fullpath ) )
+				{
+					luasrc_LuaInfoMsgF( "[Lua] effect '%s' <- %s: addon is DISABLED - skipped\n", fn, fullpath );
+				}
+				else
+				{
+					luasrc_LuaInfoMsgF( "[Lua] effect '%s' <- %s\n", fn, fullpath );
+
+					lua_newtable( L );
+					char effDir[ MAX_PATH ];
+					Q_snprintf( effDir, sizeof( effDir ), "effects/%s", fn );
+					lua_pushstring( L, effDir );
+					lua_setfield( L, -2, "__folder" );
+					lua_setglobal( L, "EFFECT" );
+
+					if ( luasrc_dofile( L, fullpath ) == 0 )
+					{
+						lua_getglobal( L, "effects" );
+						if ( lua_istable( L, -1 ) )
+						{
+							lua_getfield( L, -1, "Register" );
+							if ( lua_isfunction( L, -1 ) )
+							{
+								lua_remove( L, -2 );
+								lua_getglobal( L, "EFFECT" );
+								lua_pushstring( L, fn );
+								luasrc_pcall( L, 2, 0, 0 );
+							}
+							else
+							{
+								lua_pop( L, 2 );
+							}
+						}
+						else
+						{
+							lua_pop( L, 1 );
+						}
+					}
+					else
+					{
+						lua_pop( L, 1 );   // the error object luasrc_dofile left
+					}
+				}
+			}
+
+			// the flat-file branch below must not see directories
+			fn = g_pFullFileSystem->FindNext( fh );
+			continue;
+		}
+
 		if ( fn[0] != '.' && !g_pFullFileSystem->FindIsDirectory( fh )
 		     && luasrc_IsFlatLuaFile( fn, className, sizeof( className ) ) )
 		{
