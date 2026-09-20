@@ -276,11 +276,29 @@ void CLuaEffect::Draw( double frametime )
 	}
 
 	// EFFECT:Think() -- returning false retires the effect (GMod contract).
+	const int nTopBeforeThink = lua_gettop( L );
 	lua_getfield( L, -1, "Think" );
 	if ( lua_isfunction( L, -1 ) )
 	{
 		lua_pushvalue( L, -2 );
 		luasrc_pcall( L, 1, 1, 0 );
+
+		// HL2SB crash fix (2026-09-21, the nuke SIGABRT): on error
+		// luasrc_pcall logs the message and POPS it, so a failed Think leaves
+		// NO result where the success path leaves exactly one.  The
+		// lua_pop(L, 1) below then ate the effect table itself and every
+		// later lua_getfield indexed below the stack base -- the geometry
+		// probe's luaL_checkvector then threw with no pcall anywhere in this
+		// C frame, the panic handler fired and the process aborted
+		// ("attempt to index a nil value" with an EMPTY traceback, right
+		// after three normally-logged nuke effect errors).  Normalize to
+		// exactly one result before anything else touches the stack; a broken
+		// Think counts as alive so the per-frame error stays in the log where
+		// it can be read instead of killing the game.
+		if ( lua_gettop( L ) < nTopBeforeThink + 1 )
+			lua_pushboolean( L, true );
+		else if ( lua_gettop( L ) > nTopBeforeThink + 1 )
+			lua_settop( L, nTopBeforeThink + 1 );
 
 		const bool bAlive = lua_toboolean( L, -1 ) != 0;
 		if ( !bAlive )

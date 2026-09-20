@@ -28,6 +28,7 @@
 #include "luabinding.h"
 #include "mathlib/lvector.h"
 #include "tier1/utlvector.h"
+#include "utlstring.h"	// HL2SB: CUtlString for the Add() failure diagnostics
 #include "cdll_client_int.h"   // extern IEngineTrace *enginetrace
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -320,6 +321,23 @@ static void CLuaParticle_PushWrapper( CLuaEmitter *pEmitter, CLuaParticleX *pPar
 	lua_setmetatable( L, -2 );
 }
 
+// HL2SB (2026-09-21, the nuke SIGABRT): push a DEAD-particle wrapper -- one
+// whose serial never matches, so every setter no-ops and every getter answers
+// the stored defaults.  GMod's emitter:Add() ALWAYS returns a particle object
+// even when the material or the particle allocation fails, and the Nuke Pack
+// effects do exactly what the wiki implies:
+//     local particle = emitter:Add( "particles/smokey", pos )
+//     particle:SetVelocity( ... )     -- <- indexed nil here before this fix
+static void CLuaParticle_PushDeadWrapper( void )
+{
+	LuaParticleUD *pUD = (LuaParticleUD *)lua_newuserdata( L, sizeof( LuaParticleUD ) );
+	new ( &pUD->m_pEmitter ) CSmartPtr<CLuaEmitter>( NULL );
+	pUD->m_iSerial = 0;                     // serials start at 1: 0 is never alive
+	pUD->m_pParticle = NULL;
+	luaL_getmetatable( L, "CLuaParticle" );
+	lua_setmetatable( L, -2 );
+}
+
 LUA_REGISTRATION_INIT( CSEmitterReg );
 LUA_REGISTRATION_INIT( CLuaParticleReg );
 
@@ -333,7 +351,12 @@ LUA_BINDING_BEGIN( CSEmitterReg, Add, "method", "Creates a new CLuaParticle with
 	LuaParticleUD *pUD = LuaEmitter_checkudata( L, 1 );
 	CLuaEmitter *pEmitter = pUD->m_pEmitter.GetObject();
 	if ( pEmitter == NULL || pEmitter->m_bFinished )
-		return 0;   // GMod: unusable after Finish()
+	{
+		// GMod: unusable after Finish() -- but still hand back a particle
+		// object, never nil (see CLuaParticle_PushDeadWrapper).
+		CLuaParticle_PushDeadWrapper();
+		return 1;
+	}
 
 	const char *pszMaterial = luaL_checkstring( L, 2 );
 	Vector vecPos = luaL_checkvector( L, 3 );
@@ -342,7 +365,26 @@ LUA_BINDING_BEGIN( CSEmitterReg, Add, "method", "Creates a new CLuaParticle with
 
 	CLuaParticleX *pParticle = (CLuaParticleX *)pEmitter->AddParticle( sizeof( CLuaParticleX ), hMaterial, vecPos );
 	if ( pParticle == NULL )
-		return 0;
+	{
+		// HL2SB diagnostic: the two nil paths -- an unloadable material or a
+		// refused allocation.  One line per material name, so a missing
+		// particles/*.vmt in the mount is a name in the log, not a silent
+		// black hole (and, before the dead-wrapper fix, a script-killing nil).
+		static CUtlVector<CUtlString> s_FailedMaterials;
+		bool bSeen = false;
+		for ( int i = 0; i < s_FailedMaterials.Count(); ++i )
+		{
+			if ( !Q_stricmp( s_FailedMaterials[i], pszMaterial ) ) { bSeen = true; break; }
+		}
+		if ( !bSeen && s_FailedMaterials.Count() < 16 )
+		{
+			s_FailedMaterials.AddToTail( pszMaterial );
+			luasrc_LuaInfoMsgF( "[HL2SB] ParticleEmitter:Add('%s'): particle allocation failed (material not loadable or effect removed) -- returning an inert particle, like GMod\n",
+				pszMaterial );
+		}
+		CLuaParticle_PushDeadWrapper();
+		return 1;
+	}
 
 	pParticle->m_iSerial = ++s_iLuaParticleSerial;
 	pParticle->m_bRemoveRequested = false;
