@@ -429,10 +429,34 @@ int HL2SB_ResolveSeatedSequence( CHL2MP_Player *pPlayer, CBaseEntity *pVehicle, 
 	if ( translatedActivity == ACT_INVALID )
 		translatedActivity = ACT_HL2MP_SIT;
 
-	if ( pActivityOut )
-		*pActivityOut = ACT_HL2MP_SIT;
+	iSequence = HL2SB_SelectPlayerSequence( pPlayer, translatedActivity, ACT_HL2MP_SIT );
 
-	return HL2SB_SelectPlayerSequence( pPlayer, translatedActivity, ACT_HL2MP_SIT );
+	// HL2SB: a model that carries NO sit pose at all - the HL2 citizen player
+	// models (models/player/humans/group03/... -> models/humans/fomale_*) have no
+	// "sit_rollercoaster" and no "sit_<holdtype>" - used to leave the branch with
+	// -1 and the rider kept the gait he entered with: the reported "sitting in the
+	// chair plays the run animation" (veh/sv log: parent=1 seat_pose=0
+	// seq=28(run_pistol)). GMod shows the same gap as a standing rider; match that
+	// by pinning the model's idle pose instead of leaving a sprint on the seat.
+	// "sit_pistol" is tried by name as well, for the case where the weapon table
+	// did not translate ACT_HL2MP_SIT into a hold type (then the family is empty
+	// and SelectPlayerSequence never reaches its pistol fallback).
+	if ( iSequence < 0 )
+		iSequence = pPlayer->LookupSequence( "sit_pistol" );
+
+	if ( iSequence < 0 )
+	{
+		iSequence = HL2SB_SelectPlayerSequence( pPlayer, ACT_HL2MP_IDLE, ACT_HL2MP_IDLE );
+
+		if ( ( iSequence >= 0 ) && pActivityOut )
+			*pActivityOut = ACT_HL2MP_IDLE;
+	}
+	else if ( pActivityOut )
+	{
+		*pActivityOut = ACT_HL2MP_SIT;
+	}
+
+	return iSequence;
 #endif
 }
 
