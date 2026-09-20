@@ -1550,6 +1550,44 @@ static RenderGroup_t DetectBucketedRenderGroup( RenderGroup_t group, float fDime
 	return bucketedGroup;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-21): per-classname one-shot probe for the renderables-list
+// collation.  The spawned scripted entities pass ShouldDraw and are inserted
+// into the leaf tree at the right AABB, yet never reach DrawModel() -- this
+// names which collation filter (if any) eats them, or confirms they made the
+// draw list.
+//-----------------------------------------------------------------------------
+#ifdef LUA_SDK
+static void HL2SB_CollateProbe( IClientRenderable *pRenderable, const char *pszReason )
+{
+	C_BaseEntity *pEnt = ( pRenderable && pRenderable->GetIClientUnknown() ) ?
+		pRenderable->GetIClientUnknown()->GetBaseEntity() : NULL;
+	C_BaseScripted *pScripted = dynamic_cast< C_BaseScripted * >( pEnt );
+	if ( !pScripted )
+		return;
+
+	static CUtlVector<CUtlString> s_Probed;
+	static CUtlVector<int> s_Counts;
+	const char *pszClass = pScripted->GetScriptedClassname();
+	int iProbed = -1;
+	for ( int i = 0; i < s_Probed.Count(); ++i )
+	{
+		if ( !Q_stricmp( s_Probed[i], pszClass ) ) { iProbed = i; break; }
+	}
+	if ( iProbed < 0 && s_Probed.Count() < 16 )
+	{
+		s_Probed.AddToTail( pszClass );
+		s_Counts.AddToTail( 0 );
+		iProbed = s_Probed.Count() - 1;
+	}
+	if ( iProbed >= 0 && s_Counts[iProbed] < 3 )
+	{
+		++s_Counts[iProbed];
+		luasrc_LuaInfoMsgF( "[HL2SB] collate '%s' (%d/3): %s\n", pszClass, s_Counts[iProbed], pszReason );
+	}
+}
+#endif
+
 void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafIndex,	const SetupRenderInfo_t &info )
 {
 	bool portalTestEnts = r_PortalTestEnts.GetBool() && !r_portalsopenall.GetBool();
@@ -1608,7 +1646,12 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 			// They are made to be opaque because they don't have to be sorted.
 			nAlpha = renderable.m_pRenderable->GetFxBlend();
 			if ( nAlpha == 0 )
+			{
+#ifdef LUA_SDK
+				HL2SB_CollateProbe( renderable.m_pRenderable, "SKIPPED alpha==0" );
+#endif
 				continue;
+			}
 		}
 
 		Vector absMins, absMaxs;
@@ -1618,13 +1661,23 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 		{
 			VPROF( "r_PortalTestEnts" );
 			if ( !engine->DoesBoxTouchAreaFrustum( absMins, absMaxs, renderable.m_Area ) )
+			{
+#ifdef LUA_SDK
+				HL2SB_CollateProbe( renderable.m_pRenderable, "SKIPPED area-frustum" );
+#endif
 				continue;
+			}
 		}
 		else
 		{
 			// cull with main frustum
 			if ( engine->CullBox( absMins, absMaxs ) )
+			{
+#ifdef LUA_SDK
+				HL2SB_CollateProbe( renderable.m_pRenderable, "SKIPPED frustum-cull" );
+#endif
 				continue;
+			}
 		}
 
 		// UNDONE: Investigate speed tradeoffs of occlusion culling brush models too?
@@ -1632,7 +1685,12 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 		{
 			// test to see if this renderable is occluded by the engine's occlusion system
 			if ( engine->IsOccluded( absMins, absMaxs ) )
+			{
+#ifdef LUA_SDK
+				HL2SB_CollateProbe( renderable.m_pRenderable, "SKIPPED occluded" );
+#endif
 				continue;
+			}
 		}
 
 #ifdef INVASION_CLIENT_DLL
@@ -1672,6 +1730,9 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 				Assert( group >= RENDER_GROUP_OPAQUE_STATIC_HUGE && group <= RENDER_GROUP_OPAQUE_ENTITY );
 			}
 
+#ifdef LUA_SDK
+			HL2SB_CollateProbe( renderable.m_pRenderable, "ADDED to opaque draw list" );
+#endif
 			AddRenderableToRenderList( *info.m_pRenderList, renderable.m_pRenderable, 
 				worldListLeafIndex, group, handle);
 		}
@@ -1682,6 +1743,9 @@ void CClientLeafSystem::CollateRenderablesInLeaf( int leaf, int worldListLeafInd
 			// Add to appropriate list if drawing translucent objects (shadow depth mapping will skip this)
 			if ( info.m_bDrawTranslucentObjects ) 
 			{
+#ifdef LUA_SDK
+				HL2SB_CollateProbe( renderable.m_pRenderable, "ADDED to translucent draw list" );
+#endif
 				AddRenderableToRenderList( *info.m_pRenderList, renderable.m_pRenderable, 
 					worldListLeafIndex, (RenderGroup_t)renderable.m_RenderGroup, handle, bTwoPass );
 			}
