@@ -2502,14 +2502,15 @@ void luasrc_LoadEffects (const char *path)
 		char szDirFile[ MAX_PATH ] = { 0 };
 		if ( fn[0] != '.' && g_pFullFileSystem->FindIsDirectory( fh ) )
 		{
+			// A directory IS the effect name (GMod's wiki layout
+			// lua/effects/<name>/init.lua) -- the name has no ".lua" suffix, so
+			// luasrc_IsFlatLuaFile must NOT gate this branch (the first version
+			// did, directories were still skipped, and nuke_effect_ground stayed
+			// unregistered).  Only requirements: not hidden, and init.lua exists.
 			bool bIsDirEffect = false;
-			char szDirEffectName[ 255 ] = { 0 };
-			if ( luasrc_IsFlatLuaFile( fn, szDirEffectName, sizeof( szDirEffectName ) ) )
-			{
-				Q_snprintf( szDirFile, sizeof( szDirFile ), "%s" LUA_PATH_EFFECTS "/%s/init.lua", path, fn );
-				if ( filesystem->FileExists( szDirFile, "MOD" ) )
-					bIsDirEffect = true;
-			}
+			Q_snprintf( szDirFile, sizeof( szDirFile ), "%s" LUA_PATH_EFFECTS "/%s/init.lua", path, fn );
+			if ( filesystem->FileExists( szDirFile, "MOD" ) )
+				bIsDirEffect = true;
 
 			if ( bIsDirEffect )
 			{
