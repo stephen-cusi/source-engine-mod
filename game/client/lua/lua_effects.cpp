@@ -432,14 +432,62 @@ static bool HL2SB_FindLuaEffectTemplate( lua_State *L, const char *pszName )
 	Q_strlower( szLookup );
 
 	lua_getglobal( L, HL2SB_LUA_EFFECT_TEMPLATES );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, szLookup );
+		lua_remove( L, -2 );                // drop the registry, leave the template
+
+		if ( lua_istable( L, -1 ) )
+			return true;
+
+		lua_pop( L, 1 );
+	}
+	else
+	{
+		lua_pop( L, 1 );
+	}
+
+	// HL2SB (2026-09-21): GMod's own effects module keeps its templates in a
+	// MODULE-LOCAL table -- lua/includes/modules/effects.lua opens with
+	//     local EffectList = {}
+	// and effects.Register( EFFECT, name ) -- which is exactly what our loader
+	// calls after dofile -- stores THERE.  The __hl2sb_lua_effects global above
+	// has therefore always been empty for Lua-registered effects: every
+	// util.Effect of a registered Lua effect fell through to the engine
+	// callbacks, and the Nuke Pack's nuke_blastwave / nuke_disintegrate et al
+	// exploded invisibly ("effect 'nuke_blastwave': no Lua template" in the
+	// 2026-09-21 01:0x log, minutes after the registration lines printed).
+	//
+	// effects.Create( name ) is the module's own accessor: it returns a fresh
+	// instance table (EffectList[name] merged over EffectList["base"]).  That
+	// is exactly what HL2SB_CreateLuaEffect wants -- it shallow-copies per
+	// spawn anyway -- and mirrors GMod, whose EFFECT instances ARE created
+	// through effects.Create.  Guarded with lua_pcall: a module error must not
+	// escape into the render path.
+	lua_getglobal( L, "effects" );
 	if ( !lua_istable( L, -1 ) )
 	{
 		lua_pop( L, 1 );
 		return false;
 	}
 
-	lua_getfield( L, -1, szLookup );
-	lua_remove( L, -2 );                // drop the registry, leave the template
+	lua_getfield( L, -1, "Create" );
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );
+		return false;
+	}
+
+	lua_pushstring( L, szLookup );
+	if ( lua_pcall( L, 1, 1, 0 ) != 0 )
+	{
+		luasrc_LuaInfoMsgF( "[HL2SB] effect '%s': effects.Create failed: %s\n",
+			pszName, lua_tostring( L, -1 ) );
+		lua_pop( L, 2 );                    // error object, the effects table
+		return false;
+	}
+
+	lua_remove( L, -2 );                    // drop the effects table
 
 	if ( !lua_istable( L, -1 ) )
 	{
