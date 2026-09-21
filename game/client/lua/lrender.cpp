@@ -101,7 +101,15 @@ LUA_BINDING_BEGIN( Renders, GetRenderTarget, "library", "Get the currently activ
 {
     CMatRenderContextPtr pRenderContext( materials );
     ITexture *pTexture = pRenderContext->GetRenderTarget();
-    lua_pushitexture( L, pTexture );
+
+    // HL2SB (2026-09-22): NULL (the backbuffer) is Lua nil -- pushing a
+    // NULL-wrapped ITexture made the caller's SetRenderTarget( rt_Scene )
+    // throw "ITexture expected, got NULL" inside halo's failure fuse, which
+    // is what kept the frame black.
+    if ( pTexture == NULL )
+        lua_pushnil( L );
+    else
+        lua_pushitexture( L, pTexture );
 
     return 1;
 }
@@ -487,6 +495,49 @@ LUA_BINDING_BEGIN( Renders, BlurRenderTarget, "library", "Blurs a render target 
         pRenderContext->PopRenderTargetAndViewport();
     }
 
+    return 0;
+}
+LUA_BINDING_END()
+
+// render.ModelMaterialOverride( IMaterial|nil ) -- forces the material onto
+// every DrawModel until cleared with nil.  The stable halo technique: draw the
+// entity tinted with an additive flat material on top of its normal pass.
+LUA_BINDING_BEGIN( Renders, ModelMaterialOverride, "library", "Forces a material onto all model rendering (nil clears).", "client" )
+{
+    if ( lua_isnoneornil( L, 1 ) )
+    {
+        modelrender->ForcedMaterialOverride( NULL );
+        return 0;
+    }
+
+    IMaterial *pMaterial = NULL;
+    if ( luaL_testudata( L, 1, LUA_MATERIALLIBNAME ) != NULL )
+    {
+        pMaterial = luaL_checkmaterial( L, 1 );
+    }
+    else if ( lua_type( L, 1 ) == LUA_TTABLE || lua_type( L, 1 ) == LUA_TSTRING )
+    {
+        // GMod parity with render.SetMaterial: accept Material() proxies/paths.
+        const char *pszName = NULL;
+        if ( lua_type( L, 1 ) == LUA_TSTRING )
+        {
+            pszName = lua_tostring( L, 1 );
+        }
+        else
+        {
+            lua_getfield( L, 1, "__path" );
+            if ( lua_type( L, -1 ) == LUA_TSTRING )
+                pszName = lua_tostring( L, -1 );
+            lua_pop( L, 1 );
+        }
+        if ( pszName != NULL && pszName[0] != '\0' )
+            pMaterial = materials->FindMaterial( pszName, TEXTURE_GROUP_CLIENT_EFFECTS, false );
+    }
+
+    if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
+        return luaL_error( L, "render.ModelMaterialOverride: material expected" );
+
+    modelrender->ForcedMaterialOverride( pMaterial );
     return 0;
 }
 LUA_BINDING_END()
