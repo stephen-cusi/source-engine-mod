@@ -586,155 +586,6 @@ int CBaseScripted::DrawModel( int flags )
 	return BaseClass::DrawModel( flags );
 }
 
-void CBaseScripted::OnDataChanged( DataUpdateType_t updateType )
-{
-	BaseClass::OnDataChanged( updateType );
-
-	if ( updateType == DATA_UPDATE_CREATED )
-	{
-		// HL2SB: probe.  A Lua nextbot's client entity has to be a
-		// C_NextBotCombatCharacter (that is where the RenderGroup/DrawModel hooks
-		// live); if it shows up here instead, it was built as a plain scripted
-		// entity and the whole nextbot draw path is unreachable.
-		static int s_nScriptedReports = 0;
-
-		if ( s_nScriptedReports < 40 )
-		{
-			++s_nScriptedReports;
-			luasrc_LuaWarnMsgF( "[HL2SB] CLIENT CBaseScripted created: classname='%s' networkedScriptClass='%s'",
-				GetClassname(),
-				( m_iScriptedClassname.Get() != NULL ) ? m_iScriptedClassname.Get() : "(none)" );
-		}
-
-		if ( m_iScriptedClassname.Get() )
-		{
-			SetClassname( m_iScriptedClassname.Get() );
-			InitScriptedEntity();
-		}
-	}
-}
-
-const char *CBaseScripted::GetScriptedClassname( void )
-{
-	if ( m_iScriptedClassname.Get() )
-		return m_iScriptedClassname.Get();
-	return BaseClass::GetClassname();
-}
-#endif
-
-void CBaseScripted::Spawn( void )
-{
-	BaseClass::Spawn();
-
-#ifndef CLIENT_DLL
-	// HL2SB GMod compat: a scripted entity reaches the client even with no model.
-	//
-	// CBaseEntity::UpdateTransmitState() drops anything without a model index or
-	// model name unless it carries EFL_FORCE_CHECK_TRANSMIT, and plenty of Lua
-	// entities are model-less by design: windgrin_npc's attack spawns
-	// ent_windgrin_blaster / ent_windgrin_throw, which draw themselves from a script
-	// the client never got to run because the entity was never sent -- the attack
-	// simply did nothing on screen.  (CLuaNextBot::Spawn() sets the same flag for
-	// nextbots.)  GMod transmits scripted entities regardless of a model.
-	AddEFlags( EFL_FORCE_CHECK_TRANSMIT );
-
-	InitScriptedEntity();
-#endif
-}
-
-void CBaseScripted::Precache( void )
-{
-	BaseClass::Precache();
-
-	// HL2SB: NOT dispatching ENT:Precache() and NOT precaching ENT.Model here.
-	// GMod scripted entities name their model for the first time inside
-	// ENT:Initialize() and declare no ENT.Model (lua/entities/sent_ball.lua does
-	// exactly that), so the model does not exist yet at this point.  The load is
-	// handled on demand where GMod handles it: UTIL_SetModel() precaches a model
-	// that was never registered instead of falling through to an Error() that is
-	// compiled out in release (see the comment there).
-	// InitScriptedEntity();
-}
-
-#ifdef CLIENT_DLL
-void CBaseScripted::ClientThink()
-{
-#ifdef LUA_SDK
-	BEGIN_LUA_CALL_ENTITY_METHOD( "ClientThink" );
-	END_LUA_CALL_ENTITY_METHOD( 0, 0 );
-#endif
-}
-#endif
-
-void CBaseScripted::Think()
-{
-#ifdef LUA_SDK
-	BEGIN_LUA_CALL_ENTITY_METHOD( "Think" );
-	END_LUA_CALL_ENTITY_METHOD( 0, 0 );
-#endif
-}
-
-void CBaseScripted::StartTouch( CBaseEntity *pOther )
-{
-#ifdef LUA_SDK
-	BEGIN_LUA_CALL_ENTITY_METHOD( "StartTouch" );
-		lua_pushentity( L, pOther );
-	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
-#endif
-}
-
-void CBaseScripted::Touch( CBaseEntity *pOther )
-{
-#ifdef LUA_SDK
-	BEGIN_LUA_CALL_ENTITY_METHOD( "Touch" );
-		lua_pushentity( L, pOther );
-	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
-#endif
-}
-
-void CBaseScripted::EndTouch( CBaseEntity *pOther )
-{
-#ifdef LUA_SDK
-	BEGIN_LUA_CALL_ENTITY_METHOD( "EndTouch" );
-		lua_pushentity( L, pOther );
-	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
-#endif
-}
-
-void CBaseScripted::VPhysicsUpdate( IPhysicsObject *pPhysics )
-{
-	BaseClass::VPhysicsUpdate( pPhysics );
-
-#ifdef LUA_SDK
-	BEGIN_LUA_CALL_ENTITY_METHOD( "VPhysicsUpdate" );
-		lua_pushphysicsobject( L, pPhysics );
-	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
-
-	// GMod name for the same callback.
-	BEGIN_LUA_CALL_ENTITY_METHOD( "PhysicsUpdate" );
-		lua_pushphysicsobject( L, pPhysics );
-	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
-#endif
-}
-
-#ifndef CLIENT_DLL
-#include "world.h"
-//-----------------------------------------------------------------------------
-// Purpose: HL2SB GMod compat: ENT:PhysicsCollide( data, physObj ).
-//
-// GMod hands a scripted entity a CollisionData table every time its physics
-// object collides with something, and weapon_nyangun's bomb is entirely built
-// around it: PhysicsCollide() is where the explosion, the blast damage and
-// self:Remove() live.  Nothing dispatched it, so the bomb bounced forever and
-// never went off.
-//
-// The table carries GMod's documented keys.  (The script here only reads self,
-// but the shape is what addons are written against.)
-//-----------------------------------------------------------------------------
-static ConVar hl2sb_physicscollide_debug(
-	"hl2sb_physicscollide_debug", "0", FCVAR_ARCHIVE,
-	"Log every ENT:PhysicsCollide dispatch (entity hit, speed, contact point)" );
-
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat (2026-09-21): ENT:Use( activator, caller ).
 //
@@ -756,20 +607,29 @@ void CBaseScripted::UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 	if ( L == NULL || m_nTableReference < 0 )
 		return;
 
-	// HL2SB: one line, once per classname -- the next "E does nothing" round
-	// is settled by this line's presence or absence (dispatch vs script).
+	// HL2SB: per-classname counter, capped at 50 lines -- every dispatch is
+	// visible, so a "pressed E twice, only the first did anything" report can
+	// be settled from the log (the earlier once-per-class probe hid exactly
+	// the second press that mattered).
 	static CUtlVector<CUtlString> s_UseLogged;
+	static CUtlVector<int> s_UseCounts;
 	const char *pszClass = GetClassname();	// server: the real scripted classname
-	bool bLogged = false;
+	int iProbed = -1;
 	for ( int i = 0; i < s_UseLogged.Count(); ++i )
 	{
-		if ( !Q_stricmp( s_UseLogged[i], pszClass ) ) { bLogged = true; break; }
+		if ( !Q_stricmp( s_UseLogged[i], pszClass ) ) { iProbed = i; break; }
 	}
-	if ( !bLogged && s_UseLogged.Count() < 16 )
+	if ( iProbed < 0 && s_UseLogged.Count() < 16 )
 	{
 		s_UseLogged.AddToTail( pszClass );
-		luasrc_LuaInfoMsgF( "[HL2SB] Use dispatched to '%s' (activator %s)\n",
-			pszClass, pActivator ? pActivator->GetClassname() : "<none>" );
+		s_UseCounts.AddToTail( 0 );
+		iProbed = s_UseLogged.Count() - 1;
+	}
+	if ( iProbed >= 0 && s_UseCounts[iProbed] < 50 )
+	{
+		++s_UseCounts[iProbed];
+		luasrc_LuaInfoMsgF( "[HL2SB] Use dispatched to '%s' #%d (activator %s)\n",
+			pszClass, s_UseCounts[iProbed], pActivator ? pActivator->GetClassname() : "<none>" );
 	}
 
 	lua_getref( L, m_nTableReference );
@@ -912,7 +772,6 @@ void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent 
 			lua_pushphysicsobject( L, pEvent->pObjects[ nOther ] );
 			lua_settable( L, -3 );
 		}
-		lua_pushphysicsobject( L, pEvent->pObjects[ index ] );
 	END_LUA_CALL_ENTITY_METHOD( 2, 0 );
 #endif
 }
