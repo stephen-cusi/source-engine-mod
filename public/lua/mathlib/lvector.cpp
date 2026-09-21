@@ -107,9 +107,27 @@ static int Vector_Angle (lua_State *L) {
 // through this every think (FaceVictim / FacePoint); with the method nil the
 // call raised once per think and the statue never rotated.  VectorAngles has
 // the exact forward+up overload.
+//
+// ⚠️ The forward+up VectorAngles degenerates when forward is (anti)parallel to
+// up: CrossProduct(up, forward) == 0 and VectorNormalizeFast hands NaN down the
+// line, so the angles come back NaN -- and SetAngles(NaN) on a vphysics-solid
+// entity drove the physics solver into an infinite loop (whole process frozen
+// on scp173's first FaceVictim).  Fall back to the world-up form whenever the
+// inputs are not finite or the cross collapses.
 static int Vector_AngleEx (lua_State *L) {
+  Vector vecForward = luaL_checkvector(L, 1);
+  Vector vecUp = luaL_checkvector(L, 2);
   QAngle angAngles;
-  VectorAngles( luaL_checkvector(L, 1), luaL_checkvector(L, 2), angAngles );
+
+  Vector vecLeft = vecUp.Cross(vecForward);
+  if ( !vecForward.IsValid() || !vecUp.IsValid() || vecLeft.IsZero() )
+    VectorAngles( vecForward, angAngles );
+  else
+    VectorAngles( vecForward, vecUp, angAngles );
+
+  if ( !angAngles.IsValid() )
+    angAngles.Init();
+
   lua_pushangle(L, angAngles);
   return 1;
 }
