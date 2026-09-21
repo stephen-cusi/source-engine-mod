@@ -1471,7 +1471,18 @@ static int HL2SB_NWSerialize( lua_State *L, int iValue, char tag, unsigned char 
 // The client-side replicated store: key "entindex_name" -> tag byte + payload.
 // Entries accumulate for the life of the process; each is 300 bytes at most
 // and only exists for variables a script actually declared, so this stays small.
-static CUtlDict<CUtlString, unsigned short> s_NWReplicated;
+// CUtlString here would be wrong: this fork's CUtlString::Length() is strlen,
+// and NW payloads are binary -- float 32.0f serializes to bytes 00 00 48 42,
+// whose leading 0x00 cut the stored length to 1, so every later read
+// overflowed and came back as 0 (the tiny-ball bug, logged as
+// "NW get float: 0.000000" while the wire carried 32.0).  Use a POD blob with
+// an explicit byte count instead.
+struct HL2SB_NWBlob_t
+{
+	int nBytes;
+	unsigned char buf[ 300 ];	// 1 tag byte + up to 256 payload + slack
+};
+static CUtlDict<HL2SB_NWBlob_t, unsigned short> s_NWReplicated;
 
 static void HL2SB_NWReplicatedStore( int entindex, const char *pszName, char tag,
 									const unsigned char *pPayload, int nPayload )
@@ -1479,9 +1490,22 @@ static void HL2SB_NWReplicatedStore( int entindex, const char *pszName, char tag
 	char key[ 160 ];
 	Q_snprintf( key, sizeof( key ), "%d_%s", entindex, pszName );
 
-	CUtlString val;
-	val.SetDirect( ( const char * )pPayload, nPayload );
-	s_NWReplicated.Insert( key, val );
+	// Readers treat byte 0 as the tag and the rest as the payload, but the
+	// hook hands those over as two separate arguments -- rejoin them.  (The
+	// first build stored the bare payload: val[0] was the first float's low
+	// byte, the tag switch fell through to nil, and sent_ball indexing the
+	// nil color cascaded into an unprotected error and a process abort.)
+	HL2SB_NWBlob_t blob;
+	blob.nBytes = 0;
+	if ( nPayload < 0 )
+		nPayload = 0;
+	if ( nPayload > ( int )sizeof( blob.buf ) - 1 )
+		nPayload = ( int )sizeof( blob.buf ) - 1;
+	blob.buf[ 0 ] = ( unsigned char )tag;
+	if ( nPayload > 0 )
+		Q_memcpy( blob.buf + 1, pPayload, nPayload );
+	blob.nBytes = nPayload + 1;
+	s_NWReplicated.Insert( key, blob );
 }
 
 // Push the replicated value for (entity index, key), or nil.  Returns whether
@@ -1495,13 +1519,12 @@ static bool HL2SB_NWReplicatedPush( lua_State *L, int entindex, const char *pszK
 	if ( !s_NWReplicated.IsValidIndex( idx ) )
 		return false;
 
-	CUtlString &val = s_NWReplicated[ idx ];
-	if ( val.Length() < 1 )
+	HL2SB_NWBlob_t &val = s_NWReplicated[ idx ];
+	if ( val.nBytes < 1 )
 		return false;
 
-	char tag = val[ 0 ];
-	bf_read r( "HL2SB_NW", val.Get(), val.Length() );
-	r.Seek( 1 );	// skip the tag byte
+	char tag = ( char )val.buf[ 0 ];
+	bf_read r( "HL2SB_NW", val.buf + 1, val.nBytes - 1 );
 
 	switch ( tag )
 	{
@@ -1566,13 +1589,6 @@ static void __MsgFunc_HL2SB_NW( bf_read &read )
 	if ( read.IsOverflowed() )
 		return;
 
-	static int s_nNWRecvLogs = 0;
-	if ( s_nNWRecvLogs < 10 ) {
-		++s_nNWRecvLogs;
-		Msg( "[HL2SB] NW received: ent=%d name=%s tag=%c len=%d\n",
-			entindex, szName, tag, len );
-	}
-
 	HL2SB_NWReplicatedStore( entindex, szName, tag, payload, len );
 }
 // Hooked in luasrc_openlibs' client tail (usermessages->HookMessage).
@@ -1633,12 +1649,6 @@ static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
       unsigned char payload[ 512 ];
       int len = HL2SB_NWSerialize( L, 2, tag, payload, sizeof( payload ) );
       if ( len >= 0 ) {
-        static int s_nNWSendLogs = 0;
-        if ( s_nNWSendLogs < 10 ) {
-          ++s_nNWSendLogs;
-          Msg( "[HL2SB] NW broadcast: ent=%d name=%s tag=%c len=%d\n",
-              pSelf->entindex(), pszName, tag, len );
-        }
         // (Registered at openlibs on both realms -- see the client tail of
         // luasrc_openlibs.  A lazy first-use registration landed after the
         // local client's signon and the engine dropped every message.)
@@ -1691,11 +1701,10 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
       Q_snprintf( key, sizeof( key ), "%d_%s", pSelf->entindex(), pszName );
 
       unsigned short idx = s_NWReplicated.Find( key );
-      if ( s_NWReplicated.IsValidIndex( idx ) && s_NWReplicated[ idx ].Length() >= 1 ) {
-        CUtlString &val = s_NWReplicated[ idx ];
-        char tag = val[ 0 ];
-        bf_read r( "HL2SB_NW", val.Get(), val.Length() );
-        r.Seek( 1 );	// skip the tag byte
+      if ( s_NWReplicated.IsValidIndex( idx ) && s_NWReplicated[ idx ].nBytes >= 1 ) {
+        const HL2SB_NWBlob_t &val = s_NWReplicated[ idx ];
+        char tag = ( char )val.buf[ 0 ];
+        bf_read r( "HL2SB_NW", val.buf + 1, val.nBytes - 1 );
 
         switch ( tag )
         {
@@ -1737,7 +1746,10 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
             break;
           }
           default:
-            lua_pushnil( L );
+            // GMod getters NEVER return nil -- fall back to the type default.
+            // (A nil here made sent_ball index a nil color, and the error
+            // reporting chain then aborted the process.)
+            HL2SB_NWPushValue( L, pszType );
             break;
         }
         lua_remove( L, iTable );
@@ -2001,7 +2013,11 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   // on; a lazy first-use registration (the previous version) landed after the
   // local listen client had signed on and every message was dropped.
   if ( usermessages->LookupUserMessage( "HL2SB_NW" ) == -1 )
-    usermessages->Register( "HL2SB_NW", 256 );
+    usermessages->Register( "HL2SB_NW", -1 );
+    // -1 = variable size.  The engine validates the DECLARED size at
+    // MessageEnd and refuses the send outright on mismatch ("User Msg
+    // 'HL2SB_NW': N bytes written, expected 256" -- 226 refusals in one
+    // session), so the fixed 256 dropped every broadcast server-side.
 #endif
 #ifdef CLIENT_DLL
   // HL2SB (2026-09-21): Lua NetworkVar replication receiver (see the
@@ -2015,7 +2031,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   // ball's replicated BallColor.  Both realms create the entry here, at state
   // init, before any entity can exist.
   if ( usermessages->LookupUserMessage( "HL2SB_NW" ) == -1 )
-    usermessages->Register( "HL2SB_NW", 256 );
+    usermessages->Register( "HL2SB_NW", -1 );  // -1: variable size (see server
+    // branch above -- a fixed declared size makes the engine refuse the send).
   usermessages->HookMessage( "HL2SB_NW", __MsgFunc_HL2SB_NW );
 #endif
 
