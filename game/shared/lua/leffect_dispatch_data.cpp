@@ -298,6 +298,11 @@ static const luaL_Reg CEffectDatameta[] = {
   {"SetDamageType", CEffectData_SetDamageType},
   {"GetMaterial", CEffectData_GetMaterial},
   {"SetMaterial", CEffectData_SetMaterial},
+  // HL2SB: GMod spells these GetMaterialIndex/SetMaterialIndex (wiki
+  // CEffectData:GetMaterialIndex -- "the material ID of the effect"); the Team
+  // Sandbox names above stay for the scripts already using them.
+  {"GetMaterialIndex", CEffectData_GetMaterial},
+  {"SetMaterialIndex", CEffectData_SetMaterial},
   {"GetSurfaceProp", CEffectData_GetSurfaceProp},
   {"SetSurfaceProp", CEffectData_SetSurfaceProp},
   {"GetColor", CEffectData_GetColor},

@@ -77,6 +77,8 @@ $Project "Client (HL2SB)"
 		$File "lua/lrender.cpp"
 		// HL2SB: GMod's lua/effects/*.lua runtime (EFFECT:Init/Think/Render)
 		$File "lua/lua_effects.cpp"
+		// HL2SB: GMod's effects.* C functions (Bubbles/BubbleTrail/BeamRingPoint)
+		$File "lua/leffects.cpp"
 		// HL2SB: GMod's standalone Lua particle system (ParticleEmitter/CSEmitter/CLuaParticle)
 		$File "lua/luaparticle.cpp"
 		// HL2SB: GMod's .pcf engine-particle surface (CNewParticleEffect/CreateParticleSystem*)

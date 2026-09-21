@@ -688,14 +688,19 @@ static int luasrc_util_GetModelInfo (lua_State *L) {
 **   * on the SERVER it dispatches the effect as a temp entity, which is how a
 **     non-predicted shooter (an NPC, a scripted entity) gets the effect onto
 **     every client's screen.
+**
+** allowOverride (wiki: default TRUE) -- when false, a Lua effect registered
+** under the same name does NOT shadow the engine callback for this call.
+** The 4th GMod argument (ignorePrediction / CRecipientFilter) is accepted and
+** ignored: this fork dispatches with the default filter either way.
 */
 static int luasrc_UTIL_Effect (lua_State *L) {
   const char *pszName = luaL_checkstring(L, 1);
   CEffectData data = luaL_checkeffect(L, 2);
-  luaL_optboolean(L, 3, false);
+  int bAllowOverride = luaL_optboolean(L, 3, 1);
 
 #ifdef CLIENT_DLL
-  if ( HL2SB_CreateLuaEffect( pszName, data ) ) {
+  if ( bAllowOverride && HL2SB_CreateLuaEffect( pszName, data ) ) {
     return 0;
   }
 #endif

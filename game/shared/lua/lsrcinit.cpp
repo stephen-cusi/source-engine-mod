@@ -62,6 +62,10 @@ LUALIB_API int (luaopen_CSEmitter) (lua_State *L);
 #ifdef CLIENT_DLL
 // HL2SB: GMod's .pcf engine-particle surface (game/client/lua/lnewparticle.cpp).
 LUALIB_API int (luaopen_CNewParticleEffect) (lua_State *L);
+// HL2SB: the C half of GMod's effects library (game/client/lua/leffects.cpp) --
+// Bubbles / BubbleTrail / BeamRingPoint.  Same local-prototype rule as
+// luaopen_CSEmitter above: a luasrclib.h touch would force a full-tree rebuild.
+LUALIB_API int (luaopen_HL2SBClientEffects) (lua_State *L);
 #else
 // HL2SB: server AI enum globals (bottom of this file).
 LUALIB_API int luaopen_ServerAIEnums( lua_State *L );
@@ -243,6 +247,10 @@ static const luaL_Reg luasrclibs[] = {
   // half of the particle story, for effects that come from .pcf files
   // (game/client/lua/lnewparticle.cpp).
   {"CNewParticleEffect", luaopen_CNewParticleEffect},
+  // HL2SB: GMod's effects.* C functions.  Lowercase "effects" -- the global
+  // table lua/includes/modules/effects.lua's module("effects") merges onto
+  // (package.loaded path), exactly how GMod layers its C + Lua halves.
+  {"effects", luaopen_HL2SBClientEffects},
 #endif
   {LUA_UTILLIBNAME, luaopen_UTIL},
   {LUA_UTILLIBNAME, luaopen_UTIL_shared},
@@ -1558,6 +1566,13 @@ static void __MsgFunc_HL2SB_NW( bf_read &read )
 	if ( read.IsOverflowed() )
 		return;
 
+	static int s_nNWRecvLogs = 0;
+	if ( s_nNWRecvLogs < 10 ) {
+		++s_nNWRecvLogs;
+		Msg( "[HL2SB] NW received: ent=%d name=%s tag=%c len=%d\n",
+			entindex, szName, tag, len );
+	}
+
 	HL2SB_NWReplicatedStore( entindex, szName, tag, payload, len );
 }
 // Hooked in luasrc_openlibs' client tail (usermessages->HookMessage).
@@ -1618,6 +1633,12 @@ static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
       unsigned char payload[ 512 ];
       int len = HL2SB_NWSerialize( L, 2, tag, payload, sizeof( payload ) );
       if ( len >= 0 ) {
+        static int s_nNWSendLogs = 0;
+        if ( s_nNWSendLogs < 10 ) {
+          ++s_nNWSendLogs;
+          Msg( "[HL2SB] NW broadcast: ent=%d name=%s tag=%c len=%d\n",
+              pSelf->entindex(), pszName, tag, len );
+        }
         static bool bMessageRegistered = false;
         if ( !bMessageRegistered ) {
           usermessages->Register( "HL2SB_NW", 256 );

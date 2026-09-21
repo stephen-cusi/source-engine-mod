@@ -302,6 +302,20 @@ LUA_BINDING_BEGIN( Entities, FindAllByClass, "library", "Finds all entities whos
 }
 LUA_BINDING_END( "table", "A table of every entity whose class name matches." )
 
+// HL2SB (2026-09-22): GMod spells this ents.FindByClass.  The binding above
+// existed under the Team Sandbox name only, so ents.FindByClass was nil on
+// BOTH realms -- effects.Register()'s hot-reload branch
+// (lua/includes/modules/effects.lua:38) calls it on the client every time an
+// effect script is re-run, and every GMod addon that scans by class calls it
+// everywhere.  Same function, GMod's name.  (A thin wrapper, because
+// LUA_REGISTER_METHOD mints a RegHelper struct from the function name and the
+// FindAllByClass one already exists.)
+static int Entities_FindByClass( lua_State *L )
+{
+    return Entities_FindAllByClass( L );
+}
+LUA_REGISTER_METHOD( Entities_luaRegistry, "FindByClass", Entities_FindByClass )
+
 LUA_BINDING_BEGIN( Entities, FindByClassNearest, "library", "Finds the nearest entity by its class name", "server" )
 {
     const char *className = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "className" );
