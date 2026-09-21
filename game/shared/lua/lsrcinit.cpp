@@ -1639,11 +1639,9 @@ static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
           Msg( "[HL2SB] NW broadcast: ent=%d name=%s tag=%c len=%d\n",
               pSelf->entindex(), pszName, tag, len );
         }
-        static bool bMessageRegistered = false;
-        if ( !bMessageRegistered ) {
-          usermessages->Register( "HL2SB_NW", 256 );
-          bMessageRegistered = true;
-        }
+        // (Registered at openlibs on both realms -- see the client tail of
+        // luasrc_openlibs.  A lazy first-use registration landed after the
+        // local client's signon and the engine dropped every message.)
 
         CReliableBroadcastRecipientFilter filter;
         UserMessageBegin( filter, "HL2SB_NW" );
@@ -1998,10 +1996,26 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_pushboolean(L, 1); lua_setglobal(L, "_GAME");
   lua_pushboolean(L, 1); lua_setglobal(L, "SERVER");
   lua_pushboolean(L, 0); lua_setglobal(L, "CLIENT");
+  // HL2SB (2026-09-21): register the Lua NetworkVar replication message at
+  // state init.  Source's user message table must exist before clients sign
+  // on; a lazy first-use registration (the previous version) landed after the
+  // local listen client had signed on and every message was dropped.
+  if ( usermessages->LookupUserMessage( "HL2SB_NW" ) == -1 )
+    usermessages->Register( "HL2SB_NW", 256 );
 #endif
 #ifdef CLIENT_DLL
   // HL2SB (2026-09-21): Lua NetworkVar replication receiver (see the
   // HL2SB_NWTagForType block above).  Hooked once per client state.
+  //
+  // The Register BEFORE the hook matters: the engine's user message table is
+  // synced to clients at signon, and messages a DLL registers lazily (our old
+  // first-SetBallColor registration ran mid entity-init, after the local
+  // client's signon) never reach the client's table -- the engine silently
+  // dropped every "HL2SB_NW" send, which is why the client never saw the
+  // ball's replicated BallColor.  Both realms create the entry here, at state
+  // init, before any entity can exist.
+  if ( usermessages->LookupUserMessage( "HL2SB_NW" ) == -1 )
+    usermessages->Register( "HL2SB_NW", 256 );
   usermessages->HookMessage( "HL2SB_NW", __MsgFunc_HL2SB_NW );
 #endif
 
