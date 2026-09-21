@@ -3116,28 +3116,16 @@ int C_BaseAnimating::DrawModel( int flags )
 	if ( !m_bReadyToDraw )
 		return 0;
 
-	// HL2SB GMod compat: the glow shell pass - an unlit additive pass over the
-	// model, then the normal pass below covers the interior, leaving the lit
-	// surface and its edges glowing.
-	// HL2SB (2026-09-22): PROPS ONLY + physgun_halo toggle.  The forced
-	// material override breaks the NPC/player/ragdoll render paths (their
-	// bones/flexes render wrong under the override - the "NPC renders broken
-	// while grabbed" report); those get the dlight wash from the physgun's
-	// EffectUpdate instead.  The halo LIBRARY (modules/halo.lua) is the real
-	// GMod pathway for arbitrary glowing entities and runs independently.
-	if ( HL2SB_PhysgunHeldEntity() == this
-		&& physgun_halo.GetBool()
-		&& !IsNPC() && !IsPlayer() && !IsRagdoll() )
-	{
-		IMaterial *pGlowMaterial = HL2SB_PhysgunGlowMaterial();
-		if ( pGlowMaterial != NULL && !pGlowMaterial->IsErrorMaterial() )
-		{
-			modelrender->ForcedMaterialOverride( pGlowMaterial );
-			InternalDrawModel( flags );
-			modelrender->ForcedMaterialOverride( NULL );
-		}
-	}
-
+	// HL2SB GMod compat: the physgun held-entity glow shell.  The shell is an
+	// additive pass over the model -- it MUST draw AFTER the normal pass:
+	// drawn before it, the opaque surface (same geometry, same depth) paints
+	// straight over it and the glow is invisible.  That ordering bug is why
+	// "根本没发光" -- the shell was there, hidden under the model.
+	// PROPS ONLY + physgun_halo toggle: the forced override breaks the
+	// NPC/player/ragdoll render paths (bones/flexes render wrong under the
+	// override); those get the dlight wash from the physgun's EffectUpdate.
+	// The halo LIBRARY (modules/halo.lua) is the pathway for arbitrary
+	// glowing entities and runs independently.
 	int drawn = 0;
 
 #ifdef TF_CLIENT_DLL
@@ -3180,20 +3168,34 @@ int C_BaseAnimating::DrawModel( int flags )
 		else
 		{
 			// this doesn't draw unless master entity is visible and it's a studio model!!!
-			C_BaseAnimating *follow = FindFollowedEntity();
-			if ( follow )
+			C_BaseAnimating *pFollow = FindFollowedEntity();
+			if ( pFollow )
 			{
 				// recompute master entity bone structure
-				int baseDrawn = follow->DrawModel( 0 );
+				int baseDrawn = pFollow->DrawModel( 0 );
 
 				// draw entity
-				// FIXME: Currently only draws if aiment is drawn.  
+				// FIXME: Currently only draws if aiment is drawn.
 				// BUGBUG: Fixup bbox and do a separate cull for follow object
 				if ( baseDrawn )
 				{
 					drawn = InternalDrawModel( STUDIO_RENDER|extraFlags );
 				}
 			}
+		}
+	}
+
+	// The glow shell -- now ON TOP of the freshly drawn surface.
+	if ( HL2SB_PhysgunHeldEntity() == this
+		&& physgun_halo.GetBool()
+		&& !IsNPC() && !IsPlayer() && !IsRagdoll() )
+	{
+		IMaterial *pGlowMaterial = HL2SB_PhysgunGlowMaterial();
+		if ( pGlowMaterial != NULL && !pGlowMaterial->IsErrorMaterial() )
+		{
+			modelrender->ForcedMaterialOverride( pGlowMaterial );
+			InternalDrawModel( flags );
+			modelrender->ForcedMaterialOverride( NULL );
 		}
 	}
 
