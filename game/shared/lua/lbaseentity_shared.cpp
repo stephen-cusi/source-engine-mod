@@ -69,6 +69,16 @@ LUA_API lua_CBaseEntity *lua_toentity (lua_State *L, int idx) {
 */
 
 
+// HL2SB (2026-09-21): per-state cache of entity userdata, keyed by the
+// CBaseHandle's index+serial.  GMod hands Lua the SAME userdata for the same
+// entity forever -- every push of "the player" yields one identical object --
+// and GMod addons rely on it: scp173's util.TraceLineEx polyfill deduplicates
+// trace hits with `tracedEnts[result.Entity]`, which never matched here
+// because lua_newuserdata made a fresh object per push (the world was "new"
+// on every trace) and its while-loop spun forever: hard freeze on spawn.
+// Keyed by serial so a recycled edict slot gets a fresh entry.
+static int s_iEntityCacheKey = 0;
+
 LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
   /* HL2SB: GMod hands a drivable vehicle the Vehicle metatable, and it has to
   ** happen for EVERY entity push -- ents.FindByClass, trace results,
@@ -79,6 +89,38 @@ LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
   ** still what every other entity gets. */
   if (lua_pushvehicleentity(L, pEntity))
     return;
+
+  if (pEntity != NULL) {
+    CBaseHandle hEntity;
+    hEntity.Set(pEntity);
+    const int iKey = hEntity.ToInt();
+
+    lua_pushlightuserdata(L, &s_iEntityCacheKey);
+    lua_rawget(L, LUA_REGISTRYINDEX);          // [cache]
+    if (lua_isnil(L, -1)) {
+      lua_pop(L, 1);
+      lua_newtable(L);                         // [cache]
+      lua_pushlightuserdata(L, &s_iEntityCacheKey);
+      lua_pushvalue(L, -2);
+      lua_rawset(L, LUA_REGISTRYINDEX);        // registry[key] = cache
+    }
+
+    lua_rawgeti(L, -1, iKey);                  // [cache, cached]
+    if (lua_isuserdata(L, -1)) {
+      lua_remove(L, -2);                       // [cached] -- same object as last time
+      return;
+    }
+    lua_pop(L, 1);                             // [cache]
+
+    CBaseHandle *hNew = (CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle)); // [cache, new]
+    hNew->Set(pEntity);
+    luaL_getmetatable(L, "CBaseEntity");
+    lua_setmetatable(L, -2);                   // [cache, new]
+    lua_pushvalue(L, -1);                      // [cache, new, new]
+    lua_rawseti(L, -3, iKey);                  // [cache, new] -- cache[iKey] = new
+    lua_remove(L, -2);                         // [new]
+    return;
+  }
 
   CBaseHandle *hEntity = (CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle));
   hEntity->Set(pEntity);
@@ -1869,10 +1911,6 @@ static int CBaseEntity_SetPos (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   const Vector &vecOrigin = luaL_checkvector(L, 2);
 #ifdef GAME_DLL
-  {
-    static bool s_diag = false;
-    if ( !s_diag ) { s_diag = true; luasrc_LuaInfoMsgF( "[scp173diag] SetPos->Teleport enter\n" ); }
-  }
   pEntity->Teleport( &vecOrigin, NULL, NULL );
 #else
   pEntity->SetAbsOrigin(vecOrigin);
@@ -3319,10 +3357,7 @@ static int CBaseEntity_SetHullType (lua_State *L) {
   CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
   if ( pNPC == NULL )
     return 0;
-  static bool s_diag = false;
-  if ( !s_diag ) { s_diag = true; luasrc_LuaInfoMsgF( "[scp173diag] SetHullType enter\n" ); }
   pNPC->SetHullType( (Hull_t)luaL_checkint( L, 2 ) );
-  luasrc_LuaInfoMsgF( "[scp173diag] SetHullType done\n" );
   return 0;
 }
 
@@ -3332,7 +3367,6 @@ static int CBaseEntity_SetHullSizeNormal (lua_State *L) {
   if ( pNPC == NULL )
     return 0;
   pNPC->SetHullSizeNormal();
-  luasrc_LuaInfoMsgF( "[scp173diag] SetHullSizeNormal done\n" );
   return 0;
 }
 
@@ -3342,7 +3376,6 @@ static int CBaseEntity_CapabilitiesAdd (lua_State *L) {
   if ( pNPC == NULL )
     return 0;
   pNPC->CapabilitiesAdd( luaL_checkint( L, 2 ) );
-  luasrc_LuaInfoMsgF( "[scp173diag] CapabilitiesAdd done\n" );
   return 0;
 }
 
@@ -3352,7 +3385,6 @@ static int CBaseEntity_SetCondition (lua_State *L) {
   if ( pNPC == NULL )
     return 0;
   pNPC->SetCondition( luaL_checkint( L, 2 ) );
-  luasrc_LuaInfoMsgF( "[scp173diag] SetCondition done\n" );
   return 0;
 }
 
@@ -3361,9 +3393,7 @@ static int CBaseEntity_SetEnemy (lua_State *L) {
   CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
   if ( pNPC == NULL )
     return 0;
-  luasrc_LuaInfoMsgF( "[scp173diag] SetEnemy enter\n" );
   pNPC->SetEnemy( lua_toentity( L, 2 ) );
-  luasrc_LuaInfoMsgF( "[scp173diag] SetEnemy done\n" );
   return 0;
 }
 
@@ -3373,9 +3403,7 @@ static int CBaseEntity_SetSchedule (lua_State *L) {
   if ( pNPC == NULL )
     return 0;
   int nSched = luaL_checkint( L, 2 );
-  luasrc_LuaInfoMsgF( "[scp173diag] SetSchedule(%d) enter\n", nSched );
   pNPC->SetSchedule( nSched );
-  luasrc_LuaInfoMsgF( "[scp173diag] SetSchedule(%d) done\n", nSched );
   return 0;
 }
 
@@ -3385,7 +3413,6 @@ static int CBaseEntity_StopMoving (lua_State *L) {
   if ( pNPC == NULL )
     return 0;
   pNPC->GetNavigator()->StopMoving();
-  luasrc_LuaInfoMsgF( "[scp173diag] StopMoving done\n" );
   return 0;
 }
 #endif
