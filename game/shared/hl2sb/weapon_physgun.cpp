@@ -19,6 +19,10 @@
 #endif
 #include "vphysics/constraints.h"
 #include "physics.h"
+#include "effect_dispatch_data.h"	// HL2SB GMod compat: the RMB-freeze TeslaHitboxes dispatch
+#ifndef CLIENT_DLL
+#include "te_effect_dispatch.h"		// HL2SB: server-side DispatchEffect( name, data )
+#endif
 #include "in_buttons.h"
 #include "IEffects.h"
 #include "soundenvelope.h"
@@ -52,11 +56,18 @@
 // HL2SB GMod compat: the physgun's held-prop glow sprite + the GMod physgun
 // hooks (GM:PhysgunPickup / GM:PhysgunDrop).
 #include "Sprite.h"
-#if defined ( LUA_SDK ) && !defined ( CLIENT_DLL )
+#endif
+
+// HL2SB GMod compat: the GMod physgun hooks fire in BOTH realms (server:
+// PhysgunPickup/OnPhysgunPickup/PhysgunDrop/OnPhysgunFreeze/OnPhysgunReload/
+// GetPreferredCarryAngles; client: GM:DrawPhysgunBeam), so the Lua headers
+// sit OUTSIDE the realm split.
+#if defined ( LUA_SDK )
 #include "luamanager.h"
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
-#endif
+#include "lvphysics_interface.h"	// lua_pushphysicsobject (GM:OnPhysgunFreeze)
+#include "mathlib/lvector.h"		// lua_pushvector / lua_toangle (DrawPhysgunBeam / GetPreferredCarryAngles)
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -65,6 +76,20 @@
 static int g_physgunBeam1;
 static int g_physgunBeam;
 static int g_physgunGlow;
+
+// HL2SB GMod compat (ConVars In Garrysmod): the physgun's dynamic feel, same
+// names GMod exposes.  SERVER side: the shadow controller and the input maths
+// run there.  (physgun_halo / physgun_drawbeams are CLIENT -- see lhalo.cpp.)
+#ifndef CLIENT_DLL
+ConVar physgun_timeToArrive( "physgun_timeToArrive", "0.15", FCVAR_ARCHIVE, "Physgun: seconds for the held object to reach the target" );
+ConVar physgun_teleportDistance( "physgun_teleportDistance", "250", FCVAR_ARCHIVE, "Physgun: distance at which the held object teleports instead of sliding" );
+ConVar physgun_maxSpeed( "physgun_maxSpeed", "5000", FCVAR_ARCHIVE, "Physgun: maximum linear speed of the held object" );
+ConVar physgun_maxAngular( "physgun_maxAngular", "5400", FCVAR_ARCHIVE, "Physgun: maximum angular speed of the held object" );
+ConVar physgun_maxSpeedDamping( "physgun_maxSpeedDamping", "10000", FCVAR_ARCHIVE, "Physgun: linear speed where damping kicks in" );
+ConVar physgun_maxAngularDamping( "physgun_maxAngularDamping", "10000", FCVAR_ARCHIVE, "Physgun: angular speed where damping kicks in" );
+ConVar physgun_rotation_sensitivity( "physgun_rotation_sensitivity", "1", FCVAR_ARCHIVE, "Physgun: E+mouse rotation sensitivity multiplier" );
+ConVar physgun_wheelspeed( "physgun_wheelspeed", "2", FCVAR_ARCHIVE, "Physgun: wheel push/pull distance multiplier" );
+#endif
 
 #define PHYSGUN_BEAM_SPRITE1	"sprites/physbeam1.vmt"
 #define PHYSGUN_BEAM_SPRITE		"sprites/physbeam.vmt"
@@ -295,7 +320,14 @@ IMotionEvent::simresult_e CGravControllerPoint::Simulate( IPhysicsMotionControll
 {
 	hlshadowcontrol_params_t shadowParams = m_shadow;
 #ifndef CLIENT_DLL
-	m_timeToArrive = pObject->ComputeShadowControl( shadowParams, m_timeToArrive, deltaTime );
+	// HL2SB GMod compat: the controller follows the physgun_* convars every
+	// tick, exactly the knobs GMod exposes.
+	shadowParams.maxSpeed = physgun_maxSpeed.GetFloat();
+	shadowParams.maxAngular = physgun_maxAngular.GetFloat();
+	shadowParams.maxDampSpeed = physgun_maxSpeedDamping.GetFloat();
+	shadowParams.maxDampAngular = physgun_maxAngularDamping.GetFloat();
+	shadowParams.teleportDistance = physgun_teleportDistance.GetFloat();
+	m_timeToArrive = pObject->ComputeShadowControl( shadowParams, MAX( m_timeToArrive, physgun_timeToArrive.GetFloat() ), deltaTime );
 #else
 	m_timeToArrive = pObject->ComputeShadowControl( shadowParams, (TICK_INTERVAL*2), deltaTime );
 #endif
@@ -484,8 +516,9 @@ private:
 	// HL2SB GMod compat: the held prop's soft full-body light is a CLIENT
 	// dlight (see EffectUpdate) - no server-side entity needed.
 	float		m_flLastReloadPress;	// for the double-tap-R unfreeze-all
-	bool		m_bDraggingNPC;			// holding a LIVE npc (teleport-drag, no ragdoll)
+	bool		m_bDraggingNPC;			// teleport-drag mode: NPC / nextbot / script ent / force-allowed player
 	QAngle		m_heldWorldAngles;		// GMod style: the held object keeps its WORLD orientation
+	Vector		m_vecGrabOffset;		// world offset from the hit point to the origin, kept while dragged
 #endif
 
 	CSoundPatch					*m_sndMotor;		// Whirring sound for the gun
@@ -618,6 +651,7 @@ CWeaponGravityGun::CWeaponGravityGun()
 	m_flLastReloadPress = 0.0f;
 	m_bDraggingNPC = false;
 	m_heldWorldAngles = vec3_angle;
+	m_vecGrabOffset = vec3_origin;
 #endif
 }
 
@@ -771,13 +805,64 @@ void CWeaponGravityGun::EffectUpdate( void )
 		}
 
 		IPhysicsObject *pPhys = GetPhysObjFromPhysicsBone( pObject, m_physicsBone );
+
+		// HL2SB diagnostic: RMB freeze reached the server? (capped)
+		static int s_nFreezeDiag = 0;
+		if ( s_nFreezeDiag < 6 )
+		{
+			++s_nFreezeDiag;
+			luasrc_LuaInfoMsgF( "[HL2SB physgun] RMB freeze: obj='%s' phys=%p\n",
+				pObject->GetClassname(), (void *)pPhys );
+		}
+
 		if ( pPhys != NULL )
 		{
-			pPhys->EnableMotion( false );
+			// GM:OnPhysgunFreeze( weapon, physobj, ent, ply ) -- GMod contract:
+			// any non-nil return blocks the default freeze (the object stays
+			// held and unfrozen).
+			bool bFreezeBlocked = false;
+			if ( L != NULL )
+			{
+				BEGIN_LUA_CALL_HOOK( "OnPhysgunFreeze" );
+					lua_pushentity( L, this );
+					lua_pushphysicsobject( L, pPhys );
+					lua_pushentity( L, pObject );
+					lua_pushplayer( L, pOwner );
+				END_LUA_CALL_HOOK( 4, 1 );
 
-			// HL2SB GMod compat: GM:PhysgunDrop( ply, ent ) -- the freeze
-			// releases the object, so the drop hook fires here too.
-			DetachObject();
+				if ( lua_gettop( L ) > 0 )
+				{
+					bFreezeBlocked = !lua_isnil( L, -1 );
+					lua_pop( L, 1 );
+				}
+			}
+
+			if ( !bFreezeBlocked )
+			{
+				pPhys->EnableMotion( false );
+
+				// record it on the player's frozen list -- what R / double-R /
+				// Player:PhysgunUnfreeze / UnfreezePhysicsObjects drain from
+				HL2SB_PlayerAddFrozenObject( pOwner, pObject, pPhys );
+
+				// HL2SB GMod compat: the freeze feedback -- electric arcs over
+				// the frozen body (util.Effect-style dispatch; the engine's
+				// TeslaHitboxes callback reads the entity) + the Special1 zap.
+				CEffectData zap;
+				zap.m_nEntIndex = pObject->entindex();
+				DispatchEffect( "TeslaHitboxes", zap );
+				pObject->EmitSound( "Weapon_Physgun.Special1" );
+
+				// HL2SB GMod compat: GM:PhysgunDrop( ply, ent ) -- the freeze
+				// releases the object, so the drop hook fires here too.
+				DetachObject();
+			}
+			else
+			{
+				// blocked: keep holding the unfrozen object, GMod-style
+				// (no EffectDestroy/SoundDestroy -- the beam stays up)
+				return;
+			}
 		}
 #endif
 
@@ -789,22 +874,11 @@ void CWeaponGravityGun::EffectUpdate( void )
 	if ( pObject )
 	{
 #ifndef CLIENT_DLL
-		// HL2SB GMod compat: LIVE NPC drag - drive the position every tick,
-		// the NPC stays alive and keeps playing its animations (it slides
-		// exactly like the video's GMan).
-		if ( m_bDraggingNPC )
-		{
-			Vector npcTarget = start + forward * m_distance;
-			pObject->Teleport( &npcTarget, NULL, NULL );
-			pObject->SetAbsVelocity( vec3_origin );
-			m_movementLength = ( npcTarget - pObject->GetLocalOrigin() ).Length();
-			return;
-		}
-
 		// HL2SB GMod compat: E+mouse rotates - the mouse deltas arrive with the
 		// user command (the client freezes the VIEW while E is held, see
 		// HL2SB_PhysgunMouseRotate in in_mouse.cpp), so the object rotates
-		// without the camera swinging along.
+		// without the camera swinging along.  Runs for BOTH carry modes
+		// (shadow-carry and teleport-drive) -- before the drive's early return.
 		if ( pOwner->m_nButtons & IN_USE )
 		{
 			int nMouseDx = 0, nMouseDy = 0;
@@ -816,12 +890,47 @@ void CWeaponGravityGun::EffectUpdate( void )
 			}
 
 			if ( nMouseDx != 0 )
-				m_heldWorldAngles.y -= nMouseDx * 0.4f;
+				m_heldWorldAngles.y -= nMouseDx * 0.4f * physgun_rotation_sensitivity.GetFloat();
 			if ( nMouseDy != 0 )
-				m_heldWorldAngles.x += nMouseDy * 0.4f;
+				m_heldWorldAngles.x += nMouseDy * 0.4f * physgun_rotation_sensitivity.GetFloat();
+
+			// HL2SB diagnostic: are the raw mouse deltas reaching the server?
+			static int s_nRotDiag = 0;
+			if ( s_nRotDiag < 3 )
+			{
+				++s_nRotDiag;
+				luasrc_LuaInfoMsgF( "[HL2SB physgun] E-rotate tick dx=%d dy=%d cmd=%p\n",
+					nMouseDx, nMouseDy, (void *)pCmd );
+			}
 		}
 
 		QAngle angles = m_heldWorldAngles;
+
+		// HL2SB GMod compat: teleport-drag for everything without a vphysics
+		// body (NPCs, nextbots, scripted ents) - the entity stays alive and
+		// keeps playing its animations (it slides exactly like the video's
+		// GMan).
+		if ( m_bDraggingNPC )
+		{
+			// hold the entity at the held distance ALONG THE VIEW, plus the
+			// offset from the original grab point, so tall/anchored ents stay
+			// where they were grabbed instead of snapping to the eye line
+			Vector npcTarget = start + forward * m_distance + m_vecGrabOffset;
+			pObject->Teleport( &npcTarget, &angles, NULL );
+			pObject->SetAbsVelocity( vec3_origin );
+			m_movementLength = ( npcTarget - pObject->GetLocalOrigin() ).Length();
+
+			// HL2SB diagnostic: is the NPC teleport-drive even ticking?
+			static int s_nNpcDriveDiag = 0;
+			if ( s_nNpcDriveDiag < 3 )
+			{
+				++s_nNpcDriveDiag;
+				luasrc_LuaInfoMsgF( "[HL2SB physgun] drive tick '%s' dist=%.0f target=(%.0f %.0f %.0f)\n",
+					pObject->GetClassname(), m_distance,
+					npcTarget.x, npcTarget.y, npcTarget.z );
+			}
+			return;
+		}
 #else
 		QAngle angles = m_gravCallback.TransformAnglesFromPlayerSpace( m_gravCallback.m_targetRotation, pOwner );
 #endif
@@ -1096,16 +1205,27 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 	m_useDown = false;
 
 #ifndef CLIENT_DLL
-	// HL2SB GMod compat: players are never grabbable, and the gamemode may
-	// veto the pickup through GM:PhysgunPickup( ply, ent ) - the literal false
-	// vetoes, anything else keeps the physgun's own rules.
-	if ( pObject->IsPlayer() )
+	// HL2SB diagnostic (2026-09-22): WHY did the attach fail/choose a mode?
+	// One line per attach attempt (capped): class, NPC/player flags, movetype,
+	// the physics body the trace handed us.
+	static int s_nAttachDiag = 0;
+	if ( s_nAttachDiag < 12 )
 	{
-		m_hObject = NULL;
-		return;
+		++s_nAttachDiag;
+		luasrc_LuaInfoMsgF( "[HL2SB physgun] attach: '%s' npc=%d player=%d movetype=%d phys=%p bone=%d\n",
+			pObject->GetClassname(),
+			pObject->IsNPC() ? 1 : 0,
+			pObject->IsPlayer() ? 1 : 0,
+			(int)pObject->GetMoveType(),
+			(void *)pPhysics, (int)physicsbone );
 	}
 
+	// HL2SB GMod compat: the gamemode rules live in GM:PhysgunPickup( ply, ent ).
+	// GMod contract: literal false vetoes, literal true force-allows (that is
+	// how gamemodes allow grabbing PLAYERS), nil keeps the physgun's own rules
+	// (players never grabbable).
 	bool bPhysgunPickupAllowed = true;
+	bool bForceAllow = false;
 	if ( L != NULL )
 	{
 		BEGIN_LUA_CALL_HOOK( "PhysgunPickup" );
@@ -1115,8 +1235,13 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 
 		if ( lua_gettop( L ) > 0 )
 		{
-			if ( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) == 0 )
-				bPhysgunPickupAllowed = false;
+			if ( lua_isboolean( L, -1 ) )
+			{
+				if ( lua_toboolean( L, -1 ) == 0 )
+					bPhysgunPickupAllowed = false;
+				else
+					bForceAllow = true;
+			}
 			lua_pop( L, 1 );
 		}
 	}
@@ -1127,30 +1252,70 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 		return;
 	}
 
-	// HL2SB GMod compat: LIVE NPCs are DRAGGED ALIVE (the video's GMan slides
-	// on his feet while held).  A live NPC moves by its locomotion controller,
-	// so there is no rigid body for the grab controller - the NPC gets its own
-	// drag mode (per-tick position drive, see EffectUpdate) and stays alive.
-	m_bDraggingNPC = pObject->IsNPC();
+	if ( pObject->IsPlayer() && !bForceAllow )
+	{
+		m_hObject = NULL;
+		return;
+	}
+
+	// HL2SB GMod compat: GMod grabs EVERYTHING. Anything with a vphysics body
+	// rides the shadow controller; everything else -- NPCs, nextbots, scripted
+	// NPCs, body-less script ents -- rides the teleport-drive. Players only
+	// when the gamemode force-allowed the pickup (hook returned true).
+	bool bHasBody = ( pPhysics != NULL && pObject->GetMoveType() == MOVETYPE_VPHYSICS );
+	if ( pObject->IsPlayer() )
+		m_bDraggingNPC = bForceAllow && !bHasBody;
+	else
+		m_bDraggingNPC = !bHasBody;
 
 	// GMod style: the held object keeps its WORLD orientation, E+mouse rotates
 	m_heldWorldAngles = pObject->GetAbsAngles();
+
+	// GM:GetPreferredCarryAngles( ent, ply ) -> Angle|nil -- a non-nil result
+	// is the pose the object snaps to while carried.
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "GetPreferredCarryAngles" );
+			lua_pushentity( L, pObject );
+			lua_pushplayer( L, pOwner );
+		END_LUA_CALL_HOOK( 2, 1 );
+
+		if ( lua_gettop( L ) > 0 )
+		{
+			if ( !lua_isnil( L, -1 ) )
+				m_heldWorldAngles = lua_toangle( L, -1 );
+			lua_pop( L, 1 );
+		}
+	}
 #endif
 
 #ifndef CLIENT_DLL
 	if ( m_bDraggingNPC )
 	{
-		// NPC drag: no controller, no bone bookkeeping - just hold the handle
+		// teleport-drag attach: no controller, no bone bookkeeping - just hold
+		// the handle.  Keep the grab offset (origin vs. hit point) so the
+		// entity does not snap toward the player's eye line.
+		m_vecGrabOffset = pObject->GetAbsOrigin() - end;
 		Pickup_OnPhysGunPickup( pObject, pOwner );
 
 		static int s_nNpcGrabDiag = 0;
 		if ( s_nNpcGrabDiag < 15 )
 		{
 			++s_nNpcGrabDiag;
-			luasrc_LuaInfoMsgF( "[HL2SB physgun] NPC drag attached '%s' (alive)\n", pObject->GetClassname() );
+			luasrc_LuaInfoMsgF( "[HL2SB physgun] drive-drag attached '%s' (offset %.0f %.0f %.0f)\n",
+				pObject->GetClassname(), m_vecGrabOffset.x, m_vecGrabOffset.y, m_vecGrabOffset.z );
 		}
 
 		m_distance = distance;
+
+		// GM:OnPhysgunPickup( ply, ent ) -- fired after a SUCCESSFUL pickup
+		if ( L != NULL )
+		{
+			BEGIN_LUA_CALL_HOOK( "OnPhysgunPickup" );
+				lua_pushplayer( L, pOwner );
+				lua_pushentity( L, pObject );
+			END_LUA_CALL_HOOK( 2, 0 );
+		}
 		return;
 	}
 #endif
@@ -1183,6 +1348,15 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 
 #ifndef CLIENT_DLL
 		Pickup_OnPhysGunPickup( pObject, pOwner );
+
+		// GM:OnPhysgunPickup( ply, ent ) -- fired after a SUCCESSFUL pickup
+		if ( L != NULL )
+		{
+			BEGIN_LUA_CALL_HOOK( "OnPhysgunPickup" );
+				lua_pushplayer( L, pOwner );
+				lua_pushentity( L, pObject );
+			END_LUA_CALL_HOOK( 2, 0 );
+		}
 #endif
 	}
 	else
@@ -1209,12 +1383,13 @@ void CWeaponGravityGun::PrimaryAttack( void )
 
 #ifndef CLIENT_DLL
 		// HL2SB GMod compat: while attack is HELD the one-shot grab animation
-		// used to finish and leave the viewmodel frozen on its last frame -
-		// the arms off-screen (the "arms vanish on held attack" report).  Re-arm: the
-		// hold-idle (@hold_idle = ACT_VM_RELOAD) while carrying something,
-		// plain idle while scanning.
+		// used to finish and leave the viewmodel frozen on its last frame - the
+		// arms off-screen (the "arms vanish on held attack" report).  Re-arm to
+		// the PLAIN IDLE: ACT_VM_RELOAD (the first cut's hold pose) has no
+		// sequence in the physgun's viewmodel, which is what made the arms
+		// vanish entirely.
 		if ( IsViewModelSequenceFinished() )
-			SendWeaponAnim( m_hObject != NULL ? ACT_VM_RELOAD : ACT_VM_IDLE );
+			SendWeaponAnim( ACT_VM_IDLE );
 #endif
 	}
 }
@@ -1248,6 +1423,49 @@ int CWeaponGravityGun::DrawModel( int flags )
 		// ViewModelDrawn draws it at the viewmodel attachment.
 		if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawUsingViewModel() )
 			return 0;
+
+		// HL2SB GMod compat: GM:DrawPhysgunBeam( ply, weapon, enabled, target,
+		// physBone, hitPos ) -- literal false hides the default beam + sprites.
+		// hitPos is the LOCAL grab offset on the held body (the wiki's
+		// "relative to the physics bone"), or the world scan endpos.
+		if ( L != NULL )
+		{
+			C_BaseEntity *pHeld = m_hObject;
+			Vector vecHookHit( vec3_origin );
+			if ( pHeld != NULL )
+				vecHookHit = m_worldPosition;
+			else
+			{
+				trace_t tr;
+				TraceLine( &tr );
+				vecHookHit = tr.endpos;
+			}
+
+			BEGIN_LUA_CALL_HOOK( "DrawPhysgunBeam" );
+				lua_pushplayer( L, pOwner );
+				lua_pushentity( L, this );
+				lua_pushboolean( L, m_active );
+				lua_pushentity( L, pHeld );
+				lua_pushinteger( L, m_physicsBone );
+				lua_pushvector( L, vecHookHit );
+			END_LUA_CALL_HOOK( 6, 1 );
+
+			if ( lua_gettop( L ) > 0 )
+			{
+				bool bSuppressed = ( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) == 0 );
+				lua_pop( L, 1 );
+				if ( bSuppressed )
+					return 0;
+			}
+		}
+
+		// physgun_drawbeams 0 hides the DEFAULT beam/sprites (the hook above
+		// still fires, exactly as the wiki documents it)
+		{
+			extern ConVar physgun_drawbeams;
+			if ( !physgun_drawbeams.GetBool() )
+				return 0;
+		}
 
 		Vector points[3];
 		QAngle tmpAngle;
@@ -1318,6 +1536,17 @@ int CWeaponGravityGun::DrawModel( int flags )
 		{
 			DrawSprite( points[2], scale, scale, clr );
 		}
+
+		// HL2SB GMod compat: the bright blue-white glow at the MUZZLE while
+		// the beam is up (the gun-tip light in every GMod physgun reference
+		// shot) -- two soft sprites at the beam start.
+		color32 clrMuzzle = { 150, 210, 255, 255 };
+		float flMuzzleScale = random->RandomFloat( 2.0f, 3.0f );
+		pRenderContext->Bind( pMaterial );
+		for ( int i = 0; i < 2; i++ )
+		{
+			DrawSprite( points[0], flMuzzleScale, flMuzzleScale, clrMuzzle );
+		}
 		return 1;
 	}
 
@@ -1338,6 +1567,47 @@ void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 
 	if ( !pOwner )
 		return;
+
+	// HL2SB GMod compat: GM:DrawPhysgunBeam( ply, weapon, enabled, target,
+	// physBone, hitPos ) -- literal false hides the default effects (the
+	// first-person path; the third-person path hooks inside DrawModel).
+	if ( L != NULL )
+	{
+		C_BaseEntity *pHeld = m_hObject;
+		Vector vecHookHit( vec3_origin );
+		if ( pHeld != NULL )
+			vecHookHit = m_worldPosition;
+		else
+		{
+			trace_t tr;
+			TraceLine( &tr );
+			vecHookHit = tr.endpos;
+		}
+
+		BEGIN_LUA_CALL_HOOK( "DrawPhysgunBeam" );
+			lua_pushplayer( L, pOwner );
+			lua_pushentity( L, this );
+			lua_pushboolean( L, m_active );
+			lua_pushentity( L, pHeld );
+			lua_pushinteger( L, m_physicsBone );
+			lua_pushvector( L, vecHookHit );
+		END_LUA_CALL_HOOK( 6, 1 );
+
+		if ( lua_gettop( L ) > 0 )
+		{
+			bool bSuppressed = ( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) == 0 );
+			lua_pop( L, 1 );
+			if ( bSuppressed )
+				return;
+		}
+	}
+
+	// physgun_drawbeams 0 hides the DEFAULT beam/sprites (first-person path)
+	{
+		extern ConVar physgun_drawbeams;
+		if ( !physgun_drawbeams.GetBool() )
+			return;
+	}
 
 	Vector points[3];
 	QAngle tmpAngle;
@@ -1409,6 +1679,15 @@ void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 	for ( int i = 0; i < 3; i++ )
 	{
 		DrawSprite( points[2], scale, scale, clr );
+	}
+
+	// HL2SB GMod compat: muzzle glow (first-person path; see DrawModel)
+	color32 clrMuzzle = { 150, 210, 255, 255 };
+	float flMuzzleScale = random->RandomFloat( 2.0f, 3.0f );
+	pRenderContext->Bind( pMaterial );
+	for ( int i = 0; i < 2; i++ )
+	{
+		DrawSprite( points[0], flMuzzleScale, flMuzzleScale, clrMuzzle );
 	}
 #if 1
 	pRenderContext->DepthRange( 0.0f, 1.0f );
@@ -1494,8 +1773,18 @@ CON_COMMAND( hl2sb_physgun_push, "Physgun: push the held object away (mouse whee
 		return;
 
 	CWeaponGravityGun *pGun = dynamic_cast< CWeaponGravityGun * >( pPlayer->GetActiveWeapon() );
+
+	// HL2SB diagnostic: did the wheel-forward from the client ever arrive?
+	static int s_nWheelDiag = 0;
+	if ( s_nWheelDiag < 3 )
+	{
+		++s_nWheelDiag;
+		Msg( "[HL2SB physgun] wheel push cmd: gun=%s holding=%d\n",
+			pGun != NULL ? "yes" : "NO", ( pGun != NULL && pGun->IsHolding() ) ? 1 : 0 );
+	}
+
 	if ( pGun != NULL && pGun->IsHolding() )
-		pGun->HL2SB_AdjustDistance( 45.0f );
+		pGun->HL2SB_AdjustDistance( 45.0f * physgun_wheelspeed.GetFloat() );
 }
 
 CON_COMMAND( hl2sb_physgun_pull, "Physgun: pull the held object closer (mouse wheel)" )
@@ -1505,79 +1794,70 @@ CON_COMMAND( hl2sb_physgun_pull, "Physgun: pull the held object closer (mouse wh
 		return;
 
 	CWeaponGravityGun *pGun = dynamic_cast< CWeaponGravityGun * >( pPlayer->GetActiveWeapon() );
+
+	static int s_nWheelDiag = 0;
+	if ( s_nWheelDiag < 6 )
+	{
+		++s_nWheelDiag;
+		Msg( "[HL2SB physgun] wheel pull cmd: gun=%s holding=%d\n",
+			pGun != NULL ? "yes" : "NO", ( pGun != NULL && pGun->IsHolding() ) ? 1 : 0 );
+	}
+
 	if ( pGun != NULL && pGun->IsHolding() )
-		pGun->HL2SB_AdjustDistance( -45.0f );
+		pGun->HL2SB_AdjustDistance( -45.0f * physgun_wheelspeed.GetFloat() );
 }
 #endif
 
 bool CWeaponGravityGun::Reload( void )
 {
 #ifndef CLIENT_DLL
-	// HL2SB GMod compat (the on-screen hints promise exactly this):
-	//   R while dragging a frozen entity  -> unfreeze it (keep dragging)
-	//   R aimed at a frozen entity        -> unfreeze it
-	//   double-tap R                      -> unfreeze everything
+	// HL2SB GMod compat (2026-09-22 physgun audit), GMod's R contract:
+	//   GM:OnPhysgunReload( physgun, ply )   non-nil return -> NO default action
+	//   single R   -> unfreeze the frozen bodies of the entity under the
+	//                 crosshair (GM:Player:PhysgunUnfreeze semantics)
+	//   double-R   -> unfreeze EVERYTHING THIS PLAYER froze
+	//                (Player:UnfreezePhysicsObjects semantics -- NOT the
+	//                whole map, which the first cut did)
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 	if ( pOwner == NULL )
 		return false;
+
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "OnPhysgunReload" );
+			lua_pushentity( L, this );
+			lua_pushplayer( L, pOwner );
+		END_LUA_CALL_HOOK( 2, 1 );
+
+		if ( lua_gettop( L ) > 0 )
+		{
+			bool bBlocked = !lua_isnil( L, -1 );
+			lua_pop( L, 1 );
+			if ( bBlocked )
+				return false;
+		}
+	}
 
 	float flNow = gpGlobals->curtime;
 	bool bDoubleTap = ( flNow - m_flLastReloadPress ) < 0.35f;
 	m_flLastReloadPress = flNow;
 
-	// 1) the entity currently being dragged: unfreeze and keep holding it
-	if ( m_hObject != NULL && !m_bDraggingNPC )
-	{
-		IPhysicsObject *pPhys = GetPhysObjFromPhysicsBone( m_hObject, m_physicsBone );
-		if ( pPhys != NULL && !pPhys->IsMoveable() )
-		{
-			pPhys->EnableMotion( true );
-			pPhys->Wake();
-			return true;
-		}
-	}
-
-	// 2) the entity under the crosshair
-	trace_t tr;
-	TraceLine( &tr );
-	if ( tr.DidHitNonWorldEntity() && tr.m_pEnt != NULL )
-	{
-		IPhysicsObject *pPhys = tr.m_pEnt->VPhysicsGetObject();
-		if ( pPhys != NULL && !pPhys->IsMoveable() )
-		{
-			pPhys->EnableMotion( true );
-			pPhys->Wake();
-			return true;
-		}
-	}
-
-	// 3) double-tap R: unfreeze every physics entity on the map
 	if ( bDoubleTap )
 	{
-		int nUnfrozen = 0;
-		CBaseEntity *pEnt = gEntList.FirstEnt();
-		for ( ; pEnt != NULL; pEnt = gEntList.NextEnt( pEnt ) )
-		{
-			if ( pEnt->GetMoveType() != MOVETYPE_VPHYSICS || pEnt->IsWorld() )
-				continue;
-
-			IPhysicsObject *pPhys = pEnt->VPhysicsGetObject();
-			if ( pPhys != NULL && !pPhys->IsMoveable() )
-			{
-				pPhys->EnableMotion( true );
-				pPhys->Wake();
-				++nUnfrozen;
-			}
-		}
+		int nUnfrozen = HL2SB_PlayerUnfreezeAll( pOwner );
 
 		static int s_nUnfreezeAllDiag = 0;
 		if ( s_nUnfreezeAllDiag < 15 )
 		{
 			++s_nUnfreezeAllDiag;
-			luasrc_LuaInfoMsgF( "[HL2SB physgun] double-R unfroze %d objects\n", nUnfrozen );
+			luasrc_LuaInfoMsgF( "[HL2SB physgun] double-R unfroze %d object(s) on the player's list\n", nUnfrozen );
 		}
-		return true;
+		return nUnfrozen > 0;
 	}
+
+	// single R: the aimed entity's frozen bodies (GMod counts them too)
+	int nUnfrozen = HL2SB_PlayerUnfreezeAimed( pOwner );
+	return nUnfrozen > 0;
 #endif
 	return false;
 }

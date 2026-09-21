@@ -3,10 +3,17 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lrender.h"
+
+// HL2SB GMod compat (ConVars In Garrysmod): the physgun visual toggles.
+// physgun_drawbeams is read by hl2sb/weapon_physgun.cpp's draw paths,
+// physgun_halo by c_baseanimating.cpp's held-entity glow shell.
+ConVar physgun_halo( "physgun_halo", "1", FCVAR_ARCHIVE, "Draw the physgun halo on the held entity" );
+ConVar physgun_drawbeams( "physgun_drawbeams", "1", FCVAR_ARCHIVE, "Draw the physgun beams" );
 #ifdef CLIENT_DLL
 #include "rendertexture.h"
 #include "view_scene.h"
 #include <materialsystem/imaterialsystem.h>
+#include <materialsystem/imaterialvar.h>
 #include <materialsystem/imesh.h>
 #include <vgui/ISurface.h>
 #include <vgui_controls/Controls.h>
@@ -268,6 +275,276 @@ LUA_BINDING_BEGIN( Renders, PopView2D, "library", "Pop a 2D view.", "client" )
     return 0;
 }
 LUA_BINDING_END()
+
+// HL2SB: the material render.SetMaterial last bound -- DrawScreenQuad draws it
+// (this render context has no GetBoundMaterial).  Defined here so the
+// DrawScreenQuad binding below sees it; SetMaterial (further down) writes it.
+static IMaterial *s_pRendersLastSetMaterial = NULL;
+
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-22): the primitives GMod's halo.lua and the client render.lua
+// shim need.  The shim's load gate is render.GetAmbientLightColor -- without
+// it the whole file returned early and cam.Start2D/3D, the STENCIL_* aliases
+// and render.BlurRenderTarget never existed, which is why the (already ported)
+// modules/halo.lua was dead on arrival.
+//-----------------------------------------------------------------------------
+
+// render.GetAmbientLightColor() -> Color
+LUA_BINDING_BEGIN( Renders, GetAmbientLightColor, "library", "Returns the ambient light color at the origin of the map.", "client" )
+{
+    Vector vecLight = engine->GetLightForPoint( Vector( 0, 0, 0 ), false );
+    lua_Color clr( (unsigned char)clamp( (int)( vecLight.x * 255.0f ), 0, 255 ),
+                   (unsigned char)clamp( (int)( vecLight.y * 255.0f ), 0, 255 ),
+                   (unsigned char)clamp( (int)( vecLight.z * 255.0f ), 0, 255 ),
+                   255 );
+    lua_pushcolor( L, clr );
+    return 1;
+}
+LUA_BINDING_END()
+
+// render.Clear( r, g, b, a, clearDepth = false, clearStencil = false )
+LUA_BINDING_BEGIN( Renders, Clear, "library", "Clears the current render target with the given color.", "client" )
+{
+    color32 clr;
+    clr.r = (unsigned char)clamp( (int)luaL_checknumber( L, 1 ), 0, 255 );
+    clr.g = (unsigned char)clamp( (int)luaL_checknumber( L, 2 ), 0, 255 );
+    clr.b = (unsigned char)clamp( (int)luaL_checknumber( L, 3 ), 0, 255 );
+    clr.a = (unsigned char)clamp( (int)luaL_checknumber( L, 4 ), 0, 255 );
+    bool bClearDepth = luaL_optboolean( L, 5, 0 ) ? true : false;
+    bool bClearStencil = luaL_optboolean( L, 6, 0 ) ? true : false;
+
+    CMatRenderContextPtr pRenderContext( materials );
+    pRenderContext->ClearColor4ub( clr.r, clr.g, clr.b, clr.a );
+    pRenderContext->ClearBuffers( true, bClearDepth, bClearStencil );
+
+    return 0;
+}
+LUA_BINDING_END()
+
+// render.SetRenderTarget( texture ) -- nil restores the frame buffer.
+LUA_BINDING_BEGIN( Renders, SetRenderTarget, "library", "Sets the render target to draw into.", "client" )
+{
+    CMatRenderContextPtr pRenderContext( materials );
+    if ( lua_isnoneornil( L, 1 ) )
+    {
+        pRenderContext->SetRenderTarget( NULL );
+    }
+    else
+    {
+        pRenderContext->SetRenderTarget( LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" ) );
+    }
+    return 0;
+}
+LUA_BINDING_END()
+
+// render.PushRenderTarget( texture [, x, y, w, h] ) / render.PopRenderTarget()
+LUA_BINDING_BEGIN( Renders, PushRenderTarget, "library", "Pushes a render target and viewport for rendering.", "client" )
+{
+    CMatRenderContextPtr pRenderContext( materials );
+    ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
+
+    if ( lua_isnumber( L, 2 ) && lua_isnumber( L, 3 ) && lua_isnumber( L, 4 ) && lua_isnumber( L, 5 ) )
+    {
+        int nX = (int)lua_tonumber( L, 2 );
+        int nY = (int)lua_tonumber( L, 3 );
+        int nW = (int)lua_tonumber( L, 4 );
+        int nH = (int)lua_tonumber( L, 5 );
+        pRenderContext->PushRenderTargetAndViewport( pTexture, nX, nY, nW, nH );
+    }
+    else
+    {
+        pRenderContext->PushRenderTargetAndViewport( pTexture );
+    }
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, PopRenderTarget, "library", "Pops a render target pushed with PushRenderTarget.", "client" )
+{
+    CMatRenderContextPtr pRenderContext( materials );
+    pRenderContext->PopRenderTargetAndViewport();
+    return 0;
+}
+LUA_BINDING_END()
+
+// render.DrawScreenQuad() -- one quad over the current viewport with the
+// material set by render.SetMaterial.
+LUA_BINDING_BEGIN( Renders, DrawScreenQuad, "library", "Draws a fullscreen quad with the currently bound material.", "client" )
+{
+    CMatRenderContextPtr pRenderContext( materials );
+    IMaterial *pMaterial = s_pRendersLastSetMaterial;
+    if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
+        return luaL_error( L, "render.DrawScreenQuad: no material bound (call render.SetMaterial first)" );
+    pRenderContext->DrawScreenSpaceQuad( pMaterial );
+    return 0;
+}
+LUA_BINDING_END()
+
+// render.GetBloomTex1() -> Texture
+LUA_BINDING_BEGIN( Renders, GetBloomTex1, "library", "Returns the bloom render target texture.", "client" )
+{
+    lua_pushitexture( L, materials->FindTexture( "_rt_Bloom1", TEXTURE_GROUP_RENDER_TARGET ) );
+    return 1;
+}
+LUA_BINDING_END()
+
+// render.BlurRenderTarget( rt, blurx, blury, passes )
+//
+// This branch has no screenspace blur pixel shaders, so this is a real
+// blur by ping-ponging progressively smaller quarter-res render targets
+// (bilinear resampling = box blur per step), then back.  blurx/blury size
+// the chain; passes repeats it.
+LUA_BINDING_BEGIN( Renders, BlurRenderTarget, "library", "Blurs a render target (downsample-upsample chain).", "client" )
+{
+    ITexture *pSource = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "renderTarget" );
+    float flBlurX = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 2, 2, "blurx" );
+    float flBlurY = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 3, 2, "blury" );
+    int nPasses = (int)LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 4, 1, "passes" );
+    nPasses = clamp( nPasses, 1, 4 );
+
+    IMaterial *pCopy = materials->FindMaterial( "pp/copy", TEXTURE_GROUP_CLIENT_EFFECTS );
+    if ( pCopy == NULL || pCopy->IsErrorMaterial() )
+        return 0;
+
+    // HL2SB: IMaterial has no SetTexture in this branch -- drive $basetexture
+    // through its IMaterialVar instead.
+    bool bVarFound = false;
+    IMaterialVar *pBaseVar = pCopy->FindVar( "$basetexture", &bVarFound );
+    if ( !bVarFound || pBaseVar == NULL )
+        return 0;
+
+    CMatRenderContextPtr pRenderContext( materials );
+    CViewSetup playerView = *view->GetPlayerViewSetup();
+    int nWidth = playerView.width;
+    int nHeight = playerView.height;
+
+    // quarter-res ping-pong targets, allocated once
+    static ITexture *s_pRT0 = NULL, *s_pRT1 = NULL;
+    if ( s_pRT0 == NULL )
+    {
+        g_pMaterialSystem->OverrideRenderTargetAllocation( true );
+        s_pRT0 = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_blur0",
+            nWidth / 4, nHeight / 4, RT_SIZE_NO_CHANGE,
+            IMAGE_FORMAT_RGBA8888, MATERIAL_RT_DEPTH_SHARED,
+            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT, 0 );
+        s_pRT1 = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_blur1",
+            nWidth / 4, nHeight / 4, RT_SIZE_NO_CHANGE,
+            IMAGE_FORMAT_RGBA8888, MATERIAL_RT_DEPTH_SHARED,
+            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT, 0 );
+        g_pMaterialSystem->OverrideRenderTargetAllocation( false );
+    }
+
+    pCopy->SetMaterialVarFlag( MATERIAL_VAR_IGNOREZ, true );
+
+    int nHalfW = MAX( 8, nWidth / 2 );
+    int nHalfH = MAX( 8, nHeight / 2 );
+    int nSmallW = MAX( 8, nWidth / ( 2 + (int)MAX( 1.0f, flBlurX ) ) );
+    int nSmallH = MAX( 8, nHeight / ( 2 + (int)MAX( 1.0f, flBlurY ) ) );
+
+    for ( int i = 0; i < nPasses; ++i )
+    {
+        // down: source -> rt0 (half), rt0 -> rt1 (small)
+        pRenderContext->PushRenderTargetAndViewport( s_pRT0, 0, 0, nHalfW, nHalfH );
+        pBaseVar->SetTextureValue( pSource );
+        pRenderContext->DrawScreenSpaceQuad( pCopy );
+        pRenderContext->PopRenderTargetAndViewport();
+
+        pRenderContext->PushRenderTargetAndViewport( s_pRT1, 0, 0, nSmallW, nSmallH );
+        pBaseVar->SetTextureValue( s_pRT0 );
+        pRenderContext->DrawScreenSpaceQuad( pCopy );
+        pRenderContext->PopRenderTargetAndViewport();
+
+        // up: rt1 -> rt0 (half), rt0 -> source (full)
+        pRenderContext->PushRenderTargetAndViewport( s_pRT0, 0, 0, nHalfW, nHalfH );
+        pBaseVar->SetTextureValue( s_pRT1 );
+        pRenderContext->DrawScreenSpaceQuad( pCopy );
+        pRenderContext->PopRenderTargetAndViewport();
+
+        pRenderContext->PushRenderTargetAndViewport( pSource );
+        pBaseVar->SetTextureValue( s_pRT0 );
+        pRenderContext->DrawScreenSpaceQuad( pCopy );
+        pRenderContext->PopRenderTargetAndViewport();
+    }
+
+    return 0;
+}
+LUA_BINDING_END()
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the cam library.  cam.Start( {type="3D"/"2D", ...} )
+// mirrors the table API the content render.lua shim builds on top of.
+//-----------------------------------------------------------------------------
+
+static int cam_Start (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+
+  lua_getfield( L, 1, "type" );
+  const char *pszType = luaL_optstring( L, -1, "3D" );
+  lua_pop( L, 1 );
+
+  CViewSetup playerView = *view->GetPlayerViewSetup();
+  CViewSetup viewSetup( playerView );
+  viewSetup.m_flAspectRatio = 0.0f;   // the rect decides the aspect (see PushView3D)
+
+  if ( !Q_stricmp( pszType, "2D" ) )
+  {
+    render->Push2DView( viewSetup, 0, NULL, view->GetFrustum() );
+    return 0;
+  }
+
+  lua_getfield( L, 1, "origin" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.origin = luaL_checkvector( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "angles" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.angles = luaL_checkangle( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "fov" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.fov = (float)lua_tonumber( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "x" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.x = (int)lua_tonumber( L, -1 );
+  lua_pop( L, 1 );
+  lua_getfield( L, 1, "y" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.y = (int)lua_tonumber( L, -1 );
+  lua_pop( L, 1 );
+  lua_getfield( L, 1, "w" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.width = (int)lua_tonumber( L, -1 );
+  lua_pop( L, 1 );
+  lua_getfield( L, 1, "h" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.height = (int)lua_tonumber( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "znear" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.zNear = (float)lua_tonumber( L, -1 );
+  lua_pop( L, 1 );
+  lua_getfield( L, 1, "zfar" );
+  if ( !lua_isnil( L, -1 ) ) viewSetup.zFar = (float)lua_tonumber( L, -1 );
+  lua_pop( L, 1 );
+
+  render->Push3DView( viewSetup, 0, NULL, view->GetFrustum() );
+  return 0;
+}
+
+static int cam_End (lua_State *L) {
+  render->PopView( view->GetFrustum() );
+  return 0;
+}
+
+// cam.IgnoreZ( ignore ) -- this branch's IMatRenderContext has no SetIgnoreZ;
+// accepted and no-op'd (halo.lua defaults ignorez=false anyway).
+static int cam_IgnoreZ (lua_State *L) {
+  return 0;
+}
+
+static const luaL_Reg cam_funcs[] = {
+  { "Start", cam_Start },
+  { "End", cam_End },
+  { "IgnoreZ", cam_IgnoreZ },
+  { NULL, NULL }
+};
 
 LUA_BINDING_BEGIN( Renders, PushCustomClipPlane, "library", "Push a custom clip plane.", "client" )
 {
@@ -980,6 +1257,9 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->Bind( pMaterial );
 
+    // HL2SB: DrawScreenQuad draws THIS material -- render.SetMaterial is the
+    // only way Lua binds one, so remember it here.
+    s_pRendersLastSetMaterial = pMaterial;
     // HL2SB diagnostic: name what a script's Material() path actually resolved
     // to.  A proxy table (gmod_surface.lua's Material()) is not an IMaterial, so
     // this is also the place that can silently hand back the error material.
@@ -1370,6 +1650,12 @@ LUALIB_API int luaopen_render( lua_State *L )
     LUA_REGISTRATION_COMMIT_LIBRARY( Renders );
 
 #ifdef CLIENT_DLL
+    // HL2SB: the cam library -- cam.Start( {type="3D"/"2D", ...} ) / cam.End() /
+    // cam.IgnoreZ().  The content render.lua shim builds cam.Start3D/Start2D on
+    // top of these.
+    luaL_register( L, "cam", cam_funcs );
+    lua_pop( L, 1 );
+
     LUA_SET_ENUM_LIB_BEGIN( L, "CULL_MODE" );
     lua_pushenum( L, MaterialCullMode_t::MATERIAL_CULLMODE_CCW, "COUNTER_CLOCKWISE" );
     lua_pushenum( L, MaterialCullMode_t::MATERIAL_CULLMODE_CW, "CLOCKWISE" );

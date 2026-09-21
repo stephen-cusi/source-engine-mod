@@ -748,6 +748,14 @@ void CInput::MouseMove( CUserCmd *cmd )
 			// still and the raw deltas reach the physgun through the command.
 			cmd->mousedx = mx;
 			cmd->mousedy = my;
+
+			// HL2SB diagnostic: is the E-rotate view intercept active at all?
+			static bool s_bRotInterceptDiag = false;
+			if ( !s_bRotInterceptDiag )
+			{
+				s_bRotInterceptDiag = true;
+				Msg( "[HL2SB physgun] E-rotate view intercept active\n" );
+			}
 		}
 		else
 		{

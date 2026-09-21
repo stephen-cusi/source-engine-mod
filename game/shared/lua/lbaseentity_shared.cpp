@@ -2463,6 +2463,60 @@ static int CBaseEntity_GetPhysicsObject (lua_State *L) {
   return CBaseEntity_VPhysicsGetObject( L );
 }
 
+// HL2SB GMod compat (2026-09-22 physgun audit): Entity:GetPhysicsObjectCount()
+// -- how many physics bodies the entity owns (1 for plain props, one per
+// physics bone for ragdolls).
+static int CBaseEntity_GetPhysicsObjectCount (lua_State *L) {
+  IPhysicsObject *pList[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+  int count = luaL_checkentity(L, 1)->VPhysicsGetObjectList( pList, ARRAYSIZE(pList) );
+  lua_pushinteger(L, count);
+  return 1;
+}
+
+// HL2SB GMod compat: Entity:GetPhysicsObjectNum( physNum ) -> PhysObj|nil.
+// GMod hands back the body of physics bone #n; the ragdoll's object list is
+// in physics-bone order, so indexing the list is the same mapping GMod uses.
+static int CBaseEntity_GetPhysicsObjectNum (lua_State *L) {
+  int nNum = luaL_checkint(L, 2);
+  IPhysicsObject *pList[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+  int count = luaL_checkentity(L, 1)->VPhysicsGetObjectList( pList, ARRAYSIZE(pList) );
+  if ( nNum < 0 || nNum >= count || pList[nNum] == NULL )
+  {
+    lua_pushnil(L);
+    return 1;
+  }
+  lua_pushphysicsobject(L, pList[nNum]);
+  return 1;
+}
+
+// HL2SB GMod compat: Entity:MakePhysicsObjectAShadow( allowMove=true, allowRot=true ).
+//
+// Puts the entity's EXISTING physics object under a shadow controller -- the
+// wiki notes it (unlike PhysicsInitShadow) keeps the current body.  This is
+// the machinery player/NPC/carry shadows use: the controller pulls the body
+// toward whatever UpdateShadow is fed while collisions stay live.
+static int CBaseEntity_MakePhysicsObjectAShadow (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  bool bAllowMovement = luaL_optboolean(L, 2, 1) ? true : false;
+  bool bAllowRotation = luaL_optboolean(L, 3, 1) ? true : false;
+
+  IPhysicsObject *pPhys = pEntity->VPhysicsGetObject();
+  if ( pPhys == NULL )
+  {
+    lua_pushboolean(L, 0);
+    return 1;
+  }
+
+  // Soft-shadow budget: bounded speed so the controller never launches the
+  // body, collisions still push it around.
+  pPhys->SetShadow( 30.0f, 20.0f, bAllowMovement, bAllowRotation );
+  pPhys->UpdateShadow( pEntity->GetAbsOrigin(), pEntity->GetAbsAngles(), bAllowMovement, TICK_INTERVAL );
+  pPhys->Wake();
+
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
 // HL2SB GMod compat: Entity:PhysWake().
 //
 // GMod's stock sent_ball.lua:100 calls self:PhysWake() at the end of
@@ -4382,6 +4436,9 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"VPhysicsDestroyObject", CBaseEntity_VPhysicsDestroyObject},
   {"VPhysicsGetObject", CBaseEntity_VPhysicsGetObject},
 {"GetPhysicsObject", CBaseEntity_GetPhysicsObject},
+{"GetPhysicsObjectCount", CBaseEntity_GetPhysicsObjectCount},
+{"GetPhysicsObjectNum", CBaseEntity_GetPhysicsObjectNum},
+{"MakePhysicsObjectAShadow", CBaseEntity_MakePhysicsObjectAShadow},
   {"PhysWake", CBaseEntity_PhysWake},
   {"VPhysicsGetObjectList", CBaseEntity_VPhysicsGetObjectList},
   {"VPhysicsInitNormal", CBaseEntity_VPhysicsInitNormal},
@@ -4491,7 +4548,13 @@ static int luasrc_ents_Create (lua_State *L) {
 
 static int luasrc_ents_GetByIndex (lua_State *L) {
   CBaseEntity *pEnt = CBaseEntity::Instance(luaL_checkint(L, 1));
-  lua_pushentity(L, pEnt);
+  // HL2SB (2026-09-22 physgun audit): push with the DYNAMIC metatable.  The
+  // plain lua_pushentity stamps "CBaseEntity" on everything, so Entity(1) on
+  // the server answered to zero Player methods (GetEyeTrace/GetActiveWeapon/
+  // AddFrozenPhysicsObject all nil) even though they are registered on the
+  // CBasePlayer metatable.  PushLuaInstanceSafe resolves the metatable from
+  // the dynamic type -- which is exactly GMod's Entity( index ) contract.
+  CBaseEntity::PushLuaInstanceSafe( L, pEnt );
   return 1;
 }
 

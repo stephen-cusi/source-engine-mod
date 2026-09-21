@@ -3108,6 +3108,7 @@ ConVar r_drawothermodels( "r_drawothermodels", "1", FCVAR_CHEAT, "0=Off, 1=Norma
 // soft glow all around the held prop.
 C_BaseEntity *HL2SB_PhysgunHeldEntity( void );
 IMaterial *HL2SB_PhysgunGlowMaterial( void );
+extern ConVar physgun_halo;
 
 int C_BaseAnimating::DrawModel( int flags )
 {
@@ -3118,7 +3119,15 @@ int C_BaseAnimating::DrawModel( int flags )
 	// HL2SB GMod compat: the glow shell pass - an unlit additive pass over the
 	// model, then the normal pass below covers the interior, leaving the lit
 	// surface and its edges glowing.
-	if ( HL2SB_PhysgunHeldEntity() == this )
+	// HL2SB (2026-09-22): PROPS ONLY + physgun_halo toggle.  The forced
+	// material override breaks the NPC/player/ragdoll render paths (their
+	// bones/flexes render wrong under the override - the "NPC renders broken
+	// while grabbed" report); those get the dlight wash from the physgun's
+	// EffectUpdate instead.  The halo LIBRARY (modules/halo.lua) is the real
+	// GMod pathway for arbitrary glowing entities and runs independently.
+	if ( HL2SB_PhysgunHeldEntity() == this
+		&& physgun_halo.GetBool()
+		&& !IsNPC() && !IsPlayer() && !IsRagdoll() )
 	{
 		IMaterial *pGlowMaterial = HL2SB_PhysgunGlowMaterial();
 		if ( pGlowMaterial != NULL && !pGlowMaterial->IsErrorMaterial() )

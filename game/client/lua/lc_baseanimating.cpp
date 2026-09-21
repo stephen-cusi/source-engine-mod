@@ -897,6 +897,23 @@ static int CBaseAnimating_TranslatePhysBoneToBone (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Entity:TranslateBoneToPhysBone( bone ) -- the inverse of
+// TranslatePhysBoneToBone: which physics bone the model bone belongs to.
+// -1 for bones with no physics body (the GMod answer).
+static int CBaseAnimating_TranslateBoneToPhysBone (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating( L, 1 );
+  int nBone = luaL_checkint( L, 2 );
+
+  CStudioHdr *pStudioHdr = pEntity->GetModelPtr();
+  if ( pStudioHdr != NULL && nBone >= 0 && nBone < pStudioHdr->numbones() ) {
+    lua_pushinteger( L, pStudioHdr->pBone( nBone )->physicsbone );
+    return 1;
+  }
+
+  lua_pushinteger( L, -1 );
+  return 1;
+}
+
 static int CBaseAnimating_SetServerIntendedCycle (lua_State *L) {
   luaL_checkanimating(L, 1)->SetServerIntendedCycle(luaL_checknumber(L, 2));
   return 0;
@@ -1302,6 +1319,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"SetBodygroup", CBaseAnimating_SetBodygroup},
   {"SetBoneController", CBaseAnimating_SetBoneController},
   {"TranslatePhysBoneToBone", CBaseAnimating_TranslatePhysBoneToBone},
+  {"TranslateBoneToPhysBone", CBaseAnimating_TranslateBoneToPhysBone},
   {"SetCycle", CBaseAnimating_SetCycle},
   {"SetHitboxSet", CBaseAnimating_SetHitboxSet},
   {"SetHitboxSetByName", CBaseAnimating_SetHitboxSetByName},

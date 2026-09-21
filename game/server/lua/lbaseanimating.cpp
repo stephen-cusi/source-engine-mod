@@ -409,6 +409,23 @@ static int CBaseAnimating_TranslatePhysBoneToBone (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Entity:TranslateBoneToPhysBone( bone ) -- the inverse of
+// TranslatePhysBoneToBone: which physics bone the model bone belongs to.
+// -1 for bones with no physics body (the GMod answer).
+static int CBaseAnimating_TranslateBoneToPhysBone (lua_State *L) {
+  CBaseAnimating *pEntity = luaL_checkanimating( L, 1 );
+  int nBone = luaL_checkint( L, 2 );
+
+  CStudioHdr *pStudioHdr = pEntity->GetModelPtr();
+  if ( pStudioHdr != NULL && nBone >= 0 && nBone < pStudioHdr->numbones() ) {
+    lua_pushinteger( L, pStudioHdr->pBone( nBone )->physicsbone );
+    return 1;
+  }
+
+  lua_pushinteger( L, -1 );
+  return 1;
+}
+
 static int CBaseAnimating_SetSequence (lua_State *L) {
   luaL_checkanimating(L, 1)->SetSequence(luaL_checkinteger(L, 2));
   return 0;
@@ -805,6 +822,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"SetPoseParameter", CBaseAnimating_SetPoseParameter},
   {"SetSequence", CBaseAnimating_SetSequence},
   {"TranslatePhysBoneToBone", CBaseAnimating_TranslatePhysBoneToBone},
+  {"TranslateBoneToPhysBone", CBaseAnimating_TranslateBoneToPhysBone},
   {"StudioFrameAdvance", CBaseAnimating_StudioFrameAdvance},
   {"FrameAdvance", CBaseAnimating_FrameAdvance},
   {"BecomeRagdoll", CBaseAnimating_BecomeRagdoll},

@@ -6,6 +6,7 @@
 
 #include "cbase.h"
 #include "view.h"
+#include "luamanager.h"	// HL2SB GMod compat: PostDrawEffects per-frame hook
 #include "iviewrender.h"
 #include "view_shared.h"
 #include "ivieweffects.h"
@@ -2097,6 +2098,20 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 		}
 
 		CleanupMain3DView( view );
+
+		// HL2SB GMod compat: fire GM:PostDrawEffects once per frame, after the
+		// 3D scene (world/entities/viewmodel) and screen-space effects, before
+		// the HUD.  This is the hook GMod's own modules/halo.lua renders on
+		// (it calls hook.Run("PreDrawHalos") inside, so addons' halo.Add calls
+		// made there draw here too).  Skipped for reflections/water views.
+		{
+			extern bool g_bRenderingReflection;
+			if ( L != NULL && !g_bRenderingReflection )
+			{
+				BEGIN_LUA_CALL_HOOK( "PostDrawEffects" );
+				END_LUA_CALL_HOOK( 0, 0 );
+			}
+		}
 
 		if ( m_rbTakeFreezeFrame[ view.m_eStereoEye ] )
 		{

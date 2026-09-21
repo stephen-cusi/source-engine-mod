@@ -437,6 +437,13 @@ void CBaseHudWeaponSelection::UserCmd_NextWeapon(void)
 		extern bool HL2SB_PhysgunIsHolding( void );
 		if ( HL2SB_PhysgunIsHolding() )
 		{
+			// HL2SB diagnostic: did the client wheel branch even run?
+			static bool s_bWheelFwdDiag = false;
+			if ( !s_bWheelFwdDiag )
+			{
+				s_bWheelFwdDiag = true;
+				Msg( "[HL2SB physgun] wheel down while holding -> forwarding push\n" );
+			}
 			engine->ClientCmd( "hl2sb_physgun_push" );
 			return;
 		}

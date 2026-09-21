@@ -811,6 +811,27 @@ static int CBasePlayer_SetAnimation (lua_State *L) {
   return 0;
 }
 
+// HL2SB (2026-09-22): Player:Crouching() -- GMod reads the FL_DUCKING flag
+// (wiki: "Returns whether the player is crouching or not (FL_DUCKING flag)").
+// cf_beast's weapon base halves the spread for a crouching shooter.
+static int CBasePlayer_Crouching (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  lua_pushboolean(L, (pPlayer->GetFlags() & FL_DUCKING) != 0);
+  return 1;
+}
+
+// HL2SB (2026-09-22): Player:DoAnimationEvent( event, data ).  GMod routes the
+// event through the gamemode; the SWEP bases this fork must run (cf_beast)
+// pass the engine's own PLAYER_ANIM value (PLAYER_ATTACK1) expecting the third
+// person model to swing, so play it through the player animation directly.
+// The optional second argument is accepted and ignored for signature parity.
+static int CBasePlayer_DoAnimationEvent (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const int iEvent = (int)luaL_checkint(L, 2);
+  pPlayer->SetAnimation((PLAYER_ANIM)iEvent);
+  return 0;
+}
+
 static int CBasePlayer_SetAnimationExtension (lua_State *L) {
   luaL_checkplayer(L, 1)->SetAnimationExtension(luaL_checkstring(L, 2));
   return 0;
@@ -1571,6 +1592,164 @@ static int CBasePlayer_GetInfoNum (lua_State *L) {
   return 1;
 }
 
+// ---------------------------------------------------------------------------
+// HL2SB GMod compat (2026-09-22 physgun audit): the per-player frozen-object
+// list.  GMod's Player:AddFrozenPhysicsObject / Player:PhysgunUnfreeze /
+// Player:UnfreezePhysicsObjects and the physgun's R behaviours all run on one
+// list per player; the physgun freeze path feeds it and reload drains it.
+// SERVER only -- freezing is a server concept.
+// ---------------------------------------------------------------------------
+#ifndef CLIENT_DLL
+
+struct hl2sb_frozenobject_t
+{
+	EHANDLE hEnt;                 // owner entity of the frozen body
+	IPhysicsObject *pPhys;        // the frozen body
+};
+
+static CUtlVector< hl2sb_frozenobject_t > s_aFrozenObjects[ MAX_PLAYERS ];
+
+// The physobj pointer dies with the entity that owns it, so an entry may only
+// be touched while the entity is alive AND the body is still in its list
+// (ragdolls rebuild/replace bodies).  Anything else is dropped, never touched.
+static bool HL2SB_FrozenEntryValid( hl2sb_frozenobject_t &entry )
+{
+	CBaseEntity *pEnt = entry.hEnt;
+	if ( pEnt == NULL || entry.pPhys == NULL )
+		return false;
+
+	IPhysicsObject *pList[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+	int count = pEnt->VPhysicsGetObjectList( pList, ARRAYSIZE(pList) );
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( pList[i] == entry.pPhys )
+			return true;
+	}
+	return false;
+}
+
+static void HL2SB_FrozenUnfreezeEntry( hl2sb_frozenobject_t &entry )
+{
+	entry.pPhys->EnableMotion( true );
+	entry.pPhys->Wake();
+}
+
+// One entry per (entity, body) pair.
+void HL2SB_PlayerAddFrozenObject( CBasePlayer *pPlayer, CBaseEntity *pEnt, IPhysicsObject *pPhys )
+{
+	if ( pPlayer == NULL || pEnt == NULL || pPhys == NULL )
+		return;
+
+	int iSlot = pPlayer->entindex();
+	if ( iSlot < 0 || iSlot >= MAX_PLAYERS )
+		return;
+
+	CUtlVector< hl2sb_frozenobject_t > &list = s_aFrozenObjects[ iSlot ];
+	for ( int i = 0; i < list.Count(); ++i )
+	{
+		if ( list[i].hEnt == pEnt && list[i].pPhys == pPhys )
+			return;
+	}
+
+	hl2sb_frozenobject_t entry;
+	entry.hEnt = pEnt;
+	entry.pPhys = pPhys;
+	list.AddToTail( entry );
+}
+
+// Unfreeze every frozen body of the entity under the player's crosshair.
+// Returns how many bodies were unfrozen (GMod: Player:PhysgunUnfreeze).
+int HL2SB_PlayerUnfreezeAimed( CBasePlayer *pPlayer )
+{
+	if ( pPlayer == NULL )
+		return 0;
+
+	int iSlot = pPlayer->entindex();
+	if ( iSlot < 0 || iSlot >= MAX_PLAYERS )
+		return 0;
+
+	Vector vForward;
+	pPlayer->EyeVectors( &vForward, NULL, NULL );
+	Vector vecEye = pPlayer->EyePosition();
+	Vector vecEnd = vecEye + vForward * MAX_TRACE_LENGTH;
+
+	trace_t tr;
+	UTIL_TraceLine( vecEye, vecEnd, MASK_SHOT, pPlayer, COLLISION_GROUP_NONE, &tr );
+	if ( !tr.DidHitNonWorldEntity() || tr.m_pEnt == NULL )
+		return 0;
+
+	CBaseEntity *pTarget = tr.m_pEnt;
+	CUtlVector< hl2sb_frozenobject_t > &list = s_aFrozenObjects[ iSlot ];
+
+	int nUnfrozen = 0;
+	for ( int i = list.Count() - 1; i >= 0; --i )
+	{
+		if ( list[i].hEnt != pTarget )
+			continue;
+
+		if ( HL2SB_FrozenEntryValid( list[i] ) )
+		{
+			HL2SB_FrozenUnfreezeEntry( list[i] );
+			++nUnfrozen;
+		}
+		list.Remove( i );
+	}
+	return nUnfrozen;
+}
+
+// Unfreeze everything this player froze. Returns the body count
+// (GMod: Player:UnfreezePhysicsObjects / double-tap R).
+int HL2SB_PlayerUnfreezeAll( CBasePlayer *pPlayer )
+{
+	if ( pPlayer == NULL )
+		return 0;
+
+	int iSlot = pPlayer->entindex();
+	if ( iSlot < 0 || iSlot >= MAX_PLAYERS )
+		return 0;
+
+	CUtlVector< hl2sb_frozenobject_t > &list = s_aFrozenObjects[ iSlot ];
+
+	int nUnfrozen = 0;
+	for ( int i = list.Count() - 1; i >= 0; --i )
+	{
+		if ( HL2SB_FrozenEntryValid( list[i] ) )
+		{
+			HL2SB_FrozenUnfreezeEntry( list[i] );
+			++nUnfrozen;
+		}
+		list.Remove( i );
+	}
+	return nUnfrozen;
+}
+
+// Player:AddFrozenPhysicsObject( ent, physobj ) -- records a frozen body.
+static int CBasePlayer_AddFrozenPhysicsObject (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  CBaseEntity *pEnt = luaL_checkentity(L, 2);
+  IPhysicsObject *pPhys = luaL_checkphysicsobject(L, 3);
+  HL2SB_PlayerAddFrozenObject( pPlayer, pEnt, pPhys );
+  return 0;
+}
+
+// Player:PhysgunUnfreeze() -> number -- unfreezes the frozen bodies of the
+// entity under the crosshair, returns the count (the single-R behaviour).
+static int CBasePlayer_PhysgunUnfreeze (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  lua_pushinteger( L, HL2SB_PlayerUnfreezeAimed( pPlayer ) );
+  return 1;
+}
+
+// Player:UnfreezePhysicsObjects() -- unfreezes everything this player froze
+// (the double-R behaviour).
+static int CBasePlayer_UnfreezePhysicsObjects (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  HL2SB_PlayerUnfreezeAll( pPlayer );
+  return 0;
+}
+
+#endif // CLIENT_DLL
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"LagCompensation", CBasePlayer_LagCompensation},
   {"GetInfo", CBasePlayer_GetInfo},
@@ -1598,6 +1777,12 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"FindUseEntity", CBasePlayer_FindUseEntity},
   {"GetActiveWeapon", CBasePlayer_GetActiveWeapon},
   {"GetAmmoCount", CBasePlayer_GetAmmoCount},
+#ifndef CLIENT_DLL
+  // HL2SB GMod compat (2026-09-22 physgun audit): the per-player frozen list.
+  {"AddFrozenPhysicsObject", CBasePlayer_AddFrozenPhysicsObject},
+  {"PhysgunUnfreeze", CBasePlayer_PhysgunUnfreeze},
+  {"UnfreezePhysicsObjects", CBasePlayer_UnfreezePhysicsObjects},
+#endif
   {"GetAutoaimVector", CBasePlayer_GetAutoaimVector},
   {"GetShootPos", CBasePlayer_GetShootPos},
   {"GetAimVector", CBasePlayer_GetAimVector},
@@ -1687,6 +1872,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SetAmmoCount", CBasePlayer_SetAmmoCount},
   {"SetAnimation", CBasePlayer_SetAnimation},
   {"SetAnimationExtension", CBasePlayer_SetAnimationExtension},
+  // HL2SB (2026-09-22): GMod names -- cf_beast's weapon base calls both.
+  {"Crouching", CBasePlayer_Crouching},
+  {"DoAnimationEvent", CBasePlayer_DoAnimationEvent},
   {"SetBloodColor", CBasePlayer_SetBloodColor},
   {"SetFOV", CBasePlayer_SetFOV},
   {"SetLadderNormal", CBasePlayer_SetLadderNormal},

@@ -52,6 +52,7 @@
 #include "usermessages.h"
 #ifdef CLIENT_DLL
 #include "c_user_message_register.h"	// USER_MESSAGE_REGISTER (client hook)
+#include "client_entity_list.h"			// HL2SB_RPC: entity index -> C_BaseEntity
 #endif
 
 
@@ -1590,6 +1591,41 @@ static void __MsgFunc_HL2SB_NW( bf_read &read )
 		return;
 
 	HL2SB_NWReplicatedStore( entindex, szName, tag, payload, len );
+}
+
+// HL2SB (2026-09-22): Entity:CallOnClient( name, data ) receiver -- the server
+// sends SHORT entindex, STRING functionName, STRING data; we resolve the
+// client entity and call its Lua method of that name with the data string as
+// the only argument (GMod's contract: the SWEP's function runs on the client
+// with `data` as its first parameter).
+static void __MsgFunc_HL2SB_RPC( bf_read &read )
+{
+	int entindex = read.ReadShort();
+	char szFn[ 128 ];
+	read.ReadString( szFn, sizeof( szFn ) );
+	char szData[ 256 ];
+	read.ReadString( szData, sizeof( szData ) );
+
+	if ( read.IsOverflowed() || szFn[ 0 ] == '\0' )
+		return;
+
+	IClientEntity *pIClient = cliententitylist->GetClientEntity( entindex );
+	C_BaseEntity *pEnt = pIClient ? pIClient->GetBaseEntity() : NULL;
+	if ( pEnt == NULL )
+		return;
+
+	// The in-game state (global L); hooks only arrive once it exists.
+	if ( L == NULL )
+		return;
+
+	lua_pushentity( L, pEnt );			// [ent]
+	lua_getfield( L, -1, szFn );		// [ent, fn]  (resolved through __index)
+	if ( lua_isfunction( L, -1 ) ) {
+		lua_pushvalue( L, -2 );			// [ent, fn, self]
+		lua_pushstring( L, szData );	// [ent, fn, self, data]
+		luasrc_pcall( L, 2, 0, 0 );		// protected: a bad callback must not kill the frame
+	}
+	lua_pop( L, 2 );					// drop fn (and any error remnant) + ent
 }
 // Hooked in luasrc_openlibs' client tail (usermessages->HookMessage).
 #endif // CLIENT_DLL

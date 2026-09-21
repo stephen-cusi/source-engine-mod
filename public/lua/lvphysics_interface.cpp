@@ -1060,6 +1060,90 @@ static int IPhysicsObject_SetVelocity (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB GMod compat: PhysObj:UpdateShadow( position, angle, frameTime ).
+**
+** Moves a physics shadow (or any object driven by a shadow controller) toward
+** a target pose while keeping collision response -- what the physgun, the
+** +use carry and the crane use instead of SetPos.  The vphysics entry takes
+** (pos, ang, tempDisableGravity, timeOffset); GMod's Lua surface passes the
+** frame time and no gravity override, so gravity stays on.
+*/
+static int IPhysicsObject_UpdateShadow (lua_State *L) {
+  Vector position = luaL_checkvector(L, 2);
+  QAngle angles = luaL_checkangle(L, 3);
+  float frameTime = (float)luaL_checknumber(L, 4);
+  bool bDisableGravity = luaL_optboolean(L, 5, 0) ? true : false;
+  luaL_checkphysicsobject(L, 1)->UpdateShadow(position, angles, bDisableGravity, frameTime);
+  return 0;
+}
+
+/*
+** HL2SB GMod compat: PhysObj:ComputeShadowControl( params [, deltaTime] ).
+**
+** Drives ANY physics object (shadow or not) toward params.pos / params.angle.
+** The table members and their defaults are the ShadowControlParams structure
+** from the wiki; delta (the simulation step) may also be handed in as the
+** legacy second argument -- ENTITY:PhysicsSimulate's deltaTime is the caller
+** that does that.
+*/
+static int IPhysicsObject_ComputeShadowControl (lua_State *L) {
+  luaL_checktype(L, 2, LUA_TTABLE);
+
+  hlshadowcontrol_params_t params;
+
+  lua_getfield(L, 2, "pos");
+  params.targetPosition = lua_isnil(L, -1) ? vec3_origin : luaL_checkvector(L, -1);
+  lua_pop(L, 1);
+
+  lua_getfield(L, 2, "angle");
+  params.targetRotation = lua_isnil(L, -1) ? vec3_angle : luaL_checkangle(L, -1);
+  lua_pop(L, 1);
+
+  lua_getfield(L, 2, "maxangular");
+  params.maxAngular = lua_isnil(L, -1) ? 1.0f : (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+
+  lua_getfield(L, 2, "maxangulardamp");
+  params.maxDampAngular = lua_isnil(L, -1) ? 1.0f : (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+
+  lua_getfield(L, 2, "maxspeed");
+  params.maxSpeed = lua_isnil(L, -1) ? 1.0f : (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+
+  lua_getfield(L, 2, "maxspeeddamp");
+  params.maxDampSpeed = lua_isnil(L, -1) ? 1.0f : (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+
+  lua_getfield(L, 2, "dampfactor");
+  params.dampFactor = lua_isnil(L, -1) ? 1.0f : (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+
+  lua_getfield(L, 2, "teleportdistance");
+  params.teleportDistance = lua_isnil(L, -1) ? 0.0f : (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+
+  // Wiki: "Cannot be 0! Will give errors if you do." -- a zero seconds-to-arrive
+  // divides by zero inside the controller, so clamp to the smallest tick.
+  float secondsToArrive = 0.0f;
+  lua_getfield(L, 2, "secondstoarrive");
+  secondsToArrive = lua_isnil(L, -1) ? (TICK_INTERVAL * 2.0f) : (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+  secondsToArrive = MAX(secondsToArrive, TICK_INTERVAL);
+
+  float deltaTime = 0.1f;
+  lua_getfield(L, 2, "delta");
+  if (!lua_isnil(L, -1))
+    deltaTime = (float)luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+  if (lua_isnumber(L, 3))               // legacy (params, deltaTime) shape
+    deltaTime = (float)lua_tonumber(L, 3);
+
+  luaL_checkphysicsobject(L, 1)->ComputeShadowControl(params, secondsToArrive, deltaTime);
+  return 0;
+}
+
 /* HL2SB: same GMod one-argument shape as AddVelocity above. */
 static int IPhysicsObject_SetVelocityInstantaneous (lua_State *L) {
   Vector velocity = luaL_checkvector(L, 2);
@@ -1173,6 +1257,7 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"GetInvMass", IPhysicsObject_GetInvMass},
   {"GetMass", IPhysicsObject_GetMass},
   {"GetMassCenterLocalSpace", IPhysicsObject_GetMassCenterLocalSpace},
+  {"GetMassCenter", IPhysicsObject_GetMassCenterLocalSpace},  /* HL2SB: GMod's name (local-space center of mass) */
   {"GetMaterialIndex", IPhysicsObject_GetMaterialIndex},
   {"GetName", IPhysicsObject_GetName},
   {"GetPosition", IPhysicsObject_GetPosition},
@@ -1210,6 +1295,8 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"SetMass", IPhysicsObject_SetMass},
   {"SetMaterialIndex", IPhysicsObject_SetMaterialIndex},
   {"SetShadow", IPhysicsObject_SetShadow},
+  {"UpdateShadow", IPhysicsObject_UpdateShadow},
+  {"ComputeShadowControl", IPhysicsObject_ComputeShadowControl},
   {"SetVelocity", IPhysicsObject_SetVelocity},
   {"SetVelocityInstantaneous", IPhysicsObject_SetVelocityInstantaneous},
   {"Sleep", IPhysicsObject_Sleep},

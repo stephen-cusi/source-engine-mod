@@ -232,8 +232,26 @@ void DispatchEffect( const char *pName, const CEffectData &data )
 	// prints and neither "Lua effect ... created" nor "no Lua effect template"
 	// follows, the name fell into one of the silent exits inside
 	// HL2SB_CreateLuaEffect (ref failure / clienteffects list full).
-	luasrc_LuaInfoMsgF( "[HL2SB] DispatchEffect '%s' flags=0x%X ent=%d\n",
-		pName, (unsigned int)data.m_fFlags, data.entindex() );
+	// HL2SB (2026-09-22): once per name now -- every dispatch of an engine
+	// effect printed it twice (two call sites) and flooded the console.
+	static char s_szDispatchSeen[ 64 ][ 96 ];
+	static int s_nDispatchSeen = 0;
+	bool bDispatchNew = true;
+	for ( int i = 0; i < s_nDispatchSeen; ++i )
+	{
+		if ( !Q_stricmp( s_szDispatchSeen[ i ], pName ) )
+		{
+			bDispatchNew = false;
+			break;
+		}
+	}
+	if ( bDispatchNew && s_nDispatchSeen < 64 )
+	{
+		Q_strncpy( s_szDispatchSeen[ s_nDispatchSeen ], pName, sizeof( s_szDispatchSeen[ 0 ] ) );
+		++s_nDispatchSeen;
+		luasrc_LuaInfoMsgF( "[HL2SB] DispatchEffect '%s' flags=0x%X ent=%d\n",
+			pName, (unsigned int)data.m_fFlags, data.entindex() );
+	}
 
 	if ( HL2SB_CreateLuaEffect( pName, data ) )
 	{

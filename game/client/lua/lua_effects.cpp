@@ -558,7 +558,25 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 		// runs the engine's "BloodImpact" and 'cball_bounce' its own callback.
 		// The old wording ("no Lua effect template for ...") read as a failure
 		// and sent every debugging session down a wrong trail (2026-09-21).
-		luasrc_LuaInfoMsgF( "[HL2SB] effect '%s': no Lua template -> engine callback\n", pszName );
+		// HL2SB (2026-09-22): once PER NAME -- every dispatch of an engine
+		// effect printed this twice (two call sites), flooding the console.
+		static char s_szNoTemplateSeen[ 64 ][ 96 ];
+		static int s_nNoTemplateSeen = 0;
+		bool bNoTemplateNew = true;
+		for ( int i = 0; i < s_nNoTemplateSeen; ++i )
+		{
+			if ( !Q_stricmp( s_szNoTemplateSeen[ i ], pszName ) )
+			{
+				bNoTemplateNew = false;
+				break;
+			}
+		}
+		if ( bNoTemplateNew && s_nNoTemplateSeen < 64 )
+		{
+			Q_strncpy( s_szNoTemplateSeen[ s_nNoTemplateSeen ], pszName, sizeof( s_szNoTemplateSeen[ 0 ] ) );
+			++s_nNoTemplateSeen;
+			luasrc_LuaInfoMsgF( "[HL2SB] effect '%s': no Lua template -> engine callback\n", pszName );
+		}
 		return false;
 	}
 
