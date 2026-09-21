@@ -654,7 +654,15 @@ LUALIB_API int luaopen_ACTIVITY( lua_State *L )
     // the above advice and registers all enumerations.
     // Leaving Andrew's advice here for future reference.
     LUA_SET_ENUM_LIB_BEGIN( L, "ACTIVITY" );
+    // HL2SB (2026-09-21): one-shot bisection instrumentation for the
+    // "ACTIVITY FAILED: attempt to index a string value" failure.  The
+    // REGISTER_SHARED_ACTIVITY macro (activitylist.h) indexes slot -3, so if
+    // the two values BEGIN left (_E and the new enum table) are not what we
+    // think, THIS line says so before the first registration runs.
+    Msg( "[HL2SB] ACT pre-reg: top=%d _E=%s T=%s\n",
+        lua_gettop( L ), luaL_typename( L, -2 ), luaL_typename( L, -1 ) );
     ActivityList_RegisterSharedActivities();
+    Msg( "[HL2SB] ACT post-reg: top=%d\n", lua_gettop( L ) );
 
     // HL2SB: the registry above is the curated HL2 shared-activity list (877
     // entries), and a handful of members of the ai_activity.h enum are NOT part

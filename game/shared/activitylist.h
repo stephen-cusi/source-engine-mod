@@ -108,7 +108,6 @@ extern int ActivityList_HighestIndex();
     lua_pushstring( L, #_n );                       \
     lua_pushinteger( L, _n );                       \
     lua_settable( L, -3 );                          \
-    lua_pushstring( L, #_n );                       \
     lua_pushinteger( L, _n );                       \
     lua_setglobal( L, #_n );
 #endif

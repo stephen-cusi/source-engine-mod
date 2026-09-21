@@ -124,9 +124,13 @@ bool ActivityList_RegisterSharedActivity( const char *pszActivityName, int iActi
 	// so the failing entry and any preceding collision are on the record.
 	{
 		static int s_nRegistered = 0;
-		if ( ( ++s_nRegistered % 200 ) == 0 )
+		++s_nRegistered;
+		// one-shot bisect: name the first few entries and the stack top, so a
+		// failure before the 200th entry still names its exact spot
+		if ( s_nRegistered <= 3 || ( s_nRegistered % 200 ) == 0 )
 		{
-			Msg( "[HL2SB] activity probe: %d registered, now '%s'\n", s_nRegistered, pszActivityName );
+			Msg( "[HL2SB] activity probe: #%d '%s' top=%d\n", s_nRegistered,
+				pszActivityName, ( L != NULL ) ? lua_gettop( L ) : -1 );
 		}
 	}
 
