@@ -3314,6 +3314,37 @@ static int CBaseEntity_GetRenderGroup (lua_State *L) {
 }
 
 //-----------------------------------------------------------------------------
+// HL2SB (2026-09-21): Entity:GetAimVector() -- wiki: Player:GetAimVector is the
+// player form (already bound in lbaseplayer_shared); NPC:GetAimVector aims at
+// the NPC's current enemy and defaults to Entity:GetForward with none (the
+// engine's weapon-spread noise is deliberately not reproduced).  scp173 reads
+// each NPC victim's aim to build its vision cone; with no binding the call
+// raised once per victim per think.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_GetAimVector (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  Vector vecAim;
+#ifdef GAME_DLL
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC != NULL )
+  {
+    CBaseEntity *pEnemy = pNPC->GetEnemy();
+    if ( pEnemy != NULL )
+      vecAim = pEnemy->WorldSpaceCenter() - pNPC->EyePosition();
+    else
+      AngleVectors( pNPC->GetAbsAngles(), &vecAim );
+  }
+  else
+#endif
+  {
+    AngleVectors( pEntity->GetAbsAngles(), &vecAim );
+  }
+  VectorNormalize( vecAim );
+  lua_pushvector( L, vecAim );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
 // HL2SB GMod compat: Entity:NextThink( time ) (wiki: shared, ENT:Think only).
 // GMod scripted entities drive their think rate through it -- scp173's
 // ENT:Think ends in self:NextThink( CurTime() ) and every call died with
@@ -4023,6 +4054,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"AddRelationship", CBaseEntity_AddRelationship},
 #endif
   {"GetRenderGroup", CBaseEntity_GetRenderGroup},
+  {"GetAimVector", CBaseEntity_GetAimVector},
   {"NextThink", CBaseEntity_NextThink},
 #ifdef GAME_DLL
   {"SetHullType", CBaseEntity_SetHullType},

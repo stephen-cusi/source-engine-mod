@@ -78,8 +78,13 @@ LUA_BINDING_BEGIN( Entities, CreateByName, "library", "Creates an entity by the 
     }
     else if ( pEntity != NULL )
     {
-        Warning( "[HL2SB] ents.Create('%s'): created a non-scripted '%s' - no Lua class will be bound\n",
-            pszClassName, pEntity->GetClassname() );
+        // HL2SB (2026-09-21): a plain ENGINE entity is a perfectly legal
+        // ents.Create target -- GMod's wiki documents exactly this and the
+        // caller still gets a working, unspawned entity (it calls :Spawn()
+        // itself).  npc_bullseye (scp049's hate target), prop_physics and
+        // env_shake (Nuke Pack blasts) all come through here, and each one
+        // printed this Warning once per spawn.  The only interesting failure
+        // is pEntity == NULL above, which already has its own diagnostic.
     }
 
     CBaseEntity::PushLuaInstanceSafe( L, pEntity );
