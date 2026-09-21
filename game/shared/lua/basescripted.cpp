@@ -147,7 +147,22 @@ void CBaseScripted::LoadScriptedEntity( void )
 		if ( lua_isfunction( L, -1 ) )
 		{
 			lua_remove( L, -2 );
-			lua_pushstring( L, GetClassname() );
+			// HL2SB (2026-09-21, the "ball shows the C4 model" bug): look the
+			// script up by the SCRIPTED classname.  The client's GetClassname()
+			// collapses every scripted entity to the FIRST-registered SENT
+			// ("cod-c4") through the classmap's reverse lookup, so binding by
+			// it gave EVERY scripted entity the cod_c4 client table on the
+			// client -- its ENT:Draw is self:DrawModel(), which is why the
+			// ball rendered a bomb model and the nyan grenade rendered the
+			// suitcase instead of their sprites.
+#ifdef CLIENT_DLL
+			const char *pszScriptClass = GetScriptedClassname();
+#else
+			const char *pszScriptClass = GetClassname();
+#endif
+			if ( pszScriptClass == NULL || pszScriptClass[0] == 0 )
+				pszScriptClass = GetClassname();
+			lua_pushstring( L, pszScriptClass );
 			luasrc_pcall( L, 1, 1, 0 );
 		}
 		else
@@ -502,6 +517,19 @@ RenderGroup_t CBaseScripted::GetRenderGroup( void )
 int CBaseScripted::DrawModel( int flags )
 {
 #ifdef LUA_SDK
+	// HL2SB temp probe (2026-09-21): sent_ball displays its heli-bomb shadow
+	// model although its ENT:Draw replaces the draw.  Log EVERY DrawModel entry
+	// for this one class: entry flags tell which pass drew what.
+	if ( V_stricmp( GetScriptedClassname(), "sent_ball" ) == 0 )
+	{
+		static int s_nBallDrawProbe = 0;
+		if ( s_nBallDrawProbe < 200 )
+		{
+			++s_nBallDrawProbe;
+			luasrc_LuaInfoMsgF( "[HL2SB] ball draw #%d: flags=0x%X mi=%d model=%s",
+				s_nBallDrawProbe, (unsigned)flags, GetModelIndex(), GetModel() ? "ok" : "NULL" );
+		}
+	}
 	// HL2SB: the script decides which of the draw hooks runs, exactly as GMod's
 	// wiki describes it -- ENTITY:RenderOverride() first, then the render group
 	// picks between ENTITY:DrawTranslucent() and ENTITY:Draw().
@@ -549,6 +577,19 @@ int CBaseScripted::DrawModel( int flags )
 		pszFunc = "DrawTranslucent";
 	else if ( bHasDraw )
 		pszFunc = "Draw";
+
+#ifdef CLIENT_DLL
+	if ( V_stricmp( GetClassname(), "sent_ball" ) == 0 )
+	{
+		static int s_nBallPath = 0;
+		if ( s_nBallPath < 60 )
+		{
+			++s_nBallPath;
+			luasrc_LuaInfoMsgF( "[HL2SB] ball path #%d: pszFunc=%s model=%s\n",
+				s_nBallPath, pszFunc ? pszFunc : "(NULL->fallback)", GetModel() ? "ok" : "NULL" );
+		}
+	}
+#endif
 
 	if ( pszFunc != NULL )
 	{
