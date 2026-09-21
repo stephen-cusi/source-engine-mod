@@ -60,6 +60,7 @@ public:
 	// model specific
 	virtual int DrawModel( int flags );
 
+
 	// HL2SB GMod compat: answers the script's ENT.RenderGroup, which is what picks
 	// between ENTITY:Draw and ENTITY:DrawTranslucent (and sorts the entity
 	// translucently).  A sprite entity that only defines DrawTranslucent -- the
@@ -79,10 +80,8 @@ public:
 	// weapon_nyangun's bomb entity explodes from.
 	virtual void	VPhysicsCollision( int index, gamevcollisionevent_t *pEvent );
 
-	// HL2SB GMod compat (2026-09-21): ENT:Use( activator, caller ).  GMod
-	// routes the player's +use to every scripted entity's Use handler; this
-	// fork never called SetUse(), so E did nothing on all SENTs (the Nuke
-	// Pack arms its bombs through it -- "cannot arm, cannot detonate").
+	// HL2SB GMod compat (2026-09-21): ENT:Use( activator, caller ) -- GMod
+	// routes +use to every scripted entity; see basescripted.cpp UseHandler.
 	virtual int		ObjectCaps( void );
 	void	UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 #endif

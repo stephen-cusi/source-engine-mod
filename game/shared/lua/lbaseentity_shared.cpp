@@ -27,6 +27,7 @@
 #include "lrecipientfilter.h"
 #include "ai_basenpc.h"				// HL2SB: NPC:AddEntityRelationship (CAI_BaseNPC::AddEntityRelationship)
 #include "eventqueue.h"				// HL2SB: Entity:Fire's delay argument (g_EventQueue.AddEvent)
+#include "particle_parse.h"			// HL2SB: Entity:StopParticles (StopParticleEffects)
 #endif
 #include "lbaseplayer_shared.h"
 #include "lbasecombatweapon_shared.h"
@@ -1857,9 +1858,25 @@ static int CBaseEntity_SetAbsOrigin (lua_State *L) {
   return 0;
 }
 
-// HL2SB GMod SWEP compat: GMod calls ent:SetPos(v) (alias for SetAbsOrigin).
+// HL2SB (2026-09-21): GMod's Entity:SetPos moves the entity's PHYSICS OBJECT
+// with it (wiki: everything except ragdolls).  This was a bare SetAbsOrigin,
+// which leaves the vphysics object at the old position -- and for a
+// PhysicsInit(SOLID_VPHYSICS) scripted entity like scp173 the physics shadow
+// then dragged the entity straight back every tick, so TeleportToPos's
+// SetPos could never move it: the statue stood still forever.  Route through
+// Teleport(), which moves both the networked origin and the vphysics object.
 static int CBaseEntity_SetPos (lua_State *L) {
-  luaL_checkentity(L, 1)->SetAbsOrigin(luaL_checkvector(L, 2));
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const Vector &vecOrigin = luaL_checkvector(L, 2);
+#ifdef GAME_DLL
+  {
+    static bool s_diag = false;
+    if ( !s_diag ) { s_diag = true; luasrc_LuaInfoMsgF( "[scp173diag] SetPos->Teleport enter\n" ); }
+  }
+  pEntity->Teleport( &vecOrigin, NULL, NULL );
+#else
+  pEntity->SetAbsOrigin(vecOrigin);
+#endif
   return 0;
 }
 
@@ -2760,15 +2777,23 @@ static int CBaseEntity_GetVar (lua_State *L) {
 
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: Entity:SetOverlayText( text ) / Entity:GetOverlayText().
-// GMod shows this text over the entity (wiremod-style); here it is stored so
-// scripts can round-trip it.  Rendering the overlay is not wired up yet --
-// no addon under test reads it back visually.
+// GMod shows this text over the entity while a player aims at it (the
+// Nuke Pack's bombs live on it: " Unarmed " / " ARMED ").
+//
+// Server realm routes through the engine's own entity-text overlay
+// (CBaseEntity::EntityText -> NDebugOverlay), which is exactly what GMod's
+// implementation does; the overlay is re-issued every Think, so a 1s duration
+// keeps it up between ticks.  The NW dict copy stays for scripts that read
+// the text back and for the client realm (no world renderer there yet).
 //-----------------------------------------------------------------------------
 static int CBaseEntity_SetOverlayText (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   const char *pszValue = luaL_optstring(L, 2, "");
   HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, "overlaytext", true );
   if (p) p->s = pszValue;
+#ifndef CLIENT_DLL
+  pEntity->EntityText( 0, pszValue, 1.0f );
+#endif
   return 0;
 }
 
@@ -3187,6 +3212,180 @@ static int CBaseEntity_AddEntityRelationship (lua_State *L) {
     return 0;
 
   pNPC->AddEntityRelationship( pTarget, (Disposition_t)nDisposition, nPriority );
+  return 0;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: NPC:GetNPCState() (wiki: returns the NPC_STATE enum,
+// server realm).  scp173 keys "can anyone see me" on
+//     currVictim:GetNPCState() != NPC_STATE_DEAD
+// With no binding the call errored inside its think coroutine every tick and
+// the statue never moved.  Non-NPC entities answer NPC_STATE_NONE the same
+// way CBaseEntity::MyNPCPointer() answers NULL.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_GetNPCState (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  lua_pushinteger( L, pNPC ? (int)pNPC->GetState() : NPC_STATE_NONE );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: NPC:AddRelationship( relationstring ) (wiki: single
+// string "npc_class D_FR 9999", server realm).  scp173's OnEntityCreated hook
+// calls ent:AddRelationship("npc_scp173 D_FR 9999") so every stock NPC fears
+// the statue.  The string goes straight to CAI_BaseNPC::AddRelationship, the
+// same parser the ai_addrelationship console command uses.  Non-NPC entities
+// are silently ignored (the GMod call is also an NPC-only no-op there).
+//-----------------------------------------------------------------------------
+static int CBaseEntity_AddRelationship (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  const char *pszRelationship = luaL_checkstring( L, 2 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL )
+    return 0;
+  pNPC->AddRelationship( pszRelationship, NULL );
+  return 0;
+}
+#endif
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:GetRenderGroup() (wiki: returns the RENDERGROUP
+// enum).  scp173's clientside coroutine asks EVERY entity for its render
+// group and reports it to the server, whose line-of-sight check then tells
+// "watched through a window" from "watched through a wall".  Scripted
+// entities answer ENT.RenderGroup (CBaseScripted::GetRenderGroup already
+// resolves it, both realms); everything else -- world props, doors -- answers
+// the opaque group, GMod's usual answer for solid non-scripted geometry.
+// The one lie: a translucent-material prop also reads opaque here, which
+// makes the statue more conservative (it freezes), never less.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_GetRenderGroup (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CBaseScripted *pScripted = dynamic_cast< CBaseScripted * >( pEntity );
+#ifdef CLIENT_DLL
+  lua_pushinteger( L, pScripted ? (int)pScripted->GetRenderGroup() : RENDER_GROUP_OPAQUE_ENTITY );
+#else
+  // Only the client ever asks (scp173's settings coroutine is autorun/client),
+  // and CBaseScripted::GetRenderGroup / RenderGroup_t are client-only too.
+  // Answer GMod's opaque group (7) for anything a server-side script asks.
+  (void)pScripted;
+  lua_pushinteger( L, 7 );  // RENDER_GROUP_OPAQUE_ENTITY
+#endif
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:NextThink( time ) (wiki: shared, ENT:Think only).
+// GMod scripted entities drive their think rate through it -- scp173's
+// ENT:Think ends in self:NextThink( CurTime() ) and every call died with
+// "attempt to call a nil value (method 'NextThink')", so the statue thought
+// exactly never.  Server routes into SetNextThink; the client has no
+// server-think clock and routes into SetNextClientThink (the same split
+// CBaseScripted::Spawn already makes).  GMod returns true so scripts can
+// tail-call it; we do the same.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_NextThink (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  float flTime = (float)luaL_checknumber( L, 2 );
+#ifdef CLIENT_DLL
+  pEntity->SetNextClientThink( flTime );
+#else
+  pEntity->SetNextThink( flTime );
+#endif
+  lua_pushboolean( L, true );
+  return 1;
+}
+
+#ifdef GAME_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the small slice of GMod's NPC scripting API npc_scp173
+// uses.  All are CAI_BaseNPC calls through MyNPCPointer(); non-NPC entities
+// are silently ignored, matching how GMod's own NPC methods behave on
+// non-NPC entities (the calls come from ENT code that can also run on the
+// plain scripted "anim" variant).
+//
+//   SetHullType( hull ) / SetHullSizeNormal()   -- npc_scp173 Initialize
+//   CapabilitiesAdd( caps )                     -- bit.bor of the CAP_* globals
+//   SetCondition( cond ) / SetEnemy( ent )      -- the chase-enemy path
+//   SetSchedule( sched )                        -- SCHED_* ids; resolves through
+//                                                 GetScheduleOfType, the same
+//                                                 translation Source's own
+//                                                 ai_schedule tasks use
+//   StopMoving()                                -- the freeze path
+//-----------------------------------------------------------------------------
+static int CBaseEntity_SetHullType (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL )
+    return 0;
+  static bool s_diag = false;
+  if ( !s_diag ) { s_diag = true; luasrc_LuaInfoMsgF( "[scp173diag] SetHullType enter\n" ); }
+  pNPC->SetHullType( (Hull_t)luaL_checkint( L, 2 ) );
+  luasrc_LuaInfoMsgF( "[scp173diag] SetHullType done\n" );
+  return 0;
+}
+
+static int CBaseEntity_SetHullSizeNormal (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL )
+    return 0;
+  pNPC->SetHullSizeNormal();
+  luasrc_LuaInfoMsgF( "[scp173diag] SetHullSizeNormal done\n" );
+  return 0;
+}
+
+static int CBaseEntity_CapabilitiesAdd (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL )
+    return 0;
+  pNPC->CapabilitiesAdd( luaL_checkint( L, 2 ) );
+  luasrc_LuaInfoMsgF( "[scp173diag] CapabilitiesAdd done\n" );
+  return 0;
+}
+
+static int CBaseEntity_SetCondition (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL )
+    return 0;
+  pNPC->SetCondition( luaL_checkint( L, 2 ) );
+  luasrc_LuaInfoMsgF( "[scp173diag] SetCondition done\n" );
+  return 0;
+}
+
+static int CBaseEntity_SetEnemy (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL )
+    return 0;
+  luasrc_LuaInfoMsgF( "[scp173diag] SetEnemy enter\n" );
+  pNPC->SetEnemy( lua_toentity( L, 2 ) );
+  luasrc_LuaInfoMsgF( "[scp173diag] SetEnemy done\n" );
+  return 0;
+}
+
+static int CBaseEntity_SetSchedule (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL )
+    return 0;
+  int nSched = luaL_checkint( L, 2 );
+  luasrc_LuaInfoMsgF( "[scp173diag] SetSchedule(%d) enter\n", nSched );
+  pNPC->SetSchedule( nSched );
+  luasrc_LuaInfoMsgF( "[scp173diag] SetSchedule(%d) done\n", nSched );
+  return 0;
+}
+
+static int CBaseEntity_StopMoving (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
+  if ( pNPC == NULL )
+    return 0;
+  pNPC->GetNavigator()->StopMoving();
+  luasrc_LuaInfoMsgF( "[scp173diag] StopMoving done\n" );
   return 0;
 }
 #endif
@@ -3768,6 +3967,17 @@ static int CBaseEntity_IsPointInside (lua_State *L) {
   return 1;
 }
 
+// HL2SB (2026-09-21): Entity:StopParticles() -- GMod realm: shared.  Both
+// realms run the stock StopParticleEffects() helper (game/shared/
+// particle_parse.cpp): it fills CEffectData with the entity and dispatches the
+// "ParticleEffectStop" TE, whose client callback calls
+// ParticleProp()->StopEmission() -- so server callers clean up every client,
+// client callers clean up locally.
+static int CBaseEntity_StopParticles (lua_State *L) {
+  StopParticleEffects( luaL_checkentity(L, 1) );
+  return 0;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"GetForward", CBaseEntity_GetForward},
   {"GetRight", CBaseEntity_GetRight},
@@ -3782,6 +3992,19 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetName", CBaseEntity_GetName},
 #ifdef GAME_DLL
   {"AddEntityRelationship", CBaseEntity_AddEntityRelationship},
+  {"GetNPCState", CBaseEntity_GetNPCState},
+  {"AddRelationship", CBaseEntity_AddRelationship},
+#endif
+  {"GetRenderGroup", CBaseEntity_GetRenderGroup},
+  {"NextThink", CBaseEntity_NextThink},
+#ifdef GAME_DLL
+  {"SetHullType", CBaseEntity_SetHullType},
+  {"SetHullSizeNormal", CBaseEntity_SetHullSizeNormal},
+  {"CapabilitiesAdd", CBaseEntity_CapabilitiesAdd},
+  {"SetCondition", CBaseEntity_SetCondition},
+  {"SetEnemy", CBaseEntity_SetEnemy},
+  {"SetSchedule", CBaseEntity_SetSchedule},
+  {"StopMoving", CBaseEntity_StopMoving},
 #endif
   {"PhysicsInitShadow", CBaseEntity_PhysicsInitShadow},
   {"SetAngles", CBaseEntity_SetAngles},
@@ -4148,6 +4371,11 @@ static const luaL_Reg CBaseEntitymeta[] = {
   ** (2026-09-17).  The binding is a method (it reads its argument from index 2), so it
   ** belongs here. */
   {"SetEyeTarget", CBaseEntity_SetEyeTarget},
+  // HL2SB (2026-09-21): GMod's Entity:StopParticles -- shared realm.  On the
+  // server it broadcasts the "ParticleEffectStop" TE (see particle_parse.cpp),
+  // which lands in c_particle_system.cpp's ParticleEffectStopCallback on every
+  // client; on the client it stops locally through the same TE path.
+  {"StopParticles", CBaseEntity_StopParticles},
   {"__index", CBaseEntity___index},
   {"__newindex", CBaseEntity___newindex},
   {"__eq", CBaseEntity___eq},
