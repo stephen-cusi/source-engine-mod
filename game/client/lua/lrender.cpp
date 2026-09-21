@@ -409,6 +409,29 @@ LUA_BINDING_BEGIN( Renders, DrawScreenQuad, "library", "Draws a fullscreen quad 
 }
 LUA_BINDING_END()
 
+// render.CopyFrameToTexture( texture ) -- copies the CURRENT FRAME into the
+// given render target texture, using the same call the engine's own freeze
+// frame uses (CopyRenderTargetToTextureEx with the view rect).  The plain
+// CopyRenderTargetToTexture binding produced BLACK in this DX9 layer, which
+// is what black-screened halo's scene-restore step.
+LUA_BINDING_BEGIN( Renders, CopyFrameToTexture, "library", "Copies the current frame into the given texture.", "client" )
+{
+    ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
+
+    CViewSetup playerView = *view->GetPlayerViewSetup();
+    Rect_t rect;
+    rect.x = playerView.x;
+    rect.y = playerView.y;
+    rect.width = playerView.width;
+    rect.height = playerView.height;
+
+    CMatRenderContextPtr pRenderContext( materials );
+    pRenderContext->CopyRenderTargetToTextureEx( pTexture, 0, &rect, &rect );
+
+    return 0;
+}
+LUA_BINDING_END()
+
 // render.GetBloomTex1() -> Texture
 LUA_BINDING_BEGIN( Renders, GetBloomTex1, "library", "Returns the bloom render target texture.", "client" )
 {
