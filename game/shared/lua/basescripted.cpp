@@ -766,7 +766,11 @@ void CBaseScripted::UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 	}
 
 	// stack: table, Use
-	lua_pushvalue( L, -3 );					// self
+	// HL2SB (2026-09-21): self MUST be the entity userdata -- the earlier
+	// lua_pushvalue( L, -3 ) pushed whatever sat below the table (stack
+	// garbage), so self.isarmed = 1 landed on a dead table and self:MakeNuke()
+	// read as nil ('attempt to call a nil value (method MakeNuke)').
+	lua_pushanimating( L, this );			// self: the entity, like every engine dispatch
 	if ( pActivator != NULL )
 		lua_pushentity( L, pActivator );
 	else
