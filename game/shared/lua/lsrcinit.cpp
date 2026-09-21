@@ -1078,9 +1078,17 @@ static HL2SB_NWStorage_t HL2SB_NWStorageForName (const char *pszName) {
   if ( V_stricmp( pszName, "BallSize" ) == 0 )
     return HL2SB_NW_SKIN;
 
-  if ( V_stricmp( pszName, "BallColor" ) == 0 )
-    return HL2SB_NW_RENDERCOLOR;
-
+  // HL2SB (2026-09-21): BallColor USED to map to HL2SB_NW_RENDERCOLOR
+  // (m_clrRender) so the engine's CNetworkColor32 would carry it to the
+  // client.  That broke the stock script's own color roll:
+  //     if ( !self:GetBallColor():IsZero() ) then return end
+  //     self:SetBallColor( table.Random( {...} ) )
+  // m_clrRender's default is 255,255,255, so GetBallColor() read (1,1,1) --
+  // never "zero" -- the random roll was skipped on every spawn and every ball
+  // stayed white.  GMod's NetworkVars default to (0,0,0), which is exactly
+  // what the HL2SB_NW_TABLE storage + HL2SB_NWPushValue push.  BallColor now
+  // uses the table storage and reaches the client through the HL2SB_NW user
+  // message replication (see HL2SB_Lua_EntityNetworkVarSet).
   return HL2SB_NW_TABLE;
 }
 
