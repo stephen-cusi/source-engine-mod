@@ -44,6 +44,15 @@
 #include "ai_default.h"			// SCHED_* enum
 #include "ai_hull.h"			// Hull_t (HULL_*)
 #endif
+// HL2SB (2026-09-21): Lua NetworkVar replication -- the shim's storage below
+// is per-realm and local-only, so a server-side NetworkVar write (the Nuke
+// Pack's BallColor random roll) never reached the client and every self-drawn
+// entity showed its default color.  The setter broadcasts a user message, the
+// client handler stores the payload, and the getter falls back to it.
+#include "usermessages.h"
+#ifdef CLIENT_DLL
+#include "c_user_message_register.h"	// USER_MESSAGE_REGISTER (client hook)
+#endif
 
 
 // HL2SB: local prototype -- deliberately NOT added to luasrclib.h: a header
@@ -1346,6 +1355,206 @@ static void HL2SB_NWStoreValue (lua_State *L, int iSelf, int iTable, const char 
 //   read + store               [self, value, table, old, new]
 //   notify (if any)            above, with the callback's frame pushed and popped
 //   return                     the extra slots are discarded by the VM
+//
+// HL2SB (2026-09-21): REPLICATION.  The storage above is per-realm, so a
+// server-side NetworkVar write (sent_ball rolls a random BallColor in
+// Initialize) never reached the client -- every self-drawing entity showed
+// its default color.  The setter now serializes the value and broadcasts it
+// in the "HL2SB_NW" user message; the client handler stores the payload in
+// s_NWReplicated and the getter falls back to it whenever the local storage
+// has no value.  Pure user message, no engine table changes.
+
+// Type tags for the wire format (also the first byte of the stored payload).
+enum HL2SB_NWTag_t
+{
+	HL2SB_NWTAG_FLOAT = 'F',
+	HL2SB_NWTAG_VECTOR = 'V',
+	HL2SB_NWTAG_ANGLE = 'A',
+	HL2SB_NWTAG_BOOL = 'B',
+	HL2SB_NWTAG_INT = 'I',
+	HL2SB_NWTAG_STRING = 'S',
+	HL2SB_NWTAG_ENTITY = 'E',
+};
+
+static char HL2SB_NWTagForType( const char *pszType )
+{
+	if ( !pszType )
+		return 0;
+	if ( !Q_stricmp( pszType, "Float" ) )
+		return HL2SB_NWTAG_FLOAT;
+	if ( !Q_stricmp( pszType, "Vector" ) )
+		return HL2SB_NWTAG_VECTOR;
+	if ( !Q_stricmp( pszType, "Angle" ) )
+		return HL2SB_NWTAG_ANGLE;
+	if ( !Q_stricmp( pszType, "Bool" ) )
+		return HL2SB_NWTAG_BOOL;
+	if ( !Q_stricmp( pszType, "Int" ) )
+		return HL2SB_NWTAG_INT;
+	if ( !Q_stricmp( pszType, "String" ) )
+		return HL2SB_NWTAG_STRING;
+	if ( !Q_stricmp( pszType, "Entity" ) )
+		return HL2SB_NWTAG_ENTITY;
+	return 0;
+}
+
+// Serialize the Lua value at iValue into pOut.  Returns the payload length,
+// or -1 when the type is unknown (the caller then skips replication).
+static int HL2SB_NWSerialize( lua_State *L, int iValue, char tag, unsigned char *pOut, int nMax )
+{
+	bf_write w( "HL2SB_NW", pOut, nMax );
+	switch ( tag )
+	{
+		case HL2SB_NWTAG_FLOAT:
+			w.WriteFloat( ( float )luaL_checknumber( L, iValue ) );
+			break;
+		case HL2SB_NWTAG_VECTOR:
+		{
+			Vector v = luaL_checkvector( L, iValue );
+			w.WriteFloat( v.x );
+			w.WriteFloat( v.y );
+			w.WriteFloat( v.z );
+			break;
+		}
+		case HL2SB_NWTAG_ANGLE:
+		{
+			QAngle a = luaL_checkangle( L, iValue );
+			w.WriteFloat( a.x );
+			w.WriteFloat( a.y );
+			w.WriteFloat( a.z );
+			break;
+		}
+		case HL2SB_NWTAG_BOOL:
+			w.WriteByte( lua_toboolean( L, iValue ) ? 1 : 0 );
+			break;
+		case HL2SB_NWTAG_INT:
+			w.WriteLong( ( int )luaL_checknumber( L, iValue ) );
+			break;
+		case HL2SB_NWTAG_STRING:
+		{
+			const char *psz = luaL_checkstring( L, iValue );
+			int n = ( int )Q_strlen( psz );
+			if ( n > 255 )
+				n = 255;
+			w.WriteByte( n );
+			w.WriteBytes( psz, n );
+			break;
+		}
+		case HL2SB_NWTAG_ENTITY:
+		{
+			CBaseEntity *pEnt = lua_toentity( L, iValue );
+			w.WriteShort( pEnt ? pEnt->entindex() : 0 );
+			break;
+		}
+		default:
+			return -1;
+	}
+	return w.GetNumBytesWritten();
+}
+
+#ifdef CLIENT_DLL
+// The client-side replicated store: key "entindex_name" -> tag byte + payload.
+// Entries accumulate for the life of the process; each is 300 bytes at most
+// and only exists for variables a script actually declared, so this stays small.
+static CUtlDict<CUtlString, unsigned short> s_NWReplicated;
+
+static void HL2SB_NWReplicatedStore( int entindex, const char *pszName, char tag,
+									const unsigned char *pPayload, int nPayload )
+{
+	char key[ 160 ];
+	Q_snprintf( key, sizeof( key ), "%d_%s", entindex, pszName );
+
+	CUtlString val;
+	val.SetDirect( ( const char * )pPayload, nPayload );
+	s_NWReplicated.Insert( key, val );
+}
+
+// Push the replicated value for (entity index, key), or nil.  Returns whether
+// a replicated value existed.
+static bool HL2SB_NWReplicatedPush( lua_State *L, int entindex, const char *pszKey, const char *pszType )
+{
+	char key[ 160 ];
+	Q_snprintf( key, sizeof( key ), "%d_%s", entindex, pszKey );
+
+	unsigned short idx = s_NWReplicated.Find( key );
+	if ( !s_NWReplicated.IsValidIndex( idx ) )
+		return false;
+
+	CUtlString &val = s_NWReplicated[ idx ];
+	if ( val.Length() < 1 )
+		return false;
+
+	char tag = val[ 0 ];
+	bf_read r( "HL2SB_NW", val.Get(), val.Length() );
+	r.Seek( 1 );	// skip the tag byte
+
+	switch ( tag )
+	{
+		case HL2SB_NWTAG_FLOAT:
+			lua_pushnumber( L, ( lua_Number )r.ReadFloat() );
+			return true;
+		case HL2SB_NWTAG_VECTOR:
+		{
+			Vector v;
+			v.x = r.ReadFloat();
+			v.y = r.ReadFloat();
+			v.z = r.ReadFloat();
+			lua_pushvector( L, v );
+			return true;
+		}
+		case HL2SB_NWTAG_ANGLE:
+		{
+			QAngle a;
+			a.x = r.ReadFloat();
+			a.y = r.ReadFloat();
+			a.z = r.ReadFloat();
+			lua_pushangle( L, a );
+			return true;
+		}
+		case HL2SB_NWTAG_BOOL:
+			lua_pushboolean( L, r.ReadByte() != 0 );
+			return true;
+		case HL2SB_NWTAG_INT:
+			lua_pushinteger( L, ( lua_Integer )r.ReadLong() );
+			return true;
+		case HL2SB_NWTAG_STRING:
+		{
+			int n = r.ReadByte();
+			char sz[ 256 ];
+			if ( n > 0 )
+				r.ReadBytes( sz, n );
+			sz[ n ] = 0;
+			lua_pushstring( L, sz );
+			return true;
+		}
+		default:
+			return false;	// Entity payloads are not replicated to a value
+	}
+}
+
+// The "HL2SB_NW" user message: SHORT entindex, STRING name, BYTE tag,
+// BYTE len, BYTE[len] payload.
+static void __MsgFunc_HL2SB_NW( bf_read &read )
+{
+	int entindex = read.ReadShort();
+	char szName[ 128 ];
+	read.ReadString( szName, sizeof( szName ) );
+	char tag = ( char )read.ReadByte();
+	int len = read.ReadByte();
+
+	unsigned char payload[ 256 ];
+	if ( len > 0 && len <= ( int )sizeof( payload ) )
+		read.ReadBytes( payload, len );
+	else
+		len = 0;
+
+	if ( read.IsOverflowed() )
+		return;
+
+	HL2SB_NWReplicatedStore( entindex, szName, tag, payload, len );
+}
+// Hooked in luasrc_openlibs' client tail (usermessages->HookMessage).
+#endif // CLIENT_DLL
+
 static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
   // Normalise the arguments to self, value (so the notify call below can build
   // its own frame regardless of what the caller passed).
@@ -1387,6 +1596,39 @@ static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
     lua_pop( L, 1 );                                       // [.., table, old, new]
     lua_remove( L, iTable );                               // [self, value, old, new]
   }
+#ifndef CLIENT_DLL
+  // HL2SB (2026-09-21): REPLICATE.  Broadcast the new value to all clients;
+  // the client handler stores it and the getter falls back to it when the
+  // local (per-realm) storage has no value.  sent_ball's random BallColor is
+  // the canonical case: rolled server-side in ENT:Initialize, read client-side
+  // in ENT:Draw.
+  const char *pszValueType = lua_tostring( L, lua_upvalueindex( 1 ) );
+  char tag = HL2SB_NWTagForType( pszValueType );
+  if ( tag != 0 && iTable != 0 ) {
+    CBaseEntity *pSelf = lua_toentity( L, 1 );
+    if ( pSelf != NULL && pSelf->entindex() > 0 ) {
+      unsigned char payload[ 512 ];
+      int len = HL2SB_NWSerialize( L, 2, tag, payload, sizeof( payload ) );
+      if ( len >= 0 ) {
+        static bool bMessageRegistered = false;
+        if ( !bMessageRegistered ) {
+          usermessages->Register( "HL2SB_NW", 256 );
+          bMessageRegistered = true;
+        }
+
+        CReliableBroadcastRecipientFilter filter;
+        UserMessageBegin( filter, "HL2SB_NW" );
+          WRITE_SHORT( pSelf->entindex() );
+          WRITE_STRING( pszName );
+          WRITE_BYTE( ( unsigned char )tag );
+          WRITE_BYTE( ( unsigned char )len );
+          for ( int i = 0; i < len; ++i )
+            WRITE_BYTE( payload[ i ] );
+        MessageEnd();
+      }
+    }
+  }
+#endif
 
   return 0;
 }
@@ -1404,6 +1646,75 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
   if ( iTable != 0 ) {
     lua_remove( L, iTable );
   }
+
+#ifdef CLIENT_DLL
+  // HL2SB (2026-09-21): REPLICATION FALLBACK.  The local storage is
+  // per-realm: a value the SERVER wrote (sent_ball's random BallColor) is
+  // not in it.  If the read above produced nil, consult the replicated store
+  // the "HL2SB_NW" user message keeps (keyed entindex_name).
+  if ( lua_isnil( L, -1 ) ) {
+    CBaseEntity *pSelf = lua_toentity( L, 1 );
+    if ( pSelf != NULL && pSelf->entindex() > 0 ) {
+      const char *pszName = ( pszKey != NULL ) ? ( pszKey + strlen( "__hl2sb_nw_" ) ) : "";
+      char key[ 160 ];
+      Q_snprintf( key, sizeof( key ), "%d_%s", pSelf->entindex(), pszName );
+
+      unsigned short idx = s_NWReplicated.Find( key );
+      if ( s_NWReplicated.IsValidIndex( idx ) && s_NWReplicated[ idx ].Length() >= 1 ) {
+        CUtlString &val = s_NWReplicated[ idx ];
+        char tag = val[ 0 ];
+        bf_read r( "HL2SB_NW", val.Get(), val.Length() );
+        r.Seek( 1 );	// skip the tag byte
+
+        switch ( tag )
+        {
+          case HL2SB_NWTAG_FLOAT:
+            lua_pushnumber( L, ( lua_Number )r.ReadFloat() );
+            break;
+          case HL2SB_NWTAG_VECTOR:
+          {
+            Vector v;
+            v.x = r.ReadFloat();
+            v.y = r.ReadFloat();
+            v.z = r.ReadFloat();
+            lua_pushvector( L, v );
+            break;
+          }
+          case HL2SB_NWTAG_ANGLE:
+          {
+            QAngle a;
+            a.x = r.ReadFloat();
+            a.y = r.ReadFloat();
+            a.z = r.ReadFloat();
+            lua_pushangle( L, a );
+            break;
+          }
+          case HL2SB_NWTAG_BOOL:
+            lua_pushboolean( L, r.ReadByte() != 0 );
+            break;
+          case HL2SB_NWTAG_INT:
+            lua_pushinteger( L, ( lua_Integer )r.ReadLong() );
+            break;
+          case HL2SB_NWTAG_STRING:
+          {
+            int n = r.ReadByte();
+            char sz[ 256 ];
+            if ( n > 0 )
+              r.ReadBytes( sz, n );
+            sz[ n ] = 0;
+            lua_pushstring( L, sz );
+            break;
+          }
+          default:
+            lua_pushnil( L );
+            break;
+        }
+        lua_remove( L, iTable );
+        return 1;
+      }
+    }
+  }
+#endif
 
   return 1;
 }
@@ -1648,6 +1959,11 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_pushboolean(L, 1); lua_setglobal(L, "_GAME");
   lua_pushboolean(L, 1); lua_setglobal(L, "SERVER");
   lua_pushboolean(L, 0); lua_setglobal(L, "CLIENT");
+#endif
+#ifdef CLIENT_DLL
+  // HL2SB (2026-09-21): Lua NetworkVar replication receiver (see the
+  // HL2SB_NWTagForType block above).  Hooked once per client state.
+  usermessages->HookMessage( "HL2SB_NW", __MsgFunc_HL2SB_NW );
 #endif
 
   /* HL2SB: four GMod globals this engine never had.  All four are LOAD-TIME

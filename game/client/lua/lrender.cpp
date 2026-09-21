@@ -1039,7 +1039,11 @@ LUA_BINDING_BEGIN( Renders, DrawQuadEasy, "library", "Draws a quad with the curr
 
     Vector right = normal.Cross( reference );
     VectorNormalize( right );
-    Vector up = right.Cross( normal );
+    // HL2SB (2026-09-21): was right.Cross( normal ) -- the in-plane up ended
+    // up 180 degrees from GMod's convention and every DrawQuadEasy sprite
+    // (the nyan grenade cat) rendered upside-down.  normal.Cross( right ) is
+    // the GMod orientation (verified against the nyan addon's tuned rotation).
+    Vector up = normal.Cross( right );
     VectorNormalize( up );
 
     if ( rotation != 0.0f )
