@@ -899,6 +899,10 @@ static int lua_Warning (lua_State *L) {
   return 0;
 }
 
+// HL2SB (2026-09-21): local prototype on purpose (no header churn) -- the
+// collector lives in luamanager.cpp; ErrorNoHalt feeds it from here.
+void HL2SB_CollectLuaError( const char *pszError, const char *pszTraceback );
+
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: ErrorNoHalt( ... ) and ErrorNoHaltWithStack( ... ).
 //
@@ -921,6 +925,14 @@ static int lua_ErrorNoHalt (lua_State *L) {
   char szText[2048];
   LuaConcatArgs( L, szText, sizeof( szText ) );
   luasrc_LuaConsoleMsg( szText, 'E', true );
+
+  // HL2SB (2026-09-21): ErrorNoHalt is how GMod addons report soft failures;
+  // those belong in the error viewer as much as hard errors do.  Collect with
+  // a traceback so the entry names its origin.
+  luaL_traceback( L, L, szText, 1 );
+  const char *pszReport = lua_tostring( L, -1 );
+  HL2SB_CollectLuaError( szText, pszReport );
+  lua_pop( L, 1 );
   return 0;
 }
 
@@ -1493,13 +1505,30 @@ static int HL2SB_Lua_EntityNetworkVarNotify (lua_State *L) {
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
-    // HL2SB (2026-09-21): lua_call below is UNPROTECTED - a Lua error in any
-    // luaopen_* goes straight to the atpanic handler with an empty traceback.
-    // Log the module name first so a panic names its library immediately.
+    // HL2SB (2026-09-21): log the module name FIRST so a failure names its
+    // library immediately.
+    //
+    // HL2SB (2026-09-21, later): lua_call here was UNPROTECTED - a Lua error in
+    // any luaopen_* went straight to the atpanic handler and took the PROCESS
+    // down ("进地图闪退"), with an empty traceback because the throw unwound
+    // through the pure-C boundary.  All day 2026-09-21 produced exactly that,
+    // with DIFFERENT messages per run ("attempt to call a nil value" / "index a
+    // number value" / "index a nil value" / "index a string value") at
+    // different libraries - flaky, undiagnosable, and fatal.  lua_pcall turns
+    // the whole class into a named, non-fatal console error: the failing lib is
+    // skipped, the state keeps initializing, the game boots, and the log says
+    // exactly which lib to look at.  A half-opened lib can leave one binding
+    // missing (addons see nil where the enum would be) - strictly better than
+    // a hard crash; GMod makes the same tradeoff everywhere.
     luasrc_LuaInfoMsgF( "[HL2SB] openlibs: %s\n", lib->name );
     lua_pushcfunction(L, lib->func);
     lua_pushstring(L, lib->name);
-    lua_call(L, 1, 0);
+    if ( lua_pcall(L, 1, 0, 0) != LUA_OK ) {
+      luasrc_LuaErrorMsgF( "[HL2SB] openlibs: library '%s' FAILED: %s -- skipped, state continues\n",
+        ( lib->name && lib->name[0] ) ? lib->name : "(anon)",
+        lua_tostring(L, -1) ? lua_tostring(L, -1) : "(no message)" );
+      lua_pop(L, 1);
+    }
   }
 
   /* HL2SB GMod compat: the Entity( index ) global (wiki: Global.Entity --
@@ -1556,7 +1585,19 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
       }
       lua_remove( LS, -2 );
       lua_pushvalue( LS, 1 );
-      lua_call( LS, 1, 1 );
+      // HL2SB (2026-09-21): baseclass.Get( name ) ERRORS on an unknown name
+      // (GMod's own module does), and a lua_call from inside this closure is
+      // UNPROTECTED - the error went straight to the atpanic handler and took
+      // the process down.  pcall it and return nil on failure instead: the
+      // script gets the same nil BaseClass it would have had, with the named
+      // error in the log, instead of a 闪退.
+      if ( lua_pcall( LS, 1, 1, 0 ) != LUA_OK ) {
+        luasrc_LuaErrorMsgF( "[HL2SB] DEFINE_BASECLASS: %s\n",
+          lua_tostring( LS, -1 ) ? lua_tostring( LS, -1 ) : "(no message)" );
+        lua_pop( LS, 1 );
+        lua_pushnil( LS );
+        return 1;
+      }
       // GMod's expansion also mirrors the result onto the global BaseClass,
       // so BaseClass:Initialize( self ) calls keep resolving.
       lua_setglobal( LS, "BaseClass" );

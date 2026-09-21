@@ -62,6 +62,18 @@ static bool luasrc_PathInDisabledAddon (const char *fullpath);
 // Local prototype on purpose -- luasrclib.h touch would force a full rebuild.
 LUA_API void HL2SB_TimerShutdown( void );
 
+// HL2SB (2026-09-21): the process-wide Lua error collector feeding the main-menu
+// error viewer (lua/gameui/luaerrorsdialog.lua).  Local prototypes on purpose --
+// same rule as above, no header churn.
+void HL2SB_CollectLuaError( const char *pszError, const char *pszTraceback );
+void HL2SB_LuaRegisterErrorCollector( lua_State *L );
+
+// HL2SB: the collector's copy-to-clipboard binding uses the same vgui ISystem
+// accessors as lsystem.cpp's system.SetClipboardText (which links in BOTH dlls,
+// so referencing it here is safe for the server twin too).
+#include <vgui_controls/Controls.h>
+#include <vgui/ISystem.h>
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -541,6 +553,10 @@ void luasrc_init_gameui (void) {
   // (mountaddons.cpp) instead of going through a console command -- it needs
   // the "did it take effect now?" answer back.
   HL2SB_LuaRegisterAddons(LGameUI);
+
+  // HL2SB: the main-menu Lua error viewer (lua/gameui/luaerrorsdialog.lua)
+  // reads the collector and copies error text through these globals.
+  HL2SB_LuaRegisterErrorCollector(LGameUI);
 
   static const char *const menuFiles[] = {
     LUA_PATH_EXTENSIONS "/table.lua",     // table.merge, used by vgui.register
@@ -1053,6 +1069,13 @@ void luasrc_init (void) {
 
   luasrc_openlibs(L);
 
+  // HL2SB (2026-09-21): the error collector's globals in the GAME realms too --
+  // hook.lua reports failed hook callbacks through hl2sb_reportluaerror, and
+  // the in-game state is where those errors happen.  (The menu window reads the
+  // client.dll collector; a server-side copy exists for symmetry but is not
+  // visible to the menu - see the collector comment above.)
+  HL2SB_LuaRegisterErrorCollector(L);
+
   // HL2SB: gameevent.Listen() needs an engine-side listener; it lives as long as the
   // state does (Experiment: Source does the same in their Lua init).
   InitializeLuaGameEventHandler(L);
@@ -1121,6 +1144,225 @@ void luasrc_shutdown (void) {
 */
 static bool g_bReportingLuaError = false;
 
+// ============================================================================
+// HL2SB (2026-09-21): the process-wide Lua error collector.
+//
+// GMod groups every Lua error by the addon that raised it and keeps the list
+// alive in its menu, across map changes.  A Lua-side collector cannot do that
+// here: the client state is torn down on every level load (losing what it
+// collected), and the menu state never sees client-realm errors at all.  So
+// the collection happens HERE, in C, next to the one place an error becomes
+// visible (luasrc_report_error), and the menu reads it through globals
+// registered by HL2SB_LuaRegisterErrorCollector (called for LGameUI):
+//
+//   hl2sb_getluaerrors()   -> { { addon=, total=, items={ {msg=, count=, traceback=} } }, ... }
+//   hl2sb_clearluaerrors() -> nil
+//   hl2sb_luaerrorcount()  -> number   (total errors seen, for cheap polling)
+//   hl2sb_setclipboardtext( text )     (the menu realm has no system library)
+//
+// Scope note: this is per-DLL static storage.  The menu window therefore sees
+// client- and menu-realm errors; server-realm errors keep going to the console
+// and hl2sb_lua.log only.
+// ============================================================================
+
+struct HL2SB_LuaErrorItem_t
+{
+	CUtlString m_msg;        // first line of the error message (the list text)
+	CUtlString m_traceback;  // full traceback of the FIRST occurrence
+	int        m_count;      // how many times this exact message repeated
+};
+
+struct HL2SB_LuaErrorGroup_t
+{
+	CUtlString m_addon;      // addon folder name, or "Other"
+	CUtlVector<HL2SB_LuaErrorItem_t> m_items;
+	int m_total;             // all errors in this group, counted or dropped
+};
+
+static CUtlVector<HL2SB_LuaErrorGroup_t> g_HL2SBLuaErrors;
+
+// Limits: the viewer is for triage, not an archive.  Anything past these is
+// still counted (m_total / m_count) but its text is dropped.
+static const int HL2SB_LUAERR_MAX_GROUPS      = 32;
+static const int HL2SB_LUAERR_MAX_ITEMS_GROUP = 16;
+static const int HL2SB_LUAERR_MAX_MSG         = 512;
+static const int HL2SB_LUAERR_MAX_TRACEBACK   = 1536;
+
+// Which addon raised this?  GMod's answer comes from the traceback's chunk
+// names: the first addons/<name>/ entry wins.  Everything else is "Other".
+static void HL2SB_ErrorAddonFromTraceback( const char *pszTraceback, char *pszOut, size_t outLen )
+{
+	Q_strncpy( pszOut, "Other", outLen );
+	if ( !pszTraceback )
+		return;
+
+	const char *p = pszTraceback;
+	while ( ( p = Q_stristr( p, "addons/" ) ) != NULL )
+	{
+		const char *pszName = p + 7;
+		const char *pszEnd  = strchr( pszName, '/' );
+		if ( pszEnd && pszEnd > pszName && (size_t)( pszEnd - pszName ) < outLen )
+		{
+			size_t n = (size_t)( pszEnd - pszName );
+			Q_strncpy( pszOut, pszName, n + 1 );
+			pszOut[ n ] = '\0';
+			return;
+		}
+		p = pszName;
+	}
+}
+
+void HL2SB_CollectLuaError( const char *pszError, const char *pszTraceback )
+{
+	if ( !pszError )
+		pszError = "(no error message)";
+
+	char szAddon[128];
+	HL2SB_ErrorAddonFromTraceback( pszTraceback, szAddon, sizeof( szAddon ) );
+
+	// The list shows one line per error; the traceback keeps the full report.
+	char szMsg[ HL2SB_LUAERR_MAX_MSG ];
+	Q_strncpy( szMsg, pszError, sizeof( szMsg ) );
+	szMsg[ sizeof( szMsg ) - 1 ] = '\0';
+	char *pszNL = strchr( szMsg, '\n' );
+	if ( pszNL )
+		*pszNL = '\0';
+
+	char szTrace[ HL2SB_LUAERR_MAX_TRACEBACK ];
+	Q_strncpy( szTrace, pszTraceback ? pszTraceback : "", sizeof( szTrace ) );
+	szTrace[ sizeof( szTrace ) - 1 ] = '\0';
+
+	HL2SB_LuaErrorGroup_t *pGroup = NULL;
+	for ( int i = 0; i < g_HL2SBLuaErrors.Count(); ++i )
+	{
+		if ( Q_stricmp( g_HL2SBLuaErrors[i].m_addon, szAddon ) == 0 )
+		{
+			pGroup = &g_HL2SBLuaErrors[i];
+			break;
+		}
+	}
+	if ( !pGroup )
+	{
+		if ( g_HL2SBLuaErrors.Count() >= HL2SB_LUAERR_MAX_GROUPS )
+			return;  // way past triage capacity; the console still has it all
+		int idx = g_HL2SBLuaErrors.AddToTail();
+		g_HL2SBLuaErrors[idx].m_addon = szAddon;
+		g_HL2SBLuaErrors[idx].m_total = 0;
+		pGroup = &g_HL2SBLuaErrors[idx];
+	}
+
+	pGroup->m_total++;
+
+	for ( int i = 0; i < pGroup->m_items.Count(); ++i )
+	{
+		if ( Q_stricmp( pGroup->m_items[i].m_msg, szMsg ) == 0 )
+		{
+			pGroup->m_items[i].m_count++;
+			return;
+		}
+	}
+
+	if ( pGroup->m_items.Count() >= HL2SB_LUAERR_MAX_ITEMS_GROUP )
+		return;
+
+	int idx = pGroup->m_items.AddToTail();
+	pGroup->m_items[idx].m_msg = szMsg;
+	pGroup->m_items[idx].m_traceback = szTrace;
+	pGroup->m_items[idx].m_count = 1;
+}
+
+static int HL2SB_LuaGetErrors( lua_State *L )
+{
+	lua_newtable( L );
+	for ( int g = 0; g < g_HL2SBLuaErrors.Count(); ++g )
+	{
+		HL2SB_LuaErrorGroup_t &grp = g_HL2SBLuaErrors[g];
+
+		lua_newtable( L );  // group
+
+		lua_pushstring( L, grp.m_addon );
+		lua_setfield( L, -2, "addon" );
+
+		lua_pushinteger( L, grp.m_total );
+		lua_setfield( L, -2, "total" );
+
+		lua_newtable( L );  // items
+		for ( int i = 0; i < grp.m_items.Count(); ++i )
+		{
+			lua_newtable( L );
+			lua_pushstring( L, grp.m_items[i].m_msg );
+			lua_setfield( L, -2, "msg" );
+			lua_pushstring( L, grp.m_items[i].m_traceback );
+			lua_setfield( L, -2, "traceback" );
+			lua_pushinteger( L, grp.m_items[i].m_count );
+			lua_setfield( L, -2, "count" );
+			lua_rawseti( L, -2, i + 1 );
+		}
+		lua_setfield( L, -2, "items" );
+
+		lua_rawseti( L, -2, g + 1 );
+	}
+	return 1;
+}
+
+static int HL2SB_LuaClearErrors( lua_State * )
+{
+	g_HL2SBLuaErrors.RemoveAll();
+	return 0;
+}
+
+static int HL2SB_LuaErrorCount( lua_State *L )
+{
+	int n = 0;
+	for ( int g = 0; g < g_HL2SBLuaErrors.Count(); ++g )
+		n += g_HL2SBLuaErrors[g].m_total;
+	lua_pushinteger( L, n );
+	return 1;
+}
+
+static int HL2SB_LuaSetClipboardText( lua_State *L )
+{
+	size_t len = 0;
+	const char *pszText = luaL_checklstring( L, 1, &len );
+	if ( pszText && len > 0 )
+		vgui::system()->SetClipboardText( pszText, (int)len );
+	return 0;
+}
+
+// HL2SB: Lua-side report path into the collector.  luasrc_report_error only
+// sees dofile/dostring-level errors; the ones caught INSIDE Lua (hook.Call's
+// pcall in hook.lua, engine timers, ErrorNoHalt) printed and vanished.  hook.lua
+// calls this global with ( message, traceback ) on every failed callback.
+static int HL2SB_LuaReportError( lua_State *L )
+{
+	size_t lenMsg = 0, lenTrace = 0;
+	const char *pszMsg = luaL_checklstring( L, 1, &lenMsg );
+	const char *pszTrace = ( lua_isstring( L, 2 ) ) ? lua_tolstring( L, 2, &lenTrace ) : NULL;
+	HL2SB_CollectLuaError( pszMsg, pszTrace );
+	return 0;
+}
+
+void HL2SB_LuaRegisterErrorCollector( lua_State *L )
+{
+	if ( L == NULL )
+		return;
+
+	lua_pushcfunction( L, HL2SB_LuaGetErrors );
+	lua_setglobal( L, "hl2sb_getluaerrors" );
+
+	lua_pushcfunction( L, HL2SB_LuaClearErrors );
+	lua_setglobal( L, "hl2sb_clearluaerrors" );
+
+	lua_pushcfunction( L, HL2SB_LuaErrorCount );
+	lua_setglobal( L, "hl2sb_luaerrorcount" );
+
+	lua_pushcfunction( L, HL2SB_LuaSetClipboardText );
+	lua_setglobal( L, "hl2sb_setclipboardtext" );
+
+	lua_pushcfunction( L, HL2SB_LuaReportError );
+	lua_setglobal( L, "hl2sb_reportluaerror" );
+}
+
 LUA_API void luasrc_report_error (lua_State *L, const char *pszError) {
   if (!pszError)
     pszError = "(no error message)";
@@ -1147,6 +1389,10 @@ LUA_API void luasrc_report_error (lua_State *L, const char *pszError) {
   if (lua_isstring(L, -1))
     Q_strncpy(szTraceback, lua_tostring(L, -1), sizeof(szTraceback));
   lua_pop(L, 1);
+
+  // HL2SB: feed the process-wide collector BEFORE the hook call -- the hook may
+  // error itself (the re-entrancy guard only stops recursion of this function).
+  HL2SB_CollectLuaError( pszError, szTraceback );
 
   LUA_CALL_HOOK_FOR_STATE_BEGIN(L, "LuaError");
     lua_pushstring(L, pszError);

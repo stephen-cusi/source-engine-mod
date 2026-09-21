@@ -27,6 +27,10 @@
 #include "tier1/utlhashtable.h"
 #include "tier1/utlvector.h"
 
+// HL2SB (2026-09-21): local prototype on purpose (no header churn) -- failed
+// timer callbacks go to the process error collector, not just the console.
+void HL2SB_CollectLuaError( const char *pszError, const char *pszTraceback );
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -307,8 +311,11 @@ LUA_API void HL2SB_TimerTick ( void )
 		luaL_unref( L, LUA_REGISTRYINDEX, iRef );
 		if ( lua_pcall( L, 0, 0, 0 ) != 0 )
 		{
-			Warning( "[timer] simple timer failed: %s\n", lua_tostring( L, -1 ) );
-			lua_pop( L, 1 );
+			const char *pszErr = lua_tostring( L, -1 );
+			Warning( "[timer] simple timer failed: %s\n", pszErr );
+			luaL_traceback( L, L, pszErr, 0 );
+			HL2SB_CollectLuaError( pszErr, lua_tostring( L, -1 ) );
+			lua_pop( L, 2 );
 		}
 	}
 
@@ -343,8 +350,11 @@ LUA_API void HL2SB_TimerTick ( void )
 				luaL_unref( L, LUA_REGISTRYINDEX, iRef );
 				if ( lua_pcall( L, 0, 0, 0 ) != 0 )
 				{
-					Warning( "[timer] '%s' failed: %s\n", due[ i ].Get(), lua_tostring( L, -1 ) );
-					lua_pop( L, 1 );
+					const char *pszErr = lua_tostring( L, -1 );
+					Warning( "[timer] '%s' failed: %s\n", due[ i ].Get(), pszErr );
+					luaL_traceback( L, L, pszErr, 0 );
+					HL2SB_CollectLuaError( pszErr, lua_tostring( L, -1 ) );
+					lua_pop( L, 2 );
 				}
 				continue;
 			}
@@ -355,8 +365,11 @@ LUA_API void HL2SB_TimerTick ( void )
 		lua_rawgeti( L, LUA_REGISTRYINDEX, t.m_iFuncRef );
 		if ( lua_pcall( L, 0, 0, 0 ) != 0 )
 		{
-			Warning( "[timer] '%s' failed: %s\n", due[ i ].Get(), lua_tostring( L, -1 ) );
-			lua_pop( L, 1 );
+			const char *pszErr = lua_tostring( L, -1 );
+			Warning( "[timer] '%s' failed: %s\n", due[ i ].Get(), pszErr );
+			luaL_traceback( L, L, pszErr, 0 );
+			HL2SB_CollectLuaError( pszErr, lua_tostring( L, -1 ) );
+			lua_pop( L, 2 );
 		}
 	}
 }
