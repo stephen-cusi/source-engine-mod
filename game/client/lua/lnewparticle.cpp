@@ -416,6 +416,54 @@ LUA_BINDING_BEGIN( CNewParticleEffectReg, IsViewModelEffect, "method", "HL2SB: a
 }
 LUA_BINDING_END()
 
+// GetAutoUpdateBBox() -- whether the render bounds are recomputed from the
+// live particles every frame.
+LUA_BINDING_BEGIN( CNewParticleEffectReg, GetAutoUpdateBBox, "method", "Returns whether the particle system's bounding box updates automatically.", "client" )
+{
+	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
+	lua_pushboolean( L, pEffect->GetAutoUpdateBBox() ? 1 : 0 );
+	return 1;
+}
+LUA_BINDING_END()
+
+// GetHighestControlPoint() -- highest CP id the definition actually uses.
+LUA_BINDING_BEGIN( CNewParticleEffectReg, GetHighestControlPoint, "method", "Returns the highest control point number used by the particle system.", "client" )
+{
+	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
+	lua_pushnumber( L, pEffect->GetHighestControlPoint() );
+	return 1;
+}
+LUA_BINDING_END()
+
+// GetRenderBounds() -- the current bounding box of the system's particles.
+LUA_BINDING_BEGIN( CNewParticleEffectReg, GetRenderBounds, "method", "Returns mins, maxs of the particle system's bounding box.", "client" )
+{
+	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
+	Vector vecMins, vecMaxs;
+	pEffect->GetRenderBounds( vecMins, vecMaxs );
+	lua_pushvector( L, vecMins );
+	lua_pushvector( L, vecMaxs );
+	return 2;
+}
+LUA_BINDING_END()
+
+// Render() -- GMod can force a particle system into the current render
+// context (vgui panels).  This engine has no out-of-band particle render
+// path: systems only draw through the world renderable list, so this is a
+// reported no-op (same precedent as SetIsViewModelEffect above).
+LUA_BINDING_BEGIN( CNewParticleEffectReg, Render, "method", "HL2SB: no manual render path -- particle systems draw through the world render only.", "client" )
+{
+	LuaNewParticle_checkudata( L, 1 );
+	static bool s_bWarned = false;
+	if ( !s_bWarned )
+	{
+		s_bWarned = true;
+		Warning( "[HL2SB] CNewParticleEffect:Render has no manual render path in this engine; systems auto-draw.\n" );
+	}
+	return 0;
+}
+LUA_BINDING_END()
+
 // ---------------------------------------------------------------------------
 // Globals: CreateParticleSystem( ent, name, attachType, attachmentID, offset )
 // and CreateParticleSystemNoEntity( name, pos, ang ).

@@ -501,8 +501,26 @@ static int luasrc_UTIL_TraceModel (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB GMod compat: util.ParticleTracer( name, startPos, endPos, doWhiz ).
+** GMod's 4-arg signature -- entity/attachment routing lives in the Ex variant
+** below.  (The first cut exposed the C++ UTIL_ParticleTracer's 6-arg order
+** here, so a script's `doWhiz = true` landed in the entIndex slot.)
+** The 4-arg form never uses an attachment: pass TRACER_DONT_USE_ATTACHMENT so
+** the dispatch does not carry a bogus TRACER_FLAG_USEATTACHMENT.
+*/
 static int luasrc_UTIL_ParticleTracer (lua_State *L) {
-  UTIL_ParticleTracer(luaL_checkstring(L, 1), luaL_checkvector(L, 2), luaL_checkvector(L, 3), luaL_optint(L, 4, 0), luaL_optint(L, 5, 0), luaL_optboolean(L, 6, 0));
+  UTIL_ParticleTracer(luaL_checkstring(L, 1), luaL_checkvector(L, 2), luaL_checkvector(L, 3), 0, TRACER_DONT_USE_ATTACHMENT, luaL_optboolean(L, 4, 0));
+  return 0;
+}
+
+/*
+** HL2SB GMod compat: util.ParticleTracerEx( name, startPos, endPos, doWhiz,
+** entityIndex, attachmentIndex ) -- GMod's expanded variant, the signature the
+** old binding above used to answer under the plain ParticleTracer name.
+*/
+static int luasrc_UTIL_ParticleTracerEx (lua_State *L) {
+  UTIL_ParticleTracer(luaL_checkstring(L, 1), luaL_checkvector(L, 2), luaL_checkvector(L, 3), luaL_optint(L, 5, 0), luaL_optint(L, 6, 0), luaL_optboolean(L, 4, 0));
   return 0;
 }
 
@@ -887,6 +905,7 @@ static const luaL_Reg util_funcs[] = {
   {"TraceModel",  luasrc_UTIL_TraceModel},
   // {"UTIL_ParticleTracer",  luasrc_UTIL_ParticleTracer},
   {"ParticleTracer",  luasrc_UTIL_ParticleTracer},
+  {"ParticleTracerEx",  luasrc_UTIL_ParticleTracerEx},
   // {"UTIL_Tracer",  luasrc_UTIL_Tracer},
   {"Tracer",  luasrc_UTIL_Tracer},
   // {"UTIL_IsLowViolence",  luasrc_UTIL_IsLowViolence},
