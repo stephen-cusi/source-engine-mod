@@ -1649,18 +1649,22 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
 
   const int iTable = HL2SB_NWPushStorageTable( L, 1 );
 
-  HL2SB_NWReadValue( L, 1, iTable, pszKey, storage, pszType );
-
+#ifdef CLIENT_DLL
+  // HL2SB (2026-09-21): REPLICATED VALUE FIRST.  The local table has no entry
+  // until THIS realm writes one, and HL2SB_NWReadValue falling through would
+  // push the TYPE DEFAULT -- Vector(0,0,0) -- which sent_ball's ENT:Draw then
+  // used as the sprite color: black balls.  The "HL2SB_NW" user message
+  // carries the server's value; if it has arrived, it wins over the default.
+  // (The local table wins again once this realm writes its own.)
+  bool bLocalSet = false;
   if ( iTable != 0 ) {
-    lua_remove( L, iTable );
+    lua_pushstring( L, pszKey );
+    lua_rawget( L, iTable );
+    bLocalSet = !lua_isnil( L, -1 );
+    lua_pop( L, 1 );
   }
 
-#ifdef CLIENT_DLL
-  // HL2SB (2026-09-21): REPLICATION FALLBACK.  The local storage is
-  // per-realm: a value the SERVER wrote (sent_ball's random BallColor) is
-  // not in it.  If the read above produced nil, consult the replicated store
-  // the "HL2SB_NW" user message keeps (keyed entindex_name).
-  if ( lua_isnil( L, -1 ) ) {
+  if ( !bLocalSet ) {
     CBaseEntity *pSelf = lua_toentity( L, 1 );
     if ( pSelf != NULL && pSelf->entindex() > 0 ) {
       const char *pszName = ( pszKey != NULL ) ? ( pszKey + strlen( "__hl2sb_nw_" ) ) : "";
@@ -1723,6 +1727,12 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
     }
   }
 #endif
+
+  HL2SB_NWReadValue( L, 1, iTable, pszKey, storage, pszType );
+
+  if ( iTable != 0 ) {
+    lua_remove( L, iTable );
+  }
 
   return 1;
 }
