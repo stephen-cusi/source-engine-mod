@@ -493,6 +493,30 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 	if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawLocalPlayerViewModel() )
 		return 0;
 
+	// HL2SB: GMod-style c_ models as world models. GMod SWEPs point WorldModel at a
+	// c_ model (rigged for viewmodel space); drawn in a world pass it only reads as
+	// "held" when it plays the pose the viewmodel is playing - by default it sits in
+	// sequence 0 (reference pose), which is why the mirror showed a wrongly gripped
+	// gun. Sync pose by sequence NAME from the active viewmodel, so real w_ models
+	// (whose sequence tables differ) are left untouched.
+	if ( IsCarriedByLocalPlayer() && g_bRenderingReflection )
+	{
+		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		C_BaseViewModel *pVM = pOwner ? pOwner->GetViewModel( 0 ) : NULL;
+		if ( pVM && GetModel() )
+		{
+			const char *pszSeqName = pVM->GetSequenceName( pVM->GetSequence() );
+			int iSeq = ( pszSeqName && pszSeqName[0] ) ? LookupSequence( pszSeqName ) : -1;
+			if ( iSeq != -1 )
+			{
+				if ( GetSequence() != iSeq )
+					SetSequence( iSeq );
+				SetCycle( pVM->GetCycle() );
+				InvalidateBoneCache();
+			}
+		}
+	}
+
 	return BaseClass::DrawModel( flags );
 }
 

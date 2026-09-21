@@ -38,12 +38,27 @@
 #ifdef CLIENT_DLL
 #include "prediction.h"			// CPrediction *prediction, for IsFirstTimePredicted
 #endif
+#ifndef CLIENT_DLL
+// HL2SB: luaopen_ServerAIEnums below -- the server AI enum globals
+// (HULL_* / SCHED_*) that GMod publishes and scripted SNPCs (npc_scp173) use.
+#include "ai_default.h"			// SCHED_* enum
+#include "ai_hull.h"			// Hull_t (HULL_*)
+#endif
 
 
 // HL2SB: local prototype -- deliberately NOT added to luasrclib.h: a header
 // touch there would force a full-tree rebuild (waf has no header dependency
 // propagation), and only lsrcinit.cpp needs to see this.
 LUALIB_API int (luaopen_CSEmitter) (lua_State *L);
+#ifdef CLIENT_DLL
+// HL2SB: GMod's .pcf engine-particle surface (game/client/lua/lnewparticle.cpp).
+LUALIB_API int (luaopen_CNewParticleEffect) (lua_State *L);
+#else
+// HL2SB: server AI enum globals (bottom of this file).
+LUALIB_API int luaopen_ServerAIEnums( lua_State *L );
+#endif
+// HL2SB: the engine timer library (game/shared/lua/ltimer.cpp), both realms.
+LUALIB_API int luaopen_timer ( lua_State *L );
 
 static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.  Fills _E with the shared enums.
@@ -81,7 +96,11 @@ static const luaL_Reg luasrclibs[] = {
 #ifndef CLIENT_DLL
   {LUA_EFFECTSLIBNAME, luaopen_Effects},
   {LUA_HL2MPPLAYERLIBNAME, luaopen_CHL2MP_Player},
+  {"ServerAIEnums", luaopen_ServerAIEnums},
 #endif
+  // HL2SB: the GMod timer library, engine-side (game/shared/lua/ltimer.cpp),
+  // pumped per frame from CHL2MPRules::Think / the scripted viewport paint.
+  {"timer", luaopen_timer},
   {LUA_HL2MPPLAYERLIBNAME, luaopen_CHL2MP_Player_shared},
   // HL2SB: ported from Garry's Mod.  Registers the "Vehicle" metatable
   // (game/shared/lua/lvehicle_shared.cpp) that lua_pushentity() installs for a
@@ -210,6 +229,11 @@ static const luaL_Reg luasrclibs[] = {
   // CLuaParticle) -- Nuke Pack and every effect script that spawns its own
   // sprites (game/client/lua/luaparticle.cpp).
   {"CSEmitter", luaopen_CSEmitter},
+  // HL2SB: GMod's .pcf engine-particle surface (CNewParticleEffect metatable +
+  // CreateParticleSystem / CreateParticleSystemNoEntity globals) -- the other
+  // half of the particle story, for effects that come from .pcf files
+  // (game/client/lua/lnewparticle.cpp).
+  {"CNewParticleEffect", luaopen_CNewParticleEffect},
 #endif
   {LUA_UTILLIBNAME, luaopen_UTIL},
   {LUA_UTILLIBNAME, luaopen_UTIL_shared},
@@ -1609,6 +1633,17 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     "IncludeCS = IncludeCS or function( path ) return path end\n"
     "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400 }\n"
     //---------------------------------------------------------------------
+    // NPC_STATE_*: GMod exposes Source's own NPC_STATE enum as globals
+    // (wiki NPC:GetNPCState "see the NPC_STATE enum").  scp173 compares
+    //     currVictim:GetNPCState() != NPC_STATE_DEAD
+    // serverside; with the global nil the comparison was "state != nil",
+    // always true, so a dead NPC still counted as a watcher.  Values are
+    // game/server/ai_npcstate.h's enum verbatim.
+    //---------------------------------------------------------------------
+    "NPC_STATE_INVALID = -1 NPC_STATE_NONE = 0 NPC_STATE_IDLE = 1 NPC_STATE_ALERT = 2 "
+    "NPC_STATE_COMBAT = 3 NPC_STATE_SCRIPT = 4 NPC_STATE_PLAYDEAD = 5 NPC_STATE_PRONE = 6 "
+    "NPC_STATE_DEAD = 7\n"
+    //---------------------------------------------------------------------
     // player: only the SERVER DLL ever created this table
     // (game/server/lua/lplayer.cpp:652 does lua_setglobal( L, "player" ));
     // the client's luaopen_CBasePlayer (game/client/lua/lc_baseplayer.cpp)
@@ -1823,4 +1858,149 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_setglobal( L, "SuppressHostEvents" );
 #endif
 }
+
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-21): server AI enum globals -- HULL_* and SCHED_*.
+//
+// GMod exposes Source's own AI enums as flat globals and scripted SNPCs use
+// them directly: npc_scp173's Initialize calls
+//     self:SetHullType( HULL_MEDIUM_TALL )
+//     self:CapabilitiesAdd( bit.bor( CAP_MOVE_GROUND, ... ) )
+//     self:SetSchedule( SCHED_CHASE_ENEMY )
+// The values come from the engine's own enums (ai_default.h / ai_hull.h) so
+// they can never drift from what SetSchedule's local schedule ids mean.
+// lua_pushenum publishes both _E.HULL.MEDIUM_TALL and the flat HULL_MEDIUM_TALL.
+//-----------------------------------------------------------------------------
+LUALIB_API int luaopen_ServerAIEnums( lua_State *L )
+{
+  LUA_SET_ENUM_LIB_BEGIN( L, "HULL" );
+  lua_pushenum( L, HULL_HUMAN, "HUMAN" );
+  lua_pushenum( L, HULL_SMALL_CENTERED, "SMALL_CENTERED" );
+  lua_pushenum( L, HULL_WIDE_HUMAN, "WIDE_HUMAN" );
+  lua_pushenum( L, HULL_TINY, "TINY" );
+  lua_pushenum( L, HULL_WIDE_SHORT, "WIDE_SHORT" );
+  lua_pushenum( L, HULL_MEDIUM, "MEDIUM" );
+  lua_pushenum( L, HULL_TINY_CENTERED, "TINY_CENTERED" );
+  lua_pushenum( L, HULL_LARGE, "LARGE" );
+  lua_pushenum( L, HULL_LARGE_CENTERED, "LARGE_CENTERED" );
+  lua_pushenum( L, HULL_MEDIUM_TALL, "MEDIUM_TALL" );
+  LUA_SET_ENUM_LIB_END( L );
+
+  LUA_SET_ENUM_LIB_BEGIN( L, "SCHED" );
+  lua_pushenum( L, SCHED_NONE, "NONE" );
+  lua_pushenum( L, SCHED_IDLE_STAND, "IDLE_STAND" );
+  lua_pushenum( L, SCHED_IDLE_WALK, "IDLE_WALK" );
+  lua_pushenum( L, SCHED_IDLE_WANDER, "IDLE_WANDER" );
+  lua_pushenum( L, SCHED_WAKE_ANGRY, "WAKE_ANGRY" );
+  lua_pushenum( L, SCHED_ALERT_FACE, "ALERT_FACE" );
+  lua_pushenum( L, SCHED_ALERT_FACE_BESTSOUND, "ALERT_FACE_BESTSOUND" );
+  lua_pushenum( L, SCHED_ALERT_REACT_TO_COMBAT_SOUND, "ALERT_REACT_TO_COMBAT_SOUND" );
+  lua_pushenum( L, SCHED_ALERT_SCAN, "ALERT_SCAN" );
+  lua_pushenum( L, SCHED_ALERT_STAND, "ALERT_STAND" );
+  lua_pushenum( L, SCHED_ALERT_WALK, "ALERT_WALK" );
+  lua_pushenum( L, SCHED_INVESTIGATE_SOUND, "INVESTIGATE_SOUND" );
+  lua_pushenum( L, SCHED_COMBAT_FACE, "COMBAT_FACE" );
+  lua_pushenum( L, SCHED_COMBAT_SWEEP, "COMBAT_SWEEP" );
+  lua_pushenum( L, SCHED_FEAR_FACE, "FEAR_FACE" );
+  lua_pushenum( L, SCHED_COMBAT_STAND, "COMBAT_STAND" );
+  lua_pushenum( L, SCHED_COMBAT_WALK, "COMBAT_WALK" );
+  lua_pushenum( L, SCHED_CHASE_ENEMY, "CHASE_ENEMY" );
+  lua_pushenum( L, SCHED_CHASE_ENEMY_FAILED, "CHASE_ENEMY_FAILED" );
+  lua_pushenum( L, SCHED_VICTORY_DANCE, "VICTORY_DANCE" );
+  lua_pushenum( L, SCHED_TARGET_FACE, "TARGET_FACE" );
+  lua_pushenum( L, SCHED_TARGET_CHASE, "TARGET_CHASE" );
+  lua_pushenum( L, SCHED_SMALL_FLINCH, "SMALL_FLINCH" );
+  lua_pushenum( L, SCHED_BIG_FLINCH, "BIG_FLINCH" );
+  lua_pushenum( L, SCHED_BACK_AWAY_FROM_ENEMY, "BACK_AWAY_FROM_ENEMY" );
+  lua_pushenum( L, SCHED_MOVE_AWAY_FROM_ENEMY, "MOVE_AWAY_FROM_ENEMY" );
+  lua_pushenum( L, SCHED_BACK_AWAY_FROM_SAVE_POSITION, "BACK_AWAY_FROM_SAVE_POSITION" );
+  lua_pushenum( L, SCHED_TAKE_COVER_FROM_ENEMY, "TAKE_COVER_FROM_ENEMY" );
+  lua_pushenum( L, SCHED_TAKE_COVER_FROM_BEST_SOUND, "TAKE_COVER_FROM_BEST_SOUND" );
+  lua_pushenum( L, SCHED_FLEE_FROM_BEST_SOUND, "FLEE_FROM_BEST_SOUND" );
+  lua_pushenum( L, SCHED_TAKE_COVER_FROM_ORIGIN, "TAKE_COVER_FROM_ORIGIN" );
+  lua_pushenum( L, SCHED_FAIL_TAKE_COVER, "FAIL_TAKE_COVER" );
+  lua_pushenum( L, SCHED_RUN_FROM_ENEMY, "RUN_FROM_ENEMY" );
+  lua_pushenum( L, SCHED_RUN_FROM_ENEMY_FALLBACK, "RUN_FROM_ENEMY_FALLBACK" );
+  lua_pushenum( L, SCHED_MOVE_TO_WEAPON_RANGE, "MOVE_TO_WEAPON_RANGE" );
+  lua_pushenum( L, SCHED_ESTABLISH_LINE_OF_FIRE, "ESTABLISH_LINE_OF_FIRE" );
+  lua_pushenum( L, SCHED_ESTABLISH_LINE_OF_FIRE_FALLBACK, "ESTABLISH_LINE_OF_FIRE_FALLBACK" );
+  lua_pushenum( L, SCHED_PRE_FAIL_ESTABLISH_LINE_OF_FIRE, "PRE_FAIL_ESTABLISH_LINE_OF_FIRE" );
+  lua_pushenum( L, SCHED_FAIL_ESTABLISH_LINE_OF_FIRE, "FAIL_ESTABLISH_LINE_OF_FIRE" );
+  lua_pushenum( L, SCHED_SHOOT_ENEMY_COVER, "SHOOT_ENEMY_COVER" );
+  lua_pushenum( L, SCHED_COWER, "COWER" );
+  lua_pushenum( L, SCHED_MELEE_ATTACK1, "MELEE_ATTACK1" );
+  lua_pushenum( L, SCHED_MELEE_ATTACK2, "MELEE_ATTACK2" );
+  lua_pushenum( L, SCHED_RANGE_ATTACK1, "RANGE_ATTACK1" );
+  lua_pushenum( L, SCHED_RANGE_ATTACK2, "RANGE_ATTACK2" );
+  lua_pushenum( L, SCHED_SPECIAL_ATTACK1, "SPECIAL_ATTACK1" );
+  lua_pushenum( L, SCHED_SPECIAL_ATTACK2, "SPECIAL_ATTACK2" );
+  lua_pushenum( L, SCHED_STANDOFF, "STANDOFF" );
+  lua_pushenum( L, SCHED_ARM_WEAPON, "ARM_WEAPON" );
+  lua_pushenum( L, SCHED_DISARM_WEAPON, "DISARM_WEAPON" );
+  lua_pushenum( L, SCHED_HIDE_AND_RELOAD, "HIDE_AND_RELOAD" );
+  lua_pushenum( L, SCHED_RELOAD, "RELOAD" );
+  lua_pushenum( L, SCHED_AMBUSH, "AMBUSH" );
+  lua_pushenum( L, SCHED_DIE, "DIE" );
+  lua_pushenum( L, SCHED_DIE_RAGDOLL, "DIE_RAGDOLL" );
+  lua_pushenum( L, SCHED_WAIT_FOR_SCRIPT, "WAIT_FOR_SCRIPT" );
+  lua_pushenum( L, SCHED_AISCRIPT, "AISCRIPT" );
+  lua_pushenum( L, SCHED_SCRIPTED_WALK, "SCRIPTED_WALK" );
+  lua_pushenum( L, SCHED_SCRIPTED_RUN, "SCRIPTED_RUN" );
+  lua_pushenum( L, SCHED_SCRIPTED_CUSTOM_MOVE, "SCRIPTED_CUSTOM_MOVE" );
+  lua_pushenum( L, SCHED_SCRIPTED_WAIT, "SCRIPTED_WAIT" );
+  lua_pushenum( L, SCHED_SCRIPTED_FACE, "SCRIPTED_FACE" );
+  lua_pushenum( L, SCHED_SCENE_GENERIC, "SCENE_GENERIC" );
+  lua_pushenum( L, SCHED_NEW_WEAPON, "NEW_WEAPON" );
+  lua_pushenum( L, SCHED_NEW_WEAPON_CHEAT, "NEW_WEAPON_CHEAT" );
+  lua_pushenum( L, SCHED_SWITCH_TO_PENDING_WEAPON, "SWITCH_TO_PENDING_WEAPON" );
+  lua_pushenum( L, SCHED_GET_HEALTHKIT, "GET_HEALTHKIT" );
+  lua_pushenum( L, SCHED_WAIT_FOR_SPEAK_FINISH, "WAIT_FOR_SPEAK_FINISH" );
+  lua_pushenum( L, SCHED_MOVE_AWAY, "MOVE_AWAY" );
+  lua_pushenum( L, SCHED_MOVE_AWAY_FAIL, "MOVE_AWAY_FAIL" );
+  lua_pushenum( L, SCHED_MOVE_AWAY_END, "MOVE_AWAY_END" );
+  lua_pushenum( L, SCHED_FORCED_GO, "FORCED_GO" );
+  lua_pushenum( L, SCHED_FORCED_GO_RUN, "FORCED_GO_RUN" );
+  lua_pushenum( L, SCHED_NPC_FREEZE, "NPC_FREEZE" );
+  lua_pushenum( L, SCHED_PATROL_WALK, "PATROL_WALK" );
+  lua_pushenum( L, SCHED_COMBAT_PATROL, "COMBAT_PATROL" );
+  lua_pushenum( L, SCHED_PATROL_RUN, "PATROL_RUN" );
+  lua_pushenum( L, SCHED_RUN_RANDOM, "RUN_RANDOM" );
+  lua_pushenum( L, SCHED_FALL_TO_GROUND, "FALL_TO_GROUND" );
+  lua_pushenum( L, SCHED_DROPSHIP_DUSTOFF, "DROPSHIP_DUSTOFF" );
+  lua_pushenum( L, SCHED_FLINCH_PHYSICS, "FLINCH_PHYSICS" );
+  LUA_SET_ENUM_LIB_END( L );
+
+  // CAP_*: the capability BITS from basecombatcharacter.h's Capability_t,
+  // written out as literals so this shared file does not need the server
+  // player header.  These are Source's own bits (CAP_MOVE_GROUND = 0x1) --
+  // what CAI_BaseNPC::CapabilitiesAdd consumes raw.
+  LUA_SET_ENUM_LIB_BEGIN( L, "CAP" );
+  lua_pushenum( L, 0x00000001, "MOVE_GROUND" );
+  lua_pushenum( L, 0x00000002, "MOVE_JUMP" );
+  lua_pushenum( L, 0x00000004, "MOVE_FLY" );
+  lua_pushenum( L, 0x00000008, "MOVE_CLIMB" );
+  lua_pushenum( L, 0x00000010, "MOVE_SWIM" );
+  lua_pushenum( L, 0x00000020, "MOVE_CRAWL" );
+  lua_pushenum( L, 0x00000040, "MOVE_SHOOT" );
+  lua_pushenum( L, 0x00000080, "SKIP_NAV_GROUND_CHECK" );
+  lua_pushenum( L, 0x00000100, "USE" );
+  lua_pushenum( L, 0x00000400, "AUTO_DOORS" );
+  lua_pushenum( L, 0x00000800, "OPEN_DOORS" );
+  lua_pushenum( L, 0x00001000, "TURN_HEAD" );
+  lua_pushenum( L, 0x00002000, "WEAPON_RANGE_ATTACK1" );
+  lua_pushenum( L, 0x00004000, "WEAPON_RANGE_ATTACK2" );
+  lua_pushenum( L, 0x00008000, "WEAPON_MELEE_ATTACK1" );
+  lua_pushenum( L, 0x00010000, "WEAPON_MELEE_ATTACK2" );
+  lua_pushenum( L, 0x00020000, "INNATE_RANGE_ATTACK1" );
+  lua_pushenum( L, 0x00040000, "INNATE_RANGE_ATTACK2" );
+  lua_pushenum( L, 0x00080000, "INNATE_MELEE_ATTACK1" );
+  lua_pushenum( L, 0x00100000, "INNATE_MELEE_ATTACK2" );
+  lua_pushenum( L, 0x00200000, "USE_WEAPONS" );
+  lua_pushenum( L, 0x02000000, "FRIENDLY_DMG_IMMUNE" );
+  LUA_SET_ENUM_LIB_END( L );
+
+  return 0;
+}
+#endif
 

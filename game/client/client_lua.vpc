@@ -79,6 +79,8 @@ $Project "Client (HL2SB)"
 		$File "lua/lua_effects.cpp"
 		// HL2SB: GMod's standalone Lua particle system (ParticleEmitter/CSEmitter/CLuaParticle)
 		$File "lua/luaparticle.cpp"
+		// HL2SB: GMod's .pcf engine-particle surface (CNewParticleEffect/CreateParticleSystem*)
+		$File "lua/lnewparticle.cpp"
 		// HL2SB: ported from Experiment: Source (GMod's chat.*)
 		$File "lua/lc_chat.cpp"
 		$File "lua/scripted_controls/lButton.cpp"
@@ -110,6 +112,8 @@ $Project "Client (HL2SB)"
 		
 		$File "$SRCDIR/game/shared/lua/lsrcinit.cpp"
 		$File "$SRCDIR/game/shared/lua/lnet.cpp"
+		// HL2SB: the GMod timer library, engine-side (pumped from gamerules Think / scripted viewport paint)
+		$File "$SRCDIR/game/shared/lua/ltimer.cpp"
 		$File "$SRCDIR/game/shared/lua/ltakedamageinfo.cpp"
 		$File "$SRCDIR/game/shared/lua/lbaseplayer_shared.cpp"
 		$File "$SRCDIR/game/shared/lua/lbaseentity_shared.cpp"

@@ -97,11 +97,20 @@ extern int ActivityList_HighestIndex();
 // global `L` (luamanager.h) has to be that same state and stack.
 // Only activitylist.cpp ever expands this macro, and it includes luamanager.h
 // under LUA_SDK before the expansion site.
+//
+// HL2SB: each entry is ALSO published as a flat global (ACT_IDLE etc), like every
+// other enum lib does -- GMod exposes ACT_* as globals and addons use them
+// directly (scp049's StartActivity( ACT_HL2MP_SWIM_IDLE_PISTOL )).  The values
+// come from the SAME macro expansion as the engine's own numbers, so they can
+// never drift the way the old hand-copied block in gmod_globals.lua did.
 #define REGISTER_SHARED_ACTIVITY( _n )              \
     ActivityList_RegisterSharedActivity( #_n, _n ); \
     lua_pushstring( L, #_n );                       \
     lua_pushinteger( L, _n );                       \
-    lua_settable( L, -3 );
+    lua_settable( L, -3 );                          \
+    lua_pushstring( L, #_n );                       \
+    lua_pushinteger( L, _n );                       \
+    lua_setglobal( L, #_n );
 #endif
 #define REGISTER_PRIVATE_ACTIVITY( _n ) _n = ActivityList_RegisterPrivateActivity( #_n );
 

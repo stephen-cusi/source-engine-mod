@@ -335,6 +335,15 @@ static int CBasePlayer_GetEyeTrace (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Player:GetEyeTraceNoCursor() (wiki: shared; the cursor is
+// a clientside-only concept, so serverside GMod's version traces the same eye
+// ray).  scp173 reads victim:GetEyeTraceNoCursor().Normal every think to build
+// its vision cone; with the method nil the think coroutine errored each tick
+// and the statue froze mid-game.
+static int CBasePlayer_GetEyeTraceNoCursor (lua_State *L) {
+  return CBasePlayer_GetEyeTrace( L );
+}
+
 static int CBasePlayer_FindUseEntity (lua_State *L) {
   CBaseEntity *pUseEntity = luaL_checkplayer(L, 1)->FindUseEntity();
   lua_pushentity(L, pUseEntity);
@@ -1405,6 +1414,35 @@ static int CBasePlayer_SteamID (lua_State *L) {
   return 1;
 }
 
+/*
+** HL2SB GMod compat: Player:IsAdmin() / Player:IsSuperAdmin().
+**
+** There is no usergroup system behind this engine, so the practical meaning of
+** "admin" is the listen-server host -- which is also who GMod's own defaults
+** treat as the server's boss.  Addons gate server functions on this
+** (cod_c4's net receiver at shared.lua:27 raised "attempt to call a nil value
+** (method 'IsAdmin')" on every convar change before this existed).
+*/
+static int CBasePlayer_IsAdmin (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+
+  bool bHost = false;
+  if ( pPlayer != NULL )
+  {
+#ifdef CLIENT_DLL
+    // On a listen server the host's client entity index is always 1
+    // (same convention as IsListenServerHost above; the client engine
+    // interface has no IsDedicatedServer to ask).
+    bHost = ( pPlayer->entindex() == 1 );
+#else
+    bHost = !engine->IsDedicatedServer() && ( pPlayer->entindex() == 1 );
+#endif
+  }
+
+  lua_pushboolean( L, bHost );
+  return 1;
+}
+
 static int CBasePlayer_SteamID64 (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
   CSteamID steamID;
@@ -1569,6 +1607,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetVehicle", CBasePlayer_GetVehicle},
   {"KillSilent", CBasePlayer_KillSilent},
   {"GetEyeTrace", CBasePlayer_GetEyeTrace},
+  {"GetEyeTraceNoCursor", CBasePlayer_GetEyeTraceNoCursor},
   {"GetBonusChallenge", CBasePlayer_GetBonusChallenge},
   {"GetBonusProgress", CBasePlayer_GetBonusProgress},
   {"GetDeathTime", CBasePlayer_GetDeathTime},
@@ -1605,6 +1644,8 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SetWeaponColor", CBasePlayer_SetWeaponColor},
   {"SteamID", CBasePlayer_SteamID},
   {"SteamID64", CBasePlayer_SteamID64},
+  {"IsAdmin", CBasePlayer_IsAdmin},
+  {"IsSuperAdmin", CBasePlayer_IsAdmin},
 
   {"GetViewModel", CBasePlayer_GetViewModel},
   {"GetWaterJumpTime", CBasePlayer_GetWaterJumpTime},

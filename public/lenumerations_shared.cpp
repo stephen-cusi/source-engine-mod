@@ -1023,6 +1023,10 @@ LUALIB_API int luaopen_SOLID( lua_State *L )
     lua_pushenum( L, SOLID_NONE, "NONE" );
     lua_pushenum( L, SOLID_BSP, "BSP" );
     lua_pushenum( L, SOLID_BBOX, "AABB" );
+    // HL2SB: GMod spells this constant SOLID_BBOX (npc_scp173's Initialize
+    // passes SOLID_BBOX to Entity:SetSolid) -- the flat global from "AABB"
+    // above is SOLID_AABB, so publish the GMod spelling too.
+    lua_pushenum( L, SOLID_BBOX, "BBOX" );
     lua_pushenum( L, SOLID_OBB, "OBB" );
     lua_pushenum( L, SOLID_OBB_YAW, "OBB_YAW" );
     lua_pushenum( L, SOLID_CUSTOM, "CUSTOM" );

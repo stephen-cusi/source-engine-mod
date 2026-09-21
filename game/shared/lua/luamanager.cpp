@@ -58,6 +58,9 @@ static bool luasrc_PathInDisabledAddon (const char *fullpath);
 // HL2SB: the scripted control factories (luaopen_vgui_Panel/Frame/Button) that
 // luasrc_init_gameui opens for the main menu state.
 #include "lua/vgui_controls/lControls.h"
+// HL2SB (2026-09-21): engine timer registry shutdown (game/shared/lua/ltimer.cpp).
+// Local prototype on purpose -- luasrclib.h touch would force a full rebuild.
+LUA_API void HL2SB_TimerShutdown( void );
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -693,6 +696,17 @@ static ConVar hl2sb_lua_log( "hl2sb_lua_log", "1", FCVAR_ARCHIVE | FCVAR_CLIENTD
 	"Write all Lua console output (errors/warnings/diagnostics) to hl2sb_lua.log" );
 static ConVar hl2sb_lua_log_colors( "hl2sb_lua_log_colors", "0", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
 	"Prefix each hl2sb_lua.log line with [E]/[W]/[I] severity markers" );
+// HL2SB: GMod's own log switches (2026-09-20).  GMod defaults these to 0; we
+// default to 1 so the fork's debugging workflow (hl2sb_lua.log is the primary
+// diagnostic channel) does not silently change.  They gate per-realm, on top of
+// the hl2sb_lua_log master switch.
+#ifdef CLIENT_DLL
+static ConVar lua_log_cl( "lua_log_cl", "1", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
+	"Log client Lua messages to hl2sb_lua.log (GMod-parity name)" );
+#else
+static ConVar lua_log_sv( "lua_log_sv", "1", FCVAR_ARCHIVE,
+	"Log server Lua messages to hl2sb_lua.log (GMod-parity name)" );
+#endif
 
 static const char *s_pszLuaLogFile = "hl2sb_lua.log";
 
@@ -700,6 +714,13 @@ void luasrc_LuaLogToFile( const char *pszText, char cSeverity )
 {
 	if ( !hl2sb_lua_log.GetBool() || !g_pFullFileSystem || pszText == NULL )
 		return;
+#ifdef CLIENT_DLL
+	if ( !lua_log_cl.GetBool() )
+		return;
+#else
+	if ( !lua_log_sv.GetBool() )
+		return;
+#endif
 
 	char szLine[ 2048 ];
 	int nLen = Q_strlen( pszText );
@@ -1066,6 +1087,11 @@ void luasrc_shutdown (void) {
   // arrives during the level transition is dispatched against stale indices in
   // the next state (that abort was the client.dll crash).
   luasrc_net_reset();
+
+  // HL2SB (2026-09-21): same for the engine timer registry
+  // (game/shared/lua/ltimer.cpp) -- timer callbacks are luaL_ref()s into the
+  // dying state.
+  HL2SB_TimerShutdown();
 
 //  lcf_close(L);
   lua_close(L);
@@ -2383,6 +2409,38 @@ void luasrc_LoadEntities (const char *path)
 	luasrc_ResolvePendingNextBotChains();
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-21): every entity script is on disk-loaded now, so build the
+// baseclass registry -- GMod runs scripted_ents.OnLoaded() / weapons.OnLoaded()
+// at exactly this point, and every DEFINE_BASECLASS depends on it.  The
+// registration used to live only in gmod_compatibility/sh_init.lua behind a
+// "PostEntitiesLoaded" hook that NOTHING ever dispatched, so the registry
+// stayed empty forever and every BaseClass was a fresh empty table:
+// BaseClass.Initialize silently skipped, SCP173_Initialized never set, the
+// statue brain-dead.
+//-----------------------------------------------------------------------------
+static void HL2SB_RunEntsOnLoaded ( void )
+{
+	lua_getglobal( L, "scripted_ents" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "OnLoaded" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_remove( L, -2 );
+			luasrc_pcall( L, 0, 0, 0 );
+		}
+		else
+		{
+			lua_pop( L, 2 );
+		}
+	}
+	else
+	{
+		lua_pop( L, 1 );
+	}
+}
+
 /*
 ** HL2SB: one SWEP, from whichever layout found it.
 **
@@ -2814,6 +2872,11 @@ bool luasrc_SetGamemode (const char *gamemode) {
 	  luasrc_LoadWeapons( loadPath );
 	  luasrc_LoadEntities( loadPath );
 	  luasrc_LoadEffects( loadPath );
+
+	  // HL2SB (2026-09-21): build the baseclass registry now that every entity
+	  // script has loaded -- see HL2SB_RunEntsOnLoaded above.
+	  HL2SB_RunEntsOnLoaded();
+
 	  BEGIN_LUA_CALL_HOOK("Initialize");
 	  END_LUA_CALL_HOOK(0,0);
 
@@ -2921,6 +2984,10 @@ static void HL2SB_LuaReloadCmd( const CCommand &args )
 	luasrc_LoadEffects();
 #endif
 
+	// HL2SB (2026-09-21): rebuild the baseclass registry for the reloaded
+	// classes -- see HL2SB_RunEntsOnLoaded.
+	HL2SB_RunEntsOnLoaded();
+
 	luasrc_LuaInfoMsgF( "[HL2SB] lua_reloadents: done\n" );
 }
 
@@ -2976,40 +3043,84 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 	return current;
 }
 
+// ---------------------------------------------------------------------------
+// HL2SB: shared body for lua_dofile(_cl) / lua_openscript(_cl) /
+// lua_refresh_file (2026-09-20).  GMod names the "run a script file" command
+// lua_openscript(_cl) and also exposes lua_refresh_file (simulate a file
+// change to exercise auto-refresh); all three have the same semantics, so the
+// bodies are funnelled here instead of being pasted per command name.
+// ---------------------------------------------------------------------------
+static ConVar sv_allowcslua( "sv_allowcslua", "1", FCVAR_REPLICATED,
+	"Allow clients to run client-side Lua (lua_openscript_cl / lua_run_cl)" );
+
+static void HL2SB_LuaDoFile_Impl( const CCommand &args, bool bClient, const char *cmdname )
+{
+	if ( !g_bLuaInitialized )
+		return;
+
+	if ( args.ArgC() == 1 )
+	{
+		Msg( "Usage: %s <filename>\n", cmdname );
+		return;
+	}
+
+#ifndef CLIENT_DLL
+	// Server realm only -- the client has no such helper.
+	if ( !UTIL_IsCommandIssuedByServerAdmin() )
+		return;
+#endif
+
+	// GMod: with sv_allowcslua 0 the client-side script commands are refused.
+	// The cvar is replicated, so checking it locally is the same decision the
+	// server would make.
+	if ( bClient && !sv_allowcslua.GetBool() )
+	{
+		Msg( "%s: refused, sv_allowcslua is 0\n", cmdname );
+		return;
+	}
+
+	char fullpath[ 512 ] = { 0 };
+	char filename[ 256 ] = { 0 };
+	Q_snprintf( filename, sizeof( filename ), LUA_ROOT "/%s", args.ArgS() );
+	Q_strlower( filename );
+	Q_FixSlashes( filename );
+	if ( filesystem->FileExists( filename, "MOD" ) )
+	{
+		filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
+	}
+	else
+	{
+		// filename is local to game dir for Steam, so we need to prepend game dir for regular file load
+#ifdef CLIENT_DLL
+		Q_snprintf( fullpath, sizeof( fullpath ), "%s/" LUA_ROOT "/%s", engine->GetGameDirectory(), args.ArgS() );
+#else
+		char gamePath[256];
+		engine->GetGameDir( gamePath, 256 );
+		Q_StripTrailingSlash( gamePath );
+		Q_snprintf( fullpath, sizeof( fullpath ), "%s/" LUA_ROOT "/%s", gamePath, args.ArgS() );
+#endif
+		Q_strlower( fullpath );
+		Q_FixSlashes( fullpath );
+	}
+
+	if ( Q_strstr( fullpath, ".." ) )
+	{
+		return;
+	}
+	Msg( "Running file %s...\n", args.ArgS() );
+	luasrc_dofile( L, fullpath );
+}
+
 #ifdef CLIENT_DLL
 	CON_COMMAND_F_COMPLETION( lua_dofile_cl, "Load and run a Lua file", 0, DoFileCompletion )
 	{
-		if ( !g_bLuaInitialized )
-			return;
+		HL2SB_LuaDoFile_Impl( args, true, "lua_dofile_cl" );
+	}
 
-		if ( args.ArgC() == 1 )
-		{
-			Msg( "Usage: lua_dofile_cl <filename>\n" );
-			return;
-		}
-
-		char fullpath[ 512 ] = { 0 };
-		char filename[ 256 ] = { 0 };
-		Q_snprintf( filename, sizeof( filename ), LUA_ROOT "/%s", args.ArgS() );
-		Q_strlower( filename );
-		Q_FixSlashes( filename );
-		if ( filesystem->FileExists( filename, "MOD" ) )
-		{
-			filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
-		}
-		else
-		{
-			Q_snprintf( fullpath, sizeof( fullpath ), "%s/" LUA_ROOT "/%s", engine->GetGameDirectory(), args.ArgS() );
-			Q_strlower( fullpath );
-			Q_FixSlashes( fullpath );
-		}
-
-		if ( Q_strstr( fullpath, ".." ) )
-		{
-			return;
-		}
-		Msg( "Running file %s...\n", args.ArgS() );
-		luasrc_dofile( L, fullpath );
+	// HL2SB: GMod's name for the same thing (2026-09-20).
+	CON_COMMAND_F_COMPLETION( lua_openscript_cl, "Load and run a Lua file (GMod name for lua_dofile_cl)", 0, DoFileCompletion )
+	{
+		HL2SB_LuaDoFile_Impl( args, true, "lua_openscript_cl" );
 	}
 
 	/*
@@ -3031,6 +3142,14 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 			return;
 		}
 
+		// Same gate as lua_openscript_cl (2026-09-20): the cvar is replicated,
+		// so checking it locally is the same decision the server would make.
+		if ( !sv_allowcslua.GetBool() )
+		{
+			Msg( "lua_run_cl: refused, sv_allowcslua is 0\n" );
+			return;
+		}
+
 		if ( args.ArgC() == 1 )
 		{
 			Msg( "Usage: lua_run_cl <lua code>\n" );
@@ -3042,44 +3161,23 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 #else
 	CON_COMMAND_F_COMPLETION( lua_dofile, "Load and run a Lua file", 0, DoFileCompletion )
 	{
-		if ( !g_bLuaInitialized )
-			return;
+		HL2SB_LuaDoFile_Impl( args, false, "lua_dofile" );
+	}
 
-		if ( !UTIL_IsCommandIssuedByServerAdmin() )
-			return;
+	// HL2SB: GMod's name for the same thing (2026-09-20).
+	CON_COMMAND_F_COMPLETION( lua_openscript, "Load and run a Lua file (GMod name for lua_dofile)", 0, DoFileCompletion )
+	{
+		HL2SB_LuaDoFile_Impl( args, false, "lua_openscript" );
+	}
 
-		if ( args.ArgC() == 1 )
-		{
-			Msg( "Usage: lua_dofile <filename>\n" );
-			return;
-		}
-
-		char fullpath[ 512 ] = { 0 };
-		char filename[ 256 ] = { 0 };
-		Q_snprintf( filename, sizeof( filename ), LUA_ROOT "lua/%s", args.ArgS() );
-		Q_strlower( filename );
-		Q_FixSlashes( filename );
-		if ( filesystem->FileExists( filename, "MOD" ) )
-		{
-			filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
-		}
-		else
-		{
-			// filename is local to game dir for Steam, so we need to prepend game dir for regular file load
-			char gamePath[256];
-			engine->GetGameDir( gamePath, 256 );
-			Q_StripTrailingSlash( gamePath );
-			Q_snprintf( fullpath, sizeof( fullpath ), "%s/" LUA_ROOT "/%s", gamePath, args.ArgS() );
-			Q_strlower( fullpath );
-			Q_FixSlashes( fullpath );
-		}
-
-		if ( Q_strstr( fullpath, ".." ) )
-		{
-			return;
-		}
-		Msg( "Running file %s...\n", args.ArgS() );
-		luasrc_dofile( L, fullpath );
+	// HL2SB: GMod's lua_refresh_file -- simulate a file change so auto-refresh
+	// style reloads can be exercised by hand.  Same semantics as lua_dofile:
+	// the file is re-executed top to bottom (note that, exactly like GMod, old
+	// hook.Add/concommand.Add registrations from the previous run are NOT
+	// removed -- clean them up in the file itself).
+	CON_COMMAND_F_COMPLETION( lua_refresh_file, "Re-run a Lua file, simulating a file change", 0, DoFileCompletion )
+	{
+		HL2SB_LuaDoFile_Impl( args, false, "lua_refresh_file" );
 	}
 
 	/* HL2SB: GMod's lua_run, server realm.  See the client one above. */
@@ -3098,6 +3196,196 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 		}
 
 		luasrc_dostring( L, args.ArgS() );
+	}
+#endif
+
+// ---------------------------------------------------------------------------
+// HL2SB: GMod-parity Lua management surface (2026-09-20).
+//
+// GMod ships a set of ConVars and diagnostics commands around its Lua system;
+// addons and debugging workflows expect them.  What already existed here:
+// lua_run(_cl), lua_dofile(_cl) (+GMod-name lua_openscript(_cl) above),
+// lua_reloadents, include, AddCSLuaFile (no-op stub).  What this block adds:
+//
+//   sv_allowcslua   (above HL2SB_LuaDoFile_Impl) - replicated, default 1
+//   lua_openscript(_cl), lua_refresh_file        - GMod command names
+//   lua_dumpfonts(_menu)      - dump the per-state font registry
+//   lua_dumptimers(_cl/_sv/_menu) - dump timer.* state (needs timer.Dump,
+//                               lua/includes/modules/timer.lua)
+//   lua_filestats             - count lua/ files per top folder
+//   sv_kickerrornum, lua_strict, lua_networkvar_bytespertick, lua_matproxy,
+//   lua_log_cl, lua_log_sv    - GMod-parity ConVars (see each comment)
+//
+// Realm placement mirrors GMod: _cl commands register in client.dll, bare ones
+// in server.dll, _menu ones in client.dll (the menu lua_State lives there --
+// cdll_client_int.cpp calls luasrc_init_gameui).  No name is registered by
+// both DLLs (a bare name in both would collide, exactly like lua_run).
+// ---------------------------------------------------------------------------
+
+static ConVar sv_kickerrornum( "sv_kickerrornum", "0", FCVAR_REPLICATED,
+	"Kick a client after this many Lua errors (0 = never). HL2SB registers this for addon compatibility; the count is not enforced yet" );
+static ConVar lua_strict( "lua_strict", "0", FCVAR_REPLICATED,
+	"Strict Lua mode: raise non-fatal errors on unsupported behaviour. Registered for addon compatibility" );
+static ConVar lua_networkvar_bytespertick( "lua_networkvar_bytespertick", "256", FCVAR_REPLICATED,
+	"Bytes per tick available for NW variable replication. HL2SB NW variables are local-only, so this is advisory" );
+static ConVar lua_matproxy( "lua_matproxy", "1", FCVAR_REPLICATED,
+	"Enable Lua material proxies" );
+
+static bool HL2SB_LuaStateReady( lua_State *pL, const char *cmdname, const char *realmname )
+{
+	if ( pL == NULL )
+	{
+		Msg( "%s: the %s Lua state is not available in this realm\n", cmdname, realmname );
+		return false;
+	}
+	if ( pL == L && !g_bLuaInitialized )
+	{
+		Msg( "%s: Lua is not initialized yet (enter a map first)\n", cmdname );
+		return false;
+	}
+	return true;
+}
+
+// Fonts live in a per-state registry table under the key below, filled by
+// surface.CreateFont( name, fontData ) -- public/lua/vgui/LISurface.cpp owns
+// the key, keep the two literals in sync.
+#define HL2SB_LUA_FONTS_REGISTRY_KEY  "hl2sb_lua_fonts"
+
+static void HL2SB_LuaDumpFonts( lua_State *pL, const char *cmdname )
+{
+	if ( !HL2SB_LuaStateReady( pL, cmdname, "target" ) )
+		return;
+
+	lua_getfield( pL, LUA_REGISTRYINDEX, HL2SB_LUA_FONTS_REGISTRY_KEY );
+	if ( !lua_istable( pL, -1 ) )
+	{
+		lua_pop( pL, 1 );
+		Msg( "%s: no fonts have been created in this state yet\n", cmdname );
+		return;
+	}
+
+	int n = 0;
+	lua_pushnil( pL );
+	while ( lua_next( pL, -2 ) != 0 )
+	{
+		Msg( "  %-32s HFont %d\n", lua_tostring( pL, -2 ), (int)lua_tointeger( pL, -1 ) );
+		++n;
+		lua_pop( pL, 1 );
+	}
+	lua_pop( pL, 1 );
+	Msg( "%s: %d font(s) registered in this state\n", cmdname, n );
+}
+
+static void HL2SB_LuaDumpTimers( lua_State *pL, const char *cmdname )
+{
+	if ( !HL2SB_LuaStateReady( pL, cmdname, "target" ) )
+		return;
+
+	// timer.* is a pure Lua module (lua/includes/modules/timer.lua); its table
+	// is module-local, so the dump goes through timer.Dump() added there.
+	luasrc_dostring( pL, "if timer ~= nil and type(timer.Dump) == \"function\" then timer.Dump() else print(\"[HL2SB] timer module (or its Dump) is not loaded in this realm\") end" );
+}
+
+#ifdef CLIENT_DLL
+	CON_COMMAND( lua_dumpfonts, "Dump fonts registered via surface.CreateFont (client)" )
+	{
+		HL2SB_LuaDumpFonts( L, "lua_dumpfonts" );
+	}
+
+	CON_COMMAND( lua_dumpfonts_menu, "Dump fonts registered in the main-menu Lua state" )
+	{
+		HL2SB_LuaDumpFonts( LGameUI, "lua_dumpfonts_menu" );
+	}
+
+	CON_COMMAND( lua_dumptimers_cl, "Dump all active Lua timers (client)" )
+	{
+		HL2SB_LuaDumpTimers( L, "lua_dumptimers_cl" );
+	}
+
+	CON_COMMAND( lua_dumptimers_menu, "Dump all active Lua timers (menu)" )
+	{
+		HL2SB_LuaDumpTimers( LGameUI, "lua_dumptimers_menu" );
+	}
+#else
+	CON_COMMAND( lua_dumptimers_sv, "Dump all active Lua timers (server)" )
+	{
+		HL2SB_LuaDumpTimers( L, "lua_dumptimers_sv" );
+	}
+
+	static int HL2SB_CountLuaFiles( const char *pszDir, int nDepth )
+	{
+		if ( nDepth > 8 )
+			return 0;
+
+		char szWild[ MAX_PATH ];
+		Q_snprintf( szWild, sizeof( szWild ), "%s/*", pszDir );
+		Q_FixSlashes( szWild );
+
+		int n = 0;
+		FileFindHandle_t fh;
+		char const *fn = g_pFullFileSystem->FindFirstEx( szWild, "MOD", &fh );
+		while ( fn )
+		{
+			if ( fn[ 0 ] != '.' )
+			{
+				char szSub[ MAX_PATH ];
+				Q_snprintf( szSub, sizeof( szSub ), "%s/%s", pszDir, fn );
+				if ( g_pFullFileSystem->FindIsDirectory( fh ) )
+				{
+					n += HL2SB_CountLuaFiles( szSub, nDepth + 1 );
+				}
+				else if ( Q_stristr( fn, ".lua" ) || Q_stristr( fn, ".dll" ) )
+				{
+					++n;
+				}
+			}
+			fn = g_pFullFileSystem->FindNext( fh );
+		}
+		g_pFullFileSystem->FindClose( fh );
+		return n;
+	}
+
+	// GMod's lua_filestats: summary of the Lua filesystem.  Ours counts what is
+	// visible under lua/ in the MOD search path (own tree + mounted addons).
+	CON_COMMAND( lua_filestats, "Show Lua file statistics (counts per lua/ folder)" )
+	{
+		if ( !g_pFullFileSystem )
+			return;
+
+		char szRoot[ MAX_PATH ];
+		Q_snprintf( szRoot, sizeof( szRoot ), LUA_ROOT );
+		Q_FixSlashes( szRoot );
+
+		int nTotal = 0;
+		FileFindHandle_t fh;
+		char szWild[ MAX_PATH ];
+		Q_snprintf( szWild, sizeof( szWild ), "%s/*", szRoot );
+		Q_FixSlashes( szWild );
+
+		Msg( "lua_filestats (search path \"MOD\", root %s):\n", szRoot );
+		char const *fn = g_pFullFileSystem->FindFirstEx( szWild, "MOD", &fh );
+		while ( fn )
+		{
+			if ( fn[ 0 ] != '.' )
+			{
+				char szSub[ MAX_PATH ];
+				Q_snprintf( szSub, sizeof( szSub ), "%s/%s", szRoot, fn );
+				if ( g_pFullFileSystem->FindIsDirectory( fh ) )
+				{
+					int n = HL2SB_CountLuaFiles( szSub, 1 );
+					Msg( "  %-24s %d file(s)\n", fn, n );
+					nTotal += n;
+				}
+				else if ( Q_stristr( fn, ".lua" ) )
+				{
+					Msg( "  %-24s 1 file(s)\n", fn );
+					++nTotal;
+				}
+			}
+			fn = g_pFullFileSystem->FindNext( fh );
+		}
+		g_pFullFileSystem->FindClose( fh );
+		Msg( "  %-24s %d file(s)\n", "TOTAL", nTotal );
 	}
 #endif
 

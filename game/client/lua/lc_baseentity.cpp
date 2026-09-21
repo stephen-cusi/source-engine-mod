@@ -13,6 +13,9 @@
 #include "mathlib/lvector.h"
 #include "model_types.h"	// HL2SB: STUDIO_RENDER, the default of Entity:DrawModel()
 #include "c_baseanimating.h"	// HL2SB: non-dispatching DrawModel path, see CBaseEntity_DrawModel
+#include "particles_new.h"	// HL2SB: Entity:CreateParticleEffect (CNewParticleEffect)
+#include "particle_parse.h"	// HL2SB: ParticleAttachment_t
+#include "lnewparticle.h"	// HL2SB: HL2SB_PushNewParticleEffect
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -195,6 +198,71 @@ static int CBaseEntity_SetNextClientThink (lua_State *L) {
 }
 
 
+// HL2SB (2026-09-21): Entity:CreateParticleEffect( particle, attachment, options )
+// -- GMod realm: client.  Creates a .pcf particle system owned by the entity's
+// CParticleProperty and returns the CNewParticleEffect wrapper.  The options
+// table (IDs 1..64) drives extra control points: each entry may carry
+// attachtype (PATTACH_*, default PATTACH_ABSORIGIN), entity (the CP follows
+// it) and position (a static CP position).
+static int CBaseEntity_CreateParticleEffect (lua_State *L) {
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  int iAttachment = luaL_optint(L, 3, 0);
+
+  // With an attachment index the system must follow that attachment
+  // (PATTACH_POINT_FOLLOW); without one, follow the origin.
+  ParticleAttachment_t iAttachType = iAttachment > 0 ? PATTACH_POINT_FOLLOW : PATTACH_ABSORIGIN_FOLLOW;
+
+  CNewParticleEffect *pEffect = pEnt->ParticleProp()->Create( pszName, iAttachType, iAttachment );
+  if ( pEffect == NULL ) {
+    lua_pushnil(L);
+    return 1;
+  }
+  if ( !pEffect->IsValid() ) {
+    Warning( "[HL2SB] Entity:CreateParticleEffect('%s'): the particle system is unknown -- was it loaded with game.AddParticles and registered with PrecacheParticleSystem?\n", pszName );
+  }
+
+  if ( lua_istable(L, 4) ) {
+    for ( int i = 1; i <= 64; ++i ) {
+      lua_rawgeti(L, 4, i);
+      if ( lua_istable(L, -1) ) {
+        lua_getfield(L, -1, "entity");
+        CBaseEntity *pCPEnt = lua_isnil(L, -1) ? NULL : luaL_checkentity(L, -1);
+        lua_pop(L, 1);
+
+        int iCPType = PATTACH_ABSORIGIN;   // wiki: attachtype defaults to PATTACH_ABSORIGIN
+        lua_getfield(L, -1, "attachtype");
+        if ( !lua_isnil(L, -1) )
+          iCPType = (int)lua_tointeger(L, -1);
+        lua_pop(L, 1);
+
+        if ( pCPEnt != NULL ) {
+          pEnt->ParticleProp()->AddControlPoint( pEffect, i, pCPEnt, (ParticleAttachment_t)iCPType, NULL, vec3_origin );
+        }
+
+        lua_getfield(L, -1, "position");
+        if ( !lua_isnil(L, -1) )
+          pEffect->SetControlPoint( i, luaL_checkvector(L, -1) );
+        lua_pop(L, 1);
+      }
+      lua_pop(L, 1);
+    }
+  }
+
+  HL2SB_PushNewParticleEffect(L, pEffect);
+  return 1;
+}
+
+// HL2SB (2026-09-21): Entity:StopParticlesInvolving( entity ) -- GMod realm:
+// client.  Stops every particle system on this entity that has a control
+// point attached to the given entity.
+static int CBaseEntity_StopParticlesInvolving (lua_State *L) {
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  CBaseEntity *pOther = luaL_checkentity(L, 2);
+  pEnt->ParticleProp()->StopParticlesInvolving( pOther );
+  return 0;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"SpawnClientEntity", CBaseEntity_SpawnClientEntity},
   {"Interp_HierarchyUpdateInterpolationAmounts", CBaseEntity_Interp_HierarchyUpdateInterpolationAmounts},
@@ -222,6 +290,11 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetFxBlend", CBaseEntity_GetFxBlend},
   {"LODTest", CBaseEntity_LODTest},
   {"SetNextClientThink", CBaseEntity_SetNextClientThink},
+  // HL2SB (2026-09-21): the .pcf particle surface.  StopParticles lives in the
+  // SHARED entity metatable (lbaseentity_shared.cpp) -- both realms register
+  // into the same table.
+  {"CreateParticleEffect", CBaseEntity_CreateParticleEffect},
+  {"StopParticlesInvolving", CBaseEntity_StopParticlesInvolving},
   {NULL, NULL}
 };
 

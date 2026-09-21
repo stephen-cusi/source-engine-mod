@@ -101,6 +101,19 @@ static int Vector_Angle (lua_State *L) {
   return 1;
 }
 
+// HL2SB (2026-09-21): Vector:AngleEx( up ) -- wiki: "Returns the angle required
+// for the vector to point in its direction, using the given up reference"
+// instead of Angle()'s world-up heuristic.  scp173 turns to face its victim
+// through this every think (FaceVictim / FacePoint); with the method nil the
+// call raised once per think and the statue never rotated.  VectorAngles has
+// the exact forward+up overload.
+static int Vector_AngleEx (lua_State *L) {
+  QAngle angAngles;
+  VectorAngles( luaL_checkvector(L, 1), luaL_checkvector(L, 2), angAngles );
+  lua_pushangle(L, angAngles);
+  return 1;
+}
+
 static int Vector_ToTable (lua_State *L) {
   Vector vec = luaL_checkvector(L, 1);
 
@@ -419,6 +432,7 @@ static int Vector___unm (lua_State *L) {
 static const luaL_Reg Vectormeta[] = {
   {"Cross", Vector_Cross},
   {"Angle", Vector_Angle},
+  {"AngleEx", Vector_AngleEx},
   {"ToTable", Vector_ToTable},
   {"GetNormalized", Vector_GetNormalized},
 // HL2SB GMod compat: GMod's documented Vector surface (see the definitions above).

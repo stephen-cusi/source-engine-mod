@@ -27,6 +27,9 @@
 	#include "lbaseplayer_shared.h"
 	#include "ltakedamageinfo.h"
 	#include "mathlib/lvector.h"
+	// HL2SB: engine timer pump (game/shared/lua/ltimer.cpp), see Think() below.
+	// Local prototype on purpose -- luasrclib.h touch would force a full rebuild.
+	LUA_API void HL2SB_TimerTick( void );
 #endif
 
 #ifdef CLIENT_DLL
@@ -481,6 +484,16 @@ void CHL2MPRules::Think( void )
 #if defined ( LUA_SDK )
 	BEGIN_LUA_CALL_HOOK( "Think" );
 	END_LUA_CALL_HOOK( 0, 0 );
+
+#ifndef CLIENT_DLL
+	// HL2SB (2026-09-21): the engine timer library (game/shared/lua/ltimer.cpp)
+	// is pumped here, one frame per call -- the same deal GMod makes with its
+	// engine-internal DoSimpleTimers.  Local prototype on purpose: putting it
+	// in luasrclib.h would force a full-tree rebuild (waf has no header
+	// dependency propagation), and only the two pump sites need it.
+	if ( L != NULL )
+		HL2SB_TimerTick();
+#endif
 #endif
 
 #ifndef CLIENT_DLL

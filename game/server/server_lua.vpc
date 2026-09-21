@@ -172,6 +172,8 @@ $Project "Server (HL2MP)"
 		$File "$SRCDIR/game/shared/lua/lutil_shared.cpp"
 		$File "$SRCDIR/game/shared/lua/lsrcinit.cpp"
 		$File "$SRCDIR/game/shared/lua/lnet.cpp"
+		// HL2SB: the GMod timer library, engine-side (pumped from gamerules Think / scripted viewport paint)
+		$File "$SRCDIR/game/shared/lua/ltimer.cpp"
 		$File "$SRCDIR/game/shared/lua/leffect_dispatch_data.cpp"
 		$File "$SRCDIR/game/shared/lua/lhl2mp_player_shared.cpp"
 		// HL2SB: GMod's Vehicle Lua library (the "Vehicle" metatable).

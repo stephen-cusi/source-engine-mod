@@ -389,6 +389,23 @@ static int net_WriteEntity( lua_State *L )
 
 static const char *s_HexChars = "0123456789abcdef";
 
+// HL2SB (2026-09-21): client->server command drip feed.  See net_SendToServer.
+#define HL2SB_NETCMD_QUEUE_MAX  256
+#define HL2SB_NETCMD_PER_FRAME  6
+static CUtlVector<CUtlString> g_cnetCmdQueue;
+
+// Pumped once per frame from the client's per-frame point (scripted viewport
+// paint).  Issues at most HL2SB_NETCMD_PER_FRAME queued hl2sb_netmsg commands.
+LUA_API void HL2SB_NetCmdPump ( void )
+{
+	int nFire = MIN( HL2SB_NETCMD_PER_FRAME, g_cnetCmdQueue.Count() );
+	for ( int i = 0; i < nFire; ++i )
+	{
+		engine->ClientCmd( g_cnetCmdQueue[ 0 ].Get() );
+		g_cnetCmdQueue.Remove( 0 );
+	}
+}
+
 // net.SendToServer()
 static int net_SendToServer( lua_State *L )
 {
@@ -431,7 +448,26 @@ static int net_SendToServer( lua_State *L )
 
 	char szCmd[ sizeof( szHex ) + 32 ];
 	Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_netmsg %s", szHex );
-	engine->ClientCmd( szCmd );
+
+	// HL2SB (2026-09-21): THROTTLE.  ClientCmd lands in the server's command
+	// buffer (Cbuf) on a listen server, and scp173's render-group registration
+	// pushes one of these per entity every 0.5s -- hundreds per second once a
+	// map is populated.  The unbounded burst overflowed Cbuf
+	// ("Cbuf_AddText: buffer overflow" × hundreds) and starved the server
+	// main thread: the game froze solid.  Queue the command and drip-feed a
+	// few per frame from HL2SB_NetCmdPump (scripted viewport paint) instead.
+	if ( g_cnetCmdQueue.Count() >= HL2SB_NETCMD_QUEUE_MAX )
+	{
+		static bool s_bOverflowWarned = false;
+		if ( !s_bOverflowWarned )
+		{
+			Warning( "[net] SendToServer: client->server queue full (%d) -- dropping '%s'; the transport is rate-limited to %d commands/frame\n",
+				HL2SB_NETCMD_QUEUE_MAX, pszName, HL2SB_NETCMD_PER_FRAME );
+			s_bOverflowWarned = true;
+		}
+		return 0;
+	}
+	g_cnetCmdQueue.AddToTail( CUtlString( szCmd ) );
 	return 0;
 }
 
@@ -782,14 +818,24 @@ static void HL2SB_NetMsgCmd( const CCommand &args )
 	{
 		if ( !Q_stricmp( g_NetReceiversSv[i].m_Name.Get(), szName ) )
 		{
-			s_NetRead.Seek( 0 );
+			// HL2SB (2026-09-21): the wire is "name\0payload", so the reader
+			// must skip the name before Lua sees it.  Seek( 0 ) handed the
+			// receiver the NAME BYTES as its first read: net.ReadType decoded
+			// the message name's first character as a typeid and raised
+			// "Couldn't read type" on every single client->server message
+			// carrying anything but raw bytes (scp173's screen-dimensions
+			// table: 359 failures in one session).  The client dispatcher
+			// already does this right -- it ReadStrings the name out of the
+			// usermessage before calling the receiver.
+			s_NetRead.Seek( ( nNameLen + 1 ) * 8 );
 			g_pNetReadSv = &s_NetRead;
 
 			lua_rawgeti( L, LUA_REGISTRYINDEX, g_NetReceiversSv[i].m_Ref );
 			if ( lua_isfunction( L, -1 ) )
 			{
-				// GMod contract: fn( length, player )
-				lua_pushinteger( L, nTotal );
+				// GMod contract: fn( length, player ).  length is the PAYLOAD
+				// in BITS (it used to be the whole wire size in bytes).
+				lua_pushinteger( L, ( nTotal - nNameLen - 1 ) * 8 );
 				lua_pushentity( L, pPlayer );
 
 				// luasrc_pcall consumes the function and its arguments.

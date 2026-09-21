@@ -161,6 +161,18 @@ static int CGameTrace___index (lua_State *L) {
     lua_pushinteger(L, tr.hitbox);
   else if (Q_strcmp(field, "HitGroup") == 0)
     lua_pushinteger(L, tr.hitgroup);
+  // HL2SB GMod compat: the remaining GMod-cased TraceResult fields.  scp173's
+  // teleport search branches on tr.StartSolid (util.TraceLineEx polyfill feeds
+  // it every result); nil made "not tr.StartSolid" always true so the search
+  // could settle inside geometry.
+  else if (Q_strcmp(field, "StartSolid") == 0)
+    lua_pushboolean(L, tr.startsolid);
+  else if (Q_strcmp(field, "AllSolid") == 0)
+    lua_pushboolean(L, tr.allsolid);
+  else if (Q_strcmp(field, "FractionLeftSolid") == 0)
+    lua_pushnumber(L, tr.fractionleftsolid);
+  else if (Q_strcmp(field, "Normal") == 0)
+    lua_pushvector(L, tr.plane.normal);
   else {
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);

@@ -127,6 +127,18 @@ static int engine_GetLastTimeStamp (lua_State *L) {
   return 1;
 }
 
+// HL2SB (2026-09-21): engine.TickInterval() -- GMod's per-server-tick seconds.
+// The gmod_compat shim wanted to map it to "Engines.GetIntervalPerTick", but
+// that library does not exist in this fork, so the field was nil; scp173's
+// settings coroutine called it on line 49 right AFTER re-registering every
+// entity's render group, so every frame every entity pushed a net message to
+// the server and then died -- the think-rate flood that made the statue unable
+// to move.
+static int engine_TickInterval (lua_State *L) {
+  lua_pushnumber(L, gpGlobals->interval_per_tick);
+  return 1;
+}
+
 static int engine_GetLevelName (lua_State *L) {
   lua_pushstring(L, engine->GetLevelName());
   return 1;
@@ -470,6 +482,7 @@ static const luaL_Reg enginelib[] = {
   {"GetEngineBuildNumber",   engine_GetEngineBuildNumber},
   {"GetGameDirectory", engine_GetGameDirectory},
   {"GetLastTimeStamp", engine_GetLastTimeStamp},
+  {"TickInterval",     engine_TickInterval},
   {"GetLevelName",   engine_GetLevelName},
   {"GetLightForPoint",   engine_GetLightForPoint},
   {"GetLightForPointFast",   engine_GetLightForPointFast},
