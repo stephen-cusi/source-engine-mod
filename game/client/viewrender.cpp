@@ -2103,10 +2103,12 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 		// 3D scene (world/entities/viewmodel) and screen-space effects, before
 		// the HUD.  This is the hook GMod's own modules/halo.lua renders on
 		// (it calls hook.Run("PreDrawHalos") inside, so addons' halo.Add calls
-		// made there draw here too).  Skipped for reflections/water views.
+		// made there draw here too).  In-game realm ONLY: the menu background
+		// renders through here too and its Lua state has no print/Msg, so any
+		// hook error there is unreportable and unfixable noise.
 		{
 			extern bool g_bRenderingReflection;
-			if ( L != NULL && !g_bRenderingReflection )
+			if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
 			{
 				BEGIN_LUA_CALL_HOOK( "PostDrawEffects" );
 				END_LUA_CALL_HOOK( 0, 0 );

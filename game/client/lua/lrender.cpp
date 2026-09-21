@@ -158,8 +158,29 @@ LUA_BINDING_END()
 
 LUA_BINDING_BEGIN( Renders, GetScreenEffectTexture, "library", "Get the screen effect texture.", "client" )
 {
-    lua_ITexture *pTexture = GetFullFrameFrameBufferTexture( LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "textureIndex" ) );
-    lua_pushitexture( L, pTexture );
+    // HL2SB (2026-09-22): DEDICATED screen-effect RTs.  The old mapping
+    // (GetFullFrameFrameBufferTexture( i )) hands back the engine's FRAME
+    // BUFFER ping-pong textures -- modules/halo.lua copies the scene into
+    // "rt_Store" and draws it back at the end of its pass, and with the
+    // framebuffer aliased that copy was a SELF-copy: the "restore" step
+    // painted garbage and the screen went black while the beam was held.
+    // RT_SIZE_FULL_FRAME_BUFFER tracks the frame size automatically.
+    static ITexture *s_pScreenFX[ 2 ] = { NULL, NULL };
+    if ( s_pScreenFX[ 0 ] == NULL )
+    {
+        g_pMaterialSystem->OverrideRenderTargetAllocation( true );
+        s_pScreenFX[ 0 ] = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_screenfx0",
+            1, 1, RT_SIZE_FULL_FRAME_BUFFER, IMAGE_FORMAT_RGBA8888, MATERIAL_RT_DEPTH_SHARED,
+            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT, 0 );
+        s_pScreenFX[ 1 ] = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_screenfx1",
+            1, 1, RT_SIZE_FULL_FRAME_BUFFER, IMAGE_FORMAT_RGBA8888, MATERIAL_RT_DEPTH_SHARED,
+            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT, 0 );
+        g_pMaterialSystem->OverrideRenderTargetAllocation( false );
+    }
+
+    int nIndex = (int)LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "textureIndex" );
+    nIndex = clamp( nIndex, 0, 1 );
+    lua_pushitexture( L, s_pScreenFX[ nIndex ] );
     return 1;
 }
 LUA_BINDING_END( "Texture", "The screen effect texture." )
