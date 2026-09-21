@@ -558,6 +558,39 @@ static int HL2SB_IMaterial_SetFloat( lua_State *L )
     return 0;
 }
 
+// HL2SB GMod compat (2026-09-22): IMaterial:SetTexture( varName, ITexture ).
+// modules/halo.lua:106 does mat_Copy:SetTexture( "$basetexture", rt_Store ) --
+// without this the call raised "attempt to call nil (method 'SetTexture')",
+// aborted halo.lua's Render mid-frame (after render.Clear, before the scene
+// restore) and left the SCREEN BLACK for as long as the beam was held.
+static int HL2SB_IMaterial_SetTexture( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pszVar = luaL_checkstring( L, 2 );
+    ITexture *pTexture = luaL_checkitexture( L, 3 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    if ( pVar != NULL && pTexture != NULL )
+        pVar->SetTextureValue( pTexture );
+    return 0;
+}
+
+// HL2SB GMod compat: IMaterial:SetString( varName, value ) -- halo.lua:107-108
+// resets pp/copy's $color/$alpha every frame through this.
+static int HL2SB_IMaterial_SetString( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pszVar = luaL_checkstring( L, 2 );
+    const char *pszValue = luaL_checkstring( L, 3 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    if ( pVar != NULL )
+        pVar->SetStringValue( pszValue );
+    return 0;
+}
+
 static int HL2SB_IMaterial_GetFloat( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
@@ -800,6 +833,10 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
         lua_setfield( L, -2, "SetFloat" );
         lua_pushcfunction( L, HL2SB_IMaterial_GetFloat );
         lua_setfield( L, -2, "GetFloat" );
+        lua_pushcfunction( L, HL2SB_IMaterial_SetTexture );
+        lua_setfield( L, -2, "SetTexture" );
+        lua_pushcfunction( L, HL2SB_IMaterial_SetString );
+        lua_setfield( L, -2, "SetString" );
     }
     lua_pop( L, 1 );
 
