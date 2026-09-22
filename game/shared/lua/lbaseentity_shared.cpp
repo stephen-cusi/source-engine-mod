@@ -392,7 +392,24 @@ static int CBaseEntity_DestroyDataObject (lua_State *L) {
 }
 
 static int CBaseEntity_DispatchTraceAttack (lua_State *L) {
-  luaL_checkentity(L, 1)->DispatchTraceAttack(luaL_checkdamageinfo(L, 2), luaL_checkvector(L, 3), &luaL_checktrace(L, 4));
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  CTakeDamageInfo *pInfo = luaL_checkdamageinfo(L, 2);
+  // HL2SB (2026-09-22): GMod's signature takes a CGameTrace, but cf_beast's
+  // melee passes two VECTORS -- the trace start and end (DispatchTraceAttack(
+  // dmg, sp, ran )).  Tolerate that shape by running the trace here instead
+  // of throwing; the knife then lands its damage the way it does in GMod.
+  if (luaL_testudata(L, 4, "CGameTrace") == NULL) {
+#ifdef GAME_DLL
+    Vector vecStart = luaL_checkvector(L, 3);
+    Vector vecEnd = luaL_checkvector(L, 4);
+    trace_t tr;
+    UTIL_TraceLine(vecStart, vecEnd, MASK_SHOT, pEntity, COLLISION_GROUP_NONE, &tr);
+    pEntity->DispatchTraceAttack(*pInfo, vecStart - vecEnd, &tr);
+    ApplyMultiDamage();
+#endif
+    return 0;
+  }
+  pEntity->DispatchTraceAttack(*pInfo, luaL_checkvector(L, 3), &luaL_checktrace(L, 4));
   return 0;
 }
 
@@ -1918,6 +1935,32 @@ static int CBaseEntity_SetPos (lua_State *L) {
   return 0;
 }
 
+// HL2SB (2026-09-22): Entity:CallOnClient( functionName, data ) -- the GMod
+// wiki documents it under Weapon, but cf_beast's SWEP base calls it as
+// self:CallOnClient( "Muzzle" ) and the mechanism is entity-level.  Server
+// only (the wiki: "Does nothing on client"); one user message carries the
+// entity index, the function name and the data string, and the client invokes
+// ent:functionName( data ) on its scripted entity (see __MsgFunc_HL2SB_RPC in
+// lsrcinit.cpp).  GMod caps name+data at 254 bytes -- the usermessage limit.
+static int CBaseEntity_CallOnClient (lua_State *L) {
+#ifdef GAME_DLL
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszFn = luaL_checkstring(L, 2);
+  const char *pszData = luaL_optstring(L, 3, "");
+  if (Q_strlen(pszFn) + Q_strlen(pszData) > 254) {
+    return luaL_error(L, "CallOnClient: function name + data must fit in 254 bytes");
+  }
+
+  CReliableBroadcastRecipientFilter filter;
+  UserMessageBegin(filter, "HL2SB_RPC");
+    WRITE_SHORT(pEntity->entindex());
+    WRITE_STRING(pszFn);
+    WRITE_STRING(pszData);
+  MessageEnd();
+#endif
+  return 0;
+}
+
 // HL2SB GMod SWEP compat: GMod calls ent:SetKeyValue(k, v) (alias for KeyValue).
 static int CBaseEntity_SetKeyValue (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
@@ -2992,6 +3035,26 @@ static int CBaseEntity___index (lua_State *L) {
   const char *field = luaL_checkstring(L, 2);
   if (Q_strcmp(field, "m_bAllowPrecache") == 0)
     lua_pushboolean(L, pEntity->m_bAllowPrecache);
+  else if (Q_strcmp(field, "Owner") == 0) {
+    /* HL2SB (2026-09-22): self.Owner -- GMod SWEPs read their holder as a
+    ** FIELD, not only via GetOwner().  The WEAPON metatable already answered
+    ** it, but cf_beast's SWEP self carries this plain entity metatable, so
+    ** self.Owner was nil: the server's PrimaryAttack died on
+    ** self.Owner:GetShootPos() before it ever reached SetNextPrimaryFire, and
+    ** the client (whose CanPrimaryAttack then never went false) re-ran the
+    ** whole attack EVERY FRAME -- machine-gun sound, viewmodel reset each tick
+    ** (the "jitter"), client-side ammo drain and duplicated FireBullets.  No
+    ** owner yields GMod's NULL sentinel, like the weapon metatable's answer.
+    ** The shared C++ accessor for the field is GetOwnerEntity() (the same one
+    ** Entity:GetOwner below uses -- m_hOwnerEntity itself is private).
+    ** PushLuaInstanceSafe (NOT plain lua_pushentity) resolves the metatable
+    ** from the DYNAMIC type: a held weapon's owner is a player, and the Player
+    ** metatable is what answers ShouldDrawLocalPlayer/Crouching/GetShootPos --
+    ** the generic CBaseEntity table made every one of those reads die with
+    ** "attempt to call a nil value (method ...)".
+    */
+    CBaseEntity::PushLuaInstanceSafe(L, pEntity->GetOwnerEntity());
+  }
   else if (Q_strcmp(field, "m_flAnimTime") == 0)
     lua_pushnumber(L, pEntity->m_flAnimTime);
   else if (Q_strcmp(field, "m_flSimulationTime") == 0)
@@ -3265,6 +3328,25 @@ static int CBaseEntity_TakeDamageInfo (lua_State *L) {
 static int CBaseEntity_GetOwner (lua_State *L) {
   lua_pushentity( L, luaL_checkentity( L, 1 )->GetOwnerEntity() );
   return 1;
+}
+
+// HL2SB (2026-09-22): Entity:GetNoDraw()/SetNoDraw( bool ) -- the EF_NODRAW
+// flag.  GMod's halo library ducks these; our halo.lua's RT path calls
+// GetNoDraw directly on every entry entity every frame, and a scripted
+// entity without the method raised "attempt to call a nil value (method
+// 'GetNoDraw')" 160+ times per session.
+static int CBaseEntity_GetNoDraw (lua_State *L) {
+  lua_pushboolean( L, ( luaL_checkentity( L, 1 )->GetEffects() & EF_NODRAW ) != 0 );
+  return 1;
+}
+
+static int CBaseEntity_SetNoDraw (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  if ( lua_toboolean( L, 2 ) )
+    pEntity->SetEffects( pEntity->GetEffects() | EF_NODRAW );
+  else
+    pEntity->SetEffects( pEntity->GetEffects() & ~EF_NODRAW );
+  return 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -4102,6 +4184,10 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"TakeDamageInfo", CBaseEntity_TakeDamageInfo},
   {"GetOwner", CBaseEntity_GetOwner},
   {"GetName", CBaseEntity_GetName},
+  // HL2SB (2026-09-22): the EF_NODRAW flag, GMod's names -- halo.lua reads
+  // GetNoDraw on every halo entity every frame.
+  {"GetNoDraw", CBaseEntity_GetNoDraw},
+  {"SetNoDraw", CBaseEntity_SetNoDraw},
 #ifdef GAME_DLL
   {"AddEntityRelationship", CBaseEntity_AddEntityRelationship},
   {"GetNPCState", CBaseEntity_GetNPCState},
@@ -4360,6 +4446,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetPos", CBaseEntity_SetPos},
   {"SetKeyValue", CBaseEntity_SetKeyValue},
   {"GetPos", CBaseEntity_GetPos},
+  // HL2SB (2026-09-22): GMod's CallOnClient -- cf_beast's weapon base needs it.
+  {"CallOnClient", CBaseEntity_CallOnClient},
   {"SetAbsQueriesValid", CBaseEntity_SetAbsQueriesValid},
   {"SetAbsVelocity", CBaseEntity_SetAbsVelocity},
   {"SetAIWalkable", CBaseEntity_SetAIWalkable},

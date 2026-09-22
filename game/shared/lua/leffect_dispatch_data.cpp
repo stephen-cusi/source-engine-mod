@@ -76,13 +76,13 @@ static int CEffectData_GetEffectNameIndex (lua_State *L) {
 // HL2SB GMod compat (Nuke Pack audit 2026-09-20): CEffectData:SetEntity( ent )
 // -- the server half of `effectdata:SetEntity( weapon )` before util.Effect
 // (nuke_blastwave's guiding effects read it back client-side via GetEntity).
-#ifndef CLIENT_DLL
+// 2026-09-22: un-guarded from the server -- the CLIENT needs it just as much
+// (cf_beast's CallOnClient'd Muzzle sets the viewmodel on the EffectData).
   static int CEffectData_SetEntity (lua_State *L) {
     CBaseEntity *pEnt = lua_toentity( L, 2 );
     luaL_checkeffect( L, 1 ).m_nEntIndex = pEnt ? pEnt->entindex() : 0;
     return 0;
   }
-#endif
 
 /*
 ** HL2SB GMod compat: the accessors a GMod effect script actually calls.
@@ -270,9 +270,12 @@ static const luaL_Reg CEffectDatameta[] = {
 #ifdef CLIENT_DLL
   {"GetEntity", CEffectData_GetEntity},
 #endif
-#ifndef CLIENT_DLL
+  // HL2SB (2026-09-22): SetEntity is CLIENT-safe too -- m_nEntIndex is a plain
+  // field on the shared CEffectData.  It used to be server-only, and
+  // cf_beast's Muzzle() (which runs on the CLIENT via Weapon:CallOnClient)
+  // died on "attempt to call a nil value (method 'SetEntity')" before every
+  // muzzle flash / shell eject.
   {"SetEntity", CEffectData_SetEntity},
-#endif
   // HL2SB GMod compat: the field accessors lua/effects/*.lua is written against.
   {"GetStart", CEffectData_GetStart},
   {"SetStart", CEffectData_SetStart},

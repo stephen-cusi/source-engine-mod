@@ -1771,6 +1771,25 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 	luasrc_dofolder( L, LUA_PATH_EXTENSIONS );
 	luasrc_dofolder( L, LUA_PATH_MODULES );
 
+	// HL2SB (2026-09-22): GMod's client-only extension subtree.  GMod loads
+	// lua/includes/extensions/client/*.lua on the client realm; this fork's
+	// cam.Start3D/Start2D live in extensions/client/render.lua, and without
+	// this pass halo.lua's PostDrawEffects hook died on "cam.Start3D is nil"
+	// ~1500 times per session, taking every halo with it.
+	//
+	// ONLY A WHITELIST, deliberately NOT the recursive pass.  The first
+	// recursive run also loaded panel.lua + panel/{animation,dragdrop,
+	// selection}.lua -- four files that had NEVER executed here, and which
+	// patch the global Panel metatable every derma panel then runs through.
+	// With them live, pressing the spawnmenu key hard-froze the game on
+	// first open; bisecting needs them off while render.lua (the halo chain)
+	// stays on.  Re-introduce panel.lua only with its own load-order and
+	// interaction pass against the spawn menu.
+	luasrc_dofile_includes( L, "extensions/client/render.lua" );
+	luasrc_dofile_includes( L, "extensions/client/player.lua" );
+	luasrc_dofile_includes( L, "extensions/client/entity.lua" );
+	luasrc_dofile_includes( L, "extensions/client/globals.lua" );
+
 	// HL2SB: GMod keeps its bootstrap files (init.lua, util.lua, vgui_base.lua)
 	// directly in lua/includes/ and its engine loads lua/includes/init.lua by
 	// NAME -- it does not scan the directory.  Loading only init.lua matters a

@@ -52,7 +52,7 @@
 #include "usermessages.h"
 #ifdef CLIENT_DLL
 #include "c_user_message_register.h"	// USER_MESSAGE_REGISTER (client hook)
-#include "client_entity_list.h"			// HL2SB_RPC: entity index -> C_BaseEntity
+#include "cliententitylist.h"			// HL2SB_RPC: entity index -> C_BaseEntity
 #endif
 
 
@@ -1609,7 +1609,7 @@ static void __MsgFunc_HL2SB_RPC( bf_read &read )
 	if ( read.IsOverflowed() || szFn[ 0 ] == '\0' )
 		return;
 
-	IClientEntity *pIClient = cliententitylist->GetClientEntity( entindex );
+	IClientEntity *pIClient = cl_entitylist->GetClientEntity( entindex );
 	C_BaseEntity *pEnt = pIClient ? pIClient->GetBaseEntity() : NULL;
 	if ( pEnt == NULL )
 		return;
@@ -1618,6 +1618,14 @@ static void __MsgFunc_HL2SB_RPC( bf_read &read )
 	if ( L == NULL )
 		return;
 
+	// Snapshot FIRST.  luasrc_pcall pops the function and its arguments on
+	// BOTH paths (results and errors alike), so the only safe cleanup is a
+	// full restore to this depth -- the first version hardcoded lua_pop(2)
+	// after it, which underflowed the main state's stack by one per call
+	// (call it from a SWEP's PrimaryAttack and the game dies within a few
+	// shots, which is exactly the CF pack's "fires once and crashes").
+	const int iBase = lua_gettop( L );
+
 	lua_pushentity( L, pEnt );			// [ent]
 	lua_getfield( L, -1, szFn );		// [ent, fn]  (resolved through __index)
 	if ( lua_isfunction( L, -1 ) ) {
@@ -1625,7 +1633,7 @@ static void __MsgFunc_HL2SB_RPC( bf_read &read )
 		lua_pushstring( L, szData );	// [ent, fn, self, data]
 		luasrc_pcall( L, 2, 0, 0 );		// protected: a bad callback must not kill the frame
 	}
-	lua_pop( L, 2 );					// drop fn (and any error remnant) + ent
+	lua_settop( L, iBase );				// unconditional restore -- no under/overflow
 }
 // Hooked in luasrc_openlibs' client tail (usermessages->HookMessage).
 #endif // CLIENT_DLL
@@ -2054,6 +2062,10 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     // MessageEnd and refuses the send outright on mismatch ("User Msg
     // 'HL2SB_NW': N bytes written, expected 256" -- 226 refusals in one
     // session), so the fixed 256 dropped every broadcast server-side.
+  // HL2SB (2026-09-22): Entity:CallOnClient carrier message -- registered
+  // here for the same signon-table reason as HL2SB_NW above.
+  if ( usermessages->LookupUserMessage( "HL2SB_RPC" ) == -1 )
+    usermessages->Register( "HL2SB_RPC", -1 );
 #endif
 #ifdef CLIENT_DLL
   // HL2SB (2026-09-21): Lua NetworkVar replication receiver (see the
@@ -2070,6 +2082,10 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     usermessages->Register( "HL2SB_NW", -1 );  // -1: variable size (see server
     // branch above -- a fixed declared size makes the engine refuse the send).
   usermessages->HookMessage( "HL2SB_NW", __MsgFunc_HL2SB_NW );
+  // HL2SB (2026-09-22): Entity:CallOnClient receiver -- same timing rules.
+  if ( usermessages->LookupUserMessage( "HL2SB_RPC" ) == -1 )
+    usermessages->Register( "HL2SB_RPC", -1 );
+  usermessages->HookMessage( "HL2SB_RPC", __MsgFunc_HL2SB_RPC );
 #endif
 
   /* HL2SB: four GMod globals this engine never had.  All four are LOAD-TIME

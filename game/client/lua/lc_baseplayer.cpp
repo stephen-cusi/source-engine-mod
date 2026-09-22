@@ -81,12 +81,26 @@ static int CBasePlayer_CrosshairEnable (lua_State *L) {
   return 0;
 }
 
+// HL2SB (2026-09-22): Player:ShouldDrawLocalPlayer() -- GMod asks whether the
+// local player's own model should be drawn this frame (true in third person,
+// mirrored views, vehicle cameras).  cf_beast's Muzzle() uses it to decide
+// between a world muzzle flash on the player and the viewmodel shell eject.
+// Only the LOCAL player's answer can matter on this client; anyone else is a
+// plain false.
+static int CBasePlayer_ShouldDrawLocalPlayer (lua_State *L) {
+  C_BasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+  lua_pushboolean( L, pPlayer != NULL && pPlayer == C_BasePlayer::GetLocalPlayer()
+                        && pPlayer->ShouldDrawLocalPlayer() );
+  return 1;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"GetLocalPlayer", CBasePlayer_GetLocalPlayer},
   {"UniqueID", CBasePlayer_UniqueID},
   {"DrawViewModel", CBasePlayer_DrawViewModel},
   {"CrosshairDisable", CBasePlayer_CrosshairDisable},
   {"CrosshairEnable", CBasePlayer_CrosshairEnable},
+  {"ShouldDrawLocalPlayer", CBasePlayer_ShouldDrawLocalPlayer},
   {NULL, NULL}
 };
 

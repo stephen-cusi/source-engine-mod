@@ -358,6 +358,32 @@ static int CBaseAnimating_GetAnimTimeInterval (lua_State *L) {
 }
 
 static int CBaseAnimating_GetAttachment (lua_State *L) {
+  // HL2SB (2026-09-22): GMod signature GetAttachment( id|name ) -> a table
+  // { Pos = Vector, Ang = Angle }, nil when the attachment doesn't exist.
+  // cf_beast's shell eject reads vm:GetAttachment(att) this way; the old
+  // binding only knew the HL2 out-parameter form, so the single-argument call
+  // threw "bad argument #2 ... Vector expected" and the whole Muzzle effect
+  // chain died on every shot.
+  if (lua_gettop(L) == 2) {
+    C_BaseAnimating *pAnimating = luaL_checkanimating(L, 1);
+    Vector origin;
+    QAngle angles;
+    bool bOk;
+    if (lua_type(L, 2) == LUA_TNUMBER)
+      bOk = pAnimating->GetAttachment(luaL_checkint(L, 2), origin, angles);
+    else
+      bOk = pAnimating->GetAttachment(luaL_checkstring(L, 2), origin, angles);
+    if (!bOk) {
+      lua_pushnil(L);
+      return 1;
+    }
+    lua_newtable(L);                        // [tab]
+    lua_pushvector(L, origin);              // [tab, Pos]
+    lua_setfield(L, -2, "Pos");
+    lua_pushangle(L, angles);               // [tab, Ang]
+    lua_setfield(L, -2, "Ang");
+    return 1;
+  }
   switch(lua_type(L, 2)) {
 	case LUA_TNUMBER:
       {
@@ -690,8 +716,15 @@ static int CBaseAnimating_LookupRandomAttachment (lua_State *L) {
 }
 
 static int CBaseAnimating_LookupSequence (lua_State *L) {
-  lua_pushinteger(L, luaL_checkanimating(L, 1)->LookupSequence(luaL_checkstring(L, 2)));
-  return 1;
+  // HL2SB (2026-09-22): GMod returns TWO values -- the sequence id and its
+  // play duration.  cf_beast's SetupENUM does
+  //     self.ReloadSpeed = select( 2, vm:LookupSequence( "reload" ) )
+  // and got nil (Reload-speed arithmetic died on every reload).
+  C_BaseAnimating *pAnimating = luaL_checkanimating(L, 1);
+  const int iSeq = pAnimating->LookupSequence(luaL_checkstring(L, 2));
+  lua_pushinteger(L, iSeq);
+  lua_pushnumber(L, (iSeq >= 0) ? pAnimating->SequenceDuration(iSeq) : 0.0f);
+  return 2;
 }
 
 static int CBaseAnimating_NotifyShouldTransmit (lua_State *L) {

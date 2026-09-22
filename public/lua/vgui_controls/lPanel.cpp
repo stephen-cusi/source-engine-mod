@@ -655,6 +655,18 @@ static int Panel_IsVisible (lua_State *L) {
   return 1;
 }
 
+// HL2SB (2026-09-22): GMod Panel:IsWorldClicker() -- whether the panel passes
+// clicks through into the game world.  This engine's vgui has no world-clicker
+// concept, so the honest answer is always "no".  properties.lua's hover-halo
+// hook calls this on the hovered panel EVERY FRAME; without the binding it
+// died on the missing method ~4500 times per session, each failure feeding
+// the hook error reporter.
+static int Panel_IsWorldClicker (lua_State *L) {
+  luaL_checkpanel(L, 1);
+  lua_pushboolean(L, 0);
+  return 1;
+}
+
 static int Panel_IsWithin (lua_State *L) {
   lua_pushboolean(L, luaL_checkpanel(L, 1)->IsWithin(luaL_checkint(L, 2), luaL_checkint(L, 3)));
   return 1;
@@ -1769,6 +1781,7 @@ static const luaL_Reg Panelmeta[] = {
   {"IsTriplePressAllowed", Panel_IsTriplePressAllowed},
   {"IsValidKeyBindingsContext", Panel_IsValidKeyBindingsContext},
   {"IsVisible", Panel_IsVisible},
+  {"IsWorldClicker", Panel_IsWorldClicker},
   // HL2SB: GMod spells this IsHovered - DButton and DPanel call self:IsHovered()
   // throughout derma - but this fork only ever bound IsCursorOver, so every such
   // call died on a nil method.  Same function, GMod's name.
