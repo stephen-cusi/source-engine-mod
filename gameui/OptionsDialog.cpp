@@ -45,7 +45,11 @@ using namespace vgui;
 //-----------------------------------------------------------------------------
 COptionsDialog::COptionsDialog(vgui::Panel *parent) : PropertyDialog(parent, "OptionsDialog")
 {
-	SetDeleteSelfOnClose(true);
+	// PERF (2026-09-23): the constructor builds every page (video/audio device
+	// enumeration included) and used to run on EVERY open because of
+	// delete-self-on-close.  Cache the dialog instead (BasePanel::OnOpenOptionsDialog
+	// already keeps the handle) and refresh the pages in Activate() below.
+	SetDeleteSelfOnClose(false);
 
 	int w = 512;
 	int h = 406;
@@ -128,6 +132,10 @@ COptionsDialog::~COptionsDialog()
 //-----------------------------------------------------------------------------
 void COptionsDialog::Activate()
 {
+	// PERF (2026-09-23): with the dialog cached, pages would otherwise show the
+	// values from whenever they were first built.  Re-read every page from the
+	// current convars on each open (same refresh a fresh build used to give).
+	ResetAllData();
 	BaseClass::Activate();
 	EnableApplyButton(false);
 }

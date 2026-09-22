@@ -1358,7 +1358,10 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
     // HL2SB diagnostic: name what a script's Material() path actually resolved
     // to.  A proxy table (gmod_surface.lua's Material()) is not an IMaterial, so
     // this is also the place that can silently hand back the error material.
-    if ( pMaterial != NULL )
+    // PERF (2026-09-23): SetMaterial runs per entity per frame on the render
+    // path; only the error-material case is worth a lookup + format.  The
+    // not-an-error spam was WarnOnce-deduped anyway, so nothing visible changes.
+    if ( pMaterial != NULL && pMaterial->IsErrorMaterial() )
     {
         char szKey[ 192 ];
         Q_snprintf( szKey, sizeof( szKey ), "setmaterial:%s", pMaterial->GetName() );
@@ -1391,16 +1394,23 @@ LUA_BINDING_BEGIN( Renders, DrawQuadEasy, "library", "Draws a quad with the curr
 
     // HL2SB diagnostic: the nyan bomb only draws via DrawQuadEasy -- if this
     // never runs, ENT:Draw is silent and the entity looks like it has "no model".
+    // PERF (2026-09-23): WarnOnce already dedupes the output, but the key
+    // format + GetName ran per call on the render path; log once, ever.
     {
-        char szKey[ 192 ];
-        Q_snprintf( szKey, sizeof( szKey ), "drawquad:%s",
-            ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none>" );
-        HL2SB_WarnOnce( szKey,
-            "DrawQuadEasy mat='%s' pos=(%.0f %.0f %.0f) n=(%.1f %.1f %.1f) %.0fx%.0f a=%d\n",
-            ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none>",
-            position.x, position.y, position.z,
-            normal.x, normal.y, normal.z,
-            width, height, color.a() );
+        static bool s_bLoggedDrawQuad = false;
+        if ( !s_bLoggedDrawQuad )
+        {
+            s_bLoggedDrawQuad = true;
+            char szKey[ 192 ];
+            Q_snprintf( szKey, sizeof( szKey ), "drawquad:%s",
+                ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none>" );
+            HL2SB_WarnOnce( szKey,
+                "DrawQuadEasy mat='%s' pos=(%.0f %.0f %.0f) n=(%.1f %.1f %.1f) %.0fx%.0f a=%d\n",
+                ( g_pHL2SBLastBoundMaterial != NULL ) ? g_pHL2SBLastBoundMaterial->GetName() : "<none>",
+                position.x, position.y, position.z,
+                normal.x, normal.y, normal.z,
+                width, height, color.a() );
+        }
     }
 
     VectorNormalize( normal );

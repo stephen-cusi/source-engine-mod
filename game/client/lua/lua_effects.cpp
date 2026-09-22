@@ -325,8 +325,13 @@ void CLuaEffect::Draw( double frametime )
 		// HL2SB diagnostic: the geometry the script itself believes in.  A beam
 		// that is drawn from somewhere unexpected looks exactly like one that is
 		// not drawn at all, so print the effect's own numbers once.
+		// PERF (2026-09-23): once the 32-slot seen-list is saturated the format +
+		// linear scan below can never find anything new; skip the whole block.
 		if ( bAlive )
 		{
+			static bool s_bGeometrySaturated = false;
+			if ( !s_bGeometrySaturated )
+			{
 			char szKey[ 160 ];
 			Q_snprintf( szKey, sizeof( szKey ), "lua-effect-geometry:%s", GetName() );
 
@@ -347,6 +352,8 @@ void CLuaEffect::Draw( double frametime )
 			{
 				Q_strncpy( s_szGeometrySeen[ s_nGeometrySeen ], szKey, sizeof( s_szGeometrySeen[ 0 ] ) );
 				++s_nGeometrySeen;
+				if ( s_nGeometrySeen >= 32 )
+					s_bGeometrySaturated = true;
 
 				char szStart[ 48 ], szEnd[ 48 ], szDist[ 48 ];
 
@@ -386,6 +393,7 @@ void CLuaEffect::Draw( double frametime )
 				lua_pop( L, 1 );
 
 				Warning( "[HL2SB] CLuaEffect '%s': StartPos=%s EndPos=%s Dist=%s\n", GetName(), szStart, szEnd, szDist );
+			}
 			}
 		}
 	}
