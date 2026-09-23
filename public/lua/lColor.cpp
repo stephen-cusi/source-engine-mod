@@ -52,7 +52,22 @@ static int lua_color_field (lua_State *L, int idx, const char *pszField, int iDe
   if (idx < 0)
     idx = lua_gettop(L) + idx + 1;
   lua_getfield(L, idx, pszField);
-  int iValue = lua_isnumber(L, -1) ? (int)lua_tointeger(L, -1) : iDefault;
+  // HL2SB FIX (2026-09-24, the nuke whiteout): lua_tointeger() answers 0 for
+  // a non-integral float in Lua 5.4 - Color fields decay to floats the moment
+  // a Think does GAlpha = 255 - 9.48*ft, so EVERY float alpha parsed as 0
+  // (raw_a=254.9 -> a=0; integer r/g/b were fine; sent_ball's literal 255
+  // worked, which is why it was so hard to see).  Parse with lua_tonumber
+  // and clamp - GMod reads these fields as numbers, ints or floats alike.
+  int iValue;
+  if ( lua_isnumber( L, -1 ) )
+  {
+    double flValue = lua_tonumber( L, -1 );
+    if ( flValue < 0.0 ) flValue = 0.0;
+    else if ( flValue > 255.0 ) flValue = 255.0;
+    iValue = (int)( flValue + 0.5 );
+  }
+  else
+    iValue = iDefault;
   lua_pop(L, 1);
   return iValue;
 }
@@ -68,10 +83,12 @@ static int lua_color_field (lua_State *L, int idx, const char *pszField, int iDe
 
 LUA_API lua_Color lua_tocolor (lua_State *L, int idx) {
   luaL_checktype(L, idx, LUA_TTABLE);
-  return Color(lua_color_field(L, idx, LUA_COLOR_FIELD_R, 255),
-               lua_color_field(L, idx, LUA_COLOR_FIELD_G, 255),
-               lua_color_field(L, idx, LUA_COLOR_FIELD_B, 255),
-               lua_color_field(L, idx, LUA_COLOR_FIELD_A, 255));
+  int iR = lua_color_field(L, idx, LUA_COLOR_FIELD_R, 255);
+  int iG = lua_color_field(L, idx, LUA_COLOR_FIELD_G, 255);
+  int iB = lua_color_field(L, idx, LUA_COLOR_FIELD_B, 255);
+  int iA = lua_color_field(L, idx, LUA_COLOR_FIELD_A, 255);
+
+  return Color(iR, iG, iB, iA);
 }
 
 LUALIB_API lua_Color luaL_checkcolor (lua_State *L, int narg) {
