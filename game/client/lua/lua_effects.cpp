@@ -241,6 +241,25 @@ CLuaEffect::CLuaEffect( const char *pszName, int nRef, const CEffectData &data )
 		return;
 	}
 
+	// HL2SB GMod compat (2026-09-23, the console-flooding nuke effects):
+	// the GMod-era engine put EffectData's entity onto the effect table as
+	// .Entity BEFORE Init - 2012 addons rely on it (nukepack's vaporize calls
+	// self.Entity:BoundingRadius() in Init; air's Render reads
+	// self.Entity:GetPos()), while GMod's OWN effects read data:GetEntity()
+	// themselves and never touch .Entity.  Without this the field was plain
+	// nil: "attempt to index a nil value (field 'Entity')" every frame.
+	{
+		CEffectData dataCopy = data;			// GetEntity is a const accessor
+		CBaseEntity *pEnt = dataCopy.GetEntity();
+		if ( pEnt != NULL )
+		{
+			lua_pushstring( L, "Entity" );
+			lua_pushentity( L, pEnt );
+			lua_settable( L, -3 );				// table["Entity"] = ent
+		}
+	}
+
+
 	lua_getfield( L, -1, "Init" );
 	if ( lua_isfunction( L, -1 ) )
 	{
@@ -274,6 +293,7 @@ void CLuaEffect::Draw( double frametime )
 		Destroy();
 		return;
 	}
+
 
 	// EFFECT:Think() -- returning false retires the effect (GMod contract).
 	const int nTopBeforeThink = lua_gettop( L );
