@@ -526,6 +526,14 @@ static int CBasePlayer_GiveNamedItem (lua_State *L) {
   return 1;
 }
 
+// HL2SB: GMod 的 Player:Give( weapon_class ). GMod 里 Give 与 GiveNamedItem
+// 对引擎武器等价（class name 即 item 名）；GiveNamedItem 引擎侧本来就会
+// 丢弃玩家已拥有的同名武器，直接转发即可。
+static int CBasePlayer_Give (lua_State *L) {
+  lua_pushentity(L, luaL_checkplayer(L, 1)->GiveNamedItem(luaL_checkstring(L, 2), luaL_optinteger(L, 3, 0)));
+  return 1;
+}
+
 static int CBasePlayer_EnableControl (lua_State *L) {
   luaL_checkplayer(L, 1)->EnableControl(luaL_checkboolean(L, 2));
   return 0;
@@ -693,6 +701,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"HasNamedPlayerItem", CBasePlayer_HasNamedPlayerItem},
   {"HasWeapons", CBasePlayer_HasWeapons},
   {"GiveNamedItem", CBasePlayer_GiveNamedItem},
+  {"Give", CBasePlayer_Give},
   {"EnableControl", CBasePlayer_EnableControl},
   {"CheckTrainUpdate", CBasePlayer_CheckTrainUpdate},
   {"EquipSuit", CBasePlayer_EquipSuit},
