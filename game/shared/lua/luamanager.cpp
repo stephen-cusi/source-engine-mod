@@ -765,6 +765,31 @@ LUA_API void luasrc_LuaErrorMsg (const char *pszText)
 	if ( pszText == NULL )
 		return;
 
+	// HL2SB (2026-09-23): a broken effect errors EVERY frame - nuke_effect_air
+	// alone produced 4174 identical lines in one session (the console flood AND
+	// a real per-frame cost: the traceback above this call is rebuilt each
+	// time).  Collapse identical repeats: print the first three, then one
+	// "(repeated N times)" banner every 200th.  A different message resets the
+	// counter, so interleaved errors still all get through.
+	static char s_szLastErr[512] = "";
+	static int  s_nRepeats = 0;
+	if ( s_szLastErr[0] != '\0' &&
+	     Q_strnicmp( pszText, s_szLastErr, sizeof( s_szLastErr ) - 1 ) == 0 )
+	{
+		++s_nRepeats;
+		if ( s_nRepeats > 3 && ( s_nRepeats % 200 ) != 0 )
+			return;
+		char szCollapsed[ 768 ];
+		Q_snprintf( szCollapsed, sizeof( szCollapsed ), "%s  (repeated %d times)",
+			pszText, s_nRepeats );
+		pszText = szCollapsed;
+	}
+	else
+	{
+		Q_strncpy( s_szLastErr, pszText, sizeof( s_szLastErr ) );
+		s_nRepeats = 1;
+	}
+
 	ConColorMsg( 0, Color( 255, 64, 64, 255 ), "%s\n", pszText );	// red
 	luasrc_LuaLogToFile( pszText, 'E' );
 }

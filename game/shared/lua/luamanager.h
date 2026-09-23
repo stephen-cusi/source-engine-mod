@@ -225,6 +225,14 @@
   else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); }
 
 #define BEGIN_LUA_CALL_HOOK(functionName) \
+  /* These hooks fire from pure C++ mid-frame (CalcPlayerView etc.) with		\
+     whatever CallInfo happens to be on top - its leftover 20-slot ci->top	\
+     can be only slots away from L->top.  lua_pushangle transiently holds	\
+     TWO slots (userdata + the metatable get), and that auxgetstr tripped		\
+     "stack overflow" firing the hook on the coop nuke (2026-09-23).			\
+     lua_checkstack grows the array AND lifts ci->top to top+N so every push	\
+     below fits whatever frame we land on. */								\
+  lua_checkstack( L, 32 ); \
   lua_getglobal(L, "hook"); \
   if (lua_istable(L, -1)) { \
     lua_getfield(L, -1, "call"); \
