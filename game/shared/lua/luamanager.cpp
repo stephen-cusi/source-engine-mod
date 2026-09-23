@@ -710,13 +710,6 @@ void luasrc_shutdown_gameui (void) {
 // on every start.  The flag is what tells it the cvar belongs to the client.
 static ConVar hl2sb_lua_log( "hl2sb_lua_log", "1", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
 	"Write all Lua console output (errors/warnings/diagnostics) to hl2sb_lua.log" );
-// HL2SB (2026-09-23): master switch for the C++ DIAGNOSTIC prints added while
-// chasing tracer/hands/nextbot/spawnmenu issues ([HL2SB] lines).  Default OFF:
-// the lines still land in hl2sb_lua.log, they just stop flooding the console.
-// Lua scripts' own print()/Warning() and all ERROR output are NOT affected --
-// they go through luasrc_LuaConsoleMsg / luasrc_LuaErrorMsg, untouched here.
-ConVar hl2sb_debug( "hl2sb_debug", "0", FCVAR_ARCHIVE | FCVAR_REPLICATED,
-	"Print [HL2SB] C++ diagnostic messages (Info/Warn channels) to the console" );
 static ConVar hl2sb_lua_log_colors( "hl2sb_lua_log_colors", "0", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
 	"Prefix each hl2sb_lua.log line with [E]/[W]/[I] severity markers" );
 // HL2SB: GMod's own log switches (2026-09-20).  GMod defaults these to 0; we
@@ -784,14 +777,6 @@ LUA_API void luasrc_LuaWarnMsg (const char *pszText)
 	if ( pszText == NULL )
 		return;
 
-	// HL2SB (2026-09-23): console output of the C++ diagnostic channels is gated
-	// by hl2sb_debug (default 0); hl2sb_lua.log keeps receiving everything.
-	if ( !hl2sb_debug.GetBool() )
-	{
-		luasrc_LuaLogToFile( pszText, 'W' );
-		return;
-	}
-
 	ConColorMsg( 0, Color( 255, 165, 0, 255 ), "%s\n", pszText );	// orange
 	luasrc_LuaLogToFile( pszText, 'W' );
 }
@@ -804,14 +789,6 @@ LUA_API void luasrc_LuaInfoMsg (const char *pszText)
 {
 	if ( pszText == NULL )
 		return;
-
-	// HL2SB (2026-09-23): console output of the C++ diagnostic channel is gated
-	// by hl2sb_debug (default 0).  hl2sb_lua.log keeps receiving everything.
-	if ( !hl2sb_debug.GetBool() )
-	{
-		luasrc_LuaLogToFile( pszText, 'I' );
-		return;
-	}
 
 	ConColorMsg( 0, Color( 200, 236, 255, 255 ), "%s\n", pszText );	// ice blue
 	luasrc_LuaLogToFile( pszText, 'I' );

@@ -777,10 +777,4 @@ void       HL2SB_PrecacheForget (const char *pszName);
 // the next crash log names the live path instead of a bare access violation.
 void       HL2SB_WarnOnce (const char *pszKey, const char *pszFormat, ...);
 
-// HL2SB (2026-09-23): master switch for [HL2SB] C++ diagnostic console prints
-// (default 0 = console quiet, hl2sb_lua.log unaffected).  Defined in
-// luamanager.cpp; used here and by files outside the Lua layer (e.g. the
-// c_arms viewmodel attach diagnostics).
-extern ConVar hl2sb_debug;
-
 #endif // LUAMANAGER_H

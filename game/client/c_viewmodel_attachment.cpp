@@ -929,8 +929,7 @@ void RegisterPlayerColorProxyFactory()
 		g_PlayerColorProxyFactory.SetOld( pOld );
 		materials->SetMaterialProxyFactory( pNew );
 	}
-	if ( hl2sb_debug.GetBool() )
-		Msg( "[HL2SB] PlayerColorProxyFactory: materials=%s\n", materials ? "yes" : "NO" );
+	Msg( "[HL2SB] PlayerColorProxyFactory: materials=%s\n", materials ? "yes" : "NO" );
 }
 
 // Register as soon as the client DLL is loaded (static init).  The material
