@@ -975,8 +975,11 @@ bool CHL2MPScriptedWeapon::UseHands( void ) const
 // The old version returned lua_tostring() of a value whose stack slot it had
 // already popped -- a pointer the GC could collect before the HUD copied it --
 // and it ignored every non-string, so the Material() form silently fell through
-// to the paper "weapons/swep" icon.  (The older WepSelectIcon spelling as a
-// surface.GetTextureID() *number* is still not a name, and is still ignored.)
+// to the paper "weapons/swep" icon.  The classic WepSelectIcon spelling as a
+// surface.GetTextureID() NUMBER used to be ignored too; the Lua side now keeps
+// id -> path in surface.__textureNames (gmod_surface.lua) and the LUA_TNUMBER
+// branch below resolves it, which is what picked up e.g. the CF pack
+// ("killicon/ak47_beast").
 //-----------------------------------------------------------------------------
 const char *CHL2MPScriptedWeapon::GetWepSelectIcon( void ) const
 {
@@ -1009,6 +1012,31 @@ const char *CHL2MPScriptedWeapon::GetWepSelectIcon( void ) const
 		{
 			Q_strncpy( s_szWepSelectIcon, lua_tostring( L, -1 ), sizeof( s_szWepSelectIcon ) );
 			bHaveIcon = true;
+		}
+		else if ( lua_type( L, -1 ) == LUA_TNUMBER )
+		{
+			// Classic GMod spelling: SWEP.WepSelectIcon =
+			// surface.GetTextureID( "killicon/ak47_beast" ).  Resolve the
+			// texture id back to its material path via the Lua registry.
+			int iTextureID = (int) lua_tonumber( L, -1 );
+			lua_getglobal( L, "surface" );
+			if ( lua_istable( L, -1 ) )
+			{
+				lua_getfield( L, -1, "__textureNames" );
+				if ( lua_istable( L, -1 ) )
+				{
+					lua_pushnumber( L, iTextureID );
+					lua_rawget( L, -2 );
+					if ( lua_type( L, -1 ) == LUA_TSTRING )
+					{
+						Q_strncpy( s_szWepSelectIcon, lua_tostring( L, -1 ), sizeof( s_szWepSelectIcon ) );
+						bHaveIcon = true;
+					}
+					lua_pop( L, 1 );
+				}
+				lua_pop( L, 1 );
+			}
+			lua_pop( L, 1 );
 		}
 		else if ( lua_istable( L, -1 ) )
 		{
@@ -1461,11 +1489,103 @@ void HL2SB_WeaponUpdateLuaOwnerFields( CHL2MPScriptedWeapon *pWeapon )
 #endif
 }
 
+#ifdef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: WEAPON:FireAnimationEvent( pos, ang, event, options,
+// source ) - wiki (https://wiki.facepunch.com/gmod/WEAPON:FireAnimationEvent):
+// "Called before executing an animation event, such as a muzzle flash...", the
+// return value is "Return true to disable the effect", clientside handles the
+// 5000-range and other events, and arg 5 (source) is the viewmodel on the
+// client.
+//
+// cf_beast paints its FIRST-PERSON CS muzzle flash from event 21 (its hook
+// calls util.Effect("CS_MuzzleFlash") and returns true).  This engine never
+// dispatched the hook at all, so the SWEP's effect never ran - the log of a
+// live session shows 137 shots and ZERO "DispatchEffect 'CS_MuzzleFlash'" -
+// and the viewmodel's own default muzzle event drew the wrong sprite instead
+// (the stray blue streak the user reported).  Called from
+// C_BaseAnimating::FireEvent (viewmodel scope; the local world weapon's copy
+// of the event stays suppressed by the existing HL2SB block in the
+// AE_MUZZLEFLASH case, so first person gets exactly one flash).
+//
+// Returns true when the script disabled the event.
+//-----------------------------------------------------------------------------
+bool HL2SB_ViewmodelFireAnimationEvent( C_BaseCombatWeapon *pWpn, const Vector &pos, const QAngle &ang, int event, const char *options )
+{
+	if ( L == NULL || pWpn == NULL )
+		return false;
+
+	CHL2MPScriptedWeapon *pScripted = dynamic_cast< CHL2MPScriptedWeapon * >( pWpn );
+	if ( pScripted == NULL || !lua_isrefvalid( L, pScripted->m_nTableReference ) )
+		return false;
+
+	// self.Owner / self.Weapon are only written on Deploy/Equip; a weapon
+	// re-bound mid-life (give/switch window) would dispatch with a stale or
+	// nil Owner and die inside the script (cf_beast muzzle effect suppressed
+	// at cf_base:108, then the error-path pop below underflowed the stack).
+	HL2SB_WeaponUpdateLuaOwnerFields( pScripted );
+
+	lua_getref( L, pScripted->m_nTableReference );
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	// Protected read: the weapon table answers through __index (base chain),
+	// and lua_getfield from C is NOT protected - an error raised there skips
+	// every pcall and goes straight to atpanic (process abort).
+	luasrc_PushScriptField( L, -1, "FireAnimationEvent" );
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );	// nil + table
+		return false;
+	}
+
+	lua_pushvalue( L, -2 );			// self
+	lua_pushvector( L, pos );
+	lua_pushangle( L, ang );
+	lua_pushinteger( L, event );
+	if ( options && options[0] )
+		lua_pushstring( L, options );
+	else
+		lua_pushnil( L );
+	// wiki arg 5: source entity - the viewmodel on the client
+	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+	if ( pLocal && pLocal->GetViewModel() )
+		lua_pushentity( L, pLocal->GetViewModel() );
+	else
+		lua_pushnil( L );
+
+	if ( luasrc_pcall( L, 6, 1, 0 ) != 0 )
+	{
+		// On error luasrc_pcall logged the traceback and popped the message
+		// itself, so ONLY the weapon table is left here.  The success path
+		// pops 2 (result + table); doing that after an error pops one value
+		// past this frame - the next event dispatch then calls garbage/nil
+		// unprotected and aborts the process (2026-09-23 cf_beast crash).
+		lua_pop( L, 1 );
+		return false;
+	}
+	// A non-boolean result (nil = "no opinion") lets the default event run.
+	bool bDisabled = ( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) != 0 );
+	lua_pop( L, 2 );				// result + weapon table
+	return bDisabled;
+}
+#endif
+
 bool CHL2MPScriptedWeapon::Deploy( void )
 {
 #if defined ( LUA_SDK )
 	// HL2SB: refresh self.Owner / self.Weapon BEFORE the script sees the deploy.
 	HL2SB_WeaponUpdateLuaOwnerFields( this );
+
+	// Snapshot the fire gates before SWEP:Deploy runs so we can tell whether
+	// the script armed them itself.  In GMod the script's SetNextPrimaryFire
+	// from Deploy() is authoritative (weapon_cf_base's DeployDuration field
+	// exists precisely to set CurTime + DeployDuration there).
+	const float flPrevNextPrimaryAttack   = m_flNextPrimaryAttack;
+	const float flPrevNextSecondaryAttack = m_flNextSecondaryAttack;
 
 	// GMod: SWEP:Deploy() returning true is the NORMAL case (weapon_base
 	// returns true) and does NOT mean "skip the engine default" - only an
@@ -1476,9 +1596,43 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
 
 	RETURN_LUA_VETO();
-#endif
 
+	const bool bScriptArmedPrimary   = ( m_flNextPrimaryAttack   != flPrevNextPrimaryAttack );
+	const bool bScriptArmedSecondary = ( m_flNextSecondaryAttack != flPrevNextSecondaryAttack );
+	const float flScriptNextPrimaryAttack   = m_flNextPrimaryAttack;
+	const float flScriptNextSecondaryAttack = m_flNextSecondaryAttack;
+
+	const bool bResult = BaseClass::Deploy();
+
+	// HL2SB (2026-09-22): DefaultDeploy() re-stamps both gates with
+	// curtime + SequenceDuration() AFTER the script ran - and, worse,
+	// pOwner->SetNextAttack( curtime + SequenceDuration() ), which parks the
+	// whole weapon in ItemBusyFrame so the Lua fire-button dispatch never
+	// runs at all.  With a draw activity that resolves long (or fails to
+	// resolve and leaves SequenceDuration() on whatever sequence is current)
+	// that locked CF SWEPs out for ~1s after deploy, while GMod fires at
+	// DeployDuration.  Restore what the script asked for; never hold the
+	// owner past the script's own gate.
+	if ( bScriptArmedPrimary )
+		m_flNextPrimaryAttack = flScriptNextPrimaryAttack;
+	if ( bScriptArmedSecondary )
+		m_flNextSecondaryAttack = flScriptNextSecondaryAttack;
+
+	if ( bScriptArmedPrimary || bScriptArmedSecondary )
+	{
+		CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		if ( pOwner != NULL )
+		{
+			const float flScriptGate = bScriptArmedPrimary ? flScriptNextPrimaryAttack : flScriptNextSecondaryAttack;
+			if ( pOwner->GetNextAttack() > flScriptGate )
+				pOwner->SetNextAttack( flScriptGate );
+		}
+	}
+
+	return bResult;
+#else
 	return BaseClass::Deploy();
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -1501,6 +1655,20 @@ void CHL2MPScriptedWeapon::Equip( CBaseCombatCharacter *pOwner )
 		if ( pOwner != NULL )
 			lua_pushentity( L, pOwner );
 	END_LUA_CALL_WEAPON_METHOD( pOwner != NULL ? 1 : 0, 0 );
+
+	// HL2SB GMod compat (2026-09-23): GM:WeaponEquip( weapon, owner ) -- a
+	// SERVER-side gamemode hook in GMod (wiki lists it under server hooks);
+	// fired after the weapon's own Equip so the state addons read is final.
+#ifndef CLIENT_DLL
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "WeaponEquip" );
+			lua_pushweapon( L, this );
+			if ( pOwner != NULL )
+				lua_pushentity( L, pOwner );
+		END_LUA_CALL_HOOK( pOwner != NULL ? 2 : 1, 0 );
+	}
+#endif
 #endif
 }
 
@@ -1880,6 +2048,24 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 		const int nButtons = pOwner->m_nButtons;
 		const int nPressed = pOwner->m_afButtonPressed;
 
+		// HL2SB GMod compat: the stock CBaseCombatWeapon::ItemPostFrame() calls
+		// CheckReload() first thing every frame (basecombatweapon_shared.cpp:
+		// 1689).  That call -- and only that call -- notices m_bInReload (set
+		// by DefaultReload) once m_flNextPrimaryAttack has elapsed and runs
+		// FinishReload(), which moves spare ammo into the clip.  This GMod
+		// -style frame drives the fire buttons itself and returns before
+		// BaseClass::ItemPostFrame(), so that completion step was severed: a
+		// SWEP reload played the animation and set m_bInReload, but nothing
+		// ever refilled the clip ("reload anim OK, still no bullets"; session
+		// log: SendWeaponAnim activity=182 with zero Lua errors).  Placed
+		// BEFORE the Lua ItemPostFrame dispatch so the "Lua owns the buttons"
+		// early return below still completes reloads, guarded exactly like the
+		// base class (ClipSize -1 weapons skip it).
+		if ( UsesClipsForAmmo1() )
+		{
+			CheckReload();
+		}
+
 		// A Lua SWEP may implement SWEP:ItemPostFrame() itself; returning false
 		// means "Lua owns the fire buttons" (the GMod base port did that).
 		BEGIN_LUA_CALL_WEAPON_METHOD( "ItemPostFrame" );
@@ -1914,6 +2100,14 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 		// DefaultClip.  The old Lua base seeded them; the flag lives on the
 		// weapon's Lua table because adding a member to this class would be an
 		// ABI trap (waf does not track header changes).
+		//
+		// HL2SB (2026-09-22): only the CLIP is seeded here.  The spare half of
+		// DefaultClip (DefaultClip - ClipSize) is granted by the engine's
+		// CBaseCombatCharacter::Weapon_Equip() - that single grant IS GMod's
+		// behaviour (GMod AK47: 35 clip / 105 reserve = 140 - 35).  An older
+		// revision of this block also called GiveAmmo() for the excess, so a
+		// freshly given weapon arrived with DOUBLE the reserve (210, and 340
+		// after a re-give in a test session) - user-observed, fixed here.
 		bool bClipsSeeded = false;
 		lua_getref( L, m_nTableReference );
 		if ( lua_istable( L, -1 ) )
@@ -1932,17 +2126,28 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 
 		if ( !bClipsSeeded )
 		{
+			// GMod Primary.DefaultClip = total ammo on give (clip + spare).
+			// Seed magazine with min(DefaultClip, ClipSize); excess -> GiveAmmo.
+			// Writing DefaultClip straight into m_iClip1 made an 11-round
+			// deagle show 55 in the HUD (ClipSize=11, DefaultClip=55).
+			// Clip only - clamp to ClipSize exactly like GMod's net result
+			// (clip = min(DefaultClip, ClipSize)); the spare half of
+			// DefaultClip is Weapon_Equip's job, not ours (see comment above
+			// bClipsSeeded - granting it here doubled the reserve).
 			const int nClipSize1 = lua_getweaponint( L, m_nTableReference, "Primary", "ClipSize", "Primary.ClipSize", -1 );
 			if ( nClipSize1 != -1 )
 			{
-				// Same write as the SetClip1 Lua binding.
-				m_iClip1.GetForModify() = lua_getweaponint( L, m_nTableReference, "Primary", "DefaultClip", "Primary.DefaultClip", nClipSize1 );
+				const int nDefault1 = lua_getweaponint( L, m_nTableReference, "Primary", "DefaultClip", "Primary.DefaultClip", nClipSize1 );
+				const int nSeed1 = ( nClipSize1 > 0 ) ? MIN( nDefault1, nClipSize1 ) : nDefault1;
+				m_iClip1.GetForModify() = nSeed1;
 			}
 
 			const int nClipSize2 = lua_getweaponint( L, m_nTableReference, "Secondary", "ClipSize", "Secondary.ClipSize", -1 );
 			if ( nClipSize2 != -1 )
 			{
-				m_iClip2.GetForModify() = lua_getweaponint( L, m_nTableReference, "Secondary", "DefaultClip", "Secondary.DefaultClip", nClipSize2 );
+				const int nDefault2 = lua_getweaponint( L, m_nTableReference, "Secondary", "DefaultClip", "Secondary.DefaultClip", nClipSize2 );
+				const int nSeed2 = ( nClipSize2 > 0 ) ? MIN( nDefault2, nClipSize2 ) : nDefault2;
+				m_iClip2.GetForModify() = nSeed2;
 			}
 		}
 

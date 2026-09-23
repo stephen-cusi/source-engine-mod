@@ -21,6 +21,7 @@
 #include "hltvcamera.h"
 #include "hl2sb_model_config.h"
 #include "hands_model_mapping.h"
+#include "luamanager.h"	// HL2SB: sound.Add script lookup in FireEvent below
 
 #if defined( REPLAY_ENABLED )
 #include "replay/replaycamera.h"
@@ -113,6 +114,98 @@ void C_BaseViewModel::UncorrectViewModelAttachment( Vector &vOrigin )
 }
 
 
+// HL2SB: sound.Add scripts live in a Lua-side table (gmod_compat.lua) that the
+// C++ sound system cannot see - viewmodel animation-event sounds registered by
+// name ("Rifle.ClipOut" in cf_beast) resolved to nothing, so reloads were
+// silent while Lua EmitSound(wav) fire sounds played fine.  Returns true when
+// pName is a registered script: copies the (randomly picked per GMod's
+// semantics) wav path, and level/volume/channel leave -1 when unregistered.
+static bool HL2SB_ResolveLuaSoundScript( const char *pName, char *pOutPath, int nOutLen, float *pOutVolume, int *pOutLevel, int *pOutChannel )
+{
+	if ( L == NULL || pName == NULL || pName[0] == '\0' )
+		return false;
+
+	lua_getglobal( L, "sound" );				// [sound]
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+	lua_getfield( L, -1, "GetProperties" );		// [sound][fn]
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );
+		return false;
+	}
+	lua_pushstring( L, pName );
+	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
+	{
+		// luasrc_pcall reported + popped the message: only [sound] is left.
+		lua_pop( L, 1 );
+		return false;
+	}
+	if ( !lua_istable( L, -1 ) )				// not a registered script
+	{
+		lua_pop( L, 2 );						// nil + sound
+		return false;
+	}
+
+	const int iProps = lua_gettop( L );			// [sound][props]
+
+	// Path field: "Sounds" (shim key) or GMod SoundData's "sound"; a string,
+	// or a table of variants (GMod picks one at random per play).
+	lua_getfield( L, iProps, "Sounds" );		// [sound][props][v]
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		lua_getfield( L, iProps, "sound" );
+	}
+	bool bResolved = false;
+	if ( lua_type( L, -1 ) == LUA_TSTRING )
+	{
+		Q_strncpy( pOutPath, lua_tostring( L, -1 ), nOutLen );
+		bResolved = ( pOutPath[0] != '\0' );
+	}
+	else if ( lua_istable( L, -1 ) )
+	{
+		const int nVariants = (int)lua_rawlen( L, -1 );
+		if ( nVariants > 0 )
+		{
+			lua_rawgeti( L, -1, RandomInt( 1, nVariants ) );	// [..][v][pick]
+			if ( lua_type( L, -1 ) == LUA_TSTRING )
+			{
+				Q_strncpy( pOutPath, lua_tostring( L, -1 ), nOutLen );
+				bResolved = ( pOutPath[0] != '\0' );
+			}
+			lua_pop( L, 1 );
+		}
+	}
+	lua_pop( L, 1 );							// [sound][props]
+
+	if ( bResolved )
+	{
+		// Registered params (shim stores capitalized keys, GMod SoundData
+		// lowercase - accept both); only overwrite the caller's -1 defaults.
+		lua_getfield( L, iProps, "Level" );
+		if ( !lua_isnumber( L, -1 ) ) { lua_pop( L, 1 ); lua_getfield( L, iProps, "level" ); }
+		if ( lua_isnumber( L, -1 ) ) *pOutLevel = (int)lua_tonumber( L, -1 );
+		lua_pop( L, 1 );
+
+		lua_getfield( L, iProps, "Volume" );
+		if ( !lua_isnumber( L, -1 ) ) { lua_pop( L, 1 ); lua_getfield( L, iProps, "volume" ); }
+		if ( lua_isnumber( L, -1 ) ) *pOutVolume = (float)lua_tonumber( L, -1 );
+		lua_pop( L, 1 );
+
+		lua_getfield( L, iProps, "Channel" );
+		if ( !lua_isnumber( L, -1 ) ) { lua_pop( L, 1 ); lua_getfield( L, iProps, "channel" ); }
+		if ( lua_isnumber( L, -1 ) ) *pOutChannel = (int)lua_tonumber( L, -1 );
+		lua_pop( L, 1 );
+	}
+
+	lua_pop( L, 2 );							// props + sound
+	return bResolved;
+}
+
 //-----------------------------------------------------------------------------
 // Purpose
 //-----------------------------------------------------------------------------
@@ -125,7 +218,30 @@ void C_BaseViewModel::FireEvent( const Vector& origin, const QAngle& angles, int
 		if ( GetOwner() != NULL )
 		{
 			CLocalPlayerFilter filter;
-			EmitSound( filter, GetOwner()->GetSoundSourceIndex(), options, &GetAbsOrigin() );
+			char szScripted[256];
+			float flVolume = 1.0f;
+			int nLevel = -1;
+			int nChannel = -1;
+			if ( HL2SB_ResolveLuaSoundScript( options, szScripted, sizeof( szScripted ), &flVolume, &nLevel, &nChannel ) )
+			{
+				// sound.Add script: emit the resolved wav path with the
+				// registered params - the script name is unknown to the
+				// C++ sound system and would resolve to nothing.
+				Vector vOrigin = GetAbsOrigin();
+				EmitSound_t params;
+				params.m_pSoundName = szScripted;
+				params.m_flVolume = flVolume;
+				if ( nLevel >= 0 )
+					params.m_SoundLevel = (soundlevel_t)nLevel;
+				if ( nChannel >= 0 )
+					params.m_nChannel = nChannel;
+				params.m_pOrigin = &vOrigin;
+				EmitSound( filter, GetOwner()->GetSoundSourceIndex(), params );
+			}
+			else
+			{
+				EmitSound( filter, GetOwner()->GetSoundSourceIndex(), options, &GetAbsOrigin() );
+			}
 			return;
 		}
 	}
