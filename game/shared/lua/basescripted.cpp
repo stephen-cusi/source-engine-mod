@@ -675,8 +675,43 @@ void CBaseScripted::Precache( void )
 void CBaseScripted::ClientThink()
 {
 #ifdef LUA_SDK
-	BEGIN_LUA_CALL_ENTITY_METHOD( "ClientThink" );
-	END_LUA_CALL_ENTITY_METHOD( 0, 0 );
+	// HL2SB GMod parity (2026-09-24, the silent nuke client visuals): GMod
+	// dispatches ENT:Think on the CLIENT too - nukepack's cl_init defines
+	// exactly that name (the blast-wave sound cues, and client visual scripts
+	// generally), never "ClientThink", so this dispatch never matched anything;
+	// and the schedule was one-shot (Spawn armed it once).  Re-arm for the next
+	// tick BEFORE dispatching so an explicit NextThink() inside the script
+	// still wins, then prefer GMod's "Think" name with a fallback to this
+	// fork's older "ClientThink" spelling.
+	SetNextClientThink( gpGlobals->curtime );
+
+	if ( L != NULL && m_nTableReference >= 0 && lua_isrefvalid( L, m_nTableReference ) )
+	{
+		lua_getref( L, m_nTableReference );			// [table]
+		if ( lua_istable( L, -1 ) )
+		{
+			bool bFn = luasrc_PushScriptField( L, -1, "Think" );	// [table][fn|nil]
+			if ( !bFn )
+			{
+				lua_pop( L, 1 );
+				bFn = luasrc_PushScriptField( L, -1, "ClientThink" );
+			}
+			if ( bFn )
+			{
+				lua_remove( L, -2 );					// [fn]
+				lua_pushanimating( L, this );			// [fn][self]
+				luasrc_pcall( L, 1, 0, 0 );
+			}
+			else
+			{
+				lua_pop( L, 2 );						// nil + table
+			}
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+	}
 #endif
 }
 #endif
