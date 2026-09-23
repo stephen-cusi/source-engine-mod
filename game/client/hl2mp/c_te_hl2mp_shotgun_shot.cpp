@@ -208,14 +208,20 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 							pTracerName = pWpn->GetTracerType();
 						}
 
-						if ( pTracerName == NULL || pTracerName[0] == '\0' )
-						{
-							pTracerName = "Tracer";
-						}
+						// HL2SB (2026-09-23): the old unconditional
+						//     pTracerName = "Tracer";
+						// fallback here made EVERY weapon draw the Lua tracer
+						// beam for every viewer - the "global tracer" report.
+						// No name from the server and none on the weapon = this
+						// shot declared no tracer: szTracerName stays empty and
+						// the DispatchEffect below is skipped (impacts unaffected).
 
 						// Copied: GetTracerType() hands back a static buffer, and
 						// Lua runs before the name is used below.
-						Q_strncpy( szTracerName, pTracerName, sizeof( szTracerName ) );
+						if ( pTracerName != NULL )
+						{
+							Q_strncpy( szTracerName, pTracerName, sizeof( szTracerName ) );
+						}
 
 						// HL2SB diagnostic: names the source of the tracer name in
 						// ds_debug.log, once per weapon per DLL load (Warning, not
@@ -244,7 +250,10 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 						pWpn->DoImpactEffect( tr, pAmmoDef->DamageType( m_iAmmoID ) );
 					}
 
-					if ( m_bDoTracers )
+					// HL2SB (2026-09-23): opt-in tracers - an empty name means the
+					// shot declared none (see the name block above), and an empty
+					// string must not reach DispatchEffect.
+					if ( m_bDoTracers && szTracerName[0] != '\0' )
 					{
 						CEffectData data;
 						data.m_vStart = tr.startpos;

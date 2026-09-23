@@ -12,6 +12,8 @@
 #include "physics_saverestore.h"
 #include "datacache/imdlcache.h"
 #include "activitylist.h"
+#include "luamanager.h"	// HL2SB GMod compat: SWEP:OwnerChanged dispatch in SetOwner
+#include "lbasecombatweapon_shared.h"	// HL2SB: lua_pushweapon
 
 // NVNT start extra includes
 #include "haptics/haptic_utils.h"
@@ -582,6 +584,18 @@ void CBaseCombatWeapon::SetOwner( CBaseCombatCharacter *owner )
 #else
 	UpdateVisibility();
 #endif
+
+	// HL2SB GMod compat (2026-09-23): SWEP:OwnerChanged() -- "called when
+	// weapon is dropped or picked up by a new player"; SetOwner is exactly
+	// that transition (owner set OR cleared), on both realms, matching the
+	// wiki note that it "can be called clientside for all players".
+#if defined( LUA_SDK )
+	if ( IsScripted() && L != NULL )
+	{
+		BEGIN_LUA_CALL_WEAPON_HOOK( "OwnerChanged", this );
+		END_LUA_CALL_WEAPON_HOOK( 0, 0 );
+	}
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -802,6 +816,17 @@ void CBaseCombatWeapon::MakeTracer( const Vector &vecTracerSrc, const trace_t &t
 	}
 
 	const char *pszTracerName = GetTracerType();
+
+	// HL2SB (2026-09-23): tracers are OPT-IN, same gate as
+	// CBaseEntity::MakeTracer.  No bullet.TracerName (handled by the
+	// HL2SB_HasShotTracerName branch above) AND no weapon/NPC declaration
+	// (GetTracerType() empty - stock weapons) means this shot asked for no
+	// tracer, and the default ammo-style tracer must draw NOTHING.  Weapons
+	// that declare one (floor turret "AR2Tracer", ...) still pass.
+	if ( pszTracerName == NULL || pszTracerName[0] == '\0' )
+	{
+		return;
+	}
 
 	Vector vNewSrc = vecTracerSrc;
 	int iEntIndex = pOwner->entindex();

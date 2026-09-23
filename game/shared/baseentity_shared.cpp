@@ -2431,6 +2431,17 @@ void CBaseEntity::MakeTracer( const Vector &vecTracerSrc, const trace_t &tr, int
 		s_szHL2SB_ShotTracerName,
 		( GetTracerType() != NULL ) ? GetTracerType() : "(null)" );
 
+	// HL2SB (2026-09-23): tracers are OPT-IN.  An empty name means the shot
+	// declared no tracer (bullet.TracerName unset and no weapon TracerType) and
+	// the default ammo-style tracer draws nothing - only weapons that ask
+	// (cf_beast TracerName="Tracer", weapon_nyangun, ...) get tracer visuals.
+	// The InfoMsg above still logs the call with name='' so the skip stays
+	// observable in ds_debug.log.
+	if ( pszTracerName == NULL || pszTracerName[0] == '\0' )
+	{
+		return;
+	}
+
 	// HL2SB GMod compat: an explicit tracer name is a request to draw THAT
 	// tracer, and GMod's engine does not second-guess it with the ammo's tracer
 	// style.  Here the ammo decides, and an addon-declared ammo type
