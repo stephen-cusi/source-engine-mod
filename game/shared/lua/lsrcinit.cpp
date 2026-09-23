@@ -1927,7 +1927,6 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     // exactly which lib to look at.  A half-opened lib can leave one binding
     // missing (addons see nil where the enum would be) - strictly better than
     // a hard crash; GMod makes the same tradeoff everywhere.
-    luasrc_LuaInfoMsgF( "[HL2SB] openlibs: %s\n", lib->name );
     lua_pushcfunction(L, lib->func);
     lua_pushstring(L, lib->name);
     if ( lua_pcall(L, 1, 0, 0) != LUA_OK ) {

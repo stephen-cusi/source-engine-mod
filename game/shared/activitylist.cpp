@@ -121,18 +121,6 @@ bool ActivityList_RegisterSharedActivity( const char *pszActivityName, int iActi
 	lastActivityIndex = iActivityIndex;
 
 	// HL2SB (2026-09-21): bisecting the server startup Lua panic - log progress
-	// so the failing entry and any preceding collision are on the record.
-	{
-		static int s_nRegistered = 0;
-		++s_nRegistered;
-		// one-shot bisect: name the first few entries and the stack top, so a
-		// failure before the 200th entry still names its exact spot
-		if ( s_nRegistered <= 3 || ( s_nRegistered % 200 ) == 0 )
-		{
-			Msg( "[HL2SB] activity probe: #%d '%s' top=%d\n", s_nRegistered,
-				pszActivityName, ( L != NULL ) ? lua_gettop( L ) : -1 );
-		}
-	}
 
 	// first, check to make sure the slot we're asking for is free. It must be for 
 	// a shared activity.
@@ -144,7 +132,6 @@ bool ActivityList_RegisterSharedActivity( const char *pszActivityName, int iActi
 
 	if ( pList )
 	{
-		Msg( "[HL2SB] activity probe: COLLISION at '%s'\n", pszActivityName );
 		Warning( "***\nShared activity collision! %s<->%s\n***\n", pszActivityName, g_ActivityStrings.GetStringForKey( pList->stringKey ) );
 		Assert(0);
 		return false;
