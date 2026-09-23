@@ -19,6 +19,9 @@
 // lua hooks
 #ifdef LUA_SDK
 #include "luamanager.h"
+#include "lbaseentity_shared.h"	// HL2SB GMod compat: lua_pushplayer
+#include "lbasecombatweapon_shared.h"	// HL2SB GMod compat: lua_pushweapon
+#include "c_baseplayer.h"	// HL2SB GMod compat: SWEP:DrawHUD / SWEP:DrawHUDBackground
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -66,6 +69,25 @@ void CScriptedHudViewport::Paint()
 	BEGIN_LUA_CALL_HOOK( "HudViewportPaint" );
 	END_LUA_CALL_HOOK( 0, 0 );
 
+	// HL2SB GMod compat (2026-09-23): SWEP:DrawHUDBackground() runs in the
+	// GM:HUDPaintBackground phase -- the wiki says it is called BEFORE
+	// WEAPON:DrawHUD -- and SWEP:DrawHUD() runs in the GM:HUDPaint phase.
+	// GMod order: HUDPaintBackground -> HUDPaint, so mirror that here.
+#if defined( LUA_SDK )
+	{
+		C_BasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
+		if ( pLocalPlayer != NULL && pLocalPlayer->IsAlive() )
+		{
+			CBaseCombatWeapon *pWep = pLocalPlayer->GetActiveWeapon();
+			if ( pWep != NULL && pWep->IsScripted() )
+			{
+				BEGIN_LUA_CALL_WEAPON_HOOK( "DrawHUDBackground", pWep );
+				END_LUA_CALL_WEAPON_HOOK( 0, 0 );
+			}
+		}
+	}
+#endif
+
 	// HL2SB: GMod's name for the same event.
 	//
 	// GMod addons write hook.Add( "HUDPaint", ... ) to draw a HUD (GMod passes no
@@ -76,4 +98,19 @@ void CScriptedHudViewport::Paint()
 	// appeared even once its input.LookupBinding call was fixed.
 	BEGIN_LUA_CALL_HOOK( "HUDPaint" );
 	END_LUA_CALL_HOOK( 0, 0 );
+
+#if defined( LUA_SDK )
+	{
+		C_BasePlayer *pLocalPlayer = C_BasePlayer::GetLocalPlayer();
+		if ( pLocalPlayer != NULL && pLocalPlayer->IsAlive() )
+		{
+			CBaseCombatWeapon *pWep = pLocalPlayer->GetActiveWeapon();
+			if ( pWep != NULL && pWep->IsScripted() )
+			{
+				BEGIN_LUA_CALL_WEAPON_HOOK( "DrawHUD", pWep );
+				END_LUA_CALL_WEAPON_HOOK( 0, 0 );
+			}
+		}
+	}
+#endif
 }

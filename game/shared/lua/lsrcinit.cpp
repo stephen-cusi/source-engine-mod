@@ -1626,7 +1626,10 @@ static void __MsgFunc_HL2SB_RPC( bf_read &read )
 	// shots, which is exactly the CF pack's "fires once and crashes").
 	const int iBase = lua_gettop( L );
 
-	lua_pushentity( L, pEnt );			// [ent]
+	// PushLuaInstanceSafe, NOT lua_pushentity: the latter always installs the
+	// generic CBaseEntity metatable, so a weapon CallOnClient("Deploy") ran
+	// SWEP:Deploy with a self that had no SetNextPrimaryFire (on CBaseCombatWeapon).
+	CBaseEntity::PushLuaInstanceSafe( L, pEnt );
 	lua_getfield( L, -1, szFn );		// [ent, fn]  (resolved through __index)
 	if ( lua_isfunction( L, -1 ) ) {
 		lua_pushvalue( L, -2 );			// [ent, fn, self]

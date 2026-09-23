@@ -78,9 +78,14 @@ static int CEffectData_GetEffectNameIndex (lua_State *L) {
 // (nuke_blastwave's guiding effects read it back client-side via GetEntity).
 // 2026-09-22: un-guarded from the server -- the CLIENT needs it just as much
 // (cf_beast's CallOnClient'd Muzzle sets the viewmodel on the EffectData).
+// Client stores a handle (m_hEntity); server stores an int index (m_nEntIndex).
   static int CEffectData_SetEntity (lua_State *L) {
     CBaseEntity *pEnt = lua_toentity( L, 2 );
+#ifdef CLIENT_DLL
+    luaL_checkeffect( L, 1 ).m_hEntity = pEnt ? pEnt->GetRefEHandle() : INVALID_EHANDLE_INDEX;
+#else
     luaL_checkeffect( L, 1 ).m_nEntIndex = pEnt ? pEnt->entindex() : 0;
+#endif
     return 0;
   }
 

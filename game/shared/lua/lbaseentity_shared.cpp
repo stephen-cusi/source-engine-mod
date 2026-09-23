@@ -393,7 +393,8 @@ static int CBaseEntity_DestroyDataObject (lua_State *L) {
 
 static int CBaseEntity_DispatchTraceAttack (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
-  CTakeDamageInfo *pInfo = luaL_checkdamageinfo(L, 2);
+  // luaL_checkdamageinfo returns a reference, not a pointer.
+  CTakeDamageInfo &info = luaL_checkdamageinfo(L, 2);
   // HL2SB (2026-09-22): GMod's signature takes a CGameTrace, but cf_beast's
   // melee passes two VECTORS -- the trace start and end (DispatchTraceAttack(
   // dmg, sp, ran )).  Tolerate that shape by running the trace here instead
@@ -404,12 +405,21 @@ static int CBaseEntity_DispatchTraceAttack (lua_State *L) {
     Vector vecEnd = luaL_checkvector(L, 4);
     trace_t tr;
     UTIL_TraceLine(vecStart, vecEnd, MASK_SHOT, pEntity, COLLISION_GROUP_NONE, &tr);
-    pEntity->DispatchTraceAttack(*pInfo, vecStart - vecEnd, &tr);
+    // HL2SB (2026-09-22): every engine caller brackets DispatchTraceAttack
+    // with Clear/ApplyMultiDamage (gamerules.cpp pattern) - without the
+    // Clear, stale pending damage from an earlier batch rides along into
+    // this apply and the hit lands far above the script's damage.  Also
+    // pass a normalized FORWARD direction (the old vecStart-vecEnd pointed
+    // backwards and unnormalized, misplacing blood/decals).
+    Vector vecDir = vecEnd - vecStart;
+    VectorNormalize(vecDir);
+    ClearMultiDamage();
+    pEntity->DispatchTraceAttack(info, vecDir, &tr);
     ApplyMultiDamage();
 #endif
     return 0;
   }
-  pEntity->DispatchTraceAttack(*pInfo, luaL_checkvector(L, 3), &luaL_checktrace(L, 4));
+  pEntity->DispatchTraceAttack(info, luaL_checkvector(L, 3), &luaL_checktrace(L, 4));
   return 0;
 }
 
@@ -3330,23 +3340,15 @@ static int CBaseEntity_GetOwner (lua_State *L) {
   return 1;
 }
 
-// HL2SB (2026-09-22): Entity:GetNoDraw()/SetNoDraw( bool ) -- the EF_NODRAW
-// flag.  GMod's halo library ducks these; our halo.lua's RT path calls
-// GetNoDraw directly on every entry entity every frame, and a scripted
-// entity without the method raised "attempt to call a nil value (method
-// 'GetNoDraw')" 160+ times per session.
+// HL2SB (2026-09-22): Entity:GetNoDraw() -- the EF_NODRAW flag read side.
+// GMod's halo library ducks these; our halo.lua's RT path calls GetNoDraw
+// directly on every halo entity every frame, and a scripted entity without
+// the method raised "attempt to call a nil value (method 'GetNoDraw')"
+// 160+ times per session.  SetNoDraw already exists near the top of this
+// file (cod_c4 fix) -- do not redefine it here (C2084).
 static int CBaseEntity_GetNoDraw (lua_State *L) {
   lua_pushboolean( L, ( luaL_checkentity( L, 1 )->GetEffects() & EF_NODRAW ) != 0 );
   return 1;
-}
-
-static int CBaseEntity_SetNoDraw (lua_State *L) {
-  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
-  if ( lua_toboolean( L, 2 ) )
-    pEntity->SetEffects( pEntity->GetEffects() | EF_NODRAW );
-  else
-    pEntity->SetEffects( pEntity->GetEffects() & ~EF_NODRAW );
-  return 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -4172,6 +4174,44 @@ static int CBaseEntity_StopParticles (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: Entity:GetAttachment( id ) (wiki: Entity:GetAttachment).
+// The CS_MuzzleFlash effect resolves the muzzle with
+// ent:GetAttachment( data:GetAttachment() ); with the method missing, every
+// CS-style muzzle flash fell through to EffectData origin (0,0,0) and drew at
+// world origin - invisible at the gun.  1-based ids (0 == none); returns the
+// AngPos table { Ang, Pos } or nil when the attachment does not exist, per
+// wiki.  Bone is not filled - CAttachmentData does not carry it here.
+static int CBaseEntity_GetAttachment (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const int nAttachment = luaL_checkinteger(L, 2);
+  CBaseAnimating *pAnim = pEntity ? dynamic_cast<CBaseAnimating *>( pEntity ) : NULL;
+  Vector vecPos;
+  QAngle angPos;
+  if ( pAnim == NULL || nAttachment < 1
+       || !pAnim->GetAttachment( nAttachment, vecPos, angPos ) ) {
+    lua_pushnil(L);
+    return 1;
+  }
+  lua_newtable(L);
+  lua_pushvector(L, vecPos);
+  lua_setfield(L, -2, "Pos");
+  lua_pushangle(L, angPos);
+  lua_setfield(L, -2, "Ang");
+  return 1;
+}
+
+// HL2SB GMod compat: Entity:LookupAttachment( name ) -> 1-based id, 0 when the
+// attachment does not exist (wiki example: `if obj > 0`).  Pairs with
+// GetAttachment above - the standard GMod muzzle idiom is
+// ent:LookupAttachment( "muzzle" ) then ent:GetAttachment( id ).
+static int CBaseEntity_LookupAttachment (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *szName = luaL_checkstring(L, 2);
+  CBaseAnimating *pAnim = pEntity ? dynamic_cast<CBaseAnimating *>( pEntity ) : NULL;
+  lua_pushinteger(L, pAnim ? pAnim->LookupAttachment( szName ) : 0);
+  return 1;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"GetForward", CBaseEntity_GetForward},
   {"GetRight", CBaseEntity_GetRight},
@@ -4269,6 +4309,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   // ENT:Draw opens with self:GetVelocity() -- without this the draw died on
   // its first line every frame and the flying cat rendered as nothing at all.
   {"GetVelocity", CBaseEntity_GetAbsVelocity},
+  {"GetAttachment", CBaseEntity_GetAttachment},
   {"GetAnimTime", CBaseEntity_GetAnimTime},
   {"GetBaseAnimating", CBaseEntity_GetBaseAnimating},
   {"GetBaseEntity", CBaseEntity_GetBaseEntity},
@@ -4377,6 +4418,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"StopSound", CBaseEntity_StopSound},
   {"GetParent", CBaseEntity_GetParent},
   {"LocalToWorld", CBaseEntity_LocalToWorld},
+  {"LookupAttachment", CBaseEntity_LookupAttachment},
   {"SetTrigger", CBaseEntity_SetTrigger},
   {"ManipulateBoneAngles", CBaseEntity_ManipulateBoneAngles},
   {"SetSpawnEffect", CBaseEntity_SetSpawnEffect},

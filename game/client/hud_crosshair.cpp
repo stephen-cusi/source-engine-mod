@@ -17,6 +17,8 @@
 #include "VGuiMatSurface/IMatSystemSurface.h"
 #include "client_virtualreality.h"
 #include "sourcevr/isourcevirtualreality.h"
+#include "luamanager.h"	// HL2SB GMod compat: SWEP:DoDrawCrosshair
+#include "lbasecombatweapon_shared.h"	// HL2SB: lua_pushweapon
 
 #ifdef SIXENSE
 #include "sixense/in_sixense.h"
@@ -263,6 +265,27 @@ void CHudCrosshair::Paint( void )
 	{
 		pWeapon->GetWeaponCrosshairScale( flWeaponScale );
 	}
+
+	// HL2SB GMod compat (2026-09-23): SWEP:DoDrawCrosshair( x, y ) -- literal
+	// true means the callback drew its own crosshair and the default one is
+	// skipped (wiki: "Return true to override the default crosshair").
+#if defined( LUA_SDK )
+	if ( pWeapon && pWeapon->IsScripted() )
+	{
+		BEGIN_LUA_CALL_WEAPON_HOOK( "DoDrawCrosshair", pWeapon );
+			lua_pushnumber( L, x );
+			lua_pushnumber( L, y );
+		END_LUA_CALL_WEAPON_HOOK( 2, 1 );
+
+		if ( lua_gettop( L ) > 0 )
+		{
+			bool bOverride = lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) != 0;
+			lua_pop( L, 1 );
+			if ( bOverride )
+				return;
+		}
+	}
+#endif
 
 	int iScreenDiv = 1600;
 	if ( IsSteamDeck() )

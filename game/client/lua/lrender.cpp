@@ -6,8 +6,12 @@
 
 // HL2SB GMod compat (ConVars In Garrysmod): the physgun visual toggles.
 // physgun_drawbeams is read by hl2sb/weapon_physgun.cpp's draw paths,
-// physgun_halo by c_baseanimating.cpp's held-entity glow shell.
+// physgun_halo by the Lua halo capture (hl2sb_physgun_halo.lua).
+// physgun_halo_shell gates the legacy C++ whole-model glow shell -- OFF by
+// default since 2026-09-23: GMod has no such shell, and stacked with the
+// halo library it reads as "the whole prop wrapped in one flat color".
 ConVar physgun_halo( "physgun_halo", "1", FCVAR_ARCHIVE, "Draw the physgun halo on the held entity" );
+ConVar physgun_halo_shell( "physgun_halo_shell", "0", FCVAR_ARCHIVE, "Draw the legacy whole-model physgun glow shell" );
 ConVar physgun_drawbeams( "physgun_drawbeams", "1", FCVAR_ARCHIVE, "Draw the physgun beams" );
 #ifdef CLIENT_DLL
 #include "rendertexture.h"

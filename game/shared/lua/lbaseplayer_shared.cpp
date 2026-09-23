@@ -21,6 +21,9 @@ void HL2SB_GetLastMouseDeltas( int &dx, int &dy );
 // HL2SB: Player:SteamID / SteamID64 - CSteamID is not in this file's usual include chain
 // (c_baseplayer.h only forward-declares it in its method signature).
 #include "steam/steamclientpublic.h"
+// HL2SB: usergroup support (settings/users.txt lookup, GMod-style) reads through
+// the engine filesystem so the file resolves in the mod dir.
+#include "filesystem.h"
 #ifdef CLIENT_DLL
 #include "lc_baseanimating.h"
 // HL2SB: complete IClientVehicle for CBasePlayer_GetVehicleEntity's
@@ -1403,31 +1406,33 @@ static int CBasePlayer_SetWeaponColor (lua_State *L) {
 // and Render()'s implementation (common/steamid.cpp) is not linked into the game DLLs
 // (LNK2019).  The string is built from the inline accessors with Valve's own arithmetic
 // (common/steamid.cpp:508-517: accountID = Low32 * 2 + High32).
-static void HL2SB_PushSteamID( lua_State *L, CBasePlayer *pPlayer ) {
+static void HL2SB_SteamIDString( CBasePlayer *pPlayer, char *szOut, size_t nOutLen ) {
   CSteamID steamID;
 
   if ( pPlayer->GetSteamID( &steamID ) && steamID.IsValid() )
   {
     unsigned unUniverse = (unsigned)steamID.GetEUniverse();
-    char szID[ 32 ];
 
     if ( unUniverse >= (unsigned)k_EUniversePublic )
       unUniverse -= (unsigned)k_EUniversePublic;
     else
       unUniverse = 0;
 
-    Q_snprintf( szID, sizeof( szID ), "STEAM_%u:%u:%u", unUniverse,
+    Q_snprintf( szOut, nOutLen, "STEAM_%u:%u:%u", unUniverse,
                 (unsigned)( steamID.GetAccountID() & 1 ), (unsigned)( steamID.GetAccountID() >> 1 ) );
-    lua_pushstring( L, szID );
     return;
   }
 
   // No Steam (this fork also runs standalone): a string both realms derive from the same
   // networked value, so the client/server comparison above still holds.
-  char szFallback[ 32 ];
+  Q_snprintf( szOut, nOutLen, "STEAM_0:0:%d", pPlayer->entindex() );
+}
 
-  Q_snprintf( szFallback, sizeof( szFallback ), "STEAM_0:0:%d", pPlayer->entindex() );
-  lua_pushstring( L, szFallback );
+static void HL2SB_PushSteamID( lua_State *L, CBasePlayer *pPlayer ) {
+  char szID[ 32 ];
+
+  HL2SB_SteamIDString( pPlayer, szID, sizeof( szID ) );
+  lua_pushstring( L, szID );
 }
 
 static int CBasePlayer_SteamID (lua_State *L) {
@@ -1436,31 +1441,193 @@ static int CBasePlayer_SteamID (lua_State *L) {
 }
 
 /*
-** HL2SB GMod compat: Player:IsAdmin() / Player:IsSuperAdmin().
+** HL2SB GMod compat: the usergroup suite behind Player:IsAdmin().
 **
-** There is no usergroup system behind this engine, so the practical meaning of
-** "admin" is the listen-server host -- which is also who GMod's own defaults
-** treat as the server's boss.  Addons gate server functions on this
-** (cod_c4's net receiver at shared.lua:27 raised "attempt to call a nil value
-** (method 'IsAdmin')" on every convar change before this existed).
+** Wiki semantics (wiki.facepunch.com Player:IsAdmin / IsSuperAdmin /
+** IsUserGroup / GetUserGroup):
+**   - IsAdmin()      = IsUserGroup("admin") or IsUserGroup("superadmin")
+**   - IsSuperAdmin() = IsUserGroup("superadmin")
+**   - GetUserGroup() = group string, "user" when none
+**   - groups are loaded from garrysmod/settings/users.txt  -> here:
+**     settings/users.txt under the GAME search path.
+**
+** Group resolution order (server): a users.txt entry for the player wins;
+** with no entry, the listen-server host is "superadmin" (GMod's own wiki
+** example runs Entity(1):IsUserGroup("superadmin") as the listen host),
+** everyone else is "user".  This engine is NON-STEAM: GetSteamID never
+** yields a real Steam2 id (fallback "STEAM_0:0:<entindex>"), so users.txt
+** entries are matched by PLAYER NAME first -- the operative path here --
+** and by the id string as a GMod-shaped fallback.  The client realm answers
+** from the same host heuristic: this engine does not network the usergroup
+** string, so on a dedicated server remote clients always report "user" --
+** documented limitation, listen/standalone play (this fork's usage) is
+** exact.  Addons gate server functions on this (cod_c4's net receiver at
+** shared.lua:27 raised "attempt to call a nil value (method 'IsAdmin')" on
+** every convar change before any of this existed).
 */
+static void HL2SB_GetUserGroup( CBasePlayer *pPlayer, char *szGroup, size_t nGroupLen ) {
+  Q_strncpy( szGroup, "user", nGroupLen );
+
+#ifdef CLIENT_DLL
+  // On a listen server the host's client entity index is always 1
+  // (same convention as IsListenServerHost above; the client engine
+  // interface has no IsDedicatedServer to ask).
+  if ( pPlayer->entindex() == 1 )
+    Q_strncpy( szGroup, "superadmin", nGroupLen );
+#else
+  if ( !engine->IsDedicatedServer() && pPlayer->entindex() == 1 )
+    Q_strncpy( szGroup, "superadmin", nGroupLen );
+
+  // Explicit users.txt entries beat the implicit host default.
+  char szSteamID[ 32 ];
+  HL2SB_SteamIDString( pPlayer, szSteamID, sizeof( szSteamID ) );
+  const char *pszName = pPlayer->GetPlayerName();
+
+  FileHandle_t hFile = g_pFullFileSystem->Open( "settings/users.txt", "r", "GAME" );
+  if ( hFile == FILESYSTEM_INVALID_HANDLE )
+    return;
+
+  int nSize = g_pFullFileSystem->Size( hFile );
+  if ( nSize <= 0 || nSize > 64 * 1024 )
+  {
+    g_pFullFileSystem->Close( hFile );
+    return;
+  }
+
+  char *pszBuf = new char[ nSize + 1 ];
+  int nRead = g_pFullFileSystem->Read( pszBuf, nSize, hFile );
+  g_pFullFileSystem->Close( hFile );
+  pszBuf[ nRead ] = '\0';
+
+  // Tiny walker for GMod's users.txt shape:
+  //   "Users" { "superadmin" { "name" "STEAM_0:x:y" ... } "admin" { ... } }
+  // with // and /* */ comments.  Depth 1 strings name a group; depth 2 string
+  // pairs are (player name, id).  Name matches are the real path on this
+  // non-Steam engine; the id match only ever hits the synthetic
+  // STEAM_0:0:<entindex> fallbacks.
+  int nDepth = 0;
+  char szCurGroup[ 64 ] = "";
+  char szTopString[ 64 ] = "";
+  char szPending[ 64 ] = "";
+  bool bHavePending = false;
+  const char *p = pszBuf;
+
+  while ( *p && nDepth != -1000 )
+  {
+    if ( p[ 0 ] == '/' && p[ 1 ] == '/' )
+    {
+      while ( *p && *p != '\n' )
+        p++;
+      continue;
+    }
+    if ( p[ 0 ] == '/' && p[ 1 ] == '*' )
+    {
+      p += 2;
+      while ( *p && !( p[ 0 ] == '*' && p[ 1 ] == '/' ) )
+        p++;
+      if ( *p )
+        p += 2;
+      continue;
+    }
+    if ( *p == '"' )
+    {
+      p++;
+      char szToken[ 64 ];
+      size_t n = 0;
+      while ( *p && *p != '"' )
+      {
+        if ( n < sizeof( szToken ) - 1 )
+          szToken[ n++ ] = *p;
+        p++;
+      }
+      if ( *p )
+        p++;
+      szToken[ n ] = '\0';
+
+      if ( nDepth == 1 )
+        Q_strncpy( szTopString, szToken, sizeof( szTopString ) );
+      else if ( nDepth == 2 && szCurGroup[ 0 ] )
+      {
+        if ( !bHavePending )
+        {
+          Q_strncpy( szPending, szToken, sizeof( szPending ) );
+          bHavePending = true;
+        }
+        else
+        {
+          // The pair is (name, id): a match on either assigns the group.
+          if ( ( pszName && pszName[ 0 ] && Q_stricmp( szPending, pszName ) == 0 ) ||
+               Q_stricmp( szPending, szSteamID ) == 0 )
+          {
+            Q_strncpy( szGroup, szCurGroup, nGroupLen );
+            nDepth = -1000; // matched, stop walking
+          }
+          bHavePending = false;
+        }
+      }
+      continue;
+    }
+    if ( *p == '{' )
+    {
+      nDepth++;
+      if ( nDepth == 2 )
+      {
+        Q_strncpy( szCurGroup, szTopString, sizeof( szCurGroup ) );
+        bHavePending = false;
+      }
+      p++;
+      continue;
+    }
+    if ( *p == '}' )
+    {
+      if ( nDepth == 2 )
+        szCurGroup[ 0 ] = '\0';
+      nDepth--;
+      p++;
+      continue;
+    }
+    p++;
+  }
+
+  delete[] pszBuf;
+#endif
+}
+
+static int CBasePlayer_GetUserGroup (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+
+  char szGroup[ 64 ];
+  HL2SB_GetUserGroup( pPlayer, szGroup, sizeof( szGroup ) );
+  lua_pushstring( L, szGroup );
+  return 1;
+}
+
+static int CBasePlayer_IsUserGroup (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const char *pszGroup = luaL_checkstring(L, 2);
+
+  char szGroup[ 64 ];
+  HL2SB_GetUserGroup( pPlayer, szGroup, sizeof( szGroup ) );
+  lua_pushboolean( L, Q_stricmp( szGroup, pszGroup ) == 0 );
+  return 1;
+}
+
+static int CBasePlayer_IsSuperAdmin (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+
+  char szGroup[ 64 ];
+  HL2SB_GetUserGroup( pPlayer, szGroup, sizeof( szGroup ) );
+  lua_pushboolean( L, Q_stricmp( szGroup, "superadmin" ) == 0 );
+  return 1;
+}
+
 static int CBasePlayer_IsAdmin (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
 
-  bool bHost = false;
-  if ( pPlayer != NULL )
-  {
-#ifdef CLIENT_DLL
-    // On a listen server the host's client entity index is always 1
-    // (same convention as IsListenServerHost above; the client engine
-    // interface has no IsDedicatedServer to ask).
-    bHost = ( pPlayer->entindex() == 1 );
-#else
-    bHost = !engine->IsDedicatedServer() && ( pPlayer->entindex() == 1 );
-#endif
-  }
-
-  lua_pushboolean( L, bHost );
+  char szGroup[ 64 ];
+  HL2SB_GetUserGroup( pPlayer, szGroup, sizeof( szGroup ) );
+  lua_pushboolean( L, Q_stricmp( szGroup, "admin" ) == 0 ||
+                       Q_stricmp( szGroup, "superadmin" ) == 0 );
   return 1;
 }
 
@@ -1830,7 +1997,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SteamID", CBasePlayer_SteamID},
   {"SteamID64", CBasePlayer_SteamID64},
   {"IsAdmin", CBasePlayer_IsAdmin},
-  {"IsSuperAdmin", CBasePlayer_IsAdmin},
+  {"IsSuperAdmin", CBasePlayer_IsSuperAdmin},
+  {"IsUserGroup", CBasePlayer_IsUserGroup},
+  {"GetUserGroup", CBasePlayer_GetUserGroup},
 
   {"GetViewModel", CBasePlayer_GetViewModel},
   {"GetWaterJumpTime", CBasePlayer_GetWaterJumpTime},

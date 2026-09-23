@@ -791,19 +791,25 @@ void CHudWeaponSelection::Paint()
 								if ( pWeapon->GetSlot() == i && pWeapon->GetPosition() == slotpos )
 								{
 									bool bSelected = (pWeapon == pSelectedWeapon);
-									DrawLargeWeaponBox( pWeapon, 
-														bSelected, 
-														xpos, 
-														ypos, 
-														largeBoxWide, 
-														largeBoxTall, 
-														bSelected ? selectedColor : m_BoxColor, 
-														GetWeaponBoxAlpha( bSelected ), 
-														bDrawBucketNumber ? i + 1 : -1 );
+									// HL2SB GMod style: the slot number sits on
+									// the selected weapon's large box, not on
+									// whatever weapon happens to draw first.
+									int iNumber = ( bSelected && bDrawBucketNumber ) ? i + 1 : -1;
+									DrawLargeWeaponBox( pWeapon,
+														bSelected,
+														xpos,
+														ypos,
+														largeBoxWide,
+														largeBoxTall,
+														bSelected ? selectedColor : m_BoxColor,
+														GetWeaponBoxAlpha( bSelected ),
+														iNumber );
+									if ( bSelected )
+										bDrawBucketNumber = false;
 
-									// move down to the next bucket
-									ypos += (largeBoxTall + m_flBoxGap);
-									bDrawBucketNumber = false;
+									// move down to the next bucket -- non-selected
+									// weapons draw as flat name-only bars (tall/3)
+									ypos += ( ( bSelected ? largeBoxTall : largeBoxTall / 3 ) + m_flBoxGap );
 								}
 							}
 						}
@@ -1028,6 +1034,57 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 	{
 	case HUDTYPE_BUCKETS:
 		{
+#ifdef LUA_SDK
+			// HL2SB GMod style: in the expanded slot only the SELECTED weapon
+			// gets the large icon box -- every other weapon in the slot draws
+			// as a flat name-only bar (GMod reference: the CF pack shows one
+			// big "AK47 - Iron Beast" box with "M4A1-S-Beast" / "AK-47 Vulcan"
+			// flat bars underneath).  The caller advanced ypos by the bar
+			// height, which is boxTall/3.
+			if ( !bSelected )
+			{
+				int flatTall = boxTall / 3;
+				DrawBox( xpos, ypos, boxWide, flatTall, selectedColor, alpha * 0.75f, number );
+
+				wchar_t text[128];
+				wchar_t *tempString = g_pVGuiLocalize->Find( pWeapon->GetPrintName() );
+				if ( tempString )
+				{
+#ifdef WIN32
+					_snwprintf( text, sizeof(text)/sizeof(wchar_t) - 1, L"%s", tempString );
+#else
+					_snwprintf( text, sizeof(text)/sizeof(wchar_t) - 1, L"%S", tempString );
+#endif
+					text[sizeof(text)/sizeof(wchar_t) - 1] = 0;
+				}
+				else
+				{
+					// HL2SB: GMod SWEPs spell their print name as a language
+					// token ("#weapon_medkit"); strip the '#' like GMod's
+					// language.GetPhrase() fallback does.
+					const char *pszPrintName = pWeapon->GetPrintName();
+					if ( pszPrintName && pszPrintName[0] == '#' )
+						++pszPrintName;
+					g_pVGuiLocalize->ConvertANSIToUnicode( pszPrintName, text, sizeof( text ) );
+				}
+
+				Color textColor = m_TextColor;
+				textColor[3] = (unsigned char)( textColor[3] * ( alpha / 255.0f ) );
+				surface()->DrawSetTextColor( textColor );
+				surface()->DrawSetTextFont( m_hTextFont );
+
+				int slen = 0;
+				for ( wchar_t *pch = text; *pch != 0; pch++ )
+					slen += surface()->GetCharacterWidth( m_hTextFont, *pch );
+
+				surface()->DrawSetTextPos( xpos + ( boxWide - slen ) / 2,
+										   ypos + ( flatTall - surface()->GetFontTall( m_hTextFont ) ) / 2 );
+				for ( wchar_t *pch = text; *pch != 0; pch++ )
+					surface()->DrawUnicodeChar( *pch );
+
+				return;
+			}
+#endif
 			// draw box for selected weapon
 			DrawBox( xpos, ypos, boxWide, boxTall, selectedColor, alpha, number );
 

@@ -300,8 +300,14 @@ static int CBaseAnimating_LookupPoseParameter (lua_State *L) {
 }
 
 static int CBaseAnimating_LookupSequence (lua_State *L) {
-  lua_pushinteger(L, luaL_checkanimating(L, 1)->LookupSequence(luaL_checkstring(L, 2)));
-  return 1;
+  // HL2SB (2026-09-22): match the client -- GMod returns (seq, duration).
+  // cf_beast SetupENUM does select(2, vm:LookupSequence("reload")); the old
+  // 1-return server binding left ReloadSpeed nil and Reload() threw.
+  CBaseAnimating *pAnimating = luaL_checkanimating(L, 1);
+  const int iSeq = pAnimating->LookupSequence(luaL_checkstring(L, 2));
+  lua_pushinteger(L, iSeq);
+  lua_pushnumber(L, (iSeq >= 0) ? pAnimating->SequenceDuration(iSeq) : 0.0f);
+  return 2;
 }
 
 static int CBaseAnimating_ResetSequence (lua_State *L) {

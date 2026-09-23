@@ -14,6 +14,10 @@
 #include "client_virtualreality.h"
 #include "sourcevr/isourcevirtualreality.h"
 #include "c_viewmodel_attachment.h"
+#include "luamanager.h"	// HL2SB GMod compat: SWEP:CalcViewModelView / SWEP:GetViewModelPosition
+#include "mathlib/lvector.h"	// lua_pushvector / lua_pushangle / luaL_checkvector / luaL_checkangle
+#include "lbasecombatweapon_shared.h"	// lua_pushweapon
+#include "lbaseentity_shared.h"	// lua_pushentity
 #else
 #include "vguiscreen.h"
 #endif
@@ -425,6 +429,54 @@ void CBaseViewModel::CalcViewModelView( CBasePlayer *owner, const Vector& eyePos
 	{
 		g_ClientVirtualReality.OverrideViewModelTransform( vmorigin, vmangles, pWeapon && pWeapon->ShouldUseLargeViewModelVROverride() );
 	}
+
+	// HL2SB GMod compat (2026-09-23): SWEP:GetViewModelPosition( eyePos, eyeAng )
+	// then SWEP:CalcViewModelView( vm, oldEyePos, oldEyeAng, eyePos, eyeAng ),
+	// in exactly the base gamemode's GM:CalcViewModelView order
+	// (garrysmod/gamemodes/base/gamemode/cl_init.lua:555-576: GetViewModelPosition
+	// runs first, CalcViewModelView second, later results win).  Only Lua returns
+	// that are actually present AND of the expected type overwrite, so a weapon
+	// returning fewer values (or nil) cannot corrupt the transform.
+#if defined( LUA_SDK )
+	if ( pWeapon != NULL && pWeapon->IsScripted() && L != NULL &&
+		lua_isrefvalid( L, pWeapon->m_nTableReference ) && !prediction->InPrediction() )
+	{
+		BEGIN_LUA_CALL_WEAPON_HOOK( "GetViewModelPosition", pWeapon );
+			lua_pushvector( L, vmorigin );
+			lua_pushangle( L, vmangles );
+		END_LUA_CALL_WEAPON_HOOK( 2, 2 );
+
+		int nRet = lua_gettop( L );
+		if ( nRet >= 2 )
+		{
+			if ( lua_isuserdata( L, -2 ) && luaL_checkudata( L, -2, "Vector" ) )
+				vmorigin = luaL_checkvector( L, -2 );
+			if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
+				vmangles = luaL_checkangle( L, -1 );
+		}
+		if ( nRet > 0 )
+			lua_pop( L, nRet );
+
+		BEGIN_LUA_CALL_WEAPON_HOOK( "CalcViewModelView", pWeapon );
+			lua_pushentity( L, this );
+			lua_pushvector( L, eyePosition );
+			lua_pushangle( L, eyeAngles );
+			lua_pushvector( L, vmorigin );
+			lua_pushangle( L, vmangles );
+		END_LUA_CALL_WEAPON_HOOK( 5, 2 );
+
+		nRet = lua_gettop( L );
+		if ( nRet >= 2 )
+		{
+			if ( lua_isuserdata( L, -2 ) && luaL_checkudata( L, -2, "Vector" ) )
+				vmorigin = luaL_checkvector( L, -2 );
+			if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
+				vmangles = luaL_checkangle( L, -1 );
+		}
+		if ( nRet > 0 )
+			lua_pop( L, nRet );
+	}
+#endif
 
 	SetLocalOrigin( vmorigin );
 	SetLocalAngles( vmangles );

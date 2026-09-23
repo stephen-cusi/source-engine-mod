@@ -174,6 +174,19 @@ $Project "Client (HL2SB)"
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.h"
 	}
 
+	// HL2SB: native CS muzzle-flash engine effects (CS_MuzzleFlash and
+	// CS_MuzzleFlash_X).  Only client_cstrike.vpc ever listed them, and the
+	// hl2sb game config builds client_base + client_hl2mp + client_lua - so
+	// util.Effect("CS_MuzzleFlash") had no engine effect to find and the game
+	// shipped a Lua particle stand-in that looked nothing like GMod's
+	// (sprites/muzzleflash4 star + TE_DynamicLight).  GMod lists
+	// CS_MuzzleFlash under Engine Effects on the wiki; materials are mounted
+	// (muzzleflash4 in the hl2 vpk, muzzleflashX in garrysmod fallbacks).
+	$Folder "CStrike Effects"
+	{
+		$File "cstrike\fx_cs_muzzleflash.cpp"
+	}
+
 	$Folder "SMenu"
 	{
 		$File "menu/toolgun_menu.cpp"

@@ -16,6 +16,9 @@
 #include "tier1/KeyValues.h"
 #include "toolframework/itoolframework.h"
 #include "toolframework_client.h"
+#include "luamanager.h"	// HL2SB GMod compat: SWEP:DrawWorldModel / DrawWorldModelTranslucent
+#include "lbasecombatweapon_shared.h"	// HL2SB: lua_pushweapon
+#include "model_types.h"	// HL2SB: STUDIO_TRANSPARENCY
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -492,6 +495,40 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 	// Only draw in reflection or third person.
 	if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawLocalPlayerViewModel() )
 		return 0;
+
+	// HL2SB GMod compat (2026-09-23): SWEP:DrawWorldModel( flags ) for the
+	// opaque pass, SWEP:DrawWorldModelTranslucent( flags ) for the translucent
+	// pass.  Per the wiki, DEFINING the callback replaces the default draw
+	// entirely (the examples call self:DrawModel( flags ) themselves to keep
+	// it), so a scripted weapon with the method draws ONLY through Lua.
+#if defined( LUA_SDK )
+	if ( IsScripted() && L != NULL && lua_isrefvalid( L, m_nTableReference ) )
+	{
+		bool bTranslucent = ( flags & STUDIO_TRANSPARENCY ) != 0;
+		const char *pszMethod = bTranslucent ? "DrawWorldModelTranslucent" : "DrawWorldModel";
+
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, pszMethod );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			// The stack must be [table, func, self, flags] BEFORE lua_remove(-4).
+			// It used to run while only [table, func] were pushed, so -4 pointed
+			// one TValue BEFORE the stack array base - the heap block header of
+			// the stack itself.  lua_rotate then rewrote that header every frame
+			// a scripted world model drew, and the next luaD_shrinkstack realloc
+			// hit the corruption (the nuke-launch heap crashes, 2026-09-23, each
+			// caught with sent_nuke / weapon_redeemer on screen).  Push self and
+			// flags first, then drop the table so pcall sees the function at
+			// -(nargs)-1.
+			lua_pushweapon( L, this );
+			lua_pushinteger( L, flags );
+			lua_remove( L, -4 );
+			luasrc_pcall( L, 2, 0, 0 );
+			return 1;
+		}
+		lua_pop( L, 2 );
+	}
+#endif
 
 	// HL2SB: GMod-style c_ models as world models. GMod SWEPs point WorldModel at a
 	// c_ model (rigged for viewmodel space); drawn in a world pass it only reads as

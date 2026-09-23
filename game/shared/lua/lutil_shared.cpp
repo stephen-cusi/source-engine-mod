@@ -559,6 +559,30 @@ static int luasrc_UTIL_DecalTrace (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat (2026-09-23): GMod's util.Decal( name, start, end,
+// filter = NULL ) -- "Performs a trace and paints a decal to the surface hit"
+// (wiki; built-in names include ManhackCut, Impact.Concrete, Scorch, ...).
+// This fork only had util.DecalTrace( trace, name ), so the CF beast pack's
+// melee (weapon_cf_base.lua:65, util.Decal("ManhackCut", sp, ran)) died on
+// "attempt to call a nil value (field 'Decal')" on every wall hit.
+static int luasrc_UTIL_Decal (lua_State *L) {
+  const char *pszDecal = luaL_checkstring( L, 1 );
+  Vector vecStart = luaL_checkvector( L, 2 );
+  Vector vecEnd = luaL_checkvector( L, 3 );
+  CBaseEntity *pFilter = ( lua_gettop( L ) >= 4 && !lua_isnoneornil( L, 4 ) ) ? lua_toentity( L, 4 ) : NULL;
+
+  CGameTrace trace;
+  UTIL_TraceLine( vecStart, vecEnd, MASK_SHOT, pFilter, COLLISION_GROUP_NONE, &trace );
+
+  // Same guard as the engine's own UTIL_DecalTrace callers: nothing hit ->
+  // nothing to paint (UTIL_DecalTrace early-outs on fraction == 1.0 anyway,
+  // but it also dereferences m_pEnt, so don't even call it into the void).
+  if ( trace.fraction < 1.0f && trace.m_pEnt != NULL )
+    UTIL_DecalTrace( &trace, pszDecal );
+
+  return 0;
+}
+
 static int luasrc_UTIL_IsSpaceEmpty (lua_State *L) {
   lua_pushboolean(L, UTIL_IsSpaceEmpty(luaL_checkentity(L, 1), luaL_checkvector(L, 2), luaL_checkvector(L, 3)));
   return 1;
@@ -925,6 +949,7 @@ static const luaL_Reg util_funcs[] = {
   {"BloodDecalTrace",  luasrc_UTIL_BloodDecalTrace},
   // {"UTIL_DecalTrace",  luasrc_UTIL_DecalTrace},
   {"DecalTrace",  luasrc_UTIL_DecalTrace},
+  {"Decal",  luasrc_UTIL_Decal},
   // {"UTIL_IsSpaceEmpty",  luasrc_UTIL_IsSpaceEmpty},
   {"IsSpaceEmpty",  luasrc_UTIL_IsSpaceEmpty},
   // {"UTIL_PlayerByIndex",  luasrc_UTIL_PlayerByIndex},

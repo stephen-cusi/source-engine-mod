@@ -386,6 +386,29 @@ static int CBaseCombatWeapon_GetSlot (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (2026-09-23): Weapon:GetSlotPos() -- GMod has it, the
+// scripted weapon already carries the SWEP.SlotPos value (read in
+// InitScriptedWeapon) and exposes it through the GetPosition() virtual.
+static int CBaseCombatWeapon_GetSlotPos (lua_State *L) {
+  lua_pushinteger(L, luaL_checkweapon(L, 1)->GetPosition());
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-23): Weapon:GetWeaponViewModel() /
+// Weapon:GetWeaponWorldModel() -- the model path strings from the weapon's
+// SCRIPTED WEAPON / properties, exactly what GMod returns.
+static int CBaseCombatWeapon_GetWeaponViewModel (lua_State *L) {
+  const char *psz = luaL_checkweapon(L, 1)->GetViewModel( 0 );
+  lua_pushstring(L, psz ? psz : "");
+  return 1;
+}
+
+static int CBaseCombatWeapon_GetWeaponWorldModel (lua_State *L) {
+  const char *psz = luaL_checkweapon(L, 1)->GetWorldModel();
+  lua_pushstring(L, psz ? psz : "");
+  return 1;
+}
+
 static int CBaseCombatWeapon_GetSubType (lua_State *L) {
   lua_pushinteger(L, luaL_checkweapon(L, 1)->GetSubType());
   return 1;
@@ -1100,6 +1123,9 @@ static const luaL_Reg CBaseCombatWeaponmeta[] = {
   {"GetSecondaryAttackActivity", CBaseCombatWeapon_GetSecondaryAttackActivity},
   {"GetShootSound", CBaseCombatWeapon_GetShootSound},
   {"GetSlot", CBaseCombatWeapon_GetSlot},
+  {"GetSlotPos", CBaseCombatWeapon_GetSlotPos},
+  {"GetWeaponViewModel", CBaseCombatWeapon_GetWeaponViewModel},
+  {"GetWeaponWorldModel", CBaseCombatWeapon_GetWeaponWorldModel},
   {"GetSubType", CBaseCombatWeapon_GetSubType},
   {"GetViewModel", CBaseCombatWeapon_GetViewModel},
   {"GetViewModelSequenceDuration", CBaseCombatWeapon_GetViewModelSequenceDuration},

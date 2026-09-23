@@ -31,6 +31,7 @@
 #include "luamanager.h"
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
+#include "lbasecombatweapon_shared.h"	// HL2SB GMod compat: lua_pushweapon (SWEP:OnDrop)
 #include "lhl2mp_player_shared.h"
 #include "ltakedamageinfo.h"
 #endif
@@ -1542,6 +1543,18 @@ void CHL2MP_Player::Weapon_Drop( CBaseCombatWeapon *pWeapon, const Vector *pvecT
 			}
 		}
 	}
+
+	// HL2SB GMod compat (2026-09-23): SWEP:OnDrop( owner ) -- "called when
+	// weapon is dropped by Player:DropWeapon"; handed the dropping owner,
+	// fired BEFORE the engine drop so the script still sees itself carried.
+#if defined( LUA_SDK )
+	if ( pWeapon != NULL && pWeapon->IsScripted() && L != NULL )
+	{
+		BEGIN_LUA_CALL_WEAPON_HOOK( "OnDrop", pWeapon );
+			lua_pushentity( L, this );
+		END_LUA_CALL_WEAPON_HOOK( 1, 0 );
+	}
+#endif
 
 	BaseClass::Weapon_Drop( pWeapon, pvecTarget, pVelocity );
 }

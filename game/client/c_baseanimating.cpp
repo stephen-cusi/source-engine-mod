@@ -3108,7 +3108,12 @@ ConVar r_drawothermodels( "r_drawothermodels", "1", FCVAR_CHEAT, "0=Off, 1=Norma
 // soft glow all around the held prop.
 C_BaseEntity *HL2SB_PhysgunHeldEntity( void );
 IMaterial *HL2SB_PhysgunGlowMaterial( void );
+// Legacy whole-model shell, OFF by default (2026-09-23): GMod draws the held
+// prop's glow through the halo LIBRARY's stencil+blur edge ring only; this
+// shell stacked on top of it reads as "the whole prop wrapped in one flat
+// color".  physgun_halo stays with the Lua capture (hl2sb_physgun_halo.lua).
 extern ConVar physgun_halo;
+extern ConVar physgun_halo_shell;
 
 int C_BaseAnimating::DrawModel( int flags )
 {
@@ -3185,9 +3190,11 @@ int C_BaseAnimating::DrawModel( int flags )
 		}
 	}
 
-	// The glow shell -- now ON TOP of the freshly drawn surface.
+	// The legacy glow shell -- now ON TOP of the freshly drawn surface.
+	// OFF by default (physgun_halo_shell 0): the halo library's edge ring is
+	// the GMod look; enable the shell only to debug without the library.
 	if ( HL2SB_PhysgunHeldEntity() == this
-		&& physgun_halo.GetBool()
+		&& physgun_halo_shell.GetBool()
 		&& !IsNPC() && !IsPlayer() && !IsRagdoll() )
 	{
 		IMaterial *pGlowMaterial = HL2SB_PhysgunGlowMaterial();
@@ -3759,7 +3766,30 @@ void MaterialFootstepSound( C_BaseAnimating *pEnt, bool bLeftFoot, float flVolum
 void C_BaseAnimating::FireEvent( const Vector& origin, const QAngle& angles, int event, const char *options )
 {
 	Vector attachOrigin;
-	QAngle attachAngles; 
+	QAngle attachAngles;
+
+#if defined ( HL2SB )
+	// HL2SB GMod compat: WEAPON:FireAnimationEvent - wiki
+	// (https://wiki.facepunch.com/gmod/WEAPON:FireAnimationEvent) "Called
+	// before executing an animation event... Return true to disable the
+	// effect"; clientside handles the 5000-range and other events (event 21
+	// included), source = viewmodel.  cf_beast draws its first-person CS
+	// muzzle flash from event 21; the hook had never been dispatched by this
+	// engine, so the SWEP's util.Effect("CS_MuzzleFlash") never ran and the
+	// viewmodel's default muzzle event drew the wrong sprite instead.  View-
+	// model scope only: the local world weapon's duplicate of the event is
+	// already suppressed by the HL2SB block in the AE_MUZZLEFLASH case, so
+	// first person ends up with exactly one flash.
+	extern bool HL2SB_ViewmodelFireAnimationEvent( C_BaseCombatWeapon *pWpn, const Vector &pos, const QAngle &ang, int event, const char *options );
+
+	if ( IsViewModel() )
+	{
+		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+		C_BaseCombatWeapon *pWpn = pLocal ? pLocal->GetActiveWeapon() : NULL;
+		if ( pWpn && HL2SB_ViewmodelFireAnimationEvent( pWpn, origin, angles, event, options ) )
+			return;		// the script disabled this event (wiki: return true)
+	}
+#endif
 
 	switch( event )
 	{

@@ -85,12 +85,15 @@ static int CBasePlayer_CrosshairEnable (lua_State *L) {
 // local player's own model should be drawn this frame (true in third person,
 // mirrored views, vehicle cameras).  cf_beast's Muzzle() uses it to decide
 // between a world muzzle flash on the player and the viewmodel shell eject.
-// Only the LOCAL player's answer can matter on this client; anyone else is a
-// plain false.
+// GMod wiki: "Despite this being a method on a player object, this will always
+// represent the state of the local player, not of the player entity this
+// method is used on." -- so the receiver is validated but ignored; the previous
+// receiver==local guard answered false for otherPlayer:ShouldDrawLocalPlayer()
+// where GMod answers with the local player's state.  Client-only metatable, so
+// the static query is always valid here.
 static int CBasePlayer_ShouldDrawLocalPlayer (lua_State *L) {
-  C_BasePlayer *pPlayer = luaL_checkplayer( L, 1 );
-  lua_pushboolean( L, pPlayer != NULL && pPlayer == C_BasePlayer::GetLocalPlayer()
-                        && pPlayer->ShouldDrawLocalPlayer() );
+  luaL_checkplayer( L, 1 );
+  lua_pushboolean( L, C_BasePlayer::ShouldDrawLocalPlayer() );
   return 1;
 }
 
