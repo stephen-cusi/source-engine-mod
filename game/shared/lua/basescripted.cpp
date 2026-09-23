@@ -686,6 +686,21 @@ void CBaseScripted::Think()
 #ifdef LUA_SDK
 	BEGIN_LUA_CALL_ENTITY_METHOD( "Think" );
 	END_LUA_CALL_ENTITY_METHOD( 0, 0 );
+
+#ifndef CLIENT_DLL
+	// HL2SB GMod parity (2026-09-23, the missing nuke aftermath): GMod runs a
+	// scripted entity's ENT:Think EVERY tick when the script does not
+	// reschedule itself.  The engine's think here is one-shot - Spawn arms it
+	// once, and after the dispatch m_flNextThink is <= curtime unless the
+	// script called SetNextThink/NextThink.  Nukepack's radiation field and
+	// the sent_nuke expansion wave never do, so their first Think ran (and the
+	// radiation's returned immediately: FTime < 0.3) and all post-blast damage
+	// and the burn wave died silently.  scp173 had the same shape - it only
+	// worked because its script tail-calls NextThink.  Re-arm for the next
+	// tick unless the script itself scheduled something later.
+	if ( GetNextThink() <= gpGlobals->curtime )
+		SetNextThink( gpGlobals->curtime );
+#endif
 #endif
 }
 
