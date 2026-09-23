@@ -88,6 +88,12 @@ bool HL2SB_PrecacheOnce (const char *pszName) {
 ** Non-static: game/shared/lua/basescripted.cpp uses it too.
 */
 void HL2SB_WarnOnce (const char *pszKey, const char *pszFormat, ...) {
+  // HL2SB (2026-09-23): console print gated by hl2sb_debug (default 0); the
+  // one-shot bookkeeping below still runs so re-enabling the cvar mid-session
+  // does not replay every old key.
+  if ( !hl2sb_debug.GetBool() )
+    return;
+
   if ( s_pHL2SBWarned == NULL )
     s_pHL2SBWarned = new CUtlDict<int, int>();
 
@@ -559,6 +565,52 @@ static int luasrc_UTIL_DecalTrace (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB GMod compat: util.Decal( name, start, end, filter = NULL ) - wiki
+** (https://wiki.facepunch.com/gmod/util.Decal): available client AND server,
+** "Performs a trace and paints a decal to the surface hit"; arg 4 is an entity
+** (or sequential <Entity> table) the decal may never be painted on.
+**
+** The missing binding threw "attempt to call a nil value (field 'Decal')" at
+** weapon_cf_base.lua:65 AFTER the knife had already dealt its damage - the
+** error aborted SWEP:Think before `self.NextHit = nil`, so NextHit stayed in
+** the past and AttackTrace re-ran EVERY FRAME: one right-click melted
+** several-hundred-HP NPCs (the reported "elbow one-shots everything"), and
+** LagCompensation(false) never ran either.
+*/
+static int luasrc_UTIL_Decal (lua_State *L) {
+  const char *name = luaL_checkstring(L, 1);
+  Vector start = luaL_checkvector(L, 2);
+  Vector end = luaL_checkvector(L, 3);
+
+  trace_t tr;
+  UTIL_TraceLine(start, end, MASK_SHOT, (CBaseEntity *)NULL, COLLISION_GROUP_NONE, &tr);
+  if (!tr.DidHit())
+    return 0;
+
+  // Wiki arg 4: entities the decal must not be painted on.  A trace that ends
+  // on an excluded entity simply paints nothing (the decal "cannot be placed"
+  // there).  nil / omitted (the common case, cf_beast passes 3 args) skips
+  // this check entirely.
+  CBaseEntity *pExclude = lua_toentity(L, 4);
+  if (pExclude) {
+    if (pExclude == tr.m_pEnt)
+      return 0;
+  } else if (lua_istable(L, 4)) {
+    for (int i = 1; ; ++i) {
+      lua_rawgeti(L, 4, i);
+      if (lua_isnil(L, -1)) { lua_pop(L, 1); break; }
+      CBaseEntity *pEnt = lua_toentity(L, -1);
+      lua_pop(L, 1);
+      if (pEnt && pEnt == tr.m_pEnt)
+        return 0;
+    }
+  }
+
+  UTIL_DecalTrace(&tr, name);
+  return 0;
+}
+
 static int luasrc_UTIL_IsSpaceEmpty (lua_State *L) {
   lua_pushboolean(L, UTIL_IsSpaceEmpty(luaL_checkentity(L, 1), luaL_checkvector(L, 2), luaL_checkvector(L, 3)));
   return 1;
@@ -925,6 +977,8 @@ static const luaL_Reg util_funcs[] = {
   {"BloodDecalTrace",  luasrc_UTIL_BloodDecalTrace},
   // {"UTIL_DecalTrace",  luasrc_UTIL_DecalTrace},
   {"DecalTrace",  luasrc_UTIL_DecalTrace},
+  // HL2SB: GMod's util.Decal (wiki arg list name/start/end/filter)
+  {"Decal",  luasrc_UTIL_Decal},
   // {"UTIL_IsSpaceEmpty",  luasrc_UTIL_IsSpaceEmpty},
   {"IsSpaceEmpty",  luasrc_UTIL_IsSpaceEmpty},
   // {"UTIL_PlayerByIndex",  luasrc_UTIL_PlayerByIndex},
