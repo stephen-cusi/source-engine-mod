@@ -10,9 +10,13 @@
 #include "llimits.h"
 #include "lstate.h"
 
+LUA_API void HL2SB_LuaApiStackOverflow( lua_State *L );
+
 /* Increments 'L->top.p', checking for stack overflows */
 #define api_incr_top( L )                                           \
     {                                                               \
+        if ( L->top.p > L->ci->top.p )                              \
+            HL2SB_LuaApiStackOverflow( L );                         \
         L->top.p++;                                                 \
         api_check( L, L->top.p <= L->ci->top.p, "stack overflow" ); \
     }

@@ -674,6 +674,28 @@
 #define luai_apicheck( l, e ) assert( e )
 #endif
 
+/*
+** HL2SB (2026-09-23): make the API boundary checks LIVE even in release.
+** A nuke detonation corrupted the heap next to the Lua stack array; neither
+** the api_incr_top overflow trap nor page-heap caught a push-side violation,
+** so every api_check in lapi/ldo/lvm becomes an armed detector: a failed
+** condition logs the condition + file:line + the whole CallInfo chain, then
+** aborts so the engine crash handler writes a minidump.
+*/
+#if !defined( luai_apicheck )
+#ifdef __cplusplus
+extern "C" {
+#endif
+void HL2SB_LuaApiCheckFail( void *L, const char *cond, const char *file, int line );
+#ifdef __cplusplus
+}
+#endif
+#define luai_apicheck( l, e )                                             \
+  ( (void)(l),                                                            \
+    (e) ? (void)0                                                         \
+        : HL2SB_LuaApiCheckFail( (void *)(l), #e, __FILE__, __LINE__ ) )
+#endif
+
 /* }================================================================== */
 
 /*

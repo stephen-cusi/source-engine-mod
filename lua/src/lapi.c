@@ -12,6 +12,8 @@
 
 #include <limits.h>
 #include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lua.h"
@@ -51,6 +53,61 @@ const char lua_ident[] =
 
 /* test for upvalue */
 #define isupvalue(i)		((i) < LUA_REGISTRYINDEX)
+
+/*
+** HL2SB (2026-09-23): called from api_incr_top (lapi.h) when a C function
+** pushes past its LUA_MINSTACK frame.  Lua itself never overflows its stack
+** array; raw pushes from bindings do, and the page-heap build trapped exactly
+** that - a corrupted stack array, hit later by luaD_shrinkstack's realloc
+** (nuke-launch crash).  Name every frame on the CallInfo chain (C bindings
+** included) into a log file next to the game, then abort so the engine's own
+** crash handler writes a minidump with the culprit's stack.
+*/
+LUA_API void HL2SB_LuaApiStackOverflow( lua_State *L )
+{
+	FILE *fp = fopen( "hl2sb_api_stack_overflow.log", "a" );
+	lua_Debug ar;
+	int n;
+
+	if ( fp )
+		fprintf( fp, "=== LUA API STACK OVERFLOW ===\n" );
+	for ( n = 0; lua_getstack( L, n, &ar ) && n < 24; ++n )
+	{
+		lua_getinfo( L, "Sn", &ar );
+		if ( fp )
+			fprintf( fp, "level %d: what=%s name=%s (%s) source=%s line=%d\n",
+				n, ar.what,
+				ar.name ? ar.name : "(?)", ar.namewhat ? ar.namewhat : "",
+				ar.short_src[0] ? ar.short_src : "?", ar.currentline );
+	}
+	if ( fp )
+	{
+		fprintf( fp, "top=%d stacksize=%d\n",
+			( int )( L->top.p - L->stack.p ), stacksize( L ) );
+		fclose( fp );
+	}
+	abort();	/* the engine crash handler logs and dumps from here */
+}
+
+/*
+** HL2SB (2026-09-23): armed by luai_apicheck in luaconf.h - every api_check
+** in the C API reports through here (release builds compiled them out, which
+** is how the nuke heap corruption got past them).  Log which condition broke
+** and where, then dump the same CallInfo chain as the push-overflow trap.
+*/
+void HL2SB_LuaApiCheckFail( void *pL, const char *cond, const char *file, int line )
+{
+	FILE *fp = fopen( "hl2sb_api_stack_overflow.log", "a" );
+	if ( fp )
+	{
+		fprintf( fp, "=== LUA API CHECK FAILED ===\n" );
+		fprintf( fp, "condition: %s\nat %s:%d\n", cond ? cond : "?",
+			file ? file : "?", line );
+		fclose( fp );
+	}
+	HL2SB_LuaApiStackOverflow( (lua_State *)pL );	/* logs chain, then abort() */
+}
+
 
 
 /*

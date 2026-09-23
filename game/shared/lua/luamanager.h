@@ -282,13 +282,16 @@
     lua_getref(L, pWeapon->m_nTableReference); \
     luasrc_PushScriptField(L, -1, functionName); \
     lua_remove(L, -2); \
-    int args = 0; \
-    lua_pushweapon(L, pWeapon); \
-    ++args;
+    if (lua_isfunction(L, -1)) { \
+      int args = 0; \
+      lua_pushweapon(L, pWeapon); \
+      ++args;
 
 #define END_LUA_CALL_WEAPON_HOOK(nArgs, nresults) \
-    args += nArgs; \
-    luasrc_pcall(L, args, nresults, 0); \
+      args += nArgs; \
+      luasrc_pcall(L, args, nresults, 0); \
+    } \
+    else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); } \
   } \
   else \
     if ((nresults) > 0) lua_pushnil(L);
