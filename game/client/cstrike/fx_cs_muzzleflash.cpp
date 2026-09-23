@@ -9,6 +9,7 @@
 #include "particles_localspace.h"
 #include "c_te_effect_dispatch.h"
 #include "clienteffectprecachesystem.h"
+#include "materialsystem/imaterial.h"	// HL2SB: SetMaterialVarFlag below
 
 // Precache our effects
 CLIENTEFFECT_REGISTER_BEGIN( PrecacheEffect_CS_MuzzleFlash )
@@ -19,8 +20,33 @@ CLIENTEFFECT_REGISTER_END()
 void TE_DynamicLight( IRecipientFilter& filter, float delay,
 	const Vector* org, int r, int g, int b, int exponent, float radius, float time, float decay, int nLightIndex = LIGHT_INDEX_TE_DYNAMIC );
 
+// HL2SB (2026-09-23): HL2's copy of the flash sprites ships WITHOUT the
+// additive blend flag (CS:S's originals had it), so the stock particle drew
+// the texture's black background - the big black square the user reported at
+// every shot.  MATERIAL_VAR_ADDITIVE is the authoritative blend switch and
+// does not need a $additive variable in the VMT ("No such variable" at
+// runtime proved the param is not declared), so force the flag once on the
+// shared material.  Every consumer of a flash sprite wants additive, so this
+// is safe for the stock muzzle-sprite users too.
+static void HL2SB_ForceAdditive( const char *pszMaterialName )
+{
+	static bool s_bLogged = false;
+	IMaterial *pMat = materials->FindMaterial( pszMaterialName, TEXTURE_GROUP_CLIENT_EFFECTS );
+	if ( pMat != NULL && !pMat->IsErrorMaterial() )
+	{
+		pMat->SetMaterialVarFlag( MATERIAL_VAR_ADDITIVE, true );
+		if ( !s_bLogged )
+		{
+			s_bLogged = true;
+			Msg( "[HL2SB] CS_MuzzleFlash: forced MATERIAL_VAR_ADDITIVE on %s\n", pszMaterialName );
+		}
+	}
+}
+
 void CS_MuzzleFlashCallback( const CEffectData &data )
 {
+	HL2SB_ForceAdditive( "sprites/muzzleflash4" );
+
 	CSmartPtr<CLocalSpaceEmitter> pEmitter = 
 		CLocalSpaceEmitter::Create( "CS_MuzzleFlash", data.m_hEntity, data.m_nAttachmentIndex, 0 );
 
@@ -94,7 +120,9 @@ DECLARE_CLIENT_EFFECT( "CS_MuzzleFlash", CS_MuzzleFlashCallback );
 // 'X' shaped muzzleflash used by certain weapons
 void CS_MuzzleFlashXCallback( const CEffectData &data )
 {
-	CSmartPtr<CLocalSpaceEmitter> pEmitter = 
+	HL2SB_ForceAdditive( "effects/muzzleflashX" );
+
+	CSmartPtr<CLocalSpaceEmitter> pEmitter =
 		CLocalSpaceEmitter::Create( "CS_MuzzleFlashX", data.m_hEntity, data.m_nAttachmentIndex, 0 );
 
 	Assert( pEmitter );
