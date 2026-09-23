@@ -1186,8 +1186,11 @@ Particle *CParticleMgr::AllocParticle( int size )
 {
 	// Enforce max particle limit.
 	if ( m_nCurrentParticlesAllocated >= MAX_TOTAL_PARTICLES )
+	{
 		return NULL;
-		
+	}
+
+
 	Particle *pRet = (Particle *)malloc( size );
 	if ( pRet )
 		++m_nCurrentParticlesAllocated;
