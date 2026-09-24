@@ -2813,6 +2813,14 @@ bool CHL2_Player::ClientCommand( const CCommand &args )
 //-----------------------------------------------------------------------------
 void CHL2_Player::PlayerUse ( void )
 {
+	// HL2SB GMod compat (2026-09-25): while the physics gun is CARRYING an
+	// object, E belongs to the gun (rotate) -- the HL2 +use system must not
+	// react (it played the interaction sound on the held prop and its
+	// use-grab fights the physgun's carry controller).
+	extern bool HL2SB_PhysgunServerIsHolding( CBasePlayer *pPlayer );
+	if ( HL2SB_PhysgunServerIsHolding( this ) )
+		return;
+
 	// Was use pressed or released?
 	if ( ! ((m_nButtons | m_afButtonPressed | m_afButtonReleased) & IN_USE) )
 		return;
