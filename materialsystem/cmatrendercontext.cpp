@@ -194,11 +194,17 @@ InitReturnVal_t CMatRenderContextBase::Init( )
 		// 2.2 MB default the pool ran dry mid-frame while holding
 		// flex-heavy NPCs under halo_draw 1 -- LockRenderData returned NULL
 		// ~40 times (ExecuteNTimes printed 4) and a caller NULL-dereferenced
-		// (dumps/crash_20260924_223952_1_accessviolation.mdmp).  Same pool
-		// as garrysmod therefore.
+		// (dumps/crash_20260924_223952_1_accessviolation.mdmp).
+		//
+		// HL2SB (2026-09-25): 4.4 MB (GMod's size) STILL ran dry once the
+		// First Person Body addon is active -- its per-frame shadow-body
+		// RenderScene pass roughly doubles per-frame render data on top of
+		// the halo pipeline (npc_antlion grab, dumps/crash_20260925_004916).
+		// The pool is a per-frame linear allocator wiped every frame, so the
+		// extra resident cost is just the reservation: give hl2sb 2x GMod.
 		if ( gamedir && ( !Q_stricmp( "garrysmod", gamedir ) || !Q_stricmp( "hl2sb", gamedir ) ) )
 		{
-			nSize = 4400 * 1024;
+			nSize = 8800 * 1024;
 		}
 
 		sm_RenderData[0].Init( nSize, nCommitSize, 0, 32 );
