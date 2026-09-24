@@ -504,6 +504,15 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 #if defined( LUA_SDK )
 	if ( IsScripted() && L != NULL && lua_isrefvalid( L, m_nTableReference ) )
 	{
+		// ⚠️ recursion latch (2026-09-24): the GMod-documented pattern inside
+		// WEAPON:DrawWorldModel is `self:DrawModel( flags )` -- which re-enters
+		// THIS function.  While dispatching, fall straight through to the
+		// default render so that inner call draws the plain model instead of
+		// recursing forever.
+		static bool s_bInDrawWorldModel = false;
+		if ( s_bInDrawWorldModel )
+			return BaseClass::DrawModel( flags );
+
 		bool bTranslucent = ( flags & STUDIO_TRANSPARENCY ) != 0;
 		const char *pszMethod = bTranslucent ? "DrawWorldModelTranslucent" : "DrawWorldModel";
 
@@ -523,7 +532,9 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 			lua_pushweapon( L, this );
 			lua_pushinteger( L, flags );
 			lua_remove( L, -4 );
+			s_bInDrawWorldModel = true;
 			luasrc_pcall( L, 2, 0, 0 );
+			s_bInDrawWorldModel = false;
 			return 1;
 		}
 		lua_pop( L, 2 );
