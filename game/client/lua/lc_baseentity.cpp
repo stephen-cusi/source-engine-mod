@@ -128,8 +128,20 @@ static int CBaseEntity_DrawModel (lua_State *L) {
   // is never actually drawn (the cod_c4 thrown entity rendered nothing while
   // its ENT:Draw ran every frame).  Route through InternalDrawModel, which
   // draws the model without the script dispatch.
+  //
+  // HL2SB (2026-09-24): brush and sprite models have no studio header.
+  // gm_construct's grabbable func_reflective_glass mirror drawn through here
+  // AV'd inside the studio path (dumps/crash_20260924_231913).  Skip
+  // non-studio models: Lua callers get a 0 instead of a crash.
   C_BaseEntity *pEntity = luaL_checkentity(L, 1);
   int nFlags = luaL_optint(L, 2, STUDIO_RENDER);
+
+  const model_t *pModel = pEntity->GetModel();
+  if ( pModel == NULL || modelinfo->GetModelType( pModel ) != mod_studio )
+  {
+    lua_pushinteger( L, 0 );
+    return 1;
+  }
 
   int nResult = 0;
   C_BaseAnimating *pAnim = dynamic_cast<C_BaseAnimating *>(pEntity);
