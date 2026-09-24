@@ -1278,9 +1278,29 @@ Color HL2SB_GetWeaponColor( int iUserID )
 {
 	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
 	int idx = s_WeaponColor.Find( iUserID );
-	if ( idx == s_WeaponColor.InvalidIndex() )
-		return Color( 76, 255, 255, 255 );	// GMod's cl_weaponcolor default 0.30 1.80 2.10, clamped
-	return s_WeaponColor[ idx ];
+	if ( idx != s_WeaponColor.InvalidIndex() )
+		return s_WeaponColor[ idx ];
+
+	// 2026-09-24: the map only fills when Lua calls SetWeaponColor -- the
+	// player-model mixer writes the cl_weaponcolor CONVAR directly, so a
+	// fresh session fell through to the hardcoded cyan default and the
+	// physgun beam ignored the user's weapon colour.  Read the convar like
+	// the C++ PlayerWeaponColor proxy does (values are normalized and may
+	// exceed 1; GMod's default is "0.30 1.80 2.10").
+	static ConVarRef s_cl_weaponcolor( "cl_weaponcolor" );
+	if ( s_cl_weaponcolor.IsValid() )
+	{
+		float r = 0.0f, g = 0.0f, b = 0.0f;
+		if ( sscanf( s_cl_weaponcolor.GetString(), "%f %f %f", &r, &g, &b ) == 3 )
+		{
+			return Color(
+				clamp( (int)( r * 255.0f ), 0, 255 ),
+				clamp( (int)( g * 255.0f ), 0, 255 ),
+				clamp( (int)( b * 255.0f ), 0, 255 ), 255 );
+		}
+	}
+
+	return Color( 76, 255, 255, 255 );	// GMod's cl_weaponcolor default 0.30 1.80 2.10, clamped
 }
 
 void HL2SB_SetWeaponColor( int iUserID, const Color &clr )

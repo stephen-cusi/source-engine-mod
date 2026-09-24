@@ -825,6 +825,10 @@ EXPOSE_INTERFACE( CPlayerColorProxy, IMaterialProxy, "PlayerColor" IMATERIAL_PRO
 // the arms have no colour" report, 2026-09-17).  The colour is cl_weaponcolor, the
 // convar the player model selector's weapon mixer writes.
 //-----------------------------------------------------------------------------
+// HL2SB (2026-09-24): hold state of the local physgun (weapon_physgun.cpp) --
+// drives the grab-glow pulse below.
+bool HL2SB_PhysgunIsHolding( void );
+
 class CPlayerWeaponColorProxy : public IMaterialProxy
 {
 public:
@@ -871,6 +875,19 @@ public:
 		r = clamp( r, 0.0f, 1.0f );
 		g = clamp( g, 0.0f, 1.0f );
 		b = clamp( b, 0.0f, 1.0f );
+
+		// HL2SB (2026-09-24): the GMod13 "physgun glow" -- while the local
+		// physgun is holding something, its materials brighten and gently
+		// pulse in the weapon colour.  GMod drives this through the same
+		// proxy plus a hold-brightness ramp; without it the tint is flat and
+		// the gun never reads as "glowing while grabbing".
+		if ( HL2SB_PhysgunIsHolding() )
+		{
+			float flGlow = 1.6f + 0.35f * sin( gpGlobals->curtime * 8.0f );
+			r *= flGlow;
+			g *= flGlow;
+			b *= flGlow;
+		}
 
 		m_pColor->SetVecValue( r, g, b );
 	}

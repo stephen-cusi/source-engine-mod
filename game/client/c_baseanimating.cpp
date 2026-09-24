@@ -6,8 +6,10 @@
 //===========================================================================//
 #include "cbase.h"
 #include "c_baseanimating.h"
-#include "c_sprite.h"
 #include "model_types.h"
+#include "materialsystem/imaterial.h"
+#include "materialsystem/imaterialvar.h"	// HL2SB: IMaterialVar for the glow-shell $color tint
+#include "c_sprite.h"
 #include "bone_setup.h"
 #include "ivrenderview.h"
 #include "r_efx.h"
@@ -3108,12 +3110,14 @@ ConVar r_drawothermodels( "r_drawothermodels", "1", FCVAR_CHEAT, "0=Off, 1=Norma
 // soft glow all around the held prop.
 C_BaseEntity *HL2SB_PhysgunHeldEntity( void );
 IMaterial *HL2SB_PhysgunGlowMaterial( void );
-// Legacy whole-model shell, OFF by default (2026-09-23): GMod draws the held
-// prop's glow through the halo LIBRARY's stencil+blur edge ring only; this
-// shell stacked on top of it reads as "the whole prop wrapped in one flat
-// color".  physgun_halo stays with the Lua capture (hl2sb_physgun_halo.lua).
-extern ConVar physgun_halo;
+// HL2SB (2026-09-24): the shell IS the held-prop glow again (weapon colour +
+// hold pulse via the material's $color var).  Lua-side rim draws could not be
+// tinted: Material() is a stub wrapper and SetColorModulation does not reach
+// override draws in this branch.  physgun_halo_shell is kept as an extra
+// master-off switch.
 extern ConVar physgun_halo_shell;
+extern bool HL2SB_PhysgunIsHolding( void );
+Color HL2SB_GetWeaponColor( int iUserID );
 
 int C_BaseAnimating::DrawModel( int flags )
 {
@@ -3190,9 +3194,11 @@ int C_BaseAnimating::DrawModel( int flags )
 		}
 	}
 
-	// The legacy glow shell -- now ON TOP of the freshly drawn surface.
-	// OFF by default (physgun_halo_shell 0): the halo library's edge ring is
-	// the GMod look; enable the shell only to debug without the library.
+	// The physgun held-entity GLOW shell -- the whole-body additive tint.
+	// OFF by default (2026-09-24): additive over bright backgrounds saturates
+	// to a flat white fill, which is exactly the "整个变白" the user rejected.
+	// The outline look is the halo library's RT pipeline (halo_draw 1); this
+	// shell stays behind physgun_halo_shell 1 as a manual fallback only.
 	if ( HL2SB_PhysgunHeldEntity() == this
 		&& physgun_halo_shell.GetBool()
 		&& !IsNPC() && !IsPlayer() && !IsRagdoll() )
@@ -3200,9 +3206,28 @@ int C_BaseAnimating::DrawModel( int flags )
 		IMaterial *pGlowMaterial = HL2SB_PhysgunGlowMaterial();
 		if ( pGlowMaterial != NULL && !pGlowMaterial->IsErrorMaterial() )
 		{
-			modelrender->ForcedMaterialOverride( pGlowMaterial );
-			InternalDrawModel( flags );
-			modelrender->ForcedMaterialOverride( NULL );
+			IMaterialVar *pColorVar = pGlowMaterial->FindVar( "$color", NULL, false );
+			if ( pColorVar != NULL )
+			{
+				C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+				Color clrW = pLocal ? HL2SB_GetWeaponColor( pLocal->GetUserID() )
+									: Color( 255, 255, 255, 255 );
+
+				float flGlow;
+				if ( HL2SB_PhysgunIsHolding() )
+					flGlow = 0.62f + 0.10f * sin( gpGlobals->curtime * 8.0f );
+				else
+					flGlow = 0.30f;
+
+				pColorVar->SetVecValue(
+					clrW.r() / 255.0f * flGlow,
+					clrW.g() / 255.0f * flGlow,
+					clrW.b() / 255.0f * flGlow );
+
+				modelrender->ForcedMaterialOverride( pGlowMaterial );
+				InternalDrawModel( flags );
+				modelrender->ForcedMaterialOverride( NULL );
+			}
 		}
 	}
 

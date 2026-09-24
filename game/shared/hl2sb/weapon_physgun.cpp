@@ -48,6 +48,12 @@
 #include "iinput.h"				// HL2SB GMod compat: E-rotate input interception
 #include "materialsystem/imaterialsystem.h"
 #include "texture_group_names.h"
+#include "cdll_client_int.h"	// HL2SB GMod compat: modelrender (the viewmodel glow shell)
+
+// HL2SB GMod compat (2026-09-24): local prototype -- the definition lives in
+// lbaseplayer_shared.cpp; cl_weaponcolor drives the physgun beam/sprites,
+// exactly like GMod13.
+Color HL2SB_GetWeaponColor( int iUserID );
 #else
 #include "physics_prop_ragdoll.h"
 #include "props.h"
@@ -774,16 +780,20 @@ void CWeaponGravityGun::EffectUpdate( void )
 	// HL2SB GMod compat: the held object is wrapped in a soft full-body LIGHT
 	// (the video's "浅光"), not a sprite decal - a dlight at its centre lights
 	// every surface facing it.  Keyed on the entity so it never stacks.
+	// 2026-09-24: colour follows the owner's WEAPON colour (was hardcoded
+	// blue) -- this also gives NPCs/ragdolls a glow wash, which the material
+	// shell cannot touch.
 #ifdef CLIENT_DLL
 	if ( pObject != NULL )
 	{
+		Color clrW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
 		dlight_t *dl = effects->CL_AllocDlight( pObject->entindex() );
 		if ( dl != NULL )
 		{
 			dl->origin = pObject->WorldSpaceCenter();
-			dl->color.r = 140;
-			dl->color.g = 200;
-			dl->color.b = 255;
+			dl->color.r = clrW.r();
+			dl->color.g = clrW.g();
+			dl->color.b = clrW.b();
 			dl->radius = MAX( 140.0f, pObject->BoundingRadius() * 2.5f );
 			dl->die = gpGlobals->curtime + 0.05f;
 		}
@@ -1501,8 +1511,13 @@ int CWeaponGravityGun::DrawModel( int flags )
 		}
 		else
 		{
-			Vector vecSrc = pOwner->Weapon_ShootPosition( );
-			points[1] = vecSrc + 0.5f * (forward * points[2].DistTo(points[0]));
+			// HL2SB GMod compat (2026-09-24): the beam leaves along the
+			// MUZZLE's barrel direction and bends to the target -- the GMod13
+			// curve.  A control point on the eye's sight line read as a
+			// straight rod.
+			Vector vecMuzzleDir;
+			AngleVectors( tmpAngle, &vecMuzzleDir );
+			points[1] = points[0] + vecMuzzleDir * ( points[2].DistTo( points[0] ) * 0.45f );
 		}
 
 		IMaterial *pMat = materials->FindMaterial( "sprites/physbeam1", TEXTURE_GROUP_CLIENT_EFFECTS );
@@ -1636,13 +1651,24 @@ void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 	QAngle playerAngles = pOwner->EyeAngles();
 	AngleVectors( playerAngles, &forward, &right, &up );
 	Vector vecSrc = pOwner->Weapon_ShootPosition( );
-	points[1] = vecSrc + 0.5f * (forward * points[2].DistTo(points[0]));
+
+	// HL2SB GMod compat (2026-09-24): beam leaves along the VIEWMODEL MUZZLE's
+	// barrel direction (tmpAngle = attachment 1) and bends to the target --
+	// the GMod13 curve.  The old eye-sight-line control point read as a
+	// straight rod.
+	Vector vecMuzzleDir;
+	AngleVectors( tmpAngle, &vecMuzzleDir );
+	points[1] = points[0] + vecMuzzleDir * ( points[2].DistTo( points[0] ) * 0.45f );
+
+	// HL2SB GMod compat (2026-09-24): the beam and glow sprites take the
+	// OWNER'S WEAPON COLOUR (cl_weaponcolor), not hardcoded blue.
+	Color clrWeapon = HL2SB_GetWeaponColor( pOwner->GetUserID() );
+	Vector color;
+	color.Init( clrWeapon.r() / 255.0f, clrWeapon.g() / 255.0f, clrWeapon.b() / 255.0f );
 
 	IMaterial *pMat = materials->FindMaterial( "sprites/physbeam1", TEXTURE_GROUP_CLIENT_EFFECTS );
 	if ( pObject )
 		pMat = materials->FindMaterial( "sprites/physbeam", TEXTURE_GROUP_CLIENT_EFFECTS );
-	Vector color;
-	color.Init(1,1,1);
 
 	// Now draw it.
 	CViewSetup beamView = *view->GetPlayerViewSetup();
@@ -1663,14 +1689,15 @@ void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 
 	IMaterial *pMaterial = materials->FindMaterial( "sprites/physglow", TEXTURE_GROUP_CLIENT_EFFECTS );
 
-	color32 clr={0,64,255,255};
-	if ( pObject )
+	// Glow sprite: weapon colour, dimmed a little while nothing is held.
+	float flGlowScale = pObject ? 1.0f : 0.55f;
+	color32 clr =
 	{
-		clr.r = 186;
-		clr.g = 253;
-		clr.b = 247;
-		clr.a = 255;
-	}
+		(byte)MIN( 255, (int)( clrWeapon.r() * flGlowScale ) ),
+		(byte)MIN( 255, (int)( clrWeapon.g() * flGlowScale ) ),
+		(byte)MIN( 255, (int)( clrWeapon.b() * flGlowScale ) ),
+		255
+	};
 
 	float scale = random->RandomFloat( 3, 5 ) * ( pObject ? 3 : 2 );
 
@@ -1682,7 +1709,13 @@ void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 	}
 
 	// HL2SB GMod compat: muzzle glow (first-person path; see DrawModel)
-	color32 clrMuzzle = { 150, 210, 255, 255 };
+	color32 clrMuzzle =
+	{
+		(byte)MIN( 255, (int)( clrWeapon.r() * 0.8f + 40 ) ),
+		(byte)MIN( 255, (int)( clrWeapon.g() * 0.8f + 40 ) ),
+		(byte)MIN( 255, (int)( clrWeapon.b() * 0.8f + 40 ) ),
+		255
+	};
 	float flMuzzleScale = random->RandomFloat( 2.0f, 3.0f );
 	pRenderContext->Bind( pMaterial );
 	for ( int i = 0; i < 2; i++ )
@@ -1694,6 +1727,15 @@ void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 #endif
 
 	render->PopView( dummyFrustum );
+
+	// HL2SB (2026-09-24): the viewmodel GLOW is not drawn from here anymore.
+	// A same-transform additive shell re-drew the viewmodel and (a) recursed
+	// through C_BaseViewModel::DrawModel's tail call into this very function
+	// (fixed with a latch) and (b) still rendered as a growing white blob
+	// fighting the surrounding view context (user capture 02:01).  The glow
+	// now comes from the NATIVE PlayerWeaponColor material proxy
+	// (c_viewmodel_attachment.cpp) pulsing brighter while HL2SB_PhysgunIsHolding()
+	// -- the same chain GMod13 uses on its own physgun materials.
 
 	// Pass this back up
 	BaseClass::ViewModelDrawn( pBaseViewModel );
