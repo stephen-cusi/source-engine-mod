@@ -444,6 +444,16 @@ static int ConVar_IsRegistered (lua_State *L) {
   return 1;
 }
 
+// HL2SB (2026-09-24): GMod's global IsValid() tests `object.IsValid != nil`
+// before calling it -- without this entry GetConVar_Internal's
+// IsValid(consoleVariable) check rejected EVERY convar and GetConVar()
+// returned nil for all of them (halo_draw/halo_debug invisible, and every
+// script that trusted GetConVar silently ran on nil).
+static int ConVar_IsValid (lua_State *L) {
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
 static int ConVar_Revert (lua_State *L) {
   luaL_checkconvar(L, 1)->Revert();
   return 0;
@@ -505,6 +515,7 @@ static const luaL_Reg ConVarmeta[] = {
   {"IsCommand", ConVar_IsCommand},
   {"IsFlagSet", ConVar_IsFlagSet},
   {"IsRegistered", ConVar_IsRegistered},
+  {"IsValid", ConVar_IsValid},
   {"Revert", ConVar_Revert},
   {"SetValue", ConVar_SetValue},
   {"SetString", ConVar_SetString},
@@ -561,6 +572,13 @@ static int luasrc_ConVar (lua_State *L) {
     pDefault = luaL_checkstring( L, 2 );  // numbers auto-convert
 
   ConVar *pConVar = new ConVar(strdup(pName), pDefault, luaL_optint(L, 3, 0), strdup(luaL_optstring(L, 4, 0)), luaL_optboolean(L, 5, 0), luaL_optnumber(L, 6, 0.0), luaL_optboolean(L, 7, 0), luaL_optnumber(L, 8, 0));
+
+  // HL2SB (2026-09-24): register with the engine cvar system.  GMod's
+  // Lua-created convars ARE console-visible/queryable ("halo_draw" etc.);
+  // without this they were orphaned -- usable only through the very Lua
+  // object that created them, Unknown command from the console, and
+  // GetConVar_Internal's cvar->FindVar fallback could never see them.
+  cvar->RegisterConCommand( pConVar );
 
   lookup = m_ConVarDatabase.Insert( pName, pConVar );
   Assert( lookup != m_ConVarDatabase.InvalidIndex() );
