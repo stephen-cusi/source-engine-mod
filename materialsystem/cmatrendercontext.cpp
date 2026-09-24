@@ -187,7 +187,16 @@ InitReturnVal_t CMatRenderContextBase::Init( )
 #endif
 
 		const char *gamedir = CommandLine()->ParmValue("-game", CommandLine()->ParmValue( "-defaultgamedir", "hl2" ) );
-		if ( gamedir && !Q_stricmp( "garrysmod", gamedir ) )
+		// HL2SB (2026-09-24): our gmod-compat game runs the same Lua-driven
+		// per-frame rendering that made Facepunch double this pool for
+		// garrysmod (halo's RT pipeline alone adds fullscreen quad + blur +
+		// resolve allocations on top of the frame's normal usage).  On the
+		// 2.2 MB default the pool ran dry mid-frame while holding
+		// flex-heavy NPCs under halo_draw 1 -- LockRenderData returned NULL
+		// ~40 times (ExecuteNTimes printed 4) and a caller NULL-dereferenced
+		// (dumps/crash_20260924_223952_1_accessviolation.mdmp).  Same pool
+		// as garrysmod therefore.
+		if ( gamedir && ( !Q_stricmp( "garrysmod", gamedir ) || !Q_stricmp( "hl2sb", gamedir ) ) )
 		{
 			nSize = 4400 * 1024;
 		}
