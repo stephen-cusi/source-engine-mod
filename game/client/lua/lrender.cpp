@@ -413,6 +413,32 @@ LUA_BINDING_BEGIN( Renders, DrawScreenQuad, "library", "Draws a fullscreen quad 
 }
 LUA_BINDING_END()
 
+// render.DrawScreenQuadWithTexture( texture, materialName ) -- finds the REAL
+// IMaterial (bypassing the Lua Material() stub wrapper, which cannot touch
+// material vars and broke halo's scene-restore/composite steps), drives its
+// $basetexture var, and draws one fullscreen quad with it.
+LUA_BINDING_BEGIN( Renders, DrawScreenQuadWithTexture, "library", "Draws a fullscreen quad of the texture through the named material.", "client" )
+{
+    ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
+    const char *pszMaterial = luaL_checkstring( L, 2 );
+
+    IMaterial *pMaterial = materials->FindMaterial( pszMaterial, TEXTURE_GROUP_CLIENT_EFFECTS );
+    if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
+        return luaL_error( L, "render.DrawScreenQuadWithTexture: material '%s' not found", pszMaterial );
+
+    bool bFound = false;
+    IMaterialVar *pBaseTexture = pMaterial->FindVar( "$basetexture", &bFound, false );
+    if ( !bFound || pBaseTexture == NULL )
+        return luaL_error( L, "render.DrawScreenQuadWithTexture: material '%s' has no $basetexture", pszMaterial );
+    pBaseTexture->SetTextureValue( pTexture );
+
+    CMatRenderContextPtr pRenderContext( materials );
+    pRenderContext->Bind( pMaterial );
+    pRenderContext->DrawScreenSpaceQuad( pMaterial );
+    return 0;
+}
+LUA_BINDING_END()
+
 // render.CopyFrameToTexture( texture ) -- copies the CURRENT FRAME into the
 // given render target texture, using the same call the engine's own freeze
 // frame uses (CopyRenderTargetToTextureEx with the view rect).  The plain
@@ -1492,6 +1518,7 @@ LUA_BINDING_BEGIN( Renders, DrawSprite, "library", "Draws a sprite", "client" )
     float width = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "width" );
     float height = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "height" );
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 4, lua_Color( 255, 255, 255, 255 ), "color" );
+
 
     // HL2SB: the casts are required - clang and gcc both reject narrowing an int
     // to color32's byte fields inside a braced initializer list
