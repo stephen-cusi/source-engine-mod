@@ -178,6 +178,14 @@ void CC_GameUIConCommand( const CCommand& args )
 
 	MDLCACHE_CRITICAL_SECTION();
 
+	// HL2SB (2026-09-24): this dispatch can re-enter a state that is already
+	// executing Lua (a menu button's DoClick runs an engine command that lands
+	// right back here).  The running C frame only reserved LUA_MINSTACK slots,
+	// so the six pushes below overflowed ci->top and tripped the api-check
+	// trap -- every Lua-driven menu item crashed.  Reserve space explicitly,
+	// as the C API contract requires.
+	lua_checkstack( LGameUI, 12 );
+
 	bool bRunMode = false;
 	if ( lua_pushconcommanddispatcher( LGameUI, bRunMode ) )
 	{
@@ -223,6 +231,9 @@ void CC_ConCommand( const CCommand& args )
 	// 	return;
 
 	MDLCACHE_CRITICAL_SECTION();
+
+	// HL2SB (2026-09-24): same re-entrancy guard as CC_GameUIConCommand above.
+	lua_checkstack( L, 12 );
 
 	bool bRunMode = false;
 	if ( lua_pushconcommanddispatcher( L, bRunMode ) )
