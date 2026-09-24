@@ -509,6 +509,11 @@ public:
 private:
 	CNetworkVar( int, m_active );
 	bool		m_useDown;
+	// HL2SB GMod compat: RMB freeze releases the object; while LMB is STILL
+	// held this latch stops the per-frame scan from instantly re-grabbing the
+	// just-frozen body (AttachObject unfreezes on grab, so the re-grab made
+	// every freeze die within one frame).  Cleared when LMB comes up.
+	bool		m_bFreezeReleaseLatch;
 	CNetworkHandle( CBaseEntity, m_hObject );
 	CNetworkVar( int, m_physicsBone );
 	float		m_distance;
@@ -653,6 +658,7 @@ CWeaponGravityGun::CWeaponGravityGun()
 	m_bFiresUnderwater = true;
 	m_bInWeapon1 = false;
 	m_bInWeapon2 = false;
+	m_bFreezeReleaseLatch = false;
 #ifndef CLIENT_DLL
 	m_flLastReloadPress = 0.0f;
 	m_bDraggingNPC = false;
@@ -769,13 +775,31 @@ void CWeaponGravityGun::EffectUpdate( void )
 	Vector end = tr.endpos;
 	float distance = tr.fraction * 4096;
 
-	if ( m_hObject == NULL && tr.DidHitNonWorldEntity() )
+	if ( m_hObject == NULL && !m_bFreezeReleaseLatch && tr.DidHitNonWorldEntity() )
 	{
 		CBaseEntity *pEntity = tr.m_pEnt;
 		AttachObject( pEntity, GetPhysObjFromPhysicsBone( pEntity, tr.physicsbone ), tr.physicsbone, start, tr.endpos, distance );
 	}
 
 	CBaseEntity *pObject = m_hObject;
+
+#ifndef CLIENT_DLL
+	// HL2SB diag (2026-09-24 physgun input): what buttons ACTUALLY reach the
+	// weapon while holding?  1/sec, capped -- pairs with the client-side
+	// "CM buttons" dump to bisect client-input vs transport vs weapon code.
+	if ( pObject != NULL )
+	{
+		static int s_nSrvBtnDiag = 0;
+		static float s_flNextSrvBtnDiag = 0.0f;
+		if ( s_nSrvBtnDiag < 12 && gpGlobals->curtime >= s_flNextSrvBtnDiag )
+		{
+			s_flNextSrvBtnDiag = gpGlobals->curtime + 1.0f;
+			++s_nSrvBtnDiag;
+			luasrc_LuaInfoMsgF( "[HL2SB physgun] srv buttons=0x%X obj='%s'\n",
+				( unsigned )pOwner->m_nButtons, pObject->GetClassname() );
+		}
+	}
+#endif
 
 	// HL2SB GMod compat: the held object is wrapped in a soft full-body LIGHT
 	// (the video's "浅光"), not a sprite decal - a dlight at its centre lights
@@ -808,6 +832,16 @@ void CWeaponGravityGun::EffectUpdate( void )
 		if ( m_bDraggingNPC )
 		{
 			// a dragged NPC has no physics body to freeze - RMB just drops it
+			DetachObject();
+			EffectDestroy();
+			SoundDestroy();
+			return;
+		}
+
+		// GMod 13 parity (2026-09-24 wiki audit): "the Physgun was updated to
+		// exclude freezing vehicles" -- RMB just releases them unfrozen.
+		if ( pObject->GetServerVehicle() != NULL )
+		{
 			DetachObject();
 			EffectDestroy();
 			SoundDestroy();
@@ -850,6 +884,13 @@ void CWeaponGravityGun::EffectUpdate( void )
 			if ( !bFreezeBlocked )
 			{
 				pPhys->EnableMotion( false );
+
+				// HL2SB GMod compat: RMB freeze also ENDS the hold (GMod
+				// behaviour).  Latch off the auto-regrab while LMB stays
+				// down -- AttachObject unfreezes on grab, so without the
+				// latch the next frame's scan re-grabbed and unfroze the
+				// body within one tick (the "RMB never freezes" bug).
+				m_bFreezeReleaseLatch = true;
 
 				// record it on the player's frozen list -- what R / double-R /
 				// Player:PhysgunUnfreeze / UnfreezePhysicsObjects drain from
@@ -899,20 +940,43 @@ void CWeaponGravityGun::EffectUpdate( void )
 				nMouseDy = pCmd->mousedy;
 			}
 
+			// HL2SB (2026-09-25): GMod-like rotation rate (~1 degree per mouse
+			// count at sensitivity 1.0; the first cut's 0.4 read as sluggish vs
+			// GMod) and clamp pitch so the prop cannot flip over the top.
 			if ( nMouseDx != 0 )
-				m_heldWorldAngles.y -= nMouseDx * 0.4f * physgun_rotation_sensitivity.GetFloat();
+				m_heldWorldAngles.y -= nMouseDx * 1.0f * physgun_rotation_sensitivity.GetFloat();
 			if ( nMouseDy != 0 )
-				m_heldWorldAngles.x += nMouseDy * 0.4f * physgun_rotation_sensitivity.GetFloat();
+			{
+				m_heldWorldAngles.x += nMouseDy * 1.0f * physgun_rotation_sensitivity.GetFloat();
+				m_heldWorldAngles.x = clamp( m_heldWorldAngles.x, -89.0f, 89.0f );
+			}
 
-			// HL2SB diagnostic: are the raw mouse deltas reaching the server?
+			// HL2SB diagnostic: are RAW MOUSE MOVEMENT deltas reaching the
+			// server?  Only on actual movement frames -- the first cut burned
+			// its 3-print cap on the zero-delta frames between E-press and
+			// the first mouse move and left real movement unobserved.
 			static int s_nRotDiag = 0;
-			if ( s_nRotDiag < 3 )
+			if ( ( nMouseDx != 0 || nMouseDy != 0 ) && s_nRotDiag < 4 )
 			{
 				++s_nRotDiag;
-				luasrc_LuaInfoMsgF( "[HL2SB physgun] E-rotate tick dx=%d dy=%d cmd=%p\n",
-					nMouseDx, nMouseDy, (void *)pCmd );
+				luasrc_LuaInfoMsgF( "[HL2SB physgun] E-rot MOVE dx=%d dy=%d angles=(%.1f %.1f %.1f)\n",
+					nMouseDx, nMouseDy, m_heldWorldAngles.x, m_heldWorldAngles.y, m_heldWorldAngles.z );
 			}
 		}
+
+#ifndef CLIENT_DLL
+		// HL2SB GMod compat (2026-09-25): mouse wheel push/pull through the
+		// HL2 gravity-gun wheel mechanism -- the client KeyInput maps
+		// MOUSE_WHEEL_UP/DOWN to IN_WEAPON1/2 for one cmd while IN_ATTACK is
+		// held, and those bits ride the RELIABLE usercmd button path (the
+		// earlier hl2sb_physgun_push/pull console-command forward depended on
+		// the client hold state, which kept reading false at scroll time).
+		// Works for both carry modes (shadow-carry and teleport-drive).
+		if ( pOwner->m_nButtons & IN_WEAPON1 )
+			HL2SB_AdjustDistance( 45.0f * physgun_wheelspeed.GetFloat() );
+		if ( pOwner->m_nButtons & IN_WEAPON2 )
+			HL2SB_AdjustDistance( -45.0f * physgun_wheelspeed.GetFloat() );
+#endif
 
 		QAngle angles = m_heldWorldAngles;
 
@@ -1258,6 +1322,15 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 
 	if ( !bPhysgunPickupAllowed )
 	{
+		// HL2SB diag (2026-09-24): a veto here silently drops what we just
+		// grabbed; a veto storm shows up as the rapid re-attach bursts in the
+		// session log (attach x6 same pointer).
+		static int s_nVetoDiag = 0;
+		if ( s_nVetoDiag < 4 )
+		{
+			++s_nVetoDiag;
+			luasrc_LuaInfoMsgF( "[HL2SB physgun] pickup VETO '%s'\n", pObject->GetClassname() );
+		}
 		m_hObject = NULL;
 		return;
 	}
@@ -1785,6 +1858,9 @@ void CWeaponGravityGun::ItemPostFrame( void )
 	}
 	else
 	{
+		// HL2SB GMod compat: LMB up -> the freeze-release latch lifts, the
+		// scan may grab (and unfreeze) again on the next click.
+		m_bFreezeReleaseLatch = false;
 		if ( m_active )
 		{
 			EffectDestroy();
@@ -1805,48 +1881,23 @@ bool CWeaponGravityGun::HasAnyAmmo( void )
 	return true;
 }
 
-//=========================================================
-//=========================================================
+// HL2SB (2026-09-25): the hl2sb_physgun_push/pull console commands are gone --
+// the wheel now rides the native IN_WEAPON1/2 usercmd button path (consumed in
+// EffectUpdate), which is server-authoritative and does not depend on any
+// client-side hold detection.
+
 #ifndef CLIENT_DLL
-CON_COMMAND( hl2sb_physgun_push, "Physgun: push the held object away (mouse wheel)" )
+// HL2SB GMod compat (2026-09-25): server-side "is this player's physgun
+// carrying something" -- used by CHL2_Player::PlayerUse to suppress the HL2
+// +use system while carrying (GMod: E belongs to the physgun when holding;
+// the use system's interaction sound and use-grab fought the carry).
+bool HL2SB_PhysgunServerIsHolding( CBasePlayer *pPlayer )
 {
-	CBasePlayer *pPlayer = UTIL_GetCommandClient();
-	if ( pPlayer == NULL )
-		return;
-
-	CWeaponGravityGun *pGun = dynamic_cast< CWeaponGravityGun * >( pPlayer->GetActiveWeapon() );
-
-	// HL2SB diagnostic: did the wheel-forward from the client ever arrive?
-	static int s_nWheelDiag = 0;
-	if ( s_nWheelDiag < 3 )
-	{
-		++s_nWheelDiag;
-		Msg( "[HL2SB physgun] wheel push cmd: gun=%s holding=%d\n",
-			pGun != NULL ? "yes" : "NO", ( pGun != NULL && pGun->IsHolding() ) ? 1 : 0 );
-	}
-
-	if ( pGun != NULL && pGun->IsHolding() )
-		pGun->HL2SB_AdjustDistance( 45.0f * physgun_wheelspeed.GetFloat() );
-}
-
-CON_COMMAND( hl2sb_physgun_pull, "Physgun: pull the held object closer (mouse wheel)" )
-{
-	CBasePlayer *pPlayer = UTIL_GetCommandClient();
-	if ( pPlayer == NULL )
-		return;
-
-	CWeaponGravityGun *pGun = dynamic_cast< CWeaponGravityGun * >( pPlayer->GetActiveWeapon() );
-
-	static int s_nWheelDiag = 0;
-	if ( s_nWheelDiag < 6 )
-	{
-		++s_nWheelDiag;
-		Msg( "[HL2SB physgun] wheel pull cmd: gun=%s holding=%d\n",
-			pGun != NULL ? "yes" : "NO", ( pGun != NULL && pGun->IsHolding() ) ? 1 : 0 );
-	}
-
-	if ( pGun != NULL && pGun->IsHolding() )
-		pGun->HL2SB_AdjustDistance( -45.0f * physgun_wheelspeed.GetFloat() );
+	CBaseCombatWeapon *pWpn = pPlayer ? pPlayer->GetActiveWeapon() : NULL;
+	if ( pWpn == NULL || !FClassnameIs( pWpn, "weapon_physgun" ) )
+		return false;
+	CWeaponGravityGun *pGun = dynamic_cast< CWeaponGravityGun * >( pWpn );
+	return pGun != NULL && pGun->IsHolding();
 }
 #endif
 

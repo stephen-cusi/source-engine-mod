@@ -431,24 +431,10 @@ void CBaseHudWeaponSelection::UserCmd_Close(void)
 //-----------------------------------------------------------------------------
 void CBaseHudWeaponSelection::UserCmd_NextWeapon(void)
 {
-	// HL2SB GMod compat: with the physics gun holding an object the wheel
-	// pushes it away instead of switching weapons
-	{
-		extern bool HL2SB_PhysgunIsHolding( void );
-		if ( HL2SB_PhysgunIsHolding() )
-		{
-			// HL2SB diagnostic: did the client wheel branch even run?
-			static bool s_bWheelFwdDiag = false;
-			if ( !s_bWheelFwdDiag )
-			{
-				s_bWheelFwdDiag = true;
-				Msg( "[HL2SB physgun] wheel down while holding -> forwarding push\n" );
-			}
-			engine->ClientCmd( "hl2sb_physgun_push" );
-			return;
-		}
-	}
-
+	// HL2SB (2026-09-25): the physgun wheel push/pull moved to the native
+	// IN_WEAPON1/2 usercmd path (client KeyInput maps MOUSE_WHEEL while
+	// IN_ATTACK is held and returns 0, so invnext is not even reached while
+	// grabbing).  This handler is stock again.
 	// If we're not allowed to draw, ignore weapon selections
 	if ( !BaseClass::ShouldDraw() )
 		return;
@@ -466,15 +452,7 @@ void CBaseHudWeaponSelection::UserCmd_NextWeapon(void)
 //-----------------------------------------------------------------------------
 void CBaseHudWeaponSelection::UserCmd_PrevWeapon(void)
 {
-	// HL2SB GMod compat: wheel pull (see above)
-	{
-		extern bool HL2SB_PhysgunIsHolding( void );
-		if ( HL2SB_PhysgunIsHolding() )
-		{
-			engine->ClientCmd( "hl2sb_physgun_pull" );
-			return;
-		}
-	}
+	// HL2SB (2026-09-25): stock again -- see UserCmd_NextWeapon.
 
 	// If we're not allowed to draw, ignore weapon selections
 	if ( !BaseClass::ShouldDraw() )
