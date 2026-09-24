@@ -1096,6 +1096,24 @@ void ClientModeShared::Update()
 
 		engine->Con_NPrintf( 0, "# Active particle systems: %i", nCount );
 	}
+
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-09-24): fire "Think" and "Tick" once per client
+	// frame from the engine loop.  GMod fires GM:Think per frame and GM:Tick
+	// per tick from its client frame driver; until now the ONLY "Think"
+	// dispatch was CHL2MPRules::Think on the SERVER, and the content side had
+	// to bridge Think through HudViewportPaint (hl2sb_notification.lua - now
+	// removed).  First Person Body parks 6 hooks on Think and its slow
+	// processing on Tick.  Update() only runs in-game (g_pClientMode exists
+	// once a mode is active), which is exactly the GMod realm behaviour.
+	if ( L != NULL && engine->IsInGame() )
+	{
+		BEGIN_LUA_CALL_HOOK( "Think" );
+		END_LUA_CALL_HOOK( 0, 0 );
+		BEGIN_LUA_CALL_HOOK( "Tick" );
+		END_LUA_CALL_HOOK( 0, 0 );
+	}
+#endif
 }
 
 //-----------------------------------------------------------------------------

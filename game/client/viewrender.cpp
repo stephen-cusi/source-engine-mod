@@ -8,6 +8,7 @@
 #include "view.h"
 #include "luamanager.h"	// HL2SB GMod compat: PostDrawEffects per-frame hook
 #include "lbaseentity_shared.h"	// HL2SB GMod compat: lua_pushentity
+#include "mathlib/lvector.h"	// HL2SB GMod compat: lua_pushvector/lua_pushangle (RenderScene)
 #include "lbaseplayer_shared.h"	// HL2SB GMod compat: lua_pushplayer
 #include "lbasecombatweapon_shared.h"	// HL2SB GMod compat: lua_pushweapon
 #include "iviewrender.h"
@@ -2071,10 +2072,39 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 			}
 		}
 
+		// HL2SB GMod compat (2026-09-24): GM:RenderScene( origin, angles, fov ) -
+		// fired once per frame right before the world/entities are drawn, with a
+		// live 3D context.  Returning true skips the default scene draw (the GMod
+		// contract its Stereoscopy post-processing effect relies on; the First
+		// Person Body addon only draws, so it never returns true).  Gated like
+		// PostDrawEffects below: not during water reflections, not in the menu
+		// realm, and once per engine frame so overlay/monitor passes re-entering
+		// RenderView do not fire it twice.
+		bool bSkipSceneDraw = false;
+		{
+			extern bool g_bRenderingReflection;
+			static int s_nLastRenderSceneFrame = -1;
+			if ( L != NULL && !g_bRenderingReflection && engine->IsInGame()
+				&& s_nLastRenderSceneFrame != gpGlobals->framecount )
+			{
+				s_nLastRenderSceneFrame = gpGlobals->framecount;
+				BEGIN_LUA_CALL_HOOK( "RenderScene" );
+				lua_pushvector( L, view.origin );
+				lua_pushangle( L, view.angles );
+				lua_pushnumber( L, view.fov );
+				END_LUA_CALL_HOOK( 3, 1 );
+				bSkipSceneDraw = lua_toboolean( L, -1 ) ? true : false;
+				lua_pop( L, 1 );
+			}
+		}
+
 		// Render world and all entities, particles, etc.
 		if( !g_pIntroData )
 		{
-			ViewDrawScene( bDrew3dSkybox, nSkyboxVisible, view, nClearFlags, VIEW_MAIN, whatToDraw & RENDERVIEW_DRAWVIEWMODEL );
+			if ( !bSkipSceneDraw )
+			{
+				ViewDrawScene( bDrew3dSkybox, nSkyboxVisible, view, nClearFlags, VIEW_MAIN, whatToDraw & RENDERVIEW_DRAWVIEWMODEL );
+			}
 		}
 		else
 		{

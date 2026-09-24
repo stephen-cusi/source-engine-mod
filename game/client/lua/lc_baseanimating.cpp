@@ -17,9 +17,132 @@
 #include "lvphysics_interface.h"
 #include "mathlib/lvmatrix.h"	// HL2SB: lua_pushvmatrix for Entity:GetBoneMatrix()
 #include "studio.h"			// HL2SB: studiohdr_t for Entity:GetBoneCount()
+#include "c_baseflex.h"		// HL2SB: C_BaseFlex flex weights (GetFlexWeight/SetFlexWeight)
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+// ===== HL2SB GMod compat (2026-09-24): Entity callbacks =====================
+// GMod lets addons attach per-entity callbacks via Entity:AddCallback(name,
+// fn) / RemoveCallback(name, id) / GetCallbacks(name).  The First Person Body
+// addon drives its whole bone mirroring through
+// Entity:AddCallback( "BuildBonePositions", fn ).
+//
+// This fork dispatches exactly one callback name: "BuildBonePositions",
+// fired from C_BaseAnimating::SetupBones (c_baseanimating.cpp) right after
+// BuildTransformations filled the live bone accessor - so callbacks read the
+// bones with GetBoneMatrix and rewrite them with SetBoneMatrix, which is the
+// GMod contract.  Unknown names return nothing from AddCallback, mirroring
+// GMod's behaviour for a non-existent callback.
+struct HL2SB_EntityCallback_t
+{
+	int nID;
+	char szName[48];
+	int nRef;
+};
+
+struct HL2SB_EntityCallbackList_t
+{
+	CBaseHandle hEntity;
+	CUtlVector< HL2SB_EntityCallback_t > items;
+};
+
+static CUtlVector< HL2SB_EntityCallbackList_t * > s_EntityCallbacks;
+static int s_nNextEntityCallbackID = 1;
+
+static HL2SB_EntityCallbackList_t *HL2SB_FindCallbackList( C_BaseAnimating *pEntity, bool bCreate )
+{
+	if ( pEntity == NULL )
+		return NULL;
+	const CBaseHandle h = pEntity->GetRefEHandle();
+	for ( int i = 0; i < s_EntityCallbacks.Count(); ++i )
+	{
+		if ( s_EntityCallbacks[i]->hEntity == h )
+			return s_EntityCallbacks[i];
+	}
+	if ( !bCreate )
+		return NULL;
+	HL2SB_EntityCallbackList_t *pList = new HL2SB_EntityCallbackList_t;
+	pList->hEntity = h;
+	s_EntityCallbacks.AddToTail( pList );
+	return pList;
+}
+
+// Stale lists (entity destroyed since) are dropped the next time an addon
+// registers a callback and the registry grew past this watermark.
+static void HL2SB_PurgeDeadCallbackLists()
+{
+	for ( int i = s_EntityCallbacks.Count() - 1; i >= 0; --i )
+	{
+		if ( s_EntityCallbacks[i]->hEntity.Get() != NULL )
+			continue;
+		for ( int j = 0; j < s_EntityCallbacks[i]->items.Count(); ++j )
+			luaL_unref( L, LUA_REGISTRYINDEX, s_EntityCallbacks[i]->items[j].nRef );
+		delete s_EntityCallbacks[i];
+		s_EntityCallbacks.FastRemove( i );
+	}
+}
+
+// HL2SB (2026-09-24 crash): every bone/flex/pose binding resolves studio data
+// through this guard.  GetStudiomodel on a NULL or non-studio model_t is the
+// near-null deref the dump caught (read at 0x20 inside engine.dll); sprites,
+// brush models and the NULL model are simply answered with NULL here.
+static studiohdr_t *HL2SB_GetStudioHdrSafe( const C_BaseAnimating *pEntity )
+{
+	if ( pEntity == NULL )
+		return NULL;
+	const model_t *pModel = pEntity->GetModel();
+	if ( !pModel || modelinfo->GetModelType( pModel ) != mod_studio )
+		return NULL;
+	return modelinfo->GetStudiomodel( pModel );
+}
+
+// Called from C_BaseAnimating::SetupBones via a local extern declaration
+// (AGENTS.md: avoid touching headers - waf does not propagate them).
+void HL2SB_RunEntityCallbacks( C_BaseAnimating *pEntity, const char *pszName )
+{
+	// HL2SB (2026-09-24 crash): the dispatch MUST be re-entrancy guarded.  The
+	// First Person Body callback calls Entity:SetupBones / GetBoneMatrix on
+	// the body INSIDE the callback, i.e. inside a SetupBones rebuild that is
+	// still in flight - readable-bone flags are only set when the rebuild
+	// FINISHES, so the re-entrant call started ANOTHER full rebuild, fired the
+	// callback again, and the cycle recursed until the corrupted walk died in
+	// engine.dll!CModelInfo::GetStudiomodel (engine.log: the same 7 client.dll
+	// frames repeating 4x).  One level only, same rule as GMod's own dispatch.
+	static bool s_bInEntityCallbacks = false;
+	if ( s_bInEntityCallbacks || L == NULL || pEntity == NULL || s_EntityCallbacks.Count() == 0 )
+		return;
+
+	HL2SB_EntityCallbackList_t *pList = HL2SB_FindCallbackList( pEntity, false );
+	if ( pList == NULL || pList->items.Count() == 0 )
+		return;
+
+	const model_t *pModel = pEntity->GetModel();
+	if ( !pModel || modelinfo->GetModelType( pModel ) != mod_studio )
+		return;
+	studiohdr_t *pHdr = modelinfo->GetStudiomodel( pModel );
+	const int nBones = pHdr ? pHdr->numbones : 0;
+
+	s_bInEntityCallbacks = true;
+
+	for ( int i = 0; i < pList->items.Count(); ++i )
+	{
+		HL2SB_EntityCallback_t &cb = pList->items[i];
+		if ( Q_stricmp( cb.szName, pszName ) )
+			continue;
+		lua_getref( L, cb.nRef );
+		if ( !lua_isfunction( L, -1 ) )
+		{
+			lua_pop( L, 1 );
+			continue;
+		}
+		lua_pushanimating( L, pEntity );
+		lua_pushinteger( L, nBones );
+		luasrc_pcall( L, 2, 0, 0 );
+	}
+
+	s_bInEntityCallbacks = false;
+}
 
 /*
 ** access functions (stack -> C)
@@ -271,8 +394,7 @@ static int CBaseAnimating_DrawModel (lua_State *L) {
 // matrix, and every bone is scaled to 0.4).
 static int CBaseAnimating_GetBoneCount (lua_State *L) {
   C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
-  const model_t *pModel = pEntity->GetModel();
-  studiohdr_t *pHdr = pModel ? modelinfo->GetStudiomodel( pModel ) : NULL;
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
   lua_pushinteger(L, pHdr ? pHdr->numbones : 0);
   return 1;
 }
@@ -281,20 +403,179 @@ static int CBaseAnimating_GetBoneMatrix (lua_State *L) {
   C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
   int nBone = luaL_checkint(L, 2);
 
-  matrix3x4_t bones[128];
-  if ( nBone < 0 || nBone >= 128 )
+  // HL2SB (2026-09-24): read the LIVE bone matrices (what the renderer
+  // consumes) instead of a private SetupBones() stack copy, so a matrix
+  // observed inside a "BuildBonePositions" callback reflects what
+  // SetBoneMatrix wrote and what will be drawn this frame.  SetupBones(NULL)
+  // hits the per-frame cache on re-entry, so calling this from inside the
+  // callback does not rebuild bones recursively.
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  const int nBoneTotal = pHdr ? pHdr->numbones : 0;
+  if ( !pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
   {
-    lua_pushnil(L);
+    lua_pushnil( L );
     return 1;
   }
-  if ( !pEntity->SetupBones( bones, 128, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
+  if ( nBone < 0 || nBone >= nBoneTotal )
   {
-    lua_pushnil(L);
+    lua_pushnil( L );
     return 1;
   }
+  // HL2SB (2026-09-25): the accessor already holds WORLD-space bone matrices
+  // (BuildTransformations concatenates the entity transform into every bone;
+  // wiki for GetBoneMatrix: "the transformation used to position the bone in
+  // the world").  Return it as-is - no conversion of any kind.
   VMatrix vm;
-  vm.CopyFrom3x4( bones[nBone] );
+  vm.CopyFrom3x4( pEntity->GetBone( nBone ) );
   lua_pushvmatrix(L, vm);
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:SetBoneMatrix( bone, matrix ) -
+// writes through the live bone accessor so the change shows up in the current
+// frame's render (First Person Body's garbage-bone hiding / bone mirroring).
+static int CBaseAnimating_SetBoneMatrix (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
+  const VMatrix &vm = luaL_checkvmatrix(L, 3);
+
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  const int nBoneTotal = pHdr ? pHdr->numbones : 0;
+  if ( !pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
+    return 0;
+  if ( nBone < 0 || nBone >= nBoneTotal )
+    return 0;
+
+  // HL2SB (2026-09-25): the incoming matrix is WORLD space and the accessor
+  // stores WORLD space - write it through unchanged (see GetBoneMatrix).
+  return 0;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:GetBoneName( bone ) - the First
+// Person Body addon classifies bones by name ("ValveBiped.*") to decide which
+// to hide while mirroring.
+static int CBaseAnimating_GetBoneName (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  if ( !pHdr || nBone < 0 || nBone >= pHdr->numbones )
+  {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushstring( L, pHdr->pBone( nBone )->pszName() );
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:GetBoneNames() - names indexed 0..n-1.
+static int CBaseAnimating_GetBoneNames (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  lua_newtable( L );
+  if ( !pHdr )
+    return 1;
+  for ( int i = 0; i < pHdr->numbones; ++i )
+  {
+    lua_pushstring( L, pHdr->pBone( i )->pszName() );
+    lua_rawseti( L, -2, i );
+  }
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:GetChildBones( bone ) - direct
+// children in a 1-based Lua list (the addon walks this to cascade a hidden
+// parent's transform onto its children).
+static int CBaseAnimating_GetChildBones (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  lua_newtable( L );
+  if ( !pHdr )
+    return 1;
+  int nCount = 0;
+  for ( int i = 0; i < pHdr->numbones; ++i )
+  {
+    if ( pHdr->pBone( i )->parent == nBone )
+    {
+      lua_pushinteger( L, i );
+      lua_rawseti( L, -2, ++nCount );
+    }
+  }
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:AddCallback( name, fn ) - returns the
+// callback id, or nothing for an unsupported callback name (GMod returns
+// nothing for a non-existent one).  Only "BuildBonePositions" dispatches.
+static int CBaseAnimating_AddCallback (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  luaL_checktype(L, 3, LUA_TFUNCTION);
+
+  if ( Q_stricmp( pszName, "BuildBonePositions" ) )
+    return 0;
+
+  if ( s_EntityCallbacks.Count() > 32 )
+    HL2SB_PurgeDeadCallbackLists();
+
+  HL2SB_EntityCallbackList_t *pList = HL2SB_FindCallbackList( pEntity, true );
+  if ( pList == NULL )
+    return 0;
+
+  lua_pushvalue( L, 3 );
+  int nRef = luaL_ref( L, LUA_REGISTRYINDEX );
+  if ( nRef == LUA_NOREF )  // AGENTS.md 5.4.1: a NOREF unref'd twice crashes
+    return 0;
+
+  HL2SB_EntityCallback_t cb;
+  cb.nID = ++s_nNextEntityCallbackID;
+  Q_strncpy( cb.szName, pszName, sizeof( cb.szName ) );
+  cb.nRef = nRef;
+  pList->items.AddToTail( cb );
+
+  lua_pushinteger( L, cb.nID );
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:RemoveCallback( name, id ).
+static int CBaseAnimating_RemoveCallback (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  int nID = luaL_checkint(L, 3);
+  HL2SB_EntityCallbackList_t *pList = HL2SB_FindCallbackList( pEntity, false );
+  if ( pList != NULL )
+  {
+    for ( int i = pList->items.Count() - 1; i >= 0; --i )
+    {
+      HL2SB_EntityCallback_t &cb = pList->items[i];
+      if ( cb.nID == nID && !Q_stricmp( cb.szName, pszName ) )
+      {
+        luaL_unref( L, LUA_REGISTRYINDEX, cb.nRef );
+        pList->items.FastRemove( i );
+        break;
+      }
+    }
+  }
+  return 0;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:GetCallbacks( name ) - id-keyed
+// table of live callbacks (the addon probes it before re-adding its own).
+static int CBaseAnimating_GetCallbacks (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  lua_newtable( L );
+  HL2SB_EntityCallbackList_t *pList = HL2SB_FindCallbackList( pEntity, false );
+  if ( pList == NULL )
+    return 1;
+  for ( int i = 0; i < pList->items.Count(); ++i )
+  {
+    HL2SB_EntityCallback_t &cb = pList->items[i];
+    if ( Q_stricmp( cb.szName, pszName ) )
+      continue;
+    lua_getref( L, cb.nRef );
+    lua_rawseti( L, -2, cb.nID );
+  }
   return 1;
 }
 
@@ -494,6 +775,160 @@ static int CBaseAnimating_GetFlexControllerType (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (2026-09-24): flex + pose + render-bounds bindings the
+// First Person Body addon drives its shadow-body cloning with.
+static int CBaseAnimating_GetFlexNum (lua_State *L) {
+  lua_pushinteger(L, luaL_checkanimating(L, 1)->GetNumFlexControllers());
+  return 1;
+}
+
+// The engine keeps no client-side flex scale, so round-trip it here per entity.
+struct HL2SB_FlexScale_t { CBaseHandle hEntity; float flScale; };
+static CUtlVector<HL2SB_FlexScale_t> s_FlexScales;
+
+static float HL2SB_GetFlexScaleValue( C_BaseAnimating *pEntity )
+{
+  const CBaseHandle h = pEntity->GetRefEHandle();
+  for ( int i = 0; i < s_FlexScales.Count(); ++i )
+    if ( s_FlexScales[i].hEntity == h )
+      return s_FlexScales[i].flScale;
+  return 1.0f;
+}
+
+static int CBaseAnimating_GetFlexScale (lua_State *L) {
+  lua_pushnumber(L, HL2SB_GetFlexScaleValue( luaL_checkanimating(L, 1) ));
+  return 1;
+}
+
+static int CBaseAnimating_SetFlexScale (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  float flScale = luaL_checknumber(L, 2);
+  const CBaseHandle h = pEntity->GetRefEHandle();
+  for ( int i = 0; i < s_FlexScales.Count(); ++i )
+  {
+    if ( s_FlexScales[i].hEntity == h )
+    {
+      s_FlexScales[i].flScale = flScale;
+      return 0;
+    }
+  }
+  if ( s_FlexScales.Count() > 64 )
+  {
+    for ( int i = s_FlexScales.Count() - 1; i >= 0; --i )
+      if ( s_FlexScales[i].hEntity.Get() == NULL )
+        s_FlexScales.FastRemove( i );
+  }
+  HL2SB_FlexScale_t &entry = s_FlexScales[s_FlexScales.AddToTail()];
+  entry.hEntity = h;
+  entry.flScale = flScale;
+  return 0;
+}
+
+static int CBaseAnimating_GetFlexWeight (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int i = luaL_checkint(L, 2);
+  C_BaseFlex *pFlex = dynamic_cast<C_BaseFlex *>( pEntity );
+  if ( !pFlex || i < 0 || i >= (int)pFlex->GetNumFlexControllers() )
+  {
+    lua_pushnumber(L, 0.0f);
+    return 1;
+  }
+  lua_pushnumber(L, pFlex->GetFlexWeight( (LocalFlexController_t)i ));
+  return 1;
+}
+
+static int CBaseAnimating_SetFlexWeight (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int i = luaL_checkint(L, 2);
+  float flWeight = luaL_checknumber(L, 3);
+  C_BaseFlex *pFlex = dynamic_cast<C_BaseFlex *>( pEntity );
+  if ( !pFlex || i < 0 || i >= (int)pFlex->GetNumFlexControllers() )
+    return 0;
+  pFlex->SetFlexWeight( (LocalFlexController_t)i, flWeight );
+  return 0;
+}
+
+static int CBaseAnimating_GetNumPoseParameters (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  CStudioHdr hdr( HL2SB_GetStudioHdrSafe( pEntity ) );
+  lua_pushinteger(L, hdr.IsValid() ? hdr.GetNumPoseParameters() : 0);
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:GetModelRenderBounds() -> mins, maxs.
+static int CBaseAnimating_GetModelRenderBounds (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  const model_t *pModel = pEntity->GetModel();
+  Vector mins, maxs;
+  if ( pModel )
+    modelinfo->GetModelRenderBounds( pModel, mins, maxs );
+  lua_pushvector(L, mins);
+  lua_pushvector(L, maxs);
+  return 2;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:SetLOD(level) - the client model has
+// no LOD override storage in this fork, accept it as a safe no-op (First
+// Person Body uses it to pin its shadow-body clone to full detail).
+static int CBaseAnimating_SetLOD (lua_State *L) {
+  luaL_checkanimating(L, 1);
+  luaL_checkint(L, 2);
+  return 0;
+}
+
+// HL2SB GMod compat (2026-09-25): Entity:SetupBones() - forces the bone build
+// (wiki: "forces the entity to reconfigure its bones"; GMod notes it fires the
+// BuildBonePositions callback - the re-entrancy guard inside
+// HL2SB_RunEntityCallbacks is what keeps the documented infinite-loop warning
+// from becoming a real one).  Returns the engine's success flag.
+static int CBaseAnimating_SetupBones (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  lua_pushboolean(L, pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ));
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-25): Entity:GetPoseParameterName( id ) -> string.
+static int CBaseAnimating_GetPoseParameterName (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nParam = luaL_checkint(L, 2);
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  CStudioHdr hdr( pHdr );
+  if ( !hdr.IsValid() || nParam < 0 || nParam >= hdr.GetNumPoseParameters() )
+  {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushstring( L, hdr.pPoseParameter( nParam ).pszName() );
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-25): Entity:ManipulateBonePosition( bone, vec ) -
+// accepted as a safe NO-OP.  GMod keeps a per-bone offset applied at bone
+// build; this fork has no client storage for it (same limitation as
+// ManipulateBoneScale above).  First Person Body only uses it for a cosmetic
+// head-bone offset; the body still draws without it.
+static int CBaseAnimating_ManipulateBonePosition (lua_State *L) {
+  luaL_checkanimating(L, 1);
+  luaL_checkint(L, 2);
+  luaL_checkvector(L, 3);
+  return 0;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:CreateShadow(radius) /
+// Entity:DestroyShadow() are accepted as safe NO-OPS.  GMod builds a
+// clientside shadow copy of the model; this fork has no clientside projected
+// shadow machinery, and First Person Body only uses them for the body's fake
+// ground shadow (cosmetic) - everything else in the addon degrades cleanly.
+static int CBaseAnimating_CreateShadow (lua_State *L) {
+  luaL_checkanimating(L, 1);
+  return 0;
+}
+
+static int CBaseAnimating_DestroyShadow (lua_State *L) {
+  luaL_checkanimating(L, 1);
+  return 0;
+}
+
 static int CBaseAnimating_GetFlexDescFacs (lua_State *L) {
   lua_pushstring(L, luaL_checkanimating(L, 1)->GetFlexDescFacs(luaL_checkint(L, 2)));
   return 1;
@@ -536,7 +971,39 @@ static int CBaseAnimating_GetPlaybackRate (lua_State *L) {
 }
 
 static int CBaseAnimating_GetPoseParameter (lua_State *L) {
-  lua_pushnumber(L, luaL_checkanimating(L, 1)->GetPoseParameter(luaL_checkint(L, 2)));
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+
+  // HL2SB GMod compat (2026-09-25): GMod accepts a NAME or an index
+  // (First Person Body passes "head_yaw"/"body_yaw"/... names).
+  int nParam = -1;
+  if ( lua_type( L, 2 ) == LUA_TSTRING )
+  {
+    const char *pszName = luaL_checkstring( L, 2 );
+    studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+    CStudioHdr hdr( pHdr );
+    if ( hdr.IsValid() )
+    {
+      for ( int i = 0; i < hdr.GetNumPoseParameters(); ++i )
+      {
+        if ( !Q_stricmp( hdr.pPoseParameter( i ).pszName(), pszName ) )
+        {
+          nParam = i;
+          break;
+        }
+      }
+    }
+    if ( nParam == -1 )
+    {
+      lua_pushnumber( L, 0.0f );
+      return 1;
+    }
+  }
+  else
+  {
+    nParam = luaL_checkint( L, 2 );
+  }
+
+  lua_pushnumber(L, pEntity->GetPoseParameter(nParam));
   return 1;
 }
 
@@ -1240,6 +1707,7 @@ static int CBaseAnimating___tostring (lua_State *L) {
 
 
 static const luaL_Reg CBaseAnimatingmeta[] = {
+  {"AddCallback", CBaseAnimating_AddCallback},
   {"AddEntity", CBaseAnimating_AddEntity},
   {"AddToClientSideAnimationList", CBaseAnimating_AddToClientSideAnimationList},
   {"BecomeRagdollOnClient", CBaseAnimating_BecomeRagdollOnClient},
@@ -1259,8 +1727,19 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"DrawClientHitboxes", CBaseAnimating_DrawClientHitboxes},
   {"DrawModel", CBaseAnimating_DrawModel},
   // HL2SB GMod compat: bone accessors (minecraft SWEP world model).
+  {"CreateShadow", CBaseAnimating_CreateShadow},
+  {"DestroyShadow", CBaseAnimating_DestroyShadow},
   {"GetBoneCount", CBaseAnimating_GetBoneCount},
   {"GetBoneMatrix", CBaseAnimating_GetBoneMatrix},
+  {"GetBoneName", CBaseAnimating_GetBoneName},
+  {"GetBoneNames", CBaseAnimating_GetBoneNames},
+  {"GetCallbacks", CBaseAnimating_GetCallbacks},
+  {"GetChildBones", CBaseAnimating_GetChildBones},
+  {"GetFlexNum", CBaseAnimating_GetFlexNum},
+  {"GetFlexScale", CBaseAnimating_GetFlexScale},
+  {"GetFlexWeight", CBaseAnimating_GetFlexWeight},
+  {"GetModelRenderBounds", CBaseAnimating_GetModelRenderBounds},
+  {"GetNumPoseParameters", CBaseAnimating_GetNumPoseParameters},
   {"ManipulateBoneScale", CBaseAnimating_ManipulateBoneScale},
   {"FindBodygroupByName", CBaseAnimating_FindBodygroupByName},
   {"FindFollowedEntity", CBaseAnimating_FindFollowedEntity},
@@ -1341,6 +1820,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"RagdollMoved", CBaseAnimating_RagdollMoved},
   {"Release", CBaseAnimating_Release},
   {"RemoveFromClientSideAnimationList", CBaseAnimating_RemoveFromClientSideAnimationList},
+  {"RemoveCallback", CBaseAnimating_RemoveCallback},
 //  {"ResetEventsParity", CBaseAnimating_ResetEventsParity},
   {"ResetLatched", CBaseAnimating_ResetLatched},
   {"ResetSequence", CBaseAnimating_ResetSequence},
@@ -1351,6 +1831,13 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"SequenceLoops", CBaseAnimating_SequenceLoops},
   {"SetBodygroup", CBaseAnimating_SetBodygroup},
   {"SetBoneController", CBaseAnimating_SetBoneController},
+  {"SetBoneMatrix", CBaseAnimating_SetBoneMatrix},
+  {"SetFlexScale", CBaseAnimating_SetFlexScale},
+  {"SetFlexWeight", CBaseAnimating_SetFlexWeight},
+  {"GetPoseParameterName", CBaseAnimating_GetPoseParameterName},
+  {"ManipulateBonePosition", CBaseAnimating_ManipulateBonePosition},
+  {"SetLOD", CBaseAnimating_SetLOD},
+  {"SetupBones", CBaseAnimating_SetupBones},
   {"TranslatePhysBoneToBone", CBaseAnimating_TranslatePhysBoneToBone},
   {"TranslateBoneToPhysBone", CBaseAnimating_TranslateBoneToPhysBone},
   {"SetCycle", CBaseAnimating_SetCycle},

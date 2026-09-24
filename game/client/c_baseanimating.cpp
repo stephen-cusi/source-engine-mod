@@ -2963,8 +2963,22 @@ bool C_BaseAnimating::SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, i
 			SetupBones_AttachmentHelper( hdr );
 		}
 	}
-	
-	// Do they want to get at the bone transforms? If it's just making sure an aiment has 
+
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-09-24): GMod fires the "BuildBonePositions"
+	// entity callback (Entity:AddCallback) at the end of bone building.  At
+	// this point BuildTransformations has filled the live bone accessor, so
+	// callbacks can read bones with GetBoneMatrix and rewrite them with
+	// SetBoneMatrix before anything renders or copies them (First Person Body
+	// mirrors the player's bones onto its shadow body this way).  A no-op
+	// unless some entity actually registered callbacks.
+	{
+		extern void HL2SB_RunEntityCallbacks( C_BaseAnimating *pEntity, const char *pszName );
+		HL2SB_RunEntityCallbacks( this, "BuildBonePositions" );
+	}
+#endif
+
+	// Do they want to get at the bone transforms? If it's just making sure an aiment has
 	// its bones setup, it doesn't need the transforms yet.
 	if ( pBoneToWorldOut )
 	{

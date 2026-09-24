@@ -1667,6 +1667,45 @@ void CBasePlayer::CalcPlayerView( Vector& eyeOrigin, QAngle& eyeAngles, float& f
 		fov = luaL_checknumber( L, -1 );
 
 	lua_pop( L, 3 );
+
+#if defined( CLIENT_DLL )
+	// HL2SB GMod compat (2026-09-24): GM:CalcView - the GMod name for the view
+	// override, fired on the CLIENT realm only (the raw-value "CalcPlayerView"
+	// dispatch above is this fork's legacy hook and keeps working).  CalcView
+	// in GMod hands addons a CamData TABLE: { origin=Vector, angles=Angle,
+	// fov=n, znear=n, zfar=n, drawviewer=bool }.  This engine's CalcPlayerView
+	// has no clip-plane params, so znear/zfar are not dispatched and a table's
+	// znear/zfar/drawviewer are ignored - origin/angles/fov are applied, which
+	// is what the First Person Body addon (reads ply/vec/ang) needs.
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "CalcView" );
+			lua_pushplayer( L, this );
+			lua_pushvector( L, eyeOrigin );
+			lua_pushangle( L, eyeAngles );
+			lua_pushnumber( L, fov );
+		END_LUA_CALL_HOOK( 4, 1 );
+
+		if ( lua_istable( L, -1 ) )
+		{
+			lua_getfield( L, -1, "origin" );
+			if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "Vector" ) )
+				VectorCopy( luaL_checkvector( L, -1 ), eyeOrigin );
+			lua_pop( L, 1 );
+
+			lua_getfield( L, -1, "angles" );
+			if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
+				VectorCopy( luaL_checkangle( L, -1 ), eyeAngles );
+			lua_pop( L, 1 );
+
+			lua_getfield( L, -1, "fov" );
+			if ( lua_isnumber( L, -1 ) )
+				fov = luaL_checknumber( L, -1 );
+			lua_pop( L, 1 );
+		}
+		lua_pop( L, 1 );
+	}
+#endif // CLIENT_DLL
 #endif
 }
 

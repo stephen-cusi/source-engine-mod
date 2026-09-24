@@ -1062,6 +1062,62 @@ static int CBasePlayer_WeaponCount (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (2026-09-24): Player:Alive()/IsAlive() - the First Person
+// Body addon captures PLAYER.Alive; this fork only had Entity:IsAlive and the
+// bare PLAYER metatable read does not fall through to it.
+static int CBasePlayer_Alive (lua_State *L) {
+  lua_pushboolean(L, lua_toplayer(L, 1)->IsAlive());
+  return 1;
+}
+
+#ifdef CLIENT_DLL
+// HL2SB GMod compat (2026-09-24): Player:Get/SetRenderAngles - First Person
+// Body drives the body's yaw from these every frame.  This fork's render
+// angles ARE the absolute angles (C_BaseEntity::GetRenderAngles returns
+// GetAbsAngles), so the setter writes SetAbsAngles.  Client realm: the server
+// has no render-angle concept.
+// HL2SB GMod compat (2026-09-25): Player:GetRagdollEntity() - this fork's
+// C_BasePlayer carries no clientside ragdoll handle, so answer the NULL
+// entity (GMod answers NULL while alive as well).  The First Person Body
+// gate only tests validity to stand down while dead; Player:Alive() covers
+// that side of it.
+// HL2SB GMod compat (2026-09-25): Player:GetCurrentViewOffset() - the ducked
+// view offset (wiki: "changes while ducking").  This fork's client player has
+// no interpolated view-offset state, so answer the standing offset - First
+// Person Body only uses it for its crouch-offset math, which degrades to a
+// constant while ducked instead of animating.
+static int CBasePlayer_GetCurrentViewOffset (lua_State *L) {
+  lua_pushvector(L, lua_toplayer(L, 1)->GetViewOffset());
+  return 1;
+}
+
+static int CBasePlayer_GetRagdollEntity (lua_State *L) {
+  luaL_checktype(L, 1, LUA_TUSERDATA);
+  lua_pushentity(L, (CBaseEntity *)NULL);
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-25): Player:GetAllowWeaponsInVehicle() - no
+// client-side vehicle flag exists in this fork, answer false (the addon only
+// uses it to stand down in vehicles, which its own InVehicle() check already
+// covers).
+static int CBasePlayer_GetAllowWeaponsInVehicle (lua_State *L) {
+  lua_toplayer(L, 1);
+  lua_pushboolean(L, 0);
+  return 1;
+}
+
+static int CBasePlayer_GetRenderAngles (lua_State *L) {
+  lua_pushangle(L, lua_toplayer(L, 1)->GetRenderAngles());
+  return 1;
+}
+
+static int CBasePlayer_SetRenderAngles (lua_State *L) {
+  lua_toplayer(L, 1)->SetAbsAngles(luaL_checkangle(L, 2));
+  return 0;
+}
+#endif
+
 static int CBasePlayer___index (lua_State *L) {
   CBasePlayer *pPlayer = lua_toplayer(L, 1);
   if (pPlayer == NULL) {  /* avoid extra test when d is not 0 */
@@ -2096,6 +2152,15 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"Weapon_ShouldSetLast", CBasePlayer_Weapon_ShouldSetLast},
   {"Weapon_Switch", CBasePlayer_Weapon_Switch},
   {"WeaponCount", CBasePlayer_WeaponCount},
+  {"Alive", CBasePlayer_Alive},
+  {"IsAlive", CBasePlayer_Alive},
+#ifdef CLIENT_DLL
+  {"GetRenderAngles", CBasePlayer_GetRenderAngles},
+  {"SetRenderAngles", CBasePlayer_SetRenderAngles},
+  {"GetRagdollEntity", CBasePlayer_GetRagdollEntity},
+  {"GetAllowWeaponsInVehicle", CBasePlayer_GetAllowWeaponsInVehicle},
+  {"GetCurrentViewOffset", CBasePlayer_GetCurrentViewOffset},
+#endif
   {"__index", CBasePlayer___index},
   {"__newindex", CBasePlayer___newindex},
   {"__eq", CBasePlayer___eq},
@@ -2133,3 +2198,143 @@ LUALIB_API int luaopen_CBasePlayer_shared (lua_State *L) {
   return 1;
 }
 
+
+// ===== HL2SB GMod compat (2026-09-24): GM:SetupMove / GM:FinishMove ==========
+// GMod fires the predicted movement hooks around the engine's move processing:
+//   hook.Run( "SetupMove",  ply, mv, cmd )  before movement,
+//   hook.Run( "FinishMove", ply, mv, cmd )  after it.
+// The First Person Body addon reads mv:GetButtons()/GetOldButtons() there to
+// time its jump/duck state.  CMoveData is pushed as a POINTER userdata (its
+// lifetime is the ProcessMovement call, no copy needed) with the getters and
+// setters GMod addons actually use.  The cmd argument has no binding in this
+// fork, so nil is pushed in its slot.
+
+#include "igamemovement.h"
+
+static CMoveData *HL2SB_CheckMoveData (lua_State *L, int narg) {
+  CMoveData **ppMove = (CMoveData **)luaL_checkudata(L, narg, "MoveData");
+  return *ppMove;
+}
+
+#define HL2SB_MOVEDATA_INT_GETSET( name, field )                     \
+  static int MoveData_Get##name (lua_State *L) {                     \
+    lua_pushinteger(L, HL2SB_CheckMoveData(L, 1)->field);            \
+    return 1;                                                        \
+  }                                                                  \
+  static int MoveData_Set##name (lua_State *L) {                     \
+    HL2SB_CheckMoveData(L, 1)->field = luaL_checkint(L, 2);          \
+    return 0;                                                        \
+  }
+
+#define HL2SB_MOVEDATA_NUM_GETSET( name, field )                     \
+  static int MoveData_Get##name (lua_State *L) {                     \
+    lua_pushnumber(L, HL2SB_CheckMoveData(L, 1)->field);             \
+    return 1;                                                        \
+  }                                                                  \
+  static int MoveData_Set##name (lua_State *L) {                     \
+    HL2SB_CheckMoveData(L, 1)->field = luaL_checknumber(L, 2);       \
+    return 0;                                                        \
+  }
+
+#define HL2SB_MOVEDATA_VEC_GETSET( name, getter, setter )            \
+  static int MoveData_Get##name (lua_State *L) {                     \
+    lua_pushvector(L, HL2SB_CheckMoveData(L, 1)->getter());          \
+    return 1;                                                        \
+  }                                                                  \
+  static int MoveData_Set##name (lua_State *L) {                     \
+    HL2SB_CheckMoveData(L, 1)->setter(luaL_checkvector(L, 2));       \
+    return 0;                                                        \
+  }
+
+#define HL2SB_MOVEDATA_ANG_GETSET( name, field )                     \
+  static int MoveData_Get##name (lua_State *L) {                     \
+    lua_pushangle(L, HL2SB_CheckMoveData(L, 1)->field);              \
+    return 1;                                                        \
+  }                                                                  \
+  static int MoveData_Set##name (lua_State *L) {                     \
+    HL2SB_CheckMoveData(L, 1)->field = luaL_checkangle(L, 2);        \
+    return 0;                                                        \
+  }
+
+HL2SB_MOVEDATA_INT_GETSET( Buttons, m_nButtons )
+HL2SB_MOVEDATA_INT_GETSET( OldButtons, m_nOldButtons )
+HL2SB_MOVEDATA_INT_GETSET( ImpulseCommand, m_nImpulseCommand )
+HL2SB_MOVEDATA_NUM_GETSET( ForwardMove, m_flForwardMove )
+HL2SB_MOVEDATA_NUM_GETSET( SideMove, m_flSideMove )
+HL2SB_MOVEDATA_NUM_GETSET( UpMove, m_flUpMove )
+HL2SB_MOVEDATA_NUM_GETSET( MaxSpeed, m_flMaxSpeed )
+HL2SB_MOVEDATA_NUM_GETSET( ClientMaxSpeed, m_flClientMaxSpeed )
+HL2SB_MOVEDATA_VEC_GETSET( Origin, GetAbsOrigin, SetAbsOrigin )
+HL2SB_MOVEDATA_ANG_GETSET( ViewAngles, m_vecViewAngles )
+HL2SB_MOVEDATA_ANG_GETSET( Angles, m_vecAngles )
+
+static int MoveData_GetVelocity (lua_State *L) {
+  lua_pushvector(L, HL2SB_CheckMoveData(L, 1)->m_vecVelocity);
+  return 1;
+}
+static int MoveData_SetVelocity (lua_State *L) {
+  HL2SB_CheckMoveData(L, 1)->m_vecVelocity = luaL_checkvector(L, 2);
+  return 0;
+}
+
+static const luaL_Reg HL2SB_MoveDatameta[] = {
+  {"GetButtons",          MoveData_GetButtons},
+  {"SetButtons",          MoveData_SetButtons},
+  {"GetOldButtons",       MoveData_GetOldButtons},
+  {"SetOldButtons",       MoveData_SetOldButtons},
+  {"GetImpulseCommand",   MoveData_GetImpulseCommand},
+  {"SetImpulseCommand",   MoveData_SetImpulseCommand},
+  {"GetForwardMove",      MoveData_GetForwardMove},
+  {"SetForwardMove",      MoveData_SetForwardMove},
+  {"GetSideMove",         MoveData_GetSideMove},
+  {"SetSideMove",         MoveData_SetSideMove},
+  {"GetUpMove",           MoveData_GetUpMove},
+  {"SetUpMove",           MoveData_SetUpMove},
+  {"GetMaxSpeed",         MoveData_GetMaxSpeed},
+  {"SetMaxSpeed",         MoveData_SetMaxSpeed},
+  {"GetClientMaxSpeed",   MoveData_GetClientMaxSpeed},
+  {"SetClientMaxSpeed",   MoveData_SetClientMaxSpeed},
+  {"GetOrigin",           MoveData_GetOrigin},
+  {"SetOrigin",           MoveData_SetOrigin},
+  {"GetVelocity",         MoveData_GetVelocity},
+  {"SetVelocity",         MoveData_SetVelocity},
+  {"GetViewAngles",       MoveData_GetViewAngles},
+  {"SetViewAngles",       MoveData_SetViewAngles},
+  {"GetAngles",           MoveData_GetAngles},
+  {"SetAngles",           MoveData_SetAngles},
+  {NULL, NULL}
+};
+
+#undef HL2SB_MOVEDATA_INT_GETSET
+#undef HL2SB_MOVEDATA_NUM_GETSET
+#undef HL2SB_MOVEDATA_VEC_GETSET
+#undef HL2SB_MOVEDATA_ANG_GETSET
+
+static void HL2SB_PushMoveData_Internal (lua_State *L, CMoveData *pMove) {
+  CMoveData **ppMove = (CMoveData **)lua_newuserdata(L, sizeof(CMoveData *));
+  *ppMove = pMove;
+  if (luaL_newmetatable(L, "MoveData")) {
+    luaL_register(L, NULL, HL2SB_MoveDatameta);
+    lua_pushstring(L, "movedata");
+    lua_setfield(L, -2, "__type");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");  // mv:GetButtons() etc resolve through __index
+  }
+  lua_setmetatable(L, -2);
+}
+
+// Dispatched from CGameMovement::ProcessMovement via a local extern
+// declaration there (AGENTS.md: keep headers untouched, waf will not
+// propagate them).  Fires one GMod movement hook.
+void HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *pszHook )
+{
+	if ( L == NULL || pPlayer == NULL || pMove == NULL )
+		return;
+
+	BEGIN_LUA_CALL_HOOK( pszHook );
+		lua_pushplayer( L, pPlayer );
+		HL2SB_PushMoveData_Internal( L, pMove );
+		lua_pushnil( L );  // cmd slot: GMod passes CUserCmd; no binding here
+	END_LUA_CALL_HOOK( 3, 1 );
+	lua_pop( L, 1 );
+}

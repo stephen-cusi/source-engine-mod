@@ -1160,10 +1160,30 @@ void CGameMovement::ProcessMovement( CBasePlayer *pPlayer, CMoveData *pMove )
 
 	DiffPrint( "start %f %f %f", mv->GetAbsOrigin().x, mv->GetAbsOrigin().y, mv->GetAbsOrigin().z );
 
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-09-24): GM:SetupMove( ply, mv, cmd ) right
+	// before the engine processes the movement (GMod contract; the First
+	// Person Body addon times jump/duck here via mv:GetButtons()).  Runs in
+	// whichever realm is moving the player - server always, client during
+	// prediction, which matches GMod's predicted-hook behaviour.  Local
+	// extern on purpose: waf has no header dependency propagation.
+	{
+		extern void HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *pszHook );
+		HL2SB_LuaMoveHooks( pPlayer, pMove, "SetupMove" );
+	}
+#endif
+
 	// Run the command.
 	PlayerMove();
 
 	FinishMove();
+
+#if defined( LUA_SDK )
+	{
+		extern void HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *pszHook );
+		HL2SB_LuaMoveHooks( pPlayer, pMove, "FinishMove" );
+	}
+#endif
 
 	DiffPrint( "end %f %f %f", mv->GetAbsOrigin().x, mv->GetAbsOrigin().y, mv->GetAbsOrigin().z );
 

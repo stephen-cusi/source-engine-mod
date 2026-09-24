@@ -22,6 +22,18 @@
 // a Vector-declared variable, a 0..255 Color otherwise) and the vector/color
 // accessors it and sent_ball need.
 #include "luamanager.h"
+
+// HL2SB GMod compat (2026-09-24): convars GMod (or older Source) always has
+// that this fork never registered.  First Person Body reads gmod_language at
+// LOAD time (nil ConVar aborted the whole addon file), and cl_drawownshadow in
+// its shadow logic (GetBool(nil) aborted the body update each frame).  The
+// gmod_compatibility suite that was meant to carry gmod_language stays
+// switched off (GMOD_COMPATIBILITY=false), and creating them from Lua in
+// gmod_globals.lua ran before the engine "ConVar" global exists (it only
+// crashed the menu realm) - so register them engine-side instead: DLL load,
+// both realms, ahead of every Lua.
+static ConVar gmod_language("gmod_language", "en", FCVAR_ARCHIVE, "Language to use in GMod");
+static ConVar cl_drawownshadow("cl_drawownshadow", "0", FCVAR_ARCHIVE, "Render the local player's shadow");
 #include "lbaseentity_shared.h"
 // HL2SB: lua_toanimating() for the NetworkVar shim's m_nSkin carrier.  Each
 // realm has its own twin (game/*/lua/l[ c_ ]baseanimating.h); its

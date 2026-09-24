@@ -485,6 +485,14 @@ void CHL2MPRules::Think( void )
 	BEGIN_LUA_CALL_HOOK( "Think" );
 	END_LUA_CALL_HOOK( 0, 0 );
 
+	// HL2SB GMod compat (2026-09-24): GM:Tick - "called every game tick"
+	// (GMod wiki), server side this rides the gamerules think, which is the
+	// per-tick cadence.  The client half of Tick fires from
+	// ClientModeShared::Update.  Same local-prototype rule as the timer pump
+	// below: keep luasrclib.h untouched (no header dependency propagation).
+	BEGIN_LUA_CALL_HOOK( "Tick" );
+	END_LUA_CALL_HOOK( 0, 0 );
+
 #ifndef CLIENT_DLL
 	// HL2SB (2026-09-21): the engine timer library (game/shared/lua/ltimer.cpp)
 	// is pumped here, one frame per call -- the same deal GMod makes with its

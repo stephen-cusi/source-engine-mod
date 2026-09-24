@@ -1163,6 +1163,19 @@ static int CBaseEntity_GetModel (lua_State *L) {
   // "bad argument #1 to 'SetModel' (string expected, got nil)".  GMod answers
   // the empty string here.
   const char *pszModelName = STRING( luaL_checkentity(L, 1)->GetModelName() );
+
+  // HL2SB (2026-09-25): the LOCAL PLAYER answers an empty model-name string on
+  // the client (its model is applied by index and the name field never fills),
+  // so First Person Body read GetModel( ply ) == "" forever and never created
+  // the body.  When the name field is empty but a model pointer exists, derive
+  // the path from the model itself.
+  if ( pszModelName == NULL || pszModelName[0] == 0 )
+  {
+    const model_t *pModel = luaL_checkentity(L, 1)->GetModel();
+    if ( pModel )
+      pszModelName = modelinfo->GetModelName( pModel );
+  }
+
   if ( pszModelName == NULL )
     pszModelName = "";
   lua_pushstring(L, pszModelName);
@@ -1370,6 +1383,32 @@ static int CBaseEntity_IsOnGround (lua_State *L) {
 
   lua_pushboolean(L, ( ( pEntity->GetFlags() & FL_ONGROUND ) != 0 ) || ( pEntity->GetGroundEntity() != NULL ) );
   return 1;
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:OnGround() - the First Person Body
+// addon captures ENTITY.OnGround (this fork only had IsOnGround; GMod
+// community addons use both spellings).  Same predicate, second name.
+// HL2SB GMod compat (2026-09-25): Entity:PhysicsDestroy() - GMod destroys the
+// entity's physics object.  Clientside entities in this fork carry no physics
+// at all, and First Person Body calls it defensively on its fresh body clone,
+// so a no-op answers the only real use; the PhysObj bindings remain the
+// sandbox-facing API.
+static int CBaseEntity_PhysicsDestroy (lua_State *L) {
+  luaL_checkentity(L, 1);
+  return 0;
+}
+
+static int CBaseEntity_OnGround (lua_State *L) {
+  return CBaseEntity_IsOnGround(L);
+}
+
+// HL2SB GMod compat (2026-09-24): Entity:SetIK( bool ) - accepted as a safe
+// NO-OP.  GMod can suppress a client model's IK; this fork's C_BaseAnimating
+// has no toggle for it, and First Person Body only calls it defensively on
+// its freshly created body clone.
+static int CBaseEntity_SetIK (lua_State *L) {
+  luaL_checkentity(L, 1);
+  return 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -1940,6 +1979,22 @@ static int CBaseEntity_SetPos (lua_State *L) {
 #ifdef GAME_DLL
   pEntity->Teleport( &vecOrigin, NULL, NULL );
 #else
+  // HL2SB GMod parity (2026-09-25): SetPos on a PARENTED clientside entity
+  // must move it to the WORLD position (GMod: "Moves the entity to the
+  // specified position", plus "use Entity:SetupBones to force it" - which is
+  // exactly First Person Body's SetPos + SetupBones pattern).  Feeding a
+  // world vector into the parent-follow as a LOCAL offset is what launched
+  // the body into the air above the player's head.
+  CBaseEntity *pParent = pEntity->GetMoveParent();
+  if ( pParent != NULL )
+  {
+    matrix3x4_t worldToParent;
+    AngleIMatrix( pParent->GetAbsAngles(), pParent->GetAbsOrigin(), worldToParent );
+    Vector vecLocal;
+    VectorTransform( vecOrigin, worldToParent, vecLocal );
+    pEntity->SetLocalOrigin( vecLocal );
+    return 0;
+  }
   pEntity->SetAbsOrigin(vecOrigin);
 #endif
   return 0;
@@ -3259,7 +3314,20 @@ static int CBaseEntity_IsVehicle (lua_State *L) {
 //     ent:SetVelocity( fwd * 2000 )
 // so without them the shot still stops before the entity is spawned.
 static int CBaseEntity_SetAngles (lua_State *L) {
-  luaL_checkentity(L, 1)->SetLocalAngles( luaL_checkangle(L, 2) );
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  QAngle angWorld = luaL_checkangle(L, 2);
+#ifndef GAME_DLL
+  // HL2SB GMod parity (2026-09-25): SetAngles on a parented clientside entity
+  // is WORLD space, same contract as SetPos above (First Person Body sets the
+  // body angles to the eye angles every RenderScene).
+  CBaseEntity *pParent = pEntity->GetMoveParent();
+  if ( pParent != NULL )
+  {
+    pEntity->SetLocalAngles( angWorld - pParent->GetAbsAngles() );
+    return 0;
+  }
+#endif
+  pEntity->SetLocalAngles( angWorld );
   return 0;
 }
 
@@ -4405,6 +4473,9 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"Alive", CBaseEntity_IsAlive},
   {"IsAnimatedEveryTick", CBaseEntity_IsAnimatedEveryTick},
   {"IsOnGround", CBaseEntity_IsOnGround},
+  {"OnGround", CBaseEntity_OnGround},
+  {"PhysicsDestroy", CBaseEntity_PhysicsDestroy},
+  {"SetIK", CBaseEntity_SetIK},
   // HL2SB GMod compat batch (see the definitions above).
   {"SetRenderMode", CBaseEntity_SetRenderMode},
   {"SetModelScale", CBaseEntity_SetModelScale},

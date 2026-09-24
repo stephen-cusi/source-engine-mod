@@ -329,6 +329,42 @@ static int Vector_MulAdd (lua_State *L) {
   return 0;
 }
 
+// ===== HL2SB GMod compat (2026-09-25): Vector:Set/Add/Sub/Mul/Div ============
+// GMod's mutating vector methods (wiki: they change the original vector and
+// skip object construction).  First Person Body captures them once at load
+// and drives every body transform through them, so a nil here killed the
+// whole draw chain.  Mul/Div accept a number or a vector, like GMod.
+static int Vector_Set (lua_State *L) {
+  luaL_checkvector(L, 1) = luaL_checkvector(L, 2);
+  return 0;
+}
+
+static int Vector_Add (lua_State *L) {
+  luaL_checkvector(L, 1) += luaL_checkvector(L, 2);
+  return 0;
+}
+
+static int Vector_Sub (lua_State *L) {
+  luaL_checkvector(L, 1) -= luaL_checkvector(L, 2);
+  return 0;
+}
+
+static int Vector_Mul (lua_State *L) {
+  if ( lua_type( L, 2 ) == LUA_TNUMBER )
+    luaL_checkvector(L, 1) *= luaL_checknumber(L, 2);
+  else
+    luaL_checkvector(L, 1) *= luaL_checkvector(L, 2);
+  return 0;
+}
+
+static int Vector_Div (lua_State *L) {
+  if ( lua_type( L, 2 ) == LUA_TNUMBER )
+    luaL_checkvector(L, 1) /= luaL_checknumber(L, 2);
+  else
+    luaL_checkvector(L, 1) /= luaL_checkvector(L, 2);
+  return 0;
+}
+
 static int Vector_Negate (lua_State *L) {
   luaL_checkvector(L, 1).Negate();
   return 0;
@@ -485,6 +521,11 @@ static const luaL_Reg Vectormeta[] = {
   {"__newindex", Vector___newindex},
   {"__tostring", Vector___tostring},
   {"__eq", Vector___eq},
+  {"Add", Vector_Add},
+  {"Sub", Vector_Sub},
+  {"Mul", Vector_Mul},
+  {"Div", Vector_Div},
+  {"Set", Vector_Set},
   {"__add", Vector___add},
   {"__sub", Vector___sub},
   {"__mul", Vector___mul},
@@ -749,6 +790,18 @@ static int luasrc_QAngle (lua_State *L) {
 }
 
 
+// HL2SB GMod compat (2026-09-25): Angle:Set( angle ) - copies the values
+// (First Person Body captures it as ANGLE.Set at load).
+static int QAngle_Set (lua_State *L) {
+  luaL_checkangle(L, 1) = luaL_checkangle(L, 2);
+  return 0;
+}
+
+static const luaL_Reg QAnglemeta_extra[] = {
+  {"Set", QAngle_Set},
+  {NULL, NULL}
+};
+
 static const luaL_Reg QAngle_funcs[] = {
   {"QAngle", luasrc_QAngle},
   {NULL, NULL}
@@ -761,6 +814,7 @@ static const luaL_Reg QAngle_funcs[] = {
 LUALIB_API int luaopen_QAngle (lua_State *L) {
   luaL_newmetatable(L, LUA_QANGLELIBNAME);
   luaL_register(L, NULL, QAnglemeta);
+  luaL_register(L, NULL, QAnglemeta_extra);
   lua_pushstring(L, "angle");
   lua_setfield(L, -2, "__type");  /* metatable.__type = "angle" */
   luaL_register(L, "_G", QAngle_funcs);
