@@ -398,6 +398,20 @@ void CPlayerMove::RunCommand ( CBasePlayer *player, CUserCmd *ucmd, IMoveHelper 
 		}
 	}
 
+	// HL2SB diag (2026-09-25): does the RECEIVED usercmd carry nonzero mouse
+	// deltas?  The client provably writes cmd->mousedx=-40 in MouseMove; the
+	// physgun's E-rotate reads 0 in EffectUpdate.  This splits client-send vs
+	// engine-transport vs game-consume.
+	{
+		static int s_nUcmdDiag = 0;
+		if ( s_nUcmdDiag < 4 && ucmd->mousedx != 0 )
+		{
+			++s_nUcmdDiag;
+			Msg( "[HL2SB physgun] srv ucmd dx=%d dy=%d cmdnum=%d\n",
+				ucmd->mousedx, ucmd->mousedy, ucmd->command_number );
+		}
+	}
+
 	// Update player input button states
 	VPROF_SCOPE_BEGIN( "player->UpdateButtonState" );
 	player->UpdateButtonState( ucmd->buttons );
