@@ -599,7 +599,7 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 				break;
 			}
 		}
-		if ( bNoTemplateNew && s_nNoTemplateSeen < 64 )
+		if ( bNoTemplateNew && s_nNoTemplateSeen < 8 )
 		{
 			Q_strncpy( s_szNoTemplateSeen[ s_nNoTemplateSeen ], pszName, sizeof( s_szNoTemplateSeen[ 0 ] ) );
 			++s_nNoTemplateSeen;

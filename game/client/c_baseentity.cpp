@@ -2607,7 +2607,10 @@ void C_BaseEntity::PostDataUpdate( DataUpdateType_t updateType )
 			  V_stristr( pszClass, "verity" ) != NULL || V_stristr( pszClass, "scp" ) != NULL ||
 			  V_stristr( pszClass, "NextBot" ) != NULL );
 
-		if ( ( s_nPostDataReports < 25 || bInteresting ) && s_nPostDataReports < 120 )
+		// 2026-09-24: only CREATED, 25 total.  This used to print every
+		// PostDataUpdate for any npc-ish class up to 120 lines, which flooded
+		// the console on maps with crows/citizens (C_AI_BaseNPC matches "npc").
+		if ( updateType == DATA_UPDATE_CREATED && ( s_nPostDataReports < 25 || bInteresting ) )
 		{
 			++s_nPostDataReports;
 			luasrc_LuaWarnMsgF( "[HL2SB] CLIENT entity class='%s' updateType=%d entindex=%d",
