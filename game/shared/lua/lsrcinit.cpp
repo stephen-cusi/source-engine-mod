@@ -1518,7 +1518,19 @@ static void HL2SB_NWReplicatedStore( int entindex, const char *pszName, char tag
 	if ( nPayload > 0 )
 		Q_memcpy( blob.buf + 1, pPayload, nPayload );
 	blob.nBytes = nPayload + 1;
-	s_NWReplicated.Insert( key, blob );
+
+	// HL2SB (2026-09-25): OVERWRITE an existing entry.  CUtlDict::Insert does
+	// NOT replace -- it inserts a DUPLICATE node next to the old one, and
+	// Find() kept answering the FIRST value ever stored.  Every NetworkVar
+	// update after the first (the lemon's ChangeState(1) at detonation) was
+	// therefore invisible to the client: the replicated dictionary answered
+	// the spawn-time 0 forever, ENT:Draw kept drawing the model through its
+	// own fire, and the amount on an ammo-pickup card never grew.
+	unsigned short idx = s_NWReplicated.Find( key );
+	if ( s_NWReplicated.IsValidIndex( idx ) )
+		s_NWReplicated[ idx ] = blob;
+	else
+		s_NWReplicated.Insert( key, blob );
 }
 
 // Push the replicated value for (entity index, key), or nil.  Returns whether
@@ -1603,6 +1615,67 @@ static void __MsgFunc_HL2SB_NW( bf_read &read )
 		return;
 
 	HL2SB_NWReplicatedStore( entindex, szName, tag, payload, len );
+
+	// HL2SB (2026-09-25): the server update OVERWRITES the realm-local value.
+	// A scripted entity's client-side ENT:Initialize writes its defaults into
+	// the local storage table (the lemon opens with ChangeState(0)) and the
+	// getter prefers a locally-written entry -- so the stale local 0 shadowed
+	// every later server update (state 1/2/3) and the grenade kept its model
+	// drawn through its own fire.  Drop the local key here; the getter falls
+	// through to the replicated payload just stored, and the next LOCAL write
+	// (prediction) re-shadows until the following update -- exactly how GMod's
+	// DT vars behave.
+	if ( L != NULL ) {
+		const int iBase = lua_gettop( L );
+		IClientEntity *pIClient = cl_entitylist->GetClientEntity( entindex );
+		C_BaseEntity *pEnt = pIClient ? pIClient->GetBaseEntity() : NULL;
+		if ( pEnt != NULL ) {
+			CBaseEntity::PushLuaInstanceSafe( L, pEnt );
+			const int iTable = HL2SB_NWPushStorageTable( L, -1 );
+			if ( iTable != 0 ) {
+				char szStorageKey[ 160 ];
+				Q_snprintf( szStorageKey, sizeof( szStorageKey ), "__hl2sb_nw_%s", szName );
+				lua_pushstring( L, szStorageKey );
+			lua_pushnil( L );
+				lua_rawset( L, iTable );
+			}
+		}
+		lua_settop( L, iBase );		// unconditional restore
+	}
+}
+
+// HL2SB (2026-09-25): "HL2SB_AMMO" user message -- STRING ammoName,
+// SHORT amount.  The server's Player:GiveAmmo binding sends it whenever GMod
+// would show the pickup popup (hidePopup == false); the client turns it into
+// the shared HUDAmmoPickedUp hook, which the GMod base gamemode normally draws
+// (wiki GM:HUDAmmoPickedUp -- "Called when the client has picked up ammo").
+static void __MsgFunc_HL2SB_AMMO( bf_read &read )
+{
+	char szName[ 128 ];
+	read.ReadString( szName, sizeof( szName ) );
+	const int nAmount = read.ReadShort();
+
+	if ( read.IsOverflowed() || szName[ 0 ] == '\0' )
+		return;
+
+	if ( L == NULL )
+		return;
+
+	lua_getglobal( L, "hook" );
+	if ( lua_istable( L, -1 ) ) {
+		lua_getfield( L, -1, "call" );
+		if ( lua_isfunction( L, -1 ) ) {
+			lua_remove( L, -2 );
+			lua_pushstring( L, "HUDAmmoPickedUp" );
+			lua_pushstring( L, szName );
+			lua_pushinteger( L, nAmount );
+			luasrc_pcall( L, 3, 0, 0 );
+		} else {
+			lua_pop( L, 1 );
+		}
+	} else {
+		lua_pop( L, 1 );
+	}
 }
 
 // HL2SB (2026-09-22): Entity:CallOnClient( name, data ) receiver -- the server
@@ -1738,12 +1811,17 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
   const int iTable = HL2SB_NWPushStorageTable( L, 1 );
 
 #ifdef CLIENT_DLL
-  // HL2SB (2026-09-21): REPLICATED VALUE FIRST.  The local table has no entry
-  // until THIS realm writes one, and HL2SB_NWReadValue falling through would
-  // push the TYPE DEFAULT -- Vector(0,0,0) -- which sent_ball's ENT:Draw then
-  // used as the sprite color: black balls.  The "HL2SB_NW" user message
-  // carries the server's value; if it has arrived, it wins over the default.
-  // (The local table wins again once this realm writes its own.)
+  // HL2SB (2026-09-25): LOCAL first, replicated fallback -- paired with the
+  // receiver in __MsgFunc_HL2SB_NW, which DROPS the local entry whenever a
+  // server update for the key arrives.  That pairing is the GMod DT contract:
+  // a realm-local write (client prediction, or a scripted ENT:Initialize
+  // default) answers immediately, and the next server update overwrites it.
+  //
+  // An earlier build tried replicated-first here; that fixed the shadowing but
+  // made every client-predicted weapon state fight the last known server
+  // value -- fast grenade throws visibly jittered the throw animation.  The
+  // receiver-side clear is the precise fix: the local entry cannot outlive the
+  // server update that should replace it.
   bool bLocalSet = false;
   if ( iTable != 0 ) {
     lua_pushstring( L, pszKey );
@@ -2080,6 +2158,10 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   // here for the same signon-table reason as HL2SB_NW above.
   if ( usermessages->LookupUserMessage( "HL2SB_RPC" ) == -1 )
     usermessages->Register( "HL2SB_RPC", -1 );
+  // HL2SB (2026-09-25): ammo pickup popup carrier -- see CBasePlayer_GiveAmmo
+  // (game/server/lua/lplayer.cpp), which sends it unless hidePopup is set.
+  if ( usermessages->LookupUserMessage( "HL2SB_AMMO" ) == -1 )
+    usermessages->Register( "HL2SB_AMMO", -1 );
 #endif
 #ifdef CLIENT_DLL
   // HL2SB (2026-09-21): Lua NetworkVar replication receiver (see the
@@ -2100,6 +2182,10 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   if ( usermessages->LookupUserMessage( "HL2SB_RPC" ) == -1 )
     usermessages->Register( "HL2SB_RPC", -1 );
   usermessages->HookMessage( "HL2SB_RPC", __MsgFunc_HL2SB_RPC );
+  // HL2SB (2026-09-25): ammo pickup popup receiver -> HUDAmmoPickedUp hook.
+  if ( usermessages->LookupUserMessage( "HL2SB_AMMO" ) == -1 )
+    usermessages->Register( "HL2SB_AMMO", -1 );
+  usermessages->HookMessage( "HL2SB_AMMO", __MsgFunc_HL2SB_AMMO );
 #endif
 
   /* HL2SB: four GMod globals this engine never had.  All four are LOAD-TIME

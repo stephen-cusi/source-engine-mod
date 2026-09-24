@@ -608,7 +608,23 @@ static int CBasePlayer_GetWaterJumpTime (lua_State *L) {
 }
 
 static int CBasePlayer_GetWeapon (lua_State *L) {
-  lua_pushweapon(L, luaL_checkplayer(L, 1)->GetWeapon(luaL_checkint(L, 2)));
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+
+  // HL2SB GMod compat (2026-09-25): GetWeapon( className ) -- GMod looks a
+  // weapon up by CLASS NAME and returns it (or nil).  This binding historically
+  // took a SLOT index; keep that working for numbers, resolve strings through
+  // the same class lookup Player:StripWeapon uses.
+  if ( lua_type( L, 2 ) == LUA_TSTRING )
+  {
+    CBaseCombatWeapon *pWeapon = pPlayer->Weapon_OwnsThisType( luaL_checkstring( L, 2 ) );
+    if ( pWeapon != NULL )
+      lua_pushweapon( L, pWeapon );
+    else
+      lua_pushnil( L );
+    return 1;
+  }
+
+  lua_pushweapon(L, pPlayer->GetWeapon(luaL_checkint(L, 2)));
   return 1;
 }
 
@@ -1806,6 +1822,37 @@ static int CBasePlayer_KeyReleased (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (2026-09-24): Player:KeyDownLast( key ) -- was the key down
+// last frame.  Mirrors KeyDown/KeyPressed/KeyReleased above; m_afButtonLast is
+// the frame-old button mask.
+static int CBasePlayer_KeyDownLast (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const int nKey = luaL_checkint(L, 2);
+  lua_pushboolean(L, (pPlayer->m_afButtonLast & nKey) != 0);
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-24): Player:StripWeapon( class ) -- wiki
+// Player:StripWeapon (SERVER realm): remove the weapon entity of this class
+// (OnRemove fires, GetOwner is nil afterwards).  The engine's GetWeapon
+// binding takes a SLOT index, not a class, and the sh_init.lua copy of this
+// method sits behind the never-loaded gmod_compatibility/ folder pass -- so
+// the class lookup happens here in C++ instead (Weapon_OwnsThisType) and the
+// weapon is deleted.  C_BaseCombatWeapon has no Delete(), so server-only.
+#ifndef CLIENT_DLL
+static int CBasePlayer_StripWeapon (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const char *pszClass = luaL_checkstring(L, 2);
+  CBaseCombatWeapon *pWeapon = pPlayer->Weapon_OwnsThisType( pszClass );
+  if ( pWeapon != NULL )
+  {
+    pWeapon->Delete();
+  }
+  lua_pushboolean( L, pWeapon != NULL );
+  return 1;
+}
+#endif
+
 // HL2SB GMod compat: Player:GetInfo( convarName ) -- read a client-side
 // convar (FCVAR_USERINFO).  On the local client this always reads the local
 // player's cvar regardless of which player the method is called on; that is
@@ -2096,6 +2143,10 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"KeyDown", CBasePlayer_KeyDown},
   {"KeyPressed", CBasePlayer_KeyPressed},
   {"KeyReleased", CBasePlayer_KeyReleased},
+  {"KeyDownLast", CBasePlayer_KeyDownLast},
+#ifndef CLIENT_DLL
+  {"StripWeapon", CBasePlayer_StripWeapon},
+#endif
   {"LeaveVehicle", CBasePlayer_LeaveVehicle},
   {"LocalEyeAngles", CBasePlayer_LocalEyeAngles},
   {"MaxSpeed", CBasePlayer_MaxSpeed},

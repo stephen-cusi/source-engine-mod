@@ -69,17 +69,48 @@ static int CBasePlayer_ChatPrint (lua_State *L) {
 }
 
 static int CBasePlayer_GiveAmmo (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  const int nAmount = luaL_checkint(L, 2);
+
+  // HL2SB GMod compat (2026-09-25): GMod's GiveAmmo pops the pickup HUD
+  // notification unless hidePopup is set (wiki Player:GiveAmmo, 3rd argument);
+  // the notification itself is the CLIENT realm hook GM:HUDAmmoPickedUp
+  // (base gamemode cl_hudpickup.lua draws it).  Relay the name across a user
+  // message and let the client raise the shared hook.
+  const char *pszAmmoName = NULL;
+  char szIdName[ 32 ];
+  const bool bHidePopup = luaL_optboolean(L, 4, false);
+  int nGiven = 0;
+
   switch(lua_type(L, 3)) {
     case LUA_TNUMBER:
-      lua_pushinteger(L, luaL_checkplayer(L, 1)->GiveAmmo(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_optboolean(L, 4, false)));
+      nGiven = pPlayer->GiveAmmo(nAmount, luaL_checkint(L, 3), bHidePopup);
+      if ( lua_isstring(L, 3) == 0 ) {
+        Q_snprintf( szIdName, sizeof( szIdName ), "ammo_%d", luaL_checkint(L, 3) );
+        pszAmmoName = szIdName;
+      }
       break;
     case LUA_TSTRING:
-      lua_pushinteger(L, luaL_checkplayer(L, 1)->GiveAmmo(luaL_checkint(L, 2), luaL_checkstring(L, 3), luaL_optboolean(L, 4, false)));
+      pszAmmoName = luaL_checkstring(L, 3);
+      nGiven = pPlayer->GiveAmmo(nAmount, pszAmmoName, bHidePopup);
       break;
     default:
-      lua_pushinteger(L, luaL_checkplayer(L, 1)->GiveAmmo(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_optboolean(L, 4, false)));
+      nGiven = pPlayer->GiveAmmo(nAmount, luaL_checkint(L, 3), bHidePopup);
       break;
   }
+
+#ifndef CLIENT_DLL
+  if ( !bHidePopup && nGiven > 0 && pszAmmoName != NULL &&
+       pszAmmoName[ 0 ] != '\0' ) {
+    CSingleUserRecipientFilter filter( pPlayer );
+    UserMessageBegin( filter, "HL2SB_AMMO" );
+      WRITE_STRING( pszAmmoName );
+      WRITE_SHORT( ( short )nGiven );
+    MessageEnd();
+  }
+#endif
+
+  lua_pushinteger(L, nGiven);
   return 1;
 }
 

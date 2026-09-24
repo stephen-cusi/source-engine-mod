@@ -875,6 +875,42 @@ static int IPhysicsObject_GetPosition (lua_State *L) {
   return 2;
 }
 
+// HL2SB GMod compat (2026-09-25): PhysObj:SetAngles( angle ) -- GMod sets just
+// the orientation, keeping the current position.  combustible_lemon's Detonate
+// zeroes its velocity then SetAngles+Sleep; with the method missing the chain
+// errored and Sleep never ran, so the "asleep" grenade kept falling and dragged
+// its lingering fire through the floor.
+static int IPhysicsObject_SetAngles (lua_State *L) {
+  IPhysicsObject *pPhysics = luaL_checkphysicsobject(L, 1);
+  QAngle angles = luaL_checkangle(L, 2);
+  Vector worldPosition;
+  pPhysics->GetPosition(&worldPosition, NULL);
+  pPhysics->SetPosition(worldPosition, angles, true);
+  return 0;
+}
+
+// HL2SB GMod compat (2026-09-25): PhysObj:GetPos() -- position only.  The
+// lemon ammo bag's flush-align loop calls phys:GetPos() on every ragdoll
+// piece; with the method missing the loop errored on the first piece and the
+// flag/health/undo setup after it never ran.
+static int IPhysicsObject_GetPos (lua_State *L) {
+  Vector worldPosition;
+  luaL_checkphysicsobject(L, 1)->GetPosition(&worldPosition, NULL);
+  lua_pushvector(L, worldPosition);
+  return 1;
+}
+
+// HL2SB GMod compat (2026-09-25): PhysObj:SetPos( vec ) -- same loop, second
+// half: phys:SetPos( phys:GetPos() + offset ).  GetPos alone was not enough.
+static int IPhysicsObject_SetPos (lua_State *L) {
+  IPhysicsObject *pPhysics = luaL_checkphysicsobject(L, 1);
+  Vector worldPosition = luaL_checkvector(L, 2);
+  QAngle angles;
+  pPhysics->GetPosition(NULL, &angles);
+  pPhysics->SetPosition(worldPosition, angles, true);
+  return 0;
+}
+
 static int IPhysicsObject_GetShadowPosition (lua_State *L) {
   Vector position;
   QAngle angles;
@@ -1261,6 +1297,9 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"GetMaterialIndex", IPhysicsObject_GetMaterialIndex},
   {"GetName", IPhysicsObject_GetName},
   {"GetPosition", IPhysicsObject_GetPosition},
+  {"SetAngles", IPhysicsObject_SetAngles},
+  {"GetPos", IPhysicsObject_GetPos},
+  {"SetPos", IPhysicsObject_SetPos},
   {"GetShadowPosition", IPhysicsObject_GetShadowPosition},
   {"GetSphereRadius", IPhysicsObject_GetSphereRadius},
   {"GetVelocity", IPhysicsObject_GetVelocity},

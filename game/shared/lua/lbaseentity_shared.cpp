@@ -1463,6 +1463,41 @@ static int CBaseEntity_OBBMaxs (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (2026-09-24): Entity:GetMaterialType() -- wiki
+// Entity:GetMaterialType (server realm, harmless shared).  "Internally, all
+// this does is return gamematerial of the surface property on the first
+// physics object of the entity."  The gamematerial IS the byte GMod's MAT_
+// globals carry (MAT_GLASS == 'Y' == 89), so push it raw.
+static int CBaseEntity_GetMaterialType (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  IPhysicsObject *pPhysics = pEntity->VPhysicsGetObject();
+  if ( pPhysics == NULL )
+  {
+    lua_pushnumber( L, 0 );
+    return 1;
+  }
+
+  surfacedata_t *pSurface = physprops->GetSurfaceData( pPhysics->GetMaterialIndex() );
+  lua_pushnumber( L, pSurface ? (lua_Number)(unsigned char)pSurface->game.material : 0 );
+  return 1;
+}
+
+#ifndef CLIENT_DLL
+// HL2SB GMod compat (2026-09-25): Entity:Ignite( duration, bNPCOnly? ) -- see
+// the methods-table note above.  Forwards onto the entity's CBaseAnimating,
+// which spawns the engine's EntityFlame child (same as the animating binding).
+static int CBaseEntity_Ignite (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  CBaseAnimating *pAnim = pEntity->GetBaseAnimating();
+  if ( pAnim == NULL )
+    return 0;
+  const float flDuration = (float)luaL_optnumber( L, 2, 10.0f );
+  pAnim->Ignite( flDuration, pAnim->IsNPC(), 0.0f, false );
+  return 0;
+}
+#endif
+
 // Entity:GetCollisionBounds() -- GMod returns mins and maxs.
 static int CBaseEntity_GetCollisionBounds (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
@@ -4417,6 +4452,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetMoveParent", CBaseEntity_GetMoveParent},
   {"GetMoveType", CBaseEntity_GetMoveType},
   {"GetOwnerEntity", CBaseEntity_GetOwnerEntity},
+  {"GetMaterialType", CBaseEntity_GetMaterialType},
   {"GetParametersForSound", CBaseEntity_GetParametersForSound},
   {"GetPredictionPlayer", CBaseEntity_GetPredictionPlayer},
   {"GetPredictionRandomSeed", CBaseEntity_GetPredictionRandomSeed},
@@ -4450,6 +4486,19 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetVectors", CBaseEntity_GetVectors},
   {"GetViewOffset", CBaseEntity_GetViewOffset},
   {"GetWaterLevel", CBaseEntity_GetWaterLevel},
+  // HL2SB GMod compat (2026-09-25): GMod spells it Entity:WaterLevel() (0 dry,
+  // 1 feet, 2 waist, 3 submerged).  The alias used to live only in the
+  // never-loaded sh_init.lua, and combustible_lemon's ENT:Detonate died on it
+  // every single throw ("attempt to call a nil value (method 'WaterLevel')").
+  {"WaterLevel", CBaseEntity_GetWaterLevel},
+#ifndef CLIENT_DLL
+  // HL2SB GMod compat (2026-09-25): Entity:Ignite( duration ) on the SHARED
+  // entity level.  CBaseAnimating binds Ignite for animating-class userdata,
+  // but an entity-agnostic caller (combustible_lemon's IgniteEntitiesNear
+  // loops ents.FindInSphere and calls :Ignite on players/ragdolls too) hit
+  // metas without the method and errored every tick the fire was alive.
+  {"Ignite", CBaseEntity_Ignite},
+#endif
   {"GetWaterType", CBaseEntity_GetWaterType},
   {"HasDataObjectType", CBaseEntity_HasDataObjectType},
   {"HasNPCsOnIt", CBaseEntity_HasNPCsOnIt},

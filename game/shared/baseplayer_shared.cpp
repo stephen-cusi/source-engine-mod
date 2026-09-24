@@ -9,6 +9,12 @@
 #include "movevars_shared.h"
 #include "util_shared.h"
 #include "datacache/imdlcache.h"
+#ifdef LUA_SDK
+// HL2SB: lua_pushentity / lua_toentity for the FindUseEntity hook dispatch.
+// luamanager.h must come first -- it pulls lua.hpp (LUA_API, lua_State).
+#include "luamanager.h"
+#include "lbaseentity_shared.h"
+#endif
 #if defined ( TF_DLL ) || defined ( TF_CLIENT_DLL )
 #include "tf_gamerules.h"
 #endif
@@ -1273,6 +1279,30 @@ CBaseEntity *CBasePlayer::FindUseEntity()
 	{
 		Msg( "Radial using: %s\n", pNearest ? pNearest->GetDebugName() : "no usable entity found" );
 	}
+
+#ifdef LUA_SDK
+	// HL2SB GMod compat (2026-09-25): GM:FindUseEntity( ply, defaultEntity ) --
+	// shared hook; a Lua return overrides which entity +use targets.
+	// combustible_lemon's ammo bag emulates +use on a prop_ragdoll exactly this
+	// way (the engine never considers a ragdoll useable on its own), so without
+	// the dispatch the bag could not be picked ammo from.
+	CBaseEntity *pHookUseEntity = NULL;
+	{
+		BEGIN_LUA_CALL_HOOK( "FindUseEntity" );
+			lua_pushplayer( L, this );
+			if ( pNearest != NULL )
+				lua_pushentity( L, pNearest );
+			else
+				lua_pushnil( L );
+		END_LUA_CALL_HOOK( 2, 1 );
+
+		if ( !lua_isnil( L, -1 ) )
+			pHookUseEntity = lua_toentity( L, -1 );
+		lua_pop( L, 1 );
+	}
+	if ( pHookUseEntity != NULL )
+		return pHookUseEntity;
+#endif
 
 	return pNearest;
 }

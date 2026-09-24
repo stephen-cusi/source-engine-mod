@@ -2781,6 +2781,11 @@ static void luasrc_LoadOneWeapon (const char *filename, const char *className)
 	lua_setfield( L, -2, "__folder" );
 	lua_pushstring( L, LUA_BASE_WEAPON );
 	lua_setfield( L, -2, "__base" );
+	// HL2SB GMod compat (2026-09-24): SWEP.ClassName -- GMod stamps the class
+	// name onto every SWEP table; a grenade SWEP strips itself with
+	// owner:StripWeapon( self.ClassName ) and reads nil without it.
+	lua_pushstring( L, className );
+	lua_setfield( L, -2, "ClassName" );
 	lua_setglobal( L, "SWEP" );
 	if ( luasrc_dofile( L, fullpath ) == 0 )
 	{

@@ -236,6 +236,16 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 #endif
 		LoadScriptedEntity();
 
+		// HL2SB GMod compat (2026-09-24): ENT.ClassName -- GMod's engine stamps
+		// the class name onto every scripted table, and addon scripts read it
+		// (e.g. a grenade SWEP calls owner:StripWeapon( self.ClassName ) when it
+		// runs dry).  Without the field that read is nil and the call errors.
+		if ( lua_istable( L, -1 ) )
+		{
+			lua_pushstring( L, className );
+			lua_setfield( L, -2, "ClassName" );
+		}
+
 		// HL2SB: diagnostic for the "attempt to call a nil value (method ...)"
 		// family on freshly created scripted entities.  Reports exactly what
 		// entity.get() produced: no table at all, or a table with how many
@@ -947,6 +957,15 @@ void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent 
 
 			lua_pushstring( L, "TheirOldVelocity" );
 			lua_pushvector( L, pEvent->preVelocity[ nOther ] );
+			lua_settable( L, -3 );
+
+			// HL2SB GMod compat (2026-09-24): CollisionData.HitSpeed -- "the speed
+			// at which the impact happened" (wiki Structures/CollisionData).  GMod
+			// hands the script the RELATIVE velocity of the two bodies; a thrown
+			// grenade addon gates its detonation on HitSpeed:LengthSqr(), so with
+			// the field missing the whole PhysicsCollide body never ran.
+			lua_pushstring( L, "HitSpeed" );
+			lua_pushvector( L, pEvent->preVelocity[ index ] - pEvent->preVelocity[ nOther ] );
 			lua_settable( L, -3 );
 
 			lua_pushstring( L, "PhysObject" );

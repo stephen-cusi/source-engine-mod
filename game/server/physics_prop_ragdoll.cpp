@@ -953,6 +953,17 @@ bool CRagdollProp::TestCollision( const Ray_t &ray, unsigned int mask, trace_t& 
 
 void CRagdollProp::Teleport( const Vector *newPosition, const QAngle *newAngles, const Vector *newVelocity )
 {
+	// HL2SB (2026-09-25): a prop_ragdoll created with ents.Create and moved
+	// BEFORE :Spawn() has no ragdoll physics yet -- m_ragdoll.list[0].pObject is
+	// NULL and the original code dereferenced it straight away.  GMod addons do
+	// exactly this (combustible_lemon's ammo bag: SetModel/SetPos/SetAngles then
+	// Spawn), so fall back to the base teleport until the ragdoll exists.
+	if ( m_ragdoll.listCount == 0 || m_ragdoll.list[0].pObject == NULL )
+	{
+		BaseClass::Teleport( newPosition, newAngles, newVelocity );
+		return;
+	}
+
 	// newAngles is a relative transform for the entity
 	// But a ragdoll entity has identity orientation by design
 	// so we compute a relative transform here based on the previous transform
