@@ -963,7 +963,22 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	}
 	else if ( playerAnim == PLAYER_IDLE || playerAnim == PLAYER_WALK )
 	{
-		if ( !( GetFlags() & FL_ONGROUND ) && GetActivity( ) == ACT_HL2MP_JUMP )	// Still jumping
+		// HL2SB: swimming is checked before the jump hold, exactly like GMod's
+		// CalcMainActivity order (animations.lua:113 HandlePlayerSwimming is
+		// after HandlePlayerJumping, but animations.lua:13 ends a jump as soon
+		// as WaterLevel() > 0, so dropping into water ends the jump pose).
+		// WaterLevel >= 2 and off the ground = swimming. The old commented block
+		// below posed ACT_HOVER / ACT_SWIM - singleplayer HL2 activities no
+		// player anim model carries. ACT_HL2MP_SWIM goes through the weapon
+		// acttable (ACT_HL2MP_SWIM_<holdtype>, e.g. weapon_357.cpp:95) and then
+		// HL2SB_SelectPlayerSequence pins "swimming_<holdtype>" / bare
+		// "swimming" - all shipped by GMod's m_anm/f_anm/z_anm (mdl-bound
+		// ACT_HL2MP_SWIM_* names, verified 2026-09-24).
+		if ( GetWaterLevel() >= WL_Waist && !( GetFlags() & FL_ONGROUND ) )
+		{
+			idealActivity = ACT_HL2MP_SWIM;
+		}
+		else if ( !( GetFlags() & FL_ONGROUND ) && GetActivity( ) == ACT_HL2MP_JUMP )	// Still jumping
 		{
 			idealActivity = GetActivity( );
 		}
@@ -1107,6 +1122,19 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 			SetActivity( idealActivity );
 
 		m_flPlaybackRate = 1.0;
+
+		// HL2SB: GMod animations.lua:208 - "if we're under water we want to
+		// constantly be swimming": the stroke plays at velocity/sequence-ground-
+		// speed like land gaits would, never slower than half rate, so treading
+		// water keeps cycling instead of freezing on one frame.
+		if ( GetWaterLevel() >= WL_Waist && !( GetFlags() & FL_ONGROUND ) )
+		{
+			float flGroundSpeed = GetSequenceGroundSpeed( animDesired );
+			float flRate = ( speed > 0.2f && flGroundSpeed > 0.001f )
+								? ( speed / flGroundSpeed )
+								: 1.0f;
+			m_flPlaybackRate = clamp( flRate, 0.5f, 2.0f );
+		}
 
 		// GMod-style: on a stand<->crouch transition keep the phase we are on (do not
 		// restart at cycle 0) and let the client blend, so ducking is smooth instead of
