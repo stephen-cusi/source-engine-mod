@@ -272,6 +272,18 @@ LUA_BINDING_BEGIN( Entities, Clear, "library", "Clears the entity list.", "serve
 }
 LUA_BINDING_END()
 
+// HL2SB (2026-09-24): the GAME_DLL guard pauses here, because the
+// FindAllByClass / FindByClass pair below is SHARED -- its body carries its
+// own #ifdef CLIENT_DLL branch (ClientEntityList vs gEntList) -- and must
+// compile on BOTH realms.  While it sat inside the GAME_DLL block the
+// client build compiled it away entirely: server.dll registered
+// ents.FindByClass, client.dll did not, and every GMod addon's finder call
+// on the client died "attempt to call a nil value (field 'FindByClass')"
+// (caught by a binary string scan 2026-09-24: FindByClass server=1 hit,
+// client=0).  Server output is unchanged by the split -- GAME_DLL reopens
+// right after the shared pair's registration.
+#endif // GAME_DLL
+
 // HL2SB GMod compat: ents.FindByClass( pattern ) answers a TABLE of every
 // matching entity and accepts GMod's trailing-asterisk wildcard
 // ("minecraft_block*", "mcblock*").  SHARED -- the minecraft addon filters
@@ -315,6 +327,10 @@ static int Entities_FindByClass( lua_State *L )
     return Entities_FindAllByClass( L );
 }
 LUA_REGISTER_METHOD( Entities_luaRegistry, "FindByClass", Entities_FindByClass )
+
+// GAME_DLL resumes: everything below (nearest/within/by-model finders) is
+// server-side gEntList work, tagged "server" in its binding docs.
+#ifdef GAME_DLL
 
 LUA_BINDING_BEGIN( Entities, FindByClassNearest, "library", "Finds the nearest entity by its class name", "server" )
 {
