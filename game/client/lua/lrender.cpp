@@ -170,29 +170,23 @@ LUA_BINDING_END()
 
 LUA_BINDING_BEGIN( Renders, GetScreenEffectTexture, "library", "Get the screen effect texture.", "client" )
 {
-    // HL2SB (2026-09-22): DEDICATED screen-effect RTs.  The old mapping
-    // (GetFullFrameFrameBufferTexture( i )) hands back the engine's FRAME
-    // BUFFER ping-pong textures -- modules/halo.lua copies the scene into
-    // "rt_Store" and draws it back at the end of its pass, and with the
-    // framebuffer aliased that copy was a SELF-copy: the "restore" step
-    // painted garbage and the screen went black while the beam was held.
-    // RT_SIZE_FULL_FRAME_BUFFER tracks the frame size automatically.
-    static ITexture *s_pScreenFX[ 2 ] = { NULL, NULL };
-    if ( s_pScreenFX[ 0 ] == NULL )
-    {
-        g_pMaterialSystem->OverrideRenderTargetAllocation( true );
-        s_pScreenFX[ 0 ] = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_screenfx0",
-            1, 1, RT_SIZE_FULL_FRAME_BUFFER, IMAGE_FORMAT_RGBA8888, MATERIAL_RT_DEPTH_SHARED,
-            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT, 0 );
-        s_pScreenFX[ 1 ] = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_screenfx1",
-            1, 1, RT_SIZE_FULL_FRAME_BUFFER, IMAGE_FORMAT_RGBA8888, MATERIAL_RT_DEPTH_SHARED,
-            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT, 0 );
-        g_pMaterialSystem->OverrideRenderTargetAllocation( false );
-    }
-
+    // HL2SB (2026-09-24, second pass): hand out the ENGINE'S frame-buffer
+    // pair (_rt_FullFrameFB / _rt_FullFrameFB1, MAX_FB_TEXTURES = 4) --
+    // exactly what GMod's render.GetScreenEffectTexture returns.  The
+    // dedicated _rt_hl2sb_screenfx0/1 targets built on 09-22 sampled BLACK
+    // through halo's restore/composite quads: this fork's
+    // CopyRenderTargetToTextureEx resolves the framebuffer into a texture's
+    // DDR clone (cmatrendercontext.cpp "CopyFrameBufferToMe"), and only a
+    // texture REGISTERED via SetFrameBufferCopyTexture -- which is what the
+    // view_scene.h UpdateScreenEffectTexture inline does for the engine FB
+    // pair, and what nothing ever did for the dedicated RTs -- hands that
+    // clone to the sampler.  The 09-22 "self-copy garbage" worry is moot in
+    // this arrangement: halo captures with UpdateScreenEffectTexture BEFORE
+    // drawing any silhouette, so the FB holds the pre-halo scene and is only
+    // sampled after the pass.
     int nIndex = (int)LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "textureIndex" );
     nIndex = clamp( nIndex, 0, 1 );
-    lua_pushitexture( L, s_pScreenFX[ nIndex ] );
+    lua_pushitexture( L, GetFullFrameFrameBufferTexture( nIndex ) );
     return 1;
 }
 LUA_BINDING_END( "Texture", "The screen effect texture." )
@@ -472,79 +466,99 @@ LUA_BINDING_END()
 
 // render.BlurRenderTarget( rt, blurx, blury, passes )
 //
-// This branch has no screenspace blur pixel shaders, so this is a real
-// blur by ping-ponging progressively smaller quarter-res render targets
-// (bilinear resampling = box blur per step), then back.  blurx/blury size
-// the chain; passes repeats it.
-LUA_BINDING_BEGIN( Renders, BlurRenderTarget, "library", "Blurs a render target (downsample-upsample chain).", "client" )
+// HL2SB (2026-09-24): separable gaussian on the ORIGIN Source blur shaders.
+// stdshader_dx9 ships BlurFilterX/BlurFilterY (the bloom-chain blur: taps at
+// 1.3366..11.4401 texels, sigma ~4.7 -- full source in
+// materialsystem/stdshaders/BlurFilter[XY].cpp), and their stock VMTs
+// dev/blurfilterx|y mount from hl2_misc, so this needs NO new shader and NO
+// GMod plugin dll.  (GMod's own g_blurx/g_blury live in
+// game_shader_generic_garrysmod.dll; same algorithm, Valve's sources here.)
+//
+// Structure mirrors GMod's Lua loop: rounds = passes+1, each round does
+// horizontal (source -> ping) then vertical (ping -> source, in place).
+// blurx/blury are API parity -- GMod scales its tap STEP with $size; this
+// kernel's step is fixed, so large sizes are approximated with EXTRA ROUNDS
+// (repeated convolution widens sigma by ~sqrt(rounds)).
+LUA_BINDING_BEGIN( Renders, BlurRenderTarget, "library", "Blurs a render target (separable gaussian).", "client" )
 {
     ITexture *pSource = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "renderTarget" );
     float flBlurX = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 2, 2, "blurx" );
     float flBlurY = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 3, 2, "blury" );
     int nPasses = (int)LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 4, 1, "passes" );
-    nPasses = clamp( nPasses, 1, 4 );
 
-    IMaterial *pCopy = materials->FindMaterial( "pp/copy", TEXTURE_GROUP_CLIENT_EFFECTS );
-    if ( pCopy == NULL || pCopy->IsErrorMaterial() )
+    // rounds = passes+1 like GMod's Lua; big blurx/blury adds rounds.
+    float flSize = MAX( flBlurX, flBlurY );
+    int nRounds = nPasses + 1;
+    if ( flSize >= 6.0f )
+        nRounds += 2;
+    else if ( flSize >= 4.0f )
+        nRounds += 1;
+    nRounds = clamp( nRounds, 1, 6 );
+
+    static IMaterial *s_pBlurX = NULL, *s_pBlurY = NULL;
+    static IMaterialVar *s_pVarX = NULL, *s_pVarY = NULL;
+    static ITexture *s_pPing = NULL;
+    static bool s_bWarned = false;
+
+    if ( s_pBlurX == NULL )
+    {
+        s_pBlurX = materials->FindMaterial( "dev/blurfilterx", TEXTURE_GROUP_CLIENT_EFFECTS );
+        s_pBlurY = materials->FindMaterial( "dev/blurfiltery", TEXTURE_GROUP_CLIENT_EFFECTS );
+        bool bVarX = false, bVarY = false;
+        if ( s_pBlurX != NULL && !s_pBlurX->IsErrorMaterial() )
+            s_pVarX = s_pBlurX->FindVar( "$basetexture", &bVarX );
+        if ( s_pBlurY != NULL && !s_pBlurY->IsErrorMaterial() )
+            s_pVarY = s_pBlurY->FindVar( "$basetexture", &bVarY );
+        if ( !bVarX || !bVarY || s_pVarX == NULL || s_pVarY == NULL )
+        {
+            s_pBlurX = s_pBlurY = NULL;
+            s_pVarX = s_pVarY = NULL;
+        }
+    }
+    if ( s_pBlurX == NULL )
+    {
+        if ( !s_bWarned )
+        {
+            s_bWarned = true;
+            Warning( "[HL2SB] BlurRenderTarget: dev/blurfilterx|y not resolvable - blur skipped\n" );
+        }
+        return 0;
+    }
+
+    int nW = pSource->GetActualWidth();
+    int nH = pSource->GetActualHeight();
+    if ( nW < 8 || nH < 8 )
         return 0;
 
-    // HL2SB: IMaterial has no SetTexture in this branch -- drive $basetexture
-    // through its IMaterialVar instead.
-    bool bVarFound = false;
-    IMaterialVar *pBaseVar = pCopy->FindVar( "$basetexture", &bVarFound );
-    if ( !bVarFound || pBaseVar == NULL )
-        return 0;
-
-    CMatRenderContextPtr pRenderContext( materials );
-    CViewSetup playerView = *view->GetPlayerViewSetup();
-    int nWidth = playerView.width;
-    int nHeight = playerView.height;
-
-    // quarter-res ping-pong targets, allocated once
-    static ITexture *s_pRT0 = NULL, *s_pRT1 = NULL;
-    if ( s_pRT0 == NULL )
+    if ( s_pPing == NULL )
     {
         g_pMaterialSystem->OverrideRenderTargetAllocation( true );
-        s_pRT0 = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_blur0",
-            nWidth / 4, nHeight / 4, RT_SIZE_NO_CHANGE,
-            IMAGE_FORMAT_RGBA8888, MATERIAL_RT_DEPTH_SHARED,
-            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT, 0 );
-        s_pRT1 = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_blur1",
-            nWidth / 4, nHeight / 4, RT_SIZE_NO_CHANGE,
+        s_pPing = materials->CreateNamedRenderTargetTextureEx( "_rt_hl2sb_blurping",
+            nW, nH, RT_SIZE_NO_CHANGE,
             IMAGE_FORMAT_RGBA8888, MATERIAL_RT_DEPTH_SHARED,
             TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT, 0 );
         g_pMaterialSystem->OverrideRenderTargetAllocation( false );
+        if ( s_pPing == NULL )
+            return 0;
     }
+    // later calls with a different-size source clamp into the ping viewport
+    int nVW = MIN( nW, s_pPing->GetActualWidth() );
+    int nVH = MIN( nH, s_pPing->GetActualHeight() );
 
-    pCopy->SetMaterialVarFlag( MATERIAL_VAR_IGNOREZ, true );
+    CMatRenderContextPtr pRenderContext( materials );
 
-    int nHalfW = MAX( 8, nWidth / 2 );
-    int nHalfH = MAX( 8, nHeight / 2 );
-    int nSmallW = MAX( 8, nWidth / ( 2 + (int)MAX( 1.0f, flBlurX ) ) );
-    int nSmallH = MAX( 8, nHeight / ( 2 + (int)MAX( 1.0f, flBlurY ) ) );
-
-    for ( int i = 0; i < nPasses; ++i )
+    for ( int i = 0; i < nRounds; ++i )
     {
-        // down: source -> rt0 (half), rt0 -> rt1 (small)
-        pRenderContext->PushRenderTargetAndViewport( s_pRT0, 0, 0, nHalfW, nHalfH );
-        pBaseVar->SetTextureValue( pSource );
-        pRenderContext->DrawScreenSpaceQuad( pCopy );
+        // horizontal: source -> ping
+        pRenderContext->PushRenderTargetAndViewport( s_pPing, 0, 0, nVW, nVH );
+        s_pVarX->SetTextureValue( pSource );
+        pRenderContext->DrawScreenSpaceQuad( s_pBlurX );
         pRenderContext->PopRenderTargetAndViewport();
 
-        pRenderContext->PushRenderTargetAndViewport( s_pRT1, 0, 0, nSmallW, nSmallH );
-        pBaseVar->SetTextureValue( s_pRT0 );
-        pRenderContext->DrawScreenSpaceQuad( pCopy );
-        pRenderContext->PopRenderTargetAndViewport();
-
-        // up: rt1 -> rt0 (half), rt0 -> source (full)
-        pRenderContext->PushRenderTargetAndViewport( s_pRT0, 0, 0, nHalfW, nHalfH );
-        pBaseVar->SetTextureValue( s_pRT1 );
-        pRenderContext->DrawScreenSpaceQuad( pCopy );
-        pRenderContext->PopRenderTargetAndViewport();
-
-        pRenderContext->PushRenderTargetAndViewport( pSource );
-        pBaseVar->SetTextureValue( s_pRT0 );
-        pRenderContext->DrawScreenSpaceQuad( pCopy );
+        // vertical: ping -> source (in place, GMod parity)
+        pRenderContext->PushRenderTargetAndViewport( pSource, 0, 0, nVW, nVH );
+        s_pVarY->SetTextureValue( s_pPing );
+        pRenderContext->DrawScreenSpaceQuad( s_pBlurY );
         pRenderContext->PopRenderTargetAndViewport();
     }
 
