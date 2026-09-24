@@ -57,6 +57,20 @@ void HL2SB_GetLastMouseDeltas( int &dx, int &dy )
 	dy = s_iHL2SBLastMouseDy;
 }
 
+// HL2SB (2026-09-25): consume-once variant for the SEND path.  This fork's
+// frame order is ExtraMouseSample (fresh deltas) THEN CreateMove (drained
+// accumulators -> zeros), so the plain getter saw zeros half the time and
+// the sent usercmd carried mousedx=0 -- the physgun's E-rotate never moved.
+// MouseMove only latches NONZERO deltas; this clears them after stamping so
+// a stopped mouse does not keep re-sending the last delta.
+void HL2SB_TakeLastMouseDeltas( int &dx, int &dy )
+{
+	dx = s_iHL2SBLastMouseDx;
+	dy = s_iHL2SBLastMouseDy;
+	s_iHL2SBLastMouseDx = 0;
+	s_iHL2SBLastMouseDy = 0;
+}
+
 // up / down
 #define	PITCH	0
 // left / right
@@ -727,8 +741,15 @@ void CInput::MouseMove( CUserCmd *cmd )
 		g_pClientMode->OverrideMouseInput( &mouse_x, &mouse_y );
 
 		// Add mouse X/Y movement to cmd
-		s_iHL2SBLastMouseDx = mx;
-		s_iHL2SBLastMouseDy = my;
+		// HL2SB (2026-09-25): latch ONLY real movement -- this runs twice per
+		// frame (ExtraMouseSample first with fresh deltas, then CreateMove with
+		// already-drained accumulators) and the zero pass must not clobber the
+		// live deltas the send path (HL2SB_TakeLastMouseDeltas) consumes.
+		if ( mx != 0.0f || my != 0.0f )
+		{
+			s_iHL2SBLastMouseDx = mx;
+			s_iHL2SBLastMouseDy = my;
+		}
 
 		if ( bFreezeView )
 		{
@@ -760,6 +781,20 @@ void CInput::MouseMove( CUserCmd *cmd )
 		else
 		{
 			ApplyMouse( viewangles, cmd, mouse_x, mouse_y );
+		}
+
+		// HL2SB diag (2026-09-25): do RAW deltas reach MouseMove at all, and
+		// do they survive into the cmd?  cmd->mousedx was observed 0 at the
+		// server while the view kept turning -- locate the real mouse path.
+		{
+			static int s_nMmDiag = 0;
+			if ( HL2SB_PhysgunMouseRotate() && s_nMmDiag < 8
+				&& ( mx != 0.0f || my != 0.0f ) )
+			{
+				++s_nMmDiag;
+				Msg( "[HL2SB physgun] MM raw=(%.1f,%.1f) cmd=(%d,%d)\n",
+					mx, my, cmd->mousedx, cmd->mousedy );
+			}
 		}
 
 		// Re-center the mouse.

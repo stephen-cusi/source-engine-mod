@@ -1139,6 +1139,24 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 		//  speed.
 		ScaleMovements( cmd );
 
+		// HL2SB diag (2026-09-25): one-shot input state probe -- cmd->mousedx
+		// reached the server as 0 while the view kept turning, so either
+		// MouseMove never runs (this probe proves the gate state) or the
+		// view turns through another path entirely.
+		{
+			static bool s_bInputProbe = false;
+			if ( !s_bInputProbe )
+			{
+				s_bInputProbe = true;
+				ConVarRef rawinput( "m_rawinput" );
+				Msg( "[HL2SB physgun] input probe: mouseActive=%d camIntercept=%d m_rawinput=%d cursorVisible=%d\n",
+					m_fMouseActive ? 1 : 0,
+					m_fCameraInterceptingMouse ? 1 : 0,
+					rawinput.IsValid() ? rawinput.GetBool() : -1,
+					vgui::surface()->IsCursorVisible() ? 1 : 0 );
+			}
+		}
+
 		// Allow mice and other controllers to add their inputs
 		ControllerMove( input_sample_frametime, cmd );
 #ifdef SIXENSE
@@ -1194,6 +1212,31 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 	// Set button and flag bits
 	cmd->buttons = GetButtonBits( 1 );
 #endif
+
+	// HL2SB diag (2026-09-24 physgun input): dump the raw button bits once a
+	// second WHILE HOLDING with the physgun (E-rotate / RMB-freeze were never
+	// seen server-side).  Gated on IsHolding so the cap covers the moment the
+	// user actually presses E, not the first 12s after drawing the gun.
+	{
+		static int s_nCmDiag = 0;
+		static float s_flNextCmDiag = 0.0f;
+		C_BasePlayer *pDiagLocal = C_BasePlayer::GetLocalPlayer();
+		CBaseCombatWeapon *pDiagWpn = pDiagLocal ? pDiagLocal->GetActiveWeapon() : NULL;
+		extern bool HL2SB_PhysgunIsHolding( void );
+		if ( pDiagWpn != NULL && s_nCmDiag < 12
+			&& !Q_stricmp( pDiagWpn->GetClassname(), "weapon_physgun" )
+			&& HL2SB_PhysgunIsHolding()
+			&& gpGlobals->curtime >= s_flNextCmDiag )
+		{
+			s_flNextCmDiag = gpGlobals->curtime + 1.0f;
+			++s_nCmDiag;
+			Msg( "[HL2SB physgun] CM2 buttons=0x%X (use=%d atk2=%d dx=%d dy=%d)\n",
+				( unsigned )cmd->buttons,
+				( cmd->buttons & IN_USE ) ? 1 : 0,
+				( cmd->buttons & IN_ATTACK2 ) ? 1 : 0,
+				cmd->mousedx, cmd->mousedy );
+		}
+	}
 
 	// Using joystick?
 #ifdef SIXENSE
@@ -1372,6 +1415,21 @@ bool CInput::WriteUsercmdDeltaToBuffer( bf_write *buf, int from, int to, bool is
 	else
 	{
 		ValidateUserCmd( t, to );
+	}
+
+	// HL2SB GMod compat (2026-09-25): the sent cmd always carried
+	// mousedx=mousedy=0 -- ExtraMouseSample samples the mouse BEFORE
+	// CreateMove each frame and drains the shared accumulators, so
+	// CreateMove's MouseMove saw zeros (the view still turned through
+	// ExtraMouseSample's own apply).  Consume the LIVE raw deltas latched by
+	// the last real MouseMove (in_mouse.cpp) into the cmd being serialized --
+	// the physgun's E-rotate consumes exactly these on the server.
+	{
+		extern void HL2SB_TakeLastMouseDeltas( int &dx, int &dy );
+		int iHl2sbDx = 0, iHl2sbDy = 0;
+		HL2SB_TakeLastMouseDeltas( iHl2sbDx, iHl2sbDy );
+		t->mousedx = (short)iHl2sbDx;
+		t->mousedy = (short)iHl2sbDy;
 	}
 
 	// Write it into the buffer
