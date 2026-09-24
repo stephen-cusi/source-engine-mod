@@ -25,6 +25,12 @@ CClientSideEntityManager::~CClientSideEntityManager()
 
 lua_CBaseFlex *CClientSideEntityManager::CreateClientSideEntity( const char *pszModelName, RenderGroup_t renderGroup )
 {
+    if ( pszModelName == nullptr || pszModelName[0] == 0 )
+    {
+        DevWarning( "ClientsideModel: NULL or empty model name" );
+        return NULL;
+    }
+
     lua_CBaseFlex *pClientSideEntity = new lua_CBaseFlex();
 
     // HL2SB: upstream asks IModelInfo for a clientside model index
@@ -42,7 +48,14 @@ lua_CBaseFlex *CClientSideEntityManager::CreateClientSideEntity( const char *psz
 
         // After a map change, the pointer to the model may give an invalid studio model
         // in that case, we need to force the model to be loaded again
-        if ( modelinfo->GetStudiomodel( pModel ) == nullptr )
+        //
+        // HL2SB (2026-09-25 crash fix): GetModel() itself answers NULL for a
+        // dead index, and feeding that NULL into GetStudiomodel is a guaranteed
+        // AV READ 0x20 in engine.dll!CModelInfo::GetStudiomodel.  First Person
+        // Body's Think/Tick hooks call ClientsideModel() the moment a map
+        // finishes loading - exactly the stale-index window - and took the
+        // process down every spawn.  Guard the NULL before dereferencing.
+        if ( pModel == nullptr || modelinfo->GetStudiomodel( pModel ) == nullptr )
         {
             pModel = nullptr;
         }
@@ -53,6 +66,22 @@ lua_CBaseFlex *CClientSideEntityManager::CreateClientSideEntity( const char *psz
         // Force loading of the model into memory immediately
         pModel = ( model_t * )engine->LoadModel( pszModelName, true );
         modelinfo->RegisterDynamicModel( pszModelName, true );
+
+        // HL2SB (2026-09-25 crash fix): the fallback can still fail (missing
+        // model, not precached, bad path).  InitClientEntity stores the
+        // pointer raw, so a NULL here surfaces later as a NULL model_t in
+        // bone/render paths - fail the creation instead, like GMod's
+        // ClientsideModel does with its error.mdl fallback.
+        if ( pModel == nullptr )
+        {
+            // HL2SB: delete, NOT Remove() - this entity has not gone through
+            // InitializeAsClientEntity yet and is in no client entity list;
+            // Remove() on it walked into CModelLoader::FindModel with a NULL
+            // name (Engine Error dialog at spawn, 2026-09-25).
+            delete pClientSideEntity;
+            DevWarning( "ClientsideModel: model '%s' failed to load", pszModelName );
+            return NULL;
+        }
     }
 
     InitClientEntity( pClientSideEntity, pModel, renderGroup );
@@ -215,6 +244,14 @@ LUA_BINDING_BEGIN( Entities, CreateClientEntity, "library", "Create a clientside
     }
 
     lua_CBaseFlex *pEntity = g_pClientSideEntityManager->CreateClientSideEntity( pszModelName, ( RenderGroup_t )renderGroup );
+    if ( pEntity == NULL )
+    {
+        // HL2SB (2026-09-25): a failed creation must reach Lua as an error
+        // (hooks run inside pcall, so this is one console message), not as a
+        // NULL entity that every later method call dereferences.
+        luaL_error( L, "ClientsideModel: failed to create clientside entity for model '%s'", pszModelName );
+        return 0;
+    }
     lua_pushbaseflex( L, pEntity );
 
     return 1;
