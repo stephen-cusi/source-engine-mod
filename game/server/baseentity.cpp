@@ -69,6 +69,8 @@
 
 #ifdef LUA_SDK
 #include "luamanager.h"
+#include "lbaseentity_shared.h"	// HL2SB GMod compat: lua_pushentity (EntityTakeDamage)
+#include "ltakedamageinfo.h"	// HL2SB GMod compat: lua_pushdamageinfo (EntityTakeDamage)
 #endif
 
 #if defined( HL2SB )
@@ -1526,7 +1528,41 @@ void CBaseEntity::TakeDamage( const CTakeDamageInfo &inputInfo )
 
 		//Msg("%s took %.2f Damage, at %.2f\n", GetClassname(), info.GetDamage(), gpGlobals->curtime );
 
+#ifdef LUA_SDK
+		// HL2SB GMod compat (2026-09-25): GM:EntityTakeDamage / GM:PostEntityTakeDamage.
+		// This is the one funnel every damage entry goes through (bullets, radius,
+		// traces); the vphysics callback queue re-enters TakeDamage, so deferred
+		// damage fires here too.  Wiki: EntityTakeDamage runs before the damage is
+		// applied and returning true blocks the whole event; PostEntityTakeDamage
+		// runs afterwards and reports whether health actually dropped.
+		int iHealthBefore = m_iHealth;
+
+		BEGIN_LUA_CALL_HOOK( "EntityTakeDamage" );
+			lua_pushentity( L, this );
+			lua_pushdamageinfo( L, info );
+		END_LUA_CALL_HOOK( 2, 1 );
+
+		bool bBlocked = ( lua_toboolean( L, -1 ) != 0 );
+		lua_pop( L, 1 );
+
+		if ( bBlocked )
+			return;
+
 		OnTakeDamage( info );
+
+		BEGIN_LUA_CALL_HOOK( "PostEntityTakeDamage" );
+			lua_pushentity( L, this );
+			lua_pushdamageinfo( L, info );
+			lua_pushboolean( L, m_iHealth < iHealthBefore );
+		END_LUA_CALL_HOOK( 3, 0 );
+
+		// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): remove once
+		// the damage chain verifies end to end.
+		luasrc_LuaInfoMsgF( "[HL2SB][diag] PostEntityTakeDamage fired: %s dmg=%.1f took=%d\n",
+			GetClassname(), info.GetDamage(), (int)( m_iHealth < iHealthBefore ) );
+#else
+		OnTakeDamage( info );
+#endif
 	}
 }
 

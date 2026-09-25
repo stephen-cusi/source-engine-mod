@@ -4923,6 +4923,22 @@ void CBasePlayer::InitialSpawn( void )
 	BEGIN_LUA_CALL_HOOK( "PlayerInitialSpawn" );
 		lua_pushplayer( L, this );
 	END_LUA_CALL_HOOK( 1, 0 );
+
+	// HL2SB GMod compat (2026-09-25): GM:PlayerAuthed.  GMod fires it right
+	// after PlayerInitialSpawn once the client is ready for server Lua, and
+	// addons gate their per-player init on it (hitnumbers builds the client
+	// font / sets its "initialized" flag from this message).  GMod's uniqueid
+	// is a hash we don't have - the steamid is passed for both fields, which
+	// is what every stock consumer of this hook reads anyway.
+	const char *pszAuthID = engine->GetPlayerNetworkIDString( edict() );
+		BEGIN_LUA_CALL_HOOK( "PlayerAuthed" );
+			lua_pushplayer( L, this );
+			lua_pushstring( L, pszAuthID ? pszAuthID : "STEAM_0:0:0" );
+			lua_pushstring( L, pszAuthID ? pszAuthID : "STEAM_0:0:0" );
+		END_LUA_CALL_HOOK( 3, 0 );
+
+		// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace).
+		luasrc_LuaInfoMsgF( "[HL2SB][diag] PlayerAuthed fired: %s (%s)\n", GetPlayerName(), pszAuthID ? pszAuthID : "?" );
 #endif
 	m_iConnected = PlayerConnected;
 	gamestats->Event_PlayerConnected( this );
