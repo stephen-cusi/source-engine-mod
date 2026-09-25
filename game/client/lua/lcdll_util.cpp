@@ -15,6 +15,9 @@
 #include "lgametrace.h"
 #include "mathlib/lvector.h"
 #include "vgui/LVGUI.h"
+#include "c_sun.h"			// HL2SB GMod compat: util.GetSunInfo (env_sun)
+#include <lColor.h>			// HL2SB GMod compat: lua_pushcolor
+#include "voice_status.h"	// HL2SB GMod compat: util.IsPlayerSpeaking
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -164,6 +167,10 @@ static int luasrc_UTIL_BoundToWorldSize (lua_State *L) {
 }
 
 
+static int luasrc_util_IsSkyboxVisibleFromPoint (lua_State *L);
+static int luasrc_util_IsPlayerSpeaking (lua_State *L);
+static int luasrc_util_GetSunInfo (lua_State *L);
+
 static const luaL_Reg util_funcs[] = {
   {"IsPlayerIndex",  luasrc_IsPlayerIndex},
   {"GetLocalPlayerIndex",  luasrc_GetLocalPlayerIndex},
@@ -201,8 +208,66 @@ static const luaL_Reg util_funcs[] = {
   {"SafeName",  luasrc_UTIL_SafeName},
   // {"UTIL_BoundToWorldSize",  luasrc_UTIL_BoundToWorldSize},
   {"BoundToWorldSize",  luasrc_UTIL_BoundToWorldSize},
+  // HL2SB: GMod util, client realm (2026-09-25)
+  {"IsSkyboxVisibleFromPoint", luasrc_util_IsSkyboxVisibleFromPoint},
+  {"IsPlayerSpeaking",        luasrc_util_IsPlayerSpeaking},
+  {"GetSunInfo",              luasrc_util_GetSunInfo},
   {NULL, NULL}
 };
+
+//=============================================================================
+// HL2SB: GMod's util library, client realm (2026-09-25).
+//=============================================================================
+
+// util.IsSkyboxVisibleFromPoint( position ) -> boolean.  The engine client
+// interface carries the leaf-system query; fullbright maps always answer
+// true per the wiki note.
+static int luasrc_util_IsSkyboxVisibleFromPoint (lua_State *L) {
+  Vector vecPoint = luaL_checkvector( L, 1 );
+  lua_pushboolean( L, engine->IsSkyboxVisibleFromPoint( vecPoint ) != SKYBOX_NOT_VISIBLE );
+  return 1;
+}
+
+// util.IsPlayerSpeaking( entIndex ) -> boolean.
+static int luasrc_util_IsPlayerSpeaking (lua_State *L) {
+  int nIndex = luaL_checkint( L, 1 );
+  CVoiceStatus *pVoiceMgr = GetClientVoiceMgr();
+  lua_pushboolean( L, pVoiceMgr != NULL && pVoiceMgr->IsPlayerSpeaking( nIndex ) );
+  return 1;
+}
+
+// util.GetSunInfo() -> SunInfo table or nil.  GMod's obstruction number comes
+// from pixel-visibility queries this fork does not expose, so it stays 0
+// ("fully visible"); direction/enabled are the fields addons act on.
+static int luasrc_util_GetSunInfo (lua_State *L) {
+  C_Sun *pSun = NULL;
+  int nCount = ClientEntityList().GetHighestEntityIndex();
+  for ( int i = 0; i <= nCount; i++ ) {
+    IClientEntity *pEntity = ClientEntityList().GetClientEntity( i );
+    if ( pEntity == NULL )
+      continue;
+    C_Sun *pTest = dynamic_cast< C_Sun * >( pEntity );
+    if ( pTest != NULL ) {
+      pSun = pTest;
+      break;
+    }
+  }
+
+  if ( pSun == NULL )
+    return 0;
+
+  lua_newtable( L );
+  lua_pushstring( L, "direction" );      lua_pushvector( L, pSun->m_vDirection ); lua_rawset( L, -3 );
+  lua_pushstring( L, "obstruction" );    lua_pushnumber( L, 0 );                  lua_rawset( L, -3 );
+  lua_pushstring( L, "overlayColor" );   lua_pushcolor( L, Color( 255, 255, 255, 255 ) );  lua_rawset( L, -3 );
+  lua_pushstring( L, "overlayMaterial" );lua_pushstring( L, "" );                 lua_rawset( L, -3 );
+  lua_pushstring( L, "overlaySize" );    lua_pushnumber( L, 0 );                  lua_rawset( L, -3 );
+  lua_pushstring( L, "sunColor" );       lua_pushcolor( L, Color( 255, 255, 255, 255 ) );  lua_rawset( L, -3 );
+  lua_pushstring( L, "sunMaterial" );    lua_pushstring( L, "" );                 lua_rawset( L, -3 );
+  lua_pushstring( L, "sunSize" );        lua_pushnumber( L, 0 );                  lua_rawset( L, -3 );
+  lua_pushstring( L, "enabled" );        lua_pushboolean( L, pSun->m_bOn );       lua_rawset( L, -3 );
+  return 1;
+}
 
 
 LUALIB_API int luaopen_UTIL (lua_State *L) {

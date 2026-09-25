@@ -14,6 +14,17 @@
 #include "mathlib/lvector.h"
 #include "engine/IEngineSound.h"
 #include "tier1/keyvaluesjson.h"	// HL2SB GMod compat: util.JSONToTable decode
+#include "tier1/checksum_crc.h"		// HL2SB GMod compat: util.CRC
+#include "tier1/checksum_md5.h"		// HL2SB GMod compat: util.MD5
+#include "tier1/checksum_sha1.h"	// HL2SB GMod compat: util.SHA1
+#include "../../../utils/lzma/C/LzmaEnc.h"	// HL2SB GMod compat: util.Compress (SDK encoder linked from tier1)
+#include "../../../utils/lzma/C/LzmaDec.h"	// HL2SB GMod compat: util.Decompress (decoder linked from tier1)
+#include "vphysics_interface.h"		// HL2SB GMod compat: surfacedata_t / IPhysicsSurfaceProps
+#include "activitylist.h"
+#include "filesystem.h"
+#include "tier1/lzmaDecoder.h"		// HL2SB GMod compat: CLZMA ("LZMA!" blobs)
+#include "eventlist.h"				// HL2SB GMod compat: util.GetAnimEvent*By*
+#include "ltakedamageinfo.h"		// HL2SB GMod compat: util.BlastDamageInfo
 // HL2SB: CSoundEnvelopeController, which owns the engine's CSoundPatch objects.
 // CSoundPatch itself is defined only inside game/shared/soundenvelope.cpp, so
 // the controller interface is the only public handle on it -- which is exactly
@@ -657,6 +668,19 @@ static int luasrc_util_PrecacheModel (lua_State *L) {
 static int luasrc_util_GetModelInfo (lua_State *L) {
   const char *pszName = luaL_checkstring(L, 1);
 
+  // wiki: "This function will silently fail if used on models with following
+  // strings in them" -- animation/library models carry no useful info.
+  static const char *const s_pGetModelInfoBlock[] = {
+    "_shared", "_anims", "_gestures", "_anim", "_postures", "_gst",
+    "_pst", "_shd", "_ss", "_anm", "_include"
+  };
+  for ( int i = 0; i < ARRAYSIZE( s_pGetModelInfoBlock ); i++ ) {
+    if ( strstr( pszName, s_pGetModelInfoBlock[ i ] ) != NULL ) {
+      lua_pushnil( L );
+      return 1;
+    }
+  }
+
   model_t *pModel = NULL;
 
 #ifdef CLIENT_DLL
@@ -695,8 +719,89 @@ static int luasrc_util_GetModelInfo (lua_State *L) {
   lua_pushinteger( L, nSkins );
   lua_rawset( L, -3 );
   lua_pushstring( L, "ModelName" );
-  lua_pushstring( L, pszName );
+  // wiki: "as embedded in the model file itself"
+  lua_pushstring( L, ( pHdr != NULL && pHdr->name[ 0 ] ) ? pHdr->name : pszName );
   lua_rawset( L, -3 );
+
+  // vcollide: the .phy keyvalues text (ModelInfo.KeyValues).
+  vcollide_t *pCollide = modelinfo->GetVCollide( modelinfo->GetModelIndex( pszName ) );
+  lua_pushstring( L, "KeyValues" );
+  lua_pushstring( L, ( pCollide != NULL && pCollide->pKeyValues != NULL ) ? pCollide->pKeyValues : "" );
+  lua_rawset( L, -3 );
+  lua_pushstring( L, "ModelKeyValues" );
+  lua_pushstring( L, ( pHdr != NULL && pHdr->KeyValueText() != NULL ) ? pHdr->KeyValueText() : "" );
+  lua_rawset( L, -3 );
+
+  if ( pHdr != NULL ) {
+    lua_pushstring( L, "MeshCount" );         lua_pushinteger( L, pHdr->numbodyparts );   lua_rawset( L, -3 );
+    lua_pushstring( L, "BoneCount" );         lua_pushinteger( L, pHdr->numbones );       lua_rawset( L, -3 );
+    lua_pushstring( L, "MaterialCount" );     lua_pushinteger( L, pHdr->numtextures );    lua_rawset( L, -3 );
+    lua_pushstring( L, "SequenceCount" );     lua_pushinteger( L, pHdr->numlocalseq );         lua_rawset( L, -3 );
+    lua_pushstring( L, "AttachmentCount" );   lua_pushinteger( L, pHdr->numlocalattachments ); lua_rawset( L, -3 );
+    lua_pushstring( L, "Flags" );             lua_pushinteger( L, pHdr->flags );          lua_rawset( L, -3 );
+    lua_pushstring( L, "StaticProp" );        lua_pushboolean( L, ( pHdr->flags & STUDIOHDR_FLAGS_STATIC_PROP ) != 0 ); lua_rawset( L, -3 );
+    lua_pushstring( L, "Version" );           lua_pushinteger( L, pHdr->version );        lua_rawset( L, -3 );
+    lua_pushstring( L, "Checksum" );          lua_pushinteger( L, pHdr->checksum );       lua_rawset( L, -3 );
+    lua_pushstring( L, "SurfacePropName" );   lua_pushstring( L, pHdr->pszSurfaceProp() ); lua_rawset( L, -3 );
+    lua_pushstring( L, "IncludeModelCount" ); lua_pushinteger( L, pHdr->numincludemodels ); lua_rawset( L, -3 );
+
+    lua_pushstring( L, "EyePosition" );    lua_pushvector( L, pHdr->eyeposition );    lua_rawset( L, -3 );
+    lua_pushstring( L, "IllumPosition" );  lua_pushvector( L, pHdr->illumposition );  lua_rawset( L, -3 );
+    lua_pushstring( L, "HullMin" );        lua_pushvector( L, pHdr->hull_min );       lua_rawset( L, -3 );
+    lua_pushstring( L, "HullMax" );        lua_pushvector( L, pHdr->hull_max );       lua_rawset( L, -3 );
+
+    // attachments: Name / Bone / Offset
+    lua_pushstring( L, "Attachments" );
+    lua_newtable( L );
+    for ( int i = 0; i < pHdr->numlocalattachments; i++ ) {
+      const mstudioattachment_t *pAtt = pHdr->pLocalAttachment( i );
+      lua_newtable( L );
+      lua_pushstring( L, "Name" );   lua_pushstring( L, pAtt->pszName() ); lua_rawset( L, -3 );
+      lua_pushstring( L, "Bone" );   lua_pushinteger( L, pAtt->localbone ); lua_rawset( L, -3 );
+      Vector vecAttPos( pAtt->local.m_flMatVal[0][3], pAtt->local.m_flMatVal[1][3], pAtt->local.m_flMatVal[2][3] );
+      lua_pushstring( L, "Offset" ); lua_pushvector( L, vecAttPos );        lua_rawset( L, -3 );
+      lua_rawseti( L, -2, i + 1 );
+    }
+    lua_rawset( L, -3 );
+
+    // bones: Name / Parent / Flags / Position / SurfacePropName
+    lua_pushstring( L, "Bones" );
+    lua_newtable( L );
+    for ( int i = 0; i < pHdr->numbones; i++ ) {
+      const mstudiobone_t *pBone = pHdr->pBone( i );
+      lua_newtable( L );
+      lua_pushstring( L, "Name" );            lua_pushstring( L, pBone->pszName() );          lua_rawset( L, -3 );
+      lua_pushstring( L, "Parent" );          lua_pushinteger( L, pBone->parent );            lua_rawset( L, -3 );
+      lua_pushstring( L, "Flags" );           lua_pushinteger( L, pBone->flags );             lua_rawset( L, -3 );
+      lua_pushstring( L, "Position" );        lua_pushvector( L, pBone->pos );                lua_rawset( L, -3 );
+      lua_pushstring( L, "SurfacePropName" ); lua_pushstring( L, pBone->pszSurfaceProp() );   lua_rawset( L, -3 );
+      lua_rawseti( L, -2, i + 1 );
+    }
+    lua_rawset( L, -3 );
+
+    // sequences: Name / Activity / ActivityID
+    lua_pushstring( L, "Sequences" );
+    lua_newtable( L );
+    for ( int i = 0; i < pHdr->numlocalseq; i++ ) {
+      const mstudioseqdesc_t *pSeq = pHdr->pLocalSeqdesc( i );
+      lua_newtable( L );
+      lua_pushstring( L, "Name" );       lua_pushstring( L, pSeq->pszLabel() ); lua_rawset( L, -3 );
+      lua_pushstring( L, "ActivityID" ); lua_pushinteger( L, pSeq->activity ); lua_rawset( L, -3 );
+      const char *pActivity = ActivityList_NameForIndex( pSeq->activity );
+      lua_pushstring( L, "Activity" );   lua_pushstring( L, pActivity ? pActivity : "" ); lua_rawset( L, -3 );
+      lua_rawseti( L, -2, i + 1 );
+    }
+    lua_rawset( L, -3 );
+
+    // materials across the model's textures
+    lua_pushstring( L, "Materials" );
+    lua_newtable( L );
+    for ( int i = 0; i < pHdr->numtextures; i++ ) {
+      lua_pushstring( L, pHdr->pTexture( i )->pszName() );
+      lua_rawseti( L, -2, i + 1 );
+    }
+    lua_rawset( L, -3 );
+  }
   return 1;
 }
 
@@ -899,8 +1004,10 @@ static int luasrc_UTIL_ScreenShake (lua_State *L) {
   float flRadius    = (float)luaL_checknumber( L, 5 );
 
 #ifndef CLIENT_DLL
-  // GMod's default command is SHAKE_START.
-  UTIL_ScreenShake( vecCenter, flAmplitude, flFrequency, flDuration, flRadius, SHAKE_START, false );
+  // GMod's default command is SHAKE_START; the 6th argument is the wiki's
+  // airshake boolean (Source's bAirshake), not a ShakeCommand_t.
+  bool bAirshake = ( lua_isnone( L, 6 ) ) ? false : ( lua_toboolean( L, 6 ) != 0 );
+  UTIL_ScreenShake( vecCenter, flAmplitude, flFrequency, flDuration, flRadius, SHAKE_START, bAirshake );
 #else
   (void)flAmplitude; (void)flFrequency; (void)flDuration; (void)flRadius;
 #endif
@@ -1219,6 +1326,1177 @@ LUA_API int luasrc_UTIL_JSONToTable( lua_State *L )
 	return 1;
 }
 
+// The shared physprops global (game/shared/physics_shared.h:29 in the game
+// trees); declared here so the surface-property bindings do not need to drag
+// all of physics_shared.h into this file.
+extern IPhysicsSurfaceProps *physprops;
+
+// The shared block's filesystem handle (lfilesystem.cpp has its own copy).
+static IFileSystem *HL2SB_UtilFS( void )
+{
+	return filesystem;
+}
+
+// util.IsValidModel's "model file doesn't exist on disk" test.
+static bool HL2SB_UtilModelExistsOnDisk( const char *pName )
+{
+	return HL2SB_UtilFS()->FileExists( pName, "GAME" ) ||
+	       HL2SB_UtilFS()->FileExists( pName, "MOD" );
+}
+
+//=============================================================================
+// HL2SB: GMod's util library, second batch (2026-09-25, wiki-checked).
+//
+// Covers the members addons reach for that the Source-era UTIL_* bindings
+// above did not: codecs (Base64/CRC/MD5/SHA1/SHA256/Compress/Decompress),
+// SteamID conversion, the geometry/intersection family, surface property
+// data, model validity, activity/anim-event name lookups, BlastDamageInfo,
+// GMod-shape TraceEntityHull, FilterText and the menu path helpers.  The wiki
+// page text backing each contract is in D:\project\wiki\UTIL_*.txt.
+//=============================================================================
+
+//-----------------------------------------------------------------------------
+// Base64 (util.Base64Encode / util.Base64Decode).  Encode is RFC 2045: a line
+// break after every 76th character unless `inline` asks for the raw form.
+// Decode tolerates line breaks and other whitespace.
+//-----------------------------------------------------------------------------
+static const char s_szBase64Alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static int luasrc_util_Base64Encode (lua_State *L) {
+  size_t nLen = 0;
+  const unsigned char *pIn = (const unsigned char *)luaL_checklstring( L, 1, &nLen );
+  bool bInline = ( lua_toboolean( L, 2 ) != 0 );
+
+  if ( nLen == 0 ) {
+    lua_pushstring( L, "" );
+    return 1;
+  }
+
+  size_t nB64 = ( ( nLen + 2 ) / 3 ) * 4;
+  size_t nBreaks = bInline ? 0 : ( nB64 / 76 ) + 1;
+  char *pOut = (char *)malloc( nB64 + nBreaks + 1 );
+  if ( !pOut ) {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  size_t nOut = 0;
+  size_t nLine = 0;
+  size_t i = 0;
+  while ( i < nLen ) {
+    size_t nRemain = ( nLen - i >= 3 ) ? 3 : ( nLen - i );
+    unsigned int nBits = (unsigned int)pIn[ i ] << 16;
+    if ( nRemain > 1 ) nBits |= (unsigned int)pIn[ i + 1 ] << 8;
+    if ( nRemain > 2 ) nBits |= (unsigned int)pIn[ i + 2 ];
+    i += nRemain;
+
+    pOut[ nOut++ ] = s_szBase64Alphabet[ ( nBits >> 18 ) & 0x3F ];
+    pOut[ nOut++ ] = s_szBase64Alphabet[ ( nBits >> 12 ) & 0x3F ];
+    pOut[ nOut++ ] = ( nRemain >= 2 ) ? s_szBase64Alphabet[ ( nBits >> 6 ) & 0x3F ] : '=';
+    pOut[ nOut++ ] = ( nRemain >= 3 ) ? s_szBase64Alphabet[ nBits & 0x3F ] : '=';
+
+    if ( !bInline ) {
+      nLine += 4;
+      if ( nLine >= 76 && i < nLen ) {
+        pOut[ nOut++ ] = '\n';
+        nLine = 0;
+      }
+    }
+  }
+
+  lua_pushlstring( L, pOut, nOut );
+  free( pOut );
+  return 1;
+}
+
+static int luasrc_util_Base64Decode (lua_State *L) {
+  size_t nLen = 0;
+  const char *pIn = luaL_checklstring( L, 1, &nLen );
+
+  if ( nLen == 0 ) {
+    lua_pushstring( L, "" );
+    return 1;
+  }
+
+  char *pOut = (char *)malloc( nLen + 3 );
+  if ( !pOut ) {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  static signed char s_Reverse[ 256 ];
+  static bool s_bReverseInit = false;
+  if ( !s_bReverseInit ) {
+    memset( s_Reverse, -1, sizeof( s_Reverse ) );
+    for ( int i = 0; i < 64; i++ )
+      s_Reverse[ (unsigned char)s_szBase64Alphabet[ i ] ] = (signed char)i;
+    s_Reverse[ (unsigned char)'-' ] = 62;	// URL-safe tolerance
+    s_Reverse[ (unsigned char)'_' ] = 63;
+    s_bReverseInit = true;
+  }
+
+  unsigned int nBits = 0;
+  int nBitsCollected = 0;
+  size_t nOut = 0;
+  for ( size_t i = 0; i < nLen; i++ ) {
+    unsigned char c = (unsigned char)pIn[ i ];
+    if ( c == '\n' || c == '\r' || c == ' ' || c == '\t' || c == '=' )
+      continue;
+
+    int nValue = s_Reverse[ c ];
+    if ( nValue < 0 ) {
+      free( pOut );
+      lua_pushnil( L );
+      return 1;
+    }
+
+    nBits = ( nBits << 6 ) | (unsigned int)nValue;
+    nBitsCollected += 6;
+
+    if ( nBitsCollected >= 8 ) {
+      nBitsCollected -= 8;
+      pOut[ nOut++ ] = (char)( ( nBits >> nBitsCollected ) & 0xFF );
+    }
+  }
+
+  lua_pushlstring( L, pOut, nOut );
+  free( pOut );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// Checksums: CRC32, MD5, SHA1, SHA256.  CRC returns the unsigned decimal
+// spelling (its wiki example prints "3904355907"); the hashes are lower-case
+// hex.
+//-----------------------------------------------------------------------------
+static int luasrc_util_CRC (lua_State *L) {
+  size_t nLen = 0;
+  const char *pIn = luaL_checklstring( L, 1, &nLen );
+  CRC32_t nCrc = CRC32_ProcessSingleBuffer( pIn, (int)nLen );
+  char szBuf[ 16 ];
+  Q_snprintf( szBuf, sizeof( szBuf ), "%u", (unsigned int)nCrc );
+  lua_pushstring( L, szBuf );
+  return 1;
+}
+
+static int luasrc_util_MD5 (lua_State *L) {
+  size_t nLen = 0;
+  const char *pIn = luaL_checklstring( L, 1, &nLen );
+  MD5Context_t ctx;
+  MD5Init( &ctx );
+  MD5Update( &ctx, (unsigned char const *)pIn, (unsigned int)nLen );
+  unsigned char digest[ MD5_DIGEST_LENGTH ];
+  MD5Final( digest, &ctx );
+
+  char szBuf[ MD5_DIGEST_LENGTH * 2 + 1 ];
+  for ( int i = 0; i < MD5_DIGEST_LENGTH; i++ )
+    Q_snprintf( szBuf + i * 2, 3, "%02x", digest[ i ] );
+  lua_pushstring( L, szBuf );
+  return 1;
+}
+
+static int luasrc_util_SHA1 (lua_State *L) {
+  size_t nLen = 0;
+  const char *pIn = luaL_checklstring( L, 1, &nLen );
+  CSHA1 sha1;
+  sha1.Update( (unsigned char *)pIn, (unsigned int)nLen );
+  sha1.Final();
+  unsigned char digest[ 20 ];
+  sha1.GetHash( digest );
+
+  char szBuf[ 41 ];
+  for ( int i = 0; i < 20; i++ )
+    Q_snprintf( szBuf + i * 2, 3, "%02x", digest[ i ] );
+  lua_pushstring( L, szBuf );
+  return 1;
+}
+
+// util.SHA256.  The fork's crypto set stops at SHA1, so the FIPS 180-4
+// compression function is inlined here.
+static const unsigned int s_Sh256K[ 64 ] = {
+	0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u,
+	0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u, 0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u, 0xc19bf174u,
+	0xe49b69c1u, 0xefbe4786u, 0x0fc19dc6u, 0x240ca1ccu, 0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau,
+	0x983e5152u, 0xa831c66du, 0xb00327c8u, 0xbf597fc7u, 0xc6e00bf3u, 0xd5a79147u, 0x06ca6351u, 0x14292967u,
+	0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu, 0x53380d13u, 0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u,
+	0xa2bfe8a1u, 0xa81a664bu, 0xc24b8b70u, 0xc76c51a3u, 0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u,
+	0x19a4c116u, 0x1e376c08u, 0x2748774cu, 0x34b0bcb5u, 0x391c0cb3u, 0x4ed8aa4au, 0x5b9cca4fu, 0x682e6ff3u,
+	0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u, 0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u
+};
+
+#define SH256_ROTR( x, n ) ( ( ( x ) >> ( n ) ) | ( ( x ) << ( 32 - ( n ) ) ) )
+#define SH256_CH( x, y, z ) ( ( ( x ) & ( y ) ) ^ ( ~( x ) & ( z ) ) )
+#define SH256_MAJ( x, y, z ) ( ( ( x ) & ( y ) ) ^ ( ( x ) & ( z ) ) ^ ( ( y ) & ( z ) ) )
+#define SH256_EP0( x ) ( SH256_ROTR( x, 2 ) ^ SH256_ROTR( x, 13 ) ^ SH256_ROTR( x, 22 ) )
+#define SH256_EP1( x ) ( SH256_ROTR( x, 6 ) ^ SH256_ROTR( x, 11 ) ^ SH256_ROTR( x, 25 ) )
+#define SH256_SIG0( x ) ( SH256_ROTR( x, 7 ) ^ SH256_ROTR( x, 18 ) ^ ( ( x ) >> 3 ) )
+#define SH256_SIG1( x ) ( SH256_ROTR( x, 17 ) ^ SH256_ROTR( x, 19 ) ^ ( ( x ) >> 10 ) )
+
+static int luasrc_util_SHA256 (lua_State *L) {
+  size_t nLen = 0;
+  const char *pIn = luaL_checklstring( L, 1, &nLen );
+
+  unsigned int h[ 8 ] = {
+    0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
+    0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u
+  };
+
+  size_t nBlocks = ( nLen + 1 + 8 + 63 ) / 64;
+  unsigned char *pMsg = (unsigned char *)malloc( nBlocks * 64 );
+  if ( !pMsg ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  memset( pMsg, 0, nBlocks * 64 );
+  memcpy( pMsg, pIn, nLen );
+  pMsg[ nLen ] = 0x80;
+  unsigned long long nBits = (unsigned long long)nLen * 8;
+  for ( int i = 0; i < 8; i++ )
+    pMsg[ nBlocks * 64 - 1 - i ] = (unsigned char)( ( nBits >> ( 8 * i ) ) & 0xFF );
+
+  for ( size_t nBlock = 0; nBlock < nBlocks; nBlock++ ) {
+    unsigned int w[ 64 ];
+    for ( int i = 0; i < 16; i++ ) {
+      const unsigned char *p = pMsg + nBlock * 64 + i * 4;
+      w[ i ] = ( (unsigned int)p[ 0 ] << 24 ) | ( (unsigned int)p[ 1 ] << 16 ) |
+               ( (unsigned int)p[ 2 ] << 8 ) | (unsigned int)p[ 3 ];
+    }
+    for ( int i = 16; i < 64; i++ )
+      w[ i ] = SH256_SIG1( w[ i - 2 ] ) + w[ i - 7 ] + SH256_SIG0( w[ i - 15 ] ) + w[ i - 16 ];
+
+    unsigned int a = h[ 0 ], b = h[ 1 ], c = h[ 2 ], d = h[ 3 ];
+    unsigned int e = h[ 4 ], f = h[ 5 ], g = h[ 6 ], hh = h[ 7 ];
+    for ( int i = 0; i < 64; i++ ) {
+      unsigned int t1 = hh + SH256_EP1( e ) + SH256_CH( e, f, g ) + s_Sh256K[ i ] + w[ i ];
+      unsigned int t2 = SH256_EP0( a ) + SH256_MAJ( a, b, c );
+      hh = g; g = f; f = e; e = d + t1;
+      d = c; c = b; b = a; a = t1 + t2;
+    }
+    h[ 0 ] += a; h[ 1 ] += b; h[ 2 ] += c; h[ 3 ] += d;
+    h[ 4 ] += e; h[ 5 ] += f; h[ 6 ] += g; h[ 7 ] += hh;
+  }
+  free( pMsg );
+
+  char szBuf[ 65 ];
+  for ( int i = 0; i < 8; i++ )
+    Q_snprintf( szBuf + i * 8, 9, "%08x", h[ i ] );
+  lua_pushstring( L, szBuf );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// util.Compress / util.Decompress -- LZMA in GMod's envelope: an 8-byte
+// little-endian uncompressed-size prefix followed by the raw LZMA stream
+// (5 property bytes + 8-byte size + data).  The decoder objects come from
+// tier1 (LzmaDec.c); the encoder (LzmaEnc.c/LzFind.c) joined tier1's build
+// for this.  Decompress also accepts the engine's own "LZMA!"-wrapped blobs
+// and honours the wiki's maxSize guard against decompression bombs.
+//-----------------------------------------------------------------------------
+static void *HL2SB_LzmaAlloc( void *p, size_t size ) { (void)p; return malloc( size ); }
+static void HL2SB_LzmaFree( void *p, void *address ) { (void)p; free( address ); }
+
+static int luasrc_util_Compress (lua_State *L) {
+  size_t nLen = 0;
+  const char *pIn = luaL_checklstring( L, 1, &nLen );
+
+  if ( nLen == 0 ) {
+    lua_pushstring( L, "" );
+    return 1;
+  }
+
+  size_t nDestCap = nLen + nLen / 20 * 21 + ( 1 << 16 );
+  Byte *pDest = (Byte *)malloc( nDestCap );
+  if ( !pDest ) {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  CLzmaEncProps props;
+  LzmaEncProps_Init( &props );
+  props.level = 9;
+
+  SizeT nDestLen = nDestCap;
+  Byte propsEncoded[ LZMA_PROPS_SIZE ];
+  SizeT nPropsSize = LZMA_PROPS_SIZE;
+
+  ISzAlloc alloc = { HL2SB_LzmaAlloc, HL2SB_LzmaFree };
+  SRes res = LzmaEncode( pDest, &nDestLen, (const Byte *)pIn, nLen,
+                         &props, propsEncoded, &nPropsSize, 0, NULL, &alloc, &alloc );
+  if ( res != SZ_OK || nPropsSize != LZMA_PROPS_SIZE ) {
+    free( pDest );
+    lua_pushnil( L );
+    return 1;
+  }
+
+  // GMod envelope: 8-byte LE uncompressed size, then the raw stream (props
+  // (5) + size (8) + data).  The SDK's one-shot LzmaEncode delegates to
+  // LzmaEnc_MemEncode, which emits RAW compressed data with NO 13-byte
+  // header -- the header-writing helper is Valve's own 5-arg LzmaEncode in
+  // utils/lzma/lzma.cpp (its "strip theirs" comment refers to that one).
+  // Stripping 13 bytes from the raw output was chopping real compressed
+  // data, and the decoder answered SZ_ERROR_DATA on our own output.
+  size_t nRawData = nDestLen;
+  size_t nTotal = 8 + LZMA_PROPS_SIZE + 8 + nRawData;
+  char *pOut = (char *)malloc( nTotal );
+  if ( !pOut ) {
+    free( pDest );
+    lua_pushnil( L );
+    return 1;
+  }
+
+  size_t nAt = 0;
+  for ( int i = 0; i < 8; i++ )
+    pOut[ nAt++ ] = (char)( ( (unsigned long long)nLen >> ( 8 * i ) ) & 0xFF );
+  memcpy( pOut + nAt, propsEncoded, LZMA_PROPS_SIZE );
+  nAt += LZMA_PROPS_SIZE;
+  for ( int i = 0; i < 8; i++ )
+    pOut[ nAt++ ] = (char)( ( (unsigned long long)nLen >> ( 8 * i ) ) & 0xFF );
+  memcpy( pOut + nAt, pDest, nRawData );
+  nAt += nRawData;
+  free( pDest );
+
+  lua_pushlstring( L, pOut, nAt );
+  free( pOut );
+  return 1;
+}
+
+static int luasrc_util_Decompress (lua_State *L) {
+  size_t nLen = 0;
+  const char *pIn = luaL_checklstring( L, 1, &nLen );
+  int nMaxSize = luaL_optint( L, 2, -1 );
+
+  if ( nLen == 0 ) {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  // The engine's own "LZMA!"-wrapped blobs (BSP lumps, older data) go through
+  // tier1's CLZMA directly (the utils/lzma glue is not linked into the game).
+  if ( CLZMA::IsCompressed( (unsigned char *)pIn ) ) {
+    unsigned int nActual = CLZMA::GetActualSize( (unsigned char *)pIn );
+    if ( nActual == 0 || ( nMaxSize > 0 && (int)nActual > nMaxSize ) ) {
+      lua_pushnil( L );
+      return 1;
+    }
+    unsigned char *pOut = (unsigned char *)malloc( nActual );
+    if ( !pOut ) {
+      lua_pushnil( L );
+      return 1;
+    }
+    if ( CLZMA::Uncompress( (unsigned char *)pIn, pOut ) == 0 ) {
+      free( pOut );
+      lua_pushnil( L );
+      return 1;
+    }
+    lua_pushlstring( L, (const char *)pOut, nActual );
+    free( pOut );
+    return 1;
+  }
+
+  if ( nLen < 8 + LZMA_PROPS_SIZE + 8 ) {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  unsigned long long nActual = 0;
+  for ( int i = 7; i >= 0; i-- )
+    nActual = ( nActual << 8 ) | (unsigned char)pIn[ i ];
+  if ( nActual == 0 || nActual > 0x7FFFFFFFull || ( nMaxSize > 0 && (unsigned long long)nMaxSize < nActual ) ) {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  // GMod envelope: [8-byte LE size][props(5)][size(8)][data].  Wrap the raw
+  // stream in the engine's "LZMA!" header and let tier1's CLZMA decode it --
+  // the same battle-tested path the engine uses for BSP lumps (a hand-rolled
+  // LzmaDec loop here answered nil for this fork's own output).
+  size_t nDataLen = nLen - 8 - LZMA_PROPS_SIZE - 8;
+  size_t nWrapSize = sizeof( lzma_header_t ) + nDataLen;
+  unsigned char *pWrap = (unsigned char *)malloc( nWrapSize );
+  if ( !pWrap ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lzma_header_t *pHdr = (lzma_header_t *)pWrap;
+  pHdr->id = LZMA_ID;
+  pHdr->actualSize = (unsigned int)nActual;
+  pHdr->lzmaSize = (unsigned int)nDataLen;
+  memcpy( pHdr->properties, pIn + 8, LZMA_PROPS_SIZE );
+  memcpy( pWrap + sizeof( lzma_header_t ), pIn + 8 + LZMA_PROPS_SIZE + 8, nDataLen );
+
+  unsigned char *pOut = (unsigned char *)malloc( (size_t)nActual );
+  if ( !pOut ) {
+    free( pWrap );
+    lua_pushnil( L );
+    return 1;
+  }
+
+  unsigned int nUncompressed = CLZMA::Uncompress( pWrap, pOut );
+  free( pWrap );
+  if ( nUncompressed == 0 || nUncompressed != (unsigned int)nActual ) {
+    free( pOut );
+    lua_pushnil( L );
+    return 1;
+  }
+
+  lua_pushlstring( L, (const char *)pOut, nUncompressed );
+  free( pOut );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// util.SteamIDTo64 / util.SteamIDFrom64.  64-bit arithmetic -- Lua numbers
+// lose precision above 2^53, so this is C++ even though the math is simple.
+// From64 loses universe/account-type/instance the way GMod's does.
+//-----------------------------------------------------------------------------
+static int luasrc_util_SteamIDTo64 (lua_State *L) {
+  const char *pIn = luaL_checkstring( L, 1 );
+  int nUniverse = 0, nAuthServer = 0;
+  unsigned int nAccountId = 0;
+  if ( sscanf( pIn, "STEAM_%d:%d:%u", &nUniverse, &nAuthServer, &nAccountId ) != 3 ) {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  unsigned long long nId64 = 76561197960265728ull +
+                             ( (unsigned long long)( nUniverse > 0 ? nUniverse - 1 : 0 ) << 32 ) +
+                             (unsigned long long)nAuthServer +
+                             (unsigned long long)nAccountId * 2ull;
+  char szBuf[ 32 ];
+  Q_snprintf( szBuf, sizeof( szBuf ), "%llu", nId64 );
+  lua_pushstring( L, szBuf );
+  return 1;
+}
+
+static int luasrc_util_SteamIDFrom64 (lua_State *L) {
+  const char *pIn = luaL_checkstring( L, 1 );
+  unsigned long long nId64 = V_strtoui64( pIn, NULL, 10 );
+  unsigned long long nAccount = nId64 - 76561197960265728ull;
+  if ( nAccount > 0xFFFFFFFFull ) {
+    lua_pushnil( L );
+    return 1;
+  }
+
+  int nAuthServer = (int)( nAccount % 2 );
+  unsigned int nAccountId = (unsigned int)( nAccount / 2 );
+  char szBuf[ 32 ];
+  Q_snprintf( szBuf, sizeof( szBuf ), "STEAM_0:%d:%u", nAuthServer, nAccountId );
+  lua_pushstring( L, szBuf );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// util.SharedRandom -- GMod's name for the engine's SharedRandomFloat.
+//-----------------------------------------------------------------------------
+static int luasrc_util_SharedRandom (lua_State *L) {
+  return luasrc_SharedRandomFloat( L );
+}
+
+//-----------------------------------------------------------------------------
+// util.AimVector( ang, fov, x, y, scrW, scrH ).  The view basis scaled by the
+// screen position in tangent space, matching gui.ScreenToVector's inverse.
+//-----------------------------------------------------------------------------
+static int luasrc_util_AimVector (lua_State *L) {
+  QAngle viewAng = luaL_checkangle( L, 1 );
+  float flFov = (float)luaL_checknumber( L, 2 );
+  float flX = (float)luaL_checknumber( L, 3 );
+  float flY = (float)luaL_checknumber( L, 4 );
+  float flScrW = (float)luaL_checknumber( L, 5 );
+  float flScrH = (float)luaL_checknumber( L, 6 );
+
+  float flAspect = ( flScrH != 0.0f ) ? ( flScrW / flScrH ) : 1.0f;
+  float flTanHalf = tanf( DEG2RAD( flFov ) * 0.5f );
+  float flXN = ( 2.0f * flX / flScrW - 1.0f );
+  float flYN = ( 1.0f - 2.0f * flY / flScrH );
+
+  Vector vecForward, vecRight, vecUp;
+  AngleVectors( viewAng, &vecForward, &vecRight, &vecUp );
+
+  Vector vecDir = vecForward + vecRight * ( flXN * flTanHalf * flAspect ) + vecUp * ( flYN * flTanHalf );
+  VectorNormalize( vecDir );
+  lua_pushvector( L, vecDir );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// util.DistanceToLine( lineStart, lineEnd, pointPos ) -> distance, closest
+// point, distance along the line (clamped to the segment).
+//-----------------------------------------------------------------------------
+static int luasrc_util_DistanceToLine (lua_State *L) {
+  Vector vecStart = luaL_checkvector( L, 1 );
+  Vector vecEnd = luaL_checkvector( L, 2 );
+  Vector vecPoint = luaL_checkvector( L, 3 );
+
+  Vector vecClosest;
+  float flT = 0.0f;
+  CalcClosestPointOnLineSegment( vecPoint, vecStart, vecEnd, vecClosest, &flT );
+
+  lua_pushnumber( L, vecPoint.DistTo( vecClosest ) );
+  lua_pushvector( L, vecClosest );
+  lua_pushnumber( L, flT * vecStart.DistTo( vecEnd ) );
+  return 3;
+}
+
+//-----------------------------------------------------------------------------
+// util.IntersectRayWithPlane( rayOrigin, rayDirection, planePosition,
+// planeNormal ) -> hit position, distance -- or nothing.
+//-----------------------------------------------------------------------------
+static int luasrc_util_IntersectRayWithPlane (lua_State *L) {
+  Vector vecOrigin = luaL_checkvector( L, 1 );
+  Vector vecDir = luaL_checkvector( L, 2 );
+  Vector vecPlanePos = luaL_checkvector( L, 3 );
+  Vector vecPlaneNormal = luaL_checkvector( L, 4 );
+
+  float flDenom = vecPlaneNormal.Dot( vecDir );
+  if ( fabsf( flDenom ) < 1e-6f )
+    return 0;
+
+  float flT = ( vecPlanePos - vecOrigin ).Dot( vecPlaneNormal ) / flDenom;
+  if ( flT < 0.0f )
+    return 0;
+
+  lua_pushvector( L, vecOrigin + vecDir * flT );
+  lua_pushnumber( L, flT * vecDir.Length() );
+  return 2;
+}
+
+// Ray vs axis-aligned slabs in the box's local space.  Returns the entry
+// fraction and the local-space entry normal, or false for a miss.
+static bool HL2SB_RayAABBLocal ( const Vector &vecLocalStart, const Vector &vecLocalDelta,
+                                 const Vector &vecMins, const Vector &vecMaxs,
+                                 float &flFraction, Vector &vecLocalNormal )
+{
+  float flTMin = 0.0f, flTMax = 1.0f;
+  int nAxis = -1;
+  float flSign = 0.0f;
+
+  for ( int i = 0; i < 3; i++ ) {
+    float flStart = vecLocalStart[ i ];
+    float flDelta = vecLocalDelta[ i ];
+    float flLo = vecMins[ i ], flHi = vecMaxs[ i ];
+
+    if ( fabsf( flDelta ) < 1e-8f ) {
+      if ( flStart < flLo || flStart > flHi )
+        return false;
+      continue;
+    }
+
+    float flInv = 1.0f / flDelta;
+    float flT1 = ( flLo - flStart ) * flInv;
+    float flT2 = ( flHi - flStart ) * flInv;
+    float flThisSign = -1.0f;
+    if ( flT1 > flT2 ) {
+      float flSwap = flT1; flT1 = flT2; flT2 = flSwap;
+      flThisSign = 1.0f;
+    }
+    if ( flT1 > flTMin ) { flTMin = flT1; nAxis = i; flSign = flThisSign; }
+    if ( flT2 < flTMax ) flTMax = flT2;
+    if ( flTMin > flTMax )
+      return false;
+  }
+
+  if ( nAxis < 0 || flTMax < 0.0f || flTMin > 1.0f )
+    return false;
+
+  flFraction = flTMin;
+  vecLocalNormal.Init( 0, 0, 0 );
+  vecLocalNormal[ nAxis ] = flSign;
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+// util.IntersectRayWithOBB( rayStart, rayDelta, boxOrigin, boxAngles, mins,
+// maxs ) -> hit position, world normal, fraction -- or nothing.
+//-----------------------------------------------------------------------------
+static int luasrc_util_IntersectRayWithOBB (lua_State *L) {
+  Vector vecStart = luaL_checkvector( L, 1 );
+  Vector vecDelta = luaL_checkvector( L, 2 );
+  Vector vecBoxOrigin = luaL_checkvector( L, 3 );
+  QAngle angBox = luaL_checkangle( L, 4 );
+  Vector vecMins = luaL_checkvector( L, 5 );
+  Vector vecMaxs = luaL_checkvector( L, 6 );
+
+  matrix3x4_t matBox;
+  AngleMatrix( angBox, vecBoxOrigin, matBox );
+
+  matrix3x4_t matInv;
+  MatrixInvert( matBox, matInv );
+
+  Vector vecLocalStart, vecLocalDelta;
+  VectorTransform( vecStart, matInv, vecLocalStart );
+  VectorRotate( vecDelta, matInv, vecLocalDelta );
+
+  float flFraction = 0.0f;
+  Vector vecLocalNormal;
+  if ( !HL2SB_RayAABBLocal( vecLocalStart, vecLocalDelta, vecMins, vecMaxs, flFraction, vecLocalNormal ) )
+    return 0;
+
+  Vector vecWorldNormal;
+  VectorRotate( vecLocalNormal, matBox, vecWorldNormal );
+
+  lua_pushvector( L, vecStart + vecDelta * flFraction );
+  lua_pushvector( L, vecWorldNormal );
+  lua_pushnumber( L, flFraction );
+  return 3;
+}
+
+//-----------------------------------------------------------------------------
+// util.IntersectRayWithSphere( rayOrigin, rayDelta, spherePosition, radius )
+// -> entry fraction, exit fraction -- or nothing.
+//-----------------------------------------------------------------------------
+static int luasrc_util_IntersectRayWithSphere (lua_State *L) {
+  Vector vecOrigin = luaL_checkvector( L, 1 );
+  Vector vecDelta = luaL_checkvector( L, 2 );
+  Vector vecCenter = luaL_checkvector( L, 3 );
+  float flRadius = (float)luaL_checknumber( L, 4 );
+
+  Vector vecM = vecOrigin - vecCenter;
+  float flA = vecDelta.Dot( vecDelta );
+  if ( flA < 1e-12f )
+    return 0;
+  float flB = 2.0f * vecM.Dot( vecDelta );
+  float flC = vecM.Dot( vecM ) - flRadius * flRadius;
+  float flDisc = flB * flB - 4.0f * flA * flC;
+  if ( flDisc < 0.0f )
+    return 0;
+
+  float flSqrt = sqrtf( flDisc );
+  float flT1 = ( -flB - flSqrt ) / ( 2.0f * flA );
+  float flT2 = ( -flB + flSqrt ) / ( 2.0f * flA );
+  if ( flT2 < 0.0f || flT1 > 1.0f )
+    return 0;
+
+  lua_pushnumber( L, flT1 );
+  lua_pushnumber( L, flT2 );
+  return 2;
+}
+
+//-----------------------------------------------------------------------------
+// util.IntersectRayWithTriangle( rayOrigin, rayEnd, triA, triB, triC,
+// oneSided ) -> hit position, fraction -- or nothing.  Moller-Trumbore.
+//-----------------------------------------------------------------------------
+static int luasrc_util_IntersectRayWithTriangle (lua_State *L) {
+  Vector vecOrigin = luaL_checkvector( L, 1 );
+  Vector vecEnd = luaL_checkvector( L, 2 );
+  Vector vecA = luaL_checkvector( L, 3 );
+  Vector vecB = luaL_checkvector( L, 4 );
+  Vector vecC = luaL_checkvector( L, 5 );
+  bool bOneSided = ( lua_toboolean( L, 6 ) != 0 );
+
+  Vector vecDir = vecEnd - vecOrigin;
+  Vector vecE1 = vecB - vecA;
+  Vector vecE2 = vecC - vecA;
+  Vector vecP = vecDir.Cross( vecE2 );
+
+  float flDet = vecE1.Dot( vecP );
+  if ( bOneSided && flDet < 1e-9f )
+    return 0;
+  if ( fabsf( flDet ) < 1e-9f )
+    return 0;
+
+  float flInvDet = 1.0f / flDet;
+  Vector vecT = vecOrigin - vecA;
+  float flU = vecT.Dot( vecP ) * flInvDet;
+  if ( flU < 0.0f || flU > 1.0f )
+    return 0;
+
+  Vector vecQ = vecT.Cross( vecE1 );
+  float flV = vecDir.Dot( vecQ ) * flInvDet;
+  if ( flV < 0.0f || flU + flV > 1.0f )
+    return 0;
+
+  float flT = vecE2.Dot( vecQ ) * flInvDet;
+  if ( flT < 0.0f || flT > 1.0f )
+    return 0;
+
+  lua_pushvector( L, vecOrigin + vecDir * flT );
+  lua_pushnumber( L, flT );
+  return 2;
+}
+
+//-----------------------------------------------------------------------------
+// The Is*Intersecting* geometry family.  This fork's mathlib does not publish
+// the box/cone tests, so they are implemented here from first principles.
+//-----------------------------------------------------------------------------
+static int luasrc_util_IsBoxIntersectingBox (lua_State *L) {
+  Vector a1 = luaL_checkvector( L, 1 ), a2 = luaL_checkvector( L, 2 );
+  Vector b1 = luaL_checkvector( L, 3 ), b2 = luaL_checkvector( L, 4 );
+
+  lua_pushboolean( L, a1.x <= b2.x && a2.x >= b1.x &&
+                       a1.y <= b2.y && a2.y >= b1.y &&
+                       a1.z <= b2.z && a2.z >= b1.z );
+  return 1;
+}
+
+static int luasrc_util_IsBoxIntersectingSphere (lua_State *L) {
+  Vector vecMins = luaL_checkvector( L, 1 ), vecMaxs = luaL_checkvector( L, 2 );
+  Vector vecCenter = luaL_checkvector( L, 3 );
+  float flRadius = (float)luaL_checknumber( L, 4 );
+
+  Vector vecClamped(
+    clamp( vecCenter.x, vecMins.x, vecMaxs.x ),
+    clamp( vecCenter.y, vecMins.y, vecMaxs.y ),
+    clamp( vecCenter.z, vecMins.z, vecMaxs.z ) );
+
+  lua_pushboolean( L, vecClamped.DistToSqr( vecCenter ) <= flRadius * flRadius );
+  return 1;
+}
+
+static int luasrc_util_IsSphereIntersectingSphere (lua_State *L) {
+  Vector vecCenter1 = luaL_checkvector( L, 1 );
+  float flRadius1 = (float)luaL_checknumber( L, 2 );
+  Vector vecCenter2 = luaL_checkvector( L, 3 );
+  float flRadius2 = (float)luaL_checknumber( L, 4 );
+
+  lua_pushboolean( L, vecCenter1.DistToSqr( vecCenter2 ) <= ( flRadius1 + flRadius2 ) * ( flRadius1 + flRadius2 ) );
+  return 1;
+}
+
+// Separating-axis test over the 3+3 face normals (edge-cross axes covered by
+// the 6-axis variant are redundant for these box representations, so the two
+// boxes are tested in each other's frames through both axis sets).
+static int luasrc_util_IsOBBIntersectingOBB (lua_State *L) {
+  Vector vecOrigin1 = luaL_checkvector( L, 1 );
+  QAngle ang1 = luaL_checkangle( L, 2 );
+  Vector vecMins1 = luaL_checkvector( L, 3 ), vecMaxs1 = luaL_checkvector( L, 4 );
+  Vector vecOrigin2 = luaL_checkvector( L, 5 );
+  QAngle ang2 = luaL_checkangle( L, 6 );
+  Vector vecMins2 = luaL_checkvector( L, 7 ), vecMaxs2 = luaL_checkvector( L, 8 );
+  float flTolerance = (float)luaL_optnumber( L, 9, 0.0 );
+
+  matrix3x4_t mat1, mat2;
+  AngleMatrix( ang1, vecOrigin1, mat1 );
+  AngleMatrix( ang2, vecOrigin2, mat2 );
+
+  Vector axes1[ 3 ], axes2[ 3 ];
+  MatrixGetColumn( mat1, 0, axes1[ 0 ] );
+  MatrixGetColumn( mat1, 1, axes1[ 1 ] );
+  MatrixGetColumn( mat1, 2, axes1[ 2 ] );
+  MatrixGetColumn( mat2, 0, axes2[ 0 ] );
+  MatrixGetColumn( mat2, 1, axes2[ 1 ] );
+  MatrixGetColumn( mat2, 2, axes2[ 2 ] );
+
+  Vector vecHalf1 = ( vecMaxs1 - vecMins1 ) * 0.5f;
+  Vector vecHalf2 = ( vecMaxs2 - vecMins2 ) * 0.5f;
+  Vector vecCenter1 = vecOrigin1 + ( vecMins1 + vecMaxs1 ) * 0.5f;
+  Vector vecCenter2 = vecOrigin2 + ( vecMins2 + vecMaxs2 ) * 0.5f;
+  Vector vecD = vecCenter2 - vecCenter1;
+
+  Vector vecTest[ 6 ];
+  for ( int i = 0; i < 3; i++ ) vecTest[ i ] = axes1[ i ];
+  for ( int i = 0; i < 3; i++ ) vecTest[ 3 + i ] = axes2[ i ];
+
+  bool bIntersects = true;
+  for ( int nAxis = 0; nAxis < 6 && bIntersects; nAxis++ ) {
+    Vector vecL = vecTest[ nAxis ];
+    float flLen = vecL.Length();
+    if ( flLen < 1e-6f )
+      continue;
+    vecL /= flLen;
+
+    float flRadiusA = 0.0f, flRadiusB = 0.0f;
+    for ( int i = 0; i < 3; i++ ) {
+      flRadiusA += fabsf( axes1[ i ].Dot( vecL ) ) * vecHalf1[ i ];
+      flRadiusB += fabsf( axes2[ i ].Dot( vecL ) ) * vecHalf2[ i ];
+    }
+
+    float flDist = fabsf( vecD.Dot( vecL ) );
+    if ( flDist > flRadiusA + flRadiusB + flTolerance )
+      bIntersects = false;
+  }
+
+  lua_pushboolean( L, bIntersects );
+  return 1;
+}
+
+static int luasrc_util_IsPointInCone (lua_State *L) {
+  Vector vecPoint = luaL_checkvector( L, 1 );
+  Vector vecOrigin = luaL_checkvector( L, 2 );
+  Vector vecAxis = luaL_checkvector( L, 3 );
+  float flSine = (float)luaL_checknumber( L, 4 );
+  float flLength = (float)luaL_checknumber( L, 5 );
+
+  Vector vecD = vecPoint - vecOrigin;
+  float flH = vecD.Dot( vecAxis );
+  if ( flH < 0.0f || flH > flLength ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  Vector vecPerp = vecD - vecAxis * flH;
+  float flHalfAngleSlope = flSine / sqrtf( 1.0f - flSine * flSine );
+  float flConeRadius = flH * flHalfAngleSlope;
+  lua_pushboolean( L, vecPerp.LengthSqr() <= flConeRadius * flConeRadius );
+  return 1;
+}
+
+static int luasrc_util_IsRayIntersectingRay (lua_State *L) {
+  Vector s1 = luaL_checkvector( L, 1 ), e1 = luaL_checkvector( L, 2 );
+  Vector s2 = luaL_checkvector( L, 3 ), e2 = luaL_checkvector( L, 4 );
+
+  // Closest points of two segments (clamped), Ericson ch. 5.
+  Vector d1 = e1 - s1, d2 = e2 - s2, r = s1 - s2;
+  float a = d1.Dot( d1 ), e = d2.Dot( d2 ), f = d2.Dot( r );
+  float c = d1.Dot( r ), b = d1.Dot( d2 );
+  float flDenom = a * e - b * b;
+
+  float flS = 0.0f, flT = 0.0f;
+  if ( flDenom > 1e-8f )
+    flS = clamp( ( b * f - c * e ) / flDenom, 0.0f, 1.0f );
+  float flTNom = b * flS + f;
+  flT = ( e > 1e-8f ) ? clamp( flTNom / e, 0.0f, 1.0f ) : 0.0f;
+
+  Vector p1 = s1 + d1 * flS;
+  Vector p2 = s2 + d2 * flT;
+
+  lua_pushboolean( L, p1.DistToSqr( p2 ) < 0.01f );
+  lua_pushnumber( L, flS );
+  lua_pushnumber( L, flT );
+  return 3;
+}
+
+static int luasrc_util_IsSphereIntersectingCone (lua_State *L) {
+  Vector vecCenter = luaL_checkvector( L, 1 );
+  float flRadius = (float)luaL_checknumber( L, 2 );
+  Vector vecOrigin = luaL_checkvector( L, 3 );
+  Vector vecAxis = luaL_checkvector( L, 4 );
+  float flSine = (float)luaL_checknumber( L, 5 );
+  float flCosine = (float)luaL_checknumber( L, 6 );
+
+  Vector vecD = vecCenter - vecOrigin;
+  float flH = vecD.Dot( vecAxis );
+  float flPerp = ( vecD - vecAxis * flH ).Length();
+
+  // Signed distance from the sphere center to the cone's lateral surface.
+  float flLatDist = flPerp * flCosine - flH * flSine;
+  if ( flLatDist > flRadius ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+  if ( flH >= 0.0f ) {
+    lua_pushboolean( L, true );
+    return 1;
+  }
+  // Behind the apex: the sphere must still reach it.
+  lua_pushboolean( L, vecD.Length() <= flRadius );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// Model membership: IsModelLoaded / IsValidModel / IsValidProp /
+// IsValidRagdoll.  IsValidModel follows the wiki's name rules (leading space,
+// wrong root, animation-only name fragments, .bsp), then precaches.
+//-----------------------------------------------------------------------------
+static bool HL2SB_UtilModelNameValid ( const char *pName )
+{
+  static const char *const s_pBadFragments[] = {
+    "_gestures", "_animations", "_postures", "_gst", "_pst", "_shd", "_ss", "_anm", ".bsp", "cs_fix"
+  };
+
+  if ( !pName || pName[ 0 ] == '\0' || pName[ 0 ] == ' ' )
+    return false;
+  if ( !V_strnicmp( pName, "maps", 4 ) )
+    return false;
+  if ( V_strnicmp( pName, "models", 6 ) != 0 )
+    return false;
+
+  char szLower[ MAX_PATH ];
+  V_strncpy( szLower, pName, sizeof( szLower ) );
+  V_strlower( szLower );
+  for ( int i = 0; i < ARRAYSIZE( s_pBadFragments ); i++ ) {
+    if ( strstr( szLower, s_pBadFragments[ i ] ) )
+      return false;
+  }
+  return true;
+}
+
+// Engine PrecacheModel spelling differs per realm; the shared name lives on
+// the model preview side.  Declared locally so this file keeps one registry.
+static int luasrc_util_IsModelLoaded (lua_State *L) {
+  const char *pName = luaL_checkstring( L, 1 );
+  int nIndex = modelinfo->GetModelIndex( pName );
+  lua_pushboolean( L, nIndex >= 0 && modelinfo->GetModel( nIndex ) != NULL );
+  return 1;
+}
+
+static int luasrc_util_IsValidModel (lua_State *L) {
+  const char *pName = luaL_checkstring( L, 1 );
+  if ( !HL2SB_UtilModelNameValid( pName ) ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  // "If the model isn't precached on the server, AND if the model file
+  // doesn't exist on disk" -> invalid; otherwise running this precaches it.
+  if ( modelinfo->GetModelIndex( pName ) < 0 &&
+       !HL2SB_UtilModelExistsOnDisk( pName ) ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  CBaseEntity::PrecacheModel( pName );
+  lua_pushboolean( L, true );
+  return 1;
+}
+
+static int luasrc_util_IsValidProp (lua_State *L) {
+  const char *pName = luaL_checkstring( L, 1 );
+  int nIndex = modelinfo->GetModelIndex( pName );
+  if ( nIndex < 0 || !HL2SB_UtilModelNameValid( pName ) ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  vcollide_t *pCollide = modelinfo->GetVCollide( nIndex );
+  lua_pushboolean( L, pCollide != NULL && pCollide->solidCount > 0 );
+  return 1;
+}
+
+static int luasrc_util_IsValidRagdoll (lua_State *L) {
+  const char *pName = luaL_checkstring( L, 1 );
+  int nIndex = modelinfo->GetModelIndex( pName );
+  if ( nIndex < 0 ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  // A ragdoll setup is a vcollide with more than one solid (bone solids).
+  vcollide_t *pCollide = modelinfo->GetVCollide( nIndex );
+  lua_pushboolean( L, pCollide != NULL && pCollide->solidCount > 1 );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// Surface properties (IPhysicsSurfaceProps, shared): GetSurfaceIndex /
+// GetSurfacePropName / GetSurfaceData.  The sound fields are string-table
+// handles resolved through GetString(); unmapped wiki fields get defaults.
+//-----------------------------------------------------------------------------
+static int luasrc_util_GetSurfaceIndex (lua_State *L) {
+  const char *pName = luaL_checkstring( L, 1 );
+  int nIndex = physprops->GetSurfaceIndex( pName );
+  if ( nIndex < 0 ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushinteger( L, nIndex );
+  return 1;
+}
+
+static int luasrc_util_GetSurfacePropName (lua_State *L) {
+  int nIndex = luaL_checkint( L, 1 );
+  const char *pName = physprops->GetPropName( nIndex );
+  if ( !pName ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushstring( L, pName );
+  return 1;
+}
+
+static void HL2SB_PushSurfaceSoundField (lua_State *L, const char *pKey, unsigned short nHandle )
+{
+  const char *pName = ( nHandle != 0xFFFF ) ? physprops->GetString( nHandle ) : NULL;
+  lua_pushstring( L, pKey );
+  lua_pushstring( L, pName ? pName : "" );
+  lua_rawset( L, -3 );
+}
+
+static int luasrc_util_GetSurfaceData (lua_State *L) {
+  int nIndex = luaL_checkint( L, 1 );
+  surfacedata_t *pData = physprops->GetSurfaceData( nIndex );
+  if ( !pData ) {
+    return 0;
+  }
+
+  lua_newtable( L );
+  const char *pPropName = physprops->GetPropName( nIndex );
+  lua_pushstring( L, "name" );
+  lua_pushstring( L, pPropName ? pPropName : "" );
+  lua_rawset( L, -3 );
+
+  lua_pushstring( L, "friction" );       lua_pushnumber( L, pData->physics.friction );       lua_rawset( L, -3 );
+  lua_pushstring( L, "elasticity" );     lua_pushnumber( L, pData->physics.elasticity );   lua_rawset( L, -3 );
+  lua_pushstring( L, "density" );        lua_pushnumber( L, pData->physics.density );      lua_rawset( L, -3 );
+  lua_pushstring( L, "thickness" );      lua_pushnumber( L, pData->physics.thickness );    lua_rawset( L, -3 );
+  lua_pushstring( L, "dampening" );      lua_pushnumber( L, pData->physics.dampening );    lua_rawset( L, -3 );
+
+  lua_pushstring( L, "reflectivity" );            lua_pushnumber( L, pData->audio.reflectivity );           lua_rawset( L, -3 );
+  lua_pushstring( L, "hardnessFactor" );          lua_pushnumber( L, pData->audio.hardnessFactor );         lua_rawset( L, -3 );
+  lua_pushstring( L, "roughnessFactor" );         lua_pushnumber( L, pData->audio.roughnessFactor );        lua_rawset( L, -3 );
+  lua_pushstring( L, "roughThreshold" );          lua_pushnumber( L, pData->audio.roughThreshold );         lua_rawset( L, -3 );
+  lua_pushstring( L, "hardThreshold" );           lua_pushnumber( L, pData->audio.hardThreshold );          lua_rawset( L, -3 );
+  lua_pushstring( L, "hardVelocityThreshold" );   lua_pushnumber( L, pData->audio.hardVelocityThreshold );  lua_rawset( L, -3 );
+
+  lua_pushstring( L, "material" );        lua_pushinteger( L, pData->game.material );        lua_rawset( L, -3 );
+  lua_pushstring( L, "climbable" );       lua_pushinteger( L, pData->game.climbable );       lua_rawset( L, -3 );
+  lua_pushstring( L, "maxSpeedFactor" );  lua_pushnumber( L, pData->game.maxSpeedFactor );   lua_rawset( L, -3 );
+  lua_pushstring( L, "jumpFactor" );      lua_pushnumber( L, pData->game.jumpFactor );       lua_rawset( L, -3 );
+
+  HL2SB_PushSurfaceSoundField( L, "stepLeftSound",      pData->sounds.stepleft );
+  HL2SB_PushSurfaceSoundField( L, "stepRightSound",     pData->sounds.stepright );
+  HL2SB_PushSurfaceSoundField( L, "impactSoftSound",    pData->sounds.impactSoft );
+  HL2SB_PushSurfaceSoundField( L, "impactHardSound",    pData->sounds.impactHard );
+  HL2SB_PushSurfaceSoundField( L, "scrapeSmoothSound",  pData->sounds.scrapeSmooth );
+  HL2SB_PushSurfaceSoundField( L, "scrapeRoughSound",   pData->sounds.scrapeRough );
+  HL2SB_PushSurfaceSoundField( L, "bulletImpactSound",  pData->sounds.bulletImpact );
+  HL2SB_PushSurfaceSoundField( L, "rollingSound",       pData->sounds.rolling );
+  HL2SB_PushSurfaceSoundField( L, "breakSound",         pData->sounds.breakSound );
+  HL2SB_PushSurfaceSoundField( L, "strainSound",        pData->sounds.strainSound );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// Activity / anim-event name lookups (shared lists).  Unknown names answer
+// nil, the way GMod answers nil for names the lists do not carry.
+//-----------------------------------------------------------------------------
+static int luasrc_util_GetActivityIDByName (lua_State *L) {
+  const char *pName = luaL_checkstring( L, 1 );
+  int nIndex = ActivityList_IndexForName( pName );
+  if ( nIndex < 0 ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushinteger( L, nIndex );
+  return 1;
+}
+
+static int luasrc_util_GetActivityNameByID (lua_State *L) {
+  int nIndex = luaL_checkint( L, 1 );
+  const char *pName = ActivityList_NameForIndex( nIndex );
+  if ( !pName || !pName[ 0 ] ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushstring( L, pName );
+  return 1;
+}
+
+static int luasrc_util_GetAnimEventIDByName (lua_State *L) {
+  const char *pName = luaL_checkstring( L, 1 );
+  int nIndex = EventList_IndexForName( pName );
+  if ( nIndex < 0 ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushinteger( L, nIndex );
+  return 1;
+}
+
+static int luasrc_util_GetAnimEventNameByID (lua_State *L) {
+  int nIndex = luaL_checkint( L, 1 );
+  const char *pName = EventList_NameForIndex( nIndex );
+  if ( !pName || !pName[ 0 ] ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushstring( L, pName );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// util.BlastDamageInfo( dmginfo, origin, radius ) -- spherical RadiusDamage.
+//-----------------------------------------------------------------------------
+static int luasrc_UTIL_BlastDamageInfo (lua_State *L) {
+#ifndef CLIENT_DLL
+  CTakeDamageInfo dmgInfo( luaL_checkdamageinfo( L, 1 ) );
+  Vector vecOrigin = luaL_checkvector( L, 2 );
+  float flRadius = (float)luaL_checknumber( L, 3 );
+
+  if ( g_pGameRules == NULL ) {
+    HL2SB_WarnOnce( "blastdamageinfo-norules",
+      "util.BlastDamageInfo called with g_pGameRules == NULL (level shutting down?); ignored" );
+    return 0;
+  }
+  if ( !IsFinite( flRadius ) || flRadius <= 0.0f ) {
+    luaL_error( L, "util.BlastDamageInfo: damageRadius must be > 0" );
+    return 0;
+  }
+
+  RadiusDamage( dmgInfo, vecOrigin, flRadius, CLASS_NONE, NULL );
+#endif
+  return 0;
+}
+
+//-----------------------------------------------------------------------------
+// util.TraceEntityHull( tracedata, ent ) -- GMod-shape: like TraceHull but the
+// hull comes from the entity's AABB, and the table's mins/maxs are ignored.
+//-----------------------------------------------------------------------------
+static int luasrc_UTIL_TraceEntityHull (lua_State *L) {
+  if ( lua_istable( L, 1 ) ) {
+    Vector vecStart, vecEnd, vecMins, vecMaxs;
+    CBaseEntity *pFilter = NULL;
+    int nMask = MASK_SHOT, nCollisionGroup = COLLISION_GROUP_NONE;
+    CGameTrace trace;
+
+    luasrc_TraceArgsFromTable( L, &vecStart, &vecEnd, &vecMins, &vecMaxs, &nMask, &pFilter, &nCollisionGroup );
+
+    CBaseEntity *pEnt = lua_toentity( L, 2 );
+    if ( !pEnt ) {
+      luaL_argerror( L, 2, "Entity expected" );
+      return 0;
+    }
+
+    Vector vecHalf = pEnt->CollisionProp()->OBBSize() * 0.5f;
+    vecMins = vecHalf * -1.0f;
+    vecMaxs = vecHalf;
+
+    if ( s_bLuaTraceFilterActive )
+      UTIL_TraceHull( vecStart, vecEnd, vecMins, vecMaxs, nMask, &s_LuaTraceFilter, &trace );
+    else
+      UTIL_TraceHull( vecStart, vecEnd, vecMins, vecMaxs, nMask, pEnt, nCollisionGroup, &trace );
+
+    s_LuaTraceFilter.Release();
+    s_bLuaTraceFilterActive = false;
+    lua_pushtrace( L, trace );
+    return 1;
+  }
+
+  // Source-shape passthrough: hull supplied by the caller.
+  UTIL_TraceHull( luaL_checkvector( L, 1 ), luaL_checkvector( L, 2 ), luaL_checkvector( L, 3 ),
+                  luaL_checkvector( L, 4 ), luaL_checkint( L, 5 ), lua_toentity( L, 6 ),
+                  luaL_checkint( L, 7 ), &luaL_checktrace( L, 8 ) );
+  return 0;
+}
+
+//-----------------------------------------------------------------------------
+// util.FilterText -- no Steam text filter on this fork, so the input passes
+// through unchanged (GMod filters only specific blocked phrases anyway).
+//-----------------------------------------------------------------------------
+static int luasrc_util_FilterText (lua_State *L) {
+  const char *pIn = luaL_checkstring( L, 1 );
+  lua_pushstring( L, pIn );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// Menu-path helpers (they work in the game realms too; GMod only names them
+// "_Menu").  RelativePathToGMA_Menu has no equivalent here (no workshop tree).
+//-----------------------------------------------------------------------------
+static int luasrc_util_RelativePathToFull (lua_State *L) {
+  const char *pPath = luaL_checkstring( L, 1 );
+  const char *pMount = luaL_optstring( L, 2, "MOD" );
+
+  char szFull[ MAX_PATH ];
+  const char *pResult = HL2SB_UtilFS()->RelativePathToFullPath( pPath, pMount, szFull, sizeof( szFull ) );
+  if ( !pResult || !pResult[ 0 ] ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushstring( L, pResult );
+  return 1;
+}
+
+static int luasrc_util_FullPathToRelative (lua_State *L) {
+  const char *pFull = luaL_checkstring( L, 1 );
+
+  char szRel[ MAX_PATH ];
+  if ( !HL2SB_UtilFS()->FullPathToRelativePath( pFull, szRel, sizeof( szRel ) ) || !szRel[ 0 ] ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  lua_pushstring( L, szRel );
+  return 1;
+}
 static const luaL_Reg util_funcs[] = {
   // HL2SB GMod compat (2026-09-25): engine-side JSON (see the block above).
   {"TableToJSON",  luasrc_UTIL_TableToJSON},
@@ -1278,6 +2556,48 @@ static const luaL_Reg util_funcs[] = {
   {"SpriteTrail",  luasrc_UTIL_SpriteTrail},
   {"BlastDamage",  luasrc_UTIL_BlastDamage},
   {"ScreenShake",  luasrc_UTIL_ScreenShake},
+  // HL2SB: GMod util, second batch (2026-09-25) -- codecs, SteamIDs,
+  // geometry, surface props, model membership, damage, traces, misc.
+  {"Base64Encode",           luasrc_util_Base64Encode},
+  {"Base64Decode",           luasrc_util_Base64Decode},
+  {"CRC",                    luasrc_util_CRC},
+  {"MD5",                    luasrc_util_MD5},
+  {"SHA1",                   luasrc_util_SHA1},
+  {"SHA256",                 luasrc_util_SHA256},
+  {"Compress",               luasrc_util_Compress},
+  {"Decompress",             luasrc_util_Decompress},
+  {"SteamIDTo64",            luasrc_util_SteamIDTo64},
+  {"SteamIDFrom64",          luasrc_util_SteamIDFrom64},
+  {"SharedRandom",           luasrc_util_SharedRandom},
+  {"AimVector",              luasrc_util_AimVector},
+  {"DistanceToLine",         luasrc_util_DistanceToLine},
+  {"IntersectRayWithPlane",  luasrc_util_IntersectRayWithPlane},
+  {"IntersectRayWithOBB",    luasrc_util_IntersectRayWithOBB},
+  {"IntersectRayWithSphere", luasrc_util_IntersectRayWithSphere},
+  {"IntersectRayWithTriangle", luasrc_util_IntersectRayWithTriangle},
+  {"IsBoxIntersectingBox",   luasrc_util_IsBoxIntersectingBox},
+  {"IsBoxIntersectingSphere", luasrc_util_IsBoxIntersectingSphere},
+  {"IsSphereIntersectingSphere", luasrc_util_IsSphereIntersectingSphere},
+  {"IsOBBIntersectingOBB",   luasrc_util_IsOBBIntersectingOBB},
+  {"IsPointInCone",          luasrc_util_IsPointInCone},
+  {"IsRayIntersectingRay",   luasrc_util_IsRayIntersectingRay},
+  {"IsSphereIntersectingCone", luasrc_util_IsSphereIntersectingCone},
+  {"IsModelLoaded",          luasrc_util_IsModelLoaded},
+  {"IsValidModel",           luasrc_util_IsValidModel},
+  {"IsValidProp",            luasrc_util_IsValidProp},
+  {"IsValidRagdoll",         luasrc_util_IsValidRagdoll},
+  {"GetSurfaceIndex",        luasrc_util_GetSurfaceIndex},
+  {"GetSurfacePropName",     luasrc_util_GetSurfacePropName},
+  {"GetSurfaceData",         luasrc_util_GetSurfaceData},
+  {"GetActivityIDByName",    luasrc_util_GetActivityIDByName},
+  {"GetActivityNameByID",    luasrc_util_GetActivityNameByID},
+  {"GetAnimEventIDByName",   luasrc_util_GetAnimEventIDByName},
+  {"GetAnimEventNameByID",   luasrc_util_GetAnimEventNameByID},
+  {"BlastDamageInfo",        luasrc_UTIL_BlastDamageInfo},
+  {"TraceEntityHull",        luasrc_UTIL_TraceEntityHull},
+  {"FilterText",             luasrc_util_FilterText},
+  {"RelativePathToFull_Menu", luasrc_util_RelativePathToFull},
+  {"FullPathToRelative_Menu", luasrc_util_FullPathToRelative},
   {NULL, NULL}
 };
 
