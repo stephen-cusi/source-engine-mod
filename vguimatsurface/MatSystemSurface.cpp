@@ -3491,6 +3491,15 @@ void CMatSystemSurface::EndSkinCompositionPainting()
 //-----------------------------------------------------------------------------
 void CMatSystemSurface::PushModelMatrix( const VMatrix &matrix )
 {
+	// HL2SB GMod compat (2026-09-25): if a 2D batch is already open (e.g. the
+	// addon called surface.SetFont before cam.Start3D2D), it was started with
+	// the ortho projection - world-space vertices would be clipped out and the
+	// text would silently never show.  Close the batch so the next surface
+	// draw re-StartDrawings through the 3D branch with the camera projection.
+	if ( g_bInDrawing )
+	{
+		FinishDrawing();
+	}
 	g_SurfaceModelMatrixStack.AddToTail( matrix );
 }
 
@@ -3499,6 +3508,13 @@ void CMatSystemSurface::PopModelMatrix()
 	if ( g_SurfaceModelMatrixStack.Count() > 0 )
 	{
 		g_SurfaceModelMatrixStack.Remove( g_SurfaceModelMatrixStack.Count() - 1 );
+	}
+
+	// leaving 3D2D: close the batch so regular 2D drawing restarts with the
+	// screen ortho projection (and the leaked open-batch state is gone).
+	if ( g_SurfaceModelMatrixStack.Count() == 0 && g_bInDrawing )
+	{
+		FinishDrawing();
 	}
 }
 
