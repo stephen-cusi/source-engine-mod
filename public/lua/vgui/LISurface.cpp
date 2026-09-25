@@ -720,7 +720,30 @@ static int surface_GetScreenSize (lua_State *L) {
   return 2;
 }
 
+// HL2SB GMod compat (2026-09-25): GMod's surface.GetTextSize( text )
+// measures with the font last set via surface.SetFont (wiki).  Track it
+// here; GetTextSize falls back to it for the single-argument form.
+static HFont s_hLastSetTextFont = 0;
 static int surface_GetTextSize (lua_State *L) {
+  // HL2SB GMod compat (2026-09-25): wiki - surface.GetTextSize( text )
+  // measures with the font last set by surface.SetFont.  The older
+  // Experiment:Source spelling GetTextSize( font, text ) still works.
+  if ( lua_gettop( L ) == 1 && lua_type( L, 1 ) == LUA_TSTRING )
+  {
+    const char *szOnly = lua_tostring( L, 1 );
+    int wideOnly = 0;
+    int tallOnly = 0;
+    int bufOnly = ( strlen( szOnly ) + 1 ) * sizeof( wchar_t );
+    wchar_t *wOnly = static_cast<wchar_t *>( _alloca( bufOnly ) );
+    if ( wOnly )
+    {
+      g_pVGuiLocalize->ConvertANSIToUnicode( szOnly, wOnly, bufOnly );
+      surface()->GetTextSize( s_hLastSetTextFont, wOnly, wideOnly, tallOnly );
+    }
+    lua_pushinteger( L, wideOnly );
+    lua_pushinteger( L, tallOnly );
+    return 2;
+  }
   const char *sz = luaL_checkstring(L, 2);
   int wide = 0;
   int tall = 0;
@@ -892,6 +915,7 @@ static int surface_SetFont (lua_State *L) {
   if ( hFont != 0 )
   {
     surface()->DrawSetTextFont( hFont );
+    s_hLastSetTextFont = hFont;
   }
 
   // Push the resolved HFont back so a Lua caller can cache it.
