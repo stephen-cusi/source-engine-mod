@@ -115,6 +115,15 @@ public:
 	// begin and end skin composition painting
 	virtual void BeginSkinCompositionPainting() = 0;
 	virtual void EndSkinCompositionPainting() = 0;
+
+	// HL2SB GMod compat (2026-09-25): model-matrix stack for cam.Start3D2D.
+	// CMatSystemSurface::StartDrawing() pushes its own ortho + identity MODEL
+	// matrix around every 2D batch, which would clobber a render-context push -
+	// GMod keeps the stack here so surface text/rects land in the 3D plane.
+	// Appended at the END of the interface on purpose: old engine/GameUI builds
+	// keep their vtable slot indices and stay binary-compatible.
+	virtual void PushModelMatrix( const VMatrix &matrix ) = 0;
+	virtual void PopModelMatrix() = 0;
 };
 
 

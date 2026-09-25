@@ -20,6 +20,7 @@ ConVar physgun_drawbeams( "physgun_drawbeams", "1", FCVAR_ARCHIVE, "Draw the phy
 #include <materialsystem/imaterialvar.h>
 #include <materialsystem/imesh.h>
 #include <vgui/ISurface.h>
+#include <VGuiMatSurface/IMatSystemSurface.h>	// HL2SB: cam.Start3D2D surface matrix stack (g_pMatSystemSurface)
 #include <vgui_controls/Controls.h>
 #include "mathlib/lvector.h"
 #include <lColor.h>
@@ -678,12 +679,75 @@ static int cam_IgnoreZ (lua_State *L) {
   return 0;
 }
 
+// cam.Start3D2D( pos, angles, scale ) / cam.End3D2D() -- HL2SB GMod compat
+// (2026-09-25).  GMod: builds Translate(pos)*Rotate(angles)*Scale(scale) and
+// pushes it as the model matrix so 2D draws land in that world plane.  The
+// push goes to BOTH consumers: the render context (meshes, render.DrawQuad)
+// and CMatSystemSurface (surface text/rects - its StartDrawing resets the
+// context matrix around every batch, so it carries its own stack, see
+// vguimatsurface/MatSystemSurface.cpp).
+static int cam_Start3D2D (lua_State *L) {
+	Vector pos = luaL_checkvector( L, 1 );
+	QAngle ang = luaL_checkangle( L, 2 );
+	float scale = luaL_optnumber( L, 3, 1.0f );
+
+	// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): log first
+	// call and the matsurface pointer state.  Remove once verified.
+	static bool s_bLogged3D2D = false;
+	if ( !s_bLogged3D2D )
+	{
+		s_bLogged3D2D = true;
+		luasrc_LuaInfoMsgF( "[HL2SB][diag] cam.Start3D2D first call: matsurface=%s pos=%.0f %.0f %.0f scale=%.2f\n",
+			g_pMatSystemSurface ? "ok" : "NULL", pos.x, pos.y, pos.z, scale );
+	}
+
+	if ( !g_pMatSystemSurface )
+		return 0;
+
+	matrix3x4_t mat;
+	AngleMatrix( ang, pos, mat );
+	VMatrix vm( mat );
+
+	// HL2SB GMod compat (2026-09-25): exact wiki formula - SetAngles,
+	// SetTranslation, SetScale( Vector( scale, -scale, 1 ) ).  Rows of the
+	// AngleMatrix are the world-space basis (row0 = forward = 2D +x,
+	// row1 = -right = 2D +y), so SetScale scales ROWS: x by +scale, y by
+	// -scale (flips vgui's downward y), z (out of the plane) left at 1.
+	// The old uniform scale mirrored the text and broke the winding.
+	for ( int c = 0; c < 4; c++ )
+	{
+		vm.m[0][c] *= scale;
+		vm.m[1][c] *= -scale;
+	}
+
+	g_pMatSystemSurface->PushModelMatrix( vm );
+	CMatRenderContextPtr pRenderContext( materials );
+	pRenderContext->MatrixMode( MATERIAL_MODEL );
+	pRenderContext->PushMatrix();
+	pRenderContext->LoadIdentity();
+	pRenderContext->LoadMatrix( vm );
+	return 0;
+}
+
+static int cam_End3D2D (lua_State *L) {
+	if ( !g_pMatSystemSurface )
+		return 0;
+	g_pMatSystemSurface->PopModelMatrix();
+	CMatRenderContextPtr pRenderContext( materials );
+	pRenderContext->MatrixMode( MATERIAL_MODEL );
+	pRenderContext->PopMatrix();
+	return 0;
+}
+
 static const luaL_Reg cam_funcs[] = {
   { "Start", cam_Start },
   { "End", cam_End },
   { "IgnoreZ", cam_IgnoreZ },
+  { "Start3D2D", cam_Start3D2D },
+  { "End3D2D", cam_End3D2D },
   { NULL, NULL }
 };
+
 
 LUA_BINDING_BEGIN( Renders, PushCustomClipPlane, "library", "Push a custom clip plane.", "client" )
 {

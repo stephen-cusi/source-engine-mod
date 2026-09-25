@@ -69,6 +69,12 @@ ILauncherMgr *g_pLauncherMgr = NULL;
 
 #pragma warning( default : 4706 )
 
+// HL2SB GMod compat (2026-09-25): cam.Start3D2D matrix stack.  File-local on
+// purpose - adding members to CMatSystemSurface would churn the class layout
+// of vguimatsurface for no gain; only StartDrawing() and the two new
+// IMatSystemSurface methods below touch it.
+static CUtlVector< VMatrix > g_SurfaceModelMatrixStack;
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -707,18 +713,36 @@ void CMatSystemSurface::StartDrawing( void )
 	m_pSurfaceExtents[2] = width;
 	m_pSurfaceExtents[3] = height;
 
+	// HL2SB GMod compat (2026-09-25): 3D2D mode.  With a cam.Start3D2D plane
+	// matrix on the stack, mirror StartDrawingIn3DSpace: KEEP the camera's
+	// view + projection (the caller is inside a 3D rendering context) and only
+	// swap the model matrix.  The regular 2D path below overwrites PROJECTION
+	// with a screen ortho, which would clip every world-space vertex out of
+	// existence - the reason 3D2D text never showed.
+	bool b3DSpace = g_SurfaceModelMatrixStack.Count() > 0;
+
 	pRenderContext->MatrixMode( MATERIAL_PROJECTION );
 	pRenderContext->PushMatrix();
-	pRenderContext->LoadIdentity();
-	pRenderContext->Scale( 1, -1, 1 );
-	
-	//___stop___();
-	pRenderContext->Ortho( g_flPixelOffsetX, g_flPixelOffsetY, width + g_flPixelOffsetX, height + g_flPixelOffsetY, -1.0f, 1.0f ); 
+	if ( !b3DSpace )
+	{
+		pRenderContext->LoadIdentity();
+		pRenderContext->Scale( 1, -1, 1 );
+
+		//___stop___();
+		pRenderContext->Ortho( g_flPixelOffsetX, g_flPixelOffsetY, width + g_flPixelOffsetX, height + g_flPixelOffsetY, -1.0f, 1.0f );
+	}
 
 	// make sure there is no translation and rotation laying around
 	pRenderContext->MatrixMode( MATERIAL_MODEL );
 	pRenderContext->PushMatrix();
-	pRenderContext->LoadIdentity();
+	if ( b3DSpace )
+	{
+		pRenderContext->LoadMatrix( g_SurfaceModelMatrixStack[g_SurfaceModelMatrixStack.Count() - 1] );
+	}
+	else
+	{
+		pRenderContext->LoadIdentity();
+	}
 
 	// Always enable scissoring (translate to origin because of the glTranslatef call above..)
 	EnableScissor( true );
@@ -728,7 +752,12 @@ void CMatSystemSurface::StartDrawing( void )
 
 	pRenderContext->MatrixMode( MATERIAL_VIEW );
 	pRenderContext->PushMatrix();
-	pRenderContext->LoadIdentity();
+	if ( !b3DSpace )
+	{
+		pRenderContext->LoadIdentity();
+	}
+	// 3D space: keep the camera view - only StartDrawingIn3DSpace-style paths
+	// may leave it alone (see the PROJECTION branch above).
 }
 
 //-----------------------------------------------------------------------------
@@ -3451,6 +3480,26 @@ void CMatSystemSurface::BeginSkinCompositionPainting()
 void CMatSystemSurface::EndSkinCompositionPainting()
 {
 	g_bInDrawing = false;
+}
+
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-09-25): cam.Start3D2D / cam.End3D2D model matrix
+// stack.  While non-empty, every surface 2D batch draws through the top
+// matrix (see StartDrawing); meshes read the render-context matrix that the
+// cam bindings push separately.
+//-----------------------------------------------------------------------------
+void CMatSystemSurface::PushModelMatrix( const VMatrix &matrix )
+{
+	g_SurfaceModelMatrixStack.AddToTail( matrix );
+}
+
+void CMatSystemSurface::PopModelMatrix()
+{
+	if ( g_SurfaceModelMatrixStack.Count() > 0 )
+	{
+		g_SurfaceModelMatrixStack.Remove( g_SurfaceModelMatrixStack.Count() - 1 );
+	}
 }
 
 

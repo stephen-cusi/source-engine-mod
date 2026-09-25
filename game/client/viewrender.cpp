@@ -2403,6 +2403,16 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 		// Draw the in-game stuff based on the actual viewport being used
 		render->VGui_Paint( PAINT_INGAMEPANELS );
 
+#ifdef LUA_SDK
+		// HL2SB GMod compat (2026-09-25): GM:HUDPaint on the main HUD path.
+		// Until now the hook only fired from the scripted HUD viewport control;
+		// GMod fires it every frame while the 2D HUD context is up, so addons
+		// drawing debug overlays/meters via hook.Add("HUDPaint", ...) show up.
+		// Runs after the stock HUD elements, still inside Push2DView.
+		BEGIN_LUA_CALL_HOOK( "HUDPaint" );
+		END_LUA_CALL_HOOK( 0, 0 );
+#endif
+
 		// maybe paint the main menu and cursor too if we're in stereo hud mode
 		if( bPaintMainMenu )
 			render->VGui_Paint( PAINT_UIPANELS | PAINT_CURSOR );
@@ -4651,6 +4661,32 @@ void CRendering3dView::DrawTranslucentRenderables( bool bInSkybox, bool bShadowD
 
 	// Reset the blend state.
 	render->SetBlend( 1 );
+
+#ifdef LUA_SDK
+	// HL2SB GMod compat (2026-09-25): GM:PostDrawTranslucentRenderables.
+	// Wiki: called after all translucent entities are drawn, provides a 3D
+	// rendering context, args (bDrawingDepth, bDrawingSkybox, isDraw3DSkybox).
+	// Shadow/depth passes are skipped on purpose: addons that ignore the args
+	// would bake their effects into every shadow map (this fork renders shadow
+	// depth maps per plugin view - see the FPB shadow RenderScene history).
+	if ( !bShadowDepth )
+	{
+		BEGIN_LUA_CALL_HOOK( "PostDrawTranslucentRenderables" );
+			lua_pushboolean( L, false );		// bDrawingDepth
+			lua_pushboolean( L, bInSkybox );	// bDrawingSkybox
+			lua_pushboolean( L, false );		// isDraw3DSkybox
+		END_LUA_CALL_HOOK( 3, 0 );
+
+		// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): heartbeat,
+		// throttled to once per 10 seconds.  Remove once verified.
+		static float s_flNextBeat = 0.0f;
+		if ( gpGlobals->curtime >= s_flNextBeat )
+		{
+			s_flNextBeat = gpGlobals->curtime + 10.0f;
+			luasrc_LuaInfoMsgF( "[HL2SB][diag] PostDrawTranslucentRenderables alive (t=%.1f)\n", gpGlobals->curtime );
+		}
+	}
+#endif
 }
 
 

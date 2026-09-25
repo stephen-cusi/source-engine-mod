@@ -236,6 +236,11 @@ public:
 	virtual void BeginSkinCompositionPainting() OVERRIDE;
 	virtual void EndSkinCompositionPainting() OVERRIDE;
 
+	// HL2SB GMod compat (2026-09-25): cam.Start3D2D matrix stack (appended at
+	// the tail of IMatSystemSurface so old binaries keep their vtable slots).
+	virtual void PushModelMatrix( const VMatrix &matrix ) OVERRIDE;
+	virtual void PopModelMatrix() OVERRIDE;
+
 	// Disable clipping during rendering
 	virtual void DisableClipping( bool bDisable ) OVERRIDE;
 	virtual void GetClippingRect( int &left, int &top, int &right, int &bottom, bool &bClippingDisabled ) OVERRIDE;
