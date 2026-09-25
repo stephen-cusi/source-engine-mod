@@ -226,13 +226,18 @@ class LTextEntry : public TextEntry
     /*
     ** Enter has no action signal of its own: the base either swallows it
     ** (single-line) or turns it into a newline (multiline / _sendNewLines).
-    ** Intercept the key before the base consumes it so an OnEnter hook always
-    ** runs, then let the base do its normal thing.
+    ** GMod's contract: OnEnter fires only when the base accepts the key, and
+    ** the handler receives the entry's text (gmod dtextentry.lua:79 calls
+    ** self:OnEnter( self:GetText() ) from its own dispatch).  The old fire-
+    ** always/no-args form broke multiline entries and dropped the text arg.
     */
     virtual void OnKeyCodeTyped( KeyCode code )
     {
-        if ( code == KEY_ENTER )
-            HL2SB_CallLuaTextEntryMethod( "OnEnter" );
+        // This fork's TextEntry keeps _sendNewLines private, so the multiline
+        // + send-new-lines case cannot be queried here: OnEnter fires for
+        // single-line entries only (GMod's default contract).
+        if ( code == KEY_ENTER && !IsMultiline() )
+            HL2SB_CallLuaTextEntryMethodText( "OnEnter" );
 
         BaseClass::OnKeyCodeTyped( code );
 
@@ -260,6 +265,34 @@ class LTextEntry : public TextEntry
                 lua_pushinteger( m_lua_State, nArg2 );
 
             luasrc_pcall( m_lua_State, 1 + nArgs, 0, 0 );
+        }
+        else
+        {
+            lua_pop( m_lua_State, 1 );
+        }
+#endif
+    }
+
+    /* Same dispatch with the entry's text pushed as the one argument (GMod's
+    ** OnEnter( text ) signature). */
+    void HL2SB_CallLuaTextEntryMethodText( const char *pszName )
+    {
+#if defined( LUA_SDK )
+        if ( !lua_isrefvalid( m_lua_State, m_nTableReference ) )
+            return;
+
+        lua_getref( m_lua_State, m_nTableReference );
+        lua_getfield( m_lua_State, -1, pszName );
+        lua_remove( m_lua_State, -2 );
+        if ( lua_isfunction( m_lua_State, -1 ) )
+        {
+            lua_pushtextentry( m_lua_State, this );
+
+            char szText[ 256 ];
+            GetText( szText, sizeof( szText ) );
+            lua_pushstring( m_lua_State, szText );
+
+            luasrc_pcall( m_lua_State, 2, 0, 0 );
         }
         else
         {
