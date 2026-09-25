@@ -4936,9 +4936,6 @@ void CBasePlayer::InitialSpawn( void )
 			lua_pushstring( L, pszAuthID ? pszAuthID : "STEAM_0:0:0" );
 			lua_pushstring( L, pszAuthID ? pszAuthID : "STEAM_0:0:0" );
 		END_LUA_CALL_HOOK( 3, 0 );
-
-		// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace).
-		luasrc_LuaInfoMsgF( "[HL2SB][diag] PlayerAuthed fired: %s (%s)\n", GetPlayerName(), pszAuthID ? pszAuthID : "?" );
 #endif
 	m_iConnected = PlayerConnected;
 	gamestats->Event_PlayerConnected( this );

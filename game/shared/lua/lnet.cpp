@@ -108,9 +108,6 @@ static void MsgFunc_LuaNet( bf_read &msg )
 	if ( !szName[0] )
 		return;
 
-	// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): log every net
-	// message name arriving on the client.  Remove once the chain verifies.
-	luasrc_LuaInfoMsgF( "[HL2SB][diag] net recv client: '%s'\n", szName );
 
 	// Find the receiver.
 	for ( int i = 0; i < g_NetReceivers.Count(); i++ )
@@ -765,10 +762,6 @@ static void SendNetMessage( CRecipientFilter &filter )
 		return;
 	}
 
-	// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): log every server
-	// net send with its recipient count.  Remove once the chain verifies.
-	luasrc_LuaInfoMsgF( "[HL2SB][diag] net send server: '%s' bytes=%d recipients=%d\n",
-		g_netName.Get(), g_netWrite.GetNumBytesWritten(), filter.GetRecipientCount() );
 
 	// HL2SB GMod compat (2026-09-25): GMod net messages are RELIABLE by
 	// default (net.Start( name, unreliable = false )).  A plain

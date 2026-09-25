@@ -4676,15 +4676,6 @@ void CRendering3dView::DrawTranslucentRenderables( bool bInSkybox, bool bShadowD
 			lua_pushboolean( L, bInSkybox );	// bDrawingSkybox
 			lua_pushboolean( L, false );		// isDraw3DSkybox
 		END_LUA_CALL_HOOK( 3, 0 );
-
-		// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): heartbeat,
-		// throttled to once per 10 seconds.  Remove once verified.
-		static float s_flNextBeat = 0.0f;
-		if ( gpGlobals->curtime >= s_flNextBeat )
-		{
-			s_flNextBeat = gpGlobals->curtime + 10.0f;
-			luasrc_LuaInfoMsgF( "[HL2SB][diag] PostDrawTranslucentRenderables alive (t=%.1f)\n", gpGlobals->curtime );
-		}
 	}
 #endif
 }

@@ -1555,11 +1555,6 @@ void CBaseEntity::TakeDamage( const CTakeDamageInfo &inputInfo )
 			lua_pushdamageinfo( L, info );
 			lua_pushboolean( L, m_iHealth < iHealthBefore );
 		END_LUA_CALL_HOOK( 3, 0 );
-
-		// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): remove once
-		// the damage chain verifies end to end.
-		luasrc_LuaInfoMsgF( "[HL2SB][diag] PostEntityTakeDamage fired: %s dmg=%.1f took=%d\n",
-			GetClassname(), info.GetDamage(), (int)( m_iHealth < iHealthBefore ) );
 #else
 		OnTakeDamage( info );
 #endif

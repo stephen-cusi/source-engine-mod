@@ -691,16 +691,6 @@ static int cam_Start3D2D (lua_State *L) {
 	QAngle ang = luaL_checkangle( L, 2 );
 	float scale = luaL_optnumber( L, 3, 1.0f );
 
-	// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): log first
-	// call and the matsurface pointer state.  Remove once verified.
-	static bool s_bLogged3D2D = false;
-	if ( !s_bLogged3D2D )
-	{
-		s_bLogged3D2D = true;
-		luasrc_LuaInfoMsgF( "[HL2SB][diag] cam.Start3D2D first call: matsurface=%s pos=%.0f %.0f %.0f scale=%.2f\n",
-			g_pMatSystemSurface ? "ok" : "NULL", pos.x, pos.y, pos.z, scale );
-	}
-
 	if ( !g_pMatSystemSurface )
 		return 0;
 
