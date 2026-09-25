@@ -32,6 +32,13 @@
 #include "lobject.h"
 #include "luamanager.h"
 #include "mathlib/lvector.h"
+#include <lColor.h>
+// HL2SB GMod compat: color support for net.WriteColor
+// HL2SB GMod compat (2026-09-25): net.WriteTable / net.ReadTable reuse the
+// util.TableToJSON / util.JSONToTable implementations (local extern per the
+// "don't touch headers for one consumer" rule).
+int luasrc_UTIL_TableToJSON( lua_State *L );
+int luasrc_UTIL_JSONToTable( lua_State *L );
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -100,6 +107,10 @@ static void MsgFunc_LuaNet( bf_read &msg )
 	msg.ReadString( szName, iNameLen );
 	if ( !szName[0] )
 		return;
+
+	// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): log every net
+	// message name arriving on the client.  Remove once the chain verifies.
+	luasrc_LuaInfoMsgF( "[HL2SB][diag] net recv client: '%s'\n", szName );
 
 	// Find the receiver.
 	for ( int i = 0; i < g_NetReceivers.Count(); i++ )
@@ -287,6 +298,7 @@ static int net_ReadEntity( lua_State *L )
 	return 1;
 }
 
+
 //-----------------------------------------------------------------------------
 // HL2SB: client -> server net transport.
 //
@@ -305,6 +317,118 @@ static bf_write g_cnetWrite;
 static CUtlString g_cnetName;
 static bool g_cnetActive = false;
 
+// --- HL2SB GMod compat (2026-09-25): missing net members (client realm) ---
+// Same wiki-checked set as the server realm; writes feed net.SendToServer.
+
+static int net_WriteBool( lua_State *L )
+{
+	g_cnetWrite.WriteOneBit( lua_toboolean( L, 1 ) ? 1 : 0 );
+	return 0;
+}
+
+static int net_ReadBool( lua_State *L )
+{
+	lua_pushboolean( L, g_pNetRead ? g_pNetRead->ReadOneBit() != 0 : false );
+	return 1;
+}
+
+static int net_WriteData( lua_State *L )
+{
+	size_t nLen = 0;
+	const char *pszData = luaL_checklstring( L, 1, &nLen );
+	int nBytes = (int)luaL_optint( L, 2, (int)nLen );
+	if ( nBytes > (int)nLen ) nBytes = (int)nLen;
+	if ( nBytes > 0 ) g_cnetWrite.WriteBytes( pszData, nBytes );
+	return 0;
+}
+
+static int net_ReadData( lua_State *L )
+{
+	int nBytes = luaL_checkint( L, 1 );
+	if ( nBytes <= 0 || !g_pNetRead )
+	{
+		lua_pushstring( L, "" );
+		return 1;
+	}
+	if ( nBytes > 4096 ) nBytes = 4096;
+	char szBuf[ 4096 ];
+	g_pNetRead->ReadBytes( szBuf, nBytes );
+	lua_pushlstring( L, szBuf, nBytes );
+	return 1;
+}
+
+static int net_WriteColor( lua_State *L )
+{
+	Color clr = luaL_checkcolor( L, 1 );
+	bool bWriteAlpha = lua_isnone( L, 2 ) ? true : ( lua_toboolean( L, 2 ) != 0 );
+	g_cnetWrite.WriteByte( clr.r() );
+	g_cnetWrite.WriteByte( clr.g() );
+	g_cnetWrite.WriteByte( clr.b() );
+	if ( bWriteAlpha ) g_cnetWrite.WriteByte( clr.a() );
+	return 0;
+}
+
+static int net_ReadColor( lua_State *L )
+{
+	if ( !g_pNetRead )
+	{
+		lua_pushnil( L );
+		return 1;
+	}
+	int r = g_pNetRead->ReadByte();
+	int g = g_pNetRead->ReadByte();
+	int b = g_pNetRead->ReadByte();
+	int a = g_pNetRead->ReadByte();
+	lua_pushcolor( L, Color( r, g, b, a ) );
+	return 1;
+}
+
+static int net_WriteTable( lua_State *L )
+{
+	luasrc_UTIL_TableToJSON( L );	// reads stack slot 1 (the table), pushes JSON
+	const char *pszJson = lua_tostring( L, -1 );
+	g_cnetWrite.WriteString( pszJson ? pszJson : "" );
+	lua_pop( L, 1 );
+	return 0;
+}
+
+static int net_ReadTable( lua_State *L )
+{
+	char szBuf[ 4096 ];
+	int iLen = sizeof( szBuf ) - 1;
+	if ( g_pNetRead )
+	{
+		g_pNetRead->ReadString( szBuf, iLen );
+		szBuf[ iLen ] = '\0';
+	}
+	else
+	{
+		szBuf[ 0 ] = '\0';
+	}
+	while ( lua_gettop( L ) < 1 ) lua_pushnil( L );
+	lua_pushstring( L, szBuf );
+	lua_replace( L, 1 );
+	return luasrc_UTIL_JSONToTable( L );
+}
+
+static int net_BytesWritten( lua_State *L )
+{
+	lua_pushinteger( L, g_cnetActive ? g_cnetWrite.GetNumBytesWritten() : 0 );
+	return 1;
+}
+
+static int net_BytesLeft( lua_State *L )
+{
+	lua_pushinteger( L, g_pNetRead ? g_pNetRead->GetNumBytesLeft() : 0 );
+	return 1;
+}
+
+static int net_Abort( lua_State *L )
+{
+	g_cnetActive = false;
+	return 0;
+}
+
 // net.Start( name )
 static int net_Start( lua_State *L )
 {
@@ -318,7 +442,14 @@ static int net_Start( lua_State *L )
 // net.WriteBit( int )
 static int net_WriteBit( lua_State *L )
 {
-	int val = luaL_checkint( L, 1 );
+	// GMod wiki: net.WriteBit( boolean ) - addons pass true/false here,
+	// stock code passes 0/1 numbers.  luaL_checkint rejects booleans,
+	// which killed the hitnumbers handlers mid-message.
+	int val;
+	if ( lua_type( L, 1 ) == LUA_TBOOLEAN )
+		val = lua_toboolean( L, 1 ) ? 1 : 0;
+	else
+		val = luaL_checkint( L, 1 );
 	g_cnetWrite.WriteOneBit( val ? 1 : 0 );
 	return 0;
 }
@@ -494,6 +625,18 @@ static const luaL_Reg net_funcs[] = {
 	{ "WriteVector", net_WriteVector },
 	{ "WriteAngle",  net_WriteAngle },
 	{ "WriteEntity", net_WriteEntity },
+	// HL2SB GMod compat (2026-09-25): wiki-checked missing members (client).
+	{ "WriteBool",   net_WriteBool },
+	{ "ReadBool",    net_ReadBool },
+	{ "WriteData",   net_WriteData },
+	{ "ReadData",    net_ReadData },
+	{ "WriteColor",  net_WriteColor },
+	{ "ReadColor",   net_ReadColor },
+	{ "WriteTable",  net_WriteTable },
+	{ "ReadTable",   net_ReadTable },
+	{ "BytesWritten", net_BytesWritten },
+	{ "BytesLeft",   net_BytesLeft },
+	{ "Abort",       net_Abort },
 	{ "SendToServer", net_SendToServer },
 	{ NULL, NULL }
 };
@@ -516,21 +659,33 @@ static char g_netBuf[ HL2SB_NET_MAX_SIZE ];
 static bf_write g_netWrite;
 static CUtlString g_netName;
 static bool g_netActive = false;
+// GMod: net.Start( name, unreliable = false ) - messages are RELIABLE unless
+// the caller explicitly marks them unreliable.  This flag mirrors that second
+// argument; SendNetMessage applies it to the recipient filter.
+static bool g_netUnreliable = false;
 
-// net.Start( name )
+// net.Start( name, [unreliable] )
 static int net_Start( lua_State *L )
 {
 	const char *pszName = luaL_checkstring( L, 1 );
 	g_netName = pszName;
 	g_netWrite.StartWriting( g_netBuf, sizeof( g_netBuf ) );
 	g_netActive = true;
+	g_netUnreliable = ( lua_toboolean( L, 2 ) != 0 );
 	return 0;
 }
 
 // net.WriteBit( int )
 static int net_WriteBit( lua_State *L )
 {
-	int val = luaL_checkint( L, 1 );
+	// GMod wiki: net.WriteBit( boolean ) - addons pass true/false here,
+	// stock code passes 0/1 numbers.  luaL_checkint rejects booleans,
+	// which killed the hitnumbers handlers mid-message.
+	int val;
+	if ( lua_type( L, 1 ) == LUA_TBOOLEAN )
+		val = lua_toboolean( L, 1 ) ? 1 : 0;
+	else
+		val = luaL_checkint( L, 1 );
 	g_netWrite.WriteOneBit( val ? 1 : 0 );
 	return 0;
 }
@@ -602,13 +757,32 @@ static int net_WriteEntity( lua_State *L )
 //-----------------------------------------------------------------------------
 // Purpose: common send to a recipient filter.
 //-----------------------------------------------------------------------------
-static void SendNetMessage( IRecipientFilter &filter )
+static void SendNetMessage( CRecipientFilter &filter )
 {
 	if ( !g_netActive )
 	{
 		Msg( "[net] Send called without a Start\n" );
 		return;
 	}
+
+	// HL2SB TEMP DIAGNOSTIC (2026-09-25, hitnumbers trace): log every server
+	// net send with its recipient count.  Remove once the chain verifies.
+	luasrc_LuaInfoMsgF( "[HL2SB][diag] net send server: '%s' bytes=%d recipients=%d\n",
+		g_netName.Get(), g_netWrite.GetNumBytesWritten(), filter.GetRecipientCount() );
+
+	// HL2SB GMod compat (2026-09-25): GMod net messages are RELIABLE by
+	// default (net.Start( name, unreliable = false )).  A plain
+	// CRecipientFilter is unreliable, and unreliable usermessages to the
+	// listen-server host get dropped on this branch - broadcast filters are
+	// reliable, which is exactly why net.Broadcast arrived while net.Send to
+	// the host never did.
+	// GMod delivers net messages to the listen-server host locally - no
+	// network hop, nothing to drop - so even net.Start( name, true )
+	// (unreliable) messages always arrive in singleplayer.  This branch drops
+	// unreliable usermessages to the host (observed: 1 of ~30 hdn_spawn
+	// messages got through), so every Lua net send is forced reliable.
+	// Real-network unreliable semantics are the one GMod behavior traded away.
+	filter.MakeReliable();
 
 	UserMessageBegin( filter, "LuaNet" );
 	MessageWriteString( g_netName.Get() );
@@ -617,14 +791,30 @@ static void SendNetMessage( IRecipientFilter &filter )
 	MessageEnd();
 
 	g_netActive = false;
+	g_netUnreliable = false;
 }
 
-// net.Send( ply )
+// net.Send( ply|table ) - GMod accepts a single player or a table of players.
 static int net_Send( lua_State *L )
 {
-	CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
 	CRecipientFilter filter;
-	filter.AddRecipient( pPlayer );
+
+	if ( lua_istable( L, 1 ) )
+	{
+		int n = luaL_len( L, 1 );
+		for ( int i = 1; i <= n; i++ )
+		{
+			lua_rawgeti( L, 1, i );
+			if ( !lua_isnil( L, -1 ) )
+				filter.AddRecipient( luaL_checkplayer( L, -1 ) );
+			lua_pop( L, 1 );
+		}
+	}
+	else
+	{
+		filter.AddRecipient( luaL_checkplayer( L, 1 ) );
+	}
+
 	SendNetMessage( filter );
 	return 0;
 }
@@ -633,6 +823,46 @@ static int net_Send( lua_State *L )
 static int net_Broadcast( lua_State *L )
 {
 	CBroadcastRecipientFilter filter;
+	SendNetMessage( filter );
+	return 0;
+}
+
+// net.SendOmit( ply|entity|table ) - GMod: send to everyone EXCEPT the given
+// recipient(s).  One filter, one send: g_netActive is consumed by
+// SendNetMessage, so a Lua-side loop over net.Send would drop every message
+// after the first.  Non-player entities are accepted and simply ignored when
+// omitting (addons pass NPCs/props here - GMod's SendOmit tolerates them,
+// and hitnumbers omits the damage target unconditionally).
+static int net_SendOmit( lua_State *L )
+{
+	CRecipientFilter filter;
+
+	for ( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBasePlayer *pPlayer = UTIL_PlayerByIndex( i );
+		if ( pPlayer )
+			filter.AddRecipient( pPlayer );
+	}
+
+	bool bIsTable = lua_istable( L, 1 ) != 0;
+	int nCount = bIsTable ? (int)luaL_len( L, 1 ) : 1;
+
+	for ( int i = 1; i <= nCount; i++ )
+	{
+		if ( bIsTable )
+			lua_rawgeti( L, 1, i );
+
+		if ( !lua_isnil( L, -1 ) )
+		{
+			CBaseEntity *pEnt = luaL_checkentity( L, -1 );
+			if ( pEnt && pEnt->IsPlayer() )
+				filter.RemoveRecipient( static_cast<CBasePlayer *>( pEnt ) );
+		}
+
+		if ( bIsTable )
+			lua_pop( L, 1 );
+	}
+
 	SendNetMessage( filter );
 	return 0;
 }
@@ -768,6 +998,152 @@ static int net_ReadEntity( lua_State *L )
 	return 1;
 }
 
+// --- HL2SB GMod compat (2026-09-25): missing net members, wiki-checked ---
+
+// net.WriteBool( bool )
+static int net_WriteBool( lua_State *L )
+{
+	g_netWrite.WriteOneBit( lua_toboolean( L, 1 ) ? 1 : 0 );
+	return 0;
+}
+
+// net.ReadBool()
+static int net_ReadBool( lua_State *L )
+{
+	lua_pushboolean( L, g_pNetReadSv ? g_pNetReadSv->ReadOneBit() != 0 : false );
+	return 1;
+}
+
+// net.WriteData( data, [length] ) - binary chunk
+static int net_WriteData( lua_State *L )
+{
+	size_t nLen = 0;
+	const char *pszData = luaL_checklstring( L, 1, &nLen );
+	int nBytes = (int)luaL_optint( L, 2, (int)nLen );
+	if ( nBytes > (int)nLen ) nBytes = (int)nLen;
+	if ( nBytes > 0 ) g_netWrite.WriteBytes( pszData, nBytes );
+	return 0;
+}
+
+// net.ReadData( length )
+static int net_ReadData( lua_State *L )
+{
+	int nBytes = luaL_checkint( L, 1 );
+	if ( nBytes <= 0 || !g_pNetReadSv )
+	{
+		lua_pushstring( L, "" );
+		return 1;
+	}
+	if ( nBytes > 4096 ) nBytes = 4096;	// server <- client payload cap is 255 anyway
+	char szBuf[ 4096 ];
+	g_pNetReadSv->ReadBytes( szBuf, nBytes );
+	lua_pushlstring( L, szBuf, nBytes );
+	return 1;
+}
+
+// net.WriteColor( color, [writeAlpha=true] ) - r,g,b(,a) as bytes
+static int net_WriteColor( lua_State *L )
+{
+	Color clr = luaL_checkcolor( L, 1 );
+	bool bWriteAlpha = lua_isnone( L, 2 ) ? true : ( lua_toboolean( L, 2 ) != 0 );
+	g_netWrite.WriteByte( clr.r() );
+	g_netWrite.WriteByte( clr.g() );
+	g_netWrite.WriteByte( clr.b() );
+	if ( bWriteAlpha ) g_netWrite.WriteByte( clr.a() );
+	return 0;
+}
+
+// net.ReadColor()
+static int net_ReadColor( lua_State *L )
+{
+	if ( !g_pNetReadSv )
+	{
+		lua_pushnil( L );
+		return 1;
+	}
+	int r = g_pNetReadSv->ReadByte();
+	int g = g_pNetReadSv->ReadByte();
+	int b = g_pNetReadSv->ReadByte();
+	int a = g_pNetReadSv->ReadByte();
+	lua_pushcolor( L, Color( r, g, b, a ) );
+	return 1;
+}
+
+// net.WriteTable( table ) - GMod serializes engine-side; this fork encodes via
+// the same JSON emitter util.TableToJSON uses (null-free text, so the
+// null-terminated string transport is safe).
+static int net_WriteTable( lua_State *L )
+{
+	luasrc_UTIL_TableToJSON( L );	// reads stack slot 1 (the table), pushes JSON
+	const char *pszJson = lua_tostring( L, -1 );
+	g_netWrite.WriteString( pszJson ? pszJson : "" );
+	lua_pop( L, 1 );
+	return 0;
+}
+
+// net.ReadTable()
+static int net_ReadTable( lua_State *L )
+{
+	char szBuf[ 4096 ];
+	int iLen = sizeof( szBuf ) - 1;
+	if ( g_pNetReadSv )
+	{
+		g_pNetReadSv->ReadString( szBuf, iLen );
+		szBuf[ iLen ] = '\0';
+	}
+	else
+	{
+		szBuf[ 0 ] = '\0';
+	}
+	// reuse util.JSONToTable's decoder: it reads the JSON string from slot 1
+	while ( lua_gettop( L ) < 1 ) lua_pushnil( L );
+	lua_pushstring( L, szBuf );
+	lua_replace( L, 1 );
+	return luasrc_UTIL_JSONToTable( L );
+}
+
+// net.WritePlayer( ply )
+static int net_WritePlayer( lua_State *L )
+{
+	CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
+	g_netWrite.WriteShort( pPlayer ? pPlayer->entindex() : 0 );
+	return 0;
+}
+
+// net.ReadPlayer()
+static int net_ReadPlayer( lua_State *L )
+{
+	int idx = g_pNetReadSv ? g_pNetReadSv->ReadShort() : 0;
+	CBasePlayer *pPlayer = idx ? UTIL_PlayerByIndex( idx ) : NULL;
+	if ( pPlayer )
+		lua_pushplayer( L, pPlayer );
+	else
+		lua_pushnil( L );
+	return 1;
+}
+
+// net.BytesWritten()
+static int net_BytesWritten( lua_State *L )
+{
+	lua_pushinteger( L, g_netActive ? g_netWrite.GetNumBytesWritten() : 0 );
+	return 1;
+}
+
+// net.BytesLeft()
+static int net_BytesLeft( lua_State *L )
+{
+	lua_pushinteger( L, g_pNetReadSv ? g_pNetReadSv->GetNumBytesLeft() : 0 );
+	return 1;
+}
+
+// net.Abort() - discard the in-progress message
+static int net_Abort( lua_State *L )
+{
+	g_netActive = false;
+	g_netUnreliable = false;
+	return 0;
+}
+
 static int HexVal( char c )
 {
 	if ( c >= '0' && c <= '9' ) return c - '0';
@@ -866,8 +1242,23 @@ static const luaL_Reg net_funcs[] = {
 	{ "WriteVector", net_WriteVector },
 	{ "WriteAngle",  net_WriteAngle },
 	{ "WriteEntity", net_WriteEntity },
+	// HL2SB GMod compat (2026-09-25): wiki-checked missing members.
+	{ "WriteBool",   net_WriteBool },
+	{ "ReadBool",    net_ReadBool },
+	{ "WriteData",   net_WriteData },
+	{ "ReadData",    net_ReadData },
+	{ "WriteColor",  net_WriteColor },
+	{ "ReadColor",   net_ReadColor },
+	{ "WriteTable",  net_WriteTable },
+	{ "ReadTable",   net_ReadTable },
+	{ "WritePlayer", net_WritePlayer },
+	{ "ReadPlayer",  net_ReadPlayer },
+	{ "BytesWritten", net_BytesWritten },
+	{ "BytesLeft",   net_BytesLeft },
+	{ "Abort",       net_Abort },
 	{ "Send",        net_Send },
 	{ "Broadcast",   net_Broadcast },
+	{ "SendOmit",    net_SendOmit },
 	// HL2SB: server half of the client -> server transport (see HL2SB_NetMsgCmd).
 	{ "Receive",     net_Receive },
 	{ "ReadHeader",  net_ReadHeader },
