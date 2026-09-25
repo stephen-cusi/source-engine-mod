@@ -1113,6 +1113,21 @@ void ClientModeShared::Update()
 		BEGIN_LUA_CALL_HOOK( "Tick" );
 		END_LUA_CALL_HOOK( 0, 0 );
 	}
+
+	// HL2SB (2026-09-25): the engine timer library (game/shared/lua/ltimer.cpp)
+	// and the rate-limited client->server net transport (lnet.cpp) pump here.
+	// They used to hang off CScriptedHudViewport::Paint, which only runs when a
+	// scripted HUD viewport control exists - client timers and queued net
+	// commands stalled on any client UI without one.  Not gated on IsInGame on
+	// purpose: connected-but-paused still ticks, like GMod.
+	if ( L != NULL )
+	{
+		LUA_API void HL2SB_TimerTick( void );
+		HL2SB_TimerTick();
+
+		LUA_API void HL2SB_NetCmdPump( void );
+		HL2SB_NetCmdPump();
+	}
 #endif
 }
 

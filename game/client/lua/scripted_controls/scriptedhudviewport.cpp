@@ -53,18 +53,10 @@ void CScriptedHudViewport::SetParent(vgui::VPANEL parent)
 
 void CScriptedHudViewport::Paint()
 {
-	// HL2SB (2026-09-21): the engine timer library (game/shared/lua/ltimer.cpp)
-	// pumps every frame off this paint -- the client realm's per-frame point.
-	// Local prototype on purpose: a luasrclib.h touch would force a full-tree
-	// rebuild (waf has no header dependency propagation).
-	LUA_API void HL2SB_TimerTick( void );
-	if ( L != NULL )
-		HL2SB_TimerTick();
-
-	// HL2SB (2026-09-21): drip-feed the rate-limited client->server net
-	// transport (game/shared/lua/lnet.cpp) -- same per-frame point.
-	LUA_API void HL2SB_NetCmdPump( void );
-	HL2SB_NetCmdPump();
+	// HL2SB (2026-09-25): the timer + client->server net pumps MOVED to
+	// ClientModeShared::Update (clientmode_shared.cpp).  This Paint() only
+	// runs when a scripted HUD viewport control exists, so timers and queued
+	// net commands silently stalled on any client UI without one.
 
 	BEGIN_LUA_CALL_HOOK( "HudViewportPaint" );
 	END_LUA_CALL_HOOK( 0, 0 );

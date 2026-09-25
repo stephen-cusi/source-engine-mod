@@ -206,9 +206,13 @@ static int timer_Adjust (lua_State *L) {
 	HL2SB_LuaTimer_t &t = g_LuaTimers[ h ];
 
 	t.m_flDelay = (float)luaL_checknumber( L, 2 );
-	if ( !lua_isnil( L, 3 ) )
+	// wiki: repetitions = nil and func = nil KEEP the previous value - and a
+	// simply-omitted argument is LUA_TNONE, not LUA_TNIL, so lua_isnil() alone
+	// would treat "Adjust( id, delay )" as "reps was passed" and argerror out
+	// (caught by timer_lib_test.lua:102, 2026-09-25).
+	if ( !lua_isnoneornil( L, 3 ) )
 		t.m_iReps = luaL_checkint( L, 3 );
-	if ( !lua_isnil( L, 4 ) )
+	if ( !lua_isnoneornil( L, 4 ) )
 	{
 		luaL_checktype( L, 4, LUA_TFUNCTION );
 		HL2SB_TimerUnref( t.m_iFuncRef );
@@ -295,17 +299,28 @@ LUA_API void HL2SB_TimerTick ( void )
 
 	float flNow = HL2SB_TimerNow();
 
-	// Simple timers: fire in queue order.
+	// Simple timers: snapshot who is due first, then fire.  GMod parity
+	// (2026.1.5+): simple timers created DURING the pump - including a
+	// recursive timer.Simple( 0, self ) - are queued to the NEXT frame.
+	// Firing straight out of the live vector let a due tail entry run in the
+	// same loop, which never terminates for the recursive case.
+	CUtlVector<HL2SB_LuaSimpleTimer_t> dueSimple;
 	for ( int i = 0; i < g_LuaSimpleTimers.Count(); )
 	{
-		if ( flNow < g_LuaSimpleTimers[ i ].m_flFireTime )
+		if ( flNow >= g_LuaSimpleTimers[ i ].m_flFireTime )
+		{
+			dueSimple.AddToTail( g_LuaSimpleTimers[ i ] );
+			g_LuaSimpleTimers.FastRemove( i );
+		}
+		else
 		{
 			++i;
-			continue;
 		}
+	}
 
-		int iRef = g_LuaSimpleTimers[ i ].m_iFuncRef;
-		g_LuaSimpleTimers.FastRemove( i );
+	FOR_EACH_VEC( dueSimple, i )
+	{
+		int iRef = dueSimple[ i ].m_iFuncRef;
 
 		lua_rawgeti( L, LUA_REGISTRYINDEX, iRef );
 		luaL_unref( L, LUA_REGISTRYINDEX, iRef );
