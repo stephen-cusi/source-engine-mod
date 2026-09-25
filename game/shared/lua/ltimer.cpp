@@ -43,6 +43,7 @@ struct HL2SB_LuaTimer_t
 	float m_flDelay;	// seconds between fires
 	int m_iReps;		// fires left; 0 as passed in means infinite
 	float m_flNext;		// absolute CurTime of the next fire
+	float m_flPauseTime;	// CurTime() when Pause()d - GMod TimeLeft/UnPause anchor
 	bool m_bPaused;
 	bool m_bRunning;
 };
@@ -90,6 +91,7 @@ static int timer_Create (lua_State *L) {
 	t.m_flDelay = flDelay;
 	t.m_iReps = iReps;
 	t.m_flNext = HL2SB_TimerNow() + flDelay;
+	t.m_flPauseTime = 0.0f;
 	t.m_bPaused = false;
 	t.m_bRunning = true;
 
@@ -158,22 +160,33 @@ static int timer_Stop (lua_State *L) {
 	return 0;
 }
 
-// timer.Pause( identifier )
+// timer.Pause( identifier ) - GMod semantics: record the pause moment; the
+// countdown stays frozen in m_flNext (which keeps drifting into the past),
+// TimeLeft reports negative elapsed-since-pause, UnPause resumes from the
+// remaining time AT the pause moment.
 static int timer_Pause (lua_State *L) {
 	UtlHashHandle_t h = g_LuaTimers.Find( HL2SB_TimerKey( L, 1 ) );
 	if ( h != g_LuaTimers.InvalidHandle() )
-		g_LuaTimers[ h ].m_bPaused = true;
+	{
+		HL2SB_LuaTimer_t &t = g_LuaTimers[ h ];
+		if ( !t.m_bPaused )
+			t.m_flPauseTime = HL2SB_TimerNow();
+		t.m_bPaused = true;
+	}
 	return 0;
 }
 
-// timer.UnPause( identifier )
+// timer.UnPause( identifier ) - resume from the remaining-at-pause countdown;
+// no-op on a running timer, no full-delay reset, no pause-span compensation.
 static int timer_UnPause (lua_State *L) {
 	UtlHashHandle_t h = g_LuaTimers.Find( HL2SB_TimerKey( L, 1 ) );
 	if ( h != g_LuaTimers.InvalidHandle() )
 	{
 		HL2SB_LuaTimer_t &t = g_LuaTimers[ h ];
+		if ( !t.m_bPaused )
+			return 0;
+		t.m_flNext = HL2SB_TimerNow() + ( t.m_flNext - t.m_flPauseTime );
 		t.m_bPaused = false;
-		t.m_flNext = HL2SB_TimerNow() + t.m_flDelay;
 	}
 	return 0;
 }
@@ -188,8 +201,10 @@ static int timer_Toggle (lua_State *L) {
 	}
 	HL2SB_LuaTimer_t &t = g_LuaTimers[ h ];
 	t.m_bPaused = !t.m_bPaused;
-	if ( !t.m_bPaused )
-		t.m_flNext = HL2SB_TimerNow() + t.m_flDelay;
+	if ( t.m_bPaused )
+		t.m_flPauseTime = HL2SB_TimerNow();
+	else
+		t.m_flNext = HL2SB_TimerNow() + ( t.m_flNext - t.m_flPauseTime );
 	lua_pushboolean( L, t.m_bPaused );
 	return 1;
 }
@@ -219,13 +234,26 @@ static int timer_Adjust (lua_State *L) {
 		lua_pushvalue( L, 4 );
 		t.m_iFuncRef = luaL_ref( L, LUA_REGISTRYINDEX );
 	}
-	t.m_flNext = HL2SB_TimerNow() + t.m_flDelay;
+	// Adjust restarts the countdown with the new delay.  On a paused timer the
+	// new delay becomes the frozen remaining (pause moment resets).
+	if ( t.m_bPaused )
+	{
+		t.m_flPauseTime = HL2SB_TimerNow();
+		t.m_flNext = t.m_flPauseTime + t.m_flDelay;
+	}
+	else
+	{
+		t.m_flNext = HL2SB_TimerNow() + t.m_flDelay;
+	}
 
 	lua_pushboolean( L, true );
 	return 1;
 }
 
 // timer.TimeLeft( identifier ) -> number | false (false when it doesn't exist)
+// GMod: on a PAUSED timer this drifts negative - roughly -(time since pause) -
+// because the frozen m_flNext keeps sliding into the past.  Running timers
+// clamp at 0 (past-due-but-not-yet-pumped).
 static int timer_TimeLeft (lua_State *L) {
 	UtlHashHandle_t h = g_LuaTimers.Find( HL2SB_TimerKey( L, 1 ) );
 	if ( h == g_LuaTimers.InvalidHandle() )
@@ -233,7 +261,13 @@ static int timer_TimeLeft (lua_State *L) {
 		lua_pushboolean( L, false );
 		return 1;
 	}
-	float flLeft = g_LuaTimers[ h ].m_flNext - HL2SB_TimerNow();
+	const HL2SB_LuaTimer_t &t = g_LuaTimers[ h ];
+	if ( t.m_bPaused )
+	{
+		lua_pushnumber( L, -( HL2SB_TimerNow() - t.m_flPauseTime ) );
+		return 1;
+	}
+	float flLeft = t.m_flNext - HL2SB_TimerNow();
 	lua_pushnumber( L, flLeft < 0.0f ? 0.0f : flLeft );
 	return 1;
 }
