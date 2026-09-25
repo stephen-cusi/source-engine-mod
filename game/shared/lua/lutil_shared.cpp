@@ -13,6 +13,7 @@
 #include "lgametrace.h"
 #include "mathlib/lvector.h"
 #include "engine/IEngineSound.h"
+#include "tier1/keyvaluesjson.h"	// HL2SB GMod compat: util.JSONToTable decode
 // HL2SB: CSoundEnvelopeController, which owns the engine's CSoundPatch objects.
 // CSoundPatch itself is defined only inside game/shared/soundenvelope.cpp, so
 // the controller interface is the only public handle on it -- which is exactly
@@ -885,6 +886,27 @@ static int luasrc_UTIL_BlastDamage (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat (2026-09-24): util.ScreenShake( pos, amplitude, frequency,
+// duration, radius ) -- wiki util.ScreenShake, server realm (client gets the
+// shake via the usermessage).  combustible_lemon's Detonate calls this right
+// after BlastDamage; with the name missing the call raised and every error
+// after it in the detonation path died silently.
+static int luasrc_UTIL_ScreenShake (lua_State *L) {
+  Vector vecCenter = luaL_checkvector( L, 1 );
+  float flAmplitude = (float)luaL_checknumber( L, 2 );
+  float flFrequency = (float)luaL_checknumber( L, 3 );
+  float flDuration  = (float)luaL_checknumber( L, 4 );
+  float flRadius    = (float)luaL_checknumber( L, 5 );
+
+#ifndef CLIENT_DLL
+  // GMod's default command is SHAKE_START.
+  UTIL_ScreenShake( vecCenter, flAmplitude, flFrequency, flDuration, flRadius, SHAKE_START, false );
+#else
+  (void)flAmplitude; (void)flFrequency; (void)flDuration; (void)flRadius;
+#endif
+  return 0;
+}
+
 // HL2SB GMod compat: util.IsInWorld( position ).
 //
 // Wiki: "Returns whether the given position is in the world."  The fork only had
@@ -907,7 +929,300 @@ static int luasrc_UTIL_IsInWorld (lua_State *L) {
   return 1;
 }
 
+// -----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-09-25): util.TableToJSON / util.JSONToTable.
+//
+// GMod implements both engine-side (RapidJSON).  Here decode goes through
+// Valve's KeyValuesJSONParser (tier1/keyvaluesjson.cpp - battle-tested, and
+// already in every link that pulls tier1), encode is a direct Lua-table
+// emitter.
+//
+// Wiki semantics reproduced:
+// - TableToJSON( table, prettyPrint=false ) -> string.  Non-serializable
+//   values (functions, userdata, nil) are dropped "as if it wasn't in the
+//   table"; all keys become strings.
+// - JSONToTable( json ) -> table|nil.  nil on invalid input; JSON null -> nil;
+//   numeric-looking keys convert back to numbers "wherever possible";
+//   sequential numeric keys (JSON arrays) come back as 1-based Lua arrays.
+//
+// Known deviations (documented, none hit stock addons): GMod's parser also
+// tolerates comments/trailing commas and tracks array-vs-object identity for
+// numeric keys; Valve's parser is strict JSON and both shapes collapse to the
+// same KeyValues tree.
+// -----------------------------------------------------------------------------
+
+static void JSON_EmitEscaped( CUtlString &out, const char *psz )
+{
+	for ( const char *p = psz; *p != '\0'; ++p )
+	{
+		unsigned char c = (unsigned char)*p;
+		switch ( c )
+		{
+			case '"':  out += "\\\""; break;
+			case '\\': out += "\\\\"; break;
+			case '\b': out += "\\b";  break;
+			case '\f': out += "\\f";  break;
+			case '\n': out += "\\n";  break;
+			case '\r': out += "\\r";  break;
+			case '\t': out += "\\t";  break;
+			default:
+				if ( c < 0x20 )
+				{
+					char szTmp[ 8 ];
+					V_sprintf_safe( szTmp, "\\u%04x", c );
+					out += szTmp;
+				}
+				else
+				{
+					char szCh[ 2 ] = { (char)c, '\0' };
+					out += szCh;
+				}
+		}
+	}
+}
+
+static void JSON_EmitNumber( CUtlString &out, lua_Number num )
+{
+	char szNum[ 40 ];
+	if ( num == (double)(long long)num && num > -9.0e15 && num < 9.0e15 )
+		V_sprintf_safe( szNum, "%lld", (long long)num );
+	else
+		V_sprintf_safe( szNum, "%.14g", num );
+	out += szNum;
+}
+
+static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty, int depth, int indent );
+
+static bool JSON_IsArray( lua_State *L, int idx, lua_Integer *pnOut )
+{
+	lua_Integer n = luaL_len( L, idx );
+	if ( n <= 0 )
+		return false;
+
+	// keys 1..n must all be present...
+	for ( lua_Integer k = 1; k <= n; k++ )
+	{
+		lua_rawgeti( L, idx, k );
+		bool bNil = lua_isnil( L, -1 );
+		lua_pop( L, 1 );
+		if ( bNil )
+			return false;
+	}
+
+	// ...and there must be no other keys at all
+	lua_Integer count = 0;
+	lua_pushnil( L );
+	while ( lua_next( L, idx ) != 0 )
+	{
+		count++;
+		lua_pop( L, 1 );
+	}
+	if ( count != n )
+		return false;
+
+	*pnOut = n;
+	return true;
+}
+
+static void JSON_EmitTable( lua_State *L, int idx, CUtlString &out, bool pretty, int depth, int indent )
+{
+	if ( depth > 128 )
+	{
+		// cycle / pathological nesting - drop the value rather than overflowing
+		out += "null";
+		return;
+	}
+
+	// work on an absolute stack index: everything below pushes/pops around it
+	lua_pushvalue( L, idx );
+	int i = lua_gettop( L );
+
+	lua_Integer n = 0;
+	bool isArray = JSON_IsArray( L, i, &n );
+
+	if ( isArray )
+	{
+		out += "[";
+		for ( lua_Integer k = 1; k <= n; k++ )
+		{
+			if ( pretty ) { out += "\n"; for ( int s = 0; s <= indent; s++ ) out += "    "; }
+			lua_rawgeti( L, i, k );
+			JSON_EmitValue( L, -1, out, pretty, depth + 1, indent + 1 );
+			lua_pop( L, 1 );
+			if ( k < n ) out += ",";
+		}
+		if ( pretty ) { out += "\n"; for ( int s = 0; s < indent; s++ ) out += "    "; }
+		out += "]";
+		lua_pop( L, 1 );
+		return;
+	}
+
+	out += "{";
+	bool bFirst = true;
+	lua_pushnil( L );
+	while ( lua_next( L, i ) != 0 )
+	{
+		// value at -1, key at -2.  GMod: non-serializable values are dropped
+		// "as if it wasn't in the table"; all keys become strings.
+		int keyType = lua_type( L, -2 );
+		int valueType = lua_type( L, -1 );
+
+		bool bSkip = ( valueType == LUA_TNIL || valueType == LUA_TFUNCTION ||
+					   valueType == LUA_TUSERDATA ||
+					   ( keyType != LUA_TSTRING && keyType != LUA_TNUMBER ) );
+		if ( bSkip )
+		{
+			lua_pop( L, 1 );
+			continue;
+		}
+
+		if ( !bFirst ) out += ",";
+		bFirst = false;
+		if ( pretty ) { out += "\n"; for ( int s = 0; s <= indent; s++ ) out += "    "; }
+
+		out += "\"";
+		if ( keyType == LUA_TNUMBER )
+			JSON_EmitNumber( out, lua_tonumber( L, -2 ) );	// number keys stringify
+		else
+			JSON_EmitEscaped( out, lua_tostring( L, -2 ) );
+		out += "\": ";
+
+		JSON_EmitValue( L, -1, out, pretty, depth + 1, indent + 1 );
+		lua_pop( L, 1 );
+	}
+	if ( pretty && !bFirst ) { out += "\n"; for ( int s = 0; s < indent; s++ ) out += "    "; }
+	out += "}";
+	lua_pop( L, 1 );
+}
+
+static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty, int depth, int indent )
+{
+	// copy to an absolute index - idx may be relative (lua_rawgeti results etc.)
+	lua_pushvalue( L, idx );
+	int i = lua_gettop( L );
+
+	switch ( lua_type( L, i ) )
+	{
+		case LUA_TNIL:		out += "null"; break;
+		case LUA_TBOOLEAN:	out += lua_toboolean( L, i ) ? "true" : "false"; break;
+		case LUA_TNUMBER:	JSON_EmitNumber( out, lua_tonumber( L, i ) ); break;
+		case LUA_TSTRING:	JSON_EmitEscaped( out, lua_tostring( L, i ) ); break;
+		case LUA_TTABLE:	JSON_EmitTable( L, i, out, pretty, depth, indent ); break;
+		default:			out += "null"; break;
+	}
+
+	lua_pop( L, 1 );
+}
+
+// util.TableToJSON( table, prettyPrint=false )
+// (non-static: net_WriteTable reuses the emitter, lnet.cpp)
+LUA_API int luasrc_UTIL_TableToJSON( lua_State *L )
+{
+	if ( lua_type( L, 1 ) != LUA_TTABLE )
+	{
+		lua_pushnil( L );
+		return 1;
+	}
+
+	bool pretty = ( lua_toboolean( L, 2 ) != 0 );
+
+	CUtlString out;
+	JSON_EmitTable( L, 1, out, pretty, 0, 0 );
+
+	lua_pushstring( L, out.Get() );
+	return 1;
+}
+
+// walk a KeyValues tree (from the JSON parser) back into a Lua value/table
+static void JSON_KVToLua( lua_State *L, KeyValues *pNode )
+{
+	KeyValues *pChild = pNode->GetFirstSubKey();
+
+	if ( pChild == NULL )
+	{
+		// leaf.  NOTE: "{}" parses to a childless TYPE_NONE node - that is an
+		// empty table, not null (null comes through as TYPE_PTR).
+		if ( pNode->GetDataType() == KeyValues::TYPE_NONE )
+		{
+			lua_newtable( L );
+		}
+		else if ( pNode->GetDataType() == KeyValues::TYPE_PTR )
+		{
+			lua_pushnil( L );	// JSON null
+		}
+		else
+		{
+			switch ( pNode->GetDataType() )
+			{
+				case KeyValues::TYPE_INT:     lua_pushinteger( L, pNode->GetInt() ); break;
+				case KeyValues::TYPE_UINT64:  lua_pushnumber( L, (lua_Number)pNode->GetUint64() ); break;
+				case KeyValues::TYPE_FLOAT:   lua_pushnumber( L, pNode->GetFloat() ); break;
+				default:                      lua_pushstring( L, pNode->GetString() ); break;
+			}
+		}
+		return;
+	}
+
+	// container.  ParseArray names children "0","1",... - sequential numeric
+	// names mean this was a JSON array and comes back as a 1-based Lua array;
+	// otherwise it is a map (GMod converts numeric-looking keys to numbers
+	// "wherever possible").
+	bool isArray = true;
+	int expected = 0;
+	for ( KeyValues *p = pChild; p != NULL; p = p->GetNextKey() )
+	{
+		if ( V_atoi( p->GetName() ) != expected ) { isArray = false; break; }
+		++expected;
+	}
+
+	lua_newtable( L );
+
+	int arrayIdx = 0;
+	for ( KeyValues *p = pChild; p != NULL; p = p->GetNextKey() )
+	{
+		if ( isArray )
+		{
+			JSON_KVToLua( L, p );
+			lua_rawseti( L, -2, ++arrayIdx );
+		}
+		else
+		{
+			const char *pszKey = p->GetName();
+			char *pszEnd = NULL;
+			long lKey = strtol( pszKey, &pszEnd, 10 );
+			if ( pszEnd && *pszEnd == '\0' && pszEnd != pszKey )
+				lua_pushinteger( L, (lua_Integer)lKey );
+			else
+				lua_pushstring( L, pszKey );
+			JSON_KVToLua( L, p );
+			lua_settable( L, -3 );
+		}
+	}
+}
+
+// util.JSONToTable( json )
+// (non-static: net_ReadTable reuses the decoder, lnet.cpp)
+LUA_API int luasrc_UTIL_JSONToTable( lua_State *L )
+{
+	const char *pszJson = luaL_checkstring( L, 1 );
+
+	KeyValuesJSONParser parser( pszJson );
+	KeyValues *pRoot = parser.ParseFile();
+	if ( pRoot == NULL )
+	{
+		lua_pushnil( L );
+		return 1;
+	}
+
+	JSON_KVToLua( L, pRoot );
+	pRoot->deleteThis();
+	return 1;
+}
+
 static const luaL_Reg util_funcs[] = {
+  // HL2SB GMod compat (2026-09-25): engine-side JSON (see the block above).
+  {"TableToJSON",  luasrc_UTIL_TableToJSON},
+  {"JSONToTable",  luasrc_UTIL_JSONToTable},
   // {"UTIL_VecToYaw",  luasrc_UTIL_VecToYaw},
   {"VecToYaw",  luasrc_UTIL_VecToYaw},
   // {"UTIL_VecToPitch",  luasrc_UTIL_VecToPitch},
@@ -962,6 +1277,7 @@ static const luaL_Reg util_funcs[] = {
   {"Effect",  luasrc_UTIL_Effect},
   {"SpriteTrail",  luasrc_UTIL_SpriteTrail},
   {"BlastDamage",  luasrc_UTIL_BlastDamage},
+  {"ScreenShake",  luasrc_UTIL_ScreenShake},
   {NULL, NULL}
 };
 
