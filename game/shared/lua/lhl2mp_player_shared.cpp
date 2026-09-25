@@ -112,7 +112,10 @@ static int CHL2MP_Player___index (lua_State *L) {
   const char *field = luaL_checkstring(L, 2);
 #ifdef CLIENT_DLL
   if (Q_strcmp(field, "m_fNextThinkPushAway") == 0)
-    Msg("QQWEE");
+  {
+    // HL2SB (2026-09-25): leftover debug Msg removed -- any addon writing
+    // this field printed "QQWEE" to the console on every write.
+  }
   else {
 #endif
     if (lua_isrefvalid(L, pPlayer->m_nTableReference)) {
@@ -178,7 +181,9 @@ static int CHL2MP_Player___newindex (lua_State *L) {
   const char *field = luaL_checkstring(L, 2);
 #ifdef CLIENT_DLL
   if (Q_strcmp(field, "m_fNextThinkPushAway") == 0)
-      Msg("QQWEE");//    pPlayer->m_fNextThinkPushAway = luaL_checknumber(L, 3);
+  {
+    // HL2SB (2026-09-25): leftover debug Msg removed.
+  }
   else {
 #endif
     // HL2SB: < 0, not == LUA_NOREF -- LUA_REFNIL (-1) is not LUA_NOREF (-2);

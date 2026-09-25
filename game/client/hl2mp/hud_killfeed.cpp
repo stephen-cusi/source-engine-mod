@@ -508,6 +508,17 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 	if ( !Q_stricmp( pszName, "item_pickup" ) )
 	{
 #ifdef LUA_SDK
+		// HL2SB (2026-09-25): GMod fires HUDItemPickedUp for the LOCAL player
+		// only, and its Lua receivers open with IsValid( LocalPlayer() ).
+		// The local player entity does not exist yet during the join window,
+		// so LocalPlayer() answered a NULL-entity userdata and every pickup
+		// in that window threw "attempt to index a NULL entity" (util.lua:318)
+		// from this hook -- one console flood line per pickup.  GMod would not
+		// draw those pickups either, so skip dispatch entirely until the
+		// local player exists.
+		if ( C_BasePlayer::GetLocalPlayer() == NULL )
+			return;
+
 		if ( cl_killfeed_lua.GetBool() )
 		{
 			int iUserID = event->GetInt( "userid", 0 );
