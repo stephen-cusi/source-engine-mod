@@ -2214,30 +2214,36 @@ bool CBaseCombatCharacter::Weapon_EquipAmmoOnly( CBaseCombatWeapon *pWeapon )
 			{
 				pWeapon->SetSecondaryAmmoCount( pWeapon->GetSecondaryAmmoCount() - takenSecondary );
 			}
-			
+
+#ifdef HL2SB
+			// HL2SB: report the ammo picked up from a duplicate weapon (the
+			// player already owned the weapon, so it's an ammo pickup).
+			// amount = how much ammo the player actually received.
+			//
+			// Fired for EVERY player touch, not only when ammo was actually
+			// taken: GiveAmmo answers 0 once the reserve is full, and with the
+			// old taken>0 gate walking over your own dropped weapon a second
+			// time was completely silent on the HUD (2026-09-26 report).  GMod
+			// pops the notice on every touch too.
+			if ( this && this->IsPlayer() )
+			{
+				CBasePlayer *pPlayer = (CBasePlayer *)this;
+				IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
+				if ( event )
+				{
+					event->SetInt( "userid", pPlayer->GetUserID() );
+					event->SetString( "item", UTIL_VarArgs( "%s_ammo", pWeapon->GetClassname() ) );
+					event->SetInt( "amount", takenPrimary > 0 ? takenPrimary : takenSecondary );
+					gameeventmanager->FireEvent( event );
+				}
+			}
+#endif
 			//Only succeed if we've taken ammo from the weapon
 			if ( takenPrimary > 0 || takenSecondary > 0 )
 			{
-#ifdef HL2SB
-				// HL2SB: report the ammo picked up from a duplicate weapon (the
-				// player already owned the weapon, so it's an ammo pickup).
-				// amount = how much ammo the player actually received.
-				if ( this && this->IsPlayer() )
-				{
-					CBasePlayer *pPlayer = (CBasePlayer *)this;
-					IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
-					if ( event )
-					{
-						event->SetInt( "userid", pPlayer->GetUserID() );
-						event->SetString( "item", UTIL_VarArgs( "%s_ammo", pWeapon->GetClassname() ) );
-						event->SetInt( "amount", takenPrimary > 0 ? takenPrimary : takenSecondary );
-						gameeventmanager->FireEvent( event );
-					}
-				}
-#endif
 				return true;
 			}
-			
+
 			return false;
 		}
 	}

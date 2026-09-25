@@ -20,6 +20,7 @@
 //=============================================================================//
 #include "cbase.h"
 #include "hl2sb_undo.h"
+#include "igameevents.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -143,7 +144,26 @@ CON_COMMAND( gm_giveswep, "Give yourself a weapon: gm_giveswep <class>  (GMod)" 
 	if ( pPlayer == NULL || args.ArgC() < 2 )
 		return;
 
-	pPlayer->GiveNamedItem( args[ 1 ] );
+	const char *pszClass = args[ 1 ];
+
+	pPlayer->GiveNamedItem( pszClass );
+
+#ifdef HL2SB
+	// HL2SB (2026-09-26): the spawnmenu gives weapons through this command and
+	// nothing on that path fired item_pickup, so spawning a weapon never showed
+	// the pickup strip.  Fire it here -- GMod pops the notice for menu-given
+	// weapons too.
+	{
+		IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
+		if ( event )
+		{
+			event->SetInt( "userid", pPlayer->GetUserID() );
+			event->SetString( "item", pszClass );
+			event->SetInt( "amount", 0 );
+			gameeventmanager->FireEvent( event );
+		}
+	}
+#endif
 }
 
 //-----------------------------------------------------------------------------

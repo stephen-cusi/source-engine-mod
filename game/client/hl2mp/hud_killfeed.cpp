@@ -41,11 +41,13 @@
 #include <vgui/ILocalize.h>
 #include <KeyValues.h>
 #include "c_baseplayer.h"
+#include "c_basecombatweapon.h"
 #include "c_team.h"
 #include "filesystem.h"
 
 #ifdef LUA_SDK
 #include "luamanager.h"
+#include "lbaseentity_shared.h"
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -529,7 +531,34 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 				lua_pushinteger( L, iUserID );
 				lua_pushstring( L, pszItem );
 				lua_pushinteger( L, iAmount );
-			END_LUA_CALL_HOOK( 3, 0 );
+				// HL2SB (2026-09-26): GMod's GM:HUDWeaponPickedUp receives the weapon
+				// ENTITY.  The event only carries the classname, so look it up in
+				// the local player's inventory (m_hMyWeapons is networked for the
+				// local player); the active-weapon guess in Lua missed every time
+				// the client had not switched yet ("entity match=false", 9-26 diag).
+				C_BaseCombatWeapon *pPickupWeapon = NULL;
+				if ( !Q_strnicmp( pszItem, "weapon_", 7 ) && C_BasePlayer::GetLocalPlayer() )
+				{
+					C_BaseCombatCharacter *pLocalCC = C_BasePlayer::GetLocalPlayer();
+					for ( int i = 0; i < MAX_WEAPONS; i++ )
+					{
+						C_BaseCombatWeapon *pIter = pLocalCC->GetWeapon( i );
+						if ( pIter && !Q_stricmp( pIter->GetClassname(), pszItem ) )
+						{
+							pPickupWeapon = pIter;
+							break;
+						}
+					}
+				}
+				if ( pPickupWeapon )
+					lua_pushentity( L, pPickupWeapon );
+				else
+					lua_pushnil( L );
+			// Four values are pushed above (userid, item, amount, weapon).  This was
+			// 3 when the weapon entity was added on 2026-09-26: pcall then grabbed the
+			// EVENT NAME STRING as the function -- "attempt to call a string value"
+			// on every pickup, and the Lua handler below never ran at all.
+			END_LUA_CALL_HOOK( 4, 0 );
 			return;
 		}
 #endif
