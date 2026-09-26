@@ -1760,25 +1760,48 @@ int HL2SB_SelectPlayerSequence( CBaseAnimating *pAnim, Activity translatedActivi
 
 	const char *pszState = s_HL2SBPlayerAnimStates[ iState ].pszSequenceState;
 
-	// The one hold type whose sequence suffix differs from its activity suffix.
+	// HL2SB: the gravgun/physgun hold type is the one family whose sequence
+	// suffix differs from its activity suffix - but it differs PER STATE, and the
+	// model data (models/m_anm.mdl, verified 2026-09-27) is:
+	//
+	//     idle_physgun walk_physgun run_physgun cwalk_physgun cidle_physgun
+	//     jump_physgun sit_physgun          <- "_physgun"
+	//     swimming_gravgun swim_idle_gravgun <- "_gravgun"
+	//
+	// Converting the family once, unconditionally, made every non-swim state of
+	// the physgun miss ("cwalk_gravgun" does not exist) and drop to the generic
+	// cwalk_all family - the reported "some weapons lose their crouch animation"
+	// (the physgun is this fork's default weapon).  Keep the activity spelling and
+	// try BOTH for this one family.
+	char szAltFamily[ 64 ];
+	szAltFamily[ 0 ] = '\0';
 	if ( szFamily[ 0 ] && !Q_stricmp( szFamily, "physgun" ) )
-		Q_strncpy( szFamily, "gravgun", sizeof( szFamily ) );
+		Q_strncpy( szAltFamily, "gravgun", sizeof( szAltFamily ) );
+	else if ( szFamily[ 0 ] && !Q_stricmp( szFamily, "gravgun" ) )
+		Q_strncpy( szAltFamily, "physgun", sizeof( szAltFamily ) );
 
 	char szCandidate[ 128 ];
 
-	// 1) the weapon's own hold type.
+	// 1) the weapon's own hold type (and, for physgun/gravgun, its other spelling).
 	if ( szFamily[ 0 ] )
 	{
-		Q_snprintf( szCandidate, sizeof( szCandidate ), "%s_%s", pszState, szFamily );
-		int iSequence = pAnim->LookupSequence( szCandidate );
-		if ( iSequence >= 0 )
-			return iSequence;
+		for ( int iSpelling = 0; iSpelling < 2; ++iSpelling )
+		{
+			const char *pszFamily = ( iSpelling == 0 ) ? szFamily : szAltFamily;
+			if ( !pszFamily[ 0 ] )
+				continue;
 
-		// HL2MP ships a "_mod" copy of run_*/cwalk_* next to the plain one.
-		Q_snprintf( szCandidate, sizeof( szCandidate ), "%s_%s_mod", pszState, szFamily );
-		iSequence = pAnim->LookupSequence( szCandidate );
-		if ( iSequence >= 0 )
-			return iSequence;
+			Q_snprintf( szCandidate, sizeof( szCandidate ), "%s_%s", pszState, pszFamily );
+			int iSequence = pAnim->LookupSequence( szCandidate );
+			if ( iSequence >= 0 )
+				return iSequence;
+
+			// HL2MP ships a "_mod" copy of run_*/cwalk_* next to the plain one.
+			Q_snprintf( szCandidate, sizeof( szCandidate ), "%s_%s_mod", pszState, pszFamily );
+			iSequence = pAnim->LookupSequence( szCandidate );
+			if ( iSequence >= 0 )
+				return iSequence;
+		}
 	}
 
 	// 2) The alternate run styles are named "run_all_charging",

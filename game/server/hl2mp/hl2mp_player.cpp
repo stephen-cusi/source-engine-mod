@@ -15,6 +15,7 @@
 #include "predicted_viewmodel.h"
 #include "in_buttons.h"
 #include "hl2mp_gamerules.h"
+#include "Multiplayer/multiplayer_animstate.h"
 #include "KeyValues.h"
 #include "team.h"
 #include "weapon_hl2mpbase.h"
@@ -29,6 +30,8 @@
 #include "gamestats.h"
 #ifdef LUA_SDK
 #include "luamanager.h"
+// HL2SB (2026-09-27): lua_pushvector for the animation hook dispatches.
+#include "mathlib/lvector.h"
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
 #include "lbasecombatweapon_shared.h"	// HL2SB GMod compat: lua_pushweapon (SWEP:OnDrop)
@@ -81,7 +84,16 @@ IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 	SendPropFloat( SENDINFO( m_flAmmoStartCharge ) ),
 	SendPropFloat( SENDINFO( m_flPlayAftershock ) ),
 	SendPropFloat( SENDINFO( m_flNextAmmoBurn ) ),
-	
+
+	// HL2SB (2026-09-27): GMod per-player movement speeds (Player:SetWalkSpeed /
+	// SetRunSpeed / SetJumpPower).  Networked so client prediction in
+	// CGameMovement (GetPlayerMaxSpeed / CheckJumpButton) agrees with the
+	// server-authoritative values Lua writes.
+	SendPropFloat( SENDINFO( m_flHL2SBWalkSpeed ) ),
+	SendPropFloat( SENDINFO( m_flHL2SBRunSpeed ) ),
+	SendPropFloat( SENDINFO( m_flHL2SBSlowWalkSpeed ) ),
+	SendPropFloat( SENDINFO( m_flHL2SBJumpPower ) ),
+
 	SendPropExclude( "DT_BaseAnimating", "m_flPoseParameter" ),
 	SendPropExclude( "DT_BaseFlex", "m_viewtarget" ),
 
@@ -187,6 +199,28 @@ CHL2MP_Player::CHL2MP_Player() : m_PlayerAnimState( this )
 	m_flNextTeamChangeTime = 0.0f;
 
 	m_iSpawnInterpCounter = 0;
+
+	// HL2SB (2026-09-27): GMod defaults (base gamemode player class).  Gesture
+	// slots start empty; speeds default to GMod's walk 150 / run 400 so the
+	// movement feel matches even before any Lua touches them.
+	for ( int i = 0; i < GESTURE_SLOT_COUNT; i++ )
+	{
+		m_iHL2SBSlotLayer[i] = -1;
+		m_iHL2SBSlotActivity[i] = ACT_INVALID;
+	}
+
+	m_flHL2SBWalkSpeed = 150.0f;
+	m_flHL2SBRunSpeed = 400.0f;
+	m_flHL2SBSlowWalkSpeed = 100.0f;
+	m_flHL2SBJumpPower = 0.0f;	// 0 = engine default (SetJumpPower writes 200)
+
+	// HL2SB: stored-only GMod knobs (GMod defaults).
+	m_flHL2SBCrouchedWalkSpeed = 0.34f;
+	m_flHL2SBDuckSpeed = 0.4f;
+	m_flHL2SBUnDuckSpeed = 0.4f;
+	m_flHL2SBLadderClimbSpeed = 100.0f;
+	m_flHL2SBStepSize = 18.0f;
+	m_bHL2SBAllowWeaponsInVehicle = false;
 
     m_bEnterObserver = false;
 	m_bReady = false;
@@ -380,6 +414,15 @@ void CHL2MP_Player::Spawn(void)
 
 	SetNumAnimOverlays( 3 );
 	ResetAnimation();
+
+	// HL2SB (2026-09-27): a respawn wipes the overlay, so the Lua-side gesture
+	// slot bookkeeping must follow (GMod's animstate keeps its slots across
+	// life, but its layers die with SetNumAnimOverlays just the same).
+	for ( int i = 0; i < GESTURE_SLOT_COUNT; i++ )
+	{
+		m_iHL2SBSlotLayer[i] = -1;
+		m_iHL2SBSlotActivity[i] = ACT_INVALID;
+	}
 
 	m_nRenderFX = kRenderNormal;
 
@@ -752,6 +795,19 @@ void CHL2MP_Player::PostThink( void )
 
 	m_PlayerAnimState.Update();
 
+	// HL2SB (2026-09-27): GM:UpdateAnimation( ply, velocity, maxSeqGroundSpeed )
+	// - animations.lua:197.  The base gamemode writes SetPlaybackRate and the
+	// vehicle pose parameters here every frame, exactly like GMod; the client
+	// realm dispatches the same hook for its own pose/flex work (MouthMove).
+	{
+		float flGroundSpeed = GetSequenceGroundSpeed( GetSequence() );
+		BEGIN_LUA_CALL_HOOK( "UpdateAnimation" );
+			lua_pushplayer( L, this );
+			lua_pushvector( L, GetAbsVelocity() );
+			lua_pushnumber( L, flGroundSpeed );
+		END_LUA_CALL_HOOK( 3, 0 );
+	}
+
 	// Store the eye angles pitch so the client can compute its animation state correctly.
 	m_angEyeAngles = EyeAngles();
 
@@ -861,6 +917,187 @@ Activity CHL2MP_Player::TranslateTeamActivity( Activity ActToTranslate )
 
 extern ConVar hl2_normspeed;
 
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-27): GMod player-animation glue.  The three hooks below are
+// the exact contract GMod's base gamemode animations.lua drives player
+// animation with (hook names resolved through lua_shared.dll's id->name
+// registry; the client.dll/server.dll binaries carry no hook strings).
+//-----------------------------------------------------------------------------
+
+// GM:DoAnimationEvent( ply, event, data ) - animations.lua:361.  Returns the
+// viewmodel activity the event should play (ACT_INVALID for "none").  Answers
+// false when the gamemode has no Lua handler, so callers fall back to the
+// built-in HL2MP path.
+bool CHL2MP_Player::HL2SB_DoAnimationEventLua( PlayerAnimEvent_t event, int nData )
+{
+	bool bHandled = false;
+
+	BEGIN_LUA_CALL_HOOK( "DoAnimationEvent" );
+		lua_pushplayer( L, this );
+		lua_pushinteger( L, event );
+		lua_pushinteger( L, nData );
+	END_LUA_CALL_HOOK( 3, 1 );
+
+	if ( lua_isnumber( L, -1 ) )
+	{
+		bHandled = true;
+		Activity vmAct = (Activity)lua_tointeger( L, -1 );
+		// GMod returns ACT_VM_* to drive the viewmodel, ACT_INVALID for "no
+		// viewmodel change" (reload/jump answer ACT_INVALID in animations.lua).
+		if ( vmAct > ACT_INVALID )
+		{
+			Weapon_SetActivity( vmAct, 0 );
+		}
+	}
+	lua_pop( L, 1 );
+
+	return bHandled;
+}
+
+// GM:TranslateActivity( ply, act ) - animations.lua:348 (weapon acttable plus
+// the ACT_HL2MP_* idle-family fallback).  Returns 'fallback' when the gamemode
+// does not answer, which keeps the built-in Weapon_TranslateActivity() chain.
+Activity CHL2MP_Player::HL2SB_TranslateActivityLua( Activity act, Activity fallback )
+{
+	Activity translated = fallback;
+
+	BEGIN_LUA_CALL_HOOK( "TranslateActivity" );
+		lua_pushplayer( L, this );
+		lua_pushinteger( L, act );
+	END_LUA_CALL_HOOK( 2, 1 );
+
+	if ( lua_isnumber( L, -1 ) )
+		translated = (Activity)lua_tointeger( L, -1 );
+	lua_pop( L, 1 );
+
+	return translated;
+}
+
+void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool bRestart )
+{
+	if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT || activity <= ACT_INVALID )
+		return;
+
+	// Stale bookkeeping: the layer finished (autokill) since the slot was
+	// filled - forget it so the gesture can start again.
+	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && !IsValidLayer( m_iHL2SBSlotLayer[iSlot] ) )
+	{
+		m_iHL2SBSlotLayer[iSlot] = -1;
+		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
+	}
+
+	// GMod's authoritative semantics (CMultiPlayerAnimState::RestartGesture,
+	// game/shared/Multiplayer/multiplayer_animstate.cpp:545): asking for the
+	// activity an active slot is ALREADY playing RESETS its cycle - it replays.
+	// That is what makes a second shot / a re-triggered gesture visible again;
+	// returning early here (the first version) meant fire-fire only animated the
+	// first shot.  A different activity (or an empty slot) starts a new layer.
+	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && m_iHL2SBSlotActivity[iSlot] == activity )
+	{
+		if ( bRestart )
+			SetLayerCycle( m_iHL2SBSlotLayer[iSlot], 0.0f, 0.0f );
+
+		return;
+	}
+
+	if ( m_iHL2SBSlotLayer[iSlot] >= 0 )
+		RemoveLayer( m_iHL2SBSlotLayer[iSlot], 0.0f, 0.0f );
+
+	// GMod gestures play through the weapon acttable (ACT_MP_ATTACK_* ->
+	// ACT_HL2MP_GESTURE_RANGE_ATTACK_<holdtype>); fall back to the bare
+	// activity for model-authored layer activities (ACT_GMOD_IN_CHAT,
+	// ACT_GMOD_NOCLIP_LAYER).
+	Activity translated = Weapon_TranslateActivity( activity );
+	int iSequence = SelectWeightedSequence( translated );
+	if ( iSequence <= 0 )
+		iSequence = SelectWeightedSequence( activity );
+	if ( iSequence <= 0 )
+	{
+		m_iHL2SBSlotLayer[iSlot] = -1;
+		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
+		return;
+	}
+
+	int iLayer = AddGestureSequence( iSequence, true );
+	if ( iLayer < 0 )
+	{
+		m_iHL2SBSlotLayer[iSlot] = -1;
+		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
+		return;
+	}
+
+	SetLayerWeight( iLayer, 1.0f );
+
+	m_iHL2SBSlotLayer[iSlot] = iLayer;
+	m_iHL2SBSlotActivity[iSlot] = activity;
+}
+
+void CHL2MP_Player::HL2SB_AnimResetGestureSlot( int iSlot )
+{
+	if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT )
+		return;
+
+	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && IsValidLayer( m_iHL2SBSlotLayer[iSlot] ) )
+		RemoveLayer( m_iHL2SBSlotLayer[iSlot], 0.0f, 0.0f );
+
+	m_iHL2SBSlotLayer[iSlot] = -1;
+	m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
+}
+
+void CHL2MP_Player::HL2SB_AnimSetGestureWeight( int iSlot, float flWeight )
+{
+	if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT )
+		return;
+
+	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && IsValidLayer( m_iHL2SBSlotLayer[iSlot] ) )
+		SetLayerWeight( m_iHL2SBSlotLayer[iSlot], clamp( flWeight, 0.0f, 1.0f ) );
+}
+
+bool CHL2MP_Player::HL2SB_IsPlayingTaunt( void )
+{
+	int iSlot = GESTURE_SLOT_VCD;
+	return m_iHL2SBSlotLayer[iSlot] >= 0 && IsValidLayer( m_iHL2SBSlotLayer[iSlot] );
+}
+
+// GMod: AnimSetGestureSequence( slot, sequence ) - swap the slot's layer to a
+// raw sequence (bypasses activity translation).
+void CHL2MP_Player::HL2SB_AnimSetGestureSequence( int iSlot, int iSequence )
+{
+	if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT || iSequence <= 0 )
+		return;
+
+	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && IsValidLayer( m_iHL2SBSlotLayer[iSlot] ) )
+		RemoveLayer( m_iHL2SBSlotLayer[iSlot], 0.0f, 0.0f );
+
+	int iLayer = AddGestureSequence( iSequence, true );
+	if ( iLayer >= 0 )
+	{
+		SetLayerWeight( iLayer, 1.0f );
+		m_iHL2SBSlotLayer[iSlot] = iLayer;
+		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
+	}
+	else
+	{
+		m_iHL2SBSlotLayer[iSlot] = -1;
+		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
+	}
+}
+
+// GMod movement: players run at SetRunSpeed (400) and drop to SetWalkSpeed
+// (150) only while the walk key is held.  This supersedes the CHL2 PreThink
+// walk/sprint MaxSpeed writes (hl2_walkspeed / hl2_normspeed /
+// hl2_sprintspeed), matching GMod's player-class-driven speeds.
+float CHL2MP_Player::GetPlayerMaxSpeed( void )
+{
+	if ( IsObserver() || !IsAlive() )
+		return BaseClass::GetPlayerMaxSpeed();
+
+	if ( m_nButtons & IN_WALK )
+		return m_flHL2SBWalkSpeed;
+
+	return m_flHL2SBRunSpeed;
+}
+
 // Set the activity based on an event or current state
 void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 {
@@ -928,11 +1165,52 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		playerAnim = PLAYER_IDLE;
 	}
 
+	// HL2SB: the die check must survive the Lua override below - a dying player
+	// never gets a main-sequence change (GMod's animstate handles death itself).
+	if ( playerAnim == PLAYER_DIE && m_lifeState == LIFE_ALIVE )
+		return;
+
 	Activity idealActivity = ACT_HL2MP_RUN;
 
+	// HL2SB (2026-09-27): GM:CalcMainActivity( ply, velocity ) -
+	// animations.lua:305.  Returns ( idealActivity, sequenceOverride ); -1
+	// override = "no sequence pin".  The ACT_MP_* ideal flows through the same
+	// weapon-acttable / name-pin chain below.  When the gamemode does not
+	// answer, the built-in HL2MP state machine (kept verbatim) runs.
+	int iLuaSeqOverride = -1;
+	bool bLuaIdeal = false;
+	{
+		BEGIN_LUA_CALL_HOOK( "CalcMainActivity" );
+			lua_pushplayer( L, this );
+			lua_pushvector( L, GetAbsVelocity() );
+		END_LUA_CALL_HOOK( 2, 2 );
+
+		if ( lua_isnumber( L, -2 ) )
+		{
+			bLuaIdeal = true;
+			idealActivity = (Activity)lua_tointeger( L, -2 );
+			if ( lua_isnumber( L, -1 ) )
+				iLuaSeqOverride = lua_tointeger( L, -1 );
+		}
+		lua_pop( L, 2 );
+	}
+
+	// HL2SB (2026-09-27): the EVENT dispatch below (jump / attack / reload) must run
+	// whether or not GM:CalcMainActivity answered.  GMod starts its attack and reload
+	// GESTURES from GM:DoAnimationEvent, and gating them on !bLuaIdeal meant that as
+	// soon as a gamemode defined CalcMainActivity (i.e. always - the ported
+	// animations.lua does) firing and reloading stopped animating the player at all.
+	// Only the built-in GAIT selection (idle/walk/run/crouch/swim) is skipped when
+	// Lua supplied the ideal.
+	//
 	// This could stand to be redone. Why is playerAnim abstracted from activity? (sjb)
 	if ( playerAnim == PLAYER_JUMP )
 	{
+		// HL2SB: the jump ANIMEVENT goes to Lua first (animations.lua:388 sets
+		// m_bJumping and restarts the main sequence); the ACT_HL2MP_JUMP
+		// selection below still runs so a gamemode without Lua keeps jumping.
+		HL2SB_DoAnimationEventLua( PLAYERANIMEVENT_JUMP, 0 );
+
 		idealActivity = ACT_HL2MP_JUMP;
 	}
 	else if ( playerAnim == PLAYER_DIE )
@@ -944,7 +1222,14 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	}
 	else if ( playerAnim == PLAYER_ATTACK1 )
 	{
-		if ( GetActivity( ) == ACT_HOVER	|| 
+		// HL2SB: GMod plays attacks as a GESTURE_SLOT_ATTACK_AND_RELOAD gesture
+		// from GM:DoAnimationEvent (animations.lua:363), never touching the
+		// main sequence.  When Lua answers, the viewmodel activity the handler
+		// returned was already applied - done.
+		if ( HL2SB_DoAnimationEventLua( PLAYERANIMEVENT_ATTACK_PRIMARY, 0 ) )
+			return;
+
+		if ( GetActivity( ) == ACT_HOVER	||
 			 GetActivity( ) == ACT_SWIM		||
 			 GetActivity( ) == ACT_HOP		||
 			 GetActivity( ) == ACT_LEAP		||
@@ -959,10 +1244,17 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	}
 	else if ( playerAnim == PLAYER_RELOAD )
 	{
+		if ( HL2SB_DoAnimationEventLua( PLAYERANIMEVENT_RELOAD, 0 ) )
+			return;
+
 		idealActivity = ACT_HL2MP_GESTURE_RELOAD;
 	}
 	else if ( playerAnim == PLAYER_IDLE || playerAnim == PLAYER_WALK )
 	{
+		// HL2SB: with a gamemode the gait ideal already came from
+		// GM:CalcMainActivity above, so the built-in machine is skipped.
+		if ( !bLuaIdeal )
+		{
 		// HL2SB: swimming is checked before the jump hold, exactly like GMod's
 		// CalcMainActivity order (animations.lua:113 HandlePlayerSwimming is
 		// after HandlePlayerJumping, but animations.lua:13 ends a jump as soon
@@ -1043,8 +1335,9 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		}
 
 		idealActivity = TranslateTeamActivity( idealActivity );
+		}	// end if ( !bLuaIdeal )
 	}
-	
+
 	if ( idealActivity == ACT_HL2MP_GESTURE_RANGE_ATTACK )
 	{
 		RestartGesture( Weapon_TranslateActivity( idealActivity ) );
@@ -1064,16 +1357,33 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		// HL2SB: pin the sequence by NAME ("run_pistol", "cwalk_ar2",
 		// "idle_gravgun", ... - see HL2SB_SelectPlayerSequence()) instead of
 		// trusting the activity -> hold type -> weighted-random-sequence chain.
-		Activity translatedActivity = Weapon_TranslateActivity( idealActivity );
+		Activity translatedActivity;
+		if ( bLuaIdeal )
+		{
+			// GMod order: the ACT_MP_* ideal goes through GM:TranslateActivity
+			// (animations.lua:348 - weapon acttable, then the IdleActivityTranslate
+			// ACT_HL2MP_* fallback).  No Lua answer -> plain weapon translation.
+			translatedActivity = HL2SB_TranslateActivityLua( idealActivity, Weapon_TranslateActivity( idealActivity ) );
+		}
+		else
+		{
+			translatedActivity = Weapon_TranslateActivity( idealActivity );
+		}
 
 		animDesired = HL2SB_SelectPlayerSequence( this, translatedActivity, idealActivity );
 
+		// HL2SB: a sequence override from GM:CalcMainActivity's second return
+		// (CalcSeqOverride in animations.lua) pins the sequence outright.
+		if ( iLuaSeqOverride > -1 )
+		{
+			animDesired = iLuaSeqOverride;
+		}
 		// A model with no walk animation (HL2MP's own anim models only ship run_*)
 		// answers ACT_INVALID here: keep running instead of dropping to
 		// sequence 0, which is what the old fallback chain would have done.
-		if ( animDesired == -1 && idealActivity == ACT_HL2MP_WALK )
+		else if ( animDesired == -1 && ( idealActivity == ACT_HL2MP_WALK || idealActivity == ACT_MP_WALK ) )
 		{
-			idealActivity = ACT_HL2MP_RUN;
+			idealActivity = ( idealActivity == ACT_MP_WALK ) ? ACT_MP_RUN : ACT_HL2MP_RUN;
 
 			translatedActivity = Weapon_TranslateActivity( idealActivity );
 			animDesired = HL2SB_SelectPlayerSequence( this, translatedActivity, idealActivity );
@@ -1110,10 +1420,21 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		// client m_SequenceTransitioner only blends when the sequence changes without
 		// ResetSequence() re-zeroing the cycle every time; doing ResetSequence + SetCycle(0)
 		// on the crouch edge is what made ducking look a beat late.
+		//
+		// HL2SB: the GM:CalcMainActivity path hands us GMod's ACT_MP_CROUCH_IDLE /
+		// ACT_MP_CROUCHWALK, so the test has to accept both vocabularies - matching
+		// only ACT_HL2MP_* made bIsCrouch permanently false for Lua-driven animation,
+		// which re-zeroed the cycle on every crouch frame (visible as a stuttering
+		// crouch, and for hold types whose cwalk_* the model lacks it dropped to
+		// sequence 0).
 		const bool bWasCrouch = ( GetActivity() == ACT_HL2MP_IDLE_CROUCH ||
-								  GetActivity() == ACT_HL2MP_WALK_CROUCH );
+								  GetActivity() == ACT_HL2MP_WALK_CROUCH ||
+								  GetActivity() == ACT_MP_CROUCH_IDLE ||
+								  GetActivity() == ACT_MP_CROUCHWALK );
 		const bool bIsCrouch  = ( idealActivity == ACT_HL2MP_IDLE_CROUCH ||
-								  idealActivity == ACT_HL2MP_WALK_CROUCH );
+								  idealActivity == ACT_HL2MP_WALK_CROUCH ||
+								  idealActivity == ACT_MP_CROUCH_IDLE ||
+								  idealActivity == ACT_MP_CROUCHWALK );
 
 		// Activity bookkeeping: GetActivity() is read by the jump case above and by
 		// the walk/run split. Only touch it when it really changes, so the sequence

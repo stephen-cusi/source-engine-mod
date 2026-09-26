@@ -99,6 +99,26 @@ public:
 	CNetworkVar( float, m_flAmmoStartCharge );
 	CNetworkVar( float, m_flPlayAftershock );
 	CNetworkVar( float, m_flNextAmmoBurn );
+
+	// HL2SB (2026-09-27): GMod per-player movement speeds, networked from
+	// CHL2MP_Player so client prediction (GetPlayerMaxSpeed) agrees with the
+	// server-authoritative values Lua writes (Player:SetWalkSpeed etc.).
+	CNetworkVar( float, m_flHL2SBWalkSpeed );
+	CNetworkVar( float, m_flHL2SBRunSpeed );
+	CNetworkVar( float, m_flHL2SBSlowWalkSpeed );
+	CNetworkVar( float, m_flHL2SBJumpPower );
+
+	// HL2SB: remaining GMod Player knobs, stored for the Lua bindings (see the
+	// server header for the v1 scope note).
+	float			m_flHL2SBCrouchedWalkSpeed;
+	float			m_flHL2SBDuckSpeed;
+	float			m_flHL2SBUnDuckSpeed;
+	float			m_flHL2SBLadderClimbSpeed;
+	float			m_flHL2SBStepSize;
+	bool			m_bHL2SBAllowWeaponsInVehicle;
+
+	virtual float GetPlayerMaxSpeed( void );
+	virtual float GetHL2SBJumpPower( void ) const { return m_flHL2SBJumpPower; }
 private:
 	
 	C_HL2MP_Player( const C_HL2MP_Player & );

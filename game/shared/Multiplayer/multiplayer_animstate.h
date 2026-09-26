@@ -41,6 +41,10 @@ enum PlayerAnimEvent_t
 
 	// Cancel.
 	PLAYERANIMEVENT_CANCEL,
+	// HL2SB (2026-09-27): GMod's animations.lua (GM:DoAnimationEvent) tests
+	// PLAYERANIMEVENT_CANCEL_RELOAD; alias it to the cancel event so the
+	// reference Lua glue works verbatim.
+	PLAYERANIMEVENT_CANCEL_RELOAD = PLAYERANIMEVENT_CANCEL,
 	PLAYERANIMEVENT_SPAWN,
 
 	// Snap to current yaw exactly

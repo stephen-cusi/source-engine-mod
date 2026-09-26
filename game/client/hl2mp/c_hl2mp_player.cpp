@@ -7,6 +7,7 @@
 #include "cbase.h"
 #include "vcollide_parse.h"
 #include "c_hl2mp_player.h"
+
 #include "view.h"
 #include "takedamageinfo.h"
 #include "hl2mp_gamerules.h"
@@ -55,6 +56,10 @@ IMPLEMENT_CLIENTCLASS_DT(C_HL2MP_Player, DT_HL2MP_Player, CHL2MP_Player)
 	RecvPropFloat( RECVINFO( m_flPlayAftershock ) ),
 	RecvPropFloat( RECVINFO( m_flNextAmmoBurn ) ),
 	RecvPropBool( RECVINFO( m_fIsWalking ) ),
+	RecvPropFloat( RECVINFO( m_flHL2SBWalkSpeed ) ),
+	RecvPropFloat( RECVINFO( m_flHL2SBRunSpeed ) ),
+	RecvPropFloat( RECVINFO( m_flHL2SBSlowWalkSpeed ) ),
+	RecvPropFloat( RECVINFO( m_flHL2SBJumpPower ) ),
 END_RECV_TABLE()
 
 BEGIN_PREDICTION_DATA( C_HL2MP_Player )
@@ -105,6 +110,36 @@ C_HL2MP_Player::C_HL2MP_Player() : m_PlayerAnimState( this ), m_iv_angEyeAngles(
 	m_blinkTimer.Invalidate();
 
 	m_pFlashlightBeam = NULL;
+
+	// HL2SB (2026-09-27): GMod speed defaults, matching CHL2MP_Player's ctor
+	// (prediction runs these before the first network update arrives).
+	m_flHL2SBWalkSpeed = 150.0f;
+	m_flHL2SBRunSpeed = 400.0f;
+	m_flHL2SBSlowWalkSpeed = 100.0f;
+	m_flHL2SBJumpPower = 0.0f;
+
+	// HL2SB: stored-only GMod knobs (see the server header).
+	m_flHL2SBCrouchedWalkSpeed = 0.34f;
+	m_flHL2SBDuckSpeed = 0.4f;
+	m_flHL2SBUnDuckSpeed = 0.4f;
+	m_flHL2SBLadderClimbSpeed = 100.0f;
+	m_flHL2SBStepSize = 18.0f;
+	m_bHL2SBAllowWeaponsInVehicle = false;
+}
+
+// HL2SB (2026-09-27): GMod movement - the client-side prediction twin of
+// CHL2MP_Player::GetPlayerMaxSpeed.  Without this the predicted maxspeed came
+// from hl2_normspeed (190) while the server ran 400, so every movement command
+// mispredicted.
+float C_HL2MP_Player::GetPlayerMaxSpeed( void )
+{
+	if ( IsObserver() || !IsAlive() )
+		return BaseClass::GetPlayerMaxSpeed();
+
+	if ( m_nButtons & IN_WALK )
+		return m_flHL2SBWalkSpeed;
+
+	return m_flHL2SBRunSpeed;
 }
 
 C_HL2MP_Player::~C_HL2MP_Player( void )
@@ -1610,9 +1645,28 @@ void C_HL2MPRagdoll::SetupWeights( const matrix3x4_t *pBoneToWorld, int nFlexWei
 	}
 }
 
+// HL2SB (2026-09-27): lua_pushplayer for the GM:UpdateAnimation dispatch.
+// (declared here instead of including lbaseplayer_shared.h, which requires
+// the full CBasePlayer type before its typedef)
+class CBasePlayer;
+LUA_API void lua_pushplayer( lua_State *L, CBasePlayer *pPlayer );
+
 void C_HL2MP_Player::PostThink( void )
 {
 	BaseClass::PostThink();
+
+	// HL2SB (2026-09-27): the client realm dispatches GM:UpdateAnimation too -
+	// players run UseClientSideAnimation, so SetPlaybackRate has to be written
+	// here as well, and MouthMoveAnimation (voice flexes) is client-only in
+	// GMod (animations.lua:248).
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "UpdateAnimation" );
+			lua_pushplayer( L, this );
+			lua_pushvector( L, GetAbsVelocity() );
+			lua_pushnumber( L, GetSequenceGroundSpeed( GetSequence() ) );
+		END_LUA_CALL_HOOK( 3, 0 );
+	}
 
 	// Store the eye angles pitch so the client can compute its animation state correctly.
 	m_angEyeAngles = EyeAngles();

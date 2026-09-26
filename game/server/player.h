@@ -1219,6 +1219,11 @@ private:
 public:
 	virtual unsigned int PlayerSolidMask( bool brushOnly = false ) const;	// returns the solid mask for the given player, so bots can have a more-restrictive set
 
+	// HL2SB (2026-09-27): appended LAST on purpose - see the identical comment
+	// in game/client/c_baseplayer.h (vtable-slot shift + partial rebuild = the
+	// GetAutoaimVector crash, dump crash_20260927_010435).
+	virtual float	GetHL2SBJumpPower( void ) const { return 0.0f; }
+
 };
 
 typedef CHandle<CBasePlayer> CBasePlayerHandle;

@@ -257,6 +257,15 @@ static int CBaseEntity_AddFlag (lua_State *L) {
   return 0;
 }
 
+// HL2SB (2026-09-27): GMod's Entity:IsFlagSet( flag ).  The fork only had
+// Add/Remove/GetFlags, so GMod Lua (and the ported base-gamemode
+// animations.lua HandlePlayerDucking, which tests FL_ANIMDUCKING) died with
+// "attempt to call a nil value (method 'IsFlagSet')".
+static int CBaseEntity_IsFlagSet (lua_State *L) {
+  lua_pushboolean(L, ( luaL_checkentity(L, 1)->GetFlags() & luaL_checkint(L, 2) ) != 0);
+  return 1;
+}
+
 static int CBaseEntity_AddSolidFlags (lua_State *L) {
   luaL_checkentity(L, 1)->AddSolidFlags(luaL_checkint(L, 2));
   return 0;
@@ -4359,6 +4368,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"AddEffects", CBaseEntity_AddEffects},
   {"AddEFlags", CBaseEntity_AddEFlags},
   {"AddFlag", CBaseEntity_AddFlag},
+  {"IsFlagSet", CBaseEntity_IsFlagSet},
   {"AddSolidFlags", CBaseEntity_AddSolidFlags},
   {"ApplyAbsVelocityImpulse", CBaseEntity_ApplyAbsVelocityImpulse},
   {"ApplyLocalAngularVelocityImpulse", CBaseEntity_ApplyLocalAngularVelocityImpulse},

@@ -2158,6 +2158,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"IsBot", CBasePlayer_IsBot},
   {"IsHLTV", CBasePlayer_IsHLTV},
   {"IsInAVehicle", CBasePlayer_IsInAVehicle},
+  // HL2SB (2026-09-27): GMod spells it InVehicle() - the ported base-gamemode
+  // animations.lua uses ply:InVehicle() throughout.
+  {"InVehicle", CBasePlayer_IsInAVehicle},
   {"IsObserver", CBasePlayer_IsObserver},
   {"IsPlayer", CBasePlayer_IsPlayer},
   {"IsPlayerUnderwater", CBasePlayer_IsPlayerUnderwater},

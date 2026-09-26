@@ -648,6 +648,14 @@ public:
 	bool  ShouldGoSouth( Vector vNPCForward, Vector vNPCRight ); //Such a bad name.
 
 	void SetOldPlayerZ( float flOld ) { m_flOldPlayerZ = flOld;	}
+	// HL2SB (2026-09-27): appended LAST on purpose - adding a virtual anywhere
+	// else in this class shifts every later vtable slot, and this fork's waf
+	// does not rebuild the TUs that include this header (see AGENTS.md), so an
+	// incremental build silently produced binaries with mismatched vtable
+	// layouts and crashed in C_HL2MP_Player::GetAutoaimVector (dump
+	// crash_20260927_010435: AngleVectors wrote through a slot-shifted sret).
+	virtual float	GetHL2SBJumpPower( void ) const { return 0.0f; }
+
 };
 
 EXTERN_RECV_TABLE(DT_BasePlayer);

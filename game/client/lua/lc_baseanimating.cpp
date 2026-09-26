@@ -380,6 +380,7 @@ static int CBaseAnimating_DrawModel (lua_State *L) {
   // GMod's Entity:DrawModel draws the model directly and never re-enters
   // RenderOverride / ENT:Draw -- InternalDrawModel is this fork's
   // non-dispatching path (C_BaseScripted does not override it).
+  //
   nResult = pEntity->InternalDrawModel(luaL_optint(L, 2, STUDIO_RENDER));
 
   if (bTinted)
@@ -777,6 +778,17 @@ static int CBaseAnimating_GetFlexControllerType (lua_State *L) {
 
 // HL2SB GMod compat (2026-09-24): flex + pose + render-bounds bindings the
 // First Person Body addon drives its shadow-body cloning with.
+// HL2SB (2026-09-27): GMod's Entity:GetFlexIDByName( name ) - resolves a
+// flex controller by name (returns -1 when the model lacks it), which the
+// ported MouthMoveAnimation uses for the five jaw/mouth flexes.
+static int CBaseAnimating_GetFlexIDByName (lua_State *L) {
+  C_BaseAnimating *pAnimating = luaL_checkanimating(L, 1);
+  C_BaseFlex *pFlex = dynamic_cast<C_BaseFlex *>(pAnimating);
+  if (pFlex == NULL) { lua_pushinteger(L, -1); return 1; }
+  lua_pushinteger(L, (int)pFlex->FindFlexController( luaL_checkstring(L, 2) ));
+  return 1;
+}
+
 static int CBaseAnimating_GetFlexNum (lua_State *L) {
   lua_pushinteger(L, luaL_checkanimating(L, 1)->GetNumFlexControllers());
   return 1;
@@ -1736,6 +1748,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"GetCallbacks", CBaseAnimating_GetCallbacks},
   {"GetChildBones", CBaseAnimating_GetChildBones},
   {"GetFlexNum", CBaseAnimating_GetFlexNum},
+  {"GetFlexIDByName", CBaseAnimating_GetFlexIDByName},
   {"GetFlexScale", CBaseAnimating_GetFlexScale},
   {"GetFlexWeight", CBaseAnimating_GetFlexWeight},
   {"GetModelRenderBounds", CBaseAnimating_GetModelRenderBounds},

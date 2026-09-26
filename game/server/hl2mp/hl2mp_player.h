@@ -19,6 +19,9 @@ class CHL2MP_Player;
 #include "hl2mp_player_shared.h"
 #include "hl2mp_gamerules.h"
 #include "utldict.h"
+// HL2SB (2026-09-27): GMod player-animation glue needs the shared gesture-slot
+// enum (GESTURE_SLOT_ATTACK_AND_RELOAD .. _CUSTOM) for the Lua bindings.
+#include "Multiplayer/multiplayer_animstate.h"
 
 //=============================================================================
 // >> HL2MP_Player
@@ -142,7 +145,45 @@ public:
 
 	virtual bool	CanHearAndReadChatFrom( CBasePlayer *pPlayer );
 
-		
+	// ------------------------------------------------------------------
+	// HL2SB (2026-09-27): GMod player-animation / movement glue.
+	// GM:CalcMainActivity / GM:DoAnimationEvent / GM:UpdateAnimation are the
+	// three hooks GMod's base gamemode animations.lua drives player animation
+	// with (reference hook-id table in lua_shared.dll: CalcMainActivity=4,
+	// DoAnimationEvent=0x11).  The gesture-slot system mirrors GMod's
+	// CMultiPlayerAnimState slots on top of CBaseAnimatingOverlay layers.
+	// ------------------------------------------------------------------
+	virtual float	GetPlayerMaxSpeed( void );	// GMod SetRunSpeed/SetWalkSpeed
+	virtual float	GetHL2SBJumpPower( void ) const { return m_flHL2SBJumpPower; }
+	bool			HL2SB_DoAnimationEventLua( PlayerAnimEvent_t event, int nData );
+	Activity		HL2SB_TranslateActivityLua( Activity act, Activity fallback );
+	void			HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool bRestart );
+	void			HL2SB_AnimResetGestureSlot( int iSlot );
+	void			HL2SB_AnimSetGestureWeight( int iSlot, float flWeight );
+	void			HL2SB_AnimSetGestureSequence( int iSlot, int iSequence );
+	bool			HL2SB_IsPlayingTaunt( void );
+
+	// GMod gesture-slot tracking (server-side; layers replicate through
+	// DT_BaseAnimatingOverlay).  Indexed by GESTURE_SLOT_* values.
+	int				m_iHL2SBSlotLayer[GESTURE_SLOT_COUNT];
+	Activity		m_iHL2SBSlotActivity[GESTURE_SLOT_COUNT];
+
+	// GMod per-player movement speeds (networked; prediction reads them).
+	CNetworkVar( float, m_flHL2SBWalkSpeed );
+	CNetworkVar( float, m_flHL2SBRunSpeed );
+	CNetworkVar( float, m_flHL2SBSlowWalkSpeed );
+	CNetworkVar( float, m_flHL2SBJumpPower );
+
+	// HL2SB: remaining GMod Player speed/state knobs.  v1 stores the values
+	// (Lua-visible both realms); only walk/run/jump feed the movement engine.
+	float			m_flHL2SBCrouchedWalkSpeed;
+	float			m_flHL2SBDuckSpeed;
+	float			m_flHL2SBUnDuckSpeed;
+	float			m_flHL2SBLadderClimbSpeed;
+	float			m_flHL2SBStepSize;
+	bool			m_bHL2SBAllowWeaponsInVehicle;
+
+
 private:
 
 	CNetworkQAngle( m_angEyeAngles );

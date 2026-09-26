@@ -2503,6 +2503,13 @@ bool CGameMovement::CheckJumpButton( void )
 		flMul = sqrt(2 * GetCurrentGravity() * GAMEMOVEMENT_JUMP_HEIGHT);
 	}
 
+	// HL2SB (2026-09-27): GMod's Player:SetJumpPower scales the jump velocity
+	// proportionally (default 200 = engine default).  Players that never had
+	// SetJumpPower called report 0 and keep the stock impulse.
+	float flJumpPower = player->GetHL2SBJumpPower();
+	if ( flJumpPower > 0.0f )
+		flMul *= ( flJumpPower / 200.0f );
+
 	// Acclerate upward
 	// If we are ducking...
 	float startz = mv->m_vecVelocity[2];
