@@ -62,8 +62,8 @@ struct ClientModelRenderInfo_t : public ModelRenderInfo_t
 	matrix3x4_t modelToWorld;
 };
 
-// HL2SB: cap for buffers that are indexed by a model's real bone count (community models
-// go past MAXSTUDIOBONES=128; the format constant itself must not change).
+// HL2SB: cap for buffers that are indexed by a model's real bone count.  Kept wider
+// than MAXSTUDIOBONES(256, GMod-aligned) out of caution for odd community content.
 #define MAXSTUDIOBONES_SAFE 512
 
 struct RagdollInfo_t
@@ -71,10 +71,11 @@ struct RagdollInfo_t
 	bool		m_bActive;
 	float		m_flSaveTime;
 	int			m_nNumBones;
-	// HL2SB: indexed by m_nNumBones, which for community models exceeds MAXSTUDIOBONES(128).
-	// m_pRagdollInfo is allocated on demand, so the wider cap costs nothing until a
-	// ragdoll blend actually happens.  (MAXSTUDIOBONES itself must stay 128 - the vtx
-	// skinning indices are 7-bit.)
+	// HL2SB: indexed by m_nNumBones, which for community models exceeds the old
+	// MAXSTUDIOBONES(128).  m_pRagdollInfo is allocated on demand, so the wider cap
+	// costs nothing until a ragdoll blend actually happens.  (MAXSTUDIOBONES itself
+	// was raised to 256 to match GMod x64 - the vtx skinning hardwareID limits come
+	// from the compiled .vtx data, not this constant.)
 	Vector		m_rgBonePos[MAXSTUDIOBONES_SAFE];
 	Quaternion	m_rgBoneQuaternion[MAXSTUDIOBONES_SAFE];
 };

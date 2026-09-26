@@ -79,14 +79,24 @@ Studio models are position independent, so the cache manager can move them.
 #define	MAXSTUDIOFLEXVERTS	5000
 #endif
 #define MAXSTUDIOSKINS		32		// total textures
-#define MAXSTUDIOBONES		128		// total bones actually used
+// HL2SB: was 128 (Source 2013).  Community player models (miku/qiandai, ~250 bones,
+// mdl v49) overrun every bones[MAXSTUDIOBONES] buffer at 128 -> stack smash in
+// BecomeRagdollOnClient/SetupBones, CBoneBitList OOB writes, and studiorender's
+// m_PoseToWorld/m_PoseToDecal heap overflow on first draw.  GMod x64 raised this to
+// 256: C_BasePlayer::GetRagdollInitBoneArrays allocates three 0x3000 (256*48) stack
+// arrays and C_BaseAnimating::SetupBones zeros a 0x100-bit CBoneBitList (client.dll
+//  / , reference 2026-09-27).
+#define MAXSTUDIOBONES		256		// total bones actually used
 #define MAXSTUDIOFLEXDESC	1024	// maximum number of low level flexes (actual morph targets)
 #define MAXSTUDIOFLEXCTRL	96		// maximum number of flexcontrollers (input sliders)
 #define MAXSTUDIOPOSEPARAM	24
 #define MAXSTUDIOBONECTRLS	5
 #define MAXSTUDIOANIMBLOCKS 256
 
-#define MAXSTUDIOBONEBITS	7		// NOTE: MUST MATCH MAXSTUDIOBONES
+// HL2SB: raised with MAXSTUDIOBONES - this only sizes the networked
+// m_boneIndexAttached SendProps (both DLLs rebuild together) and must satisfy
+// (1 << MAXSTUDIOBONEBITS) >= MAXSTUDIOBONES.
+#define MAXSTUDIOBONEBITS	8		// NOTE: MUST MATCH MAXSTUDIOBONES
 
 // NOTE!!! : Changing this number also changes the vtx file format!!!!!
 #define MAX_NUM_BONES_PER_VERT 3
