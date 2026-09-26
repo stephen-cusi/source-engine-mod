@@ -1349,6 +1349,32 @@ static bool s_WeaponColorInit = false;
 Color HL2SB_GetWeaponColor( int iUserID )
 {
 	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
+
+#ifdef CLIENT_DLL
+	// 2026-09-26: the LOCAL player's colour is the live cl_weaponcolor convar
+	// -- the map below only fills when Lua calls SetWeaponColor (at spawn), so
+	// a weapon colour picked in the menu mid-session left every map reader on
+	// the OLD colour while the convar readers showed the new one (the "beam
+	// colour never changes" report).  The convar IS the source of truth for
+	// the local player; the map keeps serving remote players.
+	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+	if ( pLocal != NULL && pLocal->GetUserID() == iUserID )
+	{
+		static ConVarRef s_cl_weaponcolor_live( "cl_weaponcolor" );
+		if ( s_cl_weaponcolor_live.IsValid() )
+		{
+			float r = 0.0f, g = 0.0f, b = 0.0f;
+			if ( sscanf( s_cl_weaponcolor_live.GetString(), "%f %f %f", &r, &g, &b ) == 3 )
+			{
+				return Color(
+					clamp( (int)( r * 255.0f ), 0, 255 ),
+					clamp( (int)( g * 255.0f ), 0, 255 ),
+					clamp( (int)( b * 255.0f ), 0, 255 ), 255 );
+			}
+		}
+	}
+#endif
+
 	int idx = s_WeaponColor.Find( iUserID );
 	if ( idx != s_WeaponColor.InvalidIndex() )
 		return s_WeaponColor[ idx ];

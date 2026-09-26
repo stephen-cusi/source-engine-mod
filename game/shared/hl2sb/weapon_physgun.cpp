@@ -43,6 +43,8 @@
 #include "ragdoll.h"
 #include "c_basehlcombatweapon.h"
 #include "beamdraw.h"
+#include "iviewrender_beams.h"	// HL2SB (2026-09-26): HL2 physcannon fork-tendril beams
+#include "fx_interpvalue.h"		// HL2SB (2026-09-26): CInterpolatedValue sprite params
 #include "iefx.h"		// HL2SB GMod compat: the held prop's full-body soft light (dlight)
 #include "dlight.h"
 #include "iinput.h"				// HL2SB GMod compat: E-rotate input interception
@@ -93,23 +95,114 @@ ConVar physgun_maxSpeed( "physgun_maxSpeed", "5000", FCVAR_ARCHIVE, "Physgun: ma
 ConVar physgun_maxAngular( "physgun_maxAngular", "5400", FCVAR_ARCHIVE, "Physgun: maximum angular speed of the held object" );
 ConVar physgun_maxSpeedDamping( "physgun_maxSpeedDamping", "10000", FCVAR_ARCHIVE, "Physgun: linear speed where damping kicks in" );
 ConVar physgun_maxAngularDamping( "physgun_maxAngularDamping", "10000", FCVAR_ARCHIVE, "Physgun: angular speed where damping kicks in" );
-ConVar physgun_rotation_sensitivity( "physgun_rotation_sensitivity", "1", FCVAR_ARCHIVE, "Physgun: E+mouse rotation sensitivity multiplier" );
-ConVar physgun_wheelspeed( "physgun_wheelspeed", "2", FCVAR_ARCHIVE, "Physgun: wheel push/pull distance multiplier" );
 #endif
+
+// HL2SB (2026-09-26): defaults reference from GMod server.dll ():
+// E-rotate is mousedx * 0.05 deg per RAW mouse count (the usercmd carries
+// unscaled accumulators -- mouse sensitivity never touches cmd->mousedx), the
+// wheel moves max(|wheelspeed|,0.1) units per notch, the hold distance clamps
+// to [physgun_minrange, physgun_maxrange], E+A/D spins the held object at
+// phys_spinspeed deg/s and Shift+E snaps the held angles to gm_snapangles.
+// Registered on BOTH realms like GMod does (its client.dll registers the same
+// names without reading them -- plugins may query them client-side).
+ConVar physgun_rotation_sensitivity( "physgun_rotation_sensitivity", "0.05", FCVAR_ARCHIVE, "Physgun: E+mouse rotation (degrees per mouse count)" );
+ConVar physgun_wheelspeed( "physgun_wheelspeed", "10", FCVAR_ARCHIVE, "Physgun: wheel push/pull distance per notch" );
+ConVar physgun_minrange( "physgun_minrange", "40", FCVAR_ARCHIVE, "Physgun: minimum hold distance" );
+ConVar physgun_maxrange( "physgun_maxrange", "4096", FCVAR_ARCHIVE, "Physgun: maximum hold distance" );
+ConVar phys_spinspeed( "phys_spinspeed", "200", FCVAR_ARCHIVE, "Physgun: E+A/D spin speed (degrees per second)" );
+ConVar gm_snapangles( "gm_snapangles", "45", FCVAR_ARCHIVE, "Physgun: Shift+E angle snap grid (degrees, 0 disables)" );
 
 #define PHYSGUN_BEAM_SPRITE1	"sprites/physbeam1.vmt"
 #define PHYSGUN_BEAM_SPRITE		"sprites/physbeam.vmt"
 #define PHYSGUN_BEAM_GLOW		"sprites/physglow.vmt"
 
+// HL2SB (2026-09-26): the HL2 physcannon gun-glow set.  reference-OUT
+// (2026-09-26): GMod's physgun does NOT use ANY of these -- GMod's client.dll
+// contains no "physcannon_bluecore1/2", "physcannon_blueflare1" or
+// "physcannon_bluelight1" string at all.  Those belong to HL2's separate
+// C_WeaponPhysCannon (the EP2 mega-cannon / gravity gun), a different weapon.
+// The macro block is kept only so the (now disabled) HL2 sprite machine below
+// still compiles; nothing renders it.
+#define PHYSGUN_FORKGLOW_SPRITE	"sprites/glow04_noz"
+#define PHYSGUN_FORKEND_SPRITE	"sprites/physcannon_blueflare1"
+#define PHYSGUN_CORE_SPRITE		"sprites/physcannon_bluecore1"
+#define PHYSGUN_BLAST_SPRITE	"sprites/physcannon_bluecore2"
+#define PHYSGUN_TENDRIL_SPRITE	"sprites/physcannon_bluelight1.vmt"
+#define PHYSGUN_TENDRIL_NOZ		"sprites/physcannon_bluelight1b.vmt"
+#define PHYSGUN_SPRITE_SCALE	128.0f
+
+// HL2SB (2026-09-26, reference-confirmed): GMod's physgun rendering is exactly
+// a beam trail plus an endpoint glow, and the materials are GMod's OWN:
+//   * beam          = sprites/physbeam.vmt        (basetexture physbeam_white)
+//   * active beam   = sprites/physbeama.vmt       (basetexture physbeam_active_white)
+//   * endpoint glow = sprites/physg_glow1.vmt / sprites/physg_glow2.vmt
+//                     (basetexture physgun_glow, two additive layers).
+// C_PhysBeam::DrawModel (client.dll) builds exactly two engine
+// beam trails (physbeam always, physbeama while active) and the two glow
+// layers; there is no core/blast/fork/endcap sprite anywhere.  physbeam.vmt
+// and physbeama.vmt were MISSING from this fork's content until now -- their
+// absence is the long-standing "beam never looked right / no glow" cause.
+#define PHYSGUN_BEAM_ACTIVE		"sprites/physbeama.vmt"
+#define PHYSGUN_ENDGLOW_SPRITE	"sprites/physg_glow1"
+#define PHYSGUN_ENDGLOW_SPRITE2	"sprites/physg_glow2"
+
 #define	PHYSGUN_SKIN	1
+
+// HL2SB (2026-09-26): HL2 physcannon effect/enumeration states (shared --
+// both realms drive the machine locally).
+enum
+{
+	EFFECT_NONE = 0,
+	EFFECT_CLOSED,
+	EFFECT_READY,
+	EFFECT_HOLDING,
+	EFFECT_LAUNCH,
+};
+
+enum
+{
+	ELEMENT_STATE_NONE = -1,
+	ELEMENT_STATE_OPEN = 0,
+	ELEMENT_STATE_CLOSED,
+};
+
+#ifdef CLIENT_DLL
+// Sprite parameter slots (must be in order; NUM_PHYSGUN_EFFECTS = 11)
+enum PhysgunEffectType_t
+{
+	PHYSGUN_CORE = 0,
+	PHYSGUN_BLAST,
+	PHYSGUN_GLOW1,	// Must be in order!
+	PHYSGUN_GLOW2,
+	PHYSGUN_GLOW3,
+	PHYSGUN_GLOW4,
+	PHYSGUN_GLOW5,
+	PHYSGUN_GLOW6,
+	PHYSGUN_ENDCAP1,	// Must be in order!
+	PHYSGUN_ENDCAP2,
+	PHYSGUN_ENDCAP3,
+	PHYSGUN_NUM_EFFECTS,
+};
+#define NUM_GLOW_SPRITES	6
+#define NUM_ENDCAP_SPRITES	3
+#endif
 
 class CWeaponGravityGun;
 
 #ifdef CLIENT_DLL
 CLIENTEFFECT_REGISTER_BEGIN( PrecacheEffectGravityGun )
 CLIENTEFFECT_MATERIAL( "sprites/physbeam1" )
-CLIENTEFFECT_MATERIAL( "sprites/physbeam" )
-CLIENTEFFECT_MATERIAL( "sprites/physglow" )
+CLIENTEFFECT_MATERIAL( PHYSGUN_BEAM_SPRITE )
+CLIENTEFFECT_MATERIAL( PHYSGUN_BEAM_ACTIVE )
+CLIENTEFFECT_MATERIAL( PHYSGUN_BEAM_GLOW )
+CLIENTEFFECT_MATERIAL( PHYSGUN_ENDGLOW_SPRITE )
+CLIENTEFFECT_MATERIAL( PHYSGUN_ENDGLOW_SPRITE2 )
+CLIENTEFFECT_MATERIAL( PHYSGUN_FORKGLOW_SPRITE )
+CLIENTEFFECT_MATERIAL( PHYSGUN_FORKEND_SPRITE )
+CLIENTEFFECT_MATERIAL( PHYSGUN_CORE_SPRITE )
+CLIENTEFFECT_MATERIAL( PHYSGUN_BLAST_SPRITE )
+CLIENTEFFECT_MATERIAL( "sprites/physcannon_bluelight1" )
+CLIENTEFFECT_MATERIAL( "sprites/physcannon_bluelight1b" )
 CLIENTEFFECT_REGISTER_END()
 
 #endif
@@ -345,6 +438,144 @@ IMotionEvent::simresult_e CGravControllerPoint::Simulate( IPhysicsMotionControll
 }
 
 #ifdef CLIENT_DLL
+
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-26): the HL2 physcannon effect system (GMod parity) --
+// ported from game/shared/hl2mp/weapon_physcannon.cpp.  GMod's physgun IS
+// HL2's CWeaponPhysCannon client (reference: same attachments fork1..3m/t/b,
+// same DT fields, same HoldSound), so the gun-glow / claw / tendril rendering
+// comes straight across, tinted by the player's weapon colour.
+//-----------------------------------------------------------------------------
+
+class CPhysgunEffectSprite
+{
+public:
+	CPhysgunEffectSprite( void ) : m_vecColor( 255, 255, 255 ), m_bVisible( true ), m_nAttachment( -1 ) {};
+
+	void SetAttachment( int attachment ) { m_nAttachment = attachment; }
+	int	GetAttachment( void ) const { return m_nAttachment; }
+
+	void SetVisible( bool visible = true ) { m_bVisible = visible; }
+	bool IsVisible( void ) const { return m_bVisible; }
+
+	void SetColor( const Vector &color ) { m_vecColor = color; }
+	const Vector &GetColor( void ) const { return m_vecColor; }
+
+	bool SetMaterial( const char *materialName )
+	{
+		m_hMaterial.Init( materialName, TEXTURE_GROUP_CLIENT_EFFECTS );
+		return ( m_hMaterial != NULL );
+	}
+
+	CMaterialReference &GetMaterial( void ) { return m_hMaterial; }
+
+	CInterpolatedValue &GetAlpha( void ) { return m_Alpha; }
+	CInterpolatedValue &GetScale( void ) { return m_Scale; }
+
+private:
+	CInterpolatedValue	m_Alpha;
+	CInterpolatedValue	m_Scale;
+
+	Vector				m_vecColor;
+	bool				m_bVisible;
+	int					m_nAttachment;
+	CMaterialReference	m_hMaterial;
+};
+
+class CPhysgunEffectBeam
+{
+public:
+	CPhysgunEffectBeam( void ) : m_pBeam( NULL ) {};
+
+	~CPhysgunEffectBeam( void )
+	{
+		Release();
+	}
+
+	void Release( void )
+	{
+		if ( m_pBeam != NULL )
+		{
+			m_pBeam->flags = 0;
+			m_pBeam->die = gpGlobals->curtime - 1;
+
+			m_pBeam = NULL;
+		}
+	}
+
+	void Init( int startAttachment, int endAttachment, CBaseEntity *pEntity, bool firstPerson )
+	{
+		if ( m_pBeam != NULL )
+			return;
+
+		BeamInfo_t beamInfo;
+
+		beamInfo.m_pStartEnt = pEntity;
+		beamInfo.m_nStartAttachment = startAttachment;
+		beamInfo.m_pEndEnt = pEntity;
+		beamInfo.m_nEndAttachment = endAttachment;
+		beamInfo.m_nType = TE_BEAMPOINTS;
+		beamInfo.m_vecStart = vec3_origin;
+		beamInfo.m_vecEnd = vec3_origin;
+
+		beamInfo.m_pszModelName = ( firstPerson ) ? PHYSGUN_TENDRIL_NOZ : PHYSGUN_TENDRIL_SPRITE;
+
+		beamInfo.m_flHaloScale = 0.0f;
+		beamInfo.m_flLife = 0.0f;
+
+		if ( firstPerson )
+		{
+			beamInfo.m_flWidth = 0.0f;
+			beamInfo.m_flEndWidth = 4.0f;
+		}
+		else
+		{
+			beamInfo.m_flWidth = 0.5f;
+			beamInfo.m_flEndWidth = 2.0f;
+		}
+
+		beamInfo.m_flFadeLength = 0.0f;
+		beamInfo.m_flAmplitude = 16;
+		beamInfo.m_flBrightness = 255.0;
+		beamInfo.m_flSpeed = 150.0f;
+		beamInfo.m_nStartFrame = 0.0;
+		beamInfo.m_flFrameRate = 30.0;
+		beamInfo.m_flRed = 255.0;
+		beamInfo.m_flGreen = 255.0;
+		beamInfo.m_flBlue = 255.0;
+		beamInfo.m_nSegments = 8;
+		beamInfo.m_bRenderable = true;
+		beamInfo.m_nFlags = FBEAM_FOREVER;
+
+		m_pBeam = beams->CreateBeamEntPoint( beamInfo );
+	}
+
+	// HL2SB: GMod tints every physgun effect with the player's weapon colour.
+	void SetColor( float r, float g, float b )
+	{
+		if ( m_pBeam == NULL )
+			return;
+
+		m_pBeam->r = r;
+		m_pBeam->g = g;
+		m_pBeam->b = b;
+	}
+
+	void SetVisible( bool state = true )
+	{
+		if ( m_pBeam == NULL )
+			return;
+
+		m_pBeam->brightness = ( state ) ? 255.0f : 0.0f;
+	}
+
+private:
+	Beam_t	*m_pBeam;
+};
+
+#endif // CLIENT_DLL
+
+#ifdef CLIENT_DLL
 #define CWeaponGravityGun C_WeaponGravityGun
 #endif
 
@@ -436,9 +667,32 @@ public:
 	void ViewModelDrawn( C_BaseViewModel *pBaseViewModel );
 	bool IsTransparent( void );
 
+	// HL2SB (2026-09-26): HL2 physcannon effect system, CLIENT side (GMod parity)
+	void				OnDataChanged( DataUpdateType_t type );
+	void				ClientThink( void );
+	void				StartEffects( void );
+	void				DoEffectClosed( void );
+	void				DoEffectReady( void );
+	void				DoEffectHolding( void );
+	void				DoEffectLaunch( Vector *pos );
+	void				DoEffectNone( void );
+	void				DoEffectIdle( void );
+	void				UpdateElementPosition( void );
+	void				GetEffectParameters( int effectID, color32 &color, float &scale, IMaterial **pMaterial, Vector &vecAttachment );
+	bool				IsEffectVisible( int effectID );
+	void				DrawEffectSprite( int effectID );
+	void				DrawEffects( void );
+
 	// We need to render opaque and translucent pieces
 	RenderGroup_t	GetRenderGroup( void ) {	return RENDER_GROUP_TWOPASS;	}
 #endif
+
+	// HL2SB (2026-09-26): HL2 physcannon effect system, SHARED side -- both
+	// realms drive the same machine from the locally-known hold state.
+	void				DestroyEffects( void );
+	void				DoEffect( int effectType, Vector *pos = NULL );
+	void				OpenElements( void );
+	void				CloseElements( void );
 
 	void Spawn( void );
 	void OnRestore( void );
@@ -503,7 +757,11 @@ public:
 	CBaseEntity *GetHeldEntity( void ) const { return m_hObject; }
 	void	HL2SB_AdjustDistance( float flDelta )
 	{
-		m_distance = clamp( m_distance + flDelta, 40.0f, 1024.0f );
+		// HL2SB (2026-09-26): GMod clamps the hold distance to
+		// [physgun_minrange, physgun_maxrange] (reference: 40..4096)
+		// instead of the old hardwired 40..1024.
+		m_distance = clamp( m_distance + flDelta,
+			physgun_minrange.GetFloat(), physgun_maxrange.GetFloat() );
 	}
 
 private:
@@ -522,6 +780,23 @@ private:
 	Vector		m_originalObjectPosition;
 	CNetworkVector	( m_targetPosition );
 	CNetworkVector	( m_worldPosition );
+
+	// HL2SB (2026-09-26): HL2 physcannon effect state -- driven locally on
+	// BOTH realms (the shared OpenElements/CloseElements/DoEffect run where
+	// the hold state changes), so no new netvars are needed for GMod parity.
+	int			m_EffectState;
+	int			m_nChangeState;
+	float		m_flElementDebounce;
+	bool		m_bOpen;
+
+#ifdef CLIENT_DLL
+	// Gun-glow sprite set + fork tendrils (HL2 physcannon rendering)
+	CInterpolatedValue	m_ElementParameter;
+	CPhysgunEffectSprite	m_Parameters[11];	// CORE, BLAST, GLOW1-6, ENDCAP1-3
+	CPhysgunEffectBeam		m_Beams[3];
+	int			m_nOldEffectState;
+	bool		m_bOldOpen;
+#endif
 
 #ifndef CLIENT_DLL
 	// HL2SB GMod compat: the held prop's soft full-body light is a CLIENT
@@ -659,11 +934,18 @@ CWeaponGravityGun::CWeaponGravityGun()
 	m_bInWeapon1 = false;
 	m_bInWeapon2 = false;
 	m_bFreezeReleaseLatch = false;
+	m_bOpen = false;
+	m_nChangeState = ELEMENT_STATE_NONE;
+	m_flElementDebounce = 0.0f;
+	m_EffectState = EFFECT_NONE;
 #ifndef CLIENT_DLL
 	m_flLastReloadPress = 0.0f;
 	m_bDraggingNPC = false;
 	m_heldWorldAngles = vec3_angle;
 	m_vecGrabOffset = vec3_origin;
+#else
+	m_nOldEffectState = EFFECT_NONE;
+	m_bOldOpen = false;
 #endif
 }
 
@@ -672,6 +954,7 @@ CWeaponGravityGun::CWeaponGravityGun()
 //-----------------------------------------------------------------------------
 void CWeaponGravityGun::UpdateOnRemove(void)
 {
+	DestroyEffects();
 	EffectDestroy();
 	SoundDestroy();
 	BaseClass::UpdateOnRemove();
@@ -724,9 +1007,11 @@ void CWeaponGravityGun::Precache( void )
 {
 	BaseClass::Precache();
 
+	// HL2SB (2026-09-26, reference-confirmed): precache GMod's own beam
+	// materials -- physbeam (idle trail) + physbeama (active/held overlay).
 	g_physgunBeam1 = PrecacheModel(PHYSGUN_BEAM_SPRITE1);
 	g_physgunBeam = PrecacheModel(PHYSGUN_BEAM_SPRITE);
-	g_physgunGlow = PrecacheModel(PHYSGUN_BEAM_GLOW);
+	g_physgunGlow = PrecacheModel(PHYSGUN_BEAM_ACTIVE);
 
 	PrecacheScriptSound( "Weapon_Physgun.Scanning" );
 	PrecacheScriptSound( "Weapon_Physgun.LockedOn" );
@@ -940,14 +1225,40 @@ void CWeaponGravityGun::EffectUpdate( void )
 				nMouseDy = pCmd->mousedy;
 			}
 
-			// HL2SB (2026-09-25): GMod-like rotation rate (~1 degree per mouse
-			// count at sensitivity 1.0; the first cut's 0.4 read as sluggish vs
-			// GMod) and clamp pitch so the prop cannot flip over the top.
+			// HL2SB (2026-09-26): GMod applies the rotation at
+			// physgun_rotation_sensitivity degrees per RAW mouse count
+			// (reference: 0.05, clamped to +-1000; the usercmd deltas are
+			// unscaled accumulators) and clamps pitch so the prop cannot
+			// flip over the top.
+			float flRotSens = clamp( physgun_rotation_sensitivity.GetFloat(), -1000.0f, 1000.0f );
 			if ( nMouseDx != 0 )
-				m_heldWorldAngles.y -= nMouseDx * 1.0f * physgun_rotation_sensitivity.GetFloat();
+				m_heldWorldAngles.y -= nMouseDx * flRotSens;
 			if ( nMouseDy != 0 )
 			{
-				m_heldWorldAngles.x += nMouseDy * 1.0f * physgun_rotation_sensitivity.GetFloat();
+				m_heldWorldAngles.x += nMouseDy * flRotSens;
+				m_heldWorldAngles.x = clamp( m_heldWorldAngles.x, -89.0f, 89.0f );
+			}
+
+			// HL2SB (2026-09-26): GMod spins the held object at
+			// phys_spinspeed deg/s while A/D is held together with E
+			// (reference ).  The player still walks -- GMod
+			// does not gate the movement keys.
+			if ( pOwner->m_nButtons & IN_MOVELEFT )
+				m_heldWorldAngles.y += phys_spinspeed.GetFloat() * gpGlobals->frametime;
+			else if ( pOwner->m_nButtons & IN_MOVERIGHT )
+				m_heldWorldAngles.y -= phys_spinspeed.GetFloat() * gpGlobals->frametime;
+
+			// HL2SB (2026-09-26): GMod snaps the held angles to the
+			// gm_snapangles grid while Shift is held with E (reference
+			// : angle = round(angle/snap)*snap, gated on
+			// buttons & (IN_SPEED|IN_USE)); each tick re-rounds so turning
+			// the mouse walks the object notch by notch.
+			float flSnap = gm_snapangles.GetFloat();
+			if ( flSnap > 0.0f && ( pOwner->m_nButtons & IN_SPEED ) )
+			{
+				m_heldWorldAngles.x = roundf( m_heldWorldAngles.x / flSnap ) * flSnap;
+				m_heldWorldAngles.y = roundf( m_heldWorldAngles.y / flSnap ) * flSnap;
+				m_heldWorldAngles.z = roundf( m_heldWorldAngles.z / flSnap ) * flSnap;
 				m_heldWorldAngles.x = clamp( m_heldWorldAngles.x, -89.0f, 89.0f );
 			}
 
@@ -972,10 +1283,12 @@ void CWeaponGravityGun::EffectUpdate( void )
 		// earlier hl2sb_physgun_push/pull console-command forward depended on
 		// the client hold state, which kept reading false at scroll time).
 		// Works for both carry modes (shadow-carry and teleport-drive).
+		// HL2SB (2026-09-26): GMod moves max(|physgun_wheelspeed|,0.1) units
+		// per notch (reference ) -- not 45*wheelspeed.
 		if ( pOwner->m_nButtons & IN_WEAPON1 )
-			HL2SB_AdjustDistance( 45.0f * physgun_wheelspeed.GetFloat() );
+			HL2SB_AdjustDistance( fmaxf( fabsf( physgun_wheelspeed.GetFloat() ), 0.1f ) );
 		if ( pOwner->m_nButtons & IN_WEAPON2 )
-			HL2SB_AdjustDistance( -45.0f * physgun_wheelspeed.GetFloat() );
+			HL2SB_AdjustDistance( -fmaxf( fabsf( physgun_wheelspeed.GetFloat() ), 0.1f ) );
 #endif
 
 		QAngle angles = m_heldWorldAngles;
@@ -1009,12 +1322,17 @@ void CWeaponGravityGun::EffectUpdate( void )
 		QAngle angles = m_gravCallback.TransformAnglesFromPlayerSpace( m_gravCallback.m_targetRotation, pOwner );
 #endif
 
+		// HL2SB (2026-09-26): GMod pushes/pulls at a CONSTANT 100 u/s toward
+		// physgun_maxrange / physgun_minrange while E is held (reference:
+		// Approach(maxrange, dist, frametime*100) -- the old exponential
+		// dist*0.1 crawl capped at 1024 felt nothing like it).
 		if ( ( pOwner->m_nButtons & IN_USE ) && ( pOwner->m_nButtons & IN_FORWARD ) )
 		{
 #ifndef CLIENT_DLL
 			pOwner->SetPhysicsFlag( PFLAG_DIROVERRIDE, true );
 #endif
-			m_distance = Approach( 1024, m_distance, m_distance * 0.1 );
+			m_distance = Approach( physgun_maxrange.GetFloat(), m_distance,
+				gpGlobals->frametime * 100.0f );
 		}
 
 		if ( ( pOwner->m_nButtons & IN_USE ) && ( pOwner->m_nButtons & IN_BACK ) )
@@ -1022,7 +1340,8 @@ void CWeaponGravityGun::EffectUpdate( void )
 #ifndef CLIENT_DLL
 			pOwner->SetPhysicsFlag( PFLAG_DIROVERRIDE, true );
 #endif
-			m_distance = Approach( 40, m_distance, m_distance * 0.1 );
+			m_distance = Approach( physgun_minrange.GetFloat(), m_distance,
+				gpGlobals->frametime * 100.0f );
 		}
 
 		IPhysicsObject *pPhys = GetPhysObjFromPhysicsBone( pObject, m_physicsBone );
@@ -1220,6 +1539,540 @@ void CWeaponGravityGun::EffectDestroy( void )
 	DetachObject();
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-26): the HL2 physcannon effect system, ported from
+// game/shared/hl2mp/weapon_physcannon.cpp (GMod's physgun client IS that
+// class).  Sprite colours are tinted with the player's WEAPON colour where
+// HL2 hardcoded its orange/blue.
+//-----------------------------------------------------------------------------
+
+#ifdef CLIENT_DLL
+
+//-----------------------------------------------------------------------------
+// Gets the complete list of values needed to render an effect
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::GetEffectParameters( int effectID, color32 &color, float &scale, IMaterial **pMaterial, Vector &vecAttachment )
+{
+	const float dt = gpGlobals->curtime;
+
+	float alpha = m_Parameters[effectID].GetAlpha().Interp( dt );
+	scale = m_Parameters[effectID].GetScale().Interp( dt );
+	*pMaterial = (IMaterial *) m_Parameters[effectID].GetMaterial();
+
+	// HL2SB: GMod tints the gun glow with the player's weapon colour.
+	color.r = (int) m_Parameters[effectID].GetColor().x;
+	color.g = (int) m_Parameters[effectID].GetColor().y;
+	color.b = (int) m_Parameters[effectID].GetColor().z;
+	color.a = (int) alpha;
+
+	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+	if ( pOwner != NULL )
+	{
+		Color clrW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
+		color.r = (byte)MIN( 255, (int)( color.r * clrW.r() / 255.0f ) );
+		color.g = (byte)MIN( 255, (int)( color.g * clrW.g() / 255.0f ) );
+		color.b = (byte)MIN( 255, (int)( color.b * clrW.b() / 255.0f ) );
+	}
+
+	int	attachment = m_Parameters[effectID].GetAttachment();
+	QAngle	angles;
+
+	// HL2SB: the fork resolves weapon attachments on the weapon entity itself
+	// (the same proven path the first-person beam uses -- the hidden world
+	// model follows the viewmodel in first person).
+	GetAttachment( attachment, vecAttachment, angles );
+}
+
+//-----------------------------------------------------------------------------
+// Whether or not an effect is set to display
+//-----------------------------------------------------------------------------
+bool CWeaponGravityGun::IsEffectVisible( int effectID )
+{
+	return m_Parameters[effectID].IsVisible();
+}
+
+//-----------------------------------------------------------------------------
+// Draws the effect sprite, given an effect parameter ID
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::DrawEffectSprite( int effectID )
+{
+	color32 color;
+	float scale;
+	IMaterial *pMaterial;
+	Vector	vecAttachment;
+
+	if ( IsEffectVisible( effectID ) == false )
+		return;
+
+	GetEffectParameters( effectID, color, scale, &pMaterial, vecAttachment );
+
+	if ( color.a <= 0.0f )
+		return;
+
+	CMatRenderContextPtr pRenderContext( materials );
+	pRenderContext->Bind( pMaterial, this );
+	DrawSprite( vecAttachment, scale, scale, color );
+}
+
+//-----------------------------------------------------------------------------
+// Render the physcannon gun-glow sprite set
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-26, reference-confirmed): DISABLED.  This is the HL2
+// physcannon / EP2 gravity-gun sprite machine (core + blast + 6 fork glows +
+// 3 endcaps).  GMod's physgun does NOT render any of it: GMod's client.dll has
+// no physcannon_bluecore / blueflare / bluelight strings, and C_PhysBeam draws
+// only the physbeam trail plus the physg_glow endpoint pair ().
+// Running this on top of the beam is exactly the "wrong effects piling up"
+// the user reported.  Kept as an empty shell so the effect state machine
+// (DoEffect*/StartEffects/UpdateElementPosition) still compiles and the shared
+// m_EffectState networking keeps working.
+void CWeaponGravityGun::DrawEffects( void )
+{
+}
+
+//-----------------------------------------------------------------------------
+// Initialize all sprites and beams
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::StartEffects( void )
+{
+	// ------------------------------------------
+	// Core
+	// ------------------------------------------
+	if ( m_Parameters[PHYSGUN_CORE].GetMaterial() == NULL )
+	{
+		m_Parameters[PHYSGUN_CORE].GetScale().Init( 0.0f, 1.0f, 0.1f );
+		m_Parameters[PHYSGUN_CORE].GetAlpha().Init( 255.0f, 255.0f, 0.1f );
+		m_Parameters[PHYSGUN_CORE].SetAttachment( 1 );
+
+		m_Parameters[PHYSGUN_CORE].SetMaterial( PHYSGUN_CORE_SPRITE );
+	}
+
+	// ------------------------------------------
+	// Blast
+	// ------------------------------------------
+	if ( m_Parameters[PHYSGUN_BLAST].GetMaterial() == NULL )
+	{
+		m_Parameters[PHYSGUN_BLAST].GetScale().Init( 0.0f, 1.0f, 0.1f );
+		m_Parameters[PHYSGUN_BLAST].GetAlpha().Init( 255.0f, 255.0f, 0.1f );
+		m_Parameters[PHYSGUN_BLAST].SetAttachment( 1 );
+		m_Parameters[PHYSGUN_BLAST].SetVisible( false );
+
+		m_Parameters[PHYSGUN_BLAST].SetMaterial( PHYSGUN_BLAST_SPRITE );
+	}
+
+	// ------------------------------------------
+	// Glows (fork mid/tips)
+	// ------------------------------------------
+	const char *attachNamesGlowThirdPerson[NUM_GLOW_SPRITES] =
+	{
+		"fork1m",
+		"fork1t",
+		"fork2m",
+		"fork2t",
+		"fork3m",
+		"fork3t",
+	};
+
+	const char *attachNamesGlow[NUM_GLOW_SPRITES] =
+	{
+		"fork1b",
+		"fork1m",
+		"fork1t",
+		"fork2b",
+		"fork2m",
+		"fork2t"
+	};
+
+	for ( int i = PHYSGUN_GLOW1; i < (PHYSGUN_GLOW1+NUM_GLOW_SPRITES); i++ )
+	{
+		if ( m_Parameters[i].GetMaterial() != NULL )
+			continue;
+
+		m_Parameters[i].GetScale().SetAbsolute( 0.05f * PHYSGUN_SPRITE_SCALE );
+		m_Parameters[i].GetAlpha().SetAbsolute( 64.0f );
+
+		// Different for different views
+		if ( ShouldDrawUsingViewModel() )
+		{
+			m_Parameters[i].SetAttachment( LookupAttachment( attachNamesGlow[i-PHYSGUN_GLOW1] ) );
+		}
+		else
+		{
+			m_Parameters[i].SetAttachment( LookupAttachment( attachNamesGlowThirdPerson[i-PHYSGUN_GLOW1] ) );
+		}
+		m_Parameters[i].SetColor( Vector( 255, 255, 255 ) );
+
+		m_Parameters[i].SetMaterial( PHYSGUN_FORKGLOW_SPRITE );
+	}
+
+	// ------------------------------------------
+	// End caps (fork tips)
+	// ------------------------------------------
+	const char *attachNamesEndCap[NUM_ENDCAP_SPRITES] =
+	{
+		"fork1t",
+		"fork2t",
+		"fork3t"
+	};
+
+	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
+	{
+		if ( m_Parameters[i].GetMaterial() != NULL )
+			continue;
+
+		m_Parameters[i].GetScale().SetAbsolute( 0.05f * PHYSGUN_SPRITE_SCALE );
+		m_Parameters[i].GetAlpha().SetAbsolute( 255.0f );
+		m_Parameters[i].SetAttachment( LookupAttachment( attachNamesEndCap[i-PHYSGUN_ENDCAP1] ) );
+		m_Parameters[i].SetVisible( false );
+
+		m_Parameters[i].SetMaterial( PHYSGUN_FORKEND_SPRITE );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Closing effects
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::DoEffectClosed( void )
+{
+	// Turn off the end-caps
+	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
+	{
+		m_Parameters[i].SetVisible( false );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Ready effects
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::DoEffectReady( void )
+{
+	// Special POV case
+	if ( ShouldDrawUsingViewModel() )
+	{
+		//Turn on the center sprite
+		m_Parameters[PHYSGUN_CORE].GetScale().InitFromCurrent( 14.0f, 0.2f );
+		m_Parameters[PHYSGUN_CORE].GetAlpha().InitFromCurrent( 128.0f, 0.2f );
+		m_Parameters[PHYSGUN_CORE].SetVisible();
+	}
+	else
+	{
+		//Turn off the center sprite
+		m_Parameters[PHYSGUN_CORE].GetScale().InitFromCurrent( 8.0f, 0.2f );
+		m_Parameters[PHYSGUN_CORE].GetAlpha().InitFromCurrent( 0.0f, 0.2f );
+		m_Parameters[PHYSGUN_CORE].SetVisible();
+	}
+
+	// Turn on the glow sprites
+	for ( int i = PHYSGUN_GLOW1; i < (PHYSGUN_GLOW1+NUM_GLOW_SPRITES); i++ )
+	{
+		m_Parameters[i].GetScale().InitFromCurrent( 0.4f * PHYSGUN_SPRITE_SCALE, 0.2f );
+		m_Parameters[i].GetAlpha().InitFromCurrent( 64.0f, 0.2f );
+		m_Parameters[i].SetVisible();
+	}
+
+	// Turn off the end-caps
+	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
+	{
+		m_Parameters[i].SetVisible( false );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Holding effects
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-26, reference-confirmed): the HL2 physcannon "holding" state
+// (core sprite between the claws, 6 fork glows, 3 endcaps, fork tendril beams)
+// does not exist in GMod's physgun.  GMod's held-object look is only the
+// physbeama "active" beam overlay plus the physg_glow endpoint pair, both
+// driven by the beam draw path.  This hook is a no-op now; the state machine
+// keeps running so m_EffectState networking is unchanged.
+void CWeaponGravityGun::DoEffectHolding( void )
+{
+}
+
+//-----------------------------------------------------------------------------
+// Launch effects
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::DoEffectLaunch( Vector *pos )
+{
+	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+	if ( pOwner == NULL )
+		return;
+
+	Vector	endPos;
+	Vector	shotDir;
+
+	if ( pos == NULL )
+	{
+		endPos = pOwner->Weapon_ShootPosition();
+		pOwner->EyeVectors( &shotDir );
+
+		trace_t	tr;
+		UTIL_TraceLine( endPos, endPos + ( shotDir * MAX_TRACE_LENGTH ), MASK_SHOT, pOwner, COLLISION_GROUP_NONE, &tr );
+
+		endPos = tr.endpos;
+		shotDir = endPos - pOwner->Weapon_ShootPosition();
+		VectorNormalize( shotDir );
+	}
+	else
+	{
+		endPos = *pos;
+		shotDir = ( endPos - pOwner->Weapon_ShootPosition() );
+		VectorNormalize( shotDir );
+	}
+
+	//Turn on the blast sprite and scale
+	m_Parameters[PHYSGUN_BLAST].GetScale().Init( 8.0f, 64.0f, 0.1f );
+	m_Parameters[PHYSGUN_BLAST].GetAlpha().Init( 255.0f, 0.0f, 0.2f );
+	m_Parameters[PHYSGUN_BLAST].SetVisible();
+}
+
+//-----------------------------------------------------------------------------
+// Shutdown for the weapon when it's holstered
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::DoEffectNone( void )
+{
+	//Turn off main glows
+	m_Parameters[PHYSGUN_CORE].SetVisible( false );
+	m_Parameters[PHYSGUN_BLAST].SetVisible( false );
+
+	for ( int i = PHYSGUN_GLOW1; i < (PHYSGUN_GLOW1+NUM_GLOW_SPRITES); i++ )
+	{
+		m_Parameters[i].SetVisible( false );
+	}
+
+	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
+	{
+		m_Parameters[i].SetVisible( false );
+	}
+
+	m_Beams[0].SetVisible( false );
+	m_Beams[1].SetVisible( false );
+	m_Beams[2].SetVisible( false );
+}
+
+//-----------------------------------------------------------------------------
+// Idle effect (pulsing)
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::DoEffectIdle( void )
+{
+	StartEffects();
+
+	// Turn on the glow sprites
+	for ( int i = PHYSGUN_GLOW1; i < (PHYSGUN_GLOW1+NUM_GLOW_SPRITES); i++ )
+	{
+		m_Parameters[i].GetScale().SetAbsolute( random->RandomFloat( 0.05f, 0.075f ) * PHYSGUN_SPRITE_SCALE );
+		m_Parameters[i].GetAlpha().SetAbsolute( random->RandomInt( 24, 32 ) );
+	}
+
+	// Turn on the end-cap sprites
+	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
+	{
+		m_Parameters[i].GetScale().SetAbsolute( random->RandomFloat( 3, 5 ) );
+		m_Parameters[i].GetAlpha().SetAbsolute( random->RandomInt( 200, 255 ) );
+	}
+
+	if ( m_EffectState != EFFECT_HOLDING )
+	{
+		// Turn beams off
+		m_Beams[0].SetVisible( false );
+		m_Beams[1].SetVisible( false );
+		m_Beams[2].SetVisible( false );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Update the pose parameter for the gun (the claw open/close animation)
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::UpdateElementPosition( void )
+{
+	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+
+	float flElementPosition = m_ElementParameter.Interp( gpGlobals->curtime );
+
+	if ( ShouldDrawUsingViewModel() )
+	{
+		if ( pOwner != NULL )
+		{
+			CBaseViewModel *vm = pOwner->GetViewModel();
+
+			if ( vm != NULL )
+			{
+				vm->SetPoseParameter( "active", flElementPosition );
+			}
+		}
+	}
+	else
+	{
+		SetPoseParameter( "active", flElementPosition );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Think function for the client
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::ClientThink( void )
+{
+	// Update our elements visually
+	UpdateElementPosition();
+
+	// Update our effects
+	DoEffectIdle();
+
+	BaseClass::ClientThink();
+}
+
+#endif // CLIENT_DLL
+
+//-----------------------------------------------------------------------------
+// Effect dispatcher (shared -- the client realm applies the sprite state,
+// the server realm just tracks the state value)
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::DoEffect( int effectType, Vector *pos )
+{
+	m_EffectState = effectType;
+
+#ifdef CLIENT_DLL
+	// Save predicted state
+	m_nOldEffectState = m_EffectState;
+
+	switch( effectType )
+	{
+	case EFFECT_CLOSED:
+		DoEffectClosed( );
+		break;
+
+	case EFFECT_READY:
+		DoEffectReady( );
+		break;
+
+	case EFFECT_HOLDING:
+		DoEffectHolding();
+		break;
+
+	case EFFECT_LAUNCH:
+		DoEffectLaunch( pos );
+		break;
+
+	default:
+	case EFFECT_NONE:
+		DoEffectNone();
+		break;
+	}
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// Destroy all sprites and beams
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::DestroyEffects( void )
+{
+#ifdef CLIENT_DLL
+	// Free our beams
+	m_Beams[0].Release();
+	m_Beams[1].Release();
+	m_Beams[2].Release();
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// Open the claw elements (both realms drive this from the shared hold state)
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::OpenElements( void )
+{
+	if ( m_bOpen )
+		return;
+
+#ifndef CLIENT_DLL
+	EmitSound( "Weapon_PhysCannon.OpenClaws" );
+#endif
+
+	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+
+	if ( pOwner == NULL )
+		return;
+
+	SendWeaponAnim( ACT_VM_IDLE );
+
+	m_bOpen = true;
+
+	DoEffect( EFFECT_READY );
+
+#ifdef CLIENT_DLL
+	// Element prediction
+	m_ElementParameter.InitFromCurrent( 1.0f, 0.2f, INTERP_SPLINE );
+	m_bOldOpen = true;
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// Close the claw elements
+//-----------------------------------------------------------------------------
+void CWeaponGravityGun::CloseElements( void )
+{
+	if ( m_bOpen == false )
+		return;
+
+#ifndef CLIENT_DLL
+	EmitSound( "Weapon_PhysCannon.CloseClaws" );
+#endif
+
+	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+
+	if ( pOwner == NULL )
+		return;
+
+	SendWeaponAnim( ACT_VM_IDLE );
+
+	m_bOpen = false;
+
+	DoEffect( EFFECT_CLOSED );
+
+#ifdef CLIENT_DLL
+	// Element prediction
+	m_ElementParameter.InitFromCurrent( 0.0f, 0.5f, INTERP_SPLINE );
+	m_bOldOpen = false;
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// Client entity created / received -- start the gun-glow system
+//-----------------------------------------------------------------------------
+#ifdef CLIENT_DLL
+void CWeaponGravityGun::OnDataChanged( DataUpdateType_t type )
+{
+	BaseClass::OnDataChanged( type );
+
+	if ( type == DATA_UPDATE_CREATED )
+	{
+		SetNextClientThink( CLIENT_THINK_ALWAYS );
+		StartEffects();
+	}
+
+	// Update effect state when out of parity with the server
+	if ( m_nOldEffectState != m_EffectState )
+	{
+		DoEffect( m_EffectState );
+		m_nOldEffectState = m_EffectState;
+	}
+
+	// Update element state when out of parity
+	if ( m_bOldOpen != m_bOpen )
+	{
+		if ( m_bOpen )
+		{
+			m_ElementParameter.InitFromCurrent( 1.0f, 0.2f, INTERP_SPLINE );
+		}
+		else
+		{
+			m_ElementParameter.InitFromCurrent( 0.0f, 0.5f, INTERP_SPLINE );
+		}
+
+		m_bOldOpen = (bool) m_bOpen;
+	}
+}
+#endif
+
 void CWeaponGravityGun::UpdateObject( void )
 {
 	CBasePlayer *pPlayer = ToBasePlayer( GetOwner() );
@@ -1266,6 +2119,11 @@ void CWeaponGravityGun::DetachObject( void )
 		m_gravCallback.DetachEntity();
 		m_hObject = NULL;
 		m_physicsBone = 0;
+
+		// HL2SB (2026-09-26): HL2 physcannon effect machine -- claws close,
+		// gun-glow drops back to idle (GMod parity).
+		CloseElements();
+		DoEffect( EFFECT_CLOSED );
 	}
 }
 
@@ -1399,6 +2257,10 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 				lua_pushentity( L, pObject );
 			END_LUA_CALL_HOOK( 2, 0 );
 		}
+
+		// HL2SB (2026-09-26): claws open + gun-glow to holding (GMod parity)
+		OpenElements();
+		DoEffect( EFFECT_HOLDING );
 		return;
 	}
 #endif
@@ -1441,6 +2303,10 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 			END_LUA_CALL_HOOK( 2, 0 );
 		}
 #endif
+
+		// HL2SB (2026-09-26): claws open + gun-glow to holding (GMod parity)
+		OpenElements();
+		DoEffect( EFFECT_HOLDING );
 	}
 	else
 	{
@@ -1593,48 +2459,53 @@ int CWeaponGravityGun::DrawModel( int flags )
 			points[1] = points[0] + vecMuzzleDir * ( points[2].DistTo( points[0] ) * 0.45f );
 		}
 
-		IMaterial *pMat = materials->FindMaterial( "sprites/physbeam1", TEXTURE_GROUP_CLIENT_EFFECTS );
-		if ( pObject )
-			pMat = materials->FindMaterial( "sprites/physbeam", TEXTURE_GROUP_CLIENT_EFFECTS );
+		// HL2SB (2026-09-26, reference-confirmed): C_PhysBeam draws exactly two
+		// beam trails -- sprites/physbeam.vmt always, sprites/physbeama.vmt as
+		// the additive "active" overlay while something is held.  These are
+		// GMod's own materials (their absence from this fork's content was the
+		// long-standing "beam looks wrong" cause).  The old HL2 physbeam1/
+		// physbeam path is gone.
+		Color clrWeapon = HL2SB_GetWeaponColor( pOwner->GetUserID() );
 		Vector color;
-		color.Init(1,1,1);
+		color.Init( clrWeapon.r() / 255.0f, clrWeapon.g() / 255.0f, clrWeapon.b() / 255.0f );
 
 		float scrollOffset = gpGlobals->curtime - (int)gpGlobals->curtime;
 		CMatRenderContextPtr pRenderContext( materials );
+
+		float flWidth = pObject ? 13 / 3.0f : 13 / 5.0f;
+
+		IMaterial *pMat = materials->FindMaterial( PHYSGUN_BEAM_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS );
 		pRenderContext->Bind( pMat );
-		DrawBeamQuadratic( points[0], points[1], points[2], pObject ? 13/3.0f : 13/5.0f, color, scrollOffset );
-		DrawBeamQuadratic( points[0], points[1], points[2], pObject ? 13/3.0f : 13/5.0f, color, -scrollOffset );
+		DrawBeamQuadratic( points[0], points[1], points[2], flWidth, color, scrollOffset );
 
-		IMaterial *pMaterial = materials->FindMaterial( "sprites/physglow", TEXTURE_GROUP_CLIENT_EFFECTS );
-
-		color32 clr={0,64,255,255};
-		if ( pObject )
+		if ( pObject != NULL )
 		{
-			clr.r = 186;
-			clr.g = 253;
-			clr.b = 247;
-			clr.a = 255;
+			IMaterial *pMatActive = materials->FindMaterial( PHYSGUN_BEAM_ACTIVE, TEXTURE_GROUP_CLIENT_EFFECTS );
+			pRenderContext->Bind( pMatActive );
+			DrawBeamQuadratic( points[0], points[1], points[2], flWidth, color, scrollOffset );
 		}
+
+		// Endpoint glow: GMod's two physg_glow layers, drawn ONCE each at the
+		// target.  (The old code drew 3x each plus a muzzle copy -- that
+		// over-draw, stacked on the HL2 sprite machine, was the "wrong effects
+		// piling up" the user saw.)
+		color32 clr =
+		{
+			(byte)MIN( 255, (int)( clrWeapon.r() ) ),
+			(byte)MIN( 255, (int)( clrWeapon.g() ) ),
+			(byte)MIN( 255, (int)( clrWeapon.b() ) ),
+			255
+		};
 
 		float scale = random->RandomFloat( 3, 5 ) * ( pObject ? 3 : 2 );
 
-		// Draw the sprite
-		pRenderContext->Bind( pMaterial );
-		for ( int i = 0; i < 3; i++ )
-		{
-			DrawSprite( points[2], scale, scale, clr );
-		}
+		IMaterial *pGlow1 = materials->FindMaterial( PHYSGUN_ENDGLOW_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS );
+		IMaterial *pGlow2 = materials->FindMaterial( PHYSGUN_ENDGLOW_SPRITE2, TEXTURE_GROUP_CLIENT_EFFECTS );
+		pRenderContext->Bind( pGlow1 );
+		DrawSprite( points[2], scale, scale, clr );
+		pRenderContext->Bind( pGlow2 );
+		DrawSprite( points[2], scale, scale, clr );
 
-		// HL2SB GMod compat: the bright blue-white glow at the MUZZLE while
-		// the beam is up (the gun-tip light in every GMod physgun reference
-		// shot) -- two soft sprites at the beam start.
-		color32 clrMuzzle = { 150, 210, 255, 255 };
-		float flMuzzleScale = random->RandomFloat( 2.0f, 3.0f );
-		pRenderContext->Bind( pMaterial );
-		for ( int i = 0; i < 2; i++ )
-		{
-			DrawSprite( points[0], flMuzzleScale, flMuzzleScale, clrMuzzle );
-		}
 		return 1;
 	}
 
@@ -1733,15 +2604,14 @@ void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 	AngleVectors( tmpAngle, &vecMuzzleDir );
 	points[1] = points[0] + vecMuzzleDir * ( points[2].DistTo( points[0] ) * 0.45f );
 
-	// HL2SB GMod compat (2026-09-24): the beam and glow sprites take the
-	// OWNER'S WEAPON COLOUR (cl_weaponcolor), not hardcoded blue.
+	// HL2SB (2026-09-26, reference-confirmed): C_PhysBeam draws exactly two
+	// beam trails -- sprites/physbeam.vmt always, sprites/physbeama.vmt as the
+	// additive "active" overlay while something is held (client.dll
+	// ).  Both are GMod's own materials.  The old HL2
+	// physbeam1/physbeam split is gone, as is the HL2 physcannon sprite machine.
 	Color clrWeapon = HL2SB_GetWeaponColor( pOwner->GetUserID() );
 	Vector color;
 	color.Init( clrWeapon.r() / 255.0f, clrWeapon.g() / 255.0f, clrWeapon.b() / 255.0f );
-
-	IMaterial *pMat = materials->FindMaterial( "sprites/physbeam1", TEXTURE_GROUP_CLIENT_EFFECTS );
-	if ( pObject )
-		pMat = materials->FindMaterial( "sprites/physbeam", TEXTURE_GROUP_CLIENT_EFFECTS );
 
 	// Now draw it.
 	CViewSetup beamView = *view->GetPlayerViewSetup();
@@ -1751,50 +2621,42 @@ void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 
 	float scrollOffset = gpGlobals->curtime - (int)gpGlobals->curtime;
 	CMatRenderContextPtr pRenderContext( materials );
-	pRenderContext->Bind( pMat );
 #if 1
 	// HACK HACK:  Munge the depth range to prevent view model from poking into walls, etc.
 	// Force clipped down range
 	pRenderContext->DepthRange( 0.1f, 0.2f );
 #endif
-	DrawBeamQuadratic( points[0], points[1], points[2], pObject ? 13/3.0f : 13/5.0f, color, scrollOffset );
-	DrawBeamQuadratic( points[0], points[1], points[2], pObject ? 13/3.0f : 13/5.0f, color, -scrollOffset );
+	float flWidth = pObject ? 13 / 3.0f : 13 / 5.0f;
 
-	IMaterial *pMaterial = materials->FindMaterial( "sprites/physglow", TEXTURE_GROUP_CLIENT_EFFECTS );
+	IMaterial *pMat = materials->FindMaterial( PHYSGUN_BEAM_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS );
+	pRenderContext->Bind( pMat );
+	DrawBeamQuadratic( points[0], points[1], points[2], flWidth, color, scrollOffset );
 
-	// Glow sprite: weapon colour, dimmed a little while nothing is held.
-	float flGlowScale = pObject ? 1.0f : 0.55f;
+	if ( pObject != NULL )
+	{
+		IMaterial *pMatActive = materials->FindMaterial( PHYSGUN_BEAM_ACTIVE, TEXTURE_GROUP_CLIENT_EFFECTS );
+		pRenderContext->Bind( pMatActive );
+		DrawBeamQuadratic( points[0], points[1], points[2], flWidth, color, scrollOffset );
+	}
+
+	// Endpoint glow: GMod's two physg_glow layers, once each at the target.
 	color32 clr =
 	{
-		(byte)MIN( 255, (int)( clrWeapon.r() * flGlowScale ) ),
-		(byte)MIN( 255, (int)( clrWeapon.g() * flGlowScale ) ),
-		(byte)MIN( 255, (int)( clrWeapon.b() * flGlowScale ) ),
+		(byte)MIN( 255, (int)( clrWeapon.r() ) ),
+		(byte)MIN( 255, (int)( clrWeapon.g() ) ),
+		(byte)MIN( 255, (int)( clrWeapon.b() ) ),
 		255
 	};
 
 	float scale = random->RandomFloat( 3, 5 ) * ( pObject ? 3 : 2 );
 
-	// Draw the sprite
-	pRenderContext->Bind( pMaterial );
-	for ( int i = 0; i < 3; i++ )
-	{
-		DrawSprite( points[2], scale, scale, clr );
-	}
+	IMaterial *pGlow1 = materials->FindMaterial( PHYSGUN_ENDGLOW_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS );
+	IMaterial *pGlow2 = materials->FindMaterial( PHYSGUN_ENDGLOW_SPRITE2, TEXTURE_GROUP_CLIENT_EFFECTS );
+	pRenderContext->Bind( pGlow1 );
+	DrawSprite( points[2], scale, scale, clr );
+	pRenderContext->Bind( pGlow2 );
+	DrawSprite( points[2], scale, scale, clr );
 
-	// HL2SB GMod compat: muzzle glow (first-person path; see DrawModel)
-	color32 clrMuzzle =
-	{
-		(byte)MIN( 255, (int)( clrWeapon.r() * 0.8f + 40 ) ),
-		(byte)MIN( 255, (int)( clrWeapon.g() * 0.8f + 40 ) ),
-		(byte)MIN( 255, (int)( clrWeapon.b() * 0.8f + 40 ) ),
-		255
-	};
-	float flMuzzleScale = random->RandomFloat( 2.0f, 3.0f );
-	pRenderContext->Bind( pMaterial );
-	for ( int i = 0; i < 2; i++ )
-	{
-		DrawSprite( points[0], flMuzzleScale, flMuzzleScale, clrMuzzle );
-	}
 #if 1
 	pRenderContext->DepthRange( 0.0f, 1.0f );
 #endif
@@ -1850,6 +2712,40 @@ void CWeaponGravityGun::ItemPostFrame( void )
 	if ( pOwner->m_afButtonPressed & IN_RELOAD )
 	{
 		Reload();
+	}
+
+	// HL2SB (2026-09-26): HL2 physcannon scan glow (CheckForTarget parity,
+	// both realms) -- the claws open when the beam points at a grabbable
+	// target and close after a 0.5 s debounce when it does not.
+	if ( m_hObject == NULL && !m_bFreezeReleaseLatch )
+	{
+		trace_t trScan;
+		TraceLine( &trScan );
+
+		if ( trScan.DidHitNonWorldEntity() )
+		{
+			m_nChangeState = ELEMENT_STATE_NONE;
+			OpenElements();
+		}
+		else if ( !m_active && ( m_flElementDebounce < gpGlobals->curtime ) && ( m_nChangeState == ELEMENT_STATE_NONE ) )
+		{
+			m_nChangeState = ELEMENT_STATE_CLOSED;
+			m_flElementDebounce = gpGlobals->curtime + 0.5f;
+		}
+	}
+
+	if ( ( m_flElementDebounce < gpGlobals->curtime ) && ( m_nChangeState != ELEMENT_STATE_NONE ) )
+	{
+		if ( m_nChangeState == ELEMENT_STATE_OPEN )
+		{
+			OpenElements();
+		}
+		else if ( m_nChangeState == ELEMENT_STATE_CLOSED )
+		{
+			CloseElements();
+		}
+
+		m_nChangeState = ELEMENT_STATE_NONE;
 	}
 
 	if ( pOwner->m_nButtons & IN_ATTACK )
