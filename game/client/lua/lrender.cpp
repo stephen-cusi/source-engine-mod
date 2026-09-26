@@ -124,7 +124,54 @@ LUA_BINDING_BEGIN( Renders, CopyRenderTargetToTexture, "library", "Copies the cu
 {
     CMatRenderContextPtr pRenderContext( materials );
     ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
-    pRenderContext->CopyRenderTargetToTexture( pTexture );
+
+    // HL2SB (2026-09-26): GMod parity, implemented as the ENGINE'S OWN
+    // UpdateScreenEffectTexture inline (view_scene.h) minus the FB lookup --
+    // that is the copy path the working halo capture always used.  The src
+    // rect comes from GetRenderTargetDimensions (the LIVE render-target
+    // size), NOT GetViewport (stale/wrong at PostDrawEffects -- a small src
+    // rect StretchRects a corner of garbage into the copy, which blacked the
+    // scene-restore step), and the dest rect is scaled like the inline when
+    // the texture differs in size.
+    int nSrcW, nSrcH;
+    pRenderContext->GetRenderTargetDimensions( nSrcW, nSrcH );
+    int nDstW = pTexture->GetActualWidth();
+    int nDstH = pTexture->GetActualHeight();
+
+    Rect_t srcRect;
+    srcRect.x = 0;
+    srcRect.y = 0;
+    srcRect.width = nSrcW;
+    srcRect.height = nSrcH;
+
+    Rect_t destRect = srcRect;
+    if ( nSrcW > nDstW || nSrcH > nDstH )
+    {
+        float scaleX = ( float )nDstW / ( float )nSrcW;
+        float scaleY = ( float )nDstH / ( float )nSrcH;
+        destRect.x = ( int )( srcRect.x * scaleX );
+        destRect.y = ( int )( srcRect.y * scaleY );
+        destRect.width = ( int )( srcRect.width * scaleX );
+        destRect.height = ( int )( srcRect.height * scaleY );
+        destRect.x = clamp( destRect.x, 0, nDstW );
+        destRect.y = clamp( destRect.y, 0, nDstH );
+        destRect.width = clamp( destRect.width, 0, nDstW - destRect.x );
+        destRect.height = clamp( destRect.height, 0, nDstH - destRect.y );
+    }
+
+    pRenderContext->CopyRenderTargetToTextureEx( pTexture, 0, &srcRect, &destRect );
+
+    // HL2SB (2026-09-26): GMod-parity registration -- same slots the engine
+    // inline registers (the frame-buffer pair handed out by
+    // render.GetScreenEffectTexture).
+    if ( pTexture == GetFullFrameFrameBufferTexture( 0 ) )
+    {
+        pRenderContext->SetFrameBufferCopyTexture( pTexture, 0 );
+    }
+    else if ( pTexture == GetFullFrameFrameBufferTexture( 1 ) )
+    {
+        pRenderContext->SetFrameBufferCopyTexture( pTexture, 1 );
+    }
 
     return 0;
 }
@@ -220,6 +267,46 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( Renders, UpdateRefractTexture, "library", "Updates the refract texture.", "client" )
 {
     UpdateRefractTexture();
+    return 0;
+}
+LUA_BINDING_END()
+
+// HL2SB (2026-09-26): GMod's Material():SetTexture/SetString/SetFloat.  The
+// GMod post-process stack (halo's pp/copy, pp/add; bloom's pp/blurx) retargets
+// material variables at draw time; this fork's Lua Material() is a plain table
+// (gmod_surface.lua), so the writes land through this library call.  GMod's
+// halo pipeline is dead without it -- mat_Copy:SetTexture("$basetexture", rt)
+// silently did nothing and the restore/composite quads sampled stale textures.
+LUA_BINDING_BEGIN( Renders, MaterialSetVar, "library", "Sets a material variable (texture, number or string).", "client" )
+{
+    const char *pszPath = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "materialPath" );
+    const char *pszVar = LUA_BINDING_ARGUMENT( luaL_checkstring, 2, "varName" );
+
+    IMaterial *pMaterial = materials->FindMaterial( pszPath, TEXTURE_GROUP_CLIENT_EFFECTS );
+    if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
+        return 0;
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    if ( !bFound || pVar == NULL )
+        return 0;
+
+    int iType = lua_type( L, 3 );
+    if ( iType == LUA_TNUMBER )
+    {
+        pVar->SetFloatValue( ( float )lua_tonumber( L, 3 ) );
+    }
+    else if ( iType == LUA_TSTRING )
+    {
+        pVar->SetStringValue( lua_tostring( L, 3 ) );
+    }
+    else if ( iType == LUA_TUSERDATA )
+    {
+        ITexture *pTexture = luaL_checkitexture( L, 3 );
+        if ( pTexture != NULL )
+            pVar->SetTextureValue( pTexture );
+    }
+
     return 0;
 }
 LUA_BINDING_END()
