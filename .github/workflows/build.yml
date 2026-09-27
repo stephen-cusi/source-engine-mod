@@ -41,6 +41,7 @@ jobs:
             libfreetype6-dev \
             libjpeg-dev \
             libopenal-dev \
+            libopus-dev \
             libpng-dev \
             libsdl2-dev \
             zlib1g-dev
@@ -52,12 +53,13 @@ jobs:
           --disable-warns
           --prefix="${{ github.workspace }}/linux"
           --build-games=hl2sb
+          --enable-opus
 
       - name: Build
-        run:           python3 ./waf build --target=client,server,GameUI -j2
+        run:           python3 ./waf build -j2
 
       - name: Install
-        run:           python3 ./waf install --target=client,server,GameUI -j2
+        run:           python3 ./waf install -j2
 
       - name: Save build configuration
         run: cp build/config.log linux/info.txt
@@ -114,7 +116,7 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
           export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-          python3 ./waf install --target=client,server,GameUI --strip
+          python3 ./waf install --strip
 
       - name: Upload Android build
         uses: actions/upload-artifact@v7
@@ -163,7 +165,7 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
           export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-          python3 ./waf install --target=client,server,GameUI --strip
+          python3 ./waf install --strip
 
       - name: Upload Android build
         uses: actions/upload-artifact@v7
@@ -195,11 +197,12 @@ jobs:
           --disable-warns
           --build-games=hl2sb
           --32bits
+          --enable-opus
 
       - name: Build and install
         run: >-
-          ./waf.bat build --target=client,server,GameUI &&
-          ./waf.bat install --target=client,server,GameUI
+          ./waf.bat build &&
+          ./waf.bat install
 
       - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
         run: |
@@ -231,12 +234,13 @@ jobs:
           --prefix=./win
           --disable-warns
           --build-games=hl2sb
+          --enable-opus
 
       - name: Build and install
         shell: pwsh
         run: >-
-          ./waf.bat build --target=client,server,GameUI &&
-          ./waf.bat install --target=client,server,GameUI
+          ./waf.bat build &&
+          ./waf.bat install
 
       - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
         run: |
@@ -267,7 +271,7 @@ jobs:
       - name: Install build dependencies
         run: |
           brew untap aws/tap || true
-          brew install sdl2 pkg-config
+          brew install sdl2 pkg-config opus
 
       - name: Configure
         run: >-
@@ -276,11 +280,12 @@ jobs:
           --disable-warns
           --build-games=hl2sb
           --prefix=./macos
+          --enable-opus
 
       - name: Build and install
         run: |
-          python3 ./waf build --target=client,server,GameUI
-          python3 ./waf install --target=client,server,GameUI
+          python3 ./waf build
+          python3 ./waf install
 
       - name: Upload macOS build
         uses: actions/upload-artifact@v7
@@ -303,7 +308,7 @@ jobs:
       - name: Install build dependencies
         run: |
           brew untap aws/tap || true
-          brew install sdl2 pkg-config
+          brew install sdl2 pkg-config opus
 
       - name: Configure
         env:
@@ -317,12 +322,12 @@ jobs:
             echo "Python reports non-arm64 (likely running under Rosetta); native Python required" >&2
             exit 1
           fi
-          python3 ./waf configure -T release --disable-warns --build-games=hl2sb --prefix=./macos
+          python3 ./waf configure -T release --disable-warns --build-games=hl2sb --prefix=./macos --enable-opus
 
       - name: Build and install
         run: |
-          python3 ./waf build --target=client,server,GameUI
-          python3 ./waf install --target=client,server,GameUI
+          python3 ./waf build
+          python3 ./waf install
 
       - name: Upload macOS build
         uses: actions/upload-artifact@v7
