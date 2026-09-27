@@ -170,11 +170,10 @@ static int CHL2MP_Player_AddVCDSequenceToGestureSlot (lua_State *L) {
 }
 
 static int CHL2MP_Player_IsPlayingTaunt (lua_State *L) {
-#ifndef CLIENT_DLL
+  // HL2SB (2026-09-27): both realms now carry the replicated taunt clock, so
+  // the real answer replaces the old client-side `false` stub (the Lua taunt
+  // camera polls IsPlayingTaunt every frame on the client).
   lua_pushboolean(L, luaL_checkhl2mpplayer(L, 1)->HL2SB_IsPlayingTaunt());
-#else
-  lua_pushboolean(L, false);
-#endif
   return 1;
 }
 

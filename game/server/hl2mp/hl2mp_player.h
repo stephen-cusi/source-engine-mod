@@ -162,6 +162,8 @@ public:
 	void			HL2SB_AnimSetGestureWeight( int iSlot, float flWeight );
 	void			HL2SB_AnimSetGestureSequence( int iSlot, int iSequence );
 	bool			HL2SB_IsPlayingTaunt( void );
+	float			HL2SB_TauntEnd( void ) const { return m_flHL2SBTauntEnd; }
+	void			HL2SB_SetTauntEnd( float flEnd ) { m_flHL2SBTauntEnd = flEnd; }
 
 	// GMod gesture-slot tracking (server-side; layers replicate through
 	// DT_BaseAnimatingOverlay).  Indexed by GESTURE_SLOT_* values.
@@ -173,6 +175,11 @@ public:
 	CNetworkVar( float, m_flHL2SBRunSpeed );
 	CNetworkVar( float, m_flHL2SBSlowWalkSpeed );
 	CNetworkVar( float, m_flHL2SBJumpPower );
+
+	// HL2SB (2026-09-27): GMod's taunt clock.  The reference act handler keeps
+	// ONE replicated float ("taunt busy until"); IsPlayingTaunt() on every realm
+	// is `curtime <= end && end != curtime`, and the act camera keys off it.
+	CNetworkVar( float, m_flHL2SBTauntEnd );
 
 	// HL2SB: remaining GMod Player speed/state knobs.  v1 stores the values
 	// (Lua-visible both realms); only walk/run/jump feed the movement engine.

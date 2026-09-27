@@ -60,6 +60,7 @@ IMPLEMENT_CLIENTCLASS_DT(C_HL2MP_Player, DT_HL2MP_Player, CHL2MP_Player)
 	RecvPropFloat( RECVINFO( m_flHL2SBRunSpeed ) ),
 	RecvPropFloat( RECVINFO( m_flHL2SBSlowWalkSpeed ) ),
 	RecvPropFloat( RECVINFO( m_flHL2SBJumpPower ) ),
+	RecvPropFloat( RECVINFO( m_flHL2SBTauntEnd ) ),
 END_RECV_TABLE()
 
 BEGIN_PREDICTION_DATA( C_HL2MP_Player )
@@ -369,120 +370,27 @@ static int s_nHL2SBLastSeq = -1;
 static int s_nHL2SBRollbacks = 0;
 static float s_flHL2SBLastRollbackMagnitude = 0.0f;
 
-// ---------------------------------------------------------------------------
-// HL2SB: GMod's "act <name>" command.
-//
-// GMod plays these over the gesture system (upper body layer) while holding a camera
-// in front of the player until the gesture is done. The names below are GMod's act
-// list; the activities are the ACT_GMOD_GESTURE_* / ACT_GMOD_TAUNT_* set that
-// models/m_anm.mdl declares (added to the shared activity table in AGENTS.md 28).
-// They are played in gesture slot 6 (GESTURE_SLOT_CUSTOM in multiplayer_animstate.h),
-// the same slot GMod uses for player gestures.
-//
-// The layer's cycle is driven from wall clock here on purpose - the HL2MP client
-// does not advance overlay layers for the local player, and the layer data is not
-// networked for a client-side animated entity.
-// ---------------------------------------------------------------------------
-#define HL2SB_GESTURE_SLOT_ACT 6
 
-struct HL2SBActEntry_t
+// HL2SB (2026-09-27): GMod's taunt state on the client -- the replicated clock
+// (act command), same formula as the server (reference ).
+bool C_HL2MP_Player::HL2SB_IsPlayingTaunt( void )
 {
-	const char	*pszName;
-	Activity	activity;
-};
-
-static const HL2SBActEntry_t s_HL2SBActList[] =
-{
-	{ "agree",	ACT_GMOD_GESTURE_AGREE },
-	{ "bow",	ACT_GMOD_GESTURE_BOW },
-	{ "cheer",	ACT_GMOD_TAUNT_CHEER },
-	{ "dance",	ACT_GMOD_TAUNT_DANCE },
-	{ "laugh",	ACT_GMOD_TAUNT_LAUGH },
-	{ "muscle",	ACT_GMOD_TAUNT_MUSCLE },
-	{ "robot",	ACT_GMOD_TAUNT_ROBOT },
-	{ "salute",	ACT_GMOD_TAUNT_SALUTE },
-	{ "wave",	ACT_GMOD_GESTURE_WAVE },
-	{ "zombie",	ACT_GMOD_GESTURE_TAUNT_ZOMBIE },
-};
-
-static float	s_flHL2SBActStartTime = 0.0f;
-static float	s_flHL2SBActEndTime = 0.0f;
-static bool		s_bHL2SBActCameraActive = false;
-static bool		s_bHL2SBActSavedThirdPerson = false;
-// HL2SB: GMod's taunt_camera.lua locks the player's angles and rotates a separate
-// CustomAngles with the mouse, so the body stays still and you orbit it 360 deg to
-// watch the gesture from the front. We store the view we started from; the body is
-// frozen to it while the camera orbits by the mouse delta from it.
-static QAngle	s_angHL2SBActLock = vec3_angle;			// frozen body/eye angles
-static QAngle	s_angHL2SBActCam = vec3_angle;			// orbiting camera angles
-static QAngle	s_angHL2SBActCamPrevRaw = vec3_angle;	// raw view last frame (CreateMove)
-
-static void HL2SB_PrintActList( void )
-{
-	Msg( "act <" );
-	for ( int i = 0; i < ARRAYSIZE( s_HL2SBActList ); ++i )
-		Msg( "%s%s", ( i > 0 ) ? "|" : "", s_HL2SBActList[i].pszName );
-	Msg( ">\n" );
+	const float flEnd = m_flHL2SBTauntEnd;
+	return ( gpGlobals->curtime <= flEnd ) && ( flEnd != gpGlobals->curtime );
 }
 
-static void HL2SB_PlayAct( C_HL2MP_Player *pPlayer, const char *pszName )
-{
-	// Resolve locally to get the camera duration. The CAMERA is started even when this
-	// model cannot resolve the gesture (first attempt bailed here, so "act" appeared
-	// to do nothing at all on custom playermodels without the ACT_GMOD_* set - the
-	// server still prints why the pose itself is missing).
-	Activity activity = ACT_INVALID;
-	const int iSequence = HL2SB_ResolveGestureSequence( pPlayer, pszName, &activity );
-
-	// The gesture has to be played by the SERVER - see HL2SB_ServerPlayGesture() in
-	// server/hl2mp/hl2mp_player.cpp: the client's overlay layers are overwritten by the
-	// networked DT_BaseAnimatingOverlay data on every update, so a client-side layer
-	// never renders (that is why the first attempt showed no animation at all).
-	char szCommand[128];
-	Q_snprintf( szCommand, sizeof( szCommand ), "hl2sb_act %s\n", pszName );
-	engine->ServerCmd( szCommand );
-
-	float flDuration = 2.0f;
-	if ( iSequence > 0 )
-	{
-		flDuration = pPlayer->SequenceDuration( iSequence );
-		if ( ( flDuration <= 0.0f ) || ( flDuration > 10.0f ) )
-			flDuration = 2.0f;
-	}
-
-	s_flHL2SBActEndTime = gpGlobals->curtime + flDuration + 0.15f;
-
-	if ( !s_bHL2SBActCameraActive )
-	{
-		s_bHL2SBActSavedThirdPerson = ( input->CAM_IsThirdPerson() != 0 );
-		s_bHL2SBActCameraActive = true;
-
-		// Start the camera orbit from the current view (GMod's CustomAngles/PlayerLockAngles).
-		s_angHL2SBActLock = pPlayer->EyeAngles();
-		s_angHL2SBActCam = s_angHL2SBActLock;
-		s_angHL2SBActCamPrevRaw = s_angHL2SBActLock;
-	}
-
-	// HL2SB: full third-person switch via the real wrapper (SetOverridingThirdPerson +
-	// CAM_ToThirdPerson + ThirdPersonSwitch). This is the path that actually puts the
-	// local player model into the render list, so the act gesture is visible.
-	::CAM_ToThirdPerson();
-
-	Msg( "act: %s (%.2fs%s)\n", pszName, flDuration, ( iSequence > 0 ) ? "" : ", no sequence on this model" );
-}
-
-// HL2SB: C_BasePlayer::ShouldDrawLocalPlayer() consults this so the act taunt camera
-// keeps the body in the render list. (The engine third-person flag does it too, but
-// this stays as a belt-and-braces for the frames where CAM_Think has not run yet.)
+// HL2SB: C_BasePlayer::ShouldDrawLocalPlayer() consults this so the Lua taunt
+// camera (gamemodes/deathmatch/gamemode/taunt_camera.lua + GM:CalcView) keeps
+// the body in the render list while it orbits.  The old client-side act camera
+// is gone -- this now keys off the networked taunt clock, exactly like GMod.
 bool HL2SB_CustomThirdPersonActive( void )
 {
-	return s_bHL2SBActCameraActive && ( gpGlobals->curtime < s_flHL2SBActEndTime );
+	C_HL2MP_Player *pPlayer = static_cast<C_HL2MP_Player *>( C_BasePlayer::GetLocalPlayer() );
+	return pPlayer != NULL && pPlayer->HL2SB_IsPlayingTaunt();
 }
 
-// GMod taunt_camera.lua CAM.CreateMove: feed the mouse into a separate orbiting camera
-// and lock the player's own view + movement so the body stays still while you spin the
-// camera around it. (s_angHL2SBActCamPrevRaw is declared with the other act statics
-// above, because HL2SB_PlayAct already needs it.)
+// (The GMod taunt camera's mouse-orbit + body lock runs through Lua --
+// GM:CreateMove in gamemodes/deathmatch/gamemode -- since 2026-09-27.)
 //
 // HL2SB: the vehicle camera convar, so the in-vehicle IN_DUCK toggle below can flip it.
 // The camera itself is built from this convar in ClientModeShared::OverrideView
@@ -499,22 +407,9 @@ bool C_HL2MP_Player::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 	if ( !BaseClass::CreateMove( flInputSampleTime, pCmd ) )
 		return false;
 
-	if ( s_bHL2SBActCameraActive && ( gpGlobals->curtime < s_flHL2SBActEndTime ) && IsAlive() )
-	{
-		// mouse delta since the engine wrote this frame's view angles
-		QAngle angDelta = pCmd->viewangles - s_angHL2SBActCamPrevRaw;
-		angDelta[ YAW ]   = AngleNormalize( angDelta[ YAW ] );
-		angDelta[ PITCH ] = clamp( angDelta[ PITCH ], -89.0f, 89.0f );
-
-		s_angHL2SBActCam[ YAW ]   = AngleNormalize( s_angHL2SBActCam[ YAW ]   + angDelta[ YAW ] );
-		s_angHL2SBActCam[ PITCH ] = clamp( s_angHL2SBActCam[ PITCH ] + angDelta[ PITCH ], -89.0f, 89.0f );
-
-		// Lock the body: restore the view to what it was at act start and freeze motion.
-		pCmd->viewangles = s_angHL2SBActLock;
-		pCmd->forwardmove = 0.0f;
-		pCmd->sidemove = 0.0f;
-		pCmd->buttons &= ~( IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_JUMP | IN_DUCK );
-	}
+	// (The old C++ act-camera body lock lived here; the GMod-parity act now runs
+	// the lock through Lua -- GM:CreateMove in gamemodes/deathmatch/gamemode --
+	// exactly like taunt_camera.lua's CAM.CreateMove.)
 
 	// ---------------------------------------------------------------------------
 	// HL2SB: the in-vehicle third person toggle, GMod's GM:VehicleMove
@@ -546,26 +441,8 @@ bool C_HL2MP_Player::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 		s_bHL2SBVehDuckLastFrame = bDuckDown;
 	}
 
-	s_angHL2SBActCamPrevRaw = pCmd->viewangles;
 	return true;
 }
-
-static void CC_HL2SB_Act( const CCommand &args )
-{
-	C_HL2MP_Player *pPlayer = static_cast<C_HL2MP_Player *>( C_BasePlayer::GetLocalPlayer() );
-	if ( !pPlayer )
-		return;
-
-	if ( args.ArgC() < 2 )
-	{
-		HL2SB_PrintActList();
-		return;
-	}
-
-	HL2SB_PlayAct( pPlayer, args[1] );
-}
-
-static ConCommand hl2sb_act( "act", CC_HL2SB_Act, "Play a GMod gesture on the local player, seen from a camera in front.", FCVAR_CLIENTDLL );
 
 // HL2SB: explicit first/third person toggle (bindable, e.g. bind F "hl2sb_vcam").
 // Vehicle third-person was removed again - it needed a per-vehicle flag and its own
@@ -640,36 +517,22 @@ void C_HL2MP_Player::ClientThink( void )
 	}
 
 	// ---------------------------------------------------------------------------
-	// HL2SB: per-frame bookkeeping for the in-vehicle camera toggle and the act
-	// camera (see the act command above this function).
+	// HL2SB: per-frame bookkeeping for the in-vehicle camera toggle.  (The old
+	// act-camera teardown lived here too; the Lua taunt camera ends itself from
+	// the replicated taunt clock and needs no client-side cleanup.)
 	// ---------------------------------------------------------------------------
 	if ( C_BasePlayer::GetLocalPlayer() == this )
 	{
-		if ( s_bHL2SBActCameraActive )
-		{
-			// The gesture layer is owned by the server (see HL2SB_ServerPlayGesture);
-			// the camera is local and its timer always expires, so the view can never be
-			// left parked in front of the player.
-			if ( ( gpGlobals->curtime >= s_flHL2SBActEndTime ) || !IsAlive() )
-			{
-				s_bHL2SBActCameraActive = false;
-				// Restore first person the same way (full wrapper).
-				if ( !s_bHL2SBActSavedThirdPerson )
-					::CAM_ToFirstPerson();
-			}
-		}
-
-		// Diagnostic (hl2sb_anim_debug): does the act camera have the engine third-person
-		// flag (that is what draws the body), and is the entity in the anim list?
+		// Diagnostic (hl2sb_anim_debug): vehicle/taunt camera state.
 		if ( hl2sb_anim_debug.GetBool() )
 		{
 			static float s_flNextVehPrint = 0.0f;
 			if ( gpGlobals->curtime >= s_flNextVehPrint )
 			{
 				s_flNextVehPrint = gpGlobals->curtime + 1.0f;
-				Msg( "[HL2SB vcam/cl] invehicle=%d thirdperson=%d actcam=%d\n",
+				Msg( "[HL2SB vcam/cl] invehicle=%d thirdperson=%d taunt=%d\n",
 					 IsInAVehicle() ? 1 : 0,
-					 input->CAM_IsThirdPerson() ? 1 : 0, s_bHL2SBActCameraActive ? 1 : 0 );
+					 input->CAM_IsThirdPerson() ? 1 : 0, HL2SB_CustomThirdPersonActive() ? 1 : 0 );
 			}
 		}
 	}
@@ -1291,42 +1154,10 @@ C_BaseAnimating *C_HL2MP_Player::BecomeRagdollOnClient()
 
 void C_HL2MP_Player::CalcView( Vector &eyeOrigin, QAngle &eyeAngles, float &zNear, float &zFar, float &fov )
 {
-	// HL2SB: the "act" command parks the camera in front of the player while the
-	// gesture plays (GMod's taunt_camera.lua view) - see the act command at the top.
-	//
-	// GMod locks the body angles and rotates a SEPARATE camera angle with the mouse,
-	// so you can orbit 360 deg and see the front of the gesture. We do the camera half
-	// here (mouse orbits the camera, not the body); the body-lock half needs a
-	// CreateMove view-freeze because the entity yaw is server-authoritative in HL2MP.
-	if ( s_bHL2SBActCameraActive && ( gpGlobals->curtime < s_flHL2SBActEndTime ) && IsAlive() && !IsInAVehicle() )
-	{
-		// The orbit lives in s_angHL2SBActCam, fed by CreateMove from the mouse while
-		// the body is locked. Here we only turn it into a position in front of the body.
-		const Vector vecTarget = GetAbsOrigin() + Vector( 0.0f, 0.0f, 64.0f );
-
-		QAngle angCamFlat = s_angHL2SBActCam;
-		angCamFlat[ PITCH ] = 0.0f;
-		Vector vecForward;
-		AngleVectors( angCamFlat, &vecForward );
-
-		// yaw orbits the camera horizontally, pitch lifts/lowers it around the head
-		float flDist = 110.0f;
-		Vector vecCam = vecTarget
-			- vecForward * ( flDist * cos( DEG2RAD( s_angHL2SBActCam[ PITCH ] ) ) )
-			+ Vector( 0.0f, 0.0f, 16.0f + flDist * sin( DEG2RAD( s_angHL2SBActCam[ PITCH ] ) ) );
-
-		trace_t tr;
-		UTIL_TraceLine( vecTarget, vecCam, MASK_SOLID, this, COLLISION_GROUP_NONE, &tr );
-		if ( tr.fraction < 1.0f )
-			vecCam = tr.endpos;
-
-		eyeOrigin = vecCam;
-		VectorAngles( vecTarget - vecCam, eyeAngles );
-
-		zNear = 7.0f;
-		zFar = 12000.0f;
-		return;
-	}
+	// HL2SB (2026-09-27): the old C++ act camera lived here.  GMod's act view is
+	// Lua -- gamemodes/deathmatch/gamemode/taunt_camera.lua through GM:CalcView
+	// (hooked from baseplayer_shared.cpp), keyed on the replicated taunt clock
+	// (HL2SB_IsPlayingTaunt) -- so the hand-rolled orbit/trace math is gone.
 
 	if ( m_lifeState != LIFE_ALIVE && !IsObserver() )
 	{

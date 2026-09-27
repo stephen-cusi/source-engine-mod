@@ -153,6 +153,86 @@ static int CBasePlayer_CmdSetViewAngles (lua_State *L) {
   return 0;
 }
 
+// HL2SB (2026-09-27): the write-side GMod methods the taunt camera needs
+// (taunt_camera.lua's CAM.CreateMove calls cmd:ClearButtons/ClearMovement) plus
+// the symmetric Set* family.
+static int CBasePlayer_CmdClearButtons (lua_State *L) {
+  lua_pushinteger(L, 0); lua_setfield(L, 1, "buttons");
+  return 0;
+}
+
+static int CBasePlayer_CmdClearMovement (lua_State *L) {
+  lua_pushnumber(L, 0); lua_setfield(L, 1, "forwardmove");
+  lua_pushnumber(L, 0); lua_setfield(L, 1, "sidemove");
+  lua_pushnumber(L, 0); lua_setfield(L, 1, "upmove");
+  return 0;
+}
+
+static int CBasePlayer_CmdSetButtons (lua_State *L) {
+  lua_setfield(L, 1, "buttons");		// command table, bitfield
+  return 0;
+}
+
+static int CBasePlayer_CmdSetImpulse (lua_State *L) {
+  lua_setfield(L, 1, "impulse");
+  return 0;
+}
+
+static int CBasePlayer_CmdSetForwardMove (lua_State *L) {
+  lua_setfield(L, 1, "forwardmove");
+  return 0;
+}
+
+static int CBasePlayer_CmdSetSideMove (lua_State *L) {
+  lua_setfield(L, 1, "sidemove");
+  return 0;
+}
+
+static int CBasePlayer_CmdSetUpMove (lua_State *L) {
+  lua_setfield(L, 1, "upmove");
+  return 0;
+}
+
+// HL2SB (2026-09-27): build the GMod-shaped CUserCmd Lua table.  Shared by
+// Player:GetCurrentCommand() and the GM:CreateMove dispatch (in_main.cpp).
+// The table is a SNAPSHOT of the command -- callers that hand it to Lua copy
+// the writable fields (viewangles/buttons/forwardmove/sidemove/upmove) back
+// into the real CUserCmd afterwards; ClearButtons/ClearMovement/Set* only
+// mutate the table, so they work through that same copy-back.
+void HL2SB_PushUserCmdTable (lua_State *L, const CUserCmd *pCmd) {
+  lua_newtable(L);
+
+  lua_pushinteger(L, pCmd->command_number); lua_setfield(L, -2, "command_number");
+  lua_pushinteger(L, pCmd->tick_count);     lua_setfield(L, -2, "tick_count");
+  lua_pushinteger(L, pCmd->buttons);        lua_setfield(L, -2, "buttons");
+  lua_pushinteger(L, pCmd->impulse);        lua_setfield(L, -2, "impulse");
+  lua_pushinteger(L, pCmd->weaponselect);   lua_setfield(L, -2, "weaponselect");
+  lua_pushinteger(L, pCmd->mousedx);        lua_setfield(L, -2, "mousedx");
+  lua_pushinteger(L, pCmd->mousedy);        lua_setfield(L, -2, "mousedy");
+  lua_pushnumber(L, pCmd->forwardmove);     lua_setfield(L, -2, "forwardmove");
+  lua_pushnumber(L, pCmd->sidemove);        lua_setfield(L, -2, "sidemove");
+  lua_pushnumber(L, pCmd->upmove);          lua_setfield(L, -2, "upmove");
+  lua_pushangle(L, pCmd->viewangles);       lua_setfield(L, -2, "viewangles");
+
+  lua_pushcfunction(L, CBasePlayer_CmdKeyDown);        lua_setfield(L, -2, "KeyDown");
+  lua_pushcfunction(L, CBasePlayer_CmdGetMouseX);      lua_setfield(L, -2, "GetMouseX");
+  lua_pushcfunction(L, CBasePlayer_CmdGetMouseY);      lua_setfield(L, -2, "GetMouseY");
+  lua_pushcfunction(L, CBasePlayer_CmdGetButtons);     lua_setfield(L, -2, "GetButtons");
+  lua_pushcfunction(L, CBasePlayer_CmdGetImpulse);     lua_setfield(L, -2, "GetImpulse");
+  lua_pushcfunction(L, CBasePlayer_CmdGetViewAngles);  lua_setfield(L, -2, "GetViewAngles");
+  lua_pushcfunction(L, CBasePlayer_CmdSetViewAngles);  lua_setfield(L, -2, "SetViewAngles");
+  lua_pushcfunction(L, CBasePlayer_CmdGetForwardMove); lua_setfield(L, -2, "GetForwardMove");
+  lua_pushcfunction(L, CBasePlayer_CmdGetSideMove);    lua_setfield(L, -2, "GetSideMove");
+  lua_pushcfunction(L, CBasePlayer_CmdGetUpMove);      lua_setfield(L, -2, "GetUpMove");
+  lua_pushcfunction(L, CBasePlayer_CmdClearButtons);   lua_setfield(L, -2, "ClearButtons");
+  lua_pushcfunction(L, CBasePlayer_CmdClearMovement);  lua_setfield(L, -2, "ClearMovement");
+  lua_pushcfunction(L, CBasePlayer_CmdSetButtons);     lua_setfield(L, -2, "SetButtons");
+  lua_pushcfunction(L, CBasePlayer_CmdSetImpulse);     lua_setfield(L, -2, "SetImpulse");
+  lua_pushcfunction(L, CBasePlayer_CmdSetForwardMove); lua_setfield(L, -2, "SetForwardMove");
+  lua_pushcfunction(L, CBasePlayer_CmdSetSideMove);    lua_setfield(L, -2, "SetSideMove");
+  lua_pushcfunction(L, CBasePlayer_CmdSetUpMove);      lua_setfield(L, -2, "SetUpMove");
+}
+
 static int CBasePlayer_GetCurrentCommand (lua_State *L) {
 #ifdef CLIENT_DLL
   // HL2SB GMod compat: on the client realm answer from the LIVE input state.
@@ -182,31 +262,6 @@ static int CBasePlayer_GetCurrentCommand (lua_State *L) {
   }
 #endif
 
-  lua_newtable(L);
-
-  lua_pushinteger(L, pCmd->command_number); lua_setfield(L, -2, "command_number");
-  lua_pushinteger(L, pCmd->tick_count);     lua_setfield(L, -2, "tick_count");
-  lua_pushinteger(L, pCmd->buttons);        lua_setfield(L, -2, "buttons");
-  lua_pushinteger(L, pCmd->impulse);        lua_setfield(L, -2, "impulse");
-  lua_pushinteger(L, pCmd->weaponselect);   lua_setfield(L, -2, "weaponselect");
-  lua_pushinteger(L, pCmd->mousedx);        lua_setfield(L, -2, "mousedx");
-  lua_pushinteger(L, pCmd->mousedy);        lua_setfield(L, -2, "mousedy");
-  lua_pushnumber(L, pCmd->forwardmove);     lua_setfield(L, -2, "forwardmove");
-  lua_pushnumber(L, pCmd->sidemove);        lua_setfield(L, -2, "sidemove");
-  lua_pushnumber(L, pCmd->upmove);          lua_setfield(L, -2, "upmove");
-  lua_pushangle(L, pCmd->viewangles);       lua_setfield(L, -2, "viewangles");
-
-  lua_pushcfunction(L, CBasePlayer_CmdKeyDown);        lua_setfield(L, -2, "KeyDown");
-  lua_pushcfunction(L, CBasePlayer_CmdGetMouseX);      lua_setfield(L, -2, "GetMouseX");
-  lua_pushcfunction(L, CBasePlayer_CmdGetMouseY);      lua_setfield(L, -2, "GetMouseY");
-  lua_pushcfunction(L, CBasePlayer_CmdGetButtons);     lua_setfield(L, -2, "GetButtons");
-  lua_pushcfunction(L, CBasePlayer_CmdGetImpulse);     lua_setfield(L, -2, "GetImpulse");
-  lua_pushcfunction(L, CBasePlayer_CmdGetViewAngles);  lua_setfield(L, -2, "GetViewAngles");
-  lua_pushcfunction(L, CBasePlayer_CmdSetViewAngles);  lua_setfield(L, -2, "SetViewAngles");
-  lua_pushcfunction(L, CBasePlayer_CmdGetForwardMove); lua_setfield(L, -2, "GetForwardMove");
-  lua_pushcfunction(L, CBasePlayer_CmdGetSideMove);    lua_setfield(L, -2, "GetSideMove");
-  lua_pushcfunction(L, CBasePlayer_CmdGetUpMove);      lua_setfield(L, -2, "GetUpMove");
-
 #ifdef CLIENT_DLL
   // HL2SB TEMPORARY diagnostic: sample the frames Tick actually processes
   // while Mouse2 is held -- does the predicted command carry the button AND
@@ -220,6 +275,7 @@ static int CBasePlayer_GetCurrentCommand (lua_State *L) {
   }
 #endif
 
+  HL2SB_PushUserCmdTable(L, pCmd);
   return 1;
 }
 

@@ -108,6 +108,30 @@ static const luaL_Reg CBasePlayermeta[] = {
 };
 
 
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-27): the server's player.GetAll(), client side (server
+// version: game/server/lua/lplayer.cpp).  The lsrcinit `player = player or {}`
+// stub leaves the client table EMPTY, so anything of GMod's shape that
+// iterates players died here with "field 'GetAll' is nil" -- first seen in
+// the taunt camera's filter = player.GetAll() trace.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_GetAll (lua_State *L) {
+  lua_newtable( L );
+  int i = 0;
+  for ( int iClient = 1; iClient <= gpGlobals->maxClients; ++iClient )
+  {
+    CBasePlayer *pPlayer = UTIL_PlayerByIndex( iClient );
+    if ( !pPlayer )
+      continue;
+
+    lua_pushinteger( L, ++i );
+    lua_pushplayer( L, pPlayer );
+    lua_rawset( L, -3 );
+  }
+  return 1;
+}
+
+
 /*
 ** Open CBasePlayer object
 */
@@ -125,6 +149,17 @@ LUALIB_API int luaopen_CBasePlayer (lua_State *L) {
   // only returns the ent index, which is useless for entity method calls.
   lua_pushcfunction(L, CBasePlayer_GetLocalPlayer);
   lua_setglobal(L, "LocalPlayer");
+
+  // HL2SB (2026-09-27): player.GetAll on the client too -- see CBasePlayer_GetAll.
+  lua_getglobal( L, "player" );
+  if ( lua_isnoneornil( L, -1 ) )
+  {
+    lua_pop( L, 1 );
+    lua_newtable( L );
+  }
+  lua_pushcfunction( L, CBasePlayer_GetAll );
+  lua_setfield( L, -2, "GetAll" );
+  lua_setglobal( L, "player" );
 
   return 1;
 }

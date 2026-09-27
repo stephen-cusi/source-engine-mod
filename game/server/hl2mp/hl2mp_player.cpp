@@ -90,6 +90,10 @@ IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 	SendPropFloat( SENDINFO( m_flHL2SBRunSpeed ) ),
 	SendPropFloat( SENDINFO( m_flHL2SBSlowWalkSpeed ) ),
 	SendPropFloat( SENDINFO( m_flHL2SBJumpPower ) ),
+	// HL2SB (2026-09-27): the taunt clock.  GMod's client reads the very same
+	// float through IsPlayingTaunt() to run the taunt camera and gate the act
+	// command, so it has to replicate.
+	SendPropFloat( SENDINFO( m_flHL2SBTauntEnd ) ),
 
 	SendPropExclude( "DT_BaseAnimating", "m_flPoseParameter" ),
 	SendPropExclude( "DT_BaseFlex", "m_viewtarget" ),
@@ -122,43 +126,103 @@ END_DATADESC()
 #pragma warning( disable : 4355 )
 
 //-----------------------------------------------------------------------------
-// HL2SB: GMod's `act <name>` command, server side.
+// HL2SB (2026-09-27): GMod's `act <name>` command, ported from the reference
+// x86 server.dll handler ():
 //
-// The gesture has to be started HERE, not on the client: the client's overlay layers
-// are overwritten by the networked DT_BaseAnimatingOverlay data on every update, so a
-// client-only layer never rendered - which is exactly why the first attempt looked
-// like "act does nothing / the body gets stuck". CBaseAnimatingOverlay::
-// StudioFrameAdvance() advances the layers and autokills the finished gesture, and the
-// layer is networked, so everyone sees it (GMod does the same through
-// ply:AnimRestartGesture() in gamemodes/base/gamemode/animations.lua).
+//   * UTIL_GetCommandClient(); bail unless the caller is an alive player
+//   * 16 hardcoded names -> activities (a strcmp chain in GMod).  forward/
+//     group/halt are HL2's squad SIGNAL gestures, the rest is the ACT_GMOD set.
+//   * a bare `act` or an unknown name silently does nothing
+//   * nothing happens while a taunt is still up (TauntEnd() > curtime)
+//   * GM:PlayerShouldTaunt( ply, actid ) returning false cancels
+//   * duration = SequenceDuration( SelectWeightedSequence( activity ) )
+//   * TauntEnd = curtime + duration (replicated float; drives IsPlayingTaunt
+//     and the taunt camera on every realm -- GMod keeps no other flag)
+//   * GMod plays the gesture as animstate DoAnimationEvent( CUSTOM_GESTURE,
+//     act, restart ), which lands in GESTURE_SLOT_CUSTOM -- this fork's
+//     equivalent is HL2SB_AnimRestartGesture( GESTURE_SLOT_CUSTOM, act, true ).
+//     The gesture has to be started HERE, not on the client: the client's
+//     overlay layers are overwritten by the networked DT_BaseAnimatingOverlay
+//     data on every update, so a client-only layer never rendered.  The layer
+//     is networked, so everyone sees it.
+//   * GM:PlayerStartTaunt( ply, actid, length )
 //-----------------------------------------------------------------------------
-static void HL2SB_ServerPlayGesture( CHL2MP_Player *pPlayer, const char *pszName )
+struct HL2SB_ActEntry_t
 {
-	if ( !pPlayer || ( pPlayer->m_lifeState != LIFE_ALIVE ) )
+	const char	*pszName;
+	Activity	activity;
+};
+
+static const HL2SB_ActEntry_t s_HL2SBGModActList[] =
+{
+	{ "wave",		ACT_GMOD_GESTURE_WAVE },
+	{ "agree",		ACT_GMOD_GESTURE_AGREE },
+	{ "becon",		ACT_GMOD_GESTURE_BECON },
+	{ "bow",		ACT_GMOD_GESTURE_BOW },
+	{ "disagree",	ACT_GMOD_GESTURE_DISAGREE },
+	{ "salute",		ACT_GMOD_TAUNT_SALUTE },
+	{ "forward",	ACT_SIGNAL_FORWARD },
+	{ "group",		ACT_SIGNAL_GROUP },
+	{ "halt",		ACT_SIGNAL_HALT },
+	{ "pers",		ACT_GMOD_TAUNT_PERSISTENCE },
+	{ "muscle",		ACT_GMOD_TAUNT_MUSCLE },
+	{ "laugh",		ACT_GMOD_TAUNT_LAUGH },
+	{ "cheer",		ACT_GMOD_TAUNT_CHEER },
+	{ "zombie",		ACT_GMOD_GESTURE_TAUNT_ZOMBIE },
+	{ "dance",		ACT_GMOD_TAUNT_DANCE },
+	{ "robot",		ACT_GMOD_TAUNT_ROBOT },
+};
+
+CON_COMMAND_F( act, "Plays a 'taunt' animation, if the server allows it. Valid options are: wave, agree, disagree, becon, bow, salute, forward, group, halt, pers, muscle, laugh, cheer, zombie, dance, robot.", FCVAR_GAMEDLL )
+{
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( UTIL_GetCommandClient() );
+	if ( !pPlayer || !pPlayer->IsAlive() )
 		return;
+
+	const char *pszAct = ( args.ArgC() >= 2 ) ? args[ 1 ] : "";
 
 	Activity activity = ACT_INVALID;
-	const int iSequence = HL2SB_ResolveGestureSequence( pPlayer, pszName, &activity );
-	if ( iSequence <= 0 )
+	for ( int i = 0; i < ARRAYSIZE( s_HL2SBGModActList ); ++i )
 	{
-		ClientPrint( pPlayer, HUD_PRINTCONSOLE,
-					 CFmtStr( "act: model %s has no gesture matching '%s' (the m_anm-based models declare the ACT_GMOD_* set)\n",
-							  pPlayer->GetModelName(), pszName ) );
-		return;
+		if ( !Q_stricmp( pszAct, s_HL2SBGModActList[ i ].pszName ) )
+		{
+			activity = s_HL2SBGModActList[ i ].activity;
+			break;
+		}
 	}
-
-	pPlayer->AddGestureSequence( iSequence, true );
-
-	ClientPrint( pPlayer, HUD_PRINTCONSOLE, CFmtStr( "act: %s\n", pszName ) );
-}
-
-CON_COMMAND_F( hl2sb_act, "Play a gesture on the calling player (GMod-style act <name>).", FCVAR_GAMEDLL )
-{
-	CBasePlayer *pPlayer = UTIL_GetCommandClient();
-	if ( !pPlayer || ( args.ArgC() < 2 ) )
+	if ( activity == ACT_INVALID )
 		return;
 
-	HL2SB_ServerPlayGesture( ToHL2MPPlayer( pPlayer ), args[1] );
+	if ( pPlayer->HL2SB_TauntEnd() > gpGlobals->curtime )
+		return;
+
+	// GM:PlayerShouldTaunt( ply, actid ) -- only an explicit false cancels
+	// (nil = the gamemode has no opinion = allow; GMod relies on its base
+	// gamemode defining the hook, this fork does now too, but stay lenient).
+	bool bAllowed = true;
+	BEGIN_LUA_CALL_HOOK( "PlayerShouldTaunt" );
+		lua_pushplayer( L, pPlayer );
+		lua_pushinteger( L, activity );
+	END_LUA_CALL_HOOK( 2, 1 );
+	bAllowed = !lua_isboolean( L, -1 ) || ( lua_toboolean( L, -1 ) != 0 );
+	lua_pop( L, 1 );
+	if ( !bAllowed )
+		return;
+
+	const int iSequence = pPlayer->SelectWeightedSequence( activity );
+	const float flDuration = ( iSequence >= 0 ) ? pPlayer->SequenceDuration( iSequence ) : 0.0f;
+
+	const float flEnd = gpGlobals->curtime + flDuration;
+	if ( pPlayer->HL2SB_TauntEnd() != flEnd )
+		pPlayer->HL2SB_SetTauntEnd( flEnd );
+
+	pPlayer->HL2SB_AnimRestartGesture( GESTURE_SLOT_CUSTOM, activity, true );
+
+	BEGIN_LUA_CALL_HOOK( "PlayerStartTaunt" );
+		lua_pushplayer( L, pPlayer );
+		lua_pushinteger( L, activity );
+		lua_pushnumber( L, flDuration );
+	END_LUA_CALL_HOOK( 3, 0 );
 }
 
 CHL2MP_Player::CHL2MP_Player() : m_PlayerAnimState( this )
@@ -937,8 +1001,10 @@ void CHL2MP_Player::HL2SB_AnimSetGestureWeight( int iSlot, float flWeight )
 
 bool CHL2MP_Player::HL2SB_IsPlayingTaunt( void )
 {
-	int iSlot = GESTURE_SLOT_VCD;
-	return m_iHL2SBSlotLayer[iSlot] >= 0 && IsValidLayer( m_iHL2SBSlotLayer[iSlot] );
+	// GMod (reference x86 server.dll, ): the taunt state is exactly
+	// this comparison against the replicated end time -- no extra flag.
+	const float flEnd = m_flHL2SBTauntEnd;
+	return ( gpGlobals->curtime <= flEnd ) && ( flEnd != gpGlobals->curtime );
 }
 
 // GMod: AnimSetGestureSequence( slot, sequence ) - swap the slot's layer to a

@@ -27,6 +27,14 @@
 #include <voice_status.h>
 #include "cam_thirdperson.h"
 
+#if defined( LUA_SDK )
+#include "luamanager.h"
+#include "mathlib/lvector.h"	// HL2SB: luaL_checkangle for the cmd write-back
+// HL2SB (2026-09-27): builds the GMod-shaped cmd table for GM:CreateMove
+// (lbaseplayer_shared.cpp; same builder Player:GetCurrentCommand uses).
+void HL2SB_PushUserCmdTable( lua_State *L, const CUserCmd *pCmd );
+#endif
+
 #ifdef SIXENSE
 #include "sixense/in_sixense.h"
 #endif
@@ -1265,6 +1273,60 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 	{
 		VectorCopy( m_angPreviousViewAngles, cmd->viewangles );
 	}
+
+#if defined( LUA_SDK )
+	// HL2SB (2026-09-27): GMod's GM:CreateMove( cmd ).  The taunt camera
+	// (gamemodes/deathmatch/gamemode/taunt_camera.lua) reads the mouse deltas
+	// off the command, orbits a separate camera angle set, and locks the body
+	// through cmd:SetViewAngles/ClearButtons/ClearMovement -- GMod's
+	// PLAYER:CreateMove wiring.  The Lua table is a SNAPSHOT of the command
+	// (kept alive through the call via the registry), and the writable fields
+	// are copied back into the real command below.
+	if ( L != NULL )
+	{
+		HL2SB_PushUserCmdTable( L, cmd );
+		const int iTableRef = luaL_ref( L, LUA_REGISTRYINDEX );
+
+		BEGIN_LUA_CALL_HOOK( "CreateMove" );
+			lua_rawgeti( L, LUA_REGISTRYINDEX, iTableRef );
+		END_LUA_CALL_HOOK( 1, 1 );
+		lua_pop( L, 1 );	// the hook result; GMod's "handled" flag has no
+							// further work to do here - the copy-back below
+							// is what makes the lock real
+
+		lua_rawgeti( L, LUA_REGISTRYINDEX, iTableRef );
+		if ( lua_istable( L, -1 ) )
+		{
+			lua_getfield( L, -1, "viewangles" );
+			if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
+				cmd->viewangles = luaL_checkangle( L, -1 );
+			lua_pop( L, 1 );
+
+			lua_getfield( L, -1, "buttons" );
+			if ( lua_isnumber( L, -1 ) )
+				cmd->buttons = (int)lua_tointeger( L, -1 );
+			lua_pop( L, 1 );
+
+			lua_getfield( L, -1, "forwardmove" );
+			if ( lua_isnumber( L, -1 ) )
+				cmd->forwardmove = (float)lua_tonumber( L, -1 );
+			lua_pop( L, 1 );
+
+			lua_getfield( L, -1, "sidemove" );
+			if ( lua_isnumber( L, -1 ) )
+				cmd->sidemove = (float)lua_tonumber( L, -1 );
+			lua_pop( L, 1 );
+
+			lua_getfield( L, -1, "upmove" );
+			if ( lua_isnumber( L, -1 ) )
+				cmd->upmove = (float)lua_tonumber( L, -1 );
+			lua_pop( L, 1 );
+		}
+		lua_pop( L, 1 );
+
+		luaL_unref( L, LUA_REGISTRYINDEX, iTableRef );
+	}
+#endif
 
 	// Let the move manager override anything it wants to.
 	if ( g_pClientMode->CreateMove( input_sample_frametime, cmd ) )

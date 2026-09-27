@@ -108,6 +108,12 @@ public:
 	CNetworkVar( float, m_flHL2SBSlowWalkSpeed );
 	CNetworkVar( float, m_flHL2SBJumpPower );
 
+	// HL2SB (2026-09-27): GMod's replicated taunt clock (act command).  The
+	// Lua taunt camera and IsPlayingTaunt() key off this on the client.
+	CNetworkVar( float, m_flHL2SBTauntEnd );
+
+	bool			HL2SB_IsPlayingTaunt( void );
+
 	// HL2SB: remaining GMod Player knobs, stored for the Lua bindings (see the
 	// server header for the v1 scope note).
 	float			m_flHL2SBCrouchedWalkSpeed;
