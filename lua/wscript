@@ -88,8 +88,11 @@ def build(bld):
 	if bld.env.DEST_OS == 'win32':
 		defines += [ 'LUA_BUILD_AS_DLL' ]
 	# dlopen/dlsym for loadlib.c (LUA_USE_DLOPEN) -- bionic keeps them in libdl.
+	# libm: as a shlib every symbol must resolve at link time, and bionic keeps
+	# acos/pow/fmod/frexp/... in a separate libm.so (desktop glibc >= 2.34
+	# merged libm into libc, which is why the Linux job passed without this).
 	if bld.env.DEST_OS in ( 'linux', 'android' ):
-		libs += [ 'dl' ]
+		libs += [ 'dl', 'm' ]
 
 	# Desktop: next to the exe (D:\srceng\bin, tier0's neighbourhood) so
 	# client.dll/server.dll resolve it from the application directory.
