@@ -2359,6 +2359,9 @@ int CWeaponGravityGun::DrawModel( int flags )
 	// Only render these on the transparent pass
 	if ( flags & STUDIO_TRANSPARENCY )
 	{
+		// HL2SB (2026-09-27, REVERTED): an "always-on beam" pass here was wrong
+		// -- GMod's CPhysBeam only lights up (m_bIsOn) while something is
+		// actually held; idle shows NO beam (user confirmed against real GMod).
 		if ( !m_active )
 			return 0;
 
@@ -2518,6 +2521,10 @@ int CWeaponGravityGun::DrawModel( int flags )
 //-----------------------------------------------------------------------------
 void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 {
+	// HL2SB (2026-09-27, REVERTED): the beam draws ONLY while actually holding
+	// -- the "always-on idle beam" experiment was wrong (user confirmed GMod
+	// shows no beam at idle).  Idle gun glow comes from the material proxy
+	// (PlayerWeaponColor -> $selfillumtint), not from the beam.
 	if ( !m_active )
 		return;
 

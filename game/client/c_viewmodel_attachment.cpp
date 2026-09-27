@@ -23,6 +23,7 @@
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialvar.h"
 #include "c_baseplayer.h"
+#include "iclientrenderable.h"	// proxy bindable -> entity (CResultProxy::BindArgToEntity inline)
 // HL2SB: LUA_NOREF / the entity's Lua table reference, for the PlayerColor proxy's
 // "is this a Lua-created clientside model?" test.
 #include "luamanager.h"
@@ -825,9 +826,13 @@ EXPOSE_INTERFACE( CPlayerColorProxy, IMaterialProxy, "PlayerColor" IMATERIAL_PRO
 // the arms have no colour" report, 2026-09-17).  The colour is cl_weaponcolor, the
 // convar the player model selector's weapon mixer writes.
 //-----------------------------------------------------------------------------
-// HL2SB (2026-09-24): hold state of the local physgun (weapon_physgun.cpp) --
-// drives the grab-glow pulse below.
-bool HL2SB_PhysgunIsHolding( void );
+// HL2SB (2026-09-27): the physgun colour proxy.  GMod implements this one in
+// LUA (garrysmod/lua/matproxy/player_weapon_color.lua) -- there is no
+// "PlayerWeaponColor" symbol in any GMod DLL; the vmts reference it and the
+// lua_matproxy system resolves it.  Per-owner colour comes from
+// HL2SB_GetWeaponColor (weapon_physgun.cpp / lbaseplayer_shared.cpp).
+//-----------------------------------------------------------------------------
+Color HL2SB_GetWeaponColor( int iUserID );
 
 class CPlayerWeaponColorProxy : public IMaterialProxy
 {
@@ -860,34 +865,68 @@ public:
 
 		float r = m_flDefault[0], g = m_flDefault[1], b = m_flDefault[2];
 
-		static ConVarRef s_cl_weaponcolor( "cl_weaponcolor" );
-
-		if ( s_cl_weaponcolor.IsValid() )
+		// HL2SB (2026-09-27): VERBATIM port of GMod's own proxy --
+		// garrysmod/lua/matproxy/player_weapon_color.lua:
+		//
+		//   local col = owner:GetWeaponColor()
+		//   local mul = ( 1 + math.sin( CurTime() * 5 ) ) * 0.5
+		//   mat:SetVector( self.ResultTo, col + col * mul )
+		//
+		// i.e. col * (1 + mul): the tint PULSES 1x..2x ALWAYS -- idle and
+		// holding are IDENTICAL (GMod has no hold boost in the proxy), and the
+		// colour is NOT clamped to 0-1 (GMod's default "0.30 1.80 2.10" is
+		// overbright by design).  Per-owner colour like GMod's ent:GetOwner():
+		// the drawn entity is either the weapon (its owner) or the player.
+		IClientRenderable *pRend = ( IClientRenderable * )pBindable;
+		C_BaseEntity *pEntity = pRend ? pRend->GetIClientUnknown()->GetBaseEntity() : NULL;
+		C_BasePlayer *pOwner = NULL;
+		if ( pEntity != NULL )
 		{
-			const char *pszCol = s_cl_weaponcolor.GetString();
-
-			if ( pszCol && pszCol[0] )
+			// HL2SB (2026-09-27 fix): the FIRST-PERSON bindable is the
+			// C_BaseViewModel, whose owner lives in m_hOwner (GetOwner()) --
+			// m_hOwnerEntity is empty on viewmodels, so the old generic
+			// GetOwnerEntity() hop resolved NULL and the proxy fell back to
+			// the default (1,1,1) = the "gun turned all white" report.  Chain:
+			// viewmodel -> its owner, weapon world model -> owner entity,
+			// player -> itself.
+			C_BaseViewModel *pVM = dynamic_cast< C_BaseViewModel * >( pEntity );
+			if ( pVM != NULL )
 			{
-				sscanf( pszCol, "%f %f %f", &r, &g, &b );
+				pOwner = ToBasePlayer( pVM->GetOwner() );
+			}
+			else if ( pEntity->IsPlayer() )
+			{
+				pOwner = ToBasePlayer( pEntity );
+			}
+			else
+			{
+				pOwner = ToBasePlayer( pEntity->GetOwnerEntity() );
 			}
 		}
 
-		r = clamp( r, 0.0f, 1.0f );
-		g = clamp( g, 0.0f, 1.0f );
-		b = clamp( b, 0.0f, 1.0f );
+		// Colour: HL2SB_GetWeaponColor reads the LIVE cl_weaponcolor for the
+		// local player (the same path the beam uses, proven working) and the
+		// per-userid map for remote players.  If the owner still resolves
+		// nowhere, fall back to the LOCAL colour -- never the raw white
+		// default (that flat white was the regression).
+		int iUserID = -1;
+		if ( pOwner != NULL )
+			iUserID = pOwner->GetUserID();
+		else if ( C_BasePlayer::GetLocalPlayer() != NULL )
+			iUserID = C_BasePlayer::GetLocalPlayer()->GetUserID();
 
-		// HL2SB (2026-09-24): the GMod13 "physgun glow" -- while the local
-		// physgun is holding something, its materials brighten and gently
-		// pulse in the weapon colour.  GMod drives this through the same
-		// proxy plus a hold-brightness ramp; without it the tint is flat and
-		// the gun never reads as "glowing while grabbing".
-		if ( HL2SB_PhysgunIsHolding() )
+		if ( iUserID >= 0 )
 		{
-			float flGlow = 1.6f + 0.35f * sin( gpGlobals->curtime * 8.0f );
-			r *= flGlow;
-			g *= flGlow;
-			b *= flGlow;
+			Color clrW = HL2SB_GetWeaponColor( iUserID );
+			r = clrW.r() / 255.0f;
+			g = clrW.g() / 255.0f;
+			b = clrW.b() / 255.0f;
 		}
+
+		float mul = ( 1.0f + sin( gpGlobals->curtime * 5.0f ) ) * 0.5f;
+		r += r * mul;
+		g += g * mul;
+		b += b * mul;
 
 		m_pColor->SetVecValue( r, g, b );
 	}
