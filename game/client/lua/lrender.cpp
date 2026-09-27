@@ -120,6 +120,33 @@ LUA_BINDING_BEGIN( Renders, GetRenderTarget, "library", "Get the currently activ
 }
 LUA_BINDING_END( "Texture", "The currently active render target texture." )
 
+// render.CreateNamedRenderTarget( name, wide, tall ) -- HL2SB (2026-09-27):
+// spawnicon snapshot support.  Creates (or finds -- CreateNamedRenderTargetTextureEx2
+// is name-keyed, so repeat calls return the same texture) a 32bpp RGBA render
+// target with its own depth surface, so a model can be rendered into it once
+// and blitted as a texture forever after, instead of every thumbnail rendering
+// its model live every frame.
+LUA_BINDING_BEGIN( Renders, CreateNamedRenderTarget, "library", "Creates or finds a named render target texture.", "client" )
+{
+    const char *pszName = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "name" );
+    int nWide = LUA_BINDING_ARGUMENT( luaL_checkint, 2, "wide" );
+    int nTall = LUA_BINDING_ARGUMENT( luaL_checkint, 3, "tall" );
+
+    ITexture *pTexture = materials->CreateNamedRenderTargetTextureEx2(
+        pszName, nWide, nTall, RT_SIZE_LITERAL, IMAGE_FORMAT_RGBA8888,
+        MATERIAL_RT_DEPTH_SEPARATE,
+        TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD,
+        0 );
+
+    if ( pTexture == NULL )
+        lua_pushnil( L );
+    else
+        lua_pushitexture( L, pTexture );
+
+    return 1;
+}
+LUA_BINDING_END( "Texture", "The render target texture." )
+
 LUA_BINDING_BEGIN( Renders, CopyRenderTargetToTexture, "library", "Copies the currently active Render Target to the specified texture.", "client" )
 {
     CMatRenderContextPtr pRenderContext( materials );

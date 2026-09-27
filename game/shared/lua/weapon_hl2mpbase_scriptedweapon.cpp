@@ -1696,27 +1696,9 @@ Activity CHL2MPScriptedWeapon::GetDrawActivity( void )
 float CHL2MPScriptedWeapon::TranslateFOV( float flFOV )
 {
 #if defined ( LUA_SDK )
-#ifdef CLIENT_DLL
-	// HL2SB TEMPORARY diagnostic: the FOV the view actually receives from the
-	// camera's TranslateFOV.  First 10 calls after it starts returning values
-	// different from the input.
-	static float s_flLastDiagFOV = -1.0f;
-#endif
 	BEGIN_LUA_CALL_WEAPON_METHOD( "TranslateFOV" );
 	lua_pushnumber( L, flFOV );
 	END_LUA_CALL_WEAPON_METHOD( 1, 1 );
-#ifdef CLIENT_DLL
-	{
-		float flNew = flFOV;
-		if ( lua_gettop( L ) > 0 && lua_isnumber( L, -1 ) )
-			flNew = ( float )lua_tonumber( L, -1 );
-		if ( flNew != s_flLastDiagFOV )
-		{
-			s_flLastDiagFOV = flNew;
-			luasrc_LuaInfoMsgF( "[HL2SB] TranslateFOV: in=%.1f out=%.1f\n", flFOV, flNew );
-		}
-	}
-#endif
 
 	// HL2SB: deliberately NOT RETURN_LUA_NUMBER().  A weapon's answer has to be a
 	// USABLE field of view before it may replace the engine's, because the camera's
@@ -1987,22 +1969,6 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 	// their swing animation but never applied any damage.
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Tick" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
-
-#ifdef CLIENT_DLL
-	// HL2SB TEMPORARY diagnostic: prove the camera's Tick runs and what its
-	// script sees.  Remove once the zoom is confirmed.
-	static int s_nCameraTickDiag = 0;
-	if ( s_nCameraTickDiag < 12 )
-	{
-		++s_nCameraTickDiag;
-		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-		C_BaseCombatWeapon *pWpn = pLocal ? pLocal->GetActiveWeapon() : NULL;
-		luasrc_LuaInfoMsgF( "[HL2SB] weapon Tick #%d dispatched classname='%s' active='%s' isscripted=%d\n",
-			s_nCameraTickDiag, GetClassname(),
-			( pWpn != NULL ) ? pWpn->GetClassname() : "(none)",
-			( pWpn != NULL && pWpn->IsScripted() ) ? 1 : 0 );
-	}
-#endif
 
 #ifdef CLIENT_DLL
 	// HL2SB: make sure the NW seed request goes out even if the copy sent from

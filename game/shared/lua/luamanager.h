@@ -374,6 +374,28 @@
   }
 
 /*
+** HL2SB (2026-09-27): GMod dispatches the Lua field Think every frame, not
+** OnThink (reference client.dll  pumps Paint / PaintOver / Think
+** / AnimationThink / OnChildRemoved / OnChildAdded in one pass).  This engine's
+** spelling is OnThink, and the fork's ported controls put their per-frame poll
+** there, so the scripted controls try GMod's name first and fall back to the
+** engine-realm spelling only when Think is absent.  Same lookup the dispatch
+** macro uses (lua_getfield over the panel's ref table), so the answer always
+** agrees with what the macro would dispatch.
+*/
+inline bool HL2SB_LuaPanelHasMethod( lua_State *L, int iTableReference, const char *pszName )
+{
+	if ( L == NULL || !lua_isrefvalid( L, iTableReference ) )
+		return false;
+
+	lua_getref( L, iTableReference );
+	lua_getfield( L, -1, pszName );
+	bool bHas = lua_isfunction( L, -1 ) != 0;
+	lua_pop( L, 2 );
+	return bHas;
+}
+
+/*
 ** Experiment: Source spellings, so their scripted-control files can be dropped in
 ** unchanged.  BEGIN/END_LUA_CALL_PANEL_METHOD above are the same macros -- HL2SB
 ** has had them all along under the unprefixed names -- so these are pure aliases.

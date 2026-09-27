@@ -496,6 +496,60 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 	if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawLocalPlayerViewModel() )
 		return 0;
 
+	// HL2SB (2026-09-27): the carried weapon entity's NETWORKED model is the
+	// VIEWMODEL model -- server-side Equip() does SetModel( GetViewModel() ),
+	// and the world-model switch in OnDataChanged only runs when a network
+	// update happens to arrive.  A weapon picked up in first person therefore
+	// keeps the c_ viewmodel model indefinitely: third-person views (act
+	// camera, cl_first_person_uses_world_model) then bone-merge the c_ model
+	// onto the player rig -- the floating / misaligned world gun (also hit
+	// other weapons, per the user report).  Fix the model index right before
+	// drawing: every path that reaches here is a third-person view (first
+	// person returned above), so the world model is the correct one.  The
+	// networked model index still wins on the next PDU; we just re-fix it per
+	// frame, the same way OnDataChanged and tool recording already do.
+	//
+	// This MUST run BEFORE the Lua SWEP:DrawWorldModel dispatch below.  That
+	// dispatch ends in `self:DrawModel()`, which resolves through the entity
+	// metatable to CBaseEntity_DrawModel -> InternalDrawModel -- a draw that
+	// never returns to this function, so a fixup placed after the dispatch was
+	// skipped for every scripted weapon whose table carries weapon_base's
+	// DrawWorldModel (the loader seeds it into every GMod-style SWEP).  Those
+	// weapons rendered the NETWORKED viewmodel index in the world pass: ak47
+	// showed c_ak47_beast bone-merged at the hand (the "offset" report) and
+	// gmod_camera showed c_arms_animations overlaid on the body while the
+	// actual camera.mdl never drew (the "camera has no model" report).  Plain
+	// HL2 weapons skip the Lua branch, which is why only Lua weapons broke.
+	if ( GetWorldModelIndex() > 0 && GetWorldModelIndex() != GetModelIndex() )
+	{
+		SetModelIndex( GetWorldModelIndex() );
+	}
+
+	// HL2SB: a c_ model used as a world model (GMod SWEPs point WorldModel at a
+	// c_ model rigged for viewmodel space) reads as "held" only when it plays
+	// the pose the viewmodel is playing -- by default it sits in sequence 0
+	// (reference pose), which is why the mirror showed a wrongly gripped gun.
+	// Sync pose by sequence NAME from the active viewmodel, so real w_ models
+	// (whose sequence tables differ) are left untouched.  Same ordering rule
+	// as the fixup above: the Lua dispatch must see the synced pose.
+	if ( IsCarriedByLocalPlayer() && g_bRenderingReflection )
+	{
+		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		C_BaseViewModel *pVM = pOwner ? pOwner->GetViewModel( 0 ) : NULL;
+		if ( pVM && GetModel() )
+		{
+			const char *pszSeqName = pVM->GetSequenceName( pVM->GetSequence() );
+			int iSeq = ( pszSeqName && pszSeqName[0] ) ? LookupSequence( pszSeqName ) : -1;
+			if ( iSeq != -1 )
+			{
+				if ( GetSequence() != iSeq )
+					SetSequence( iSeq );
+				SetCycle( pVM->GetCycle() );
+				InvalidateBoneCache();
+			}
+		}
+	}
+
 	// HL2SB GMod compat (2026-09-23): SWEP:DrawWorldModel( flags ) for the
 	// opaque pass, SWEP:DrawWorldModelTranslucent( flags ) for the translucent
 	// pass.  Per the wiki, DEFINING the callback replaces the default draw
@@ -541,33 +595,8 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 	}
 #endif
 
-	// HL2SB: GMod-style c_ models as world models. GMod SWEPs point WorldModel at a
-	// c_ model (rigged for viewmodel space); drawn in a world pass it only reads as
-	// "held" when it plays the pose the viewmodel is playing - by default it sits in
-	// sequence 0 (reference pose), which is why the mirror showed a wrongly gripped
-	// gun. Sync pose by sequence NAME from the active viewmodel, so real w_ models
-	// (whose sequence tables differ) are left untouched.
-	if ( IsCarriedByLocalPlayer() && g_bRenderingReflection )
-	{
-		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-		C_BaseViewModel *pVM = pOwner ? pOwner->GetViewModel( 0 ) : NULL;
-		if ( pVM && GetModel() )
-		{
-			const char *pszSeqName = pVM->GetSequenceName( pVM->GetSequence() );
-			int iSeq = ( pszSeqName && pszSeqName[0] ) ? LookupSequence( pszSeqName ) : -1;
-			if ( iSeq != -1 )
-			{
-				if ( GetSequence() != iSeq )
-					SetSequence( iSeq );
-				SetCycle( pVM->GetCycle() );
-				InvalidateBoneCache();
-			}
-		}
-	}
-
 	return BaseClass::DrawModel( flags );
 }
-
 
 //-----------------------------------------------------------------------------
 // Allows the client-side entity to override what the network tells it to use for
@@ -589,7 +618,6 @@ int C_BaseCombatWeapon::CalcOverrideModelIndex()
 		return GetWorldModelIndex();
 	}
 }
-
 
 //-----------------------------------------------------------------------------
 // tool recording

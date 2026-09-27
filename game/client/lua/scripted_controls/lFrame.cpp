@@ -187,8 +187,17 @@ void LFrame::OnThink()
 {
 	BaseClass::OnThink();
 #if defined( LUA_SDK )
-	BEGIN_LUA_CALL_PANEL_METHOD( "OnThink" );
-	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+	// HL2SB: GMod's name for this callback is Think (probe in luamanager.h).
+	if ( HL2SB_LuaPanelHasMethod( m_lua_State, m_nTableReference, "Think" ) )
+	{
+		BEGIN_LUA_CALL_PANEL_METHOD( "Think" );
+		END_LUA_CALL_PANEL_METHOD( 0, 0 );
+	}
+	else
+	{
+		BEGIN_LUA_CALL_PANEL_METHOD( "OnThink" );
+		END_LUA_CALL_PANEL_METHOD( 0, 0 );
+	}
 #endif
 }
 

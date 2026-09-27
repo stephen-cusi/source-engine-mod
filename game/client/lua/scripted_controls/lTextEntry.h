@@ -130,7 +130,12 @@ class LTextEntry : public TextEntry
     {
         BaseClass::OnThink();
 
-        HL2SB_CallLuaTextEntryMethod( "OnThink" );
+        // HL2SB (2026-09-27): GMod dispatches Think here (luamanager.h probe);
+        // the engine spelling stays as the fallback for the fork's ports.
+        if ( HL2SB_LuaPanelHasMethod( m_lua_State, m_nTableReference, "Think" ) )
+            HL2SB_CallLuaTextEntryMethod( "Think" );
+        else
+            HL2SB_CallLuaTextEntryMethod( "OnThink" );
     }
 
     virtual void OnSetFocus()

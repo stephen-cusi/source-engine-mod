@@ -2225,7 +2225,11 @@ bool CBaseCombatCharacter::Weapon_EquipAmmoOnly( CBaseCombatWeapon *pWeapon )
 			// old taken>0 gate walking over your own dropped weapon a second
 			// time was completely silent on the HUD (2026-09-26 report).  GMod
 			// pops the notice on every touch too.
-			if ( this && this->IsPlayer() )
+			// Gated on taken>0 (2026-09-26): firing unconditionally also fired on
+			// a full reserve, and re-spawning an owned weapon from the spawnmenu
+			// then popped a "ghost" strip for ammo the player never received.
+			// GMod notifies only when something was actually given.
+			if ( this && this->IsPlayer() && ( takenPrimary > 0 || takenSecondary > 0 ) )
 			{
 				CBasePlayer *pPlayer = (CBasePlayer *)this;
 				IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );

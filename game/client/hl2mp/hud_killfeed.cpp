@@ -526,6 +526,10 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 			int iUserID = event->GetInt( "userid", 0 );
 			const char *pszItem = event->GetString( "item", "" );
 			int iAmount = event->GetInt( "amount", 0 );
+			// HL2SB (2026-09-26): the SERVER declares weapon-ness (GMod design --
+			// SWEP classnames carry no "weapon_" prefix, name guessing fails);
+			// the client only resolves the entity from the networked inventory.
+			bool bWeaponPickup = event->GetBool( "weapon", false );
 
 			BEGIN_LUA_CALL_HOOK( "HUDItemPickedUp" );
 				lua_pushinteger( L, iUserID );
@@ -537,7 +541,12 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 				// local player); the active-weapon guess in Lua missed every time
 				// the client had not switched yet ("entity match=false", 9-26 diag).
 				C_BaseCombatWeapon *pPickupWeapon = NULL;
-				if ( !Q_strnicmp( pszItem, "weapon_", 7 ) && C_BasePlayer::GetLocalPlayer() )
+				// HL2SB (2026-09-26): no prefix gate -- SWEPs can register ANY classname
+				// (e.g. "tfusion_combustible_lemon"); membership in the inventory IS
+				// the weapon test, ammo/items never live in m_hMyWeapons.
+				// Only for weapon pickups; the event can arrive before the
+				// snapshot lands, in which case Lua retries via the active weapon.
+				if ( bWeaponPickup && C_BasePlayer::GetLocalPlayer() )
 				{
 					C_BaseCombatCharacter *pLocalCC = C_BasePlayer::GetLocalPlayer();
 					for ( int i = 0; i < MAX_WEAPONS; i++ )
@@ -554,11 +563,12 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 					lua_pushentity( L, pPickupWeapon );
 				else
 					lua_pushnil( L );
-			// Four values are pushed above (userid, item, amount, weapon).  This was
+				lua_pushboolean( L, bWeaponPickup );
+			// Five values are pushed above (userid, item, amount, entity, weaponFlag).  This was
 			// 3 when the weapon entity was added on 2026-09-26: pcall then grabbed the
 			// EVENT NAME STRING as the function -- "attempt to call a string value"
 			// on every pickup, and the Lua handler below never ran at all.
-			END_LUA_CALL_HOOK( 4, 0 );
+			END_LUA_CALL_HOOK( 5, 0 );
 			return;
 		}
 #endif

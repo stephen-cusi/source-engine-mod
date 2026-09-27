@@ -16,6 +16,7 @@
 #include <vgui/IInput.h>
 #include <vgui/ISurface.h>
 #include <vgui/IPanel.h>
+#include <Color.h>
 #include <vgui/Cursor.h>
 #include "panelmetaclassmgr.h"
 #include <vgui_controls/PHandle.h>
@@ -1663,8 +1664,94 @@ static int Panel_SetDockPadding (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB (2026-09-27): GMod's Panel meta is ONE shared table for every control
+// (reference client.dll, 162 methods), so Panel-level names below
+// are what GMod answers on ANY panel.  The ones this engine lacked and derma
+// actually calls:
+//-----------------------------------------------------------------------------
+
+// GMod Panel:CursorPos() -> x, y -- cursor position in this panel's local space.
+// (dslider/dscrollbar/dividers all use it; the fork's Lua had to fall back to
+// ScreenToLocal per control.)
+static int Panel_CursorPos (lua_State *L) {
+  vgui::Panel *pPanel = luaL_checkpanel(L, 1);
+  int x, y;
+  vgui::input()->GetCursorPos( x, y );
+  pPanel->ScreenToLocal( x, y );
+  lua_pushinteger(L, x);
+  lua_pushinteger(L, y);
+  return 2;
+}
+
+// GMod Panel:IsModal() -- MakePopup( true ) panels hold the app-modal surface.
+static int Panel_IsModal (lua_State *L) {
+  bool bModal = ( vgui::input()->GetAppModalSurface() == luaL_checkpanel(L, 1)->GetVPanel() );
+  lua_pushboolean(L, bModal ? 1 : 0);
+  return 1;
+}
+
+// GMod Panel:SetDrawOnTop( bool ) -- keep the panel above other popups
+// (dtooltip/dmenu use it).  vgui2's face for that is IPanel::SetTopmostPopup.
+static int Panel_SetDrawOnTop (lua_State *L) {
+  vgui::ipanel()->SetTopmostPopup( luaL_checkpanel(L, 1)->GetVPanel(), luaL_checkboolean(L, 2) != 0 );
+  return 0;
+}
+
+// GMod Panel:HasChildren()
+static int Panel_HasChildren (lua_State *L) {
+  bool bHas = luaL_checkpanel(L, 1)->GetChildCount() > 0;
+  lua_pushboolean(L, bHas ? 1 : 0);
+  return 1;
+}
+
+// GMod's SetFGColor/SetBGColor accept a Color OR four components; the engine
+// spellings above only take a Color.  Same receiver, dual form.
+static int Panel_SetFGColor (lua_State *L) {
+  vgui::Panel *pPanel = luaL_checkpanel(L, 1);
+  if ( lua_gettop( L ) >= 5 )
+    pPanel->SetFgColor( ::Color( luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5) ) );
+  else
+    pPanel->SetFgColor( luaL_checkcolor(L, 2) );
+  return 0;
+}
+
+static int Panel_SetBGColor (lua_State *L) {
+  vgui::Panel *pPanel = luaL_checkpanel(L, 1);
+  if ( lua_gettop( L ) >= 5 )
+    pPanel->SetBgColor( ::Color( luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5) ) );
+  else
+    pPanel->SetBgColor( luaL_checkcolor(L, 2) );
+  return 0;
+}
+
+// GMod's getters return a Color -- same answer as the engine spellings here.
+static int Panel_GetFGColor (lua_State *L) {
+  lua_pushcolor(L, luaL_checkpanel(L, 1)->GetFgColor());
+  return 1;
+}
+
+static int Panel_GetBGColor (lua_State *L) {
+  lua_pushcolor(L, luaL_checkpanel(L, 1)->GetBgColor());
+  return 1;
+}
+
 
 static const luaL_Reg Panelmeta[] = {
+  // HL2SB (2026-09-27): GMod's shared-panel-meta names this engine lacked --
+  // aliases onto existing bindings plus the new implementations above.
+  {"ChildCount", Panel_GetChildCount},
+  {"CursorPos", Panel_CursorPos},
+  {"Find", Panel_FindChildByName},
+  {"GetBGColor", Panel_GetBGColor},
+  {"GetFGColor", Panel_GetFGColor},
+  {"HasChildren", Panel_HasChildren},
+  {"IsKeyboardInputEnabled", Panel_IsKeyBoardInputEnabled},
+  {"IsModal", Panel_IsModal},
+  {"SetBGColor", Panel_SetBGColor},
+  {"SetDrawOnTop", Panel_SetDrawOnTop},
+  {"SetFGColor", Panel_SetFGColor},
+  {"SetKeyboardInputEnabled", Panel_SetKeyBoardInputEnabled},
   {"Dock", Panel_Dock},
   {"SetDock", Panel_SetDock},
   {"GetDock", Panel_GetDock},

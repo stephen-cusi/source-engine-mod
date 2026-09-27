@@ -146,24 +146,15 @@ CON_COMMAND( gm_giveswep, "Give yourself a weapon: gm_giveswep <class>  (GMod)" 
 
 	const char *pszClass = args[ 1 ];
 
+	// HL2SB (2026-09-26): no item_pickup here.  GiveNamedItem ends with
+	// Touch( this ), so a NEW weapon routes through BumpWeapon, which fires
+	// the event with the REAL entity classname and weapon=true; an owned
+	// weapon returns from GiveNamedItem immediately (GiveNamedItem answers
+	// NULL on Weapon_OwnsThisType) and must stay silent -- firing here gave
+	// every menu-given weapon a SECOND event (double strip), and when the
+	// spawnmenu class differed from the entity classname the second strip
+	// even fell through to the item fallback (green row next to the orange).
 	pPlayer->GiveNamedItem( pszClass );
-
-#ifdef HL2SB
-	// HL2SB (2026-09-26): the spawnmenu gives weapons through this command and
-	// nothing on that path fired item_pickup, so spawning a weapon never showed
-	// the pickup strip.  Fire it here -- GMod pops the notice for menu-given
-	// weapons too.
-	{
-		IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
-		if ( event )
-		{
-			event->SetInt( "userid", pPlayer->GetUserID() );
-			event->SetString( "item", pszClass );
-			event->SetInt( "amount", 0 );
-			gameeventmanager->FireEvent( event );
-		}
-	}
-#endif
 }
 
 //-----------------------------------------------------------------------------

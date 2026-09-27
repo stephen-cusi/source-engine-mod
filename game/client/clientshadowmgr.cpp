@@ -88,7 +88,15 @@
 
 static ConVar r_flashlightdrawfrustum( "r_flashlightdrawfrustum", "0" );
 static ConVar r_flashlightmodels( "r_flashlightmodels", "1" );
-static ConVar r_shadowrendertotexture( "r_shadowrendertotexture", "0" );
+// HL2SB (2026-09-27): GMod parity - real projected (render-to-texture) shadows
+// are ON by default; with this off every entity that asks for a real shadow
+// degrades to SHADOWS_SIMPLE, the round blob ("decals/simpleshadow") - which
+// is what made the player's only world presence a "blob shadow" while the
+// model itself rendered only inside mirrors.  The callback re-inits the RTT
+// shadow system whenever the value changes (the old code read it exactly once
+// in Init(), so a config.cfg exec after client init silently did nothing).
+void HL2SB_ShadowRTTCallback( IConVar *pConVar, const char *pOldValue, float flOldValue );
+static ConVar r_shadowrendertotexture( "r_shadowrendertotexture", "1", FCVAR_ARCHIVE, "Render-to-texture (real silhouette) shadows", HL2SB_ShadowRTTCallback );
 static ConVar r_flashlight_version2( "r_flashlight_version2", "0", FCVAR_CHEAT | FCVAR_DEVELOPMENTONLY );
 
 ConVar r_flashlightdepthtexture( "r_flashlightdepthtexture", "1" );
@@ -916,6 +924,8 @@ private:
 	void ShutdownDepthTextureShadows();
 
 	// Initialize, shutdown render-to-texture shadows
+	// HL2SB: the r_shadowrendertotexture change-callback (file scope) re-inits
+	friend void HL2SB_ShadowRTTCallback( IConVar *pConVar, const char *pOldValue, float flOldValue );
 	void InitRenderToTextureShadows();
 	void ShutdownRenderToTextureShadows();
 
@@ -981,6 +991,26 @@ private:
 //-----------------------------------------------------------------------------
 static CClientShadowMgr s_ClientShadowMgr;
 IClientShadowMgr* g_pClientShadowMgr = &s_ClientShadowMgr;
+
+// HL2SB (2026-09-27): set at the end of CClientShadowMgr::Init(); the rtt
+// convar callback refuses to touch the manager before that (a config.cfg
+// exec during engine boot can fire before the material system is ready).
+static bool s_bShadowMgrInitialized = false;
+
+void HL2SB_ShadowRTTCallback( IConVar *pConVar, const char *pOldValue, float flOldValue )
+{
+	if ( !s_bShadowMgrInitialized )
+		return;
+
+	// same low-end gate CClientShadowMgr::Init uses
+	if ( g_pMaterialSystemHardwareConfig == NULL || g_pMaterialSystemHardwareConfig->GetDXSupportLevel() < 80 )
+		return;
+
+	if ( r_shadowrendertotexture.GetBool() )
+		s_ClientShadowMgr.InitRenderToTextureShadows();
+	else
+		s_ClientShadowMgr.ShutdownRenderToTextureShadows();
+}
 
 
 //-----------------------------------------------------------------------------
@@ -1313,6 +1343,8 @@ bool CClientShadowMgr::Init()
 	}
 
 	materials->AddRestoreFunc( ShadowRestoreFunc );
+
+	s_bShadowMgrInitialized = true;
 
 	return true;
 }

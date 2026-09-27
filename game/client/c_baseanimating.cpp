@@ -56,11 +56,6 @@
 #include "replay/replay_ragdoll.h"
 #include "studio_stats.h"
 #include "tier1/callqueue.h"
-#ifdef LUA_SDK
-#include "luamanager.h"		// HL2SB: luasrc_LuaInfoMsgF for the final-link draw probe
-#include "basescripted.h"	// HL2SB: dynamic_cast for the final-link draw probe
-#include "utlstring.h"		// HL2SB: CUtlString for the probe classnames
-#endif
 
 #ifdef TF_CLIENT_DLL
 #include "c_tf_player.h"

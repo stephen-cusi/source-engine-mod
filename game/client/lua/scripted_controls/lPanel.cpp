@@ -18,6 +18,17 @@
 
 using namespace vgui;
 
+#ifdef LUA_SDK
+// HL2SB (2026-09-27): shared Think/OnThink probe lives in luamanager.h
+// (HL2SB_LuaPanelHasMethod) -- LFrame and LModelPanel do not derive from
+// LPanel and need the same fallback.  Kept as a local alias so the dispatch
+// sites below read the same.
+static bool HL2SB_PanelHasMethod( LPanel *pPanel, const char *pszName )
+{
+	return HL2SB_LuaPanelHasMethod( pPanel->m_lua_State, pPanel->m_nTableReference, pszName );
+}
+#endif
+
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
@@ -214,7 +225,23 @@ void LPanel::OnSizeChanged(int newWide, int newTall)
 void LPanel::OnThink()
 {
 #ifdef LUA_SDK
-	BEGIN_LUA_CALL_PANEL_METHOD( "OnThink" );
+	// HL2SB: GMod's name for this callback is Think (see HL2SB_PanelHasMethod).
+	if ( HL2SB_PanelHasMethod( this, "Think" ) )
+	{
+		BEGIN_LUA_CALL_PANEL_METHOD( "Think" );
+		END_LUA_CALL_PANEL_METHOD( 0, 0 );
+	}
+	else
+	{
+		BEGIN_LUA_CALL_PANEL_METHOD( "OnThink" );
+		END_LUA_CALL_PANEL_METHOD( 0, 0 );
+	}
+
+	// HL2SB: GMod pumps AnimationThink in the same pass.  The Lua side only
+	// assigns panel.AnimationThink while an animation is running
+	// (includes/extensions/client/panel/animation.lua:72-74), so for a panel
+	// without animations the macro's isfunction check makes this a no-op.
+	BEGIN_LUA_CALL_PANEL_METHOD( "AnimationThink" );
 	END_LUA_CALL_PANEL_METHOD( 0, 0 );
 #endif
 }
@@ -427,7 +454,11 @@ void LPanel::OnCommand(const char *command)
 void LPanel::OnSetFocus()
 {
 #ifdef LUA_SDK
-	BEGIN_LUA_CALL_PANEL_METHOD( "OnSetFocus" );
+	// HL2SB (2026-09-27): GMod dispatches OnGetFocus here (lua_shared.dll
+	// callback roster, and wiki PANEL:OnGetFocus) -- the engine spelling
+	// OnSetFocus is what this fork dispatched before, and no fork Lua defines
+	// it, so the GMod name is the only one anything listens for.
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnGetFocus" );
 	END_LUA_CALL_PANEL_METHOD( 0, 1 );
 
 	RETURN_LUA_PANEL_NONE();
@@ -442,7 +473,8 @@ void LPanel::OnSetFocus()
 void LPanel::OnKillFocus()
 {
 #ifdef LUA_SDK
-	BEGIN_LUA_CALL_PANEL_METHOD( "OnKillFocus" );
+	// HL2SB: GMod's name (pairs with OnGetFocus above).
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnLoseFocus" );
 	END_LUA_CALL_PANEL_METHOD( 0, 1 );
 
 	RETURN_LUA_PANEL_NONE();
@@ -523,7 +555,10 @@ void LPanel::OnMessage(const KeyValues *params, VPANEL ifromPanel)
 void LPanel::OnDelete()
 {
 #ifdef LUA_SDK
-	BEGIN_LUA_CALL_PANEL_METHOD( "OnDelete" );
+	// HL2SB (2026-09-27): GMod dispatches OnDeletion when a panel is deleted
+	// (lua_shared.dll callback roster; PANEL:OnDeletion on the wiki).  The
+	// engine spelling OnDelete is dispatch-only here, no fork Lua defines it.
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnDeletion" );
 	END_LUA_CALL_PANEL_METHOD( 0, 0 );
 #endif
 

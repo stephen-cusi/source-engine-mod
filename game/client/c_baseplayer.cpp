@@ -1945,6 +1945,19 @@ extern ConVar hl2sb_veh_thirdperson;
 			return !( bVehicleThirdPerson || bActThirdPerson );
 		}
 
+		// HL2SB (2026-09-27): the Lua taunt (act) camera orbits the body WITHOUT
+		// the engine's third-person flag, so on foot CAM_IsThirdPerson() stays
+		// false and the test below classified the act view as "first person" -
+		// ShouldDrawThisPlayer() then answered false and C_BasePlayer::DrawModel
+		// returned 0: the act showed no player model at all, only its cast shadow
+		// (mirrors worked because g_bRenderingReflection bypasses this path).
+		// While the taunt camera is active the view is by definition NOT first
+		// person; the body must draw (ShouldDrawLocalPlayer() already keeps it
+		// in the render lists for exactly this case).
+		extern bool HL2SB_CustomThirdPersonActive( void );
+		if ( HL2SB_CustomThirdPersonActive() )
+			return false;
+
 		return !input->CAM_IsThirdPerson() && ( !ToolsEnabled() || !ToolFramework_IsThirdPersonCamera() );
 	}
 

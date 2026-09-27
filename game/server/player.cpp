@@ -6764,6 +6764,28 @@ bool CBasePlayer::BumpWeapon( CBaseCombatWeapon *pWeapon )
 		pWeapon->AddEffects( EF_NODRAW );
 
 		Weapon_Equip( pWeapon );
+
+#ifdef HL2SB
+		// HL2SB (2026-09-26): GMod pops the weapon strip on every FIRST weapon
+			// pickup -- this new-weapon branch is the only place that knows a
+			// ground weapon was just taken (the other fire points cover menu-given
+			// and duplicate-weapon ammo).  "weapon" = true per the GMod design: the
+			// SERVER declares the kind, the client translates -- SWEP classnames
+			// carry no "weapon_" prefix (nyangun, cf packs), so name guessing fails.
+			if ( IsPlayer() )
+			{
+				IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
+				if ( event )
+				{
+					event->SetInt( "userid", GetUserID() );
+					event->SetString( "item", pWeapon->GetClassname() );
+					event->SetInt( "amount", 0 );
+					event->SetBool( "weapon", true );
+					gameeventmanager->FireEvent( event );
+				}
+			}
+#endif
+
 		if ( IsInAVehicle() )
 		{
 			pWeapon->Holster();
