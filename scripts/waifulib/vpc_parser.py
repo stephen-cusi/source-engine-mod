@@ -110,7 +110,13 @@ def parse_vpcs( env ,vpcs, basedir ):
 	includes = []
 
 	for vpc in vpcs:
-		f=open(vpc, 'r').read().replace('\\\n', ';')
+		# Explicit UTF-8: .vpc comments carry UTF-8 text (the warning emoji in
+		# server_lua.vpc), and on Windows CI runners the platform default is
+		# cp1252 -- open(vpc, 'r') then died with UnicodeDecodeError (byte 0x8f)
+		# during wscript build and failed every Windows job from 2026-09-18.
+		# errors='replace' keeps an exotic byte from ever aborting a build again.
+		with open(vpc, 'r', encoding='utf-8', errors='replace') as vf:
+			f = vf.read().replace('\\\n', ';')
 
 		re.sub(r'//.*', '', f)
 		l = f.split('\n')
