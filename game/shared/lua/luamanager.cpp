@@ -48,6 +48,12 @@ extern "C" __declspec( dllimport ) unsigned short __stdcall
 // a .h triggers a full tree rebuild).
 bool HL2SB_IsAddonDisabled( const char *pszAddonName );
 
+// HL2SB (sbrust): GMod 式第三方二进制模块加载（lua/bin/gm{sv,cl}_*_*.dll，
+// gmod13_open/gmod13_close 入口）。实现在 lua_shared.dll（lua/src/hl2sb_binmod.c）。
+// 调用点：luasrc_setmodulepaths 末尾装 searcher；两个 lua_close 之前跑 close。
+extern "C" LUA_API void HL2SB_InstallBinaryModuleSearcher( lua_State *L, const char *pszGameDir );
+extern "C" LUA_API void HL2SB_RunBinaryModuleCloses( lua_State *L );
+
 static bool luasrc_PathInDisabledAddon (const char *fullpath);
 #include "luasrclib.h"
 #include "luacachefile.h"
@@ -461,6 +467,11 @@ void luasrc_setmodulepaths(lua_State *L) {
   lua_setfield(L, -2, "path");
 
   lua_pop(L, 1);  /* pop result */
+
+  // HL2SB (sbrust): GMod 式第三方二进制模块搜索器（lua/bin/gm{sv,cl}_*.dll，
+  // gmod13_open 入口）。绝对路径来自这里的 gamePath -- 安卓上 cwd 是 "/"，
+  // 相对路径的 loadlib 必然失败，所以模块路径从第一天起就用绝对路径。
+  HL2SB_InstallBinaryModuleSearcher( L, gamePath );
 }
 
 #ifdef CLIENT_DLL
@@ -664,6 +675,9 @@ void luasrc_init_gameui (void) {
 void luasrc_shutdown_gameui (void) {
   ResetGameUIConCommandDatabase();
 
+  // HL2SB (sbrust): GMod 的 gmod13_close 生命周期 -- 状态销毁前逐个通知
+  // 已加载的二进制模块（见 lua/src/hl2sb_binmod.c）。
+  HL2SB_RunBinaryModuleCloses( LGameUI );
   lua_close(LGameUI);
 }
 #endif
@@ -722,6 +736,18 @@ static ConVar lua_log_cl( "lua_log_cl", "1", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
 #else
 static ConVar lua_log_sv( "lua_log_sv", "1", FCVAR_ARCHIVE,
 	"Log server Lua messages to hl2sb_lua.log (GMod-parity name)" );
+#endif
+
+// HL2SB (sbrust): GMod 的 lua_showerrors_cl / lua_showerrors_sv（默认 1，与
+// GMod 一致；置 0 时 Lua 错误不再刷控制台，但 hl2sb_lua.log 照常落盘 -- 本分叉
+// 的诊断主通道不随 GMod 开关消失）。实现为 ConVar：`lua_showerrors_cl 0` 与
+// GMod 的开关语义一致，console 补全里也和 GMod 一样出现在 lua_ 族里。
+#ifdef CLIENT_DLL
+static ConVar lua_showerrors_cl( "lua_showerrors_cl", "1", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
+	"Show Clientside Lua errors in the console (GMod-parity name)" );
+#else
+static ConVar lua_showerrors_sv( "lua_showerrors_sv", "1", FCVAR_ARCHIVE,
+	"Show Serverside Lua errors in the console (GMod-parity name)" );
 #endif
 
 static const char *s_pszLuaLogFile = "hl2sb_lua.log";
@@ -790,6 +816,22 @@ LUA_API void luasrc_LuaErrorMsg (const char *pszText)
 		s_nRepeats = 1;
 	}
 
+	// HL2SB (sbrust): GMod 的 lua_showerrors_cl/sv 开关 -- 置 0 只静音控制台，
+	// hl2sb_lua.log 照常落盘（本分叉的诊断主通道不随 GMod 开关消失）。
+#ifdef CLIENT_DLL
+	if ( !lua_showerrors_cl.GetBool() )
+	{
+		luasrc_LuaLogToFile( pszText, 'E' );
+		return;
+	}
+#else
+	if ( !lua_showerrors_sv.GetBool() )
+	{
+		luasrc_LuaLogToFile( pszText, 'E' );
+		return;
+	}
+#endif
+
 	ConColorMsg( 0, Color( 255, 64, 64, 255 ), "%s\n", pszText );	// red
 	luasrc_LuaLogToFile( pszText, 'E' );
 }
@@ -848,6 +890,23 @@ LUA_API void luasrc_LuaConsoleMsg (const char *pszText, char cSeverity, bool bNe
 	// The console write above is the ONLY one (see luasrc_LuaErrorMsg).
 	if ( bNewline )
 		luasrc_LuaLogToFile( pszText, cSeverity );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB (sbrust): MsgC 的颜色直通形态。GMod 的 MsgC( Color, ... ) 按 Color 参数
+// 切换控制台颜色，文本分片不带换行地续在同行（与 Msg 半行机制同一通路）；
+// hl2sb_lua.log 仍然只在整行（bNewline=true）时落盘，与 luasrc_LuaConsoleMsg
+// 的契约一致。调用方是 lsrcinit.cpp 的 lua_MsgC。
+//-----------------------------------------------------------------------------
+LUA_API void luasrc_LuaConsoleMsgColor (const char *pszText, const Color &clr, bool bNewline)
+{
+	if ( pszText == NULL )
+		return;
+
+	ConColorMsg( 0, clr, "%s%s", pszText, bNewline ? "\n" : "" );
+
+	if ( bNewline )
+		luasrc_LuaLogToFile( pszText, 'I' );
 }
 
 // HL2SB: the printf-style forms (see the declaration for why they exist here
@@ -1142,6 +1201,8 @@ void luasrc_shutdown (void) {
   HL2SB_TimerShutdown();
 
 //  lcf_close(L);
+  // HL2SB (sbrust): GMod 的 gmod13_close 生命周期 -- 同菜单态。
+  HL2SB_RunBinaryModuleCloses( L );
   lua_close(L);
 
   // HL2SB: ported from Experiment: Source.  luaopen_ACTIVITY owns the activity
@@ -3454,6 +3515,13 @@ static void HL2SB_LuaDoFile_Impl( const CCommand &args, bool bClient, const char
 	CON_COMMAND_F_COMPLETION( lua_refresh_file, "Re-run a Lua file, simulating a file change", 0, DoFileCompletion )
 	{
 		HL2SB_LuaDoFile_Impl( args, false, "lua_refresh_file" );
+	}
+
+	// HL2SB (sbrust): GMod 的 lua_autorefresh_file -- 与 lua_refresh_file 同语义
+	// 的 GMod 原名（lua_shared.dll 字符串簇里的两个 refresh 命令之一）。
+	CON_COMMAND_F_COMPLETION( lua_autorefresh_file, "Manually refresh a serverside Lua script, as if it was auto refreshed by editing it.", 0, DoFileCompletion )
+	{
+		HL2SB_LuaDoFile_Impl( args, false, "lua_autorefresh_file" );
 	}
 
 	/* HL2SB: GMod's lua_run, server realm.  See the client one above. */

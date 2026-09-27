@@ -169,6 +169,19 @@ LUA_BINDING_BEGIN( Systems, IsOsx, "library", "Check if the application is runni
 }
 LUA_BINDING_END( "boolean", "Whether the application is running on macOS." )
 
+// HL2SB (sbrust): 安卓判定。不能复用 IsLinux（__linux__ 在安卓上同样成立，
+// GMod 后缀公式会把安卓算进 linux64 槽位，与桌面 glibc 模块命名撞车）。
+LUA_BINDING_BEGIN( Systems, IsAndroid, "library", "Check if the application is running on Android." )
+{
+#ifdef __ANDROID__
+    lua_pushboolean( L, true );
+#else
+    lua_pushboolean( L, false );
+#endif
+    return 1;
+}
+LUA_BINDING_END( "boolean", "Whether the application is running on Android." )
+
 LUA_BINDING_BEGIN( Systems, IsWindows, "library", "Check if the application is running on Windows." )
 {
 #ifdef _WIN32

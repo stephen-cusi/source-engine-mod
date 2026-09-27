@@ -921,6 +921,64 @@ static int lua_MsgN (lua_State *L) {
   return 0;
 }
 
+// HL2SB (sbrust): implemented in luamanager.cpp (local prototype, no header
+// churn -- same pattern as HL2SB_CollectLuaError below).
+void luasrc_LuaConsoleMsgColor( const char *pszText, const Color &clr, bool bNewline );
+
+//-----------------------------------------------------------------------------
+// HL2SB (sbrust): GMod 的 MsgC( Color, ... )。契约（wiki + GMod 行为）：
+//   * Color 参数切换"当前颜色"，后续文本用它打印，直到下一个 Color；
+//     本 fork 的 Color 是带 r/g/b/a 字段的普通表（lColor.cpp lua_pushcolor），
+//     r/g/b 至少存在即按 Color 处理；
+//   * 其余参数按 tostring 直接连拼（无分隔符 -- 与 print 的 \t 不同，
+//     `MsgC( c, "HP: ", hp )` 输出 "HP: 100"）；
+//   * 结尾补换行（MsgC 是整行语义；半行续行走 Msg/MsgN）；
+//   * 颜色经 luasrc_LuaConsoleMsgColor 直达控制台，整行照旧进 hl2sb_lua.log。
+// 首 Color 之前的文本用白色。缓冲写满时按当前颜色提前分片续行，视觉不变。
+//-----------------------------------------------------------------------------
+static int lua_MsgC (lua_State *L) {
+  Color curColor( 255, 255, 255, 255 );
+  char szSegment[2048];
+  int nSeg = 0;
+  szSegment[0] = '\0';
+
+  int nArgs = lua_gettop( L );
+  for ( int i = 1; i <= nArgs; ++i ) {
+    if ( lua_istable( L, i ) ) {
+      lua_getfield( L, i, "r" );
+      lua_getfield( L, i, "g" );
+      lua_getfield( L, i, "b" );
+      lua_getfield( L, i, "a" );
+      if ( !lua_isnil( L, -4 ) && !lua_isnil( L, -3 ) && !lua_isnil( L, -2 ) ) {
+        if ( nSeg > 0 ) {
+          luasrc_LuaConsoleMsgColor( szSegment, curColor, false );
+          nSeg = 0;
+        }
+        curColor = Color( (int)lua_tointeger( L, -4 ), (int)lua_tointeger( L, -3 ),
+                          (int)lua_tointeger( L, -2 ), (int)lua_tointeger( L, -1 ) );
+      }
+      lua_pop( L, 4 );
+      continue;
+    }
+
+    size_t nLength = 0;
+    const char *pszText = luaL_tolstring( L, i, &nLength );
+    if ( pszText != NULL && nLength > 0 ) {
+      if ( nSeg + (int)nLength >= (int)sizeof( szSegment ) - 1 ) {
+        luasrc_LuaConsoleMsgColor( szSegment, curColor, false );
+        nSeg = 0;
+        szSegment[0] = '\0';
+      }
+      nSeg += Q_snprintf( szSegment + nSeg, sizeof( szSegment ) - nSeg, "%s", pszText );
+    }
+    lua_pop( L, 1 );
+  }
+
+  if ( nSeg > 0 || nArgs == 0 )
+    luasrc_LuaConsoleMsgColor( szSegment, curColor, true );
+  return 0;
+}
+
 // GMod's bare Warning(): orange, and collected in the log like everything else.
 static int lua_Warning (lua_State *L) {
   char szText[2048];
@@ -2210,7 +2268,17 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   if ( luaL_loadstring( L,
     "AddCSLuaFile = AddCSLuaFile or function( path ) return path end\n"
     "IncludeCS = IncludeCS or function( path ) return path end\n"
-    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400 }\n"
+    // HL2SB (sbrust): 补 arch 字段（GMod jit.arch 取值：x86/x64/arm/arm64）--
+    // util.IsBinaryModuleInstalled 的后缀公式吃它，32/64 位不再共用一个槽位。
+#if defined( __aarch64__ ) || defined( _M_ARM64 ) || defined( _M_ARM64EC )
+    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'arm64' }\n"
+#elif defined( _WIN64 ) || defined( __x86_64__ )
+    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'x64' }\n"
+#elif defined( __arm__ )
+    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'arm' }\n"
+#else
+    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'x86' }\n"
+#endif
     //---------------------------------------------------------------------
     // NPC_STATE_*: GMod exposes Source's own NPC_STATE enum as globals
     // (wiki NPC:GetNPCState "see the NPC_STATE enum").  scp173 compares
@@ -2366,6 +2434,10 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_setglobal( L, "Msg" );
   lua_pushcfunction( L, lua_MsgN );
   lua_setglobal( L, "MsgN" );
+  /* HL2SB (sbrust): GMod 的 MsgC -- 真彩色控制台输出。内容仓的
+  ** hl2sb_gmod_msgc.lua 垫片只在 C 绑定缺失时兜底，此处注册后它自动让位。 */
+  lua_pushcfunction( L, lua_MsgC );
+  lua_setglobal( L, "MsgC" );
 
   /* HL2SB: GMod's bare Warning() -- orange on the console and collected in
   ** hl2sb_lua.log, i.e. the same treatment as everything else Lua prints. */

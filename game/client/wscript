@@ -70,7 +70,7 @@ def build(bld):
 		'vtf',
 		'RT',
 		'ZLIB',
-		'lua',
+		'lua_shared',
 	]
 
 	install_path = bld.env.PREFIX
@@ -86,6 +86,13 @@ def build(bld):
 	defines = game["defines"]
 
 	defines.remove('PROTECTED_THINGS_ENABLE')
+
+	# HL2SB (sbrust): Lua C API now lives in lua_shared.dll, but consumers must
+	# NOT define LUA_BUILD_AS_DLL: hundreds of the engine's own binding
+	# functions (luasrclib.h/luamanager.h LUALIB_API/LUA_API) are DEFINED in
+	# this DLL, and dllimport definitions are C2491.  Plain extern declarations
+	# + the lua_shared import lib (use=['lua_shared'] thunk) is the standard
+	# no-dllimport linking and works for everything.
 
 	bld.shlib(
 		source   = source,
