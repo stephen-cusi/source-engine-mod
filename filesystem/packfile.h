@@ -138,7 +138,12 @@ public:
 	// Returns the filename for a given file in the pack. Returns true if a filename is found, otherwise buffer is filled with "unknown"
 	virtual bool IndexToFilename( int nIndex, char* buffer, int nBufferSize ) = 0;
 
-	inline int GetSectorSize();
+	// Not `inline`: the definition lives in packfile.cpp. Upstream only ever
+	// called it from that same TU, so gcc could inline the sole use and emit
+	// no out-of-line symbol; our cross-TU caller (gmafile.cpp
+	// CGmaPackFileHandle::GetSectorSize) then failed to link on Linux with an
+	// undefined reference, while MSVC always emitted the COMDAT and hid this.
+	int GetSectorSize();
 
 	virtual void SetupPreloadData() {}
 	virtual void DiscardPreloadData() {}
