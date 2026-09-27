@@ -7,7 +7,6 @@
 //===========================================================================//
 #include "cbase.h"
 #include "c_baseplayer.h"
-#include "hands_model_mapping.h"	// g_pszLastHandsModel / g_pszFailedHandsModel
 #include "flashlighteffect.h"
 #include "weapon_selection.h"
 #include "history_resource.h"
@@ -470,16 +469,7 @@ void C_BasePlayer::Spawn( void )
 	ClearFlags();
 	AddFlag( FL_CLIENT );
 
-	// The hands cache can carry stale state across a disconnect/reconnect or a
-	// fresh map: a previous session's viewmodel/hands entity lingers and the
-	// stale key makes the respawn skip a clean attach (so the correct hand is
-	// missing while a leftover one renders). Clear it so every spawn attaches
-	// the hands fresh.
-	g_pszLastHandsModel[0] = '\0';
-	g_pszFailedHandsModel[0] = '\0';
-	// Destroy any hands attachments leaked from a previous session before
-	// respawning - otherwise they render as a proliferated second hand.
-	HL2SB_DestroyAllHandsAttachments();
+
 
 	int effects = GetEffects() & EF_NOSHADOW;
 	SetEffects( effects );
@@ -1018,19 +1008,6 @@ void C_BasePlayer::OnDataChanged( DataUpdateType_t updateType )
 			FogControllerChanged( updateType == DATA_UPDATE_CREATED );
 		}
 
-		// Entering or leaving a vehicle swaps the weapon viewmodel for the
-		// vehicle's drive viewmodel; the c_hands were released for the ride and
-		// have to be rebuilt once we are back out. This OnDataChanged fires on
-		// the exit state change (the hide-HUD flag is part of it), which is the
-		// only moment that knows about it - weapon viewmodels receive no update
-		// of their own when the player stops driving. Cheap: each viewmodel
-		// early-outs unless its hands really need re-attaching.
-		for ( int i = 0; i < MAX_VIEWMODELS; ++i )
-		{
-			C_BaseViewModel *pViewModel = GetViewModel( i, false );
-			if ( pViewModel )
-				pViewModel->UpdateHandsAttachment();
-		}
 	}
 }
 

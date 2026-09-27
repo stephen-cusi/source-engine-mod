@@ -7,7 +7,6 @@
 //=============================================================================//
 #include "cbase.h"
 #include "c_baseviewmodel.h"
-#include "c_viewmodel_attachment.h"
 #include "model_types.h"
 #include "hud.h"
 #include "view_shared.h"
@@ -19,9 +18,8 @@
 #include "tools/bonelist.h"
 #include <KeyValues.h>
 #include "hltvcamera.h"
-#include "hl2sb_model_config.h"
-#include "hands_model_mapping.h"
 #include "luamanager.h"	// HL2SB: sound.Add script lookup in FireEvent below
+#include "lbaseentity_shared.h"	// HL2SB: lua_pushentity (OnViewModelChanged hook dispatch)
 
 #if defined( REPLAY_ENABLED )
 #include "replay/replaycamera.h"
@@ -399,25 +397,10 @@ bool C_BaseViewModel::ShouldDraw()
 // Purpose: Render the weapon. Draw the Viewmodel if the weapon's being carried
 //			by this player, otherwise draw the worldmodel.
 //-----------------------------------------------------------------------------
-// Defined further below: per-viewmodel flag that is set while the owner is
-// riding in a vehicle (the hands are released for the ride).
-static bool HL2SB_HandsHeldForVehicle( C_BaseViewModel *pVM );
-
 int C_BaseViewModel::DrawModel( int flags )
 {
 	if ( !m_bReadyToDraw )
 		return 0;
-
-	// Just left a vehicle: rebuild the hands before this frame draws, so the
-	// arms appear together with the weapon. Relying on the next OnDataChanged
-	// (the HUD-hide repaint on exit) drew the gun first and the hands a few
-	// frames later.
-	if ( ( flags & STUDIO_RENDER ) && HL2SB_HandsHeldForVehicle( this ) )
-	{
-		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-		if ( pOwner && !pOwner->GetVehicle() )
-			UpdateHandsAttachment();
-	}
 
 	if ( flags & STUDIO_RENDER )
 	{
@@ -467,49 +450,7 @@ int C_BaseViewModel::DrawModel( int flags )
 		}
 	}
 
-	// Draw the hands attachment. This is the ONLY place the arms are rendered:
-	// C_ViewmodelAttachment::ShouldDraw() returns false so the world renderer
-	// never picks the entity up. That second, unclipped draw at the raw
-	// viewmodel origin (re-added by UpdateVisibility when the arms model loads
-	// asynchronously) is exactly the "extra arm" that appeared from the second
-	// map onwards. The IsAttachedTo() gate below is the belt to those braces: a
-	// handle left pointing at an entity that has been re-parented or released
-	// can never draw a stale copy either.
-	C_ViewmodelAttachment *pAttach = m_hHandsAttachment.Get();
-	if ( pAttach )
-	{
-		if ( !pAttach->IsAttachedTo( this ) )
-		{
-			// Not ours any more - drop it; UpdateHandsAttachment builds a fresh
-			// attachment on the next pass.
-			m_hHandsAttachment = NULL;
-		}
-		else
-		{
-			C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-			C_BaseCombatWeapon *pActive = pOwner ? pOwner->GetActiveWeapon() : NULL;
-			C_BaseCombatWeapon *pThis = GetOwningWeapon();
-			CStudioHdr *pHdr = pAttach->GetModelPtr();
 
-			// Only the held weapon's viewmodel draws its arms, only while the
-			// owner is alive and NOT riding a vehicle (the vehicle viewmodel is
-			// drawn instead, and the arms would merge onto bones nobody
-			// refreshes), and only once the arms rig is actually loaded - a rig
-			// with no bones cannot merge and renders as a degenerate floating
-			// hand.
-			if ( pOwner && pOwner->IsAlive() && !pOwner->GetVehicle() &&
-				 !( pActive && pThis && pActive != pThis ) &&
-				 pHdr && pHdr->numbones() > 0 )
-			{
-				pAttach->SyncToViewModel( this );
-				HL2SB_BeginManualHandsDraw();
-				pAttach->DrawModel( flags );
-				HL2SB_EndManualHandsDraw();
-			}
-		}
-	}
-
-	return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -631,8 +572,6 @@ void C_BaseViewModel::OnDataChanged( DataUpdateType_t updateType )
 	SetPredictionEligible( true );
 	BaseClass::OnDataChanged(updateType);
 
-	// Update hands attachment when viewmodel changes
-	UpdateHandsAttachment();
 }
 
 void C_BaseViewModel::PostDataUpdate( DataUpdateType_t updateType )
@@ -642,20 +581,34 @@ void C_BaseViewModel::PostDataUpdate( DataUpdateType_t updateType )
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Re-run the hands decision once the model (and its texture table) is
-//          available. On a fast reconnect the first UpdateHandsAttachment can
-//          run before the viewmodel model data is parsed, so ViewModelHasBakedArms
-//          sees an empty texture table and merges a c_hands pair onto a weapon
-//          that actually draws its own baked arms -> double hands. Refreshing
-//          here re-checks the bake state and releases the merged pair if the
-//          weapon has its own arms.
+// Purpose: Model swap (weapon change).  The old hands-attachment rebuild that
+//          used to live here is gone with the legacy c_hands renderer; what
+//          remains is GMod's OnViewModelChanged hook so the gmod_hands entity
+//          re-parents onto the fresh viewmodel.
 //-----------------------------------------------------------------------------
 CStudioHdr *C_BaseViewModel::OnNewModel( void )
 {
 	CStudioHdr *pResult = BaseClass::OnNewModel();
-	UpdateHandsAttachment();
+#if defined( LUA_SDK )
+	// HL2SB (2026-09-27): GMod's engine hook (the name lives only in
+	// lua_shared's registry there -> by-ID dispatch; gmod_hands re-parents onto
+	// the fresh viewmodel through it).  Args mirror GMod's only consumer,
+	// ENT:ViewModelChanged( vm, old, new ) -- old is best-effort (we only know
+	// the model that is arriving).
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "OnViewModelChanged" );
+			lua_pushentity( L, this );
+			lua_pushstring( L, "" );
+			const char *pszModelName = modelinfo->GetModelName( GetModel() );
+			lua_pushstring( L, ( pszModelName != NULL ) ? pszModelName : "" );
+		END_LUA_CALL_HOOK( 3, 0 );
+	}
+#endif
 	return pResult;
 }
+
+
 
 
 //-----------------------------------------------------------------------------
@@ -692,356 +645,4 @@ void C_BaseViewModel::GetBoneControllers(float controllers[MAXSTUDIOBONECTRLS])
 RenderGroup_t C_BaseViewModel::GetRenderGroup()
 {
 	return RENDER_GROUP_VIEW_MODEL_OPAQUE;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Update hands attachment based on player model
-//-----------------------------------------------------------------------------
-// Track last successfully attached hands model (non-static: hl2sb_status reads it)
-char g_pszLastHandsModel[MAX_PATH] = "";
-
-// Last hands model whose entity creation failed. Retrying every frame just
-// spams the console and churns entities - a bad/missing model path stays
-// blocked until the requested model changes or the attachment is released.
-char g_pszFailedHandsModel[MAX_PATH] = "";
-
-// Accessor for the current c_hands state, so console commands (hl2sb_status)
-// can report what hands model is actually attached without reaching into the
-// viewmodel internals.
-const char *HL2SB_GetActiveHandsModel( void )
-{
-	// Empty means no hands have been attached this session -> stock/none.
-	if ( !g_pszLastHandsModel[0] )
-		return NULL;
-
-	// The cache only describes reality while the entity it was set for is
-	// actually alive (it dies with its viewmodel on a level change).
-	if ( HL2SB_CountLiveHandsAttachments() == 0 )
-		return NULL;
-
-	return g_pszLastHandsModel;
-}
-
-// Master switch, defined in c_viewmodel_attachment.cpp
-extern ConVar cl_hands;
-// Skip-baked-arms switch, defined in c_viewmodel_attachment.cpp
-extern ConVar cl_hands_skip_baked_arms;
-// Verbose logging switch, defined in c_viewmodel_attachment.cpp
-extern ConVar cl_hands_debug;
-
-//-----------------------------------------------------------------------------
-// "Hands released for a vehicle ride" state, indexed by entity index.
-//
-// This cannot live as a member of CBaseViewModel: the class is shared with the
-// server and growing it re-lays-out every dependent translation unit - an
-// incremental build then mixes old and new offsets and corrupts the heap (it
-// happened). MAX_EDICTS bools cost 20 KB once and can never desync.
-//-----------------------------------------------------------------------------
-static bool s_bHandsHeldForVehicle[MAX_EDICTS];
-
-static bool HL2SB_HandsHeldForVehicle( C_BaseViewModel *pVM )
-{
-	int i = pVM->entindex();
-	return ( i >= 0 && i < MAX_EDICTS ) ? s_bHandsHeldForVehicle[ i ] : false;
-}
-
-static void HL2SB_SetHandsHeldForVehicle( C_BaseViewModel *pVM, bool bHeld )
-{
-	int i = pVM->entindex();
-	if ( i >= 0 && i < MAX_EDICTS )
-		s_bHandsHeldForVehicle[ i ] = bHeld;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Does this viewmodel already draw its own arms?
-//          Stock HL2/EP2/HL2MP weapon viewmodels bake the arm/hand mesh into
-//          the model and texture it with the shared "v_hand" material
-//          (e.g. "v_hand_sheet"). Merging an extra pair of c_hands onto them
-//          double-draws the arms. MMOD-style replacement viewmodels are gun
-//          only (arms live in default-off bodygroups or are absent) and carry
-//          no v_hand material, so they must still receive the merged hands.
-//          We detect the baked arms by scanning the studio texture table for a
-//          material whose name contains "v_hand" (case-insensitive).
-//-----------------------------------------------------------------------------
-static bool ViewModelHasBakedArms( C_BaseViewModel *pVM )
-{
-	if ( !pVM )
-		return false;
-
-	CStudioHdr *pHdr = pVM->GetModelPtr();
-	if ( !pHdr )
-		return false;
-
-	const studiohdr_t *pRaw = pHdr->GetRenderHdr();
-	if ( !pRaw )
-		return false;
-
-	// A "v_hand" material only means baked arms when a mesh actually renders it.
-	// GMod c_model weapons (e.g. c_shotgun) can carry a stray v_hand_sheet entry
-	// in the texture table that no mesh references - those are gun-only and must
-	// still receive the merged c_hands. Scan the mesh materials, not just the
-	// texture table.
-	for ( int iBody = 0; iBody < pRaw->numbodyparts; iBody++ )
-	{
-		const mstudiobodyparts_t *pBody = pRaw->pBodypart( iBody );
-		if ( !pBody )
-			continue;
-
-		for ( int iModel = 0; iModel < pBody->nummodels; iModel++ )
-		{
-			const mstudiomodel_t *pModel = pBody->pModel( iModel );
-			if ( !pModel )
-				continue;
-
-			for ( int iMesh = 0; iMesh < pModel->nummeshes; iMesh++ )
-			{
-				const mstudiomesh_t *pMesh = pModel->pMesh( iMesh );
-				if ( !pMesh )
-					continue;
-
-				const int iMat = pMesh->material;
-				if ( iMat < 0 || iMat >= pRaw->numtextures )
-					continue;
-
-				const mstudiotexture_t *pTex = pRaw->pTexture( iMat );
-				if ( !pTex )
-					continue;
-
-				const char *pszName = pTex->pszName();
-				if ( pszName && Q_stristr( pszName, "v_hand" ) )
-					return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Is the viewmodel's studio header fully parsed, so the texture scan
-//          above can actually see its materials? A model that is still loading
-//          reports zero textures, and "zero textures" is indistinguishable from
-//          "no v_hand material" - which is how a second pair of arms ended up
-//          merged onto stock weapons after a level change.
-//-----------------------------------------------------------------------------
-static bool ViewModelHasLoadedTextureTable( C_BaseViewModel *pVM )
-{
-	if ( !pVM )
-		return false;
-
-	CStudioHdr *pHdr = pVM->GetModelPtr();
-	if ( !pHdr || !pHdr->GetRenderHdr() )
-		return false;
-
-	return pHdr->GetRenderHdr()->numtextures > 0;
-}
-
-void C_BaseViewModel::ReleaseHandsAttachment( void )
-{
-	if ( C_ViewmodelAttachment *pOld = m_hHandsAttachment.Get() )
-	{
-		pOld->DetachFromViewmodel();
-		pOld->Release();
-		m_hHandsAttachment = NULL;
-
-		// The globals describe the hands entity that has just been destroyed.
-		// Only touch them when this viewmodel actually owned one: a viewmodel
-		// that never had hands used to wipe another viewmodel's cache here,
-		// which forced a rebuild (and so a second live arms entity) on the very
-		// next pass.
-		g_pszLastHandsModel[0] = '\0';
-		g_pszFailedHandsModel[0] = '\0';
-	}
-}
-
-void C_BaseViewModel::UpdateHandsAttachment( void )
-{
-	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-	if ( !pOwner )
-		return;
-
-	// Player is dead: holster the hands. Without this they stay EF_BONEMERGE'd
-	// to the (dead/holstered) viewmodel and float out into the world, and the
-	// still-set g_pszLastHandsModel cache makes the respawn's UpdateHandsAttachment
-	// early-out on the stale attachment instead of building a fresh one (so the
-	// respawn has no hands). Releasing here clears the cache and detaches the
-	// arms; the respawn's OnDataChanged then re-attaches them cleanly.
-	if ( !pOwner->IsAlive() )
-	{
-		ReleaseHandsAttachment();
-		return;
-	}
-
-	// In a vehicle the engine draws the VEHICLE viewmodel instead of the
-	// weapon's, so our arms are not rendered. Keep the arms entity (and its
-	// loaded model) through the ride and just stop drawing it in DrawModel -
-	// releasing it here destroyed the entity and unloaded the arms model, so on
-	// exit the model had to reload and the hands popped in ~0.5s after the
-	// weapon. The flag marks the ride so DrawModel skips drawing them.
-	if ( pOwner->GetVehicle() != NULL )
-	{
-		HL2SB_SetHandsHeldForVehicle( this, true );
-		return;
-	}
-
-	// Master switch off - drop any existing attachment
-	if ( !cl_hands.GetBool() )
-	{
-		ReleaseHandsAttachment();
-		return;
-	}
-
-	// Don't merge hands onto a viewmodel that already draws its own arms
-	// (stock HL2 v_hand models) - that would double-draw the arms. Release any
-	// attachment we may have made earlier (e.g. the player just switched from a
-	// gun-only MMOD weapon to a stock one).
-	if ( cl_hands_skip_baked_arms.GetBool() )
-	{
-		// We can only answer the baked-arms question once the viewmodel's
-		// material table is readable. Right after a level change the model may
-		// still be arriving asynchronously; guessing "no baked arms" there is
-		// what merged a second pair of arms onto stock weapons. Defer instead -
-		// OnNewModel()/OnModelLoadComplete() re-run this decision as soon as the
-		// data is here.
-		if ( !ViewModelHasLoadedTextureTable( this ) )
-			return;
-
-		if ( ViewModelHasBakedArms( this ) )
-		{
-			ReleaseHandsAttachment();
-			return;
-		}
-	}
-
-	// If the owner's player model isn't resolved yet (e.g. right at respawn,
-	// before the model is networked), don't tear down an existing hands
-	// attachment - that would drop the hands and, since nothing re-triggers
-	// UpdateHandsAttachment after the model arrives, they'd stay lost.
-	if ( !pOwner->GetModel() )
-	{
-		return;
-	}
-
-	// Get player model path
-	const char *pszPlayerModel = modelinfo->GetModelName( pOwner->GetModel() );
-
-	// Get hands model: cl_hands_model override first, else config-system mapping
-	const char *pszHandsModel = NULL;
-	char szHandsBuf[ MAX_PATH ];
-	Q_strncpy( szHandsBuf, "", sizeof( szHandsBuf ) );
-	const char *pszOverride = cl_hands_model.GetString();
-	if ( pszOverride && pszOverride[0] && Q_stricmp( pszOverride, "auto" ) != 0 )
-	{
-		pszHandsModel = pszOverride;
-	}
-	else
-	{
-		pszHandsModel = HL2SB_GetHandsModelForPlayer( pszPlayerModel );
-	}
-
-	// The config system may encode skin/bodygroup after the path:
-	//   "models/weapons/c_arms_citizen.mdl|2|0000000"
-	int iHandsSkin = -1, iHandsBodyValid = 0;
-	char szHandsBody[ 32 ] = "";
-	if ( pszHandsModel )
-	{
-		Q_strncpy( szHandsBuf, pszHandsModel, sizeof( szHandsBuf ) );
-		char *pPipe1 = strchr( szHandsBuf, '|' );
-		if ( pPipe1 )
-		{
-			*pPipe1 = '\0';
-			char *pPipe2 = strchr( pPipe1 + 1, '|' );
-			if ( pPipe2 )
-			{
-				*pPipe2 = '\0';
-				iHandsSkin = atoi( pPipe1 + 1 );
-				Q_strncpy( szHandsBody, pPipe2 + 1, sizeof( szHandsBody ) );
-				iHandsBodyValid = 1;
-			}
-			else
-			{
-				Q_strncpy( szHandsBody, pPipe1 + 1, sizeof( szHandsBody ) );
-				iHandsBodyValid = 1;
-			}
-		}
-		pszHandsModel = szHandsBuf;
-	}
-
-	// Cache key includes encoded skin/body so switching between two player
-	// models that share a hands model but differ in skin (e.g. citizen skin0
-	// vs bloody-zombie skin2) still re-applies.
-	char szHandsKey[ MAX_PATH + 64 ];
-	if ( pszHandsModel )
-	{
-		if ( iHandsSkin >= 0 )
-			Q_snprintf( szHandsKey, sizeof( szHandsKey ), "%s|%i|%s", pszHandsModel, iHandsSkin, szHandsBody );
-		else
-			Q_snprintf( szHandsKey, sizeof( szHandsKey ), "%s|%s", pszHandsModel, szHandsBody );
-		pszHandsModel = szHandsKey;
-	}
-
-	// No hands model for this player model - remove attachment
-	if ( !pszHandsModel )
-	{
-		ReleaseHandsAttachment();
-		return;
-	}
-
-	// Our handle may point at an entity that has been re-parented or released;
-	// drop it first so the check below can never act on somebody else's hands.
-	if ( m_hHandsAttachment.Get() && !m_hHandsAttachment->IsAttachedTo( this ) )
-		m_hHandsAttachment = NULL;
-
-	// Already holding exactly this hands model? Nothing to do. This is the hot
-	// path - OnDataChanged runs on every animation parity change, so the
-	// comparison has to be cheap and must be per-viewmodel: each weapon's
-	// viewmodel owns its own single arms entity. This is also the just-left-a-
-	// vehicle case: the arms were kept through the ride, so clearing the ride
-	// flag here is all that is needed for them to draw again.
-	if ( m_hHandsAttachment.Get()
-			&& !Q_stricmp( m_hHandsAttachment->GetHandsKey(), pszHandsModel ) )
-	{
-		HL2SB_SetHandsHeldForVehicle( this, false );
-		return;
-	}
-
-	HL2SB_SetHandsHeldForVehicle( this, false );
-
-	// Death only HOLSTERS the weapon, so a transient failed-model lookup or
-	// failed-attach inside the death/respawn window could leave the sticky
-	// g_pszFailedHandsModel set and block the hands from reattaching forever.
-	// Give every reattach a clean attempt; a genuinely-bad model just re-fails
-	// (and warns) on the next weapon change instead of silently dropping the
-	// hands.
-	g_pszFailedHandsModel[0] = '\0';
-
-	// Remove our old attachment (if any)
-	ReleaseHandsAttachment();
-
-	// Create new hands attachment (load the bare model path, not the cache key)
-	C_ViewmodelAttachment *pAttach = new C_ViewmodelAttachment;
-	if ( pAttach && pAttach->SetHandsModel( szHandsBuf ) )
-	{
-		// Apply skin/bodygroup encoded in the config ("path|skin|body").
-		// e.g. zombie/charple/corpse use c_arms_citizen skin 2 = bloody hands.
-		if ( iHandsSkin >= 0 )
-			pAttach->m_nSkin = iHandsSkin;
-		if ( iHandsBodyValid && szHandsBody[0] )
-		{
-			for ( int iGroup = 0; szHandsBody[ iGroup ] >= '0' && szHandsBody[ iGroup ] <= '9'; ++iGroup )
-				static_cast<C_BaseAnimating *>( pAttach )->SetBodygroup( iGroup, szHandsBody[ iGroup ] - '0' );
-		}
-		pAttach->AttachToViewmodel( this );
-		pAttach->SetHandsKey( pszHandsModel );
-		m_hHandsAttachment = pAttach;
-		Q_strncpy( g_pszLastHandsModel, pszHandsModel, sizeof(g_pszLastHandsModel) );
-		g_pszFailedHandsModel[0] = '\0';
-		if ( cl_hands_debug.GetBool() )
-			Msg( "[HL2SB-HANDS] Attached hands model: %s\n", pszHandsModel );
-	}
-	else
-	{
-		if ( pAttach ) delete pAttach;
-		Q_strncpy( g_pszFailedHandsModel, pszHandsModel, sizeof(g_pszFailedHandsModel) );
-	}
 }

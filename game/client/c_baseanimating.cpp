@@ -709,7 +709,16 @@ C_BaseAnimating::C_BaseAnimating() :
 	m_pRagdollInfo = NULL;
 	m_pJiggleBones = NULL;
 	m_pBoneMergeCache = NULL;
-	m_bLenientBoneMerge = false;
+	// HL2SB (2026-09-27): lenient (prefix-stripped) bonemerge name matching is
+	// the DEFAULT now -- exact match runs first (FindMergeBone), so every merge
+	// that used to work still matches, and cross-rig pairs gain the strip-prefix
+	// fallback.  This is what GMod's engine does implicitly: its c_arms
+	// (ValveBiped.*) bones merge onto stock HL2 viewmodels (unprefixed Bip01_*)
+	// with no opt-in call, which is exactly what the Lua gmod_hands entity needs
+	// (it has no way to call SetLenientBoneMerge, and GMod's Lua API has no such
+	// function).  The old C_ViewmodelAttachment called SetLenientBoneMerge(true)
+	// per-entity; that renderer is deleted.
+	m_bLenientBoneMerge = true;
 
 	m_flPlaybackRate = 1.0f;
 

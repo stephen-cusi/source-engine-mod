@@ -112,7 +112,13 @@ public:
 	// Lua taunt camera and IsPlayingTaunt() key off this on the client.
 	CNetworkVar( float, m_flHL2SBTauntEnd );
 
+	// HL2SB (2026-09-27): recv side of GMod's hands handle (server sends the
+	// gmod_hands entity; GM:PostDrawViewModel draws it from GetHands()).
+	CNetworkHandle( C_BaseEntity, m_hHands );
+
 	bool			HL2SB_IsPlayingTaunt( void );
+	C_BaseEntity	*HL2SB_GetHandsEntity( void ) { return m_hHands; }
+	void			HL2SB_SetHandsEntity( C_BaseEntity *pEnt ) { m_hHands = pEnt; }
 
 	// HL2SB: remaining GMod Player knobs, stored for the Lua bindings (see the
 	// server header for the v1 scope note).

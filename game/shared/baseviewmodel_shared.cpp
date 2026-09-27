@@ -13,7 +13,6 @@
 #include "prediction.h"
 #include "client_virtualreality.h"
 #include "sourcevr/isourcevirtualreality.h"
-#include "c_viewmodel_attachment.h"
 #include "luamanager.h"	// HL2SB GMod compat: SWEP:CalcViewModelView / SWEP:GetViewModelPosition
 #include "mathlib/lvector.h"	// lua_pushvector / lua_pushangle / luaL_checkvector / luaL_checkangle
 #include "lbasecombatweapon_shared.h"	// lua_pushweapon
@@ -70,11 +69,6 @@ CBaseViewModel::~CBaseViewModel()
 void CBaseViewModel::UpdateOnRemove( void )
 {
 	BaseClass::UpdateOnRemove();
-
-#if defined( CLIENT_DLL )
-	// Detach and delete the hands entity - it is owned by this viewmodel
-	ReleaseHandsAttachment();
-#endif
 
 	DestroyControlPanels();
 }

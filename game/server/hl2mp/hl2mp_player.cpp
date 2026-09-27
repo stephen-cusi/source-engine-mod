@@ -94,6 +94,10 @@ IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 	// float through IsPlayingTaunt() to run the taunt camera and gate the act
 	// command, so it has to replicate.
 	SendPropFloat( SENDINFO( m_flHL2SBTauntEnd ) ),
+	// HL2SB (2026-09-27): the hands entity handle.  GMod's datadesc prop is
+	// "m_Hands"; this fork's pair is self-consistently named m_hHands (nothing
+	// external parses the datatable, so only the pair matching matters).
+	SendPropEHandle( SENDINFO( m_hHands ) ),
 
 	SendPropExclude( "DT_BaseAnimating", "m_flPoseParameter" ),
 	SendPropExclude( "DT_BaseFlex", "m_viewtarget" ),

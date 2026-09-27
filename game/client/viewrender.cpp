@@ -1044,9 +1044,11 @@ void CViewRender::DrawViewModels( const CViewSetup &view, bool drawViewmodel )
 	bool bShouldDrawPlayerViewModel = ShouldDrawViewModel( drawViewmodel );
 	bool bShouldDrawToolViewModels = ToolsEnabled();
 
-	// HL2SB GMod compat (2026-09-23): SWEP:PreDrawViewModel( vm, weapon, ply,
-	// flags ) -- literal true suppresses the viewmodel this frame, and per the
-	// wiki PostDrawViewModel/ViewModelDrawn are then NOT called either.
+	// HL2SB (2026-09-27): GMod contract -- the engine dispatches the GAMEMODE
+	// hook "PreDrawViewModel"( vm, ply, wep, flags ); GM:PreDrawViewModel
+	// (deathmatch cl_init) forwards to the SWEP method.  Literal true
+	// suppresses the viewmodel this frame, and per the wiki
+	// PostDrawViewModel/ViewModelDrawn are then NOT called either.
 	bool bSuppressPostVMHooks = false;
 #if defined( LUA_SDK )
 	{
@@ -1055,14 +1057,17 @@ void CViewRender::DrawViewModels( const CViewSetup &view, bool drawViewmodel )
 		{
 			CBaseCombatWeapon *pWep = pLocalPlayer->GetActiveWeapon();
 			C_BaseViewModel *pVM = pLocalPlayer->GetViewModel( 0 );
-			if ( pWep != NULL && pWep->IsScripted() && pVM != NULL )
+			if ( pVM != NULL )
 			{
-				BEGIN_LUA_CALL_WEAPON_HOOK( "PreDrawViewModel", pWep );
+				BEGIN_LUA_CALL_HOOK( "PreDrawViewModel" );
 					lua_pushentity( L, pVM );
-					lua_pushweapon( L, pWep );
 					lua_pushplayer( L, pLocalPlayer );
+					if ( pWep != NULL )
+						lua_pushweapon( L, pWep );
+					else
+						lua_pushnil( L );
 					lua_pushinteger( L, STUDIO_RENDER );
-				END_LUA_CALL_WEAPON_HOOK( 4, 1 );
+				END_LUA_CALL_HOOK( 4, 1 );
 
 				if ( lua_gettop( L ) > 0 )
 				{
@@ -1164,11 +1169,14 @@ void CViewRender::DrawViewModels( const CViewSetup &view, bool drawViewmodel )
 		DrawRenderablesInList( translucentViewModelList, STUDIO_TRANSPARENCY );
 	}
 
-	// HL2SB GMod compat (2026-09-23): SWEP:ViewModelDrawn( vm, flags ) then
-	// SWEP:PostDrawViewModel( vm, weapon, ply, flags ) -- straight after the
-	// view model has been drawn, still inside the 3D view + depth hack, which
-	// is what GMod's rendering-context note implies.  Neither runs when
-	// PreDrawViewModel suppressed the draw.
+	// HL2SB (2026-09-27): GMod contract -- straight after the view model has
+	// been drawn, still inside the 3D view + depth hack.  The engine dispatches
+	// the GAMEMODE hooks (by ID there; the names live only in lua_shared).
+	// GM:PostDrawViewModel (deathmatch cl_init) draws the gmod_hands entity and
+	// forwards to the SWEP method, so the old direct SWEP-only dispatch is gone.
+	// ViewModelDrawn keeps both the hook and the direct SWEP call (GMod's
+	// SWEP:ViewModelDrawn( vm ) is documented and its base defines it).
+	// Neither runs when PreDrawViewModel suppressed the draw.
 #if defined( LUA_SDK )
 	if ( !bSuppressPostVMHooks )
 	{
@@ -1180,6 +1188,10 @@ void CViewRender::DrawViewModels( const CViewSetup &view, bool drawViewmodel )
 			bool bDrewPlayerVM = bShouldDrawPlayerViewModel && pVM != NULL;
 			if ( bDrewPlayerVM && pVM->ShouldDraw() )
 			{
+				BEGIN_LUA_CALL_HOOK( "ViewModelDrawn" );
+					lua_pushentity( L, pVM );
+				END_LUA_CALL_HOOK( 1, 0 );
+
 				if ( pWep != NULL && pWep->IsScripted() )
 				{
 					BEGIN_LUA_CALL_WEAPON_HOOK( "ViewModelDrawn", pWep );
@@ -1187,15 +1199,16 @@ void CViewRender::DrawViewModels( const CViewSetup &view, bool drawViewmodel )
 						lua_pushinteger( L, STUDIO_RENDER );
 					END_LUA_CALL_WEAPON_HOOK( 2, 0 );
 				}
-			}
-			if ( bDrewPlayerVM && pWep != NULL && pWep->IsScripted() )
-			{
-				BEGIN_LUA_CALL_WEAPON_HOOK( "PostDrawViewModel", pWep );
+
+				BEGIN_LUA_CALL_HOOK( "PostDrawViewModel" );
 					lua_pushentity( L, pVM );
-					lua_pushweapon( L, pWep );
 					lua_pushplayer( L, pLocalPlayer );
+					if ( pWep != NULL )
+						lua_pushweapon( L, pWep );
+					else
+						lua_pushnil( L );
 					lua_pushinteger( L, STUDIO_RENDER );
-				END_LUA_CALL_WEAPON_HOOK( 4, 0 );
+				END_LUA_CALL_HOOK( 4, 0 );
 			}
 		}
 	}

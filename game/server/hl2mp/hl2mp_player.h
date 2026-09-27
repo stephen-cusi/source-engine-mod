@@ -164,6 +164,8 @@ public:
 	bool			HL2SB_IsPlayingTaunt( void );
 	float			HL2SB_TauntEnd( void ) const { return m_flHL2SBTauntEnd; }
 	void			HL2SB_SetTauntEnd( float flEnd ) { m_flHL2SBTauntEnd = flEnd; }
+	CBaseEntity		*HL2SB_GetHandsEntity( void ) { return m_hHands; }
+	void			HL2SB_SetHandsEntity( CBaseEntity *pEnt ) { m_hHands = pEnt; }
 
 	// GMod gesture-slot tracking (server-side; layers replicate through
 	// DT_BaseAnimatingOverlay).  Indexed by GESTURE_SLOT_* values.
@@ -180,6 +182,14 @@ public:
 	// ONE replicated float ("taunt busy until"); IsPlayingTaunt() on every realm
 	// is `curtime <= end && end != curtime`, and the act camera keys off it.
 	CNetworkVar( float, m_flHL2SBTauntEnd );
+
+	// HL2SB (2026-09-27): GMod's hands handle.  reference: a replicated
+	// EHandle in the player datadesc ("m_Hands", right next to
+	// m_PlayerColor/m_WeaponColor); GetHands/SetHands resolve/write it, the
+	// gmod_hands scripted entity registers itself here in DoSetup.  GMod's
+	// SetHands writes only on change with a network-dirty mark -- the
+	// CNetworkHandle assignment below dirties automatically.
+	CNetworkHandle( CBaseEntity, m_hHands );
 
 	// HL2SB: remaining GMod Player speed/state knobs.  v1 stores the values
 	// (Lua-visible both realms); only walk/run/jump feed the movement engine.

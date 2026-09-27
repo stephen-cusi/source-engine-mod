@@ -342,16 +342,26 @@ static int CHL2MP_Player_SetIK (lua_State *L) {
   return 0;
 }
 
-// GMod: Player:GetHands() - the fork has no GMod viewmodel-hands entity, so
-// hands are always nil (SetHands accepts and discards, which nil-safe addon
-// calls expect).
+// HL2SB (2026-09-27): real GetHands/SetHands, GMod's reference semantics.
+// GetHands resolves the replicated m_hHands handle (serial-checked on GMod's
+// side; EHANDLE::Get does the same here) and pushes the entity, nil when
+// empty/stale.  SetHands takes an entity (nil clears); on the server the
+// CNetworkHandle assignment marks the prop dirty exactly like GMod's
+// change-guarded write.
 static int CHL2MP_Player_GetHands (lua_State *L) {
-  luaL_checkhl2mpplayer(L, 1);
-  lua_pushnil(L);
+  CBaseEntity *pHands = luaL_checkhl2mpplayer(L, 1)->HL2SB_GetHandsEntity();
+  if ( pHands != NULL )
+    lua_pushentity( L, pHands );
+  else
+    lua_pushnil( L );
   return 1;
 }
 static int CHL2MP_Player_SetHands (lua_State *L) {
-  luaL_checkhl2mpplayer(L, 1);
+  CHL2MP_Player *pPlayer = luaL_checkhl2mpplayer(L, 1);
+  if ( lua_isnoneornil( L, 2 ) )
+    pPlayer->HL2SB_SetHandsEntity( NULL );
+  else
+    pPlayer->HL2SB_SetHandsEntity( lua_toentity( L, 2 ) );
   return 0;
 }
 

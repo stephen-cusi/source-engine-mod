@@ -61,6 +61,7 @@ IMPLEMENT_CLIENTCLASS_DT(C_HL2MP_Player, DT_HL2MP_Player, CHL2MP_Player)
 	RecvPropFloat( RECVINFO( m_flHL2SBSlowWalkSpeed ) ),
 	RecvPropFloat( RECVINFO( m_flHL2SBJumpPower ) ),
 	RecvPropFloat( RECVINFO( m_flHL2SBTauntEnd ) ),
+	RecvPropEHandle( RECVINFO( m_hHands ) ),
 END_RECV_TABLE()
 
 BEGIN_PREDICTION_DATA( C_HL2MP_Player )
