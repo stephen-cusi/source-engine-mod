@@ -1852,6 +1852,12 @@ extern "C" void __cdecl WriteSteamMiniDumpWithComment( unsigned int uStructuredE
 {
 	// Always write a local minidump into <gamedir>/dumps so crashes can be
 	// debugged without Steam/breakpad being present.
+	// HL2SB: the local-dump path uses WriteMiniDumpUsingExceptionInfo, which
+	// minidump.h only declares (and tier0 only defines) under _WIN32 -- on
+	// Linux/Android the implicit declaration broke the engine build. Those
+	// platforms keep the upstream behaviour below (SteamAPI_WriteMiniDump
+	// plus their own signal-handler logging in hl2sb_crash_handler.cpp).
+#if defined( _WIN32 )
 	{
 		char szGameDir[ MAX_PATH ];
 		COM_GetGameDir( szGameDir, sizeof( szGameDir ) );
@@ -1862,6 +1868,7 @@ extern "C" void __cdecl WriteSteamMiniDumpWithComment( unsigned int uStructuredE
 		WriteMiniDumpUsingExceptionInfo( uStructuredExceptionCode, pExceptionInfo, 0x61,
 			pszFilenameSuffix, NULL );
 	}
+#endif // _WIN32
 
 	// TODO: dynamically set the minidump comment from contextual info about the crash (i.e current VPROF node)?
 #if !defined( NO_STEAM )
