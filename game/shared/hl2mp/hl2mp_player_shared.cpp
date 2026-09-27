@@ -1273,19 +1273,29 @@ void CPlayerAnimState::ComputePoseParam_BodyYaw( void )
 	//
 	// HL2MP's own animation models (models/player/male_anims.mdl, ...) use the
 	// 8-way "move_yaw" angle. GMod's animation models (models/m_anm.mdl,
-	// f_anm.mdl, z_anm.mdl - and every playermodel that $includemodels them) have
-	// NO move_yaw at all: they use TF2's 9-way move_x / move_y pair. The old code
-	// looked up move_yaw, got -1 and returned on its first line, so on a GMod
-	// playermodel the lower body never got any direction information.
-	int iYaw = GetOuter()->LookupPoseParameter( "move_yaw" );
+	// f_anm.mdl, z_anm.mdl - and every playermodel that $includemodels them) use
+	// TF2's 9-way move_x / move_y pair.
+	//
+	// HL2SB (2026-09-27): 9-way FIRST, move_yaw only as the fallback.  The old
+	// order (move_yaw first) broke every anime-style playermodel whose own rig
+	// carries a move_yaw pose parameter (miku / qiandai / hutao reference): the
+	// 8-way branch won, move_x/move_y were never written, and the f_anm gait
+	// sequences - 3x3 blends keyed on pose parameters 0/1 - stayed pinned to
+	// their static (0,0) sub-animation: the model glided around frozen in the
+	// first walk frame.  LookupPoseParameter searches the MERGED virtual-model
+	// pose list, so move_x/move_y resolve even when only the $includemodel'd
+	// animation model declares them.  GMod's own animstate is 9-way-only
+	// (server.dll: lookup move_x/move_y, cache, drive - no move_yaw
+	// branch at all); the move_yaw fallback here only covers HL2MP's own models.
+	int iMoveX = GetOuter()->LookupPoseParameter( "move_x" );
+	int iMoveY = GetOuter()->LookupPoseParameter( "move_y" );
 
-	int iMoveX = -1;
-	int iMoveY = -1;
-	if ( iYaw < 0 )
+	int iYaw = -1;
+	if ( iMoveX < 0 || iMoveY < 0 )
 	{
-		iMoveX = GetOuter()->LookupPoseParameter( "move_x" );
-		iMoveY = GetOuter()->LookupPoseParameter( "move_y" );
-		if ( iMoveX < 0 || iMoveY < 0 )
+		iMoveX = iMoveY = -1;
+		iYaw = GetOuter()->LookupPoseParameter( "move_yaw" );
+		if ( iYaw < 0 )
 			return;
 	}
 

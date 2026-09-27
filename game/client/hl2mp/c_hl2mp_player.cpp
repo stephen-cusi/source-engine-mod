@@ -70,7 +70,10 @@ END_PREDICTION_DATA()
 #define	HL2_NORM_SPEED 190
 #define	HL2_SPRINT_SPEED 320
 
-static ConVar cl_playermodel( "cl_playermodel", "none", FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_SERVER_CAN_EXECUTE, "Default Player Model");
+// HL2SB (2026-09-27): GMod's default playermodel.  The old hardcoded team model
+// lists are gone, so an empty/invalid cl_playermodel now lands here (the server
+// side falls back to the same path).
+static ConVar cl_playermodel( "cl_playermodel", "models/player/kleiner.mdl", FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_SERVER_CAN_EXECUTE, "Default Player Model");
 static ConVar cl_defaultweapon( "cl_defaultweapon", "weapon_physcannon", FCVAR_USERINFO | FCVAR_ARCHIVE, "Default Spawn Weapon");
 
 /*

@@ -47,9 +47,6 @@
 // HL2SB: flashlight turned on by default at spawn
 extern ConVar sv_flashlight_default;
 
-int g_iLastCitizenModel = 0;
-int g_iLastCombineModel = 0;
-
 CBaseEntity	 *g_pLastCombineSpawn = NULL;
 CBaseEntity	 *g_pLastRebelSpawn = NULL;
 extern CBaseEntity				*g_pLastSpawn;
@@ -109,34 +106,14 @@ BEGIN_DATADESC( CHL2MP_Player )
 	DEFINE_FIELD( m_flNextAmmoBurn, FIELD_FLOAT ),
 END_DATADESC()
 
-const char *g_ppszRandomCitizenModels[] = 
-{
-	"models/player/humans/group03/male_01.mdl",
-	"models/player/humans/group03/male_02.mdl",
-	"models/player/humans/group03/female_01.mdl",
-	"models/player/humans/group03/male_03.mdl",
-	"models/player/humans/group03/female_02.mdl",
-	"models/player/humans/group03/male_04.mdl",
-	"models/player/humans/group03/female_03.mdl",
-	"models/player/humans/group03/male_05.mdl",
-	"models/player/humans/group03/female_04.mdl",
-	"models/player/humans/group03/male_06.mdl",
-	"models/player/humans/group03/female_06.mdl",
-	"models/player/humans/group03/male_07.mdl",
-	"models/player/humans/group03/female_07.mdl",
-	"models/player/humans/group03/male_08.mdl",
-	"models/player/humans/group03/male_09.mdl",
-};
+// HL2SB (2026-09-27): the hardcoded per-team random model lists
+// (g_ppszRandomCitizenModels / g_ppszRandomCombineModels) are gone.  The player
+// model is whatever cl_playermodel says, like GMod; the menu list comes from
+// player_manager (lua/autorun/client/hl2sb_playermodels.lua scanning
+// models/player/), and the fallback everywhere below is GMod's default
+// playermodel, models/player/kleiner.mdl.
+#define HL2SB_DEFAULT_PLAYERMODEL "models/player/kleiner.mdl"
 
-const char *g_ppszRandomCombineModels[] =
-{
-	"models/player/combine_soldier.mdl",
-	"models/player/combine_soldier_prisonguard.mdl",
-	"models/player/combine_super_soldier.mdl",
-	"models/player/police.mdl",
-};
-
-#define MAX_COMBINE_MODELS 4
 #define MODEL_CHANGE_INTERVAL 0.1f
 #define TEAM_CHANGE_INTERVAL 0.1f
 
@@ -251,18 +228,9 @@ void CHL2MP_Player::Precache( void )
 
 	PrecacheModel ( "sprites/glow01.vmt" );
 
-	//Precache Citizen models
-	int nHeads = ARRAYSIZE( g_ppszRandomCitizenModels );
-	int i;	
-
-	for ( i = 0; i < nHeads; ++i )
-	   	 PrecacheModel( g_ppszRandomCitizenModels[i] );
-
-	//Precache Combine Models
-	nHeads = ARRAYSIZE( g_ppszRandomCombineModels );
-
-	for ( i = 0; i < nHeads; ++i )
-	   	 PrecacheModel( g_ppszRandomCombineModels[i] );
+	// HL2SB: no hardcoded list to precache any more.  The default playermodel is
+	// precached here; every other model is precached on demand by SetPlayerModel.
+	PrecacheModel( HL2SB_DEFAULT_PLAYERMODEL );
 
 	PrecacheFootStepSounds();
 
@@ -349,7 +317,7 @@ void CHL2MP_Player::PickDefaultSpawnTeam( void )
 				if ( ValidatePlayerModel( szModelName ) == false )
 				{
 					char szReturnString[512];
-					Q_snprintf( szReturnString, sizeof (szReturnString ), "cl_playermodel models/player/combine_soldier.mdl\n" );
+					Q_snprintf( szReturnString, sizeof (szReturnString ), "cl_playermodel %s\n", HL2SB_DEFAULT_PLAYERMODEL );
 					engine->ClientCommand ( edict(), szReturnString );
 				}
 
@@ -502,27 +470,6 @@ void CHL2MP_Player::PickupObject( CBaseEntity *pObject, bool bLimitMassAndSize )
 
 bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )
 {
-	int iModels = ARRAYSIZE( g_ppszRandomCitizenModels );
-	int i;	
-
-	for ( i = 0; i < iModels; ++i )
-	{
-		if ( !Q_stricmp( g_ppszRandomCitizenModels[i], pModel ) )
-		{
-			return true;
-		}
-	}
-
-	iModels = ARRAYSIZE( g_ppszRandomCombineModels );
-
-	for ( i = 0; i < iModels; ++i )
-	{
-	   	if ( !Q_stricmp( g_ppszRandomCombineModels[i], pModel ) )
-		{
-			return true;
-		}
-	}
-
 #ifdef HL2SB
 	// Also accept models from HL2SB config
 	if ( HL2SB_FindModelConfigByPath( pModel ) )
@@ -551,57 +498,10 @@ bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )
 
 void CHL2MP_Player::SetPlayerTeamModel( void )
 {
-	const char *szModelName = NULL;
-	szModelName = engine->GetClientConVarValue( engine->IndexOfEdict( edict() ), "cl_playermodel" );
-
-	int modelIndex = modelinfo->GetModelIndex( szModelName );
-
-	if ( modelIndex == -1 || ValidatePlayerModel( szModelName ) == false )
-	{
-		szModelName = "models/player/combine_soldier.mdl";
-		m_iModelType = TEAM_COMBINE;
-
-		char szReturnString[512];
-
-		Q_snprintf( szReturnString, sizeof (szReturnString ), "cl_playermodel %s\n", szModelName );
-		engine->ClientCommand ( edict(), szReturnString );
-	}
-
-	if ( GetTeamNumber() == TEAM_COMBINE )
-	{
-		if ( Q_stristr( szModelName, "models/player/human") )
-		{
-			int nHeads = ARRAYSIZE( g_ppszRandomCombineModels );
-		
-			g_iLastCombineModel = ( g_iLastCombineModel + 1 ) % nHeads;
-			szModelName = g_ppszRandomCombineModels[g_iLastCombineModel];
-		}
-
-		m_iModelType = TEAM_COMBINE;
-	}
-	else if ( GetTeamNumber() == TEAM_REBELS )
-	{
-		if ( !Q_stristr( szModelName, "models/player/human") )
-		{
-			int nHeads = ARRAYSIZE( g_ppszRandomCitizenModels );
-
-			g_iLastCitizenModel = ( g_iLastCitizenModel + 1 ) % nHeads;
-			szModelName = g_ppszRandomCitizenModels[g_iLastCitizenModel];
-		}
-
-		m_iModelType = TEAM_REBELS;
-	}
-	
-	SetModel( szModelName );
-	SetupPlayerSoundsByModel( szModelName );
-
-#ifdef HL2SB
-	// HL2SB: the appearance the player editor wrote (see SetPlayerModel below).
-	// Must stay AFTER SetModel() - that is what resets the bodygroups.
-	HL2SB_ModelManager_ApplyAppearance( this );
-#endif
-
-	m_flNextModelChangeTime = gpGlobals->curtime + MODEL_CHANGE_INTERVAL;
+	// HL2SB (2026-09-27): the per-team random model lists are gone.  In teamplay
+	// the player model is still whatever cl_playermodel says - the same rule as
+	// the non-teamplay path - not a random citizen/combine head.
+	SetPlayerModel();
 }
 
 void CHL2MP_Player::SetPlayerModel( void )
@@ -630,7 +530,7 @@ void CHL2MP_Player::SetPlayerModel( void )
 
 		if ( ValidatePlayerModel( pszCurrentModelName ) == false )
 		{
-			pszCurrentModelName = "models/player/combine_soldier.mdl";
+			pszCurrentModelName = HL2SB_DEFAULT_PLAYERMODEL;
 		}
 
 		Q_snprintf( szReturnString, sizeof (szReturnString ), "cl_playermodel %s\n", pszCurrentModelName );
@@ -639,45 +539,27 @@ void CHL2MP_Player::SetPlayerModel( void )
 		szModelName = pszCurrentModelName;
 	}
 
-	if ( GetTeamNumber() == TEAM_COMBINE )
+	// HL2SB (2026-09-27): no per-team override any more - GMod semantics, the
+	// convar wins.  m_iModelType only classifies the model for the sound prefix.
+	if ( Q_strlen( szModelName ) == 0 )
 	{
-		int nHeads = ARRAYSIZE( g_ppszRandomCombineModels );
-		
-		g_iLastCombineModel = ( g_iLastCombineModel + 1 ) % nHeads;
-		szModelName = g_ppszRandomCombineModels[g_iLastCombineModel];
-
-		m_iModelType = TEAM_COMBINE;
+		szModelName = HL2SB_DEFAULT_PLAYERMODEL;
 	}
-	else if ( GetTeamNumber() == TEAM_REBELS )
+
+	if ( Q_stristr( szModelName, "models/player/human") )
 	{
-		int nHeads = ARRAYSIZE( g_ppszRandomCitizenModels );
-
-		g_iLastCitizenModel = ( g_iLastCitizenModel + 1 ) % nHeads;
-		szModelName = g_ppszRandomCitizenModels[g_iLastCitizenModel];
-
 		m_iModelType = TEAM_REBELS;
 	}
 	else
 	{
-		if ( Q_strlen( szModelName ) == 0 ) 
-		{
-			szModelName = g_ppszRandomCitizenModels[0];
-		}
-		if ( Q_stristr( szModelName, "models/player/human") )
-		{
-			m_iModelType = TEAM_REBELS;
-		}
-		else
-		{
-			m_iModelType = TEAM_COMBINE;
-		}
+		m_iModelType = TEAM_COMBINE;
 	}
 
 	int modelIndex = modelinfo->GetModelIndex( szModelName );
 
 	if ( modelIndex == -1 )
 	{
-		szModelName = "models/player/combine_soldier.mdl";
+		szModelName = HL2SB_DEFAULT_PLAYERMODEL;
 		m_iModelType = TEAM_COMBINE;
 
 		char szReturnString[512];

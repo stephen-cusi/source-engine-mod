@@ -28,15 +28,12 @@ void HL2SB_ModelManager_Init( void )
 
 //-----------------------------------------------------------------------------
 // Purpose: Get default model for team
+// HL2SB (2026-09-27): the hardcoded team model lists are gone; the fallback is
+// GMod's default playermodel for everyone.
 //-----------------------------------------------------------------------------
 const char *HL2SB_GetDefaultModelForTeam( int iTeam )
 {
-	if ( iTeam == TEAM_COMBINE )
-		return "models/player/combine_soldier.mdl";
-	else if ( iTeam == TEAM_REBELS )
-		return "models/player/group01/male_01.mdl";
-
-	return "models/player/combine_soldier.mdl";
+	return "models/player/kleiner.mdl";
 }
 
 //-----------------------------------------------------------------------------
