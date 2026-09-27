@@ -19,9 +19,6 @@ def build(bld):
 		'../utils/lzma/C/LzmaDec.c',
 		'../utils/lzma/C/LzFind.c',
 		'../utils/lzma/C/LzmaEnc.c',
-		'../utils/lzma/C/LzFindMt.c',
-		'../utils/lzma/C/MtCoder.c',
-		'../utils/lzma/C/Threads.c',
 		'bitbuf.cpp',
 		'byteswap.cpp',
 		'characterset.cpp',
@@ -67,6 +64,14 @@ def build(bld):
 	if bld.env.DEST_OS == 'win32':
 		source += [
 			'processor_detect.cpp',
+			# LZMA SDK multithreaded encoder pieces: Threads.c is a pure
+			# Win32 implementation (<process.h>, CreateThread) and dies on
+			# Linux/Android, where LzmaEnc/Lzma2Enc are instead compiled
+			# single-threaded via _7ZIP_ST below (identical output bytes,
+			# so compressed blobs stay cross-platform compatible).
+			'../utils/lzma/C/LzFindMt.c',
+			'../utils/lzma/C/MtCoder.c',
+			'../utils/lzma/C/Threads.c',
 		]
 	else:
 		source += [
@@ -85,6 +90,11 @@ def build(bld):
 	]
 
 	defines = []
+	if bld.env.DEST_OS != 'win32':
+		# Single-threaded LZMA: strips every LzFindMt/MtCoder/Threads
+		# reference from LzmaEnc.c/Lzma2Enc.c (all guarded by #ifndef
+		# _7ZIP_ST), so the Win32-only thread files are not needed.
+		defines += ['_7ZIP_ST']
 
 	libs = []
 	if bld.env.DEST_OS == 'win32':
