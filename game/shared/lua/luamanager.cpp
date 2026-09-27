@@ -51,8 +51,11 @@ bool HL2SB_IsAddonDisabled( const char *pszAddonName );
 // HL2SB (sbrust): GMod 式第三方二进制模块加载（lua/bin/gm{sv,cl}_*_*.dll，
 // gmod13_open/gmod13_close 入口）。实现在 lua_shared.dll（lua/src/hl2sb_binmod.c）。
 // 调用点：luasrc_setmodulepaths 末尾装 searcher；两个 lua_close 之前跑 close。
-extern "C" LUA_API void HL2SB_InstallBinaryModuleSearcher( lua_State *L, const char *pszGameDir );
-extern "C" LUA_API void HL2SB_RunBinaryModuleCloses( lua_State *L );
+// 只写 extern "C" 不写 LUA_API：非 Windows 的 LUA_API 展开是 extern，
+// "extern "C" extern" 被 gcc 拒收（invalid use of 'extern' in linkage
+// specification），MSVC 容忍所以 Windows 先过了。
+extern "C" void HL2SB_InstallBinaryModuleSearcher( lua_State *L, const char *pszGameDir );
+extern "C" void HL2SB_RunBinaryModuleCloses( lua_State *L );
 
 static bool luasrc_PathInDisabledAddon (const char *fullpath);
 #include "luasrclib.h"
