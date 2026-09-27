@@ -267,7 +267,21 @@
 
 #else /* }{ */
 
+/* HL2SB (sbrust): when Lua is built as the shared host library, the build
+** applies -fvisibility=hidden globally (compiler_optimizations.py CFLAGS),
+** which would bury every API symbol in liblua_shared.so -- consumers
+** (client/server) and third-party binary modules could then neither link
+** nor dlsym it. Mark the API default-visible; LUA_BUILD_AS_SHARED is only
+** ever set for the lua_shared target itself (lua/wscript), so engine code
+** that declares its own functions with these macros elsewhere stays
+** hidden exactly as before. Windows never reaches this branch: the
+** lua_shared target defines LUA_BUILD_AS_DLL, whose dllexport branch
+** above is independent of visibility flags. */
+#if defined( LUA_BUILD_AS_SHARED ) && defined( __GNUC__ ) && !defined( _WIN32 )
+#define LUA_API __attribute__( ( visibility( "default" ) ) ) extern
+#else
 #define LUA_API extern
+#endif
 
 #endif /* } */
 

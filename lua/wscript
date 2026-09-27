@@ -84,9 +84,14 @@ def build(bld):
 	# LUA_BUILD_AS_DLL so the sources compile with __declspec(dllexport)
 	# (the .c files already carry LUA_CORE/LUA_LIB).  On ELF (linux/android)
 	# LUA_BUILD_AS_DLL would emit MSVC-only __declspec and fail the compile --
-	# symbols are exported by default visibility there, so define nothing.
+	# instead LUA_BUILD_AS_SHARED makes luaconf.h mark LUA_API with
+	# default visibility, because the global -fvisibility=hidden
+	# (compiler_optimizations.py CFLAGS) would otherwise hide every API
+	# symbol from liblua_shared.so's .dynsym and consumers could not link.
 	if bld.env.DEST_OS == 'win32':
 		defines += [ 'LUA_BUILD_AS_DLL' ]
+	else:
+		defines += [ 'LUA_BUILD_AS_SHARED' ]
 	# dlopen/dlsym for loadlib.c (LUA_USE_DLOPEN) and libm for the math builtins.
 	# Uselib names must be UPPER case: they index env.LIB_DL / env.LIB_M, the
 	# stores check_deps (wscript:336/341) and xcompile.py:357 create via
