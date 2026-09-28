@@ -792,6 +792,7 @@ private:
 #ifdef CLIENT_DLL
 	// Gun-glow sprite set + fork tendrils (HL2 physcannon rendering)
 	CInterpolatedValue	m_ElementParameter;
+	float		m_flLastPoseWritten;	// HL2SB: skip redundant per-frame pose writes
 	CPhysgunEffectSprite	m_Parameters[11];	// CORE, BLAST, GLOW1-6, ENDCAP1-3
 	CPhysgunEffectBeam		m_Beams[3];
 	int			m_nOldEffectState;
@@ -937,6 +938,9 @@ CWeaponGravityGun::CWeaponGravityGun()
 	m_bOpen = false;
 	m_nChangeState = ELEMENT_STATE_NONE;
 	m_flElementDebounce = 0.0f;
+#ifdef CLIENT_DLL
+	m_flLastPoseWritten = -1.0f;
+#endif
 	m_EffectState = EFFECT_NONE;
 #ifndef CLIENT_DLL
 	m_flLastReloadPress = 0.0f;
@@ -1890,6 +1894,16 @@ void CWeaponGravityGun::UpdateElementPosition( void )
 
 	float flElementPosition = m_ElementParameter.Interp( gpGlobals->curtime );
 
+	// HL2SB (2026-09-28, GMod parity): GMod's physgun never drives per-frame
+	// viewmodel state (reference: zero SendWeaponAnim, no pose pump).  A
+	// same-value pose write every frame still dirties the viewmodel's bone
+	// setup every frame, and that constant re-setup read as a small
+	// persistent jitter of the gun both idle and holding (GMod: rock still).
+	// Write only when the interpolated value actually changes.
+	if ( flElementPosition == m_flLastPoseWritten )
+		return;
+	m_flLastPoseWritten = flElementPosition;
+
 	if ( ShouldDrawUsingViewModel() )
 	{
 		if ( pOwner != NULL )
@@ -2319,9 +2333,18 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 //=========================================================
 void CWeaponGravityGun::PrimaryAttack( void )
 {
+	// HL2SB (2026-09-28, reference-confirmed): GMod's CWeaponPhysGun contains
+	// ZERO SendWeaponAnim calls (server vtable set, client class and the whole
+	// physgun code region scanned) -- its viewmodel lives on ACT_VM_IDLE
+	// permanently; the prong pose + material glow do the expressing.  HL2's
+	// physcannon sent ACT_VM_PRIMARYATTACK here, but c_superphyscannon's
+	// 'fire' one-shot ends with the arms off screen, and after an RMB freeze
+	// (m_active stays false + the regrab latch) a held LMB re-sent it every
+	// tick, pinning the viewmodel on the animation's first frame -- the
+	// "RMB makes the arms disappear" report.  Keep the one-shot grab
+	// effect/sound, drop the animation.
 	if ( !m_active )
 	{
-		SendWeaponAnim( ACT_VM_PRIMARYATTACK );
 		EffectCreate();
 		SoundCreate();
 	}
@@ -2329,17 +2352,6 @@ void CWeaponGravityGun::PrimaryAttack( void )
 	{
 		EffectUpdate();
 		SoundUpdate();
-
-#ifndef CLIENT_DLL
-		// HL2SB GMod compat: while attack is HELD the one-shot grab animation
-		// used to finish and leave the viewmodel frozen on its last frame - the
-		// arms off-screen (the "arms vanish on held attack" report).  Re-arm to
-		// the PLAIN IDLE: ACT_VM_RELOAD (the first cut's hold pose) has no
-		// sequence in the physgun's viewmodel, which is what made the arms
-		// vanish entirely.
-		if ( IsViewModelSequenceFinished() )
-			SendWeaponAnim( ACT_VM_IDLE );
-#endif
 	}
 }
 
@@ -2769,7 +2781,19 @@ void CWeaponGravityGun::ItemPostFrame( void )
 			EffectDestroy();
 			SoundDestroy();
 		}
-		WeaponIdle( );
+
+#ifndef CLIENT_DLL
+		// HL2SB (2026-09-28, GMod parity): GMod's physgun makes ZERO
+		// SendWeaponAnim calls -- the viewmodel parks on a sequence and
+		// stays there.  The base WeaponIdle() re-sent ACT_VM_IDLE on every
+		// idle-cycle timeout, snapping the anim back to its first frame
+		// each time (the persistent small jitter next to GMod's rock-still
+		// physgun).  Re-arm ONLY when the current sequence has finished and
+		// it is not already the idle (draw -> idle lands here once); a
+		// settled idle is never touched again.
+		if ( IsViewModelSequenceFinished() && GetSequence() != SelectWeightedSequence( ACT_VM_IDLE ) )
+			SendWeaponAnim( ACT_VM_IDLE );
+#endif
 		return;
 	}
 }

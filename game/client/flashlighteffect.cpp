@@ -305,8 +305,8 @@ void CFlashlightEffect::UpdateLightNew(const Vector &vecPos, const Vector &vecFo
 				state.m_fLinearAtten = r_flashlightlinear.GetFloat() * flScale + 1.5f * flNoise;
 			}
 
-			state.m_fHorizontalFOVDegrees = r_flashlightfov.GetFloat() - ( 16.0f * (1.0f-flScale) );
-			state.m_fVerticalFOVDegrees = r_flashlightfov.GetFloat() - ( 16.0f * (1.0f-flScale) );
+			state.m_fHorizontalFOVDegrees = 70.0f - ( 16.0f * (1.0f-flScale) );
+			state.m_fVerticalFOVDegrees = 70.0f - ( 16.0f * (1.0f-flScale) );
 			
 			bFlicker = true;
 		}
@@ -316,17 +316,27 @@ void CFlashlightEffect::UpdateLightNew(const Vector &vecPos, const Vector &vecFo
 	if ( bFlicker == false )
 	{
 		state.m_fLinearAtten = r_flashlightlinear.GetFloat();
-		state.m_fHorizontalFOVDegrees = r_flashlightfov.GetFloat();
-		state.m_fVerticalFOVDegrees = r_flashlightfov.GetFloat();
+		// HL2SB (2026-09-28, GMod reference): GMod HARDCODES the light FOV at
+		// 70 -- its r_flashlightfov convar (default 60) is dead.  Stock read
+		// the cvar here (45), which read as a narrow dim cone next to GMod.
+		state.m_fHorizontalFOVDegrees = 70.0f;
+		state.m_fVerticalFOVDegrees = 70.0f;
 	}
 
 	state.m_fConstantAtten = r_flashlightconstant.GetFloat();
 	state.m_Color[0] = 1.0f;
 	state.m_Color[1] = 1.0f;
 	state.m_Color[2] = 1.0f;
-	state.m_Color[3] = r_flashlightambient.GetFloat();
-	state.m_NearZ = r_flashlightnear.GetFloat() + m_flDistMod;	// Push near plane out so that we don't clip the world when the flashlight pulls back 
-	state.m_FarZ = r_flashlightfar.GetFloat();
+	// HL2SB (2026-09-28, GMod reference): GMod hardcodes the 4th color channel
+	// to 1.0 -- the projected-light shader uses it as the ambient/wash term;
+	// stock fed r_flashlightambient here (default 0.0), so our cone lit
+	// surfaces with no wash at all.  This is the main "GMod flashlight is so
+	// bright" difference.
+	state.m_Color[3] = 1.0f;
+	state.m_NearZ = r_flashlightnear.GetFloat() + m_flDistMod;	// Push near plane out so that we don't clip the world when the flashlight pulls back
+	// HL2SB (2026-09-28, GMod reference): GMod hardcodes the light FarZ at
+	// 2048 (the r_flashlightfar cvar only feeds the pull-back trace).
+	state.m_FarZ = 2048.0f;
 	state.m_bEnableShadows = r_flashlightdepthtexture.GetBool();
 	state.m_flShadowMapResolution = r_flashlightdepthres.GetInt();
 
