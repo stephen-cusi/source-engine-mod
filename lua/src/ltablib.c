@@ -84,7 +84,16 @@ static int tinsert (lua_State *L) {
     }
   }
   lua_seti(L, 1, pos);  /* t[pos] = v */
-  return 0;
+  /* HL2SB (2026-09-29): GLua semantics - GMod's table.insert RETURNS the index
+     it inserted at (GMod's ltablib is the Lua 5.0 form; its whole
+     lua/includes/modules/undo.lua id scheme - CallOnRemove("undo"..id),
+     gmod_undonum, the client undo list keys - depends on
+     local id = table.insert(...) answering the new position).  Vanilla 5.4
+     returns nothing, which made undo's entity removal notification
+     registration raise "attempt to concatenate a nil value (local 'id')"
+     and silently dropped every CallOnRemove. */
+  lua_pushinteger(L, pos);
+  return 1;
 }
 
 

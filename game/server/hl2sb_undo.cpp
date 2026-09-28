@@ -3,27 +3,32 @@
 // Purpose: Bridge between the engine's spawn console commands and Garry's
 //          Mod's Lua undo module.
 //
-//          The undo stack is NOT implemented here any more.  It is GMod's
-//          lua/includes/modules/undo.lua, loaded from lua/includes/modules/ on
-//          both realms: it owns the per-player stack, the CanCreateUndo /
-//          PreUndo / PostUndo / CanUndo force conditions, the OnUndo client
-//          notification and the `undo` / `gmod_undo` / `gmod_undonum` console
-//          commands.
+//          The undo stack is NOT implemented here.  It is GMod's
+//          lua/includes/modules/undo.lua, loaded on both realms: it owns the
+//          per-player stack, the CanCreateUndo / PreUndo / PostUndo / CanUndo
+//          force conditions, the OnUndo client notification and the `undo` /
+//          `gmod_undo` / `gmod_undonum` console commands.  GMod itself has no
+//          C++ undo at all (lua_shared.dll's 151 exports and both game DLLs
+//          contain zero undo symbols - audited 2026-09-29); its recording call
+//          sites are Lua (gamemodes/sandbox/gamemode/commands.lua).  This
+//          file therefore only reproduces those call sites for the spawn
+//          commands the fork moved into the engine:
 //
-//          The previous C++ stack kept a second, private copy of all of that
-//          and registered the same `hl2sb_undo` / `hl2sb_undoclear` command
-//          names as the Lua module, so one silently shadowed the other and the
-//          command could drain an empty stack.
+//            prop_* entity (commands.lua:302-305, 165-168, 329-332):
+//              undo.Create( <entity class> )
+//                undo.SetPlayer( ply )
+//                undo.AddEntity( e )
+//              undo.Finish( "#<entity class> (<model path>)" )
 //
-//          This file now only lets `ent_create` / `prop_physics_create`
-//          (engine console commands, not Lua) register what they spawned:
+//            NPC / SENT / Vehicle (commands.lua:638-644, 876-882, 1120-1124):
+//              undo.Create( <category> )
+//                undo.SetPlayer( ply )
+//                undo.AddEntity( e )
+//                undo.SetCustomUndoText( "Undone <display>" )
+//              undo.Finish( "#undo.generic.<npc|entity|vehicle> (<display>)" )
 //
-//              undo.Create( name )
-//              undo.AddEntity( ent )
-//              undo.SetPlayer( ply )
-//              undo.Finish( name )
-//
-//          which is exactly what a GMod spawnmenu does from Lua.
+//          The call ORDER is GMod's order (SetPlayer before AddEntity, and
+//          SetCustomUndoText between AddEntity and Finish).
 //
 //===========================================================================//
 
@@ -62,14 +67,6 @@ static void HL2SB_CallUndoFunc( lua_State *pL, const char *pszFunc, int nArgs )
 	// func followed by its arguments.
 	lua_insert( pL, -( nArgs + 1 ) );
 
-	// HL2SB: report the failure.
-	//
-	// This used to be a bare `luasrc_pcall( pL, nArgs, 0, 0 );` -- return value
-	// discarded, error object left unread.  Every failure inside
-	// undo.Create / AddEntity / SetPlayer / Finish was therefore invisible, and
-	// the only symptom was the undo command later saying
-	// "no undo entry recorded" with a perfectly empty stack.  Now the Lua error
-	// names itself in ds_debug.log.
 	int iStatus = luasrc_pcall( pL, nArgs, 0, 0 );
 	if ( iStatus != 0 )
 	{
@@ -80,100 +77,182 @@ static void HL2SB_CallUndoFunc( lua_State *pL, const char *pszFunc, int nArgs )
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: HL2SB_UndoRecord - register a freshly spawned entity with GMod's
-//          Lua undo module as one undoable action.
+// Purpose: Shared preamble: validates, then runs GMod's
+//
+//          undo.Create( pszCreateName ); undo.SetPlayer( ply ); undo.AddEntity( e )
+//
+//          in GMod's order.  Leaves [ undo ] on the stack and returns true;
+//          restores the stack and returns false on any rejection.
 //-----------------------------------------------------------------------------
-// 2-arg overload for the pre-existing callers (props.cpp, baseentity.cpp):
-// classname label, exactly the old behavior.
-void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
+static bool HL2SB_UndoPrefix( CBasePlayer *pOwner, CBaseEntity *pEnt,
+                              const char *pszCreateName, const char *pszWhat )
 {
-	HL2SB_UndoRecord( pOwner, pEnt, NULL );
-}
-
-void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt, const char *pszLabel )
-{
-	// HL2SB: log every entry, not just the failures.
-	//
-	// The failure prints below only fire once the call is already inside, so a
-	// silent run was ambiguous: "HL2SB_UndoRecord was never called" (the spawn
-	// command did not create anything -- CreatePhysicsProp returns NULL when the
-	// model is missing) looks exactly like "it was called and worked".  Those
-	// two need completely different fixes, so say which one it is.
 	if ( !pEnt )
 	{
-		Warning( "[HL2SB undo] HL2SB_UndoRecord: entity is NULL (the spawn failed -- model missing?), nothing recorded\n" );
-		return;
+		Warning( "[HL2SB undo] HL2SB_UndoRecord(%s): entity is NULL (the spawn failed -- model missing?), nothing recorded\n", pszWhat );
+		return false;
 	}
 	if ( !pOwner )
 	{
-		Warning( "[HL2SB undo] HL2SB_UndoRecord: owner is NULL for %s, nothing recorded\n", pEnt->GetClassname() );
-		return;
+		Warning( "[HL2SB undo] HL2SB_UndoRecord(%s): owner is NULL for %s, nothing recorded\n", pszWhat, pEnt->GetClassname() );
+		return false;
 	}
 
-	// HL2SB: never put an entity that is already gone into the undo stack.
-	//
-	// The undo stack is meant to be run LATER, so anything recorded here has to
-	// stay reachable until then.  A spawn that DispatchSpawn() gave up on is
-	// marked for deletion on the spot (a vehicle whose `vehiclescript` does not
-	// parse does exactly that: CFourWheelVehiclePhysics::Initialize ->
-	// UTIL_Remove), and recording it would leave `undo` holding a corpse.  With
-	// undo.lua's UndoValid() made real again, Do_Undo() would skip it -- but it
-	// must never get in there in the first place.
-	//
-	// IsEntityPtr() compares pointers in the global entity list without
-	// dereferencing them, so unlike IsMarkedForDeletion() it is safe even if the
-	// entity has already been freed.
+	// Never put an entity that is already gone into the undo stack: the stack
+	// is run LATER, and a spawn DispatchSpawn gave up on (a vehicle whose
+	// `vehiclescript` does not parse UTIL_Remove's itself inside
+	// CFourWheelVehiclePhysics::Initialize) would otherwise leave `undo`
+	// holding a corpse.
 	if ( pEnt->IsMarkedForDeletion() || !gEntList.IsEntityPtr( pEnt ) )
 	{
-		Warning( "[HL2SB undo] HL2SB_UndoRecord: %s is already marked for deletion or no longer in the entity list, nothing recorded\n",
-				 pEnt->GetClassname() );
-		return;
+		Warning( "[HL2SB undo] HL2SB_UndoRecord(%s): %s is already marked for deletion or no longer in the entity list, nothing recorded\n",
+				 pszWhat, pEnt->GetClassname() );
+		return false;
 	}
-
-	if ( cvar && cvar->FindVar( "hl2sb_hud_debug" ) && cvar->FindVar( "hl2sb_hud_debug" )->GetInt() != 0 )
-		Warning( "[HL2SB undo] HL2SB_UndoRecord( %s, %s )\n", pOwner->GetPlayerName(), pEnt->GetClassname() );
 
 	lua_State *pL = L;
 	if ( !pL )
-		return;
-
-	// HL2SB: the spawn menu passes the display name the entry was registered
-	// with ("Jeep", "wood_crate001a", the NPC pack's own label) -- a menu-spawned
-	// prop otherwise undid as "prop_physics" no matter which prop it was.
-	const char *pszName = ( pszLabel != NULL && pszLabel[ 0 ] != '\0' ) ? pszLabel : pEnt->GetClassname();
-	if ( !pszName || !pszName[ 0 ] )
-		pszName = "entity";
-
-	const int nBase = lua_gettop( pL );
+		return false;
 
 	lua_getglobal( pL, "undo" );					// [ undo ]
 	if ( !lua_istable( pL, -1 ) )
 	{
-		// HL2SB: same reasoning as the pcall report below -- say WHY the record
-		// is being dropped instead of returning in silence.  "undo is nil" means
-		// lua/includes/modules/undo.lua never ran in this Lua state, which is a
-		// completely different problem from an error inside undo.Finish().
 		Warning( "[HL2SB undo] global `undo` is %s, not a table -- cannot record %s\n",
-			luaL_typename( pL, -1 ), pszName );
-		lua_settop( pL, nBase );
-		return;
+				 luaL_typename( pL, -1 ), pszCreateName );
+		lua_pop( pL, 1 );
+		return false;
 	}
 
 	// undo.Create( name )
-	lua_pushstring( pL, pszName );
+	lua_pushstring( pL, pszCreateName );
 	HL2SB_CallUndoFunc( pL, "Create", 1 );
+
+	// undo.SetPlayer( ply )   -- GMod's order: owner first, then the entity.
+	lua_pushplayer( pL, pOwner );
+	HL2SB_CallUndoFunc( pL, "SetPlayer", 1 );
 
 	// undo.AddEntity( ent )
 	lua_pushentity( pL, pEnt );
 	HL2SB_CallUndoFunc( pL, "AddEntity", 1 );
 
-	// undo.SetPlayer( ply )
-	lua_pushplayer( pL, pOwner );
-	HL2SB_CallUndoFunc( pL, "SetPlayer", 1 );
+	return true;
+}
 
-	// undo.Finish( name ) -- NiceText shown by the client notification
-	lua_pushstring( pL, pszName );
-	HL2SB_CallUndoFunc( pL, "Finish", 1 );
+//-----------------------------------------------------------------------------
+// Purpose: GMod's prop grammar (commands.lua:302-305).  The undo LIST entry
+//          shows the class with the MODEL PATH in parentheses, never the
+//          spawn-menu label - that is GMod's behavior and the reason the
+//          client's Undo_AddUndo receiver has a "#token (secondary)"
+//          localizer for exactly this string shape.
+//-----------------------------------------------------------------------------
+void HL2SB_UndoRecordProp( CBasePlayer *pOwner, CBaseEntity *pEnt )
+{
+	const char *pszClass = ( pEnt != NULL && pEnt->GetClassname() != NULL ) ? pEnt->GetClassname() : "prop_physics";
+	const char *pszModel = ( pEnt != NULL && pEnt->GetModelName() != NULL_STRING )
+		? STRING( pEnt->GetModelName() )
+		: pszClass;
 
-	lua_settop( pL, nBase );
+	if ( !HL2SB_UndoPrefix( pOwner, pEnt, pszClass, "prop" ) )
+		return;
+
+	// undo.Finish( "#<class> (<model>)" )   (commands.lua:305)
+	char szNiceText[ 512 ];
+	Q_snprintf( szNiceText, sizeof( szNiceText ), "#%s (%s)", pszClass, pszModel );
+
+	lua_pushstring( L, szNiceText );
+	HL2SB_CallUndoFunc( L, "Finish", 1 );
+
+	lua_pop( L, 1 );		// the undo table
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: GMod's category grammar for "NPC" / "SENT" / "Vehicle".
+//          pszDisplay is the registry title (GMod's NiceName / PrintName /
+//          vehicle.Name), falling back to the class name when empty; props
+//          never take this route (see HL2SB_UndoRecordProp).
+//-----------------------------------------------------------------------------
+void HL2SB_UndoRecordGeneric( CBasePlayer *pOwner, CBaseEntity *pEnt,
+                              const char *pszKind, const char *pszDisplay )
+{
+	if ( !pszKind )
+		pszKind = "SENT";
+
+	// GMod's translation-key noun per category (commands.lua:644, 882, 1124).
+	const char *pszNoun = "entity";
+	if ( Q_stricmp( pszKind, "NPC" ) == 0 )
+		pszNoun = "npc";
+	else if ( Q_stricmp( pszKind, "Vehicle" ) == 0 )
+		pszNoun = "vehicle";
+
+	char szDisplay[ 256 ];
+	if ( pszDisplay && pszDisplay[ 0 ] )
+		Q_strncpy( szDisplay, pszDisplay, sizeof( szDisplay ) );
+	else if ( pEnt && pEnt->GetClassname() )
+		Q_strncpy( szDisplay, pEnt->GetClassname(), sizeof( szDisplay ) );
+	else
+		Q_strncpy( szDisplay, "entity", sizeof( szDisplay ) );
+
+	if ( !HL2SB_UndoPrefix( pOwner, pEnt, pszKind, pszKind ) )
+		return;
+
+	// undo.SetCustomUndoText( "Undone <display>" )   (commands.lua:642, 880, 1123)
+	char szCustom[ 320 ];
+	Q_snprintf( szCustom, sizeof( szCustom ), "Undone %s", szDisplay );
+
+	lua_pushstring( L, szCustom );
+	HL2SB_CallUndoFunc( L, "SetCustomUndoText", 1 );
+
+	// undo.Finish( "#undo.generic.<noun> (<display>)" )
+	char szNiceText[ 512 ];
+	Q_snprintf( szNiceText, sizeof( szNiceText ), "#undo.generic.%s (%s)", pszNoun, szDisplay );
+
+	lua_pushstring( L, szNiceText );
+	HL2SB_CallUndoFunc( L, "Finish", 1 );
+
+	lua_pop( L, 1 );		// the undo table
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: The raw engine console commands' entry point (CC_Ent_Create /
+//          CC_Prop_Physics_Create) and the generic gm_spawn path: classify by
+//          the entity's own class and emit GMod's grammar.  GMod's C++ does
+//          not record undo for these commands at all (its menu spawns go
+//          through Lua helpers); this keeps "anything a player creates is
+//          undoable" with GMod's string shapes.
+//-----------------------------------------------------------------------------
+void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt, const char *pszLabel )
+{
+	const char *pszClass = ( pEnt != NULL && pEnt->GetClassname() != NULL ) ? pEnt->GetClassname() : "";
+
+	// Check the vehicle prefixes BEFORE the prop_ prefix: prop_vehicle_* would
+	// otherwise be swallowed by the prop branch.
+	if ( Q_stricmp( pszClass, "prop_vehicle_prisoner_pod" ) == 0 ||
+		 Q_strnicmp( pszClass, "prop_vehicle_", 13 ) == 0 ||
+		 Q_strnicmp( pszClass, "vehicle_", 8 ) == 0 )
+	{
+		HL2SB_UndoRecordGeneric( pOwner, pEnt, "Vehicle", pszLabel );
+		return;
+	}
+
+	if ( Q_strnicmp( pszClass, "npc_", 4 ) == 0 )
+	{
+		HL2SB_UndoRecordGeneric( pOwner, pEnt, "NPC", pszLabel );
+		return;
+	}
+
+	// Any prop_* class (prop_physics / prop_ragdoll / prop_dynamic ...) gets
+	// GMod's prop grammar; the label is dropped exactly the way GMod's
+	// SpawnProp drops the menu title (the MODEL is shown, not the label).
+	if ( Q_strnicmp( pszClass, "prop_", 5 ) == 0 )
+	{
+		HL2SB_UndoRecordProp( pOwner, pEnt );
+		return;
+	}
+
+	HL2SB_UndoRecordGeneric( pOwner, pEnt, "SENT", pszLabel );
+}
+
+void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
+{
+	HL2SB_UndoRecord( pOwner, pEnt, NULL );
 }
