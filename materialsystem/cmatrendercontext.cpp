@@ -196,15 +196,23 @@ InitReturnVal_t CMatRenderContextBase::Init( )
 		// ~40 times (ExecuteNTimes printed 4) and a caller NULL-dereferenced
 		// (dumps/crash_20260924_223952_1_accessviolation.mdmp).
 		//
-		// HL2SB (2026-09-25): 4.4 MB (GMod's size) STILL ran dry once the
-		// First Person Body addon is active -- its per-frame shadow-body
-		// RenderScene pass roughly doubles per-frame render data on top of
-		// the halo pipeline (npc_antlion grab, dumps/crash_20260925_004916).
-		// The pool is a per-frame linear allocator wiped every frame, so the
-		// extra resident cost is just the reservation: give hl2sb 2x GMod.
+		// HL2SB (2026-09-25): 4.4 MB STILL ran dry once the First Person Body
+		// addon is active -- its per-frame shadow-body RenderScene pass roughly
+		// doubles per-frame render data on top of the halo pipeline (npc_antlion
+		// grab, dumps/crash_20260925_004916). The pool is a per-frame linear
+		// allocator wiped every frame, so the extra resident cost is just the
+		// reservation: give hl2sb 2x GMod.
+		//
+		// HL2SB (2026-09-28): reference GMod's win64 materialsystem.dll --
+		// CMatRenderContextBase::Init hardcodes Init( 0x1000000, 0x10000,
+		// 0, 32 ) on BOTH sm_RenderData stacks, i.e. 16 MB / 64 KB commit
+		// with no gamedir special case (the old "4.4 MB" claim was wrong).
+		// 8.8 MB still ran dry under FPB + gm_an_untold_story
+		// (CMeshDX8::LockVertexBuffer failure dialog). Match GMod exactly.
 		if ( gamedir && ( !Q_stricmp( "garrysmod", gamedir ) || !Q_stricmp( "hl2sb", gamedir ) ) )
 		{
-			nSize = 8800 * 1024;
+			nSize = 16 * 1024 * 1024;
+			nCommitSize = 64 * 1024;
 		}
 
 		sm_RenderData[0].Init( nSize, nCommitSize, 0, 32 );
