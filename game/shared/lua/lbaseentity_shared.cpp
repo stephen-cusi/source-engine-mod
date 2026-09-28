@@ -2760,6 +2760,19 @@ static int CBaseEntity_PhysicsInitSphere (lua_State *L) {
   const float flRadius = luaL_checknumber(L, 2);
   const char *pszSurfaceProp = luaL_optstring(L, 3, "default");
 
+  // HL2SB (2026-09-28): GMod parity, from the reference GMod win64 server.dll
+  // binding ().  GMod creates nothing for a non-positive radius,
+  // and a successful create unconditionally forces SetMoveType(MOVETYPE_VPHYSICS)
+  // and SetSolid(SOLID_VPHYSICS) BEFORE attaching the object.  Without those
+  // two, a scripted entity whose anim-SENT spawn defaults did not fire keeps a
+  // non-vphysics solid and collides through its BOX collision bounds -- the
+  // corners of a radius-sized box protrude radius*sqrt(3), so the ball reacts
+  // visibly bigger than GMod's pure sphere.
+  if ( flRadius <= 0.0f ) {
+    lua_pushnil(L);
+    return 1;
+  }
+
   solid_t solid;
   memset(&solid, 0, sizeof(solid));
   solid.params = g_PhysDefaultObjectParams;
@@ -2775,6 +2788,9 @@ static int CBaseEntity_PhysicsInitSphere (lua_State *L) {
   IPhysicsObject *pObject = PhysSphereCreate(pEntity, flRadius, pEntity->GetAbsOrigin(), solid);
 
   if (pObject != NULL) {
+    // HL2SB: GMod sets both before VPhysicsSetObject (see above).
+    pEntity->SetMoveType( MOVETYPE_VPHYSICS );
+    pEntity->SetSolid( SOLID_VPHYSICS );
     pEntity->VPhysicsSetObject(pObject);
     pObject->Wake();
   }

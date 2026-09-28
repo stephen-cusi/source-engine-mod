@@ -864,7 +864,34 @@ void CBaseScripted::UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, U
 
 void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent )
 {
+#ifdef LUA_SDK
+	// HL2SB (2026-09-28): GMod gates the default physics sound / dust path for
+	// SCRIPTED entities behind the script's own "PhysicsSounds" field --
+	// reference GMod win64 server.dll (): the vanilla-style
+	// sound player (: PhysCollisionSound + dust + the material
+	// 'X' check) only runs when the ENT table HAS that field.  sent_ball
+	// defines no PhysicsSounds, so in GMod its ball bounces with nothing but
+	// the balloon_pop_cute sound from its own Lua PhysicsCollide; our
+	// unconditional BaseClass call added the solidmetal clank on every
+	// bounce.  Presence is the whole check -- the value is never read, which
+	// is also why no GMod addon in the wild sets it to anything but true.
+	bool bDefaultPhysicsSounds = false;
+	if ( L != NULL && m_nTableReference >= 0 )
+	{
+		lua_getref( L, m_nTableReference );
+		if ( lua_istable( L, -1 ) )
+		{
+			bDefaultPhysicsSounds = luasrc_PushScriptField( L, -1, "PhysicsSounds" );
+			lua_pop( L, 1 );
+		}
+		lua_pop( L, 1 );
+	}
+
+	if ( bDefaultPhysicsSounds )
+		BaseClass::VPhysicsCollision( index, pEvent );
+#else
 	BaseClass::VPhysicsCollision( index, pEvent );
+#endif
 
 #ifdef LUA_SDK
 	if ( pEvent == NULL || index < 0 || index > 1 )
