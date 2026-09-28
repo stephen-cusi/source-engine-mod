@@ -1552,12 +1552,22 @@ static int CBaseEntity_PhysicsInit (lua_State *L) {
 // GM:PlayerDeath.  See CBasePlayer_KillSilent in lbaseplayer_shared.cpp.
 // HL2SB GMod compat: Entity:OBBCenter() and Entity:StopSound( name ).
 //
-// Both are documented GMod entity methods the windgrin_npc nextbot calls on its
-// hot paths (its ceiling-unstick and its chase music), and both raised "attempt
-// to call a nil value".  OBBCenter is this engine's WorldSpaceCenter() under
-// GMod's name; StopSound is CBaseEntity::StopSound().
+// StopSound is CBaseEntity::StopSound().  Both were originally bound because
+// the windgrin_npc nextbot calls them on its hot paths.
+//
+// OBBCenter: GMod returns the LOCAL OBB center (reference from x64 server.dll
+// : result = mins + 0.5 * (maxs - mins), no rotation, no origin
+// added) -- which is why every GMod addon wraps it as
+//     ent:LocalToWorld( ent:OBBCenter() )
+// and that pattern runs throughout this tree (scp173's attack trace, path
+// check and FaceVictim, hitnumbers, nukepack, npc_verity, the waterizer,
+// properties).  This binding used to answer WorldSpaceCenter() (absolute
+// world) instead, so all of those calls rotated and re-added the origin onto
+// an already-world point: scp173's Attack aimed its trace at garbage, hit the
+// world, and the addon's "if (not tr.Hit)" gate then silently ate every kill
+// attempt -- players and NPCs alike, with no error anywhere.
 static int CBaseEntity_OBBCenter (lua_State *L) {
-  lua_pushvector(L, luaL_checkentity(L, 1)->WorldSpaceCenter());
+  lua_pushvector(L, luaL_checkentity(L, 1)->CollisionProp()->OBBCenter());
   return 1;
 }
 

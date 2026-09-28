@@ -171,8 +171,30 @@ static int CGameTrace___index (lua_State *L) {
     lua_pushboolean(L, tr.allsolid);
   else if (Q_strcmp(field, "FractionLeftSolid") == 0)
     lua_pushnumber(L, tr.fractionleftsolid);
+  // HL2SB GMod compat: GMod's "Normal" is the DIRECTION of the trace (unit
+  // endpos - startpos), NOT the impact plane normal -- that lives under
+  // "HitNormal".  reference from GMod x64 server.dll: the shared trace-table
+  // builder used by util.TraceLine/TraceHull/TraceEntity/TraceEntityHull
+  // normalizes endpos - startpos, and on a zero-length difference falls back
+  // to the negated plane normal.  scp173 keys its entire vision cone on
+  //     local aimVec = currVictim:GetEyeTraceNoCursor().Normal
+  // with plane.normal instead (or (0,0,0) when the eye ray misses), the
+  // view-offset angle came out ~180 degrees while the player stared straight
+  // at the statue, so it teleported and neck-snapped under observation.
   else if (Q_strcmp(field, "Normal") == 0)
-    lua_pushvector(L, tr.plane.normal);
+  {
+    Vector vecDir = tr.endpos - tr.startpos;
+    float flLen = vecDir.Length();
+    if ( flLen != 0.0f )
+    {
+      vecDir /= flLen;
+    }
+    else
+    {
+      vecDir.Init( -tr.plane.normal.x, -tr.plane.normal.y, -tr.plane.normal.z );
+    }
+    lua_pushvector(L, vecDir);
+  }
   else {
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);

@@ -381,6 +381,9 @@ static int CBasePlayer_GetVehicle (lua_State *L) {
 
 // HL2SB GMod SWEP compat: GMod Owner:GetEyeTrace() -> trace table.
 // Mirrors util.TraceLine from the eye along the aim vector a long distance.
+// Mask: GMod's Lua GetEyeTrace/GetEyeTraceNoCursor traces through
+// util.GetPlayerTrace, whose table carries no "mask" key, so the engine
+// default MASK_SOLID applies (reference, not MASK_SHOT).
 static int CBasePlayer_GetEyeTrace (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
   Vector vForward;
@@ -389,7 +392,7 @@ static int CBasePlayer_GetEyeTrace (lua_State *L) {
   Vector vecEnd = vecEye + vForward * MAX_TRACE_LENGTH;
 
   trace_t tr;
-  UTIL_TraceLine(vecEye, vecEnd, MASK_SHOT, pPlayer, COLLISION_GROUP_NONE, &tr);
+  UTIL_TraceLine(vecEye, vecEnd, MASK_SOLID, pPlayer, COLLISION_GROUP_NONE, &tr);
   lua_pushtrace(L, tr);
   return 1;
 }

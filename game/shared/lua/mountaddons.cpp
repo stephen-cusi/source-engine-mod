@@ -25,14 +25,34 @@
 //-----------------------------------------------------------------------------
 static bool s_bDisabledAddonsLoaded = false;
 static CUtlVector< CUtlString > s_DisabledAddons;
+// HL2SB (2026-09-28): mtime of the list file at the last read, for the
+// staleness check below.
+static time_t s_nDisabledAddonsFileTime = 0;
 
 static void HL2SB_AddonsDisabledPath( char *pOut, int nOutSize );
 
 static void HL2SB_LoadDisabledAddons( void )
 {
-	if ( s_bDisabledAddonsLoaded )
+	// HL2SB (2026-09-28): "read once per process" was wrong in practice.  The
+	// main-menu Addons dialog / addons page rewrites the file at RUNTIME and
+	// only the realm that ran the dialog updates its in-memory copy; every
+	// other copy (the SERVER's, above all) keeps the boot-time list until the
+	// whole application exits.  Re-enabling scp173 at the menu then starting
+	// a new game in the same process left the server skipping its entities
+	// ("npc_scp173" unknown / gm_spawn no such class) while the client loaded
+	// them fine -- a per-realm split that survived any number of map restarts.
+	// The file's mtime is the shared invalidation signal both realms can see.
+	time_t fileTime = g_pFullFileSystem->GetFileTime( "addons_disabled.txt", "MOD" );
+	if ( s_bDisabledAddonsLoaded && fileTime == s_nDisabledAddonsFileTime )
 		return;
+
+	if ( s_bDisabledAddonsLoaded )
+	{
+		Msg( "[HL2SB] addons: addons_disabled.txt changed on disk - reloading the disabled list\n" );
+		s_DisabledAddons.RemoveAll();
+	}
 	s_bDisabledAddonsLoaded = true;
+	s_nDisabledAddonsFileTime = fileTime;
 
 	// Read through the filesystem (pathID MOD) so "where is the mod dir" is
 	// the ENGINE's answer, not ours.  The old form built the path from

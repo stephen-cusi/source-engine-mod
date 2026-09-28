@@ -214,7 +214,7 @@ static int luasrc_SharedRandomAngle (lua_State *L) {
 class CLuaTraceFilter : public ITraceFilter
 {
 public:
-	CLuaTraceFilter( void ) { m_L = NULL; m_nRef = LUA_NOREF; m_nType = LUA_TNIL; m_pPassEnt = NULL; m_nCollisionGroup = COLLISION_GROUP_NONE; }
+	CLuaTraceFilter( void ) { m_L = NULL; m_nRef = LUA_NOREF; m_nType = LUA_TNIL; m_pPassEnt = NULL; m_nCollisionGroup = COLLISION_GROUP_NONE; m_bIgnoreWorld = false; }
 
 	void Setup( lua_State *pL, int nIndex, IHandleEntity *pPassEnt, int nCollisionGroup )
 	{
@@ -254,7 +254,23 @@ public:
 
 			lua_pop( pL, 1 );
 		}
+		else
+		{
+			// entity (or nil / the NULL sentinel): on the plain engine path an
+			// entity filter went to CTraceFilterSimple; when the trace is routed
+			// through this filter (because of `ignoreworld`) it still has to be
+			// honoured, so keep it as the pass entity.
+			CBaseEntity *pEnt = lua_toentity( pL, nIndex );
+			if ( pEnt != NULL )
+				m_pPassEnt = pEnt;
+		}
 	}
+
+	// HL2SB GMod compat: GMod's util.TraceLine family takes `ignoreworld = true`
+	// (the parser stores it next to the filter fields, and scp173's
+	// util.TraceLineEx sets it after the first world hit so later passes reach
+	// entities the world would shadow).
+	void SetIgnoreWorld( bool bIgnoreWorld ) { m_bIgnoreWorld = bIgnoreWorld; }
 
 	void Release( void )
 	{
@@ -265,12 +281,20 @@ public:
 		m_nRef = LUA_NOREF;
 		m_nType = LUA_TNIL;
 		m_ignoreList.RemoveAll();
+		m_bIgnoreWorld = false;
 	}
 
 	virtual TraceType_t GetTraceType( void ) const { return TRACE_EVERYTHING; }
 
 	virtual bool ShouldHitEntity( IHandleEntity *pHandleEntity, int contentsMask )
 	{
+		if ( m_bIgnoreWorld )
+		{
+			CBaseEntity *pEnt = EntityFromEntityHandle( pHandleEntity );
+			if ( pEnt != NULL && pEnt->IsWorld() )
+				return false;
+		}
+
 		if ( !StandardFilterRules( pHandleEntity, contentsMask ) )
 			return false;
 
@@ -320,6 +344,7 @@ private:
 	int						 m_nType;
 	IHandleEntity			*m_pPassEnt;
 	int						 m_nCollisionGroup;
+	bool					 m_bIgnoreWorld;
 	CUtlVector< CBaseEntity * > m_ignoreList;
 };
 
@@ -353,7 +378,13 @@ static bool luasrc_TraceArgsFromTable (lua_State *L, Vector *pStart, Vector *pEn
   *pEnd = vec3_origin;
   *pMins = vec3_origin;
   *pMaxs = vec3_origin;
-  *pMask = MASK_SHOT;
+  // HL2SB GMod compat: GMod's util.TraceLine/TraceHull default mask when the
+  // data table carries no "mask" key is MASK_SOLID (0x0200400B): the literal
+  // loaded into r8 as the fallback of the "mask" key read in GMod x64
+  // server.dll's shared trace argument parser.  MASK_SHOT additionally matches
+  // CONTENTS_DEBRIS/CONTENTS_HITBOX, so the old default stopped eye traces on
+  // gibs that GMod traces pass straight through.
+  *pMask = MASK_SOLID;
   *ppFilter = NULL;
   *pCollisionGroup = COLLISION_GROUP_NONE;
 
@@ -381,15 +412,30 @@ static bool luasrc_TraceArgsFromTable (lua_State *L, Vector *pStart, Vector *pEn
   if ( lua_isnumber( L, -1 ) ) *pCollisionGroup = (int)lua_tointeger( L, -1 );
   lua_pop( L, 1 );
 
+  // HL2SB GMod compat: `ignoreworld = true` -- GMod's parser reads it right
+  // after collisiongroup and before filter (x64 server.dll trace argument
+  // parser), and keeps it beside the filter fields.  With it set the world
+  // stops participating in the trace, which util.TraceLineEx relies on: after
+  // the first world hit it turns this on so subsequent passes see past the
+  // world instead of stopping on it again.
+  bool bIgnoreWorld = false;
+  lua_getfield( L, 1, "ignoreworld" );
+  if ( !lua_isnil( L, -1 ) ) bIgnoreWorld = lua_toboolean( L, -1 ) != 0;
+  lua_pop( L, 1 );
+
   // `filter` is read LAST: the Lua filter below wants the collision group.
   s_bLuaTraceFilterActive = false;
   s_LuaTraceFilter.Release();
 
   lua_getfield( L, 1, "filter" );
 
-  if ( lua_isfunction( L, -1 ) || lua_istable( L, -1 ) )
+  if ( lua_isfunction( L, -1 ) || lua_istable( L, -1 ) || bIgnoreWorld )
   {
+    // Routing through the Lua filter either because the filter IS a Lua value
+    // or because ignoreworld needs a ShouldHitEntity hook.  Entity and nil
+    // filters are captured inside Setup.
     s_LuaTraceFilter.Setup( L, -1, NULL, *pCollisionGroup );
+    s_LuaTraceFilter.SetIgnoreWorld( bIgnoreWorld );
     s_bLuaTraceFilterActive = true;
   }
   else
