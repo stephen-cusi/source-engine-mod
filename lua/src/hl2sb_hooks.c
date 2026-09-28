@@ -342,13 +342,26 @@ static const char *const kHookNames[] = {
 
 #define HL2SB_HOOK_COUNT ( (int)( sizeof( kHookNames ) / sizeof( kHookNames[0] ) ) )
 
-extern "C" LUA_API const char *HL2SB_GetHookName( int id )
+/* Linkage guards, same pattern as hl2sb_binmod.c: this file is real C on
+ * gcc/clang (a bare `extern "C"` is a syntax error there -- the CI break
+ * this block fixes), C++ under MSVC's /TP, and both need the undecorated
+ * names because hud_killfeed.cpp resolves them across the DLL boundary.
+ * LUA_API alone carries dllexport (Windows) / default visibility (gcc). */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+LUA_API const char *HL2SB_GetHookName( int id )
 {
   if ( id < 0 || id >= HL2SB_HOOK_COUNT ) return NULL;
   return kHookNames[id];
 }
 
-extern "C" LUA_API int HL2SB_GetHookCount( void )
+LUA_API int HL2SB_GetHookCount( void )
 {
   return HL2SB_HOOK_COUNT;
 }
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
