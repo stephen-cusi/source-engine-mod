@@ -190,10 +190,12 @@ private:
 
 	// HL2SB: the world yaw of the seat the player is riding (the vehicle's own
 	// `vehicle_feet_passenger0` attachment, so it is the same datum the player is
-	// seated by). The seated body is rendered at this yaw and the head pose
-	// parameters are the view relative to it; see UpdateVehicleAnimation().
+	// seated by). The seated body is rendered at the seat's FULL world orientation
+	// (this yaw plus the seat's pitch/roll - a tilted chair tilts the rider, GMod
+	// style) and the head pose parameters are the view relative to this yaw;
+	// see UpdateVehicleAnimation().
 	//
-	// ⚠ DO NOT add members to this class casually. CPlayerAnimState is embedded in the
+	// DO NOT add members to this class casually. CPlayerAnimState is embedded in the
 	// player classes, so growing it moves every member that follows it (C_HL2MP_Player's
 	// m_angEyeAngles / m_hRagdoll / m_headYawPoseParam / m_iPlayerSoundType / ... on the
 	// client, CHL2MP_Player's members on the server) - and waf does NOT recompile a

@@ -784,20 +784,38 @@ void CPlayerAnimState::UpdateVehicleAnimation( void )
 	// the chair, reported as "when you turn the view the player model turns with it" and
 	// "it sinks into the seat / the pose looks wrong".
 	//
-	// The seat datum is the vehicle's OWN `vehicle_feet_passenger0` attachment: it is
-	// what CBaseServerVehicle::GetPassengerSeatPoint() seats the player by, so the body
-	// and the seat cannot disagree. (Measured: chair world z 38.4 = the seat; the vehicle
-	// model's attachment angles carry its yaw, so a chair that has been physgunned round
-	// takes the body with it.) Nothing here is a model name.
-	// HL2SB: the seat attachment's yaw in the vehicle's own space, for the debug line at the
-	// bottom of this function (declared out here because that line sits outside the state
-	// block below).
-	float flSeatYawLocal = 0.0f;
+		// The seat datum is the vehicle's OWN `vehicle_feet_passenger0` attachment: it is
+		// what CBaseServerVehicle::GetPassengerSeatPoint() seats the player by, so the body
+		// and the seat cannot disagree. (Measured: chair world z 38.4 = the seat; the vehicle
+		// model's attachment angles carry its yaw, so a chair that has been physgunned round
+		// takes the body with it.) Nothing here is a model name.
+		//
+		// HL2SB: the datum is the seat's FULL world ORIENTATION, pitch and roll included, not
+		// just its yaw - that is the reported "put the chair on its back / tilt it and the
+		// rider ends up in the wrong place, clipping through it". The seat POINT already
+		// follows the chair's rotation (GetPassengerSeatPoint -> UTIL_ParentToWorldSpace), so
+		// rendering the body upright at that point means a flipped chair gets an upright
+		// rider floating over it. GMod's own chain leaves the tilt in (reference
+		// 2026-09-28): server CBasePlayer::GetInVehicle (win64 server.dll )
+		// writes SetAbsOrigin + SetAbsAngles with the seat point/angles from
+		// GetPassengerSeatPoint and then SetParent(vehicle, LookupAttachment(
+		// "vehicle_feet_passenger0")) - the full seat angles, once, with nothing after it
+		// zeroing pitch or roll; and GMod's client animstate ( + its pose
+		// callees) only writes pose parameters, never a render-angle member, so the drawn
+		// body takes the entity's abs angles - the chair's tilt rides into the model
+		// through the parent transform. For an UPRIGHT seat the attachment's pitch and
+		// roll are 0, so this is bit-identical to the old yaw-only pin there; only tilted
+		// seats change.
+		//
+		// HL2SB: the seat attachment's yaw in the vehicle's own space, for the debug line at the
+		// bottom of this function (declared out here because that line sits outside the state
+		// block below).
+		float flSeatYawLocal = 0.0f;
 
-	if ( m_eHL2SBVehicleAnimState != VEHICLE_ANIM_NONE )
-	{
-		float flSeatYaw = 0.0f;
-		bool bHaveSeatYaw = false;
+		if ( m_eHL2SBVehicleAnimState != VEHICLE_ANIM_NONE )
+		{
+			QAngle angSeatWorld( 0.0f, 0.0f, 0.0f );
+			bool bHaveSeat = false;
 
 		CBaseAnimating *pSeatAnim = pVehEnt ? pVehEnt->GetBaseAnimating() : NULL;
 		if ( pSeatAnim && pVehEnt )
@@ -817,54 +835,57 @@ void CPlayerAnimState::UpdateVehicleAnimation( void )
 			// The conversion is the same one the server seats the player with
 			// (CBaseServerVehicle::GetPassengerSeatPoint -> UTIL_ParentToWorldSpace), so
 			// the two realms cannot disagree about where the seat points.
-			Vector vecSeatPos;
-			QAngle angSeat;
-			if ( HL2SB_GetRestingAttachmentLocal( pSeatAnim, "vehicle_feet_passenger0", &vecSeatPos, &angSeat ) )
-			{
-				flSeatYawLocal = angSeat[YAW];
-				HL2SB_VehicleModelToWorldSpace( pVehEnt, vecSeatPos, angSeat );
-				flSeatYaw = angSeat[YAW];
-				bHaveSeatYaw = true;
+				Vector vecSeatPos;
+				QAngle angSeat;
+				if ( HL2SB_GetRestingAttachmentLocal( pSeatAnim, "vehicle_feet_passenger0", &vecSeatPos, &angSeat ) )
+				{
+					flSeatYawLocal = angSeat[YAW];
+					HL2SB_VehicleModelToWorldSpace( pVehEnt, vecSeatPos, angSeat );
+					angSeatWorld = angSeat;
+					bHaveSeat = true;
+				}
+				else if ( pSeatAnim->GetAttachment( "vehicle_feet_passenger0", vecSeatPos, angSeat ) )
+				{
+					// Fallback for a model with no sequences at all: the pose it is in, which
+					// GetAttachment() already reports in world space.
+					angSeatWorld = angSeat;
+					bHaveSeat = true;
+				}
 			}
-			else if ( pSeatAnim->GetAttachment( "vehicle_feet_passenger0", vecSeatPos, angSeat ) )
+
+			if ( !bHaveSeat && pVehEnt )
 			{
-				// Fallback for a model with no sequences at all: the pose it is in, which
-				// GetAttachment() already reports in world space.
-				flSeatYaw = angSeat[YAW];
-				bHaveSeatYaw = true;
+				// No seat attachment at all (GetPassengerSeatPoint() falls back to the
+				// vehicle origin in that case): the vehicle's own orientation IS the seat's.
+				angSeatWorld = pVehEnt->GetAbsAngles();
+				bHaveSeat = true;
 			}
-		}
 
-		if ( !bHaveSeatYaw && pVehEnt )
-		{
-			// No seat attachment at all (GetPassengerSeatPoint() falls back to the
-			// vehicle origin in that case): the vehicle's own yaw IS the seat yaw.
-			flSeatYaw = pVehEnt->GetAbsAngles()[YAW];
-			bHaveSeatYaw = true;
-		}
+			if ( !bHaveSeat )
+			{
+				// No vehicle entity to read either: keep the previous behaviour rather
+				// than inventing an orientation.
+				angSeatWorld = QAngle( 0.0f, pPlayer->GetLocalAngles()[YAW], 0.0f );
+			}
 
-		if ( !bHaveSeatYaw )
-		{
-			// No vehicle entity to read either: keep the previous behaviour rather
-			// than inventing an orientation.
-			flSeatYaw = pPlayer->GetLocalAngles()[YAW];
-		}
-
-		m_flHL2SBSeatYaw = flSeatYaw;
-		m_angRender = QAngle( 0.0f, flSeatYaw, 0.0f );
+			const float flSeatYaw = angSeatWorld[YAW];
+			m_flHL2SBSeatYaw = flSeatYaw;
+			m_angRender = angSeatWorld;
 
 #ifndef CLIENT_DLL
-		// The server owns the entity ANGLES: they are what the client receives for
-		// every remote player and what the server-side hitboxes are built from
-		// (CBaseAnimating::SetupBones() uses GetRenderAngles()), so they have to agree
-		// with the body that is drawn or shots at a seated player land on a body that
-		// is facing somewhere else. Only the YAW is changed - the pitch is left exactly
-		// as ComputePoseParam_BodyYaw() wrote it (the anim models layer it through
-		// aim_pitch). SetAbsAngles() converts to parent-relative space.
-		QAngle angSeated = pPlayer->GetAbsAngles();
-		angSeated[YAW] = flSeatYaw;
-		angSeated[ROLL] = 0.0f;
-		pPlayer->SetAbsAngles( angSeated );
+			// The server owns the entity ANGLES: they are what the client receives for
+			// every remote player and what the server-side hitboxes are built from
+			// (CBaseAnimating::SetupBones() uses GetRenderAngles()), so they have to agree
+			// with the body that is drawn or shots at a seated player land on a body that
+			// is facing somewhere else. The FULL seat orientation goes in - GMod's
+			// GetInVehicle writes the seat's pitch/yaw/roll once and never pins them back
+			// upright - so a tilted chair's hitboxes stay glued to the tilted body too.
+			// This runs after ComputePoseParam_BodyYaw()'s "Adrian" SetLocalAngles stomp
+			// in the same Update(), so the last word is the seat's. The visible nod when
+			// the rider looks up/down is unaffected: it comes from the aim_pitch pose this
+			// function writes below, not from the entity pitch. SetAbsAngles() converts to
+			// parent-relative space.
+			pPlayer->SetAbsAngles( angSeatWorld );
 #endif
 
 		// --- the head / upper body, relative to the seat ----------------------
