@@ -178,6 +178,11 @@ CCreateMultiplayerGameDialog::CCreateMultiplayerGameDialog(vgui::Panel *parent) 
 	m_pPasswordLabel = NULL;
 	m_pMaxPlayersLabel = NULL;
 	m_pFallDamageCheck = NULL;
+	m_pMaxAmmoLabel = NULL;
+	m_pMaxAmmo = NULL;
+	m_pLoadoutCheck = NULL;
+	m_pGodModeCheck = NULL;
+	m_pSuitCheck = NULL;
 
 	SetDeleteSelfOnClose(true);
 
@@ -272,6 +277,26 @@ void CCreateMultiplayerGameDialog::PerformLayout()
 	if ( m_pFallDamageCheck )
 		m_pFallDamageCheck->SetBounds( rightX, topY + 200, rightW, 24 );
 
+	// HL2SB (2026-09-28): sidebar options stack below the fall-damage row
+	// (label+input for the ammo cap, then three checkboxes), well above the
+	// start button at ~0.93 of the screen height.
+	{
+		int optY = topY + 234;
+		if ( m_pMaxAmmoLabel )
+			m_pMaxAmmoLabel->SetBounds( rightX, optY, rightW, 20 );
+		if ( m_pMaxAmmo )
+			m_pMaxAmmo->SetBounds( rightX, optY + 20, rightW, 26 );
+		optY += 54;
+		if ( m_pLoadoutCheck )
+			m_pLoadoutCheck->SetBounds( rightX, optY, rightW, 24 );
+		optY += 30;
+		if ( m_pGodModeCheck )
+			m_pGodModeCheck->SetBounds( rightX, optY, rightW, 24 );
+		optY += 30;
+		if ( m_pSuitCheck )
+			m_pSuitCheck->SetBounds( rightX, optY, rightW, 24 );
+	}
+
 	// start / back buttons at bottom
 	int btnH = (int)(sh * 0.05);
 	int btnY = sh - btnH - (int)(sh * 0.02);
@@ -333,6 +358,20 @@ void CCreateMultiplayerGameDialog::ApplySchemeSettings( vgui::IScheme *pScheme )
 		// loaded, a few lines below.
 		m_pFallDamageCheck = new CheckButton( this, "FallDamageCheck", "#HL2SB_FallDamage" );
 
+		// HL2SB (2026-09-28): singleplayer sidebar options -- GMod's new-game
+		// column (persistence file excluded).  gmod_maxammo / gmod_suit are
+		// engine convars and reach the server through cfg/listenserver.cfg;
+		// sbox_weapons / sbox_godmode are Lua convars created by
+		// gamemodes/sandbox/gamemode/init.lua, which also applies their values
+		// from ServerConfig.vdf (written by SaveConfig below, before "map").
+		m_pMaxAmmoLabel = new Label( this, "MaxAmmoLabel", "#HL2SB_MaxAmmo" );
+		m_pMaxAmmo = new TextEntry( this, "MaxAmmo" );
+		m_pMaxAmmo->SetAllowNumericInputOnly( true );
+		m_pMaxAmmo->SetMaximumCharCount( 7 );
+		m_pLoadoutCheck = new CheckButton( this, "LoadoutCheck", "#HL2SB_GiveWeapons" );
+		m_pGodModeCheck = new CheckButton( this, "GodModeCheck", "#HL2SB_GodMode" );
+		m_pSuitCheck = new CheckButton( this, "SuitCheck", "#HL2SB_EnableHEV" );
+
 		m_pStartButton = new Button( this, "StartButton", "#GameUI_Start" );
 		m_pStartButton->SetCommand( "CreateGame" );
 		m_pStartButton->SetVisible( true );
@@ -357,6 +396,20 @@ void CCreateMultiplayerGameDialog::ApplySchemeSettings( vgui::IScheme *pScheme )
 
 		if ( m_pFallDamageCheck )
 			m_pFallDamageCheck->SetSelected( GetFallDamage() );
+
+		// HL2SB sidebar: restore the four new options the same way.
+		if ( m_pMaxAmmo )
+		{
+			char szAmmo[16];
+			Q_snprintf( szAmmo, sizeof( szAmmo ), "%d", GetMaxAmmo() );
+			m_pMaxAmmo->SetText( szAmmo );
+		}
+		if ( m_pLoadoutCheck )
+			m_pLoadoutCheck->SetSelected( GetLoadout() );
+		if ( m_pGodModeCheck )
+			m_pGodModeCheck->SetSelected( GetGodMode() );
+		if ( m_pSuitCheck )
+			m_pSuitCheck->SetSelected( GetSuit() );
 
 		BuildGameModeList();
 		BuildMapGrid();
@@ -793,6 +846,70 @@ bool CCreateMultiplayerGameDialog::GetFallDamage()
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: HL2SB sidebar getters (2026-09-28).  ServerConfig.vdf - the dialog's
+// own persisted state - wins; the live convar is only a fallback for a key the
+// file does not carry yet.
+//
+// The first version was the other way round (convar first) and that is the
+// reported "ammo field is 0 again on the next open": gmod_maxammo/gmod_suit
+// live in the game DLLs, and once a game has run this process keeps client.dll
+// loaded, so ConVarRef succeeds with the REGISTERED default "0" and buries the
+// saved 9999 on every later open (the HEV checkbox had the same trap).  The
+// sbox_* pair comes from sandbox's init.lua and usually cannot exist at the
+// menu, but they get the same order for uniformity.
+//-----------------------------------------------------------------------------
+int CCreateMultiplayerGameDialog::GetMaxAmmo()
+{
+	if ( m_pSavedData && m_pSavedData->FindKey( "gmod_maxammo" ) )
+		return m_pSavedData->GetInt( "gmod_maxammo", 9999 );
+
+	ConVarRef maxammo( "gmod_maxammo", true );
+	if ( maxammo.IsValid() && maxammo.GetInt() > 0 )
+		return maxammo.GetInt();
+
+	// GMod's start-menu field default (its HTML menu's own default table).
+	// The registered convar default is "0", which means "keep the HL2 per-type
+	// caps" - not what the field should display.
+	return 9999;
+}
+
+bool CCreateMultiplayerGameDialog::GetLoadout()
+{
+	if ( m_pSavedData && m_pSavedData->FindKey( "sbox_weapons" ) )
+		return ( m_pSavedData->GetInt( "sbox_weapons", 1 ) != 0 );
+
+	ConVarRef loadout( "sbox_weapons", true );
+	if ( loadout.IsValid() )
+		return ( loadout.GetInt() != 0 );
+
+	return true;
+}
+
+bool CCreateMultiplayerGameDialog::GetGodMode()
+{
+	if ( m_pSavedData && m_pSavedData->FindKey( "sbox_godmode" ) )
+		return ( m_pSavedData->GetInt( "sbox_godmode", 0 ) != 0 );
+
+	ConVarRef godmode( "sbox_godmode", true );
+	if ( godmode.IsValid() )
+		return ( godmode.GetInt() != 0 );
+
+	return false;
+}
+
+bool CCreateMultiplayerGameDialog::GetSuit()
+{
+	if ( m_pSavedData && m_pSavedData->FindKey( "gmod_suit" ) )
+		return ( m_pSavedData->GetInt( "gmod_suit", 0 ) != 0 );
+
+	ConVarRef suit( "gmod_suit", true );
+	if ( suit.IsValid() )
+		return ( suit.GetInt() != 0 );
+
+	return false;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: writes cfg/listenserver.cfg, which the engine execs at
 // SV_ActivateServer.  That is the first moment a cvar owned by the server DLL
 // (mp_falldamage) exists, so it cannot be put on the command line before the
@@ -805,7 +922,16 @@ static const char *kListenServerHeader[] =
 	"// The engine execs this at SV_ActivateServer.",
 };
 
-void CCreateMultiplayerGameDialog::WriteListenServerConfig( bool bFallDamage )
+// HL2SB: every line this dialog owns.  Carried-over copies from previous runs
+// are dropped by prefix so each option is written exactly once per start.
+static const char *kListenServerOwnedLines[] =
+{
+	"mp_falldamage",
+	"gmod_maxammo",
+	"gmod_suit",
+};
+
+void CCreateMultiplayerGameDialog::WriteListenServerConfig( bool bFallDamage, int nMaxAmmo, bool bSuit )
 {
 	CUtlBuffer existing( 0, 0, CUtlBuffer::TEXT_BUFFER );
 	g_pFullFileSystem->ReadFile( "cfg/listenserver.cfg", "MOD", existing );
@@ -819,6 +945,10 @@ void CCreateMultiplayerGameDialog::WriteListenServerConfig( bool bFallDamage )
 
 	char szLine[64];
 	Q_snprintf( szLine, sizeof( szLine ), "mp_falldamage %d\n", bFallDamage ? 1 : 0 );
+	out.PutString( szLine );
+	Q_snprintf( szLine, sizeof( szLine ), "gmod_maxammo %d\n", nMaxAmmo );
+	out.PutString( szLine );
+	Q_snprintf( szLine, sizeof( szLine ), "gmod_suit %d\n", bSuit ? 1 : 0 );
 	out.PutString( szLine );
 
 	if ( existing.TellMaxPut() > 0 )
@@ -846,12 +976,22 @@ void CCreateMultiplayerGameDialog::WriteListenServerConfig( bool bFallDamage )
 
 			int nTrimLen = (int)( pTrimEnd - pTrim );
 
-			// Ours is already written above; never carry a previous copy over,
+			// Ours are already written above; never carry a previous copy over,
 			// otherwise every run would stack another header block.
-			if ( !Q_strnicmp( pTrim, "mp_falldamage", 13 ) )
+			bool bOurs = false;
+			for ( int i = 0; i < ARRAYSIZE( kListenServerOwnedLines ); i++ )
+			{
+				size_t nPrefix = Q_strlen( kListenServerOwnedLines[i] );
+				if ( (size_t)nTrimLen >= nPrefix &&
+					 !Q_strnicmp( pTrim, kListenServerOwnedLines[i], nPrefix ) )
+				{
+					bOurs = true;
+					break;
+				}
+			}
+			if ( bOurs )
 				continue;
 
-			bool bOurs = false;
 			for ( int i = 0; i < ARRAYSIZE( kListenServerHeader ); i++ )
 			{
 				if ( (int)Q_strlen( kListenServerHeader[i] ) == nTrimLen &&
@@ -882,6 +1022,28 @@ void CCreateMultiplayerGameDialog::SaveConfig()
 		m_pSavedData->SetString( "map", GetMapName() );
 		m_pSavedData->SetInt( "mp_falldamage",
 			( m_pFallDamageCheck && m_pFallDamageCheck->IsSelected() ) ? 1 : 0 );
+
+		// HL2SB sidebar (2026-09-28): persisted for two consumers --
+		// reads on the next dialog open, and sandbox/init.lua's
+		// HL2SB_ApplyStartOptions() which lands the sbox_* pair in-game.
+		int nMaxAmmo = 9999;
+		if ( m_pMaxAmmo )
+		{
+			char szAmmo[16];
+			szAmmo[0] = 0;
+			m_pMaxAmmo->GetText( szAmmo, sizeof( szAmmo ) );
+			// An emptied-out box would Q_atoi to 0 and poison the saved state
+			// with "HL2 caps"; keep the GMod default instead.
+			nMaxAmmo = ( szAmmo[0] != 0 ) ? clamp( Q_atoi( szAmmo ), 0, 999999 ) : 9999;
+		}
+		m_pSavedData->SetInt( "gmod_maxammo", nMaxAmmo );
+		m_pSavedData->SetInt( "sbox_weapons",
+			( m_pLoadoutCheck && m_pLoadoutCheck->IsSelected() ) ? 1 : 0 );
+		m_pSavedData->SetInt( "sbox_godmode",
+			( m_pGodModeCheck && m_pGodModeCheck->IsSelected() ) ? 1 : 0 );
+		m_pSavedData->SetInt( "gmod_suit",
+			( m_pSuitCheck && m_pSuitCheck->IsSelected() ) ? 1 : 0 );
+
 		m_pSavedData->SaveToFile( g_pFullFileSystem, "ServerConfig.vdf", "GAME" );
 	}
 }
@@ -914,8 +1076,22 @@ void CCreateMultiplayerGameDialog::CreateGame()
 
 	// mp_falldamage belongs to the server DLL, which only exists once the map
 	// is running, so it is applied through cfg/listenserver.cfg rather than on
-	// the command line below.
-	WriteListenServerConfig( m_pFallDamageCheck && m_pFallDamageCheck->IsSelected() );
+	// the command line below.  Same story for gmod_maxammo / gmod_suit (game
+	// DLLs, not loaded at the menu) -- the sbox_* pair is NOT written here,
+	// sandbox/init.lua applies it from ServerConfig.vdf after the convars
+	// exist.
+	int nMaxAmmo = 9999;
+	if ( m_pMaxAmmo )
+	{
+		char szAmmo[16];
+		szAmmo[0] = 0;
+		m_pMaxAmmo->GetText( szAmmo, sizeof( szAmmo ) );
+		// Same empty-box guard as SaveConfig: never exec "gmod_maxammo 0" for a
+		// field the player wiped.
+		nMaxAmmo = ( szAmmo[0] != 0 ) ? clamp( Q_atoi( szAmmo ), 0, 999999 ) : 9999;
+	}
+	WriteListenServerConfig( m_pFallDamageCheck && m_pFallDamageCheck->IsSelected(),
+		nMaxAmmo, m_pSuitCheck && m_pSuitCheck->IsSelected() );
 
 	char szMapCommand[1024];
 	Q_snprintf(szMapCommand, sizeof( szMapCommand ), "disconnect\nwait\nwait\nsv_lan 1\nsetmaster enable\ngamemode \"%s\"\nmaxplayers %i\nsv_password \"%s\"\nhostname \"%s\"\nprogress_enable\nmap %s\n",

@@ -55,11 +55,22 @@ private:
 	// server DLL, so while the main menu is up it is usually not visible and
 	// this falls back to the sandbox default (off).
 	bool GetFallDamage();
+	// HL2SB (2026-09-28): sidebar options, same ConVarRef-first /
+	// ServerConfig.vdf-fallback shape as GetFallDamage.  The sbox_* pair is
+	// never visible at the menu (Lua creates it inside the running sandbox),
+	// so those two always take the vdf path; defaults match GMod's new-game
+	// sidebar (9999 / loadout on / god off / HEV off).
+	int GetMaxAmmo();	// gmod_maxammo
+	bool GetLoadout();	// sbox_weapons
+	bool GetGodMode();	// sbox_godmode
+	bool GetSuit();		// gmod_suit
 	// Writes cfg/listenserver.cfg.  The engine execs that file at
 	// SV_ActivateServer, which is the first moment a server-DLL cvar such as
 	// mp_falldamage can be set at all - it cannot go on the command line
-	// before "map".
-	void WriteListenServerConfig( bool bFallDamage );
+	// before "map".  The sbox_* pair does NOT go through here (ordering vs
+	// Lua gamemode load is not guaranteed); sandbox/init.lua applies those
+	// from ServerConfig.vdf instead.
+	void WriteListenServerConfig( bool bFallDamage, int nMaxAmmo, bool bSuit );
 	void SaveConfig();
 
 	void CreateGame();
@@ -105,6 +116,12 @@ private:
 	vgui::Label *m_pPasswordLabel;
 	vgui::Label *m_pMaxPlayersLabel;
 	vgui::CheckButton *m_pFallDamageCheck;
+	// HL2SB (2026-09-28): singleplayer sidebar options (GMod's new-game column).
+	vgui::Label *m_pMaxAmmoLabel;
+	vgui::TextEntry *m_pMaxAmmo;
+	vgui::CheckButton *m_pLoadoutCheck;
+	vgui::CheckButton *m_pGodModeCheck;
+	vgui::CheckButton *m_pSuitCheck;
 
 	CUtlVector<char*> m_MapNames; // own the strings
 

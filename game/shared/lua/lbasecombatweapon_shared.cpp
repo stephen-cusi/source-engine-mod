@@ -860,14 +860,19 @@ static int CBaseCombatWeapon_WeaponState (lua_State *L) {
 
 static int CBaseCombatWeapon___index (lua_State *L) {
   CBaseCombatWeapon *pWeapon = lua_toweapon(L, 1);
-  if (pWeapon == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+  if (pWeapon == NULL) {
+    /* HL2SB (2026-09-28): NULL-safe READ, same as every other entity-class
+    ** __index (HL2SB_PushNullEntityIndex, lbaseentity_shared.cpp).  This was
+    ** the last __index still raising: an alive-but-unarmed player (the
+    ** normal state on custom RP maps until their loadout runs) made every
+    ** per-tick `IsValid(p:GetActiveWeapon())` hook -- e.g. combustible
+    ** lemon's Tick_CombustibleLemonSwep_DropOnDeath -- flood the console
+    ** with "attempt to index a NULL entity" at util.lua:318, 7000+ lines in
+    ** a single session.  Writes to NULL keep raising in __newindex, matching
+    ** CBaseEntity___newindex.
+    */
+    HL2SB_PushNullEntityIndex( L, lua_tostring( L, 2 ) );
+    return 1;
   }
   const char *field = luaL_checkstring(L, 2);
   /* GMod SWEP compat: stock scripts use self.Owner instead of GetOwner(). */

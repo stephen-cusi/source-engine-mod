@@ -22,8 +22,14 @@ using namespace vgui;
 
 DECLARE_HUDELEMENT( CHudSuitPower );
 
-// HL2SB: hide the aux/suit-power HUD by default (aux power is infinite)
-ConVar cl_hide_suitpower_hud( "cl_hide_suitpower_hud", "1", FCVAR_ARCHIVE );
+// HL2SB: hide the aux/suit-power HUD explicitly (user opt-out).  Default
+// flipped 1 -> 0 with gmod_suit (2026-09-28): dormancy is now owned by the
+// gmod_suit gate in ShouldDraw, so this stays a pure "I don't want the
+// battery bar" override for players who DO run with the suit switched on.
+ConVar cl_hide_suitpower_hud( "cl_hide_suitpower_hud", "0", FCVAR_ARCHIVE );
+
+// HL2SB (2026-09-28): GMod's aux-suit-power switch (see game/shared/ammodef.cpp).
+extern ConVar gmod_suit;
 
 #define SUITPOWER_INIT -1
 
@@ -63,8 +69,15 @@ void CHudSuitPower::Reset( void )
 //-----------------------------------------------------------------------------
 bool CHudSuitPower::ShouldDraw()
 {
-	// HL2SB: hide the aux/suit-power HUD entirely when requested
-	if ( cl_hide_suitpower_hud.GetBool() )
+	// HL2SB (2026-09-28): the whole aux suit power system is dormant while
+	// gmod_suit is 0 (the default), so its HUD must not paint either --
+	// matches GMod, whose client-side suit-power ShouldDraw-style query is
+	// gated behind the same convar (reference from GMod win64 client.dll).
+	// The old cl_hide_suitpower_hud switch (default 1, archived, so its value
+	// is stuck in existing config.cfg files) is deliberately NOT consulted
+	// here: gmod_suit is the single authority now, otherwise ticking "Enable
+	// HEV Suit" in the create-server sidebar could never show the battery.
+	if ( !gmod_suit.GetBool() )
 		return false;
 
 	bool bNeedsDraw = false;

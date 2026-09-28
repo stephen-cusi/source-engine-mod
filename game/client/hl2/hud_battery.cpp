@@ -49,6 +49,9 @@ private:
 DECLARE_HUDELEMENT( CHudBattery );
 DECLARE_HUD_MESSAGE( CHudBattery, Battery );
 
+// HL2SB (2026-09-28): GMod's aux-suit-power switch (see game/shared/ammodef.cpp).
+extern ConVar gmod_suit;
+
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
@@ -92,6 +95,11 @@ void CHudBattery::VidInit( void )
 //-----------------------------------------------------------------------------
 bool CHudBattery::ShouldDraw( void )
 {
+	// HL2SB (2026-09-28): part of the aux suit power system -- dormant while
+	// gmod_suit is 0 (the default), so the battery bar must not paint either.
+	if ( !gmod_suit.GetBool() )
+		return false;
+
 	bool bNeedsDraw = ( m_iBat != m_iNewBat ) || ( GetAlpha() > 0 );
 
 	return ( bNeedsDraw && CHudElement::ShouldDraw() );

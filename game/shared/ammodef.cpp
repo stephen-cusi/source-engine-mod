@@ -21,6 +21,17 @@
 ConVar gmod_maxammo( "gmod_maxammo", "0", FCVAR_REPLICATED | FCVAR_NOTIFY,
 	"If set to above 0, overrides max ammo carried per player of all ammo types." );
 
+// HL2SB (2026-09-28): GMod's aux-suit-power switch, for the create-server
+// sidebar.  reference from GMod win64 server.dll (ConVar ctor call at
+// ): default "0", flags 0x2000 = FCVAR_REPLICATED only, help
+// text "Set to non zero to enable Half-Life 2 aux suit power stuff."
+// While it is 0 the HL2 suit power machinery (sprint/flashlight battery
+// drain, the SprintStart / SprintNoPower cues, the battery HUD) stays
+// dormant -- this fork's historical behaviour, which sv_infinite_aux_power
+// used to carry on its own.
+ConVar gmod_suit( "gmod_suit", "0", FCVAR_REPLICATED,
+	"Set to non zero to enable Half-Life 2 aux suit power stuff." );
+
 //-----------------------------------------------------------------------------
 // Purpose: Return a pointer to the Ammo at the Index passed in
 //-----------------------------------------------------------------------------

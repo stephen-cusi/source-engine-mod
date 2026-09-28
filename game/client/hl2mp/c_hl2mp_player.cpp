@@ -1030,6 +1030,9 @@ bool C_HL2MP_Player::CanSprint( void )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
+// HL2SB (2026-09-28): GMod's aux-suit-power switch (see game/shared/ammodef.cpp).
+extern ConVar gmod_suit;
+
 void C_HL2MP_Player::StartSprinting( void )
 {
 	if( m_HL2Local.m_flSuitPower < 10 )
@@ -1042,9 +1045,15 @@ void C_HL2MP_Player::StartSprinting( void )
 		return;
 	}
 
-	CPASAttenuationFilter filter( this );
-	filter.UsePredictionRules();
-	EmitSound( filter, entindex(), "HL2Player.SprintStart" );
+	// HL2SB (2026-09-28): the sprint start cue is part of the aux suit power
+	// experience -- gated behind gmod_suit, matching GMod's client.dll
+	// (the HL2Player.SprintStart emit sits inside its convar check).
+	if ( gmod_suit.GetBool() )
+	{
+		CPASAttenuationFilter filter( this );
+		filter.UsePredictionRules();
+		EmitSound( filter, entindex(), "HL2Player.SprintStart" );
+	}
 
 	SetMaxSpeed( HL2_SPRINT_SPEED );
 	m_fIsSprinting = true;

@@ -107,7 +107,17 @@ ConVar player_showpredictedposition_timestep( "player_showpredictedposition_time
 ConVar player_squad_transient_commands( "player_squad_transient_commands", "1", FCVAR_REPLICATED );
 ConVar player_squad_double_tap_time( "player_squad_double_tap_time", "0.25" );
 
-ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "1", FCVAR_NOTIFY );
+// HL2SB (2026-09-28): default flipped 1 -> 0.  Aux-power dormancy is now
+// owned by gmod_suit (see ammodef.cpp); this convar stays as the independent
+// cheat that suppresses drain WHILE the suit system is switched on.  With the
+// old default of 1 the sidebar's "Enable HEV Suit" toggle could never show a
+// real battery.  touch.cfg still flips it explicitly for its cheat button.
+ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "0", FCVAR_NOTIFY );
+
+// HL2SB: GMod's aux-suit-power switch (reference from GMod win64 server.dll,
+// ConVar ctor at : flags 0x2000 = FCVAR_REPLICATED, default "0").
+// Defined in game/shared/ammodef.cpp so client and server share one convar.
+extern ConVar gmod_suit;
 // HL2SB: the flashlight is turned on by default on player spawn
 ConVar sv_flashlight_default( "sv_flashlight_default", "0", FCVAR_NOTIFY );
 
@@ -1225,9 +1235,15 @@ void CHL2_Player::StartSprinting( void )
 	if( !SuitPower_AddDevice( SuitDeviceSprint ) )
 		return;
 
-	CPASAttenuationFilter filter( this );
-	filter.UsePredictionRules();
-	EmitSound( filter, entindex(), "HL2Player.SprintStart" );
+	// HL2SB (2026-09-28): GMod gates the sprint start cue behind gmod_suit
+	// (client.dll reference: the HL2Player.SprintStart emit sits inside the
+	// convar check); with the suit system off, sprinting is silent.
+	if ( gmod_suit.GetBool() )
+	{
+		CPASAttenuationFilter filter( this );
+		filter.UsePredictionRules();
+		EmitSound( filter, entindex(), "HL2Player.SprintStart" );
+	}
 
 	SetMaxSpeed( HL2_SPRINT_SPEED );
 	m_fIsSprinting = true;
@@ -1879,6 +1895,14 @@ void CHL2_Player::SuitPower_Initialize( void )
 //-----------------------------------------------------------------------------
 bool CHL2_Player::SuitPower_Drain( float flPower )
 {
+	// HL2SB (2026-09-28): gmod_suit == 0 (the default) keeps the whole aux
+	// suit power system dormant -- report success without touching the
+	// battery, exactly what sv_infinite_aux_power used to do on its own.
+	// This is GMod's contract: the convar's help text is "Set to non zero
+	// to enable Half-Life 2 aux suit power stuff."
+	if ( !gmod_suit.GetBool() )
+		return true;
+
 	// Suitpower cheat on?
 	if ( sv_infinite_aux_power.GetBool() )
 		return true;
