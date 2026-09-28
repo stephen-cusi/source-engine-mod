@@ -52,6 +52,10 @@ LUAMOD_API int( luaopen_package )( lua_State *L );
 #define LUA_BITLIBNAME "bit"
 LUAMOD_API int( luaopen_bit )( lua_State *L );
 
+/* HL2SB (sbrust): GMod/LuaJIT exports luaopen_jit so require("jit") and the
+** global jit table work for third-party modules (src/hl2sb_lua51.c). */
+LUAMOD_API int( luaopen_jit )( lua_State *L );
+
 /* open all previous libraries */
 LUALIB_API void( luaL_openlibs )( lua_State *L );
 

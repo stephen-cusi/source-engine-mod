@@ -255,6 +255,11 @@ LUA_API void HL2SB_InstallBinaryModuleSearcher( lua_State *L, const char *pszGam
 	lua_call( L, 3, 0 );					/* [fn table] */
 	lua_pop( L, 2 );
 
+	/* stash the absolute game dir: GMOD_LoadBinaryModule resolves bare
+	 * module names through it after the searcher's upvalue is gone. */
+	lua_pushstring( L, pszGameDir ? pszGameDir : "" );
+	lua_setfield( L, LUA_REGISTRYINDEX, "HL2SB_GAMEDIR" );
+
 	/* close registry */
 	lua_newtable( L );
 	lua_setfield( L, LUA_REGISTRYINDEX, HL2SB_BINMOD_CLOSES_KEY );
@@ -285,6 +290,104 @@ LUA_API void HL2SB_RunBinaryModuleCloses( lua_State *L )
 
 	lua_pushnil( L );
 	lua_setfield( L, LUA_REGISTRYINDEX, HL2SB_BINMOD_CLOSES_KEY );
+}
+
+/* GMod's GMOD_LoadBinaryModule (lua_shared 0x1cab0, called with the
+ * module path/name as its second argument): resolve the library, look up
+ * the "gmod13_open" entry (the literal its helper passes down) and run it.
+ * Ours returns 0 on success; on failure it pushes the same style of note
+ * GMod's loader builds ("Couldn't load module library! (%s)") and returns
+ * -1, with the error left on top of the stack. */
+LUA_API int GMOD_LoadBinaryModule( lua_State *L, const char *pszPath )
+{
+	char szPath[ 1024 ];
+	const char *pszUse;
+	const char *pszGameDir;
+	const char *pszEntry;
+	size_t nPath, nExt;
+	lua_CFunction pfnOpen;
+	lua_CFunction pfnClose;
+
+	if ( L == NULL )
+		return -1;
+
+	if ( pszPath == NULL || pszPath[ 0 ] == '\0' )
+	{
+		lua_pushliteral( L, "Couldn't load module library! (empty path)" );
+		return -1;
+	}
+
+	/* A path (directory separator or platform extension) loads directly; a
+	 * bare name goes through the gm{sv,cl}_<name>_<platform> recipe the
+	 * searcher uses, resolved against the stashed absolute game dir. */
+	nPath = strlen( pszPath );
+	nExt = strlen( HL2SB_BinModExt() );
+	if ( strchr( pszPath, '/' ) || strchr( pszPath, '\\' ) ||
+	     ( nPath >= nExt && strcmp( pszPath + nPath - nExt, HL2SB_BinModExt() ) == 0 ) )
+	{
+		pszUse = pszPath;
+	}
+	else
+	{
+		lua_getfield( L, LUA_REGISTRYINDEX, "HL2SB_GAMEDIR" );
+		pszGameDir = lua_tostring( L, -1 );
+		lua_pop( L, 1 );
+		snprintf( szPath, sizeof( szPath ), "%s/lua/bin/gm%s_%s_%s%s",
+			pszGameDir ? pszGameDir : "", HL2SB_BinModPrefix( L ),
+			pszPath, HL2SB_BinModSuffix(), HL2SB_BinModExt() );
+		pszUse = szPath;
+	}
+
+	/* The name gmod13_open receives: the argument the caller passed, like
+	 * require() hands the module name to the searcher's loader. */
+	pszEntry = pszPath;
+
+#ifdef _WIN32
+	{
+		HMODULE hLib;
+		UINT uOldErrorMode = SetErrorMode( SEM_FAILCRITICALERRORS );
+		hLib = LoadLibraryA( pszUse );
+		SetErrorMode( uOldErrorMode );
+		if ( hLib == NULL )
+		{
+			lua_pushfstring( L, "Couldn't load module library! (%s)", pszUse );
+			return -1;
+		}
+		pfnOpen = ( lua_CFunction )GetProcAddress( hLib, "gmod13_open" );
+		pfnClose = ( lua_CFunction )GetProcAddress( hLib, "gmod13_close" );
+		if ( pfnOpen == NULL )
+		{
+			lua_pushfstring( L, "Couldn't find function in library! (%s)", pszUse );
+			return -1;
+		}
+		HL2SB_BinModRegisterClose( L, pszUse, pfnClose );
+	}
+#else
+	{
+		void *hLib = dlopen( pszUse, RTLD_NOW );
+		if ( hLib == NULL )
+		{
+			const char *pszDl = dlerror();
+			lua_pushfstring( L, "Couldn't load module library! (%s) [%s]",
+				pszUse, pszDl ? pszDl : "unknown dlopen failure" );
+			return -1;
+		}
+		pfnOpen = ( lua_CFunction )dlsym( hLib, "gmod13_open" );
+		pfnClose = ( lua_CFunction )dlsym( hLib, "gmod13_close" );
+		if ( pfnOpen == NULL )
+		{
+			lua_pushfstring( L, "Couldn't find function in library! (%s)", pszUse );
+			return -1;
+		}
+		HL2SB_BinModRegisterClose( L, pszUse, pfnClose );
+	}
+#endif
+
+	lua_pushcfunction( L, pfnOpen );
+	lua_pushstring( L, pszEntry );
+	if ( lua_pcall( L, 1, 0, 0 ) != 0 )
+		return -1;	/* the error note from gmod13_open sits on top */
+	return 0;
 }
 
 #ifdef __cplusplus

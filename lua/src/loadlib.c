@@ -738,7 +738,11 @@ static void modinit( lua_State *L, const char *modname )
     lua_setfield( L, -2, "_PACKAGE" );
 }
 
-static const char *luaL_findtable( lua_State *L, int idx, const char *fname, int szhint )
+/* HL2SB (sbrust): exported (was static) -- GMod's lua_shared exports
+** luaL_findtable, and the lauxlib.h declaration inside its extern "C"
+** block is what makes this definition compile with the C ABI when the
+** tree is built as C++. */
+const char *luaL_findtable( lua_State *L, int idx, const char *fname, int szhint )
 {
     const char *e;
     if ( idx ) lua_pushvalue( L, idx );

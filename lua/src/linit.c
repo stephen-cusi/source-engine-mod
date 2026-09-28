@@ -51,6 +51,9 @@ static const luaL_Reg loadedlibs[] = {
   {LUA_UTF8LIBNAME, luaopen_utf8},
   {LUA_DBLIBNAME, luaopen_debug},
   {LUA_BITLIBNAME, luaopen_bit},	/* HL2SB: kept from the 5.1 build */
+  /* HL2SB (sbrust): GMod/LuaJIT shape -- _G.jit exists in every state and
+  ** require("jit") resolves, for third-party modules that probe the JIT. */
+  {"jit", luaopen_jit},
   {NULL, NULL}
 };
 

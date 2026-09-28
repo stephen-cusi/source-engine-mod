@@ -72,6 +72,12 @@ def build(bld):
 		# GMod lua_shared.dll .data，ID 与 GMod 逐位对齐；导出
 		# HL2SB_GetHookName/HL2SB_GetHookCount 供 game DLL 按 ID 派发。
 		"src/hl2sb_hooks.c",
+		# GMod (LuaJIT 5.1) C-API 导出兼容层：37 个 GMod 独有符号
+		# （lua_pcall/luaL_register/getfenv/JIT 桩/GMOD_LoadBinaryModule/
+		# AdvancedLuaErrorReporter/cvar/g_pFullFileSystem 等），签名与语义
+		# 逐个对照自 GMod win64 lua_shared.dll。第三方 gm{sv,cl}_* 模块
+		# 链接的就是这份导出集，缺一个名字 Windows 加载器就拒载整个 DLL。
+		"src/hl2sb_lua51.c",
 	]
 
 	includes = [

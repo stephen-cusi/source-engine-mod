@@ -56,6 +56,12 @@ bool HL2SB_IsAddonDisabled( const char *pszAddonName );
 // specification），MSVC 容忍所以 Windows 先过了。
 extern "C" void HL2SB_InstallBinaryModuleSearcher( lua_State *L, const char *pszGameDir );
 extern "C" void HL2SB_RunBinaryModuleCloses( lua_State *L );
+// HL2SB (sbrust): lua_shared 的 GMod 形状数据导出（g_pFullFileSystem / cvar）
+// 由这里在状态初始化时灌入真指针；同前，裸 extern "C" 不带 LUA_API。
+extern "C" void HL2SB_InitializeEngineInterfaces( void *pFileSystem, void *pCvar );
+// GMod 的错误报告器（lua_shared 导出）：非字符串错误对象转成
+// "<type> was given as Lua error!"，作为 msgh 的第一步（见 luasrc_traceback）。
+extern "C" int AdvancedLuaErrorReporter( lua_State *L );
 
 static bool luasrc_PathInDisabledAddon (const char *fullpath);
 #include "luasrclib.h"
@@ -475,6 +481,12 @@ void luasrc_setmodulepaths(lua_State *L) {
   // gmod13_open 入口）。绝对路径来自这里的 gamePath -- 安卓上 cwd 是 "/"，
   // 相对路径的 loadlib 必然失败，所以模块路径从第一天起就用绝对路径。
   HL2SB_InstallBinaryModuleSearcher( L, gamePath );
+
+  // HL2SB (sbrust): GMod 的 lua_shared 把 g_pFullFileSystem / cvar 两个引擎
+  // 接口指针作为数据导出给第三方模块；本分叉的槽位在 lua_shared.dll 里，
+  // 这里（菜单/服务端/客户端三处状态初始化都会走到）灌入本 realm 已就绪的
+  // 真指针。g_pCVar 由引擎在 convar 系统起来时填充（public/icvar.h）。
+  HL2SB_InitializeEngineInterfaces( g_pFullFileSystem, g_pCVar );
 }
 
 #ifdef CLIENT_DLL
@@ -1488,6 +1500,16 @@ LUA_API void luasrc_report_error (lua_State *L, const char *pszError) {
     lua_pushstring(L, szTraceback);
   LUA_CALL_HOOK_FOR_STATE_END(L, 2, 0);
 
+#ifdef CLIENT_DLL
+  // HL2SB (sbrust): GMod additionally dispatches OnClientLuaError from C++
+  // (slot 0x0b7 of lua_shared's hook-name table -- the only LuaError-family
+  // name in it; GMod has no server twin).  One string argument, same
+  // re-entrancy guard as the LuaError hook above.
+  LUA_CALL_HOOK_FOR_STATE_BEGIN(L, "OnClientLuaError");
+    lua_pushstring(L, pszError);
+  LUA_CALL_HOOK_FOR_STATE_END(L, 1, 0);
+#endif
+
   g_bReportingLuaError = false;
 }
 
@@ -1950,7 +1972,14 @@ static int luasrc_traceback (lua_State *L) {
   // luaL_traceback is pure C: it walks the CallInfo chain and cannot raise.
   // Level 0 because this handler is not a CallInfo frame either -- 1 would skip
   // the topmost frame, which is the function that raised.
-  luaL_traceback( L, L, lua_tostring( L, 1 ), 0 );
+  // HL2SB (sbrust): GMod's AdvancedLuaErrorReporter runs first -- a
+  // non-string error object (table/userdata/...) becomes
+  // "<type> was given as Lua error!", the wording GMod's lua_shared uses,
+  // and a number error converts like 5.1's lua_isstring path.  It either
+  // keeps arg1 (already a string) or pushes the replacement on top, so the
+  // traceback reads the value at -1 in both cases.
+  AdvancedLuaErrorReporter( L );
+  luaL_traceback( L, L, lua_tostring( L, -1 ), 0 );
   return 1;
 }
 

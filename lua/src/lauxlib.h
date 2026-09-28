@@ -280,6 +280,21 @@ typedef struct luaL_Stream
 #endif
 /* }============================================================ */
 
+/* HL2SB (sbrust): Lua 5.1 / GMod exports that live in loadlib.c
+** (luaL_pushmodule, luaL_findtable) or in src/hl2sb_lua51.c (the rest).
+** Declaring them here is what gives the loadlib.c definitions the C ABI:
+** that file is compiled as C++ (MSVC CFLAGS carry /TP), and a definition
+** with no prior extern "C" declaration exports the decorated name --
+** luaL_pushmodule used to come out as ?luaL_pushmodule@@YAX... and no
+** GMod module could import it.  These signatures match GMod's lua_shared
+** (verified against its export table and wrapper analysis). */
+LUALIB_API const char *( luaL_findtable )( lua_State *L, int idx, const char *fname, int szhint );
+LUALIB_API void( luaL_pushmodule )( lua_State *L, const char *modname, int sizehint );
+LUALIB_API void( luaL_register )( lua_State *L, const char *libname, const luaL_Reg *l );
+LUALIB_API void( luaL_openlib )( lua_State *L, const char *libname, const luaL_Reg *l, int nup );
+LUALIB_API int( luaL_typerror )( lua_State *L, int narg, const char *tname );
+LUALIB_API char *( luaL_prepbuffer )( luaL_Buffer *B );
+
 #if defined(__cplusplus)
 } /* extern "C" */
 #endif

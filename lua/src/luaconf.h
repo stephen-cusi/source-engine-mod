@@ -750,8 +750,18 @@ void HL2SB_LuaApiCheckFail( void *L, const char *cond, const char *file, int lin
 /*
 @@ LUAL_BUFFERSIZE is the initial buffer size used by the lauxlib
 ** buffer system.
+**
+** HL2SB (sbrust): pinned to 504 for the GMod binary-module ABI.  GMod
+** modules allocate luaL_Buffer on their own stack using the Lua 5.1 layout
+** { char *p; int lvl; lua_State *L; char buffer[512] } = 536 bytes (the
+** 512 end pointer B+0x218 is visible in GMod's luaL_addlstring).  Our 5.4
+** layout has a 32-byte header { b, size, n, L, init }, so 32 + 504 = 536:
+** every byte our buffer functions touch stays inside the module's
+** allocation.  With the old 1024 a module filling its buffer wrote 520
+** bytes past its own struct (stack corruption).  Modules that poke B.p
+** directly still see the wrong field -- see hl2sb_lua51.c header.
 */
-#define LUAL_BUFFERSIZE ( ( int )( 16 * sizeof( void * ) * sizeof( lua_Number ) ) )
+#define LUAL_BUFFERSIZE ( ( int )( 504 ) )
 
 /*
 @@ LUAI_MAXALIGN defines fields that, when used in a union, ensure
