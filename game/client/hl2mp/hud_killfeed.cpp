@@ -53,10 +53,25 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+// HL2SB (2026-09-29): GMod-style hook ids.  GMod's lua_shared.dll owns every
+// engine-dispatched hook NAME; game code only ever passes the numeric id
+// (reference x86 client.dll: CLuaGamemode::CallWithArgs(0x2e) ==
+// HUDItemPickedUp, 0x2c == HUDAmmoPickedUp, 0x34 == HUDWeaponPickedUp).
+// Our lua_shared mirrors that table slot-for-slot (lua/src/hl2sb_hooks.c), so
+// GMod reference numbers port verbatim.  Plain extern "C" declaration --
+// consumers must never add LUA_API (gcc rejects the combination).
+extern "C" const char *HL2SB_GetHookName( int id );
+
+enum
+{
+	HL2SB_HOOK_HUDITEMPICKEDUP = 0x2e,	// GMod slot order, verified vs client.dll
+	HL2SB_HOOK_ADDDEATHNOTICE  = 0x135,	// fork-only: after GMod's 309 entries
+};
+
 static ConVar hud_deathnotice_time( "hud_deathnotice_time", "6", FCVAR_ARCHIVE, "How long each death notice stays on screen (seconds)." );
 static ConVar cl_drawdeathnotice( "cl_drawdeathnotice", "1", FCVAR_ARCHIVE, "Toggle the death notice / kill feed HUD on and off." );
 static ConVar hud_killfeed_iconscale( "hud_killfeed_iconscale", "0.9", FCVAR_ARCHIVE, "Kill feed icon height as a fraction of the text height." );
-static ConVar hud_killfeed_max( "hud_killfeed_max", "4", FCVAR_ARCHIVE,
+static ConVar hud_killfeed_max( "hud_killfeed_max", "0", FCVAR_ARCHIVE,
 	"Maximum number of kill feed lines shown at once. 0 = unlimited (GMod behaviour), -1 = use the panel's res MaxDeathNotices." );
 static ConVar cl_killfeed_lua( "cl_killfeed_lua", "1", FCVAR_ARCHIVE,
 	"Let the Lua script own the kill feed drawing (events are forwarded to the AddDeathNotice hook)." );
@@ -170,6 +185,29 @@ private:
 	Color GetVictimColour( const KillFeedItem &e );
 	Color GetIconColour( const KillFeedItem &e );
 
+	// HL2SB (2026-09-29): join-window pickup queue, GMod parity.  The server
+	// fires the spawn loadout during the first tick, before the client
+	// snapshot has created the local player - the old code dropped those
+	// events here, which is why the first spawn showed no pickup toasts and
+	// later respawns did.  GMod cannot lose them: its WeaponPickup/AmmoPickup
+	// usermessages ride the network stream behind the snapshot, and the
+	// client re-resolves the queued weapon HANDLE every think for up to 5
+	// seconds (reference CHudGMod list consumer, x86 client.dll
+	// ).  Same 5s window below.
+	struct PendingPickup_t
+	{
+		int		iUserID;
+		char	szItem[64];
+		int		iAmount;
+		bool	bWeapon;
+		float	flExpire;
+	};
+	CUtlVector<PendingPickup_t> m_PendingPickups;
+	void DispatchPickup( int iUserID, const char *pszItem, int iAmount, bool bWeapon );
+	void FlushPickups( void );
+	void PushPickupHook( int iUserID, const char *pszItem, int iAmount, bool bWeapon, C_BaseCombatWeapon *pPickupWeapon );
+	C_BaseCombatWeapon *FindPickupWeapon( const char *pszItem );
+
 	// Res-driven layout/size fields (all read from the "HudKillFeed" block in
 	// HudLayout.res, so everything can be tuned without recompiling).
 	CPanelAnimationVarAliasType( float, m_flLineHeight, "LineHeight", "16", "proportional_float" );
@@ -278,6 +316,7 @@ void CHudKillFeed::VidInit( void )
 	}
 
 	m_DeathNotices.Purge();
+	m_PendingPickups.Purge();
 	SetPaintBackgroundEnabled( false );
 
 	SetBounds( 0, 0, ScreenWidth(), ScreenHeight() );
@@ -288,6 +327,10 @@ void CHudKillFeed::VidInit( void )
 //-----------------------------------------------------------------------------
 bool CHudKillFeed::ShouldDraw( void )
 {
+	// The HUD manager asks every frame - this is where join-window pickups
+	// flush once the local player exists and is alive (see PendingPickup_t).
+	FlushPickups();
+
 	if ( !cl_drawdeathnotice.GetBool() )
 		return false;
 
@@ -497,83 +540,29 @@ void CHudKillFeed::RetireExpiredDeathNotices( void )
 //-----------------------------------------------------------------------------
 void CHudKillFeed::FireGameEvent( IGameEvent * event )
 {
+	const char *pszName = event->GetName();
+
+	// HL2SB: item_pickup handled FIRST.  It needs no player resource (g_PR
+	// only feeds death-notice name lookups) and during the join window the
+	// local player may not exist yet - DispatchPickup decides between the
+	// immediate hook call and the pending queue.  hud_deathnotice_time does
+	// NOT gate it (GMod's pickup HUD reads no such cvar either).
+	if ( !Q_stricmp( pszName, "item_pickup" ) )
+	{
+#ifdef LUA_SDK
+		DispatchPickup( event->GetInt( "userid", 0 ),
+		                event->GetString( "item", "" ),
+		                event->GetInt( "amount", 0 ),
+		                event->GetBool( "weapon", false ) );
+#endif
+		return;
+	}
+
 	if ( !g_PR )
 		return;
 
 	if ( hud_deathnotice_time.GetFloat() == 0 )
 		return;
-
-	const char *pszName = event->GetName();
-
-	// HL2SB: weapon / item / ammo pickup -> forward to Lua.  The engine passes
-	// the raw (item, amount); the Lua script classifies and colours it.
-	if ( !Q_stricmp( pszName, "item_pickup" ) )
-	{
-#ifdef LUA_SDK
-		// HL2SB (2026-09-25): GMod fires HUDItemPickedUp for the LOCAL player
-		// only, and its Lua receivers open with IsValid( LocalPlayer() ).
-		// The local player entity does not exist yet during the join window,
-		// so LocalPlayer() answered a NULL-entity userdata and every pickup
-		// in that window threw "attempt to index a NULL entity" (util.lua:318)
-		// from this hook -- one console flood line per pickup.  GMod would not
-		// draw those pickups either, so skip dispatch entirely until the
-		// local player exists.
-		if ( C_BasePlayer::GetLocalPlayer() == NULL )
-			return;
-
-		if ( cl_killfeed_lua.GetBool() )
-		{
-			int iUserID = event->GetInt( "userid", 0 );
-			const char *pszItem = event->GetString( "item", "" );
-			int iAmount = event->GetInt( "amount", 0 );
-			// HL2SB (2026-09-26): the SERVER declares weapon-ness (GMod design --
-			// SWEP classnames carry no "weapon_" prefix, name guessing fails);
-			// the client only resolves the entity from the networked inventory.
-			bool bWeaponPickup = event->GetBool( "weapon", false );
-
-			BEGIN_LUA_CALL_HOOK( "HUDItemPickedUp" );
-				lua_pushinteger( L, iUserID );
-				lua_pushstring( L, pszItem );
-				lua_pushinteger( L, iAmount );
-				// HL2SB (2026-09-26): GMod's GM:HUDWeaponPickedUp receives the weapon
-				// ENTITY.  The event only carries the classname, so look it up in
-				// the local player's inventory (m_hMyWeapons is networked for the
-				// local player); the active-weapon guess in Lua missed every time
-				// the client had not switched yet ("entity match=false", 9-26 diag).
-				C_BaseCombatWeapon *pPickupWeapon = NULL;
-				// HL2SB (2026-09-26): no prefix gate -- SWEPs can register ANY classname
-				// (e.g. "tfusion_combustible_lemon"); membership in the inventory IS
-				// the weapon test, ammo/items never live in m_hMyWeapons.
-				// Only for weapon pickups; the event can arrive before the
-				// snapshot lands, in which case Lua retries via the active weapon.
-				if ( bWeaponPickup && C_BasePlayer::GetLocalPlayer() )
-				{
-					C_BaseCombatCharacter *pLocalCC = C_BasePlayer::GetLocalPlayer();
-					for ( int i = 0; i < MAX_WEAPONS; i++ )
-					{
-						C_BaseCombatWeapon *pIter = pLocalCC->GetWeapon( i );
-						if ( pIter && !Q_stricmp( pIter->GetClassname(), pszItem ) )
-						{
-							pPickupWeapon = pIter;
-							break;
-						}
-					}
-				}
-				if ( pPickupWeapon )
-					lua_pushentity( L, pPickupWeapon );
-				else
-					lua_pushnil( L );
-				lua_pushboolean( L, bWeaponPickup );
-			// Five values are pushed above (userid, item, amount, entity, weaponFlag).  This was
-			// 3 when the weapon entity was added on 2026-09-26: pcall then grabbed the
-			// EVENT NAME STRING as the function -- "attempt to call a string value"
-			// on every pickup, and the Lua handler below never ran at all.
-			END_LUA_CALL_HOOK( 5, 0 );
-			return;
-		}
-#endif
-		return;
-	}
 
 	KillFeedItem deathMsg;
 	deathMsg.Killer.iEntIndex = 0;
@@ -800,7 +789,14 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 				iVictimTeam = g_PR->GetTeam( deathMsg.Victim.iEntIndex );
 		}
 
-		BEGIN_LUA_CALL_HOOK( "AddDeathNotice" );
+		// HL2SB (2026-09-29): hook name resolved from lua_shared's id table
+		// (GMod-style); AddDeathNotice is a fork-only id after GMod's table
+		// since GMod fires it from Lua (cl_deathnotice.lua net.Receive).
+		const char *pszDeathHook = HL2SB_GetHookName( HL2SB_HOOK_ADDDEATHNOTICE );
+		if ( pszDeathHook == NULL )
+			return;
+
+		BEGIN_LUA_CALL_HOOK( pszDeathHook );
 			// The RAW class when we have one (an NPC / entity), the display name
 			// otherwise (a player).  Lua resolves names from the content - handing it
 			// the C++ cosmetic guess is what made a Lua NPC read as "Shaklin_scp096".
@@ -846,3 +842,165 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 
 	Msg( "%s killed %s\n", deathMsg.Killer.szName, deathMsg.Victim.szName );
 }
+
+//========= HL2SB pickup queue / dispatch (GMod parity, 2026-09-29) =========//
+//
+// GMod's chain, from reference (x86 + win64, both installs):
+//   server.dll  WeaponPickup/AmmoPickup/ItemPickup USERMESSAGES
+//               (CSingleUserRecipientFilter - only the picking player), sent
+//               from the equip/ammo/item code; networked messages sit BEHIND
+//               the snapshot that creates the local player.
+//   client.dll  CUserMessages::HookMessage handlers; Ammo/Item dispatch the
+//               GM hook immediately (CLuaGamemode::CallWithArgs 0x2c/0x2e),
+//               WeaponPickup stores an EHANDLE + timestamp in CHudGMod and a
+//               think consumer re-resolves it EVERY frame until the entity is
+//               client-valid (max 5.0s), then CallWithArgs(0x34) with the
+//               entity as the single argument.
+//   guards      C++ side only checks "Lua gamemode alive + hook exists";
+//               IsValid(LocalPlayer())/Alive() live inside GM:HUD*PickedUp.
+//
+// Our chain fires game events synchronously (listen server: during the server
+// tick), so the spawn loadout used to arrive while GetLocalPlayer() was still
+// NULL and was DROPPED - the "first spawn shows nothing, later spawns do"
+// bug.  These three functions reproduce GMod's outcome: queue what is early,
+// retry the weapon entity, give up after GMod's own 5s window.
+#ifdef LUA_SDK
+
+//-----------------------------------------------------------------------------
+// Purpose: Resolve a weapon pickup's entity from the local player's networked
+//			inventory.  NULL means the snapshot has not landed yet.
+//-----------------------------------------------------------------------------
+C_BaseCombatWeapon *CHudKillFeed::FindPickupWeapon( const char *pszItem )
+{
+	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+	if ( pLocal == NULL || pszItem == NULL || pszItem[0] == '\0' )
+		return NULL;
+
+	// No prefix gate - SWEPs can register ANY classname; membership in the
+	// inventory IS the weapon test (ammo/items never live in m_hMyWeapons).
+	for ( int i = 0; i < MAX_WEAPONS; i++ )
+	{
+		C_BaseCombatWeapon *pIter = pLocal->GetWeapon( i );
+		if ( pIter && !Q_stricmp( pIter->GetClassname(), pszItem ) )
+			return pIter;
+	}
+
+	return NULL;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: One item_pickup: dispatch now when the join window is over, queue
+//			otherwise (local player missing/dead, or the weapon entity is not
+//			networked yet).  Duplicate queue entries keep the EARLIEST expiry.
+//-----------------------------------------------------------------------------
+void CHudKillFeed::DispatchPickup( int iUserID, const char *pszItem, int iAmount, bool bWeapon )
+{
+	if ( pszItem == NULL )
+		pszItem = "";
+
+	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+	bool bReady = ( pLocal != NULL && pLocal->IsAlive() );
+	C_BaseCombatWeapon *pWeapon = ( bReady && bWeapon ) ? FindPickupWeapon( pszItem ) : NULL;
+
+	if ( !bReady || ( bWeapon && pWeapon == NULL ) )
+	{
+		for ( int i = 0; i < m_PendingPickups.Count(); i++ )
+		{
+			if ( m_PendingPickups[i].iUserID == iUserID &&
+				 !Q_stricmp( m_PendingPickups[i].szItem, pszItem ) )
+				return;		// already queued, expiry untouched
+		}
+
+		if ( m_PendingPickups.Count() < 32 )
+		{
+			PendingPickup_t p;
+			p.iUserID = iUserID;
+			Q_strncpy( p.szItem, pszItem, sizeof( p.szItem ) );
+			p.iAmount = iAmount;
+			p.bWeapon = bWeapon;
+			p.flExpire = gpGlobals->curtime + 5.0f;	// GMod's own window
+			m_PendingPickups.AddToTail( p );
+		}
+		return;
+	}
+
+	PushPickupHook( iUserID, pszItem, iAmount, bWeapon, pWeapon );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Flush queued pickups - called from ShouldDraw (every frame).  A
+//			weapon entry waits for its entity (GMod's EHANDLE retry) until the
+//			5s expiry; a ready local player flushes everything else at once.
+//-----------------------------------------------------------------------------
+void CHudKillFeed::FlushPickups( void )
+{
+	if ( m_PendingPickups.Count() == 0 )
+		return;
+
+	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+	bool bReady = ( pLocal != NULL && pLocal->IsAlive() );
+	float flNow = gpGlobals->curtime;
+
+	for ( int i = 0; i < m_PendingPickups.Count(); )
+	{
+		PendingPickup_t p = m_PendingPickups[i];
+		bool bExpired = ( p.flExpire <= flNow );
+
+		if ( !bReady )
+		{
+			// Not even a local player after the whole window - GMod's queued
+			// weapon handle expires the same way: give up rather than pile up.
+			if ( bExpired )
+				m_PendingPickups.Remove( i );
+			else
+				++i;
+			continue;
+		}
+
+		C_BaseCombatWeapon *pWeapon = p.bWeapon ? FindPickupWeapon( p.szItem ) : NULL;
+
+		if ( p.bWeapon && pWeapon == NULL && !bExpired )
+		{
+			++i;		// snapshot still coming - retry next frame
+			continue;
+		}
+
+		// On expiry dispatch anyway with whatever we have: a nil entity makes
+		// the Lua adapter take its 0.2s active-weapon retry / item-row fallback
+		// ("the user always wants a notification").
+		m_PendingPickups.Remove( i );
+		PushPickupHook( p.iUserID, p.szItem, p.iAmount, p.bWeapon, pWeapon );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Push the five-arg HUDItemPickedUp call (hook name by GMod id).
+//-----------------------------------------------------------------------------
+void CHudKillFeed::PushPickupHook( int iUserID, const char *pszItem, int iAmount, bool bWeapon, C_BaseCombatWeapon *pPickupWeapon )
+{
+	if ( !cl_killfeed_lua.GetBool() )
+		return;
+
+	const char *pszHookName = HL2SB_GetHookName( HL2SB_HOOK_HUDITEMPICKEDUP );
+	if ( pszHookName == NULL )
+		return;
+
+	BEGIN_LUA_CALL_HOOK( pszHookName );
+		lua_pushinteger( L, iUserID );
+		lua_pushstring( L, pszItem );
+		lua_pushinteger( L, iAmount );
+		// GMod's GM:HUDWeaponPickedUp receives the weapon ENTITY; the event
+		// only carries the classname, so it comes from the networked inventory.
+		if ( pPickupWeapon )
+			lua_pushentity( L, pPickupWeapon );
+		else
+			lua_pushnil( L );
+		lua_pushboolean( L, bWeapon );
+	// Five values are pushed above (userid, item, amount, entity, weaponFlag).
+	// This was 3 when the weapon entity was added on 2026-09-26: pcall then
+	// grabbed the EVENT NAME STRING as the function - "attempt to call a
+	// string value" on every pickup, and the Lua handler never ran at all.
+	END_LUA_CALL_HOOK( 5, 0 );
+}
+
+#endif	// LUA_SDK

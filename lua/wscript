@@ -67,6 +67,11 @@ def build(bld):
 		# HL2SB (sbrust): GMod 式第三方二进制模块加载器（gmod13_open/close 契约），
 		# 随 lua_shared.dll 导出 HL2SB_InstallBinaryModuleSearcher/HL2SB_RunBinaryModuleCloses。
 		"src/hl2sb_binmod.c",
+		# GMod 式钩子名注册表：GMod 的 lua_shared 持有全部引擎派发钩子名，
+		# C++ 侧只传数字 ID（client.dll CallWithArgs(0x2e)）。本表逐槽抄自
+		# GMod lua_shared.dll .data，ID 与 GMod 逐位对齐；导出
+		# HL2SB_GetHookName/HL2SB_GetHookCount 供 game DLL 按 ID 派发。
+		"src/hl2sb_hooks.c",
 	]
 
 	includes = [
