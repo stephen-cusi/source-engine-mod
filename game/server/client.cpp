@@ -1120,7 +1120,27 @@ void CC_Player_NoClip( void )
 	CPlayerState *pl = pPlayer->PlayerData();
 	Assert( pl );
 
-	if (pPlayer->GetMoveType() != MOVETYPE_NOCLIP)
+	bool bGoingOn = ( pPlayer->GetMoveType() != MOVETYPE_NOCLIP );
+
+	// HL2SB (2026-09-29): GMod gates the toggle through the gamemode -
+	// GM:PlayerNoClip( ply, on ), hook name slot 0x64 in GMod's lua_shared hook
+	// table (sandbox: sbox_noclip; base: single player only; turning noclip OFF
+	// is always allowed by both).  Veto semantics like CanEnterVehicle:
+	// a false return blocks, nil (no Lua gamemode / no return) continues.
+	{
+		BEGIN_LUA_CALL_HOOK( "PlayerNoClip" );
+			lua_pushplayer( L, pPlayer );
+			lua_pushboolean( L, bGoingOn );
+		END_LUA_CALL_HOOK( 2, 1 );
+		bool bAllow = true;
+		if ( lua_isboolean( L, -1 ) )
+			bAllow = lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+		if ( !bAllow )
+			return;
+	}
+
+	if ( bGoingOn )
 	{
 		EnableNoClip( pPlayer );
 		return;

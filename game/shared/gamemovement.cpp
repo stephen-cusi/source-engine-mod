@@ -2275,121 +2275,84 @@ void CGameMovement::FullObserverMove( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-// HL2SB: how much +speed (shift) multiplies the noclip speed - see the IN_SPEED
-// block inside FullNoClipMove below. 2.0 = twice as fast while held.
-#define HL2SB_NOCLIP_SPEED_BOOST 2.0f
-
+// HL2SB (2026-09-29): GMod's noclip movement, reference.  win64 server.dll
+//  and client.dll  are the SAME formula in both realms,
+// reached from the MOVETYPE_NOCLIP case of each pmove dispatcher (server
+//  case 8 / client  case 8) - that is how prediction
+// always agrees:
+//
+//   wishdir = forward*(IN_FORWARD-IN_BACK) + right*(IN_MOVERIGHT-IN_MOVELEFT)
+//             + up*(IN_JUMP ? 1 : 0)                 <- buttons, not cmd move values
+//   VectorNormalize(wishdir)
+//   wishvel = wishdir * (sv_noclipspeed * 100.0f)    <- GMod default 5 -> 500 u/s
+//   if (IN_SPEED) wishvel *= 3.0f                    <- shift: 1500 u/s
+//   if (IN_DUCK)  wishvel *= 0.1f                    <- ctrl:    50 u/s
+//   mv->m_vecVelocity = wishvel
+//   origin += velocity * frametime                   <- no trace; noclip collides with nothing
+//
+// No maxspeed clamp, no Accelerate ramp, no friction bleed: holding a key is a
+// constant speed, releasing stops instantly, and a view-plane diagonal moves at
+// the same speed as straight (the normalization).  GMod gates the shift/ctrl
+// multipliers on 'this move came from a real player command' (bVar2); in this
+// engine every caller of the MOVETYPE_NOCLIP branch IS a player move, so the
+// button test is the gate.  The observer-noclip call site (sv_specnoclip) shares
+// this move - GMod routes observers through the same MOVETYPE_NOCLIP case too.
+//
+// The previous port kept Valve's FlyMove shape (maxspeed = sv_maxspeed *
+// sv_noclipspeed => 1600 u/s default, a 2.0x shift boost, friction decay).  That
+// measured ~3x GMod's unshifted speed and had no ctrl-slowdown at all.
 extern ConVar hl2sb_anim_debug;
 
 void CGameMovement::FullNoClipMove( float factor, float maxacceleration )
 {
-	Vector wishvel;
+	// GMod reads neither parameter in the noclip case - the formula comes entirely
+	// from sv_noclipspeed and the buttons.  They stay in the signature for the
+	// observer call site, whose spec cvars GMod likewise ignores here.
+	(void)factor;
+	(void)maxacceleration;
+
 	Vector forward, right, up;
-	Vector wishdir;
-	float wishspeed;
+	AngleVectors( mv->m_vecViewAngles, &forward, &right, &up );
 
-	// HL2SB: GMod's noclip flies *faster* while +speed (shift by default) is held -
-	// see https://gmod.fandom.com/wiki/Noclip ("For faster flight, pressing the
-	// shift key is recommended"). Two things matter here:
-	//  1. Valve's original code halved *factor* here (factor /= 2.0f), i.e. shift
-	//     made noclip slower.
-	//  2. It has to be applied BEFORE maxspeed is derived from factor. With the boost
-	//     below the maxspeed line, the clamp stayed at sv_maxspeed*sv_noclipspeed and
-	//     absorbed the whole boost: measured clamp=3200 in the log while the real
-	//     speed stayed at ~1500 (FrameAdvance-era session, AGENTS.md 28).
+	float fmove = ( ( mv->m_nButtons & IN_FORWARD ) ? 1.0f : 0.0f )
+				  - ( ( mv->m_nButtons & IN_BACK ) ? 1.0f : 0.0f );
+	float smove = ( ( mv->m_nButtons & IN_MOVERIGHT ) ? 1.0f : 0.0f )
+				  - ( ( mv->m_nButtons & IN_MOVELEFT ) ? 1.0f : 0.0f );
+
+	Vector wishdir = forward * fmove + right * smove;
+	if ( mv->m_nButtons & IN_JUMP )
+		wishdir.z += 1.0f;
+	VectorNormalize( wishdir );
+
+	float speed = sv_noclipspeed.GetFloat() * 100.0f;
 	if ( mv->m_nButtons & IN_SPEED )
-	{
-		factor *= HL2SB_NOCLIP_SPEED_BOOST;
-	}
+		speed *= 3.0f;
+	if ( mv->m_nButtons & IN_DUCK )
+		speed *= 0.1f;
 
-	float maxspeed = sv_maxspeed.GetFloat() * factor;
-
-	AngleVectors (mv->m_vecViewAngles, &forward, &right, &up);  // Determine movement angles
-
-	// HL2SB diagnostic (hl2sb_anim_debug): print the noclip speed inputs whenever
-	// the +speed state changes, so "shift does nothing" can be told apart from "the
-	// new binary is not loaded". maxspeed is the value actually used for the clamp.
+	// HL2SB diagnostic (hl2sb_anim_debug): one line whenever the button set changes
+	// while noclipping, so 'shift/ctrl does nothing' can be told apart from 'the
+	// new binary is not loaded'.
 	if ( hl2sb_anim_debug.GetBool() && player && ( player->GetMoveType() == MOVETYPE_NOCLIP ) )
 	{
-		static bool s_bHL2SBLastBoost = false;
-		const bool bBoost = ( mv->m_nButtons & IN_SPEED ) != 0;
-		if ( bBoost != s_bHL2SBLastBoost )
+		static unsigned s_HL2SBLastButtons = 0xFFFFFFFFu;
+		if ( s_HL2SBLastButtons != (unsigned)mv->m_nButtons )
 		{
-			s_bHL2SBLastBoost = bBoost;
-			Msg( "[HL2SB noclip/sv] ent=%d boost=%d factor=%.2f sv_maxspeed=%.1f maxspeed=%.1f forwardmove=%.1f sidemove=%.1f upmove=%.1f\n",
-				 player->entindex(), bBoost ? 1 : 0, factor, sv_maxspeed.GetFloat(),
-				 maxspeed, mv->m_flForwardMove, mv->m_flSideMove, mv->m_flUpMove );
+			s_HL2SBLastButtons = (unsigned)mv->m_nButtons;
+			Msg( "[HL2SB noclip] ent=%d buttons=0x%x speed=%.1f (sv_noclipspeed=%.1f*100, "
+				 "shift x%.1f, ctrl x%.1f)\n",
+				 player->entindex(), (unsigned)mv->m_nButtons, speed,
+				 sv_noclipspeed.GetFloat(),
+				 ( mv->m_nButtons & IN_SPEED ) ? 3.0f : 1.0f,
+				 ( mv->m_nButtons & IN_DUCK ) ? 0.1f : 1.0f );
 		}
 	}
-	
-	// Copy movement amounts
-	float fmove = mv->m_flForwardMove * factor;
-	float smove = mv->m_flSideMove * factor;
-	
-	VectorNormalize (forward);  // Normalize remainder of vectors
-	VectorNormalize (right);    // 
 
-	for (int i=0 ; i<3 ; i++)       // Determine x and y parts of velocity
-		wishvel[i] = forward[i]*fmove + right[i]*smove;
-	wishvel[2] += mv->m_flUpMove * factor;
+	mv->m_vecVelocity = wishdir * speed;
 
-	VectorCopy (wishvel, wishdir);   // Determine maginitude of speed of move
-	wishspeed = VectorNormalize(wishdir);
-
-	//
-	// Clamp to server defined max speed
-	//
-	if (wishspeed > maxspeed )
-	{
-		VectorScale (wishvel, maxspeed/wishspeed, wishvel);
-		wishspeed = maxspeed;
-	}
-
-	if ( maxacceleration > 0.0 )
-	{
-		// Set pmove velocity
-		Accelerate ( wishdir, wishspeed, maxacceleration );
-
-		float spd = VectorLength( mv->m_vecVelocity );
-		if (spd < 1.0f)
-		{
-			mv->m_vecVelocity.Init();
-			return;
-		}
-		
-		// Bleed off some speed, but if we have less than the bleed
-		//  threshhold, bleed the theshold amount.
-		float control = (spd < maxspeed/4.0) ? maxspeed/4.0 : spd;
-		
-		float friction = sv_friction.GetFloat() * player->m_surfaceFriction;
-				
-		// Add the amount to the drop amount.
-		float drop = control * friction * gpGlobals->frametime;
-
-		// scale the velocity
-		float newspeed = spd - drop;
-		if (newspeed < 0)
-			newspeed = 0;
-
-		// Determine proportion of old speed we are using.
-		newspeed /= spd;
-		VectorScale( mv->m_vecVelocity, newspeed, mv->m_vecVelocity );
-	}
-	else
-	{
-		VectorCopy( wishvel, mv->m_vecVelocity );
-	}
-
-	// Just move ( don't clip or anything )
 	Vector out;
 	VectorMA( mv->GetAbsOrigin(), gpGlobals->frametime, mv->m_vecVelocity, out );
 	mv->SetAbsOrigin( out );
-
-	// Zero out velocity if in noaccel mode
-	if ( maxacceleration < 0.0f )
-	{
-		mv->m_vecVelocity.Init();
-	}
 }
 
 
