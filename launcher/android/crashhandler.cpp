@@ -103,12 +103,19 @@ static void CrashHandler( int sig, siginfo_t *si, void *uc)
 	static backtrace_t bt;
 	bt.count = 0;
 
-	_Unwind_Backtrace(UnwindBacktraceCallback, &bt);
-
 	Log(">>> crash report begin\n");
 
 	snprintf(message, sizeof(message), "Signal=%d, errno=%d, code=%d, addr=0x%" PRIXPTR "\n", sig, si->si_errno, si->si_code, (uintptr_t)si->si_addr);
 	Log(message);
+
+	// unwinder can get stuck on the signal frame, so always print
+	// the real faulting PC/LR/SP from the signal context first
+	printPC( (void*)(uintptr_t)signal_mcontext->pc );
+	printPC( (void*)(uintptr_t)signal_mcontext->regs[30] );
+	snprintf( message, sizeof(message), "sp=0x%" PRIXPTR "\n", (uintptr_t)signal_mcontext->sp );
+	Log(message);
+
+	_Unwind_Backtrace(UnwindBacktraceCallback, &bt);
 
 	for( int i = 0; i < bt.count; i++ )
 	{
