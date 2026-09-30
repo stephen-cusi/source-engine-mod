@@ -399,6 +399,21 @@ bool C_BaseViewModel::ShouldDraw()
 //-----------------------------------------------------------------------------
 int C_BaseViewModel::DrawModel( int flags )
 {
+	// HL2SB: a viewmodel can reach its first draw with the vtable pointer
+	// already wiped (object freed or not yet constructed while still queued
+	// for rendering). Every virtual call below would then read through a null
+	// vtable and crash, so skip the draw and report the instance instead --
+	// the owner index identifies the entity path to trace.
+	if ( *reinterpret_cast< void ** >( this ) == NULL )
+	{
+		C_BaseEntity *pOwner = GetOwnerEntity();
+		int ownerIndex = ( pOwner != NULL && *reinterpret_cast< void ** >( pOwner ) != NULL )
+			? pOwner->entindex() : -1;
+		Warning( "HL2SB: DrawModel skipped, viewmodel has no vtable (this=%p owner=%d)\n",
+			this, ownerIndex );
+		return 0;
+	}
+
 	if ( !m_bReadyToDraw )
 		return 0;
 
@@ -450,7 +465,11 @@ int C_BaseViewModel::DrawModel( int flags )
 		}
 	}
 
-
+	// HL2SB: return the value BaseClass::DrawModel computed above. This was
+	// dropped when the old hands-attachment block was removed (falling off the
+	// end of a value-returning function is undefined behaviour; MSVC happened
+	// to leave the value in a register, other toolchains may not).
+	return ret;
 }
 
 //-----------------------------------------------------------------------------
