@@ -127,7 +127,12 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 	hudlcd->SetGlobalStat( "(weapon_print_name)", wpn ? wpn->GetPrintName() : " " );
 	hudlcd->SetGlobalStat( "(weapon_name)", wpn ? wpn->GetName() : " " );
 
-	if ( !wpn || !player || !wpn->UsesPrimaryAmmo() )
+	// HL2SB (2026-10-01): the stock rule "no primary ammo type -> hide the
+	// ammo panel" is HL2 content talking (crowbar, medigun...), but a GMod
+	// SWEP with Primary.Ammo = "" can still own a CLIP -- weapon_medkit
+	// keeps its charge in Clip1 (100..0) and its whole ammo HUD vanished
+	// under the stock rule. GMod semantics: a clip is displayable ammo.
+	if ( !wpn || !player || ( !wpn->UsesPrimaryAmmo() && !wpn->UsesClipsForAmmo1() ) )
 	{
 		hudlcd->SetGlobalStat( "(ammo_primary)", "n/a" );
         hudlcd->SetGlobalStat( "(ammo_secondary)", "n/a" );
@@ -203,6 +208,15 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 		}
 	}
 #endif
+
+	// HL2SB (2026-10-01) probe: once per weapon class, the final decision.
+	{
+		char szKey[ 192 ];
+		Q_snprintf( szKey, sizeof( szKey ), "ammoHud:%s", wpn->GetClassname() );
+		HL2SB_WarnOnce( szKey, "[HL2SB wp] CHudAmmo class='%s' clip1=%d ammo1=%d ammo2=%d usesClip=%d usesPrimary=%d\n",
+			wpn->GetClassname(), wpn->Clip1(), ammo1, ammo2,
+			wpn->UsesClipsForAmmo1() ? 1 : 0, wpn->UsesPrimaryAmmo() ? 1 : 0 );
+	}
 
 	hudlcd->SetGlobalStat( "(ammo_primary)", VarArgs( "%d", ammo1 ) );
 	hudlcd->SetGlobalStat( "(ammo_secondary)", VarArgs( "%d", ammo2 ) );
