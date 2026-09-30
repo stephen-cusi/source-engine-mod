@@ -1555,9 +1555,8 @@ static int CBaseEntity_PhysicsInit (lua_State *L) {
 // StopSound is CBaseEntity::StopSound().  Both were originally bound because
 // the windgrin_npc nextbot calls them on its hot paths.
 //
-// OBBCenter: GMod returns the LOCAL OBB center (reference from x64 server.dll
-// : result = mins + 0.5 * (maxs - mins), no rotation, no origin
-// added) -- which is why every GMod addon wraps it as
+// OBBCenter: GMod returns the LOCAL OBB center (mins + 0.5 * (maxs - mins),
+// no rotation, no origin added) -- which is why every GMod addon wraps it as
 //     ent:LocalToWorld( ent:OBBCenter() )
 // and that pattern runs throughout this tree (scp173's attack trace, path
 // check and FaceVictim, hitnumbers, nukepack, npc_verity, the waterizer,
@@ -2027,11 +2026,41 @@ static int CBaseEntity_SetAbsOrigin (lua_State *L) {
 // then dragged the entity straight back every tick, so TeleportToPos's
 // SetPos could never move it: the statue stood still forever.  Route through
 // Teleport(), which moves both the networked origin and the vphysics object.
-static int CBaseEntity_SetPos (lua_State *L) {
+// HL2SB: non-static - the Vehicle metatable overrides SetPos with this same
+// parent-aware handler (see lvehicle_shared.cpp).
+int CBaseEntity_SetPos (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   const Vector &vecOrigin = luaL_checkvector(L, 2);
 #ifdef GAME_DLL
-  pEntity->Teleport( &vecOrigin, NULL, NULL );
+  // HL2SB GMod parity (2026-09-29, server half - the statue/CallOnClient path above
+  // is about the UNPARENTED case, which keeps routing through Teleport): GMod's
+  // Entity:SetPos binding routes through CBaseEntity::SetAbsOrigin (the
+  // "SetAbsOrigin( ... ): Ignoring unreasonable position" body), which
+  // converts the world vector into parent-local through
+  // GetParentToWorldTransform when a move parent exists.  The fork's old server path
+  // (Teleport -> UTIL_SetOrigin -> SetLocalOrigin) wrote the WORLD vector into the
+  // child's LOCAL space, so a parented child (cod_c4's C4 stuck to an NPC: SetParent
+  // then SetPos in the same timer callback) was multiplied by the parent transform
+  // on the client and landed at parentOrigin + worldPos -- the "thrown C4 offset from
+  // the NPC" report.  Unparented entities are unaffected (local == abs there).
+  if ( pEntity->GetMoveParent() )
+  {
+    // GMod's binding additionally runs Teleport after SetAbsOrigin for a
+    // parented child (the entity-vtable Teleport call), and the fork's
+    // TeleportEntity physics branch is what re-seats the vphysics shadow at
+    // the new abs transform.  SetAbsOrigin alone only fixes the logical
+    // origin - the physical box stayed where the throw landed (inside the
+    // NPC), and the NPC then walks into its own stuck C4 and stops: the
+    // "stuck to NPC, cannot move" report.  Replicate the shadow move here;
+    // the full Teleport cannot be used (its UTIL_SetOrigin writes parent-
+    // LOCAL, undoing the conversion above).
+    pEntity->SetAbsOrigin( vecOrigin );
+    IPhysicsObject *pPhys = pEntity->VPhysicsGetObject();
+    if ( pPhys && !pPhys->IsStatic() )
+      pPhys->SetPosition( pEntity->GetAbsOrigin(), pEntity->GetAbsAngles(), true );
+  }
+  else
+    pEntity->Teleport( &vecOrigin, NULL, NULL );
 #else
   // HL2SB GMod parity (2026-09-25): SetPos on a PARENTED clientside entity
   // must move it to the WORLD position (GMod: "Moves the entity to the
@@ -2329,7 +2358,15 @@ static int CBaseEntity_SetParent (lua_State *L) {
   if (pParent == NULL)
     pParent = lua_toentity(L, 2);
 
-  luaL_checkentity(L, 1)->SetParent(pParent, luaL_optint(L, 3, 0));
+  // HL2SB GMod parity (2026-09-29): GMod's Entity:SetParent passes the number
+  // arg3 as the attachment index and -1 for everything else (nil/string).
+  // -1 means "keep the child's current attachment" (CBaseEntity::SetParent reads the stored byte).
+  // The old default 0 silently RESET the attachment on a bare re-parent.
+  int iAttachment = -1;
+  if ( lua_isnumber( L, 3 ) )
+    iAttachment = (int)lua_tointeger( L, 3 );
+
+  luaL_checkentity(L, 1)->SetParent(pParent, iAttachment);
   return 0;
 }
 

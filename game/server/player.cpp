@@ -5429,21 +5429,71 @@ void CBasePlayer::VelocityPunch( const Vector &vecForce )
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+// HL2SB: the reference EnterVehicle wrapper -
+// the ONLY entry every "put this player in that vehicle" path goes through
+// (the use-key HandlePassengerEntry, the pod inputs, the vehicleRole command).
+// Three things live here, none of which the bare GetInVehicle() had:
+//
+//   1. a parent-cycle guard - a player physgun-parented to a vehicle (or its
+//      chain) must not be pulled INTO it; warn and refuse;
+//   2. GM:CanPlayerEnterVehicle( ply, vehicle, role ) - returning false
+//      refuses the entry (nil/true allow);
+//   3. GM:PlayerEnteredVehicle( ply, vehicle, role ) after a successful
+//      GetInVehicle.
+//
+// The self-made "CanEnterVehicle" hook this fork dispatched from inside
+// CBasePlayer::CanEnterVehicle() is gone: the reference hook name is
+// CanPlayerEnterVehicle and it fires HERE, once per entry, not per internal
+// re-check.
+//-----------------------------------------------------------------------------
+bool CBasePlayer::EnterVehicle( IServerVehicle *pVehicle, int nRole )
+{
+	CBaseEntity *pVehicleEnt = pVehicle ? pVehicle->GetVehicleEnt() : NULL;
+	if ( pVehicleEnt == NULL )
+		return false;
+
+	for ( CBaseEntity *pParent = pVehicleEnt->GetMoveParent(); pParent; pParent = pParent->GetMoveParent() )
+	{
+		if ( pParent == this )
+		{
+			Warning( "Player attempted to enter vehicle that they are a parent of! ( Player [%i][%s] -> Vehicle [%i][%s] )\n",
+					 entindex(), GetPlayerName(), pVehicleEnt->entindex(), pVehicleEnt->GetClassname() );
+			return false;
+		}
+	}
+
+	BEGIN_LUA_CALL_HOOK( "CanPlayerEnterVehicle" );
+		lua_pushplayer( L, this );
+		lua_pushentity( L, pVehicleEnt );
+		lua_pushinteger( L, nRole );
+	END_LUA_CALL_HOOK( 3, 1 );
+
+	bool bAllowed = true;
+	if ( lua_isboolean( L, -1 ) )
+		bAllowed = lua_toboolean( L, -1 ) != 0;
+	lua_pop( L, 1 );
+
+	if ( bAllowed == false )
+		return false;
+
+	if ( GetInVehicle( pVehicle, nRole ) == false )
+		return false;
+
+	BEGIN_LUA_CALL_HOOK( "PlayerEnteredVehicle" );
+		lua_pushplayer( L, this );
+		lua_pushentity( L, pVehicleEnt );
+		lua_pushinteger( L, nRole );
+	END_LUA_CALL_HOOK( 3, 0 );
+
+	return true;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Whether or not the player is currently able to enter the vehicle
 // Output : Returns true on success, false on failure.
 //-----------------------------------------------------------------------------
 bool CBasePlayer::CanEnterVehicle( IServerVehicle *pVehicle, int nRole )
 {
-#ifdef LUA_SDK
-	BEGIN_LUA_CALL_HOOK( "CanEnterVehicle" );
-		lua_pushplayer( L, this );
-		// FIXME: implement lua_pushvehicle()!
-		lua_pushentity( L, pVehicle->GetVehicleEnt());
-		lua_pushinteger( L, nRole );
-	END_LUA_CALL_HOOK( 3, 1 );
-
-	RETURN_LUA_BOOLEAN();
-#endif
 	// Must not have a passenger there already
 	if ( pVehicle->GetPassenger( nRole ) )
 		return false;
@@ -5524,8 +5574,23 @@ bool CBasePlayer::GetInVehicle( IServerVehicle *pVehicle, int nRole )
 	SetAbsOrigin( vSeatOrigin );
 	SetAbsAngles( qSeatAngles );
 	
-	// Parent to the vehicle
-	SetParent( pEnt );
+	// Parent to the vehicle.
+	//
+	// GMod parents the rider to the vehicle's "vehicle_feet_passenger0"
+	// ATTACHMENT, not to the entity root.  The difference is invisible on rigid
+	// vehicles (the seat attachment rigidly follows the body), but vehicles
+	// whose shell animates around a static body - the prisoner pod's closing
+	// hatch is the shipped example - moved their geometry away from the
+	// rest-pose seat point and left the rider hanging outside the closed pod.
+	// An attachment index of 0 means "no attachment" (root), which is the old
+	// behavior for models without that attachment.
+	int iSeatAttachment = 0;
+	CBaseAnimating *pSeatAnim = pEnt->GetBaseAnimating();
+	if ( pSeatAnim )
+	{
+		iSeatAttachment = pSeatAnim->LookupAttachment( "vehicle_feet_passenger0" );
+	}
+	SetParent( pEnt, iSeatAttachment );
 
 	SetCollisionGroup( COLLISION_GROUP_IN_VEHICLE );
 	
@@ -5697,8 +5762,17 @@ void CBasePlayer::LeaveVehicle( const Vector &vecExitPoint, const QAngle &vecExi
 		}
 	}
 
-	// Just cut all of the rumble effects. 
+	// Just cut all of the rumble effects.
 	RumbleEffect( RUMBLE_STOP_ALL, 0, RUMBLE_FLAGS_NONE );
+
+	// HL2SB: fire GM:PlayerLeaveVehicle( ply, vehicle ) at the very end of
+	// the leave transition, with the vehicle as it still resolves from the
+	// handle - NULL when the vehicle is already gone (the undo-while-riding
+	// path).
+	BEGIN_LUA_CALL_HOOK( "PlayerLeaveVehicle" );
+		lua_pushplayer( L, this );
+		lua_pushentity( L, bHasVehicle ? pVehicle->GetVehicleEnt() : NULL );
+	END_LUA_CALL_HOOK( 2, 0 );
 }
 
 
@@ -6490,9 +6564,9 @@ bool CBasePlayer::ClientCommand( const CCommand &args )
 					if ( !pVehicle->GetPassenger( nRole ) )
 					{
 						LeaveVehicle();
-						GetInVehicle( pVehicle, nRole );
+						EnterVehicle( pVehicle, nRole );
 					}
-				}			
+				}
 			}
 
 			return true;

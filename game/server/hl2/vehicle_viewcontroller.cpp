@@ -153,7 +153,8 @@ void CPropVehicleViewController::InputForcePlayerIn( inputdata_t &inputdata )
 	}
 
 	// Make sure we successfully got in the vehicle
-	if ( pPlayer->GetInVehicle( GetServerVehicle(), VEHICLE_ROLE_DRIVER ) == false )
+	// HL2SB: wrapper so the enter hooks fire here too
+	if ( pPlayer->EnterVehicle( GetServerVehicle(), VEHICLE_ROLE_DRIVER ) == false )
 	{
 		// The player was unable to enter the vehicle and the output has failed
 		Assert( 0 );

@@ -495,6 +495,7 @@ public:
 	// Vehicles
 	virtual bool			IsInAVehicle( void ) const;
 			bool			CanEnterVehicle( IServerVehicle *pVehicle, int nRole );
+	virtual bool			EnterVehicle( IServerVehicle *pVehicle, int nRole );
 	virtual bool			GetInVehicle( IServerVehicle *pVehicle, int nRole );
 	virtual void			LeaveVehicle( const Vector &vecExitPoint = vec3_origin, const QAngle &vecExitAngles = vec3_angle );
 	int						GetVehicleAnalogControlBias() { return m_iVehicleAnalogBias; }

@@ -772,7 +772,8 @@ void CPropVehicleChoreoGeneric::InputEnterVehicleImmediate( inputdata_t &inputda
 	// Force us to drop anything we're holding
 	pPlayer->ForceDropOfCarriedPhysObjects();
 
-	pPlayer->GetInVehicle( GetServerVehicle(), VEHICLE_ROLE_DRIVER );
+	// HL2SB: wrapper so the enter hooks fire here too
+	pPlayer->EnterVehicle( GetServerVehicle(), VEHICLE_ROLE_DRIVER );
 }
 
 //-----------------------------------------------------------------------------

@@ -6,6 +6,10 @@
 //=============================================================================//
 
 #include "cbase.h"
+#include "luamanager.h"
+// HL2SB: GM:CanExitVehicle / GM:CanPlayerEnterVehicle dispatch
+#include "lbaseentity_shared.h"
+
 #include "vcollide_parse.h"
 #include "vehicle_base.h"
 #include "ndebugoverlay.h"
@@ -875,12 +879,27 @@ bool CPropVehicleDriveable::CanEnterVehicle( CBaseEntity *pEntity )
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Return true of the player's allowed to exit the vehicle
+// HL2SB: the reference driveable exit gate is ONLY the GM:CanExitVehicle
+// hook (false denies, nil/true fall through) plus the entry/exit animation
+// flags.  The SDK's m_bLocked and m_nSpeed terms are gone - a locked or
+// moving jeep can be bailed out of with +use.
 //-----------------------------------------------------------------------------
 bool CPropVehicleDriveable::CanExitVehicle( CBaseEntity *pEntity )
 {
-	// Prevent exiting if the vehicle's locked, or if it's moving too fast.
-	return ( !m_bEnterAnimOn && !m_bExitAnimOn && !m_bLocked && (m_nSpeed <= m_flMinimumSpeedToEnterExit) );
+	BEGIN_LUA_CALL_HOOK( "CanExitVehicle" );
+		lua_pushentity( L, this );
+		lua_pushentity( L, pEntity );
+	END_LUA_CALL_HOOK( 2, 1 );
+
+	bool bAllowed = true;
+	if ( lua_isboolean( L, -1 ) )
+		bAllowed = lua_toboolean( L, -1 ) != 0;
+	lua_pop( L, 1 );
+
+	if ( bAllowed == false )
+		return false;
+
+	return ( !m_bEnterAnimOn && !m_bExitAnimOn );
 }
 
 //-----------------------------------------------------------------------------

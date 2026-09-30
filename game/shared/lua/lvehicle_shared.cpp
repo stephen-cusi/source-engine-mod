@@ -1530,6 +1530,19 @@ static int Vehicle___tostring (lua_State *L) {
   return 1;
 }
 
+// HL2SB: the reference Vehicle metatable carries its own IsVehicle
+// (validates the argument, then answers true) and its own SetPos (the same
+// SetAbsOrigin-based parent-aware placement the shared Entity:SetPos binding
+// already implements).  Route the vehicle override to the entity handler so
+// both spellings stay identical.
+int CBaseEntity_SetPos (lua_State *L);
+
+static int Vehicle_IsVehicle (lua_State *L) {
+  luaL_checkvehicle(L, 1);
+  lua_pushboolean( L, true );
+  return 1;
+}
+
 
 static const luaL_Reg Vehiclemeta[] = {
   {"BoostTimeLeft", Vehicle_BoostTimeLeft},
@@ -1563,8 +1576,10 @@ static const luaL_Reg Vehiclemeta[] = {
   {"IsEngineEnabled", Vehicle_IsEngineEnabled},
   {"IsEngineStarted", Vehicle_IsEngineStarted},
   {"IsValidVehicle", Vehicle_IsValidVehicle},
+  {"IsVehicle", Vehicle_IsVehicle},
   {"IsVehicleBodyInWater", Vehicle_IsVehicleBodyInWater},
   {"ReleaseHandbrake", Vehicle_ReleaseHandbrake},
+  {"SetPos", CBaseEntity_SetPos},
   {"SetBoost", Vehicle_SetBoost},
   {"SetCameraDistance", Vehicle_SetCameraDistance},
   {"SetHandbrake", Vehicle_SetHandbrake},

@@ -5,6 +5,10 @@
 //=============================================================================//
 
 #include "cbase.h"
+#include "luamanager.h"
+// HL2SB: GM:CanExitVehicle / GM:CanPlayerEnterVehicle dispatch
+#include "lbaseentity_shared.h"
+
 #include "npcevent.h"
 #include "vehicle_base.h"
 #include "engine/IEngineSound.h"
@@ -461,17 +465,37 @@ bool CPropVehiclePrisonerPod::CanEnterVehicle( CBaseEntity *pEntity )
 
 
 //-----------------------------------------------------------------------------
-// Purpose: Return true of the player is allowed to exit the vehicle.
+// HL2SB: the SDK's CanExitVehicle tested this class's own m_bLocked, and the
+// pod's "close" sequence fires AE_POD_CLOSE, whose handler sets exactly that
+// flag - a menu-spawned pod locked itself the moment its entry animation
+// finished and +use (E) could never leave it.  The reference behavior keeps
+// the same override shape but WITHOUT the lock term:
+// GM:CanExitVehicle hook first (returning false denies, nil/true fall
+// through), then zero local angular velocity and no entry/exit animation
+// playing.  The hatch lock only gates re-entering through the use path
+// (CanEnterVehicle above), it must not trap the rider.
 //-----------------------------------------------------------------------------
 bool CPropVehiclePrisonerPod::CanExitVehicle( CBaseEntity *pEntity )
 {
-	// Prevent exiting if the vehicle's locked, rotating, or playing an entry/exit anim.
-	return ( !m_bLocked && (GetLocalAngularVelocity() == vec3_angle) && !m_bEnterAnimOn && !m_bExitAnimOn );
+	BEGIN_LUA_CALL_HOOK( "CanExitVehicle" );
+		lua_pushentity( L, this );
+		lua_pushentity( L, pEntity );
+	END_LUA_CALL_HOOK( 2, 1 );
+
+	bool bAllowed = true;
+	if ( lua_isboolean( L, -1 ) )
+		bAllowed = lua_toboolean( L, -1 ) != 0;
+	lua_pop( L, 1 );
+
+	if ( bAllowed == false )
+		return false;
+
+	return ( (GetLocalAngularVelocity() == vec3_angle) && !m_bEnterAnimOn && !m_bExitAnimOn );
 }
 
 
 //-----------------------------------------------------------------------------
-// Purpose: Override base class to add display 
+// Purpose: Override base class to add display
 //-----------------------------------------------------------------------------
 void CPropVehiclePrisonerPod::DrawDebugGeometryOverlays(void) 
 {
@@ -656,7 +680,8 @@ void CPropVehiclePrisonerPod::InputEnterVehicleImmediate( inputdata_t &inputdata
 			pPlayer->LeaveVehicle();
 		}
 		
-		pPlayer->GetInVehicle( GetServerVehicle(), VEHICLE_ROLE_DRIVER );
+		// HL2SB: wrapper so the enter hooks fire here too
+		pPlayer->EnterVehicle( GetServerVehicle(), VEHICLE_ROLE_DRIVER );
 	}
 	else
 	{

@@ -1251,7 +1251,9 @@ void CBaseServerVehicle::HandlePassengerEntry( CBaseCombatCharacter *pPassenger,
 				pAnimating->InvalidateBoneCache();	// This is necessary because we need to query attachment points this frame for blending!
 				GetDrivableVehicle()->SetVehicleEntryAnim( true );
 
-				pPlayer->GetInVehicle( this, VEHICLE_ROLE_DRIVER );
+				// HL2SB: through the EnterVehicle wrapper - fires GM:CanPlayerEnterVehicle /
+				// GM:PlayerEnteredVehicle like GMod's use-key entry does.
+				pPlayer->EnterVehicle( this, VEHICLE_ROLE_DRIVER );
 			}
 		}
 	}
