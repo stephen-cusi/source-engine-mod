@@ -308,14 +308,26 @@ IPhysicsObject *PhysModelCreate( CBaseEntity *pEntity, int modelIndex, const Vec
 
 	vcollide_t *pCollide = modelinfo->GetVCollide( modelIndex );
 	if ( !pCollide || !pCollide->solidCount )
+	{
+		// HL2SB TEMP DIAG 2026-09-29 (tnt-model blocks get no server collision):
+		// which of the three NULL exits did we take?  Remove after diagnosis.
+		if ( pEntity && Q_stristr( STRING(pEntity->GetModelName()), "tnt" ) )
+			Warning( "[HL2SB] PhysModelCreate NULL#1 vcollide model=%d '%s' pCollide=%p solidCount=%d\n",
+				modelIndex, STRING(pEntity->GetModelName()), pCollide, pCollide ? pCollide->solidCount : -1 );
 		return NULL;
+	}
 	
 	solid_t tmpSolid;
 	if ( !pSolid )
 	{
 		pSolid = &tmpSolid;
 		if ( !PhysModelParseSolidByIndex( tmpSolid, pEntity, pCollide, -1 ) )
+		{
+			if ( pEntity && Q_stristr( STRING(pEntity->GetModelName()), "tnt" ) )
+				Warning( "[HL2SB] PhysModelCreate NULL#2 parse model='%s' pKeyValues=%p\n",
+					STRING(pEntity->GetModelName()), (void*)pCollide->pKeyValues );
 			return NULL;
+		}
 	}
 
 	int surfaceProp = -1;
@@ -325,6 +337,14 @@ IPhysicsObject *PhysModelCreate( CBaseEntity *pEntity, int modelIndex, const Vec
 	}
 	IPhysicsObject *pObject = physenv->CreatePolyObject( pCollide->solids[pSolid->index], surfaceProp, origin, angles, &pSolid->params );
 	//PhysCheckAdd( pObject, STRING(pEntity->m_iClassname) );
+
+	// HL2SB TEMP DIAG 2026-09-29: NULL#3 = vphysics itself refused the solid.
+	if ( pObject == NULL && pEntity && Q_stristr( STRING(pEntity->GetModelName()), "tnt" ) )
+	{
+		Warning( "[HL2SB] PhysModelCreate NULL#3 CreatePolyObject model='%s' surf='%s' surfIdx=%d solidIdx=%d collide=%p\n",
+			STRING(pEntity->GetModelName()), pSolid->surfaceprop, surfaceProp,
+			pSolid->index, (void*)pCollide->solids[pSolid->index] );
+	}
 
 	if ( pObject )
 	{

@@ -157,7 +157,9 @@ void CPropAPC::Spawn( void )
 	SetPoseParameter( "vehicle_weapon_pitch", 0 );
 	SetPoseParameter( "vehicle_weapon_yaw", 90 );
 
-	CreateAPCLaserDot();
+	// HL2SB: no laser dot at spawn - it parked at the APC origin (ground level
+	// under the hull) and rendered as a stray red glow on driverless APCs.
+	// AimSecondaryWeaponAt() creates it on demand.
 
 	if( g_pGameRules->GetAutoAimMode() == AUTOAIM_ON_CONSOLE )
 	{
@@ -650,7 +652,28 @@ void CPropAPC::Think( void )
 
 	StudioFrameAdvance();
 
-	if ( IsSequenceFinished() )
+	// HL2SB: process the player entry/exit animation exactly like the other
+	// drivables.  The stock body below resets ANY finished sequence straight to
+	// idle - which also buried the entry/exit animation before its handler
+	// could run - so m_bEnterAnimOn/m_bExitAnimOn never cleared and the APC
+	// stayed locked after the first ride (no driving, no exit).
+	if ( m_bEnterAnimOn || m_bExitAnimOn )
+	{
+		if ( IsSequenceFinished() )
+		{
+			bool bWasEntry = !m_bExitAnimOn;
+			GetServerVehicle()->HandleEntryExitFinish( m_bExitAnimOn, true );
+
+			// HL2SB: EnterVehicle() skips StartEngine while an entry animation
+			// plays - the reference's other drivables start it in their
+			// completion handlers (jeep), so the APC does the same.
+			if ( bWasEntry )
+			{
+				StartEngine();
+			}
+		}
+	}
+	else if ( IsSequenceFinished() )
 	{
 		int iSequence = SelectWeightedSequence( ACT_IDLE );
 		if ( iSequence > ACTIVITY_NOT_AVAILABLE )
@@ -679,9 +702,17 @@ void CPropAPC::AimSecondaryWeaponAt( CBaseEntity *pTarget )
 {
 	m_hRocketTarget = pTarget;
 
-	// Update the rocket target
-	CreateAPCLaserDot();
+	// HL2SB: created on demand (see Spawn) so driverless APCs don't carry a
+	// stray red glow parked at their origin.
+	if ( m_hRocketTarget != NULL && m_hLaserDot == NULL )
+	{
+		CreateAPCLaserDot();
+	}
 
+	if ( m_hLaserDot == NULL )
+		return;
+
+	// Update the rocket target
 	if ( m_hRocketTarget )
 	{
 		m_hLaserDot->SetAbsOrigin( m_hRocketTarget->BodyTarget( WorldSpaceCenter(), false ) );

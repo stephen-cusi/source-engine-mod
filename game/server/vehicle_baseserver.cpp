@@ -694,10 +694,33 @@ void CBaseServerVehicle::GetPassengerSeatPoint( int nRole, Vector *pPoint, QAngl
 
 			if ( bFoundSeat )
 			{
+				// HL2SB: the answer must be the attachment's LIVE transform (the pose
+				// playing right now).  SetParent() measures the rider's local offset
+				// against exactly that transform, so answering the rest-pose point here
+				// bakes (rest - live) into the rider's permanent local offset - the
+				// entry sweep on Valve's vehicles (airboat enter1..8, jeep enter1..4
+				// sweep the bone both seat attachments hang off) then parks them tens
+				// of units below/beside the seat once the animation settles.  The
+				// rest-pose read above stays as the availability gate and for the
+				// debug print only.
+				Vector vecLiveOrigin;
+				QAngle angLiveAngles;
+				if ( pAnimating->GetAttachment( nFeetAttachmentIndex, vecLiveOrigin, angLiveAngles ) )
+				{
+					vecOrigin = vecLiveOrigin;
+					vecAngles = angLiveAngles;
+					pszSeatSource = "live attachment";
+				}
+
 				// Same local -> world conversion the animated branch performs above, so
 				// the two paths cannot disagree about what "model space" means.
-				const Vector vecLocalOrigin = vecOrigin;
-				const QAngle angLocal = vecAngles;
+				Vector vecLocalOrigin;
+				QAngle angLocal;
+				if ( !pAnimating->GetAttachmentLocal( nFeetAttachmentIndex, vecLocalOrigin, angLocal ) )
+				{
+					vecLocalOrigin = vecOrigin;
+					angLocal = vecAngles;
+				}
 				UTIL_ParentToWorldSpace( pAnimating, vecOrigin, vecAngles );
 				HL2SB_DebugSeatPoint( pAnimating, pAttachmentName, pszSeatSource,
 									  vecLocalOrigin, angLocal, vecOrigin, vecAngles );
@@ -745,20 +768,21 @@ bool CBaseServerVehicle::CheckExitPoint( float yaw, int distance, Vector *pEndPo
 	QAngle vehicleAngles = m_pVehicle->GetLocalAngles();
   	Vector vecStart = m_pVehicle->GetAbsOrigin();
   	Vector vecDir;
-   
+
   	vecStart.z += 12;		// always 12" from ground
-  	vehicleAngles[YAW] += yaw;	
+  	vehicleAngles[YAW] += yaw;
   	AngleVectors( vehicleAngles, NULL, &vecDir, NULL );
 	// Vehicles are oriented along the Y axis
 	vecDir *= -1;
   	*pEndPoint = vecStart + vecDir * distance;
-  
+
   	trace_t tr;
-  	UTIL_TraceHull( vecStart, *pEndPoint, VEC_HULL_MIN, VEC_HULL_MAX, MASK_PLAYERSOLID, m_pVehicle, COLLISION_GROUP_NONE, &tr );
+  	CTraceFilterSkipTwoEntities exitFilter( m_pVehicle, GetPassenger( VEHICLE_ROLE_DRIVER ), COLLISION_GROUP_NONE );
+  	UTIL_TraceHull( vecStart, *pEndPoint, VEC_HULL_MIN, VEC_HULL_MAX, MASK_PLAYERSOLID, &exitFilter, &tr );
 
 	if ( tr.fraction < 1.0 )
 		return false;
-  
+
   	return true;
 }
 
@@ -766,7 +790,7 @@ bool CBaseServerVehicle::CheckExitPoint( float yaw, int distance, Vector *pEndPo
 // Purpose: Where does this passenger exit the vehicle?
 //-----------------------------------------------------------------------------
 bool CBaseServerVehicle::GetPassengerExitPoint( int nRole, Vector *pExitPoint, QAngle *pAngles )
-{ 
+{
 	Assert( nRole == VEHICLE_ROLE_DRIVER ); 
 
 	// First, see if we've got an attachment point
@@ -779,12 +803,30 @@ bool CBaseServerVehicle::GetPassengerExitPoint( int nRole, Vector *pExitPoint, Q
 		{
 			// Make sure it's clear
 			trace_t tr;
-			UTIL_TraceHull( vehicleExitOrigin + Vector(0, 0, 12), vehicleExitOrigin, VEC_HULL_MIN, VEC_HULL_MAX, MASK_PLAYERSOLID, m_pVehicle, COLLISION_GROUP_NONE, &tr );
+			CTraceFilterSkipTwoEntities exitFilter( m_pVehicle, GetPassenger( VEHICLE_ROLE_DRIVER ), COLLISION_GROUP_NONE );
+			UTIL_TraceHull( vehicleExitOrigin + Vector( 0, 0, 12 ), vehicleExitOrigin, VEC_HULL_MIN, VEC_HULL_MAX, MASK_PLAYERSOLID, &exitFilter, &tr );
 			if ( !tr.startsolid )
 			{
 				*pAngles = vehicleExitAngles;
 				*pExitPoint = tr.endpos;
 				return true;
+			}
+
+			// HL2SB vehdbg
+			{
+				extern ConVar hl2sb_vehicle_anim_debug;
+				if ( hl2sb_vehicle_anim_debug.GetBool() )
+				{
+					static float s_flNextExitAttLine = 0.0f;
+					if ( gpGlobals->curtime >= s_flNextExitAttLine )
+					{
+						s_flNextExitAttLine = gpGlobals->curtime + 1.0f;
+						Msg( "[HL2SB vehdbg] exitpt att veh=%s at=(%.1f %.1f %.1f) startsolid blocked by %s\n",
+							m_pVehicle ? m_pVehicle->GetClassname() : "<none>",
+							vehicleExitOrigin.x, vehicleExitOrigin.y, vehicleExitOrigin.z,
+							tr.m_pEnt ? tr.m_pEnt->GetClassname() : "<world>" );
+					}
+				}
 			}
 		}
 	}
@@ -814,7 +856,27 @@ bool CBaseServerVehicle::GetPassengerExitPoint( int nRole, Vector *pExitPoint, Q
 
 	// Make sure it's clear
 	trace_t tr;
-	UTIL_TraceHull( m_pVehicle->CollisionProp()->WorldSpaceCenter(), *pExitPoint, VEC_HULL_MIN, VEC_HULL_MAX, MASK_PLAYERSOLID, m_pVehicle, COLLISION_GROUP_NONE, &tr );
+	CTraceFilterSkipTwoEntities topFilter( m_pVehicle, GetPassenger( VEHICLE_ROLE_DRIVER ), COLLISION_GROUP_NONE );
+	UTIL_TraceHull( m_pVehicle->CollisionProp()->WorldSpaceCenter(), *pExitPoint, VEC_HULL_MIN, VEC_HULL_MAX, MASK_PLAYERSOLID, &topFilter, &tr );
+
+	// HL2SB vehdbg
+	{
+		extern ConVar hl2sb_vehicle_anim_debug;
+		if ( hl2sb_vehicle_anim_debug.GetBool() )
+		{
+			static float s_flNextTopLine = 0.0f;
+			if ( gpGlobals->curtime >= s_flNextTopLine )
+			{
+				s_flNextTopLine = gpGlobals->curtime + 1.0f;
+				Msg( "[HL2SB vehdbg] exitpt top veh=%s top=(%.1f %.1f %.1f) startsolid=%d blocked by %s\n",
+					m_pVehicle ? m_pVehicle->GetClassname() : "<none>",
+					pExitPoint->x, pExitPoint->y, pExitPoint->z,
+					tr.startsolid ? 1 : 0,
+					tr.m_pEnt ? tr.m_pEnt->GetClassname() : "<world>" );
+			}
+		}
+	}
+
 	if ( !tr.startsolid )
 	{
 		return true;
@@ -1255,6 +1317,31 @@ void CBaseServerVehicle::HandlePassengerEntry( CBaseCombatCharacter *pPassenger,
 				// GM:PlayerEnteredVehicle like GMod's use-key entry does.
 				pPlayer->EnterVehicle( this, VEHICLE_ROLE_DRIVER );
 			}
+			else
+			{
+				// HL2SB vehdbg
+				extern ConVar hl2sb_vehicle_anim_debug;
+				if ( hl2sb_vehicle_anim_debug.GetBool() )
+				{
+					CBaseCombatCharacter *pOccupant = GetPassenger( VEHICLE_ROLE_DRIVER );
+					Msg( "[HL2SB vehdbg] entry refused (player gate) veh=%s occupant=%s alive=%d\n",
+						m_pVehicle ? m_pVehicle->GetClassname() : "<none>",
+						pOccupant ? pOccupant->GetClassname() : "<none>",
+						pPlayer->IsAlive() ? 1 : 0 );
+				}
+			}
+		}
+		else
+		{
+			// HL2SB vehdbg
+			extern ConVar hl2sb_vehicle_anim_debug;
+			if ( hl2sb_vehicle_anim_debug.GetBool() )
+			{
+				CBaseEntity *pCurrent = GetDrivableVehicle()->GetDriver();
+					Msg( "[HL2SB vehdbg] entry refused (vehicle gate) veh=%s driver=%s\n",
+						m_pVehicle ? m_pVehicle->GetClassname() : "<none>",
+						pCurrent ? pCurrent->GetClassname() : "<none>" );
+			}
 		}
 	}
 	else
@@ -1294,8 +1381,27 @@ bool CBaseServerVehicle::HandlePassengerExit( CBaseCombatCharacter *pPassenger )
 		if ( ( bAllPointsBlocked ) || ( iSequence == ACTIVITY_NOT_AVAILABLE ) )
 		{
 			// Animation-driven exit points are all blocked, or we have none. Fall back to the more simple static exit points.
-			if ( !GetPassengerExitPoint( nRole, &vecNewPos, &angNewAngles ) && !GetDrivableVehicle()->AllowBlockedExit( pPlayer, nRole ) )
+			bool bGotStaticExit = GetPassengerExitPoint( nRole, &vecNewPos, &angNewAngles );
+			if ( !bGotStaticExit && !GetDrivableVehicle()->AllowBlockedExit( pPlayer, nRole ) )
+			{
+				// HL2SB vehdbg
+				{
+					extern ConVar hl2sb_vehicle_anim_debug;
+					if ( hl2sb_vehicle_anim_debug.GetBool() )
+					{
+						static float s_flNextDenyLine = 0.0f;
+						if ( gpGlobals->curtime >= s_flNextDenyLine )
+						{
+							s_flNextDenyLine = gpGlobals->curtime + 1.0f;
+							Msg( "[HL2SB vehdbg] exit deny veh=%s seq=%d blocked=%d staticexit=0 rider=(%.1f %.1f %.1f)\n",
+								m_pVehicle ? m_pVehicle->GetClassname() : "<none>",
+								iSequence, bAllPointsBlocked ? 1 : 0,
+								pPlayer->GetAbsOrigin().x, pPlayer->GetAbsOrigin().y, pPlayer->GetAbsOrigin().z );
+						}
+					}
+				}
 				return false;
+			}
 
 			// At this point, the player has exited the vehicle but did so without playing an animation.  We need to give the vehicle a
 			// chance to do any post-animation clean-up it may need to perform.
@@ -1575,7 +1681,8 @@ int CBaseServerVehicle::GetExitAnimToUse( Vector &vecEyeExitEndpoint, bool &bAll
 		Vector vecExitEndPoint = tr.endpos;
 
 		// Make sure we can trace to the center of the exit point
-		UTIL_TraceLine( vecViewOrigin, vecExitEndPoint, MASK_PLAYERSOLID, pAnimating, COLLISION_GROUP_NONE, &tr );
+		CTraceFilterSkipTwoEntities exitLineFilter( pAnimating, GetPassenger( VEHICLE_ROLE_DRIVER ), COLLISION_GROUP_NONE );
+		UTIL_TraceLine( vecViewOrigin, vecExitEndPoint, MASK_PLAYERSOLID, &exitLineFilter, &tr );
 
 		if ( tr.fraction != 1.0 )
 		{

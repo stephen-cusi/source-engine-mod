@@ -5631,14 +5631,27 @@ bool CBasePlayer::GetInVehicle( IServerVehicle *pVehicle, int nRole )
 		iSeatAttachment = pSeatAnim->LookupAttachment( "vehicle_feet_passenger0" );
 	}
 
-	// HL2SB: keep the reference placement ORDER - SetAbsOrigin/SetAbsAngles at
-	// the seat point FIRST, SetParent( attachment ) SECOND.  The entry sequence
-	// is already playing at this point, so the attachment's live transform is
-	// mid-sweep; parenting against THAT would zero the local offset but make
-	// the rider inherit the sweeping bone's tilt (they lie across the vehicle
-	// for the whole entry).  The reference rides with the same frozen local
-	// offset - keeping this identical is what matches its look.
+	// HL2SB: reference placement ORDER - SetAbsOrigin/SetAbsAngles at the seat
+	// point FIRST, SetParent( attachment ) SECOND.  The placement pair is what
+	// zeroes the rider's local offset: without it the rider is parented exactly
+	// where they stood (ground level next to the hull) and that standing offset
+	// becomes their permanent position for the whole ride.  With it they sit at
+	// the attachment and ride the entry sweep down onto the settling seat.
+	SetAbsOrigin( vSeatOrigin );
+	SetAbsAngles( qSeatAngles );
+
 	SetParent( pEnt, iSeatAttachment );
+
+	// HL2SB: anchor EXACTLY onto the attachment.  SetParent measures the local
+	// offset with its own attachment read, and the entry sequences sweep the
+	// seat bone (jeep enter1's jump-in arc) inside the microseconds between the
+	// seat-point query above and that read - the difference then baked a
+	// several-hundred-unit offset into the rider's local.  An explicit zero
+	// local is deterministic: the rider sits ON the attachment and rides the
+	// sweep, which is the same end state the reference's two agreeing reads
+	// produce.
+	SetLocalOrigin( vec3_origin );
+	SetLocalAngles( vec3_angle );
 
 	SetCollisionGroup( COLLISION_GROUP_IN_VEHICLE );
 	

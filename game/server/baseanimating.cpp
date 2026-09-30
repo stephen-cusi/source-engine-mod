@@ -418,11 +418,17 @@ float CBaseAnimating::GetAnimTimeInterval( void ) const
 void CBaseAnimating::StudioFrameAdvanceInternal( CStudioHdr *pStudioHdr, float flCycleDelta )
 {
 	float flNewCycle = GetCycle() + flCycleDelta;
-	if (flNewCycle < 0.0 || flNewCycle >= 1.0) 
+	if (flNewCycle < 0.0 || flNewCycle >= 1.0)
 	{
 		if (m_bSequenceLoops)
 		{
 			flNewCycle -= (int)(flNewCycle);
+			// HL2SB: a negative incoming cycle survives the integer wrap above
+			// ((int) of anything in (-1,0) is 0) and would sit below zero forever,
+			// spamming the networked m_flCycle range clamp once per new value.
+			// Sequences never legitimately rest on a negative cycle - pin it.
+			if (flNewCycle < 0.0f)
+				flNewCycle = 0.0f;
 		}
 		else
 		{
