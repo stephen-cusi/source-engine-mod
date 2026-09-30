@@ -29,7 +29,7 @@ ANDROID_NDK_SYSROOT_FLAG_MAX = 19 # latest NDK that need --sysroot flag
 ANDROID_NDK_API_MIN = { 10: 3, 19: 16, 20: 16, 21: 21, 22: 21, 23: 21, 24: 21, 25: 21, 26: 21, 27: 21 } # minimal API level ndk revision supports
 ANDROID_64BIT_API_MIN = 21 # minimal API level that supports 64-bit targets
 
-# This class does support ONLY r10e and r19c/r20 NDK
+# This class does support ONLY r10e, r19c/r20 and r18+ (libc++) NDK up to r27
 class Android:
 	ctx            = None # waf context
 	arch           = None

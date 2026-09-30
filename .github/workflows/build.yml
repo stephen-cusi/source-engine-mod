@@ -91,31 +91,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -f -y libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
 
-      - name: Download Android NDK and toolchain
+      - name: Download Android NDK
         run: |
-          wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -nc -q
-          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -nc -q
-          unzip -q android-ndk-r10e-linux-x86_64.zip
-          tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+          wget https://dl.google.com/android/repository/android-ndk-r27b-linux.zip -nc -q
+          unzip -q android-ndk-r27b-linux.zip
 
       - name: Configure
         run: |
-          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
-          export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r27b"
+          export PATH="${{ github.workspace }}/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           python3 ./waf configure \
             -T release \
             --prefix=../android_build \
-            --android=armeabi-v7a-hard,host,21 \
+            --android=armeabi-v7a,host,21 \
             --target=../android_build/armeabi-v7a \
             --disable-warns \
             --build-games=hl2sb \
-            -4 \
             --togles
 
       - name: Build and install
         run: |
-          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
-          export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r27b"
+          export PATH="${{ github.workspace }}/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           python3 ./waf install --strip
 
       - name: Upload Android build
@@ -141,17 +138,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -f -y libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
 
-      - name: Download Android NDK and toolchain
+      - name: Download Android NDK
         run: |
-          wget https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -nc -q
-          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -nc -q
-          unzip -q android-ndk-r10e-linux-x86_64.zip
-          tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+          wget https://dl.google.com/android/repository/android-ndk-r27b-linux.zip -nc -q
+          unzip -q android-ndk-r27b-linux.zip
 
       - name: Configure
         run: |
-          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
-          export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r27b"
+          export PATH="${{ github.workspace }}/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           python3 ./waf configure \
             -T release \
             --prefix=../android_build \
@@ -163,8 +158,8 @@ jobs:
 
       - name: Build and install
         run: |
-          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
-          export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
+          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r27b"
+          export PATH="${{ github.workspace }}/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           python3 ./waf install --strip
 
       - name: Upload Android build
