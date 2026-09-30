@@ -668,6 +668,29 @@ void CPlayerAnimState::UpdateVehicleAnimation( void )
 	if ( !pVehicle )
 		return;
 
+	// HL2SB vehdbg (hl2sb_vehicle_anim_debug 1): one line per second per realm with
+	// the rider's transform while seated - pairs with the enter/exit lines to show
+	// whether a misplacement lives on the server, on the client, or in between.
+	{
+		extern ConVar hl2sb_vehicle_anim_debug;
+		static float s_flNextVehDbgLine = 0.0f;
+		if ( hl2sb_vehicle_anim_debug.GetBool() && gpGlobals->curtime >= s_flNextVehDbgLine )
+		{
+			s_flNextVehDbgLine = gpGlobals->curtime + 1.0f;
+			CBaseEntity *pDbgParent = pPlayer->GetMoveParent();
+			Msg( "[HL2SB vehdbg] %s tick parent=%s local=(%.1f %.1f %.1f) abs=(%.1f %.1f %.1f) mt=%d\n",
+#ifdef CLIENT_DLL
+				"cl",
+#else
+				"sv",
+#endif
+				pDbgParent ? pDbgParent->GetClassname() : "<none>",
+				pPlayer->GetLocalOrigin().x, pPlayer->GetLocalOrigin().y, pPlayer->GetLocalOrigin().z,
+				pPlayer->GetAbsOrigin().x, pPlayer->GetAbsOrigin().y, pPlayer->GetAbsOrigin().z,
+				pPlayer->GetMoveType() );
+		}
+	}
+
 	// --- role (shared API, works on both realms) -----------------------------
 	// IVehicle::GetPassengerRole() returns VEHICLE_ROLE_DRIVER for the driver seat,
 	// which is what GMod uses to pick the driver vs passenger pose.

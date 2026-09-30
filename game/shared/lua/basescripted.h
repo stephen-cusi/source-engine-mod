@@ -21,6 +21,7 @@
 // HL2SB GMod compat: ENT:PhysicsCollide( data, physObj ).  Server only, because
 // gamevcollisionevent_t and CBaseEntity::VPhysicsCollision exist only there.
 struct gamevcollisionevent_t;
+class  CDmgAccumulator;	// HL2SB 2026-09-29: TraceAttack override parameter type
 #endif
 
 class CBaseScripted : /* public CBaseEntity */ public CBaseAnimating
@@ -84,6 +85,30 @@ public:
 	// routes +use to every scripted entity; see basescripted.cpp UseHandler.
 	virtual int		ObjectCaps( void );
 	void	UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
+
+	// HL2SB GMod compat (2026-09-29): ENT:OnTakeDamage( damageInfo ) -- GMod's
+	// scripted entities get every damage event through the same CBaseEntity
+	// funnel (bullets, radius blasts, util.BlastDamage); the class never
+	// overrode it, so minecraft's ENT:OnTakeDamage (TNT ignition) and cod_c4's
+	// (shot-to-detonate) never ran and those entities were invulnerable
+	// statues.  When the script defines OnTakeDamage the SCRIPT consumes the
+	// event (GMod: the base health pipeline is not entered); otherwise the
+	// inherited CBaseEntity handler applies, as before.
+	virtual int		OnTakeDamage( const CTakeDamageInfo &info );
+
+	// HL2SB GMod compat (2026-09-29): scripted entities default m_takedamage to
+	// DAMAGE_NO (nothing sets it), so the base CBaseEntity::TraceAttack `if
+	// (m_takedamage)` gate drops BULLET damage on the floor before OnTakeDamage
+	// ever dispatches.  The dirt block is provably solid server-side (contents=
+	// CONTENTS_SOLID, vcollide solidCount=1, right AABB) yet OnTakeDamage fired
+	// zero times per shotgun volley -- the bullets were simply refused entry.
+	// A GMod script that defines ENT:OnTakeDamage has opted the entity into the
+	// damage system, so open that gate for exactly those entities.  Entities
+	// without the handler keep DAMAGE_NO and stay non-targetable (parity).
+	virtual void	TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator = NULL );
+
+	// Shared "script table defines ENT:OnTakeDamage" test for the two overrides.
+	bool			HasLuaOnTakeDamage();
 #endif
 
 #ifdef CLIENT_DLL

@@ -200,7 +200,16 @@ static int CBaseAnimating_GetPlaybackRate (lua_State *L) {
 }
 
 static int CBaseAnimating_GetPoseParameter (lua_State *L) {
-  lua_pushnumber(L, luaL_checkanimating(L, 1)->GetPoseParameter(luaL_checkinteger(L, 2)));
+  // HL2SB GMod compat: match the client binding - the pose NAME is what the
+  // reference and its addons pass (GM:UpdateAnimation asks
+  // Vehicle:GetPoseParameter( "vehicle_steer" ); vehicles resolve the
+  // CBaseAnimating meta before the entity meta on the server, so an
+  // index-only form here rejected the string every frame while driving).
+  CBaseAnimating *pAnim = luaL_checkanimating(L, 1);
+  int nParam = ( lua_type(L, 2) == LUA_TSTRING )
+    ? pAnim->LookupPoseParameter( luaL_checkstring(L, 2) )
+    : luaL_checkinteger(L, 2);
+  lua_pushnumber(L, ( nParam >= 0 ) ? pAnim->GetPoseParameter(nParam) : 0.0f);
   return 1;
 }
 

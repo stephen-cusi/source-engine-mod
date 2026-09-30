@@ -747,8 +747,42 @@ static int CBaseAnimating_GetBoneControllers (lua_State *L) {
 }
 
 static int CBaseAnimating_GetBonePosition (lua_State *L) {
-  luaL_checkanimating(L, 1)->GetBonePosition(luaL_checkint(L, 2), luaL_checkvector(L, 3), luaL_checkangle(L, 4));
-  return 0;
+  // HL2SB GMod contract (2026-09-29): Entity:GetBonePosition( boneIndex )
+  // RETURNS position, angle (cod_c4's DrawWorldModel:
+  // `local pos, ang = owner:GetBonePosition( bone )` every frame - the old
+  // out-arguments-only binding raised "bad argument #3 to 'GetBonePosition'
+  // (QAngle expected, got no value)" hundreds of times per session).  The
+  // legacy (bone, vecOut, angOut) form is kept working: when the out args
+  // are present they are written as before.  An index outside the model's
+  // bones answers the entity's abs transform, GMod's documented fallback
+  // for a missing bone - and the only way to keep C_BaseAnimating::
+  // GetBonePosition (unchecked array math) from reading past the bone array.
+  C_BaseAnimating *pAnimating = luaL_checkanimating(L, 1);
+  const int iBone = luaL_checkint(L, 2);
+
+  Vector origin;
+  QAngle angles;
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pAnimating );
+  const int nBones = pHdr ? pHdr->numbones : 0;
+  if ( iBone >= 0 && iBone < nBones )
+  {
+    pAnimating->GetBonePosition( iBone, origin, angles );
+  }
+  else
+  {
+    origin = pAnimating->GetAbsOrigin();
+    angles = pAnimating->GetAbsAngles();
+  }
+
+  const int nArgs = lua_gettop(L);
+  if ( nArgs >= 3 && lua_isuserdata(L, 3) )
+    luaL_checkvector(L, 3) = origin;
+  if ( nArgs >= 4 && lua_isuserdata(L, 4) )
+    luaL_checkangle(L, 4) = angles;
+
+  lua_pushvector(L, origin);
+  lua_pushangle(L, angles);
+  return 2;
 }
 
 static int CBaseAnimating_GetClientSideFade (lua_State *L) {

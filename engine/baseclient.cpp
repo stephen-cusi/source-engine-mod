@@ -833,24 +833,23 @@ bool CBaseClient::ProcessSetConVar( NET_SetConVar *msg )
 			continue;
 		}
 
-		// The initial set of convars must contain all client convars that are flagged userinfo. This is a simple fix to
-		// exploits that send bogus data later, and catches bugs (why are new userinfo convars appearing later?)
-		if ( m_bInitialConVarsSet && !m_ConVars->FindKey( name ) )
-		{
-#ifndef _DEBUG	// warn all the time in debug build
-			static double s_dblLastWarned = 0.0;
-			double dblTimeNow = Plat_FloatTime();
-			if ( dblTimeNow - s_dblLastWarned > 10 )
-#endif
-			{
-#ifndef _DEBUG
-				s_dblLastWarned = dblTimeNow;
-#endif
-				Warning( "Client \"%s\" userinfo ignored: \"%s\" = \"%s\"\n",
-				         this->GetClientName(), name, value );
-			}
-			continue;
-		}
+	// HL2SB (2026-09-29): the Valve initial-batch restriction is DISABLED
+	// UNCONDITIONALLY.  Valve added it in 2013 to reject SetInfo for keys the
+	// client never sent at connect time.  GMod branched before it (its engine.dll
+	// carries the invalid-characters gate below but NOT the "userinfo ignored"
+	// string - verified 2026-09-29), so a GMod client may declare new
+	// FCVAR_USERINFO convars at any time - which is how every
+	// CreateClientConVar(...,userdata=true) addon config works.  With the check
+	// active, convars created during map load (after the handshake) were dropped:
+	// the server logged 'Client "hut" userinfo ignored: "cl_minecraft_blockcount" = "1"'
+	// and Entity:GetInfo for every such convar stayed empty, killing the
+	// Minecraft SWEP's server-side gates.
+	//
+	// NOTE: this used to be guarded by `#if !defined( HL2SB )`, but HL2SB is a
+	// game-DLL vpc define and is NOT set when compiling the engine, so the guard
+	// inverted (the original check was kept).  The engine.dll shipped here is
+	// always the HL2SB build, so the restriction is removed outright.  The
+	// character/sanity filter above stays in place.
 
 		m_ConVars->SetString( name, value );
 

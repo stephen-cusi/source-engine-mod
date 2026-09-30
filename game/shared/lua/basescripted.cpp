@@ -15,6 +15,7 @@
 #include "lbaseanimating.h"
 #endif
 #include "lbaseentity_shared.h"
+#include "ltakedamageinfo.h"	// HL2SB (2026-09-29): lua_pushdamageinfo for the OnTakeDamage dispatch
 #include "lvphysics_interface.h"
 #include "mathlib/lvector.h"
 #include "utlstring.h"	// HL2SB: CUtlString for the client draw-probe classnames
@@ -1006,6 +1007,102 @@ void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent 
 		lua_pushphysicsobject( L, pEvent->pObjects[ index ] );
 	END_LUA_CALL_ENTITY_METHOD( 2, 0 );
 #endif
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB GMod compat (2026-09-29): ENT:OnTakeDamage( damageInfo ).
+//
+// GMod's scripted entities receive every damage event -- bullets, blasts,
+// util.BlastDamage -- through the CBaseEntity::TakeDamage funnel, and the
+// dispatch of that event to the script lives in the scripted entity class.
+// This fork's CBaseScripted never overrode it, so ENT:OnTakeDamage never ran
+// anywhere: minecraft's TNT never ignited when shot, cod_c4 never detonated
+// when shot, and the entities behaved like invulnerable statues (only the
+// MC weapon's own Remove() made them disappear).
+//
+// GMod precedence: when the ENT table defines OnTakeDamage the SCRIPT is the
+// handler -- the base health pipeline is not entered (the script's own
+// TakePhysicsDamage / expiry logic owns the entity).  Without the script
+// handler, the inherited CBaseEntity response runs unchanged.
+//
+// The lookup is a protected PushScriptField like every other dispatch here
+// (an __index metamethod raising from C would abort the process -- the
+// SCP-096 lesson in luamanager.h).
+//-----------------------------------------------------------------------------
+bool CBaseScripted::HasLuaOnTakeDamage()
+{
+#ifdef LUA_SDK
+	if ( L == NULL || m_nTableReference < 0 )
+		return false;
+	lua_getref( L, m_nTableReference );
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+	luasrc_PushScriptField( L, -1, "OnTakeDamage" );
+	bool bHasHandler = lua_isfunction( L, -1 ) != 0;
+	lua_pop( L, 2 );		// field + table
+	return bHasHandler;
+#else
+	return false;
+#endif
+}
+
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-09-29): bullet damage enters through
+// DispatchTraceAttack -> CBaseEntity::TraceAttack, whose body gates on
+// `if (m_takedamage)` -- and nothing ever sets m_takedamage on a scripted
+// entity (GMod scripts opt into damage by DEFINING ENT:OnTakeDamage, not by
+// calling SetDamage), so shotgun volleys landing square on a solid, correctly
+// placed dirt block dispatched ZERO OnTakeDamage.  Proven this round: the
+// block's server vphysics body is real (CONTENTS_SOLID, vcollide solidCount=1,
+// AABB on the placed spot) yet 38 pellets produced no damage event.
+// Open the gate for exactly the entities whose script defines OnTakeDamage:
+// run the full base body (accumulator batching, AddMultiDamage, blood -- a
+// SENT's BloodColor is DONT_BLEED so nothing extra appears) with the damage
+// state temporarily accepted, then restore it.  No handler => untouched HL2
+// behavior (DAMAGE_NO statue stays inert).
+//-----------------------------------------------------------------------------
+void CBaseScripted::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator )
+{
+	if ( HasLuaOnTakeDamage() )
+	{
+		const int nOldTakedamage = m_takedamage;
+		m_takedamage = DAMAGE_AIM;	// nonzero, non-events: run the whole base damage body
+		BaseClass::TraceAttack( info, vecDir, ptr, pAccumulator );
+		m_takedamage = nOldTakedamage;
+		return;
+	}
+
+	BaseClass::TraceAttack( info, vecDir, ptr, pAccumulator );
+}
+
+
+//-----------------------------------------------------------------------------
+// (entry for bullets: see the TraceAttack override above; explosions/ApplyMultiDamage
+// reach TakeDamage directly)
+//-----------------------------------------------------------------------------
+int CBaseScripted::OnTakeDamage( const CTakeDamageInfo &info )
+{
+#ifdef LUA_SDK
+	bool bHasHandler = HasLuaOnTakeDamage();
+
+	if ( bHasHandler )
+	{
+		// lua_pushdamageinfo copies into the userdata; the script cannot
+		// mutate the C event either way, the local only satisfies its
+		// non-const signature.
+		CTakeDamageInfo dmgInfo = info;
+		BEGIN_LUA_CALL_ENTITY_METHOD( "OnTakeDamage" );
+			lua_pushdamageinfo( L, dmgInfo );
+		END_LUA_CALL_ENTITY_METHOD( 1, 0 );
+		return 1;
+	}
+#endif
+
+	return BaseClass::OnTakeDamage( info );
 }
 #endif // !CLIENT_DLL
 

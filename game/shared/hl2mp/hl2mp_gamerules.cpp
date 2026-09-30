@@ -1231,8 +1231,46 @@ void CHL2MPRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 #endif
 
 	//If we're different.
+#ifdef HL2SB
+	// HL2SB (2026-09-29): cl_playermodel holds a model KEY ("alyx", "miku"),
+	// pCurrentModel is the full path ("models/player/alyx.mdl") - stricmp of the
+	// two NEVER matches, so every client settings change (any replicated
+	// CreateClientConVar write - the Minecraft SWEP pings mc_viewmodel_doanim per
+	// attack) dropped into the mismatch branch and, with respawn-only switching,
+	// printed "Player model change queued..." into chat every time.  Resolve the
+	// current path through the model-config table and compare in KEY space:
+	// desired key == applied key means nothing changed, nothing to apply or
+	// announce.  (GMod's gamerules do not touch cl_playermodel at all; within
+	// this fork's design the silent equal-check is the GMod-observable result.)
+	const HL2SB_ModelConfig_t *pCurrentCfg = ( pPlayer->GetModel() != NULL )
+		? HL2SB_FindModelConfigByPath( pCurrentModel ) : NULL;
+	if ( ( pCurrentCfg != NULL && !stricmp( szModelName, pCurrentCfg->szName ) )
+		 || ( pCurrentCfg == NULL && !stricmp( szModelName, pCurrentModel ) ) )
+	{
+		return;
+	}
+#endif
 	if ( stricmp( szModelName, pCurrentModel ) )
 	{
+#ifdef HL2SB
+		// HL2SB (2026-09-29): one announcement per pending request.  This
+		// function fires on EVERY client settings change (every replicated
+		// CreateClientConVar write - the Minecraft SWEP ticks
+		// mc_viewmodel_doanim on each attack), not only when cl_playermodel
+		// changed; with a genuinely pending model change (respawn-only mode)
+		// each of those re-entered this branch and re-printed the queue hint -
+		// the user's "still spams player-model-change on placing".  Only the
+		// first detection of a given desired model talks; repeats of the same
+		// pending request stay silent.
+		static char s_rgchModelNotice[ 256 ][ 128 ];
+		const int nNoticeIdx = pHL2Player->entindex();
+		if ( nNoticeIdx >= 0 && nNoticeIdx < 256 )
+		{
+			if ( !stricmp( s_rgchModelNotice[ nNoticeIdx ], szModelName ) )
+				return;
+			Q_strncpy( s_rgchModelNotice[ nNoticeIdx ], szModelName, sizeof( s_rgchModelNotice[0] ) );
+		}
+#endif
 		//Too soon, set the cvar back to what it was.
 		//Note: this will make this function be called again
 		//but since our models will match it'll just skip this whole dealio.

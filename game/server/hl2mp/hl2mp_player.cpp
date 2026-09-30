@@ -1083,8 +1083,37 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	// down - idle/walk/run) takes over, so a fresh gait is selected on the same frame.
 	if ( IsInAVehicle() && IsAlive() && GetMoveParent() != NULL )
 	{
+		// HL2SB: the reference resolves the seat pose IN LUA - animations.lua's
+		// HandlePlayerDriving runs the vehicle list entry's Members.HandleAnimation
+		// when it defines one (chairs: ACT_GMOD_SIT_ROLLERCOASTER) and otherwise
+		// answers from its hardcoded per-class table (jeep -> drive_jeep,
+		// airboat -> drive_airboat, prisoner pod (inner model) -> drive_pd,
+		// anything else -> sit_rollercoaster), with the sit_<holdtype> family
+		// overriding the plain sit when weapons are allowed in the vehicle.
+		// Dispatch GM:CalcMainActivity exactly like the unseated path and pin
+		// what the Lua answers; the C++ resolver only fills the gap when no Lua
+		// gamemode is there to answer.
 		Activity seatActivity = ACT_INVALID;
-		int animDesired = HL2SB_ResolveSeatedSequence( this, GetVehicleEntity(), &seatActivity );
+		int animDesired = -1;
+		{
+			BEGIN_LUA_CALL_HOOK( "CalcMainActivity" );
+				lua_pushplayer( L, this );
+				lua_pushvector( L, GetAbsVelocity() );
+			END_LUA_CALL_HOOK( 2, 2 );
+
+			if ( lua_isnumber( L, -2 ) )
+			{
+				seatActivity = (Activity)lua_tointeger( L, -2 );
+				if ( lua_isnumber( L, -1 ) )
+					animDesired = lua_tointeger( L, -1 );
+			}
+			lua_pop( L, 2 );
+		}
+
+		if ( animDesired <= 0 )
+		{
+			animDesired = HL2SB_ResolveSeatedSequence( this, GetVehicleEntity(), &seatActivity );
+		}
 
 		if ( ( animDesired > 0 ) && ( animDesired != GetSequence() ) )
 		{

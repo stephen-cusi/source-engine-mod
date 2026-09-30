@@ -24,6 +24,11 @@
 #include "view.h"					// CurrentViewOrigin - the global EyePos()
 #else
 #include "lbaseanimating.h"
+#ifdef CLIENT_DLL
+#include "c_baseflex.h"
+#else
+#include "baseflex.h"
+#endif
 #include "lrecipientfilter.h"
 #include "ai_basenpc.h"				// HL2SB: NPC:AddEntityRelationship (CAI_BaseNPC::AddEntityRelationship)
 #include "eventqueue.h"				// HL2SB: Entity:Fire's delay argument (g_EventQueue.AddEvent)
@@ -499,8 +504,15 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 	     HL2SB_PrecacheOnce( pszSoundName ) )
 	{
 		CBaseEntity::PrecacheScriptSound( pszSoundName );
-		CBaseEntity::PrecacheSound( pszSoundName );
-		enginesound->PrecacheSound( pszSoundName );
+		// HL2SB (2026-09-29): was CBaseEntity::PrecacheSound, which prints
+		// "Direct precache of %s" (SoundEmitterSystem.cpp:1498) for any wave
+		// registered after the load phase - which is exactly what this lazy
+		// path is, so every addon sound's first use printed it ("Direct
+		// precache of hoff/mpl/seal_c4/satchel_plant.wav").  What that helper
+		// actually does underneath is this call with preload=true (the old
+		// second line here forgot the flag); doing it directly keeps the
+		// registration and drops the warning.
+		enginesound->PrecacheSound( pszSoundName, true );
 	}
 #endif
 
@@ -536,7 +548,16 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 		emit.m_pflSoundDuration = &duration;
 
 		// HL2SB: GMod's explicit arguments win over the sound script's.
-		if ( nSoundLevelArg >= 0 ) emit.m_SoundLevel = (soundlevel_t)nSoundLevelArg;
+		// HL2SB GMod parity (2026-09-29): levels 256-511 are GMod's
+		// "goldsrc compatibility attenuation" space (public/soundflags.h:99 -
+		// the wire format encodes them here, but this tree has no goldsrc
+		// attenuation curve), and a whole era of GMod scripts uses them as
+		// "just play it with normal falloff" (the Minecraft SWEP: EmitSound
+		// with level 510/511 for every block place AND break).  An unmappable
+		// explicit level behaves as if it were not supplied: script level or
+		// the NONE default - the observable GMod result (audible, normal
+		// falloff) without pretending to implement the goldsrc curves.
+		if ( nSoundLevelArg >= 0 && nSoundLevelArg < 256 ) emit.m_SoundLevel = (soundlevel_t)nSoundLevelArg;
 		if ( nPitchArg >= 0 )      emit.m_nPitch = nPitchArg;
 		if ( flVolumeArg >= 0.0f ) emit.m_flVolume = flVolumeArg;
 		if ( nChannelArg >= 0 )    emit.m_nChannel = nChannelArg;
@@ -586,7 +607,8 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 		emit.m_nChannel        = CHAN_WEAPON;
 
 		// HL2SB: GMod's explicit arguments (see the top of this function).
-		if ( nSoundLevelArg >= 0 ) emit.m_SoundLevel = (soundlevel_t)nSoundLevelArg;
+		// Same goldsrc-space rule as the script branch above: >=256 is ignored.
+		if ( nSoundLevelArg >= 0 && nSoundLevelArg < 256 ) emit.m_SoundLevel = (soundlevel_t)nSoundLevelArg;
 		if ( nPitchArg >= 0 )      emit.m_nPitch = nPitchArg;
 		if ( flVolumeArg >= 0.0f ) emit.m_flVolume = flVolumeArg;
 		if ( nChannelArg >= 0 )    emit.m_nChannel = nChannelArg;
@@ -3135,6 +3157,22 @@ static int CBaseEntity_WorldSpaceCenter (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (2026-09-29): Entity:WorldSpaceAABB() -> MINs, MAXs of the
+// COLLISION bounds in world space, returned as the two vectors GMod's binding
+// returns (the Minecraft SWEP's ENT:RemoveSpecial destructures
+// "local aabb_min, aabb_max = self:WorldSpaceAABB()" and the whole remove
+// chain aborted with "attempt to call a nil value (method 'WorldSpaceAABB')"
+// while it was unbound).  Both realms: CBaseEntity / C_BaseEntity expose the
+// same CollisionProp()->WorldSpaceAABB.
+static int CBaseEntity_WorldSpaceAABB (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  Vector vMins, vMaxs;
+  pEntity->CollisionProp()->WorldSpaceAABB( &vMins, &vMaxs );
+  lua_pushvector( L, vMins );
+  lua_pushvector( L, vMaxs );
+  return 2;
+}
+
 static int CBaseEntity_WorldToEntitySpace (lua_State *L) {
   luaL_checkentity(L, 1)->WorldToEntitySpace(luaL_checkvector(L, 2), &luaL_checkvector(L, 3));
   return 0;
@@ -3225,6 +3263,31 @@ static int CBaseEntity___index (lua_State *L) {
     ** the generic CBaseEntity table made every one of those reads die with
     ** "attempt to call a nil value (method ...)".
     */
+    /* HL2SB (2026-09-29): the SCRIPT field wins, the C entity is the fallback.
+    ** "Owner" is first and foremost a Lua-side field: addons' ENT:SetPlayer is
+    ** literally `self.Owner = ply` and __newindex stores that on the instance
+    ** table -- m_hOwnerEntity is never touched.  Reading the C accessor first
+    ** made every such write invisible: minecraft_block's server-side BlockInit
+    ** read self.Owner as the NULL sentinel (its GetOwnerEntity() is unset),
+    ** GetEyeTrace() answered false through HL2SB_NullEntityMethod, the
+    ** `tr.HitPos` throw aborted SpawnMinecraftBlock BEFORE ent:Spawn() -- the
+    ** blocks stayed created-but-unspawned ghosts: unhittable by server traces
+    ** ("attack cannot destroy block"), and AttackAnim never ran because
+    ** SpawnMinecraftBlock returned nothing ("no placement animation").  This is
+    ** the same precedence the generic branch below already documents (instance
+    ** fields beat C methods); only this early special case missed it.
+    */
+    if ( lua_isrefvalid( L, pEntity->m_nTableReference ) )
+    {
+      lua_getref( L, pEntity->m_nTableReference );
+      lua_getfield( L, -1, "Owner" );
+      if ( !lua_isnil( L, -1 ) )
+      {
+        lua_remove( L, -2 );   // instance table out, the value stays on top
+        return 1;
+      }
+      lua_pop( L, 2 );         // no script Owner -- fall through to the C entity
+    }
     CBaseEntity::PushLuaInstanceSafe(L, pEntity->GetOwnerEntity());
   }
   else if (Q_strcmp(field, "m_flAnimTime") == 0)
@@ -3423,7 +3486,27 @@ static int CBaseEntity_IsVehicle (lua_State *L) {
 static int CBaseEntity_SetAngles (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   QAngle angWorld = luaL_checkangle(L, 2);
-#ifndef GAME_DLL
+#ifdef GAME_DLL
+  // HL2SB GMod parity (2026-09-29): GMod's Entity:SetAngles binding
+  // (server.dll  -> ) routes through
+  // CBaseEntity::SetAbsAngles (, the "SetAbsAngles( ... ): Ignoring
+  // unreasonable angles" body), whose parent branch stores world angles as
+  // parent-local.  The old server path stored the WORLD angle into the child's
+  // LOCAL angles, so a parented child baked the parent's orientation into it
+  // (the C4's plant-angles after SetParent(NPC) inherited the NPC's yaw).
+  pEntity->SetAbsAngles( angWorld );
+  // Same vphysics-shadow completion as SetPos above (GMod's parented SetAngles
+  // ends in a Teleport(NULL, ang, NULL), whose physics branch re-seats the
+  // shadow at the new abs angles; SetAbsAngles alone leaves the box rotated
+  // from the old local angles).
+  if ( pEntity->GetMoveParent() )
+  {
+    IPhysicsObject *pPhys = pEntity->VPhysicsGetObject();
+    if ( pPhys && !pPhys->IsStatic() )
+      pPhys->SetPosition( pEntity->GetAbsOrigin(), pEntity->GetAbsAngles(), true );
+  }
+  return 0;
+#else
   // HL2SB GMod parity (2026-09-25): SetAngles on a parented clientside entity
   // is WORLD space, same contract as SetPos above (First Person Body sets the
   // body angles to the eye angles every RenderScene).
@@ -4387,6 +4470,96 @@ static int CBaseEntity_LookupAttachment (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the pose/flex methods are ENTITY methods on the reference
+// (GM:UpdateAnimation calls ply:GetPoseParameter( "vehicle_steer" ) on the
+// player, which never reaches the animating-only registrations here).  These
+// entity-level forms accept the pose/flex NAME like the reference does.
+//-----------------------------------------------------------------------------
+static int CBaseEntity_GetPoseParameter (lua_State *L) {
+  CBaseAnimating *pAnim = luaL_checkentity(L, 1)->GetBaseAnimating();
+  int nIndex = ( lua_type(L, 2) == LUA_TSTRING )
+    ? ( pAnim ? pAnim->LookupPoseParameter( lua_tostring(L, 2) ) : -1 )
+    : (int)luaL_checknumber(L, 2);
+  if ( pAnim == NULL || nIndex < 0 )
+  {
+    lua_pushnumber( L, 0 );
+    return 1;
+  }
+  lua_pushnumber( L, pAnim->GetPoseParameter( nIndex ) );
+  return 1;
+}
+
+static int CBaseEntity_SetPoseParameter (lua_State *L) {
+  CBaseAnimating *pAnim = luaL_checkentity(L, 1)->GetBaseAnimating();
+  int nIndex = ( lua_type(L, 2) == LUA_TSTRING )
+    ? ( pAnim ? pAnim->LookupPoseParameter( lua_tostring(L, 2) ) : -1 )
+    : (int)luaL_checknumber(L, 2);
+  float flValue = (float)luaL_checknumber(L, 3);
+  if ( pAnim == NULL || nIndex < 0 )
+  {
+    lua_pushnumber( L, 0 );
+    return 1;
+  }
+  lua_pushnumber( L, pAnim->SetPoseParameter( nIndex, flValue ) );
+  return 1;
+}
+
+static int CBaseEntity_LookupPoseParameter (lua_State *L) {
+  CBaseAnimating *pAnim = luaL_checkentity(L, 1)->GetBaseAnimating();
+  if ( pAnim == NULL )
+  {
+    lua_pushinteger( L, -1 );
+    return 1;
+  }
+  lua_pushinteger( L, pAnim->LookupPoseParameter( luaL_checkstring(L, 2) ) );
+  return 1;
+}
+
+static int CBaseEntity_GetFlexIDByName (lua_State *L) {
+#ifdef CLIENT_DLL
+  C_BaseFlex *pFlex = dynamic_cast<C_BaseFlex *>( luaL_checkentity(L, 1)->GetBaseAnimating() );
+#else
+  CBaseFlex *pFlex = dynamic_cast<CBaseFlex *>( luaL_checkentity(L, 1)->GetBaseAnimating() );
+#endif
+  if ( pFlex == NULL )
+  {
+    lua_pushinteger( L, -1 );
+    return 1;
+  }
+  lua_pushinteger( L, (int)pFlex->FindFlexController( luaL_checkstring(L, 2) ) );
+  return 1;
+}
+
+static int CBaseEntity_SetFlexWeight (lua_State *L) {
+#ifdef CLIENT_DLL
+  C_BaseFlex *pFlex = dynamic_cast<C_BaseFlex *>( luaL_checkentity(L, 1)->GetBaseAnimating() );
+#else
+  CBaseFlex *pFlex = dynamic_cast<CBaseFlex *>( luaL_checkentity(L, 1)->GetBaseAnimating() );
+#endif
+  int i = luaL_checkint(L, 2);
+  if ( pFlex == NULL || i < 0 || i >= (int)pFlex->GetNumFlexControllers() )
+    return 0;
+  pFlex->SetFlexWeight( (LocalFlexController_t)i, (float)luaL_checknumber(L, 3) );
+  return 0;
+}
+
+static int CBaseEntity_GetFlexWeight (lua_State *L) {
+#ifdef CLIENT_DLL
+  C_BaseFlex *pFlex = dynamic_cast<C_BaseFlex *>( luaL_checkentity(L, 1)->GetBaseAnimating() );
+#else
+  CBaseFlex *pFlex = dynamic_cast<CBaseFlex *>( luaL_checkentity(L, 1)->GetBaseAnimating() );
+#endif
+  int i = luaL_checkint(L, 2);
+  if ( pFlex == NULL || i < 0 || i >= (int)pFlex->GetNumFlexControllers() )
+  {
+    lua_pushnumber( L, 0 );
+    return 1;
+  }
+  lua_pushnumber( L, pFlex->GetFlexWeight( (LocalFlexController_t)i ) );
+  return 1;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"GetForward", CBaseEntity_GetForward},
   {"GetRight", CBaseEntity_GetRight},
@@ -4487,6 +4660,12 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetVelocity", CBaseEntity_GetAbsVelocity},
   {"GetAttachment", CBaseEntity_GetAttachment},
   {"GetAnimTime", CBaseEntity_GetAnimTime},
+  {"GetPoseParameter", CBaseEntity_GetPoseParameter},
+  {"SetPoseParameter", CBaseEntity_SetPoseParameter},
+  {"LookupPoseParameter", CBaseEntity_LookupPoseParameter},
+  {"GetFlexIDByName", CBaseEntity_GetFlexIDByName},
+  {"SetFlexWeight", CBaseEntity_SetFlexWeight},
+  {"GetFlexWeight", CBaseEntity_GetFlexWeight},
   {"GetBaseAnimating", CBaseEntity_GetBaseAnimating},
   {"GetBaseEntity", CBaseEntity_GetBaseEntity},
   {"GetBaseVelocity", CBaseEntity_GetBaseVelocity},
@@ -4776,6 +4955,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"WorldAlignMaxs", CBaseEntity_WorldAlignMaxs},
   {"WorldAlignMins", CBaseEntity_WorldAlignMins},
   {"WorldAlignSize", CBaseEntity_WorldAlignSize},
+  {"WorldSpaceAABB", CBaseEntity_WorldSpaceAABB},
   {"WorldSpaceCenter", CBaseEntity_WorldSpaceCenter},
   {"WorldToEntitySpace", CBaseEntity_WorldToEntitySpace},
   // HL2SB GMod compat: NW variable family.  GMod's NW vars are real networked
