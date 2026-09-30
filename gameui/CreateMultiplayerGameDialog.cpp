@@ -383,14 +383,22 @@ void CCreateMultiplayerGameDialog::ApplySchemeSettings( vgui::IScheme *pScheme )
 		// HL2SB: start at 1 (real single player - game.SinglePlayer() is
 		// maxclients<=1) and stop at 64, the largest value GetPlayerLimits
 		// actually serves; offering 128 here used to silently start a
-		// clamped server.  Row 5 keeps 32 as the untouched default.
+		// clamped server.  The 1 entry reads "single player" and is the
+		// default selection.
 		for ( int i = 1; i <= 64; i *= 2 )
 		{
+			if ( i == 1 )
+			{
+				const wchar_t *pwsz = g_pVGuiLocalize->Find( "#HL2SB_SinglePlayer" );
+				m_pMaxPlayers->AddItem( pwsz ? pwsz : L"Single Player",
+					new KeyValues( "maxplayers", "val", i ) );
+				continue;
+			}
 			char sz[16];
 			Q_snprintf( sz, sizeof( sz ), "%d", i );
 			m_pMaxPlayers->AddItem( sz, new KeyValues( "maxplayers", "val", i ) );
 		}
-		m_pMaxPlayers->ActivateItemByRow( 5 );
+		m_pMaxPlayers->ActivateItemByRow( 0 );
 
 		m_pSavedData = new KeyValues( "ServerConfig" );
 		if ( m_pSavedData )
