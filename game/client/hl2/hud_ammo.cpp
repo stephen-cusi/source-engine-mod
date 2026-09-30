@@ -174,6 +174,36 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 		ammo2 = player->GetAmmoCount(wpn->GetPrimaryAmmoType());
 	}
 
+#ifdef LUA_SDK
+	// wiki: WEAPON:CustomAmmoDisplay() -> table -- Draw / PrimaryClip /
+	// PrimaryAmmo override what the stock ammo HUD shows (HL2's layout is a
+	// fixed clip|reserve pair, so the Secondary* fields have no slot here).
+	{
+		CHL2MPScriptedWeapon *pScripted = dynamic_cast<CHL2MPScriptedWeapon *>( wpn );
+		if ( pScripted )
+		{
+			bool bDraw = true;
+			int nClipOverride = -1;
+			int nReserveOverride = -1;
+			if ( pScripted->DispatchCustomAmmoDisplay( &bDraw, &nClipOverride, &nReserveOverride ) )
+			{
+				if ( !bDraw )
+				{
+					hudlcd->SetGlobalStat( "(ammo_primary)", "n/a" );
+					hudlcd->SetGlobalStat( "(ammo_secondary)", "n/a" );
+					SetPaintEnabled(false);
+					SetPaintBackgroundEnabled(false);
+					return;
+				}
+				if ( nClipOverride >= 0 )
+					ammo1 = nClipOverride;
+				if ( nReserveOverride >= 0 )
+					ammo2 = nReserveOverride;
+			}
+		}
+	}
+#endif
+
 	hudlcd->SetGlobalStat( "(ammo_primary)", VarArgs( "%d", ammo1 ) );
 	hudlcd->SetGlobalStat( "(ammo_secondary)", VarArgs( "%d", ammo2 ) );
 

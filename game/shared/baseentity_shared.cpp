@@ -1641,6 +1641,11 @@ typedef CTraceFilterSimpleList CBulletsTraceFilter;
 //-----------------------------------------------------------------------------
 static char s_szHL2SB_BulletTracerName[ 64 ] = { 0 };
 
+// Defined in weapon_hl2mpbase_scriptedweapon.cpp (the dispatch needs the
+// scripted weapon class): wiki WEAPON:GetTracerOrigin() of the shooter's
+// active scripted weapon; false when it does not answer.
+extern bool HL2SB_GetWeaponTracerOrigin( CBaseEntity *pShooter, Vector &vecOut );
+
 // HL2SB: the tracer name for the FireBullets() call currently on the stack.
 // MakeTracer() has no way to receive bullet.TracerName (it is a virtual with a
 // fixed signature), and GetTracerType() only works when THIS realm published
@@ -1692,6 +1697,14 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 	// later shot.  Also parked in the shot-scoped buffer MakeTracer() reads.
 	const char *pszScriptedTracerName = HL2SB_ConsumeBulletTracerName();
 	Q_strncpy( s_szHL2SB_ShotTracerName, pszScriptedTracerName, sizeof( s_szHL2SB_ShotTracerName ) );
+
+	// HL2SB: wiki WEAPON:GetTracerOrigin() -> Vector -- a scripted weapon can
+	// move the visual source of this shot's tracers.  Asked once per shot and
+	// held in a local (the tracer NAME needs a static because MakeTracer() is
+	// a separate virtual with no room in its signature; the origin is
+	// consumed right here).
+	Vector vecScriptedTracerSrc = vec3_origin;
+	const bool bHasScriptedTracerSrc = HL2SB_GetWeaponTracerOrigin( this, vecScriptedTracerSrc );
 
 #if defined( HL2MP ) && defined( GAME_DLL ) && !defined( CLIENT_DLL )
 	// HL2SB: server-side HL2MP players ship the shot as a TE instead of doing
@@ -2114,6 +2127,10 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 #endif
 				Vector vecTracerSrc = vec3_origin;
 				ComputeTracerStartPosition( info.m_vecSrc, &vecTracerSrc );
+				// HL2SB: the scripted weapon's GetTracerOrigin() wins over
+				// the computed muzzle position.
+				if ( bHasScriptedTracerSrc )
+					vecTracerSrc = vecScriptedTracerSrc;
 
 				trace_t Tracer;
 				Tracer = tr;
@@ -2199,7 +2216,9 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 			pFiringWeapon = pShooter->GetActiveWeapon();
 		}
 
-		TE_HL2MPFireBullets( entindex(), tr.startpos, info.m_vecDirShooting, info.m_iAmmoType, iEffectSeed, info.m_iShots, info.m_vecSpread.x, bDoTracers, bDoImpacts,
+		TE_HL2MPFireBullets( entindex(),
+							 ( bHasScriptedTracerSrc ) ? vecScriptedTracerSrc : tr.startpos,
+							 info.m_vecDirShooting, info.m_iAmmoType, iEffectSeed, info.m_iShots, info.m_vecSpread.x, bDoTracers, bDoImpacts,
 							 ( pszScriptedTracerName[ 0 ] != '\0' ) ? pszScriptedTracerName : GetTracerType(),
 							 ( pFiringWeapon != NULL ) ? pFiringWeapon->entindex() : 0 );
 	}

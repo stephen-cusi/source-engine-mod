@@ -1092,6 +1092,19 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 			col[3] *= (alpha / 255.0f);
 
 #ifdef LUA_SDK
+			// wiki: WEAPON:DrawWeaponSelection( x, y, wide, tall, alpha ) --
+			// a scripted weapon that defines the hook draws the selected
+			// box's icon area itself (weapon_base bounces the WepSelectIcon
+			// texture and appends the info box).
+			if ( bSelected )
+			{
+				CHL2MPScriptedWeapon *pScriptedSel = dynamic_cast<CHL2MPScriptedWeapon *>( pWeapon );
+				if ( pScriptedSel && pScriptedSel->DispatchDrawWeaponSelection( xpos, ypos, boxWide, boxTall, (int)alpha ) )
+				{
+					break;
+				}
+			}
+
 			// HL2SB: GMod weapons carry a material icon instead of a HUD sprite.
 			if ( HL2SB_DrawWeaponSelectIcon( pWeapon, xpos, ypos, boxWide, boxTall, col ) )
 			{
@@ -1166,6 +1179,17 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 			col[3] *= (alpha / 255.0f);
 
 #ifdef LUA_SDK
+			// wiki: WEAPON:DrawWeaponSelection( x, y, wide, tall, alpha ) --
+			// same hook for the PLUS/CAROUSEL selected box.
+			if ( bSelected )
+			{
+				CHL2MPScriptedWeapon *pScriptedSel = dynamic_cast<CHL2MPScriptedWeapon *>( pWeapon );
+				if ( pScriptedSel && pScriptedSel->DispatchDrawWeaponSelection( xpos, ypos, boxWide, boxTall, (int)alpha ) )
+				{
+					break;
+				}
+			}
+
 			// HL2SB: GMod weapons carry a material icon instead of a HUD sprite.
 			if ( HL2SB_DrawWeaponSelectIcon( pWeapon, xpos, ypos, boxWide, boxTall, col ) )
 			{

@@ -1294,8 +1294,21 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	{
 		RestartGesture( Weapon_TranslateActivity( idealActivity ) );
 
-		// FIXME: this seems a bit wacked
-		Weapon_SetActivity( Weapon_TranslateActivity( ACT_RANGE_ATTACK1 ), 0 );
+		// HL2SB (2026-09-30): Lua SWEPs skip this.  CBaseCombatWeapon::
+		// SetActivity is Valve's own "Oh man..." hack -- it flips the weapon
+		// to its WORLD model to resolve the range-attack sequence, flips back
+		// and forces that world-model sequence index onto the viewmodel
+		// (or force-idles it with SetCycle(0)+ResetSequenceInfo when the
+		// activity is missing, which is every combined SWEP model).  GMod
+		// never runs this for scripted weapons: the body fire gesture is the
+		// Lua animation layer's ACT_MP_* restart (visible in the probe log),
+		// and the extra per-shot model/sequence churn was the "plays another
+		// animation after each shot" report on the Nyan Gun.
+		CBaseCombatWeapon *pFireWeapon = GetActiveWeapon();
+		if ( pFireWeapon == NULL || !pFireWeapon->IsScripted() )
+		{
+			Weapon_SetActivity( Weapon_TranslateActivity( ACT_RANGE_ATTACK1 ), 0 );
+		}
 
 		return;
 	}
