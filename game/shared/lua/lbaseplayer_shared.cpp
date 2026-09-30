@@ -1942,28 +1942,56 @@ static int CBasePlayer_StripWeapon (lua_State *L) {
 // convar (FCVAR_USERINFO).  On the local client this always reads the local
 // player's cvar regardless of which player the method is called on; that is
 // GMod's documented behaviour.
+// HL2SB GMod parity (2026-09-29): Entity:GetInfo / GetInfoNum must answer
+// with the value THAT PLAYER'S CLIENT reports - GMod's server-side GetInfo
+// reads the client's replicated userinfo convar store, not the server's own
+// cvar dictionary.  Addon config cvars (Minecraft's minecraft_blocktype,
+// minecraft_blockhealth, mc_viewmodel_doanim, ...) are created with
+// CreateClientConVar( ..., userdata=true ) - they exist ONLY on the client -
+// so the previous ConVarRef lookup found nothing on the server and every
+// GetCSConVarB/I/F helper in those addons read nil: Minecraft's server-side
+// "isBlockAllowed(GetCSConVarI(...))" gate then aborted placement (the block
+// stayed a clientside-only entity the server could never shoot or delete).
+// Keep ConVarRef first (local realm + real server cvars), then ask the engine
+// for the client-reported value.
 static int CBasePlayer_GetInfo (lua_State *L) {
-  luaL_checkplayer(L, 1);
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
   const char *pszName = luaL_checkstring(L, 2);
   ConVarRef ref( pszName, true );
   if ( ref.IsValid() ) {
     lua_pushstring( L, ref.GetString() );
-  } else {
-    lua_pushnil( L );
+    return 1;
   }
+#ifdef GAME_DLL
+  const char *pszClient = engine->GetClientConVarValue( pPlayer->entindex(), pszName );
+  if ( pszClient && pszClient[ 0 ] )
+  {
+    lua_pushstring( L, pszClient );
+    return 1;
+  }
+#endif
+  lua_pushnil( L );
   return 1;
 }
 
 static int CBasePlayer_GetInfoNum (lua_State *L) {
-  luaL_checkplayer(L, 1);
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
   const char *pszName = luaL_checkstring(L, 2);
   float flDefault = (float)luaL_optnumber(L, 3, 0.0f);
   ConVarRef ref( pszName, true );
   if ( ref.IsValid() ) {
     lua_pushnumber( L, ref.GetFloat() );
-  } else {
-    lua_pushnumber( L, flDefault );
+    return 1;
   }
+#ifdef GAME_DLL
+  const char *pszClient = engine->GetClientConVarValue( pPlayer->entindex(), pszName );
+  if ( pszClient && pszClient[ 0 ] )
+  {
+    lua_pushnumber( L, (float)Q_atof( pszClient ) );
+    return 1;
+  }
+#endif
+  lua_pushnumber( L, flDefault );
   return 1;
 }
 
@@ -2123,6 +2151,33 @@ static int CBasePlayer_UnfreezePhysicsObjects (lua_State *L) {
   return 0;
 }
 
+// Player:PickupObject( ent ) -- start a +use carry of ent.  The reference Lua
+// binding hands the entity straight to the pickup controller, so the walking
+// pickup's mass/size limit does not apply here.
+extern void PlayerPickupObject( CBasePlayer *pPlayer, CBaseEntity *pObject );
+static int CBasePlayer_PickupObject (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  CBaseEntity *pEnt = luaL_checkentity(L, 2);
+  PlayerPickupObject( pPlayer, pEnt );
+  return 0;
+}
+
+// Player:DropObject( ent ) -- release ent if this player is +use-carrying it.
+// (The reference also drops physgun-held entities here; this engine's physgun
+// carry lives on a different weapon class with no drop entry point.)
+extern bool PlayerPickupControllerIsHoldingEntity( CBaseEntity *pPickupController, CBaseEntity *pHeldEntity );
+static int CBasePlayer_DropObject (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  CBaseEntity *pEnt = luaL_checkentity(L, 2);
+  CBaseEntity *pUse = pPlayer->GetUseEntity();
+  if ( pUse != NULL && pUse->ClassMatches( "player_pickup" ) &&
+       PlayerPickupControllerIsHoldingEntity( pUse, pEnt ) )
+  {
+    pUse->Use( pPlayer, pUse, USE_OFF, 0 );
+  }
+  return 0;
+}
+
 #endif // CLIENT_DLL
 
 static const luaL_Reg CBasePlayermeta[] = {
@@ -2220,6 +2275,10 @@ static const luaL_Reg CBasePlayermeta[] = {
   // HL2SB (2026-09-27): GMod spells it InVehicle() - the ported base-gamemode
   // animations.lua uses ply:InVehicle() throughout.
   {"InVehicle", CBasePlayer_IsInAVehicle},
+#ifndef CLIENT_DLL
+  {"PickupObject", CBasePlayer_PickupObject},
+  {"DropObject", CBasePlayer_DropObject},
+#endif
   {"IsObserver", CBasePlayer_IsObserver},
   {"IsPlayer", CBasePlayer_IsPlayer},
   {"IsPlayerUnderwater", CBasePlayer_IsPlayerUnderwater},

@@ -834,7 +834,10 @@ void CChoreoGenericServerVehicle::ItemPostFrame( CBasePlayer *player )
 
 	GetDrivableVehicle()->ItemPostFrame( player );
 
-	if (( player->m_afButtonPressed & IN_USE ) || GetVehicle()->ShouldForceExit() )
+	// HL2SB: raw held button, not the pressed edge - PlayerUse (ItemPreFrame)
+	// runs first and ResetUseKey() on the vehicle's own Use() wipes the edge.
+	// Same gate as the generic server vehicle; See CBaseServerVehicle::ItemPostFrame.
+	if (( player->m_nButtons & IN_USE ) || GetVehicle()->ShouldForceExit() )
 	{
 		GetVehicle()->ClearForcedExit();
 		if ( GetDrivableVehicle()->CanExitVehicle(player) )

@@ -1306,6 +1306,18 @@ bool CBaseServerVehicle::HandlePassengerExit( CBaseCombatCharacter *pPassenger )
 		// whether we're blocked or not. We're getting out, one way or another.
 		GetDrivableVehicle()->PreExitVehicle( pPlayer, nRole );
 
+		// HL2SB vehdbg
+		{
+			extern ConVar hl2sb_vehicle_anim_debug;
+			if ( hl2sb_vehicle_anim_debug.GetBool() )
+			{
+				Msg( "[HL2SB vehdbg] exitpick veh=%s seq=%d blocked=%d newpos=(%.1f %.1f %.1f)\n",
+					m_pVehicle ? m_pVehicle->GetClassname() : "<none>",
+					iSequence, bAllPointsBlocked ? 1 : 0,
+					vecNewPos.x, vecNewPos.y, vecNewPos.z );
+			}
+		}
+
 		if ( iSequence > ACTIVITY_NOT_AVAILABLE )
 		{
 			CBaseAnimating *pAnimating = dynamic_cast<CBaseAnimating *>(m_pVehicle);
@@ -1610,7 +1622,22 @@ int CBaseServerVehicle::GetExitAnimToUse( Vector &vecEyeExitEndpoint, bool &bAll
 //-----------------------------------------------------------------------------
 void CBaseServerVehicle::HandleEntryExitFinish( bool bExitAnimOn, bool bResetAnim )
 {
-	// Parse the vehicle animations. This is needed because they may have 
+	// HL2SB vehdbg
+	{
+		extern ConVar hl2sb_vehicle_anim_debug;
+		if ( hl2sb_vehicle_anim_debug.GetBool() )
+		{
+			CBasePlayer *pDbgRider = ToBasePlayer( GetDriver() );
+			Msg( "[HL2SB vehdbg] finish veh=%s exitanim=%d resetanim=%d rider=(%.1f %.1f %.1f)\n",
+				m_pVehicle ? m_pVehicle->GetClassname() : "<none>",
+				bExitAnimOn ? 1 : 0, bResetAnim ? 1 : 0,
+				pDbgRider ? pDbgRider->GetLocalOrigin().x : 0.0f,
+				pDbgRider ? pDbgRider->GetLocalOrigin().y : 0.0f,
+				pDbgRider ? pDbgRider->GetLocalOrigin().z : 0.0f );
+		}
+	}
+
+	// Parse the vehicle animations. This is needed because they may have
 	// saved, and loaded during exit anim, which would clear the exit anim.
 	if ( !m_bParsedAnimations )
 	{
@@ -1685,6 +1712,14 @@ void CBaseServerVehicle::HandleEntryExitFinish( bool bExitAnimOn, bool bResetAni
 
 	GetDrivableVehicle()->SetVehicleEntryAnim( false );
 	GetDrivableVehicle()->SetVehicleExitAnim( false, vec3_origin );
+
+	// HL2SB: deliberately NO rider re-anchoring here.  m_bSequenceFinished flips
+	// at the sequence's last VISIBLE cycle, which on entry/exit sequences that
+	// sweep the driver-view bone is still mid-sweep - re-anchoring at that moment
+	// writes the sweeping attachment transform into the rider's permanent local
+	// offset and parks them outside the settled vehicle.  The rider is parented
+	// to the attachment itself, so once the sequence settles they ride to the
+	// seat on their own; nothing here may SetAbsOrigin/SetAbsAngles them.
 }
 
 //-----------------------------------------------------------------------------
@@ -1771,11 +1806,37 @@ void CBaseServerVehicle::ItemPostFrame( CBasePlayer *player )
 
 	GetDrivableVehicle()->ItemPostFrame( player );
 
-	if ( player->m_afButtonPressed & IN_USE )
+	// HL2SB: gate on the RAW usercmd button, not the pressed edge.  ItemPreFrame
+	// runs PlayerUse first; FindUseEntity traces from the driver's eyes, and for a
+	// driver sitting inside their own vehicle that trace starts solid (endpos ==
+	// startpos, distance 0), selects the vehicle itself and the vehicle's Use()
+	// calls ResetUseKey() - which wipes the pressed edge before this check runs.
+	// The held button is immune to that, so +use inside a vehicle always reaches
+	// the exit path.  Exit anims stay single-shot via CanExitVehicle.
+	if ( player->m_nButtons & IN_USE )
 	{
+		// HL2SB vehdbg (hl2sb_vehicle_anim_debug 1): one line per second while the
+		// driver holds +use inside the vehicle.
+		static float s_flNextELine = 0.0f;
+		extern ConVar hl2sb_vehicle_anim_debug;
+		if ( hl2sb_vehicle_anim_debug.GetBool() && gpGlobals->curtime >= s_flNextELine )
+		{
+			s_flNextELine = gpGlobals->curtime + 1.0f;
+			bool bCanExit = GetDrivableVehicle()->CanExitVehicle( player );
+			Msg( "[HL2SB vehdbg] E gate veh=%s canexit=%d\n",
+				m_pVehicle ? m_pVehicle->GetClassname() : "<none>",
+				bCanExit ? 1 : 0 );
+		}
 		if ( GetDrivableVehicle()->CanExitVehicle(player) )
 		{
-			if ( !HandlePassengerExit( player ) && ( player != NULL ) )
+			bool bExitOk = HandlePassengerExit( player );
+			extern ConVar hl2sb_vehicle_anim_debug;
+			if ( hl2sb_vehicle_anim_debug.GetBool() )
+			{
+				Msg( "[HL2SB vehdbg] E exit veh=%s result=%d\n",
+					m_pVehicle ? m_pVehicle->GetClassname() : "<none>", bExitOk ? 1 : 0 );
+			}
+			if ( !bExitOk && ( player != NULL ) )
 			{
 				player->PlayUseDenySound();
 			}

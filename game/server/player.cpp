@@ -5613,11 +5613,7 @@ bool CBasePlayer::GetInVehicle( IServerVehicle *pVehicle, int nRole )
 	Vector vSeatOrigin;
 	QAngle qSeatAngles;
 	pVehicle->GetPassengerSeatPoint( nRole, &vSeatOrigin, &qSeatAngles );
-	
-	// Set us to that position
-	SetAbsOrigin( vSeatOrigin );
-	SetAbsAngles( qSeatAngles );
-	
+
 	// Parent to the vehicle.
 	//
 	// GMod parents the rider to the vehicle's "vehicle_feet_passenger0"
@@ -5634,6 +5630,14 @@ bool CBasePlayer::GetInVehicle( IServerVehicle *pVehicle, int nRole )
 	{
 		iSeatAttachment = pSeatAnim->LookupAttachment( "vehicle_feet_passenger0" );
 	}
+
+	// HL2SB: keep the reference placement ORDER - SetAbsOrigin/SetAbsAngles at
+	// the seat point FIRST, SetParent( attachment ) SECOND.  The entry sequence
+	// is already playing at this point, so the attachment's live transform is
+	// mid-sweep; parenting against THAT would zero the local offset but make
+	// the rider inherit the sweeping bone's tilt (they lie across the vehicle
+	// for the whole entry).  The reference rides with the same frozen local
+	// offset - keeping this identical is what matches its look.
 	SetParent( pEnt, iSeatAttachment );
 
 	SetCollisionGroup( COLLISION_GROUP_IN_VEHICLE );
@@ -5709,6 +5713,20 @@ bool CBasePlayer::GetInVehicle( IServerVehicle *pVehicle, int nRole )
 	m_iVehicleAnalogBias = VEHICLE_ANALOG_BIAS_NONE;
 
 	OnVehicleStart();
+
+	// HL2SB vehdbg (hl2sb_vehicle_anim_debug 1): one line per entry with every
+	// number the seat-placement chain depends on.
+	extern ConVar hl2sb_vehicle_anim_debug;
+	if ( hl2sb_vehicle_anim_debug.GetBool() )
+	{
+		Msg( "[HL2SB vehdbg] enter veh=%s att=%d seat=(%.1f %.1f %.1f) local=(%.1f %.1f %.1f) abs=(%.1f %.1f %.1f) viewoff=(%.1f %.1f %.1f) mt=%d\n",
+			pEnt ? pEnt->GetClassname() : "<none>", iSeatAttachment,
+			vSeatOrigin.x, vSeatOrigin.y, vSeatOrigin.z,
+			GetLocalOrigin().x, GetLocalOrigin().y, GetLocalOrigin().z,
+			GetAbsOrigin().x, GetAbsOrigin().y, GetAbsOrigin().z,
+			GetViewOffset().x, GetViewOffset().y, GetViewOffset().z,
+			GetMoveType() );
+	}
 
 	return true;
 }

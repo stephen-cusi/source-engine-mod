@@ -153,6 +153,7 @@ public:
 	virtual void FinishMove( CBasePlayer *player, CUserCmd *ucmd, CMoveData *move ) { return; }
 	virtual bool CanEnterVehicle( CBaseEntity *pEntity );
 	virtual bool CanExitVehicle( CBaseEntity *pEntity );
+	virtual void UpdateOnRemove( void );
 	virtual void SetVehicleEntryAnim( bool bOn );
 	virtual void SetVehicleExitAnim( bool bOn, Vector vecEyeExitEndpoint ) { m_bExitAnimOn = bOn; if ( bOn ) m_vecEyeExitEndpoint = vecEyeExitEndpoint; }
 	virtual void EnterVehicle( CBaseCombatCharacter *pPassenger );
@@ -436,6 +437,29 @@ void CPropVehiclePrisonerPod::HandleAnimEvent( animevent_t *pEvent )
 
 
 //-----------------------------------------------------------------------------
+// HL2SB: this class derives from CPhysicsProp, not from CPropVehicleDriveable,
+// so the driveable's passenger-ejecting UpdateOnRemove never ran here:
+// removing an occupied pod (undo, cleanup, kill) deleted the entity out from
+// under a rider still parented to it in MOVETYPE_NOCLIP with the vehicle's
+// view - the "undo while seated goes black" report.  Mirror the driveable eject.
+//-----------------------------------------------------------------------------
+void CPropVehiclePrisonerPod::UpdateOnRemove( void )
+{
+	for ( int i = 1; i <= gpGlobals->maxClients; ++i )
+	{
+		CBasePlayer *pPlayer = UTIL_PlayerByIndex( i );
+		if ( pPlayer && pPlayer->GetVehicleEntity() == this )
+		{
+			// Eject where the player already is; LeaveVehicle() steps up by
+			// itself when the vehicle can no longer supply an exit point.
+			pPlayer->LeaveVehicle( pPlayer->GetAbsOrigin(), pPlayer->GetAbsAngles() );
+		}
+	}
+
+	BaseClass::UpdateOnRemove();
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
 void CPropVehiclePrisonerPod::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
@@ -561,6 +585,11 @@ void CPropVehiclePrisonerPod::ExitVehicle( int nRole )
 
 	m_playerOff.FireOutput( pPlayer, this, 0 );
 	m_bEnterAnimOn = false;
+	// HL2SB: end every completed exit UNLOCKED.  The entry sequence locks the
+	// hatch (AE_POD_CLOSE) and the exit sequence is what unlocks it; if that
+	// event is ever missed (the anim got interrupted or replaced), the lock
+	// would silently refuse every later +use entry with nothing in the log.
+	m_bLocked = false;
 
 	m_ServerVehicle.SoundShutdown( 1.0 );
 }
@@ -718,7 +747,11 @@ void CPrisonerPodServerVehicle::ItemPostFrame( CBasePlayer *player )
 
 	GetDrivableVehicle()->ItemPostFrame( player );
 
-	if (( player->m_afButtonPressed & IN_USE ) || GetPod()->ShouldForceExit() )
+	// HL2SB: raw held button, not the pressed edge - PlayerUse (ItemPreFrame)
+	// runs first, selects the pod the driver sits inside (the eye trace starts
+	// solid) and ResetUseKey() wipes the pressed edge.  Same gate as the generic
+	// server vehicle; See CBaseServerVehicle::ItemPostFrame.
+	if (( player->m_nButtons & IN_USE ) || GetPod()->ShouldForceExit() )
 	{
 		GetPod()->ClearForcedExit();
 		if ( GetDrivableVehicle()->CanExitVehicle(player) )

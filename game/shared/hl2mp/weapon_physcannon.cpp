@@ -782,11 +782,8 @@ void CPlayerPickupController::Init( CBasePlayer *pPlayer, CBaseEntity *pObject )
 	}
 
 
-	CHL2MP_Player *pOwner = (CHL2MP_Player *)ToBasePlayer( pPlayer );
-	if ( pOwner )
-	{
-		pOwner->EnableSprint( false );
-	}
+	// HL2SB: the reference pickup does NOT disable sprint here - a player
+	// carrying an object grabbed with +use keeps full sprint speed.
 
 	// If the target is debris, convert it to non-debris
 	if ( pObject->GetCollisionGroup() == COLLISION_GROUP_DEBRIS )
@@ -807,6 +804,13 @@ void CPlayerPickupController::Init( CBasePlayer *pPlayer, CBaseEntity *pObject )
 	
 	m_pPlayer->m_Local.m_iHideHUD |= HIDEHUD_WEAPONSELECTION;
 	m_pPlayer->SetUseEntity( this );
+
+	// HL2SB: the reference fires the physics-pickup hook once the carry is
+	// live, with (player, entity).
+	BEGIN_LUA_CALL_HOOK( "OnPlayerPhysicsPickup" );
+		lua_pushplayer( L, pPlayer );
+		lua_pushentity( L, pObject );
+	END_LUA_CALL_HOOK( 2, 0 );
 #endif
 }
 
@@ -835,11 +839,8 @@ void CPlayerPickupController::Shutdown( bool bThrown )
 
 	if ( m_pPlayer )
 	{
-		CHL2MP_Player *pOwner = (CHL2MP_Player *)ToBasePlayer( m_pPlayer );
-		if ( pOwner )
-		{
-			pOwner->EnableSprint( true );
-		}
+		// HL2SB: the reference never touches the sprint flag around a +use
+		// carry, so nothing to restore here either.
 
 		m_pPlayer->SetUseEntity( NULL );
 		if ( m_pPlayer->GetActiveWeapon() )
@@ -854,6 +855,17 @@ void CPlayerPickupController::Shutdown( bool bThrown )
 		}
 
 		m_pPlayer->m_Local.m_iHideHUD &= ~HIDEHUD_WEAPONSELECTION;
+
+		// HL2SB: the reference fires the physics-drop hook at the end of the
+		// drop, with (player, entity, thrown).
+		if ( pObject != NULL )
+		{
+			BEGIN_LUA_CALL_HOOK( "OnPlayerPhysicsDrop" );
+				lua_pushplayer( L, m_pPlayer );
+				lua_pushentity( L, pObject );
+				lua_pushboolean( L, bThrown );
+			END_LUA_CALL_HOOK( 3, 0 );
+		}
 	}
 	Remove();
 
