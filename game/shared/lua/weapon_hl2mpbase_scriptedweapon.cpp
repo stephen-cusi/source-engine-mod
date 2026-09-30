@@ -28,6 +28,8 @@
 #include "mathlib/lvector.h"
 // HL2SB: lua_pushtrace(), for SWEP:DoImpactEffect( trace, damageType ).
 #include "lgametrace.h"
+// HL2SB: MDLCACHE_CRITICAL_SECTION for the direct SendWeaponAnim sequence set.
+#include "datacache/imdlcache.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -1440,6 +1442,55 @@ const char *CHL2MPScriptedWeapon::GetTracerType( void )
 	return BaseClass::GetTracerType();
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:TranslateActivity( act ) -> act -- the
+// per-weapon activity translation, layered in FRONT of the engine's own
+// m_acttable walk.  weapon_base's sh_anim.lua answers from the same
+// m_acttable and returns ACT_INVALID (-1) for "no mapping", which falls
+// through to the engine walk -- the same answer twice for base weapons, and
+// a script's own translation wins for custom ones.
+//-----------------------------------------------------------------------------
+Activity CHL2MPScriptedWeapon::ActivityOverride( Activity baseAct, bool *pRequired )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "TranslateActivity" );
+		lua_pushinteger( L, (int)baseAct );
+	END_LUA_CALL_WEAPON_METHOD( 1, 1 );
+
+	if ( lua_gettop( L ) > 0 )
+	{
+		if ( lua_isnumber( L, -1 ) )
+		{
+			const int nAct = (int)lua_tointeger( L, -1 );
+			lua_pop( L, 1 );
+			if ( nAct > ACT_INVALID )
+				return (Activity)nAct;
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+	}
+#endif
+	return BaseClass::ActivityOverride( baseAct, pRequired );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:OnRestore() -- "Called when the weapon
+// entity is reloaded from a Source Engine save (not the Sandbox saves or
+// dupes) or on a changelevel."  The engine state is restored first so the
+// script reads post-restore values.
+//-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::OnRestore( void )
+{
+	BaseClass::OnRestore();
+
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "OnRestore" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+#endif
+}
+
 bool CHL2MPScriptedWeapon::Reload( void )
 {
 #if defined ( LUA_SDK )
@@ -1486,6 +1537,72 @@ void HL2SB_WeaponUpdateLuaOwnerFields( CHL2MPScriptedWeapon *pWeapon )
 	lua_setfield( L, -2, "Owner" );
 
 	lua_pop( L, 1 );
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:GetTracerOrigin() -> Vector -- "override
+// where the tracer comes from".  Consumed once per shot by CBaseEntity::
+// FireBullets (baseentity_shared.cpp).  On the client only the local
+// player's prediction draws its own tracers, so only that shooter is asked;
+// everyone else's tracers arrive through the HL2MP TE, which carries the
+// server's answer.
+//-----------------------------------------------------------------------------
+bool HL2SB_GetWeaponTracerOrigin( CBaseEntity *pShooter, Vector &vecOut )
+{
+#if defined ( LUA_SDK )
+	if ( pShooter == NULL || L == NULL )
+		return false;
+
+	CBaseCombatWeapon *pWeapon = NULL;
+#ifdef CLIENT_DLL
+	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+	if ( pLocal != NULL && pShooter == pLocal )
+		pWeapon = pLocal->GetActiveWeapon();
+#else
+	if ( CBaseCombatCharacter *pCharacter = pShooter->MyCombatCharacterPointer() )
+		pWeapon = pCharacter->GetActiveWeapon();
+#endif
+	if ( pWeapon == NULL || !pWeapon->IsScripted() )
+		return false;
+
+	CHL2MPScriptedWeapon *pScripted = static_cast< CHL2MPScriptedWeapon * >( pWeapon );
+	if ( pScripted->m_nTableReference < 0 || !lua_isrefvalid( L, pScripted->m_nTableReference ) )
+		return false;
+
+	lua_getref( L, pScripted->m_nTableReference );			// [T]
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	luasrc_PushScriptField( L, -1, "GetTracerOrigin" );		// [T, f]
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );									// []
+		return false;
+	}
+
+	lua_pushweapon( L, pScripted );							// [T, f, self]
+	lua_remove( L, -3 );									// [f, self]
+
+	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
+	{
+		// luasrc_pcall logged the traceback and popped the message
+		return false;
+	}
+
+	bool bAnswered = false;
+	if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "Vector" ) )
+	{
+		vecOut = luaL_checkvector( L, -1 );
+		bAnswered = true;
+	}
+	lua_pop( L, 1 );
+	return bAnswered;
+#else
+	return false;
 #endif
 }
 
@@ -1901,7 +2018,28 @@ bool CHL2MPScriptedWeapon::SendWeaponAnim( int iActivity )
 		( pViewModel != NULL ) ? STRING( pViewModel->GetModelName() ) : "<none>" );
 
 	if ( bOnWeaponModel )
-		return BaseClass::SendWeaponAnim( iActivity );
+	{
+		// HL2SB (2026-09-30): play the sequence DIRECTLY.  Stock
+		// SetIdealActivity can route the request through FindTransitionSequence
+		// and start an ACT_TRANSITION sequence instead of the requested one
+		// (re-arming the idle timer to the TRANSITION's duration -- measured
+		// as a 4.005s idle loop on the Nyan Gun's combined viewmodel).  GMod
+		// SWEPs have no transition chain: set the sequence and play it now.
+		MDLCACHE_CRITICAL_SECTION();
+		const int nSequence = SelectWeightedSequence( (Activity)iActivity );
+		if ( nSequence == ACTIVITY_NOT_AVAILABLE )
+			return false;
+
+		SetActivity( (Activity)iActivity );
+		SetSequence( nSequence );
+		SendViewModelAnim( nSequence );
+
+		m_IdealActivity = (Activity)iActivity;
+		m_nIdealSequence = nSequence;
+
+		SetWeaponIdleTime( gpGlobals->curtime + SequenceDuration() );
+		return true;
+	}
 
 	if ( pViewModel == NULL )
 		return false;
@@ -2040,7 +2178,9 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 		if ( lua_gettop( L ) > 0 && lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
 		{
 			lua_pop( L, 1 );
-			WeaponIdle();
+			// HL2SB (2026-09-30): no C++ WeaponIdle() here anymore -- GMod
+			// does not run any idle upkeep for Lua SWEPs (see the header
+			// comment); the viewmodel holds the pose the script sent.
 			return;
 		}
 
@@ -2163,9 +2303,15 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 		}
 
-		// The engine-side upkeep the HL2 base provided (idle / viewmodel
-		// animation), and deliberately none of its ammo or empty-click handling.
-		WeaponIdle();
+		// HL2SB (2026-09-30): NO C++ WeaponIdle() upkeep here anymore --
+		// GMod runs no idle management for Lua SWEPs (its own weapon_base
+		// Think() is empty); the viewmodel holds the pose the script sent
+		// and SWEPs re-idle themselves.  The old upkeep re-sent
+		// ACT_VM_IDLE whenever its timer elapsed, and since every
+		// SendWeaponAnim force-restarts the viewmodel (GMod semantics),
+		// automatic weapons whose fire animation is shorter than their
+		// fire delay got an idle restart interleaved between shots -- the
+		// reported attack-animation twitch.
 		return;
 	}
 #endif
@@ -2188,18 +2334,394 @@ void CHL2MPScriptedWeapon::ItemBusyFrame( void )
 }
 
 #ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:AcceptInput( inputName, activator, caller,
+// data ) -> boolean "Should we suppress the default action for this input?".
+// Entity I/O is server-only.  Override of the CBaseEntity virtual.
+//-----------------------------------------------------------------------------
+bool CHL2MPScriptedWeapon::AcceptInput( const char *szInputName, CBaseEntity *pActivator, CBaseEntity *pCaller, variant_t Value, int outputID )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "AcceptInput" );
+		lua_pushstring( L, szInputName );
+		if ( pActivator != NULL ) lua_pushentity( L, pActivator ); else lua_pushnil( L );
+		if ( pCaller != NULL ) lua_pushentity( L, pCaller ); else lua_pushnil( L );
+		lua_pushstring( L, Value.String() );
+	END_LUA_CALL_WEAPON_METHOD( 4, 1 );
+
+	if ( lua_gettop( L ) > 0 )
+	{
+		const bool bSuppress = lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+		if ( bSuppress )
+			return true;
+	}
+#endif
+	return BaseClass::AcceptInput( szInputName, pActivator, pCaller, Value, outputID );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:NPCShoot_Primary( shootPos, shootDir ) /
+// WEAPON:NPCShoot_Secondary( shootPos, shootDir ) -- "called internally
+// during TASK_RANGE_ATTACK1 -> OnRangeAttack1".  The SDK fires an NPC's
+// weapon through AE_NPC_WEAPON_FIRE -> Operator_ForceNPCFire; stock weapons
+// implement that inline, the scripted one hands the shot to the Lua method
+// (weapon_base's NPCShoot_* route it into PrimaryAttack/SecondaryAttack).
+//-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::Operator_ForceNPCFire( CBaseCombatCharacter *pOperator, bool bSecondary )
+{
+#if defined ( LUA_SDK )
+	if ( L != NULL && m_nTableReference >= 0 && lua_isrefvalid( L, m_nTableReference ) && pOperator != NULL )
+	{
+		Vector vecShootOrigin, vecShootDir;
+		int iAttachment = LookupAttachment( "muzzle" );
+		if ( iAttachment > 0 )
+		{
+			QAngle angShootDir;
+			GetAttachment( iAttachment, vecShootOrigin, angShootDir );
+			AngleVectors( angShootDir, &vecShootDir );
+		}
+		else
+		{
+			// no muzzle attachment: shoot from the operator's gun position
+			// along its body direction
+			vecShootOrigin = pOperator->Weapon_ShootPosition();
+			vecShootDir = pOperator->BodyDirection3D();
+		}
+
+		BEGIN_LUA_CALL_WEAPON_METHOD( bSecondary ? "NPCShoot_Secondary" : "NPCShoot_Primary" );
+			lua_pushvector( L, vecShootOrigin );
+			lua_pushvector( L, vecShootDir );
+		END_LUA_CALL_WEAPON_METHOD( 2, 0 );
+	}
+#endif
+
+	BaseClass::Operator_ForceNPCFire( pOperator, bSecondary );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:GetNPCBulletSpread( proficiency ) ->
+// number of DEGREES the NPC's shots deviate from its aim vector (wiki
+// default 15).  The SDK expresses the cone as sin( degrees / 2 ) per axis --
+// the VECTOR_CONE_*DEGREES constants are exactly that (10deg -> 0.08716,
+// 15deg -> 0.13053).
+//-----------------------------------------------------------------------------
+Vector CHL2MPScriptedWeapon::GetBulletSpread( WeaponProficiency_t proficiency )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "GetNPCBulletSpread" );
+		lua_pushinteger( L, (int)proficiency );
+	END_LUA_CALL_WEAPON_METHOD( 1, 1 );
+
+	if ( lua_gettop( L ) > 0 )
+	{
+		if ( lua_isnumber( L, -1 ) )
+		{
+			const float flDegrees = (float)lua_tonumber( L, -1 );
+			lua_pop( L, 1 );
+			const float flCone = sinf( DEG2RAD( flDegrees ) * 0.5f );
+			return Vector( flCone, flCone, flCone );
+		}
+		lua_pop( L, 1 );
+	}
+#endif
+	return BaseClass::GetBulletSpread( proficiency );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:GetNPCBurstSettings() -> minBurst,
+// maxBurst, fireRate-delay; WEAPON:GetNPCRestTimes() -> minRest, maxRest.
+// The SDK's shot regulator polls the five scalar virtuals below; each
+// answers from the wiki hook (a few Lua calls per regulator update, which
+// runs on equip/weapon change -- not per tick).
+//-----------------------------------------------------------------------------
+float CHL2MPScriptedWeapon::GetFireRate( void )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "GetNPCBurstSettings" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 3 );
+
+	// returns: minBurst, maxBurst, delay -- the delay is the last value
+	if ( lua_gettop( L ) >= 3 && lua_isnumber( L, -1 ) )
+	{
+		const float flDelay = (float)lua_tonumber( L, -1 );
+		lua_pop( L, 3 );
+		return MAX( 0.05f, flDelay );
+	}
+	if ( lua_gettop( L ) > 0 )
+		lua_pop( L, lua_gettop( L ) );
+#endif
+	return BaseClass::GetFireRate();
+}
+
+int CHL2MPScriptedWeapon::GetMinBurst( void )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "GetNPCBurstSettings" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 3 );
+
+	if ( lua_gettop( L ) >= 3 && lua_isnumber( L, -3 ) )
+	{
+		const int nMin = (int)lua_tointeger( L, -3 );
+		lua_pop( L, 3 );
+		return MAX( 1, nMin );
+	}
+	if ( lua_gettop( L ) > 0 )
+		lua_pop( L, lua_gettop( L ) );
+#endif
+	return BaseClass::GetMinBurst();
+}
+
+int CHL2MPScriptedWeapon::GetMaxBurst( void )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "GetNPCBurstSettings" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 3 );
+
+	if ( lua_gettop( L ) >= 3 && lua_isnumber( L, -2 ) )
+	{
+		const int nMax = (int)lua_tointeger( L, -2 );
+		lua_pop( L, 3 );
+		return MAX( 1, nMax );
+	}
+	if ( lua_gettop( L ) > 0 )
+		lua_pop( L, lua_gettop( L ) );
+#endif
+	return BaseClass::GetMaxBurst();
+}
+
+float CHL2MPScriptedWeapon::GetMinRestTime( void )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "GetNPCRestTimes" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 2 );
+
+	if ( lua_gettop( L ) >= 2 && lua_isnumber( L, -2 ) )
+	{
+		const float flMin = (float)lua_tonumber( L, -2 );
+		lua_pop( L, 2 );
+		return MAX( 0.0f, flMin );
+	}
+	if ( lua_gettop( L ) > 0 )
+		lua_pop( L, lua_gettop( L ) );
+#endif
+	return BaseClass::GetMinRestTime();
+}
+
+float CHL2MPScriptedWeapon::GetMaxRestTime( void )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "GetNPCRestTimes" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 2 );
+
+	if ( lua_gettop( L ) >= 2 && lua_isnumber( L, -1 ) )
+	{
+		const float flMax = (float)lua_tonumber( L, -1 );
+		lua_pop( L, 2 );
+		return MAX( 0.0f, flMax );
+	}
+	if ( lua_gettop( L ) > 0 )
+		lua_pop( L, lua_gettop( L ) );
+#endif
+	return BaseClass::GetMaxRestTime();
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:ShouldDropOnDie() -> boolean.  See the
+// header for the three-valued vote contract.
+//-----------------------------------------------------------------------------
+int CHL2MPScriptedWeapon::DispatchShouldDropOnDieVote( void )
+{
+#if defined ( LUA_SDK )
+	if ( L == NULL || m_nTableReference < 0 || !lua_isrefvalid( L, m_nTableReference ) )
+		return -1;
+
+	lua_getref( L, m_nTableReference );						// [T]
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return -1;
+	}
+
+	luasrc_PushScriptField( L, -1, "ShouldDropOnDie" );		// [T, f]
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );									// []
+		return -1;
+	}
+
+	lua_pushvalue( L, -2 );									// [T, f, T]
+	lua_remove( L, -3 );									// [f, T]
+
+	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
+	{
+		// luasrc_pcall logged the traceback and popped the message; the
+		// table went in as the argument, so nothing is left to pop
+		return -1;
+	}
+
+	int nVote = -1;
+	if ( lua_isboolean( L, -1 ) )
+		nVote = lua_toboolean( L, -1 ) ? 1 : 0;
+	lua_pop( L, 1 );										// []
+	return nVote;
+#else
+	return -1;
+#endif
+}
+
+// HL2SB: PackDeadPlayerItems (player.cpp) consumes the vote through this
+// wrapper so it does not need the scripted-weapon header.
+int HL2SB_WeaponShouldDropOnDieVote( CBaseCombatWeapon *pWeapon )
+{
+	if ( pWeapon == NULL || !pWeapon->IsScripted() )
+		return -1;
+	return static_cast< CHL2MPScriptedWeapon * >( pWeapon )->DispatchShouldDropOnDieVote();
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: NPC capability bits.  The wiki spells the hook GetCapabilities
+// (weapon_base/init.lua and real addons use it); older HL2SB content spelled
+// it CapabilitiesGet -- answer whichever exists.
+//-----------------------------------------------------------------------------
 int CHL2MPScriptedWeapon::CapabilitiesGet( void )
 {
 #if defined ( LUA_SDK )
-	BEGIN_LUA_CALL_WEAPON_METHOD( "CapabilitiesGet" );
-	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
-
-	RETURN_LUA_INTEGER();
+	if ( L != NULL && m_nTableReference >= 0 && lua_isrefvalid( L, m_nTableReference ) )
+	{
+		lua_getref( L, m_nTableReference );					// [T]
+		if ( lua_istable( L, -1 ) )
+		{
+			luasrc_PushScriptField( L, -1, "GetCapabilities" );	// [T, f]
+			if ( !lua_isfunction( L, -1 ) )
+			{
+				lua_pop( L, 1 );							// [T]
+				luasrc_PushScriptField( L, -1, "CapabilitiesGet" );	// [T, f]
+			}
+			if ( lua_isfunction( L, -1 ) )
+			{
+				lua_pushvalue( L, -2 );						// [T, f, T]
+				lua_remove( L, -3 );						// [f, T]
+				if ( luasrc_pcall( L, 1, 1, 0 ) == 0 )
+				{
+					int nCaps = 0;
+					if ( lua_isnumber( L, -1 ) )
+						nCaps = (int)lua_tointeger( L, -1 );
+					lua_pop( L, 1 );
+					return nCaps;
+				}
+				// luasrc_pcall logged + popped the message; nothing left
+				return BaseClass::CapabilitiesGet();
+			}
+			lua_pop( L, 2 );								// []
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+	}
 #endif
-
 	return BaseClass::CapabilitiesGet();
 }
 #else
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:DrawWeaponSelection( x, y, wide, tall,
+// alpha ) -- a scripted weapon that defines the hook draws the selected
+// weapon box's icon area itself (weapon_base's version bounces the
+// WepSelectIcon texture and appends the info box).  Returns true when the
+// hook ran so the caller skips the engine icon path.
+//-----------------------------------------------------------------------------
+bool CHL2MPScriptedWeapon::DispatchDrawWeaponSelection( int x, int y, int wide, int tall, int alpha )
+{
+#if defined ( LUA_SDK )
+	if ( L == NULL || m_nTableReference < 0 || !lua_isrefvalid( L, m_nTableReference ) )
+		return false;
+
+	lua_getref( L, m_nTableReference );						// [T]
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	luasrc_PushScriptField( L, -1, "DrawWeaponSelection" );	// [T, f]
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );
+		return false;
+	}
+
+	lua_pushweapon( L, this );								// [T, f, self]
+	lua_pushinteger( L, x );
+	lua_pushinteger( L, y );
+	lua_pushinteger( L, wide );
+	lua_pushinteger( L, tall );
+	lua_pushinteger( L, alpha );							// [T, f, self, x, y, w, t, a]
+	lua_remove( L, -8 );									// [f, self, x, y, w, t, a]
+
+	luasrc_pcall( L, 6, 0, 0 );
+	// on error luasrc_pcall logged + popped the message; zero results were
+	// requested, so either way the stack is clean here
+	return true;
+#else
+	return false;
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (wiki): WEAPON:CustomAmmoDisplay() -> table with
+// Draw (boolean), PrimaryClip / PrimaryAmmo / SecondaryClip / SecondaryAmmo
+// (numbers, -1 = leave the engine value).  HL2's ammo HUD is a fixed
+// clip|reserve pair, so only Draw / PrimaryClip / PrimaryAmmo have a slot
+// here (hud_ammo.cpp consumes them).
+//-----------------------------------------------------------------------------
+bool CHL2MPScriptedWeapon::DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "CustomAmmoDisplay" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
+
+	if ( lua_gettop( L ) <= 0 || !lua_istable( L, -1 ) )
+	{
+		if ( lua_gettop( L ) > 0 )
+			lua_pop( L, 1 );
+		return false;
+	}
+
+	if ( pbDraw != NULL )
+	{
+		lua_getfield( L, -1, "Draw" );
+		if ( lua_isboolean( L, -1 ) )
+			*pbDraw = ( lua_toboolean( L, -1 ) != 0 );
+		lua_pop( L, 1 );
+	}
+
+	if ( pnPrimaryClip != NULL )
+	{
+		lua_getfield( L, -1, "PrimaryClip" );
+		if ( lua_isnumber( L, -1 ) )
+			*pnPrimaryClip = (int)lua_tointeger( L, -1 );
+		lua_pop( L, 1 );
+	}
+
+	if ( pnPrimaryAmmo != NULL )
+	{
+		lua_getfield( L, -1, "PrimaryAmmo" );
+		if ( lua_isnumber( L, -1 ) )
+			*pnPrimaryAmmo = (int)lua_tointeger( L, -1 );
+		lua_pop( L, 1 );
+	}
+
+	lua_pop( L, 1 );	// the table
+	return true;
+#else
+	return false;
+#endif
+}
+
+//-----------------------------------------------------------------------------
+// Returns the aiment render origin + angles
+//-----------------------------------------------------------------------------
 int CHL2MPScriptedWeapon::DrawModel( int flags )
 {
 #if defined ( LUA_SDK )

@@ -49,6 +49,34 @@ public:
 	virtual Activity		GetDrawActivity( void );
 	virtual bool			SendWeaponAnim( int iActivity );
 
+	// wiki: WEAPON:NPCShoot_Primary( shootPos, shootDir ) / NPCShoot_Secondary
+	// -- "called internally during TASK_RANGE_ATTACK1 -> OnRangeAttack1".
+	// Override of the EXISTING CBaseCombatWeapon::Operator_ForceNPCFire
+	// virtual, same vtable slot.  NPC fire is server-only.
+#ifndef CLIENT_DLL
+	virtual void			Operator_ForceNPCFire( CBaseCombatCharacter *pOperator, bool bSecondary );
+#endif
+
+	// wiki: WEAPON:TranslateActivity( act ) -> act -- per-weapon activity
+	// translation, layered in FRONT of the existing m_acttable lookup
+	// (falls back to BaseClass::ActivityOverride when the script does not
+	// answer).  Override of the EXISTING CBaseCombatWeapon::ActivityOverride
+	// virtual, same vtable slot.
+	virtual Activity		ActivityOverride( Activity baseAct, bool *pRequired );
+
+	// wiki: WEAPON:OnRestore() -- "called when the weapon entity is reloaded
+	// from a Source Engine save ... or on a changelevel".  Override of the
+	// EXISTING CBaseCombatWeapon::OnRestore virtual, same vtable slot.
+	virtual void			OnRestore( void );
+
+	// wiki: WEAPON:AcceptInput( inputName, activator, caller, data ) ->
+	// boolean.  Override of the EXISTING CBaseEntity::AcceptInput virtual
+	// (inherited through CBaseCombatWeapon), same vtable slot.  Server only:
+	// entity I/O never reaches the client.
+#ifndef CLIENT_DLL
+	virtual bool			AcceptInput( const char *szInputName, CBaseEntity *pActivator, CBaseEntity *pCaller, variant_t Value, int outputID );
+#endif
+
 	// HL2SB: GMod's SWEP:Equip( newOwner ) -- override of the EXISTING
 	// CBaseCombatWeapon::Equip virtual (same vtable slot, no layout change).
 	virtual void			Equip( CBaseCombatCharacter *pOwner );
@@ -79,6 +107,26 @@ public:
 	virtual void	FireBullets( const FireBulletsInfo_t &info );
 	virtual bool	Reload();
 
+	// HL2SB (2026-09-30): GMod parity -- Lua SWEPs get NO idle management at
+	// all.  GMod's own weapon_base has an EMPTY Think() and never re-sends
+	// ACT_VM_IDLE; the viewmodel just holds the pose the script sent, and a
+	// SWEP that wants an idle cycle re-sends it itself (weapon_nyangun's
+	// Think timer).
+	//
+	// This MUST be a real override, not just "don't call WeaponIdle() from
+	// our own ItemPostFrame": CHL2MPScriptedWeapon's actual base class is
+	// CBaseHL2MPCombatWeapon, which has its OWN WeaponIdle() override
+	// (weapon_hl2mpbasehlmpcombatweapon.cpp) that unconditionally re-sends
+	// ACT_VM_IDLE once HasWeaponIdleTimeElapsed() -- shared code, so it runs
+	// on the CLIENT's predicted ItemPostFrame too, completely independent of
+	// this class's own server-side ItemPostFrame.  Without an override here
+	// that inherited implementation still ran every predicted client frame
+	// and force-restarted the viewmodel each time (SendWeaponAnim always
+	// restarts on this fork) -- the reported per-frame twitch, worse right
+	// after a vehicle exit because that is what next reset the idle timer to
+	// something already elapsed.  Empty override, same vtable slot.
+	virtual void	WeaponIdle( void ) { }
+
 	// HL2SB GMod compat: SWEP:DoImpactEffect( trace, damageType ) -- the impact
 	// effect of every scripted weapon (weapon_nyangun's util.Effect(
 	// "rb655_nyan_bounce" ) lives there).  Both are OVERRIDES of virtuals that
@@ -99,6 +147,51 @@ public:
 #endif
 
 	virtual const Vector &GetBulletSpread( void );
+
+	// HL2SB GMod compat (wiki-documented WEAPON hooks, NPC fire line):
+	// Weapon:GetNPCBulletSpread( proficiency ), Weapon:GetNPCBurstSettings()
+	// and Weapon:GetNPCRestTimes() feed the SDK's shot regulator
+	// (CAI_BaseNPC::OnUpdateShotRegulator reads GetFireRate/GetMinBurst/
+	// GetMaxBurst/GetMinRestTime/GetMaxRestTime).  All are OVERRIDES of
+	// virtuals CBaseCombatWeapon already declares (basecombatweapon_shared.h),
+	// so no new vtable slots are introduced.  Server-only: the regulator is
+	// AI-side; on the client the base implementations answer.  (The override
+	// DECLARATION is guarded with the implementation -- an unconditional
+	// declaration with a server-only definition is an unresolved-external
+	// link error on the client.)
+#ifndef CLIENT_DLL
+	virtual Vector			GetBulletSpread( WeaponProficiency_t proficiency );
+	virtual float			GetFireRate( void );
+	virtual int				GetMinBurst( void );
+	virtual int				GetMaxBurst( void );
+	virtual float			GetMinRestTime( void );
+	virtual float			GetMaxRestTime( void );
+#endif
+
+	// wiki: WEAPON:ShouldDropOnDie() -- "Return true to drop the weapon,
+	// false otherwise."  The vote is three-valued because the engine's own
+	// death-drop rule (gamerules DeadPlayerWeapons -> the active weapon)
+	// also has a say:
+	//   1  hook explicitly returned true (drop)
+	//   0  hook explicitly returned false (veto -- delete with the rest)
+	//  -1  no hook / no boolean answer (no opinion; the rule decides)
+	// Server only (the death drop runs in CBasePlayer::PackDeadPlayerItems).
+#ifndef CLIENT_DLL
+	int		DispatchShouldDropOnDieVote( void );
+#endif
+
+#ifdef CLIENT_DLL
+	// wiki: WEAPON:DrawWeaponSelection( x, y, wide, tall, alpha ) -- a
+	// scripted weapon that defines the hook draws the selected box's icon
+	// area itself.  Returns true when the hook ran (the caller then skips
+	// the engine icon path).
+	bool	DispatchDrawWeaponSelection( int x, int y, int wide, int tall, int alpha );
+
+	// wiki: WEAPON:CustomAmmoDisplay() -> table { Draw, PrimaryClip,
+	// PrimaryAmmo, ... }.  Writes back only the fields present; returns true
+	// when the hook supplied a table at all.
+	bool	DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo );
+#endif
 
 public:
 
