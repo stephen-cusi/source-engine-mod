@@ -1474,6 +1474,13 @@ void CBasePlayer::OnDamagedByExplosion( const CTakeDamageInfo &info )
 //
 // This is pretty brute force :(
 //=========================================================
+#if defined( LUA_SDK )
+// HL2SB GMod compat: wiki WEAPON:ShouldDropOnDie() vote for the death drop
+// (defined in weapon_hl2mpbase_scriptedweapon.cpp): 1 = hook says drop,
+// 0 = hook vetoed, -1 = no hook / no opinion.
+extern int HL2SB_WeaponShouldDropOnDieVote( CBaseCombatWeapon *pWeapon );
+#endif
+
 void CBasePlayer::PackDeadPlayerItems( void )
 {
 	int iWeaponRules;
@@ -1560,6 +1567,43 @@ void CBasePlayer::PackDeadPlayerItems( void )
 				}
 			}
 		}
+	}
+
+	// HL2SB: the pack list above used to be built and then thrown away --
+	// the function's tail deleted everything unconditionally, so the weapon
+	// a player died holding vanished instead of dropping.  Drop the packed
+	// weapons here at the death spot (HL2MP rules: GR_PLR_DROP_GUN_ACTIVE,
+	// the weapon the player was holding).  wiki WEAPON:ShouldDropOnDie may
+	// veto a scripted weapon's drop with an explicit false.  The BASE
+	// CBaseCombatCharacter drop is called on purpose: the CBasePlayer
+	// override tries to auto-switch to the next weapon (nonsense while
+	// dead), and the HL2MP override checks the primed-grenade fire buttons
+	// and fires SWEP:OnDrop -- none of which belong to a death drop.
+	for ( i = 0 ; i < iPW ; i++ )
+	{
+		CBaseCombatWeapon *pDropWeapon = rgpPackWeapons[ i ];
+		if ( pDropWeapon == NULL )
+			continue;
+
+#if defined( LUA_SDK )
+		if ( pDropWeapon->IsScripted() &&
+			 HL2SB_WeaponShouldDropOnDieVote( pDropWeapon ) == 0 )
+		{
+			// the scripted weapon explicitly refused to drop
+			continue;
+		}
+#endif
+
+		// HL2SB: let the weapon clean up BEFORE it becomes a world entity.
+		// The Lua Holster is where addons stop their looping sounds -- the
+		// Nyan Gun's CreateSound music rides the OWNER and would otherwise
+		// keep playing on the corpse after the drop (the drop path skips
+		// SWEP:OnDrop on purpose, and a dropped weapon is no longer deleted,
+		// so nothing else ever stopped it).  Holster's EF_NODRAW is cleared
+		// again by the drop itself.
+		pDropWeapon->Holster();
+
+		CBaseCombatCharacter::Weapon_Drop( pDropWeapon );
 	}
 
 	RemoveAllItems( true );// now strip off everything that wasn't handled by the code above.

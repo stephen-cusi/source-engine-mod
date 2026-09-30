@@ -59,6 +59,14 @@
 #include "hl2mp_gamerules.h"
 #endif
 
+// HL2SB GMod compat: WEAPON:EquipAmmo( ply ) dispatch from
+// Weapon_EquipAmmoOnly (the duplicate-weapon ammo pickup).
+#if defined( LUA_SDK )
+#include "luamanager.h"
+#include "lbaseentity_shared.h"			// lua_pushentity
+#include "lbasecombatweapon_shared.h"	// lua_pushweapon
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -2245,6 +2253,18 @@ bool CBaseCombatCharacter::Weapon_EquipAmmoOnly( CBaseCombatWeapon *pWeapon )
 			//Only succeed if we've taken ammo from the weapon
 			if ( takenPrimary > 0 || takenSecondary > 0 )
 			{
+#if defined( LUA_SDK )
+				// HL2SB GMod compat (wiki): WEAPON:EquipAmmo( ply ) -- "The
+				// player has picked up the weapon and has taken the ammo from
+				// it.  The weapon will be removed immediately after this
+				// call."  Fired only when something was actually taken.
+				if ( pWeapon->IsScripted() && this->IsPlayer() && L != NULL )
+				{
+					BEGIN_LUA_CALL_WEAPON_HOOK( "EquipAmmo", pWeapon );
+						lua_pushentity( L, this );
+					END_LUA_CALL_WEAPON_HOOK( 1, 0 );
+				}
+#endif
 				return true;
 			}
 
