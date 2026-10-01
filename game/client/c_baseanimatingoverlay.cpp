@@ -326,7 +326,11 @@ void C_BaseAnimatingOverlay::AccumulateLayers( IBoneSetup &boneSetup, Vector pos
 	}
 	for (i = 0; i < m_AnimOverlay.Count(); i++)
 	{
-		if (m_AnimOverlay[i].m_nOrder < MAX_OVERLAYS)
+		// HL2SB: unsigned - m_nOrder comes from a freshly grown slot whose
+		// constructor never initializes it, and a negative heap leftover
+		// passes a signed < MAX_OVERLAYS test and turns the layer[] bucket
+		// lookup below into an out-of-bounds stack read (render crash).
+		if ((unsigned int)m_AnimOverlay[i].m_nOrder < MAX_OVERLAYS)
 		{
 			/*
 			Assert( layer[m_AnimOverlay[i].m_nOrder] == MAX_OVERLAYS );

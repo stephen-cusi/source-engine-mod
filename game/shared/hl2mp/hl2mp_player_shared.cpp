@@ -1179,12 +1179,30 @@ namespace HL2SBClientGesture
 // (bounded by m_iv_AnimOverlay.Count()) simply never runs for them.
 static void HL2SB_ClientEnsureOverlaySlots( C_HL2MP_Player *pPlayer )
 {
-	if ( pPlayer->GetNumAnimOverlays() < HL2SBClientGesture::SLOT_COUNT )
+	if ( pPlayer->GetNumAnimOverlays() >= HL2SBClientGesture::SLOT_COUNT )
+		return;
+
+	int iOldSlots = pPlayer->GetNumAnimOverlays();
+	pPlayer->SetNumAnimOverlays( HL2SBClientGesture::SLOT_COUNT );
+
+	// SetNumAnimOverlays runs C_AnimationLayer's constructor, and that
+	// constructor's Reset() zeroes every field EXCEPT m_nOrder - a grown slot
+	// keeps whatever heap bytes were there (before the TE port the overlay
+	// decode overwrote them; with overlay_vars excluded no decode ever arrives
+	// for players).  A negative leftover passed AccumulateLayers' signed order
+	// gate and indexed its stack bucket array out of bounds - the
+	// layer[m_nOrder] read below RSP that crashed rendering with faulting
+	// element i=5 (GESTURE_SLOT_VCD, never written by this system).
+	for ( int k = iOldSlots; k < HL2SBClientGesture::SLOT_COUNT; k++ )
 	{
-		pPlayer->SetNumAnimOverlays( HL2SBClientGesture::SLOT_COUNT );
-		for ( int k = 0; k < C_BaseAnimatingOverlay::MAX_OVERLAYS; k++ )
-			pPlayer->m_flOverlayPrevEventCycle[k] = -1.0f;
+		C_AnimationLayer *pLayer = pPlayer->GetAnimOverlay( k );
+		pLayer->m_nOrder = C_BaseAnimatingOverlay::MAX_OVERLAYS;
+		pLayer->m_nSequence = 0;
+		pLayer->m_flWeight = 0.0f;
 	}
+
+	for ( int k = 0; k < C_BaseAnimatingOverlay::MAX_OVERLAYS; k++ )
+		pPlayer->m_flOverlayPrevEventCycle[k] = -1.0f;
 }
 
 // Low-level layer write used by RestartGesture and the noclip layer.
