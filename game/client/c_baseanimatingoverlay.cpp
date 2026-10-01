@@ -458,20 +458,25 @@ void C_BaseAnimatingOverlay::AccumulateLayers( IBoneSetup &boneSetup, Vector pos
 #endif
 	}
 
-	// HL2SB diagnostic: once a second per player entity, dump the received
-	// layer vector and how the render gates classified it.  "remote" entries
-	// with count=0 mean the overlay data never arrived; count>0 with
-	// rendered=0 means it arrived but every layer failed a gate; rendered>0
-	// means it renders (and the problem is upstream of the renderer).
-	if ( hl2sb_anim_debug.GetBool() && entindex() > 0 && entindex() <= gpGlobals->maxClients )
+	// HL2SB diagnostic: once a second, dump the received layer vector and how
+	// the render gates classified it - but ONLY for the players this client
+	// is looking at (i.e. everybody except the local player).  Each client's
+	// log therefore mirrors exactly what the player can see with their own
+	// eyes: the other side's model.  count=0 means the overlay data never
+	// arrived; count>0 with rendered=0 means it arrived but every layer
+	// failed a gate; rendered>0 means it renders (and any invisible-gesture
+	// report is then a rendering/blending problem, not a networking one).
+	if ( hl2sb_anim_debug.GetBool() && entindex() > 0 && entindex() <= gpGlobals->maxClients
+		 && this != C_BasePlayer::GetLocalPlayer() )
 	{
 		static float s_flHL2SBOverlayDump[MAX_PLAYERS + 1] = {};
 		if ( gpGlobals->curtime >= s_flHL2SBOverlayDump[entindex()] )
 		{
 			s_flHL2SBOverlayDump[entindex()] = gpGlobals->curtime + 1.0f;
-			bool bLocal = ( C_BasePlayer::GetLocalPlayer() == this );
-			Msg( "[HL2SB overlay/cl] DUMP: ent=%d %s count=%d nseq=%d rendered=%d badseq=%d zerowt=%d\n",
-				 entindex(), bLocal ? "local" : "remote", m_AnimOverlay.Count(),
+			player_info_t info;
+			const char *pszName = ( engine && engine->GetPlayerInfo( entindex(), &info ) ) ? info.name : "?";
+			Msg( "[HL2SB overlay/cl] DUMP: watching ent=%d '%s' count=%d nseq=%d rendered=%d badseq=%d zerowt=%d\n",
+				 entindex(), pszName, m_AnimOverlay.Count(),
 				 nSequences, hl2sb_nRendered, hl2sb_nBadSeq, hl2sb_nZeroWeight );
 			for ( int k = 0; k < m_AnimOverlay.Count(); k++ )
 			{

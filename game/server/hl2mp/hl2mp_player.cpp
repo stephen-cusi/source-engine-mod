@@ -9,6 +9,7 @@
 #include "hl2mp_player.h"
 #include "player.h"
 #include "activitylist.h"
+#include "cdll_int.h"	// HL2SB: player_info_t for the gesture/overlay name probes
 #include "globalstate.h"
 #include "game.h"
 #include "gamerules.h"
@@ -761,7 +762,9 @@ void CHL2MP_Player::PostThink( void )
 		if ( slot >= 1 && slot <= MAX_PLAYERS && gpGlobals->curtime >= s_flHL2SBSvOverlayDump[slot] )
 		{
 			s_flHL2SBSvOverlayDump[slot] = gpGlobals->curtime + 1.0f;
-			Msg( "[HL2SB overlay/sv] DUMP: ply=%d count=%d\n", slot, GetNumAnimOverlays() );
+			player_info_t info;
+			const char *pszName = engine->GetPlayerInfo( slot, &info ) ? info.name : "?";
+			Msg( "[HL2SB overlay/sv] DUMP: ply=%d '%s' count=%d\n", slot, pszName, GetNumAnimOverlays() );
 			for ( int k = 0; k < GetNumAnimOverlays(); k++ )
 			{
 				CAnimationLayer *pLayer = GetAnimOverlay( k );
@@ -994,8 +997,10 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 	{
 		if ( hl2sb_anim_debug.GetBool() )
 		{
-			Msg( "[HL2SB gesture/sv] NO SEQUENCE: ply=%d slot=%d act=%s translated=%s (model %s has no matching gesture activity - layer NOT created)\n",
-				 entindex(), iSlot, ActivityList_NameForIndex( (int)activity ),
+			player_info_t info;
+			const char *pszName = engine->GetPlayerInfo( entindex(), &info ) ? info.name : "?";
+			Msg( "[HL2SB gesture/sv] NO SEQUENCE: ply=%d '%s' slot=%d act=%s translated=%s (model %s has no matching gesture activity - layer NOT created)\n",
+				 entindex(), pszName, iSlot, ActivityList_NameForIndex( (int)activity ),
 				 ActivityList_NameForIndex( (int)translated ), STRING( GetModelName() ) );
 		}
 		m_iHL2SBSlotLayer[iSlot] = -1;
@@ -1018,8 +1023,10 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 
 	if ( hl2sb_anim_debug.GetBool() )
 	{
-		Msg( "[HL2SB gesture/sv] OK: ply=%d slot=%d act=%s translated=%s seq=%d layer=%d wt=%.2f\n",
-			 entindex(), iSlot, ActivityList_NameForIndex( (int)activity ),
+		player_info_t info;
+		const char *pszName = engine->GetPlayerInfo( entindex(), &info ) ? info.name : "?";
+		Msg( "[HL2SB gesture/sv] OK: ply=%d '%s' slot=%d act=%s translated=%s seq=%d layer=%d wt=%.2f\n",
+			 entindex(), pszName, iSlot, ActivityList_NameForIndex( (int)activity ),
 			 ActivityList_NameForIndex( (int)translated ), iSequence, iLayer,
 			 GetLayerWeight( iLayer ) );
 	}
@@ -1259,16 +1266,20 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		{
 			if ( hl2sb_anim_debug.GetBool() )
 			{
-				Msg( "[HL2SB gesture/sv] ATTACK1 path=Lua (GM:DoAnimationEvent answered) ply=%d\n",
-					 entindex() );
+				player_info_t info;
+				const char *pszName = engine->GetPlayerInfo( entindex(), &info ) ? info.name : "?";
+				Msg( "[HL2SB gesture/sv] ATTACK1 path=Lua (GM:DoAnimationEvent answered) ply=%d '%s'\n",
+					 entindex(), pszName );
 			}
 			return;
 		}
 
 		if ( hl2sb_anim_debug.GetBool() )
 		{
-			Msg( "[HL2SB gesture/sv] ATTACK1 path=C++ fallback (no Lua handler) ply=%d\n",
-				 entindex() );
+			player_info_t info;
+			const char *pszName = engine->GetPlayerInfo( entindex(), &info ) ? info.name : "?";
+			Msg( "[HL2SB gesture/sv] ATTACK1 path=C++ fallback (no Lua handler) ply=%d '%s'\n",
+				 entindex(), pszName );
 		}
 
 		if ( GetActivity( ) == ACT_HOVER	||
