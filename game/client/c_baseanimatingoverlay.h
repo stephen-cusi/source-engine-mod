@@ -41,6 +41,11 @@ public:
 	virtual void	AccumulateLayers( IBoneSetup &boneSetup, Vector pos[], Quaternion q[], float currentTime );
 	virtual void DoAnimationEvents( CStudioHdr *pStudioHdr );
 
+	// HL2SB diagnostic: log the overlay vector the moment a network update
+	// lands (before interpolation/render touch it), so RECV vs DUMP tells
+	// "never received" apart from "received then clobbered".
+	virtual void OnDataChanged( DataUpdateType_t updateType );
+
 	enum
 	{
 		MAX_OVERLAYS = 15,

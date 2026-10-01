@@ -659,3 +659,53 @@ CStudioHdr *C_BaseAnimatingOverlay::OnNewModel()
 
 	return hdr;
 }
+
+//-----------------------------------------------------------------------------
+// HL2SB diagnostic: fires after a network update has been decoded into
+// m_AnimOverlay but BEFORE interpolation/rendering.  Compares against
+// the render-time DUMP(BIRTH/ACTIVE): if RECV never prints when the server
+// logs gesture/sv OK, the update never reached this client; if RECV prints
+// but DUMP never does, the data is clobbered between recv and render.
+//-----------------------------------------------------------------------------
+void C_BaseAnimatingOverlay::OnDataChanged( DataUpdateType_t updateType )
+{
+	BaseClass::OnDataChanged( updateType );
+
+	if ( !hl2sb_anim_debug.GetBool() )
+		return;
+	if ( entindex() <= 0 || entindex() > gpGlobals->maxClients )
+		return;
+	if ( this == C_BasePlayer::GetLocalPlayer() )
+		return;
+
+	// only report layer content that differs from the last report
+	static int s_nHL2SBLastRecvSeq[MAX_PLAYERS + 1] = {};
+	static int s_nHL2SBLastRecvOrder[MAX_PLAYERS + 1] = {};
+	static float s_flHL2SBLastRecvWt[MAX_PLAYERS + 1] = {};
+
+	int iSlot = entindex();
+	int iSeq = 0, iOrder = -1;
+	float flWt = 0.0f;
+	for ( int k = 0; k < m_AnimOverlay.Count(); k++ )
+	{
+		if ( (int)m_AnimOverlay[k].m_nSequence > 0 )
+		{
+			iSeq = (int)m_AnimOverlay[k].m_nSequence;
+			iOrder = (int)m_AnimOverlay[k].m_nOrder;
+			flWt = (float)m_AnimOverlay[k].m_flWeight;
+			break;
+		}
+	}
+
+	if ( iSeq == s_nHL2SBLastRecvSeq[iSlot] && iOrder == s_nHL2SBLastRecvOrder[iSlot] )
+		return;
+
+	s_nHL2SBLastRecvSeq[iSlot] = iSeq;
+	s_nHL2SBLastRecvOrder[iSlot] = iOrder;
+	s_flHL2SBLastRecvWt[iSlot] = flWt;
+
+	player_info_t info;
+	const char *pszName = ( engine && engine->GetPlayerInfo( iSlot, &info ) ) ? info.name : "?";
+	Msg( "[HL2SB overlay/cl] RECV: ent=%d '%s' seq=%d order=%d wt=%.4f\n",
+		 iSlot, pszName, iSeq, iOrder, flWt );
+}
