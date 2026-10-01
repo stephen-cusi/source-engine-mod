@@ -8,6 +8,7 @@
 #include "weapon_hl2mpbasehlmpcombatweapon.h"
 #include "hl2mp_player.h"
 #include "player.h"
+#include "activitylist.h"
 #include "globalstate.h"
 #include "game.h"
 #include "gamerules.h"
@@ -866,6 +867,7 @@ Activity CHL2MP_Player::TranslateTeamActivity( Activity ActToTranslate )
 }
 
 extern ConVar hl2_normspeed;
+extern ConVar hl2sb_anim_debug;
 
 //-----------------------------------------------------------------------------
 // HL2SB (2026-09-27): GMod player-animation glue.  The three hooks below are
@@ -963,6 +965,12 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 		iSequence = SelectWeightedSequence( activity );
 	if ( iSequence <= 0 )
 	{
+		if ( hl2sb_anim_debug.GetBool() )
+		{
+			Msg( "[HL2SB gesture/sv] NO SEQUENCE: ply=%d slot=%d act=%s translated=%s (model %s has no matching gesture activity - layer NOT created)\n",
+				 entindex(), iSlot, ActivityList_NameForIndex( (int)activity ),
+				 ActivityList_NameForIndex( (int)translated ), STRING( GetModelName() ) );
+		}
 		m_iHL2SBSlotLayer[iSlot] = -1;
 		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
 		return;
@@ -971,9 +979,22 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 	int iLayer = AddGestureSequence( iSequence, true );
 	if ( iLayer < 0 )
 	{
+		if ( hl2sb_anim_debug.GetBool() )
+		{
+			Msg( "[HL2SB gesture/sv] ADD LAYER FAILED: ply=%d slot=%d seq=%d (%s)\n",
+				 entindex(), iSlot, iSequence, ActivityList_NameForIndex( (int)activity ) );
+		}
 		m_iHL2SBSlotLayer[iSlot] = -1;
 		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
 		return;
+	}
+
+	if ( hl2sb_anim_debug.GetBool() )
+	{
+		Msg( "[HL2SB gesture/sv] OK: ply=%d slot=%d act=%s translated=%s seq=%d layer=%d wt=%.2f\n",
+			 entindex(), iSlot, ActivityList_NameForIndex( (int)activity ),
+			 ActivityList_NameForIndex( (int)translated ), iSequence, iLayer,
+			 GetLayerWeight( iLayer ) );
 	}
 
 	SetLayerWeight( iLayer, 1.0f );
@@ -1208,7 +1229,20 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		// main sequence.  When Lua answers, the viewmodel activity the handler
 		// returned was already applied - done.
 		if ( HL2SB_DoAnimationEventLua( PLAYERANIMEVENT_ATTACK_PRIMARY, 0 ) )
+		{
+			if ( hl2sb_anim_debug.GetBool() )
+			{
+				Msg( "[HL2SB gesture/sv] ATTACK1 path=Lua (GM:DoAnimationEvent answered) ply=%d\n",
+					 entindex() );
+			}
 			return;
+		}
+
+		if ( hl2sb_anim_debug.GetBool() )
+		{
+			Msg( "[HL2SB gesture/sv] ATTACK1 path=C++ fallback (no Lua handler) ply=%d\n",
+				 entindex() );
+		}
 
 		if ( GetActivity( ) == ACT_HOVER	||
 			 GetActivity( ) == ACT_SWIM		||

@@ -19,6 +19,7 @@
 #include "tier0/memdbgon.h"
 
 extern ConVar r_sequence_debug;
+extern ConVar hl2sb_anim_debug;
 
 C_BaseAnimatingOverlay::C_BaseAnimatingOverlay()
 {
@@ -74,12 +75,21 @@ void ResizeAnimationLayerCallback( void *pStruct, int offsetToUtlVector, int len
 	Assert( pVec->Count() == pVecIV->Count() );
 	Assert( pVec->Count() <= C_BaseAnimatingOverlay::MAX_OVERLAYS );
 	
-	int diff = len - pVec->Count();
+		int diff = len - pVec->Count();
 
-	
 
-	if ( diff == 0 )
-		return;
+
+		if ( diff == 0 )
+			return;
+
+		// HL2SB diagnostic: did this entity's overlay vector ever arrive/resize
+		// on the client?  A remote attacker with layers should trigger this with
+		// diff > 0 the moment the first gesture lands.
+		if ( hl2sb_anim_debug.GetBool() && pEnt->entindex() > 0 )
+		{
+			Msg( "[HL2SB overlay/cl] RESIZE: ent=%d old=%d new=%d\n",
+				 pEnt->entindex(), pVec->Count(), len );
+		}
 
 	// remove all entries
 	for ( int i=0; i < pVec->Count(); i++ )
@@ -338,6 +348,12 @@ void C_BaseAnimatingOverlay::AccumulateLayers( IBoneSetup &boneSetup, Vector pos
 
 	int nSequences = boneSetup.GetStudioHdr()->GetNumSeq();
 
+	// HL2SB diagnostic: count the three render gates per frame for players -
+	// order bucket miss / sequence out of range / zero weight.  Printed once a
+	// second with the raw layer data at the bottom of the function; answers
+	// "B received the layers but does not render them" vs "B never received".
+	int hl2sb_nRendered = 0, hl2sb_nBadSeq = 0, hl2sb_nZeroWeight = 0;
+
 	// add in the overlay layers
 	int j;
 	for (j = 0; j < MAX_OVERLAYS; j++)
@@ -347,6 +363,7 @@ void C_BaseAnimatingOverlay::AccumulateLayers( IBoneSetup &boneSetup, Vector pos
 		{
 			if ( m_AnimOverlay[i].m_nSequence >= nSequences )
 			{
+				++hl2sb_nBadSeq;
 				continue;
 			}
 
@@ -365,8 +382,13 @@ void C_BaseAnimatingOverlay::AccumulateLayers( IBoneSetup &boneSetup, Vector pos
 
 			float fWeight = m_AnimOverlay[i].m_flWeight;
 
+			if ( fWeight <= 0.0f )
+				++hl2sb_nZeroWeight;
+
 			if (fWeight > 0)
 			{
+				++hl2sb_nRendered;
+
 				// check to see if the sequence changed
 				// FIXME: move this to somewhere more reasonable
 				// do a nice spline interpolation of the values
@@ -434,6 +456,30 @@ void C_BaseAnimatingOverlay::AccumulateLayers( IBoneSetup &boneSetup, Vector pos
 			engine->Con_NPrintf( 10 + j, "%30s %6.2f : %6.2f : %1d", "            ", 0.f, 0.f, i );
 		}
 #endif
+	}
+
+	// HL2SB diagnostic: once a second per player entity, dump the received
+	// layer vector and how the render gates classified it.  "remote" entries
+	// with count=0 mean the overlay data never arrived; count>0 with
+	// rendered=0 means it arrived but every layer failed a gate; rendered>0
+	// means it renders (and the problem is upstream of the renderer).
+	if ( hl2sb_anim_debug.GetBool() && entindex() > 0 && entindex() <= gpGlobals->maxClients )
+	{
+		static float s_flHL2SBOverlayDump[MAX_PLAYERS + 1] = {};
+		if ( gpGlobals->curtime >= s_flHL2SBOverlayDump[entindex()] )
+		{
+			s_flHL2SBOverlayDump[entindex()] = gpGlobals->curtime + 1.0f;
+			bool bLocal = ( C_BasePlayer::GetLocalPlayer() == this );
+			Msg( "[HL2SB overlay/cl] DUMP: ent=%d %s count=%d nseq=%d rendered=%d badseq=%d zerowt=%d\n",
+				 entindex(), bLocal ? "local" : "remote", m_AnimOverlay.Count(),
+				 nSequences, hl2sb_nRendered, hl2sb_nBadSeq, hl2sb_nZeroWeight );
+			for ( int k = 0; k < m_AnimOverlay.Count(); k++ )
+			{
+				Msg( "    [%d] seq=%d order=%d wt=%.2f cycle=%.3f\n",
+					 k, m_AnimOverlay[k].m_nSequence, m_AnimOverlay[k].m_nOrder,
+					 m_AnimOverlay[k].m_flWeight, m_AnimOverlay[k].m_flCycle );
+			}
+		}
 	}
 }
 
