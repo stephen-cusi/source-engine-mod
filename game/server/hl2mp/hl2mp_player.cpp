@@ -882,13 +882,18 @@ void CHL2MP_Player::PostThink( void )
 					CBaseCombatWeapon *pWpn = GetActiveWeapon();
 					player_info_t winfo;
 					const char *pszPlyName = engine->GetPlayerInfo( slot, &winfo ) ? winfo.name : "?";
+					// Viewmodel ownership: which server entities back this
+					// player's viewmodel slots - the client-side ghost is a
+					// viewmodel, so this pins whose it is.
+					CBaseViewModel *pVm0 = GetViewModel( 0, false );
+					CBaseViewModel *pVm1 = GetViewModel( 1, false );
 					if ( pWpn )
 					{
 						CBaseEntity *pParent = pWpn->GetMoveParent();
 						const Vector &vWpn = pWpn->GetAbsOrigin();
 						const Vector &vLocal = pWpn->GetLocalOrigin();
 						const Vector &vHere = GetAbsOrigin();
-						Msg( "[HL2SB wpns/sv] ply=%d '%s' wp=%s parent=%s#%d abs=(%.0f %.0f %.0f) local=(%.0f %.0f %.0f) here=(%.0f %.0f %.0f) seq=%d cyc=%.2f model=%s fx=0x%x follow=%d patt=%d pmodel=%s\n",
+						Msg( "[HL2SB wpns/sv] ply=%d '%s' wp=%s parent=%s#%d abs=(%.0f %.0f %.0f) local=(%.0f %.0f %.0f) here=(%.0f %.0f %.0f) seq=%d cyc=%.2f model=%s fx=0x%x follow=%d patt=%d pmodel=%s vm0=%d vm1=%d\n",
 							 slot, pszPlyName, pWpn->GetClassname(),
 							 pParent ? pParent->GetClassname() : "NONE",
 							 pParent ? pParent->entindex() : -1,
@@ -898,11 +903,16 @@ void CHL2MP_Player::PostThink( void )
 							 STRING( pWpn->GetModelName() ),
 							 pWpn->GetEffects(), pWpn->IsFollowingEntity() ? 1 : 0,
 							 pWpn->GetParentAttachment(),
-							 STRING( GetModelName() ) );
+							 STRING( GetModelName() ),
+							 pVm0 ? pVm0->entindex() : -1,
+							 pVm1 ? pVm1->entindex() : -1 );
 					}
 					else
 					{
-						Msg( "[HL2SB wpns/sv] ply=%d '%s' wp=NONE\n", slot, pszPlyName );
+						Msg( "[HL2SB wpns/sv] ply=%d '%s' wp=NONE vm0=%d vm1=%d\n",
+							 slot, pszPlyName,
+							 pVm0 ? pVm0->entindex() : -1,
+							 pVm1 ? pVm1->entindex() : -1 );
 					}
 				}
 			}

@@ -390,6 +390,19 @@ bool C_BaseViewModel::ShouldDraw()
 #endif
 	else
 	{
+		// HL2SB: a viewmodel is only ever meant for its owner's screen - the
+		// server gates them to owner/in-eye spectators in ShouldTransmit. A
+		// remote viewmodel that reaches this client (transmit gate missed)
+		// renders as a weapon parked at its raw networked origin - never
+		// positioned, no move parent - while playing its owner's weapon
+		// animations, i.e. the "second weapon floating in the world" that
+		// keeps syncing with the other player's attacks. Draw only the local
+		// player's own viewmodel slots; HLTV/Replay in-eye above keep their
+		// reference behavior.
+		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+		if ( pLocal && this != pLocal->GetViewModel( 0 ) && this != pLocal->GetViewModel( 1 ) )
+			return false;
+
 		return BaseClass::ShouldDraw();
 	}
 }
