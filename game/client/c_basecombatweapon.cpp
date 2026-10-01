@@ -546,7 +546,16 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 			const Vector &vHere = GetAbsOrigin();
 			const Vector &vLocalOrg = GetLocalOrigin();
 			const Vector &vOwner = pOwnerEnt ? pOwnerEnt->GetAbsOrigin() : vec3_origin;
-			Msg( "[HL2SB wpns/cl] ent=%d wp=%s mine=%d owner=%d ownerpos=(%.0f %.0f %.0f) parent=%s#%d abs=(%.0f %.0f %.0f) local=(%.0f %.0f %.0f) seq=%d cyc=%.2f model=%s\n",
+			// Bone-merge state: carried weapons render through EF_BONEMERGE
+			// onto the owner; fx bit / cache presence / hand-bone merge flag
+			// split "effect never arrived" from "cache not built" from
+			// "name match failed" - the three ways the model can end up
+			// rigid at the entity origin instead of riding the hand.
+			int iHandBone = LookupBone( "ValveBiped.Bip01_R_Hand" );
+			int iHandMerged = -1;
+			if ( m_pBoneMergeCache && iHandBone >= 0 )
+				iHandMerged = m_pBoneMergeCache->IsBoneMerged( iHandBone ) ? 1 : 0;
+			Msg( "[HL2SB wpns/cl] ent=%d wp=%s mine=%d owner=%d ownerpos=(%.0f %.0f %.0f) parent=%s#%d abs=(%.0f %.0f %.0f) local=(%.0f %.0f %.0f) seq=%d cyc=%.2f model=%s fx=0x%x cache=%d hand=%d merged=%d\n",
 				 iEnt, GetClassname(), ( pOwnerEnt == pLocal ) ? 1 : 0,
 				 pOwnerEnt ? pOwnerEnt->entindex() : -1,
 				 vOwner.x, vOwner.y, vOwner.z,
@@ -554,7 +563,8 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 				 pParent ? pParent->entindex() : -1,
 				 vHere.x, vHere.y, vHere.z, vLocalOrg.x, vLocalOrg.y, vLocalOrg.z,
 				 GetSequence(), (float)GetCycle(),
-				 GetModel() ? modelinfo->GetModelName( GetModel() ) : "?" );
+				 GetModel() ? modelinfo->GetModelName( GetModel() ) : "?",
+				 GetEffects(), m_pBoneMergeCache ? 1 : 0, iHandBone, iHandMerged );
 		}
 	}
 

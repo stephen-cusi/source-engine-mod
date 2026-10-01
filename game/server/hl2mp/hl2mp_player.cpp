@@ -888,14 +888,17 @@ void CHL2MP_Player::PostThink( void )
 						const Vector &vWpn = pWpn->GetAbsOrigin();
 						const Vector &vLocal = pWpn->GetLocalOrigin();
 						const Vector &vHere = GetAbsOrigin();
-						Msg( "[HL2SB wpns/sv] ply=%d '%s' wp=%s parent=%s#%d abs=(%.0f %.0f %.0f) local=(%.0f %.0f %.0f) here=(%.0f %.0f %.0f) seq=%d cyc=%.2f model=%s\n",
+						Msg( "[HL2SB wpns/sv] ply=%d '%s' wp=%s parent=%s#%d abs=(%.0f %.0f %.0f) local=(%.0f %.0f %.0f) here=(%.0f %.0f %.0f) seq=%d cyc=%.2f model=%s fx=0x%x follow=%d patt=%d pmodel=%s\n",
 							 slot, pszPlyName, pWpn->GetClassname(),
 							 pParent ? pParent->GetClassname() : "NONE",
 							 pParent ? pParent->entindex() : -1,
 							 vWpn.x, vWpn.y, vWpn.z, vLocal.x, vLocal.y, vLocal.z,
 							 vHere.x, vHere.y, vHere.z,
 							 pWpn->GetSequence(), (float)pWpn->GetCycle(),
-							 STRING( pWpn->GetModelName() ) );
+							 STRING( pWpn->GetModelName() ),
+							 pWpn->GetEffects(), pWpn->IsFollowingEntity() ? 1 : 0,
+							 pWpn->GetParentAttachment(),
+							 STRING( GetModelName() ) );
 					}
 					else
 					{
