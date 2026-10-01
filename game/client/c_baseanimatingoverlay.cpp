@@ -458,25 +458,56 @@ void C_BaseAnimatingOverlay::AccumulateLayers( IBoneSetup &boneSetup, Vector pos
 #endif
 	}
 
-	// HL2SB diagnostic: once a second, dump the received layer vector and how
-	// the render gates classified it - but ONLY for the players this client
-	// is looking at (i.e. everybody except the local player).  Each client's
-	// log therefore mirrors exactly what the player can see with their own
-	// eyes: the other side's model.  count=0 means the overlay data never
-	// arrived; count>0 with rendered=0 means it arrived but every layer
-	// failed a gate; rendered>0 means it renders (and any invisible-gesture
-	// report is then a rendering/blending problem, not a networking one).
+	// HL2SB diagnostic: dump the received layer vector for the players this
+	// client is looking at (everybody except the local player), so the log
+	// mirrors exactly what the player can see.  Scheduling:
+	//   * idle   - once a second (baseline noise kept low)
+	//   * active - 4x a second while any layer carries a sequence, so short
+	//              (~0.5-1s) gestures cannot slip between samples
+	//   * birth  - immediately when a layer goes 0 -> seq>0 (the exact
+	//              arrival frame; proves the update reached this client)
+	// count=0 means the overlay data never arrived; count>0 with rendered=0
+	// means it arrived but every layer failed a gate; rendered>0 means it
+	// renders (an invisible-gesture report is then a blending problem).
 	if ( hl2sb_anim_debug.GetBool() && entindex() > 0 && entindex() <= gpGlobals->maxClients
 		 && this != C_BasePlayer::GetLocalPlayer() )
 	{
 		static float s_flHL2SBOverlayDump[MAX_PLAYERS + 1] = {};
-		if ( gpGlobals->curtime >= s_flHL2SBOverlayDump[entindex()] )
+		static int s_nHL2SBLastSeenSeq[MAX_PLAYERS + 1] = {};
+
+		int iSlot = entindex();
+		int iLiveSeq = 0;
+		for ( int k = 0; k < m_AnimOverlay.Count(); k++ )
 		{
-			s_flHL2SBOverlayDump[entindex()] = gpGlobals->curtime + 1.0f;
+			if ( (int)m_AnimOverlay[k].m_nSequence > 0 )
+			{
+				iLiveSeq = (int)m_AnimOverlay[k].m_nSequence;
+				break;
+			}
+		}
+
+		const char *pszReason = NULL;
+		if ( iLiveSeq > 0 && s_nHL2SBLastSeenSeq[iSlot] == 0 )
+		{
+			pszReason = "BIRTH";	// first frame a sequence shows up
+		}
+		else
+		{
+			float flInterval = ( iLiveSeq > 0 ) ? 0.25f : 1.0f;	// active: 4Hz
+			if ( gpGlobals->curtime >= s_flHL2SBOverlayDump[iSlot] )
+			{
+				s_flHL2SBOverlayDump[iSlot] = gpGlobals->curtime + flInterval;
+				pszReason = ( iLiveSeq > 0 ) ? "ACTIVE" : "idle";
+			}
+		}
+		s_nHL2SBLastSeenSeq[iSlot] = iLiveSeq;
+
+		if ( pszReason )
+		{
 			player_info_t info;
-			const char *pszName = ( engine && engine->GetPlayerInfo( entindex(), &info ) ) ? info.name : "?";
-			Msg( "[HL2SB overlay/cl] DUMP: watching ent=%d '%s' count=%d nseq=%d rendered=%d badseq=%d zerowt=%d\n",
-				 entindex(), pszName, m_AnimOverlay.Count(),
+			const char *pszName = ( engine && engine->GetPlayerInfo( iSlot, &info ) ) ? info.name : "?";
+			Msg( "[HL2SB overlay/cl] DUMP(%s): watching ent=%d '%s' count=%d nseq=%d rendered=%d badseq=%d zerowt=%d\n",
+				 pszReason, iSlot, pszName, m_AnimOverlay.Count(),
 				 nSequences, hl2sb_nRendered, hl2sb_nBadSeq, hl2sb_nZeroWeight );
 			for ( int k = 0; k < m_AnimOverlay.Count(); k++ )
 			{

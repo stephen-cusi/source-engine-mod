@@ -758,20 +758,49 @@ void CHL2MP_Player::PostThink( void )
 	if ( hl2sb_anim_debug.GetBool() )
 	{
 		static float s_flHL2SBSvOverlayDump[MAX_PLAYERS + 1] = {};
+		static int s_nHL2SBSvLastSeq[MAX_PLAYERS + 1] = {};
 		int slot = entindex();
-		if ( slot >= 1 && slot <= MAX_PLAYERS && gpGlobals->curtime >= s_flHL2SBSvOverlayDump[slot] )
+		if ( slot >= 1 && slot <= MAX_PLAYERS )
 		{
-			s_flHL2SBSvOverlayDump[slot] = gpGlobals->curtime + 1.0f;
-			player_info_t info;
-			const char *pszName = engine->GetPlayerInfo( slot, &info ) ? info.name : "?";
-			Msg( "[HL2SB overlay/sv] DUMP: ply=%d '%s' count=%d\n", slot, pszName, GetNumAnimOverlays() );
+			int iLiveSeq = 0;
 			for ( int k = 0; k < GetNumAnimOverlays(); k++ )
 			{
-				CAnimationLayer *pLayer = GetAnimOverlay( k );
-				Msg( "    [%d] seq=%d order=%d wt=%.4f cycle=%.4f prev=%.4f flags=%d\n",
-					 k, (int)pLayer->m_nSequence, (int)pLayer->m_nOrder,
-					 (float)pLayer->m_flWeight, (float)pLayer->m_flCycle,
-					 (float)pLayer->m_flPrevCycle, (int)pLayer->m_fFlags );
+				if ( (int)GetAnimOverlay( k )->m_nSequence > 0 )
+				{
+					iLiveSeq = (int)GetAnimOverlay( k )->m_nSequence;
+					break;
+				}
+			}
+
+			const char *pszReason = NULL;
+			if ( iLiveSeq > 0 && s_nHL2SBSvLastSeq[slot] == 0 )
+			{
+				pszReason = "BIRTH";	// creation frame (pairs with gesture/sv OK)
+			}
+			else
+			{
+				float flInterval = ( iLiveSeq > 0 ) ? 0.25f : 1.0f;
+				if ( gpGlobals->curtime >= s_flHL2SBSvOverlayDump[slot] )
+				{
+					s_flHL2SBSvOverlayDump[slot] = gpGlobals->curtime + flInterval;
+					pszReason = ( iLiveSeq > 0 ) ? "ACTIVE" : "idle";
+				}
+			}
+			s_nHL2SBSvLastSeq[slot] = iLiveSeq;
+
+			if ( pszReason )
+			{
+				player_info_t info;
+				const char *pszName = engine->GetPlayerInfo( slot, &info ) ? info.name : "?";
+				Msg( "[HL2SB overlay/sv] DUMP(%s): ply=%d '%s' count=%d\n", pszReason, slot, pszName, GetNumAnimOverlays() );
+				for ( int k = 0; k < GetNumAnimOverlays(); k++ )
+				{
+					CAnimationLayer *pLayer = GetAnimOverlay( k );
+					Msg( "    [%d] seq=%d order=%d wt=%.4f cycle=%.4f prev=%.4f flags=%d\n",
+						 k, (int)pLayer->m_nSequence, (int)pLayer->m_nOrder,
+						 (float)pLayer->m_flWeight, (float)pLayer->m_flCycle,
+						 (float)pLayer->m_flPrevCycle, (int)pLayer->m_fFlags );
+				}
 			}
 		}
 	}
