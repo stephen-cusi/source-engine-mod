@@ -42,7 +42,7 @@ LModelPanel::LModelPanel( Panel *parent, const char *panelName, lua_State *L )
 LModelPanel::~LModelPanel()
 {
 #if defined( LUA_SDK )
-	lua_unref( m_lua_State, m_nTableReference );
+	HL2SB_LuaPanelUnref( m_lua_State, m_nTableReference );
 #endif
 }
 

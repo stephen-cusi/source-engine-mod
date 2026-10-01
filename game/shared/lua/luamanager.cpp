@@ -694,6 +694,13 @@ void luasrc_shutdown_gameui (void) {
   // 已加载的二进制模块（见 lua/src/hl2sb_binmod.c）。
   HL2SB_RunBinaryModuleCloses( LGameUI );
   lua_close(LGameUI);
+
+  // HL2SB (2026-10-01): 置空全局指针，与 luasrc_shutdown() 对 L 的处理同款。
+  // 引擎关机时 vgui 拆面板树发生在本函数之后，GameUI 派生面板的析构函数
+  // （HL2SB_LuaPanelUnref）靠"缓存指针 == 存活全局状态"判定能不能 unref；
+  // 不置空则关闭后的指针仍匹配，unref 会打进已释放的 lua_State
+  // （luaL_unref -> lua_rawgeti，2026-10-01 插件管理器退出崩溃）。
+  LGameUI = NULL;
 }
 #endif
 

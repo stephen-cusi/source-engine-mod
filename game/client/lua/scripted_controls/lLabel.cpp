@@ -76,7 +76,7 @@ void HL2SB_ApplyTextDefaults( Label *pLabel )
 LLabel::~LLabel()
 {
 #if defined( LUA_SDK )
-    lua_unref( m_lua_State, m_nTableReference );
+    HL2SB_LuaPanelUnref( m_lua_State, m_nTableReference );
 #endif
 }
 

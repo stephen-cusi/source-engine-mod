@@ -268,6 +268,7 @@
 // the whole process down, because lua_getfield() from C is not a protected call.
 // Every BEGIN_LUA_CALL_* below goes through the helper for that reason.
 #define BEGIN_LUA_CALL_WEAPON_METHOD(functionName) \
+  lua_checkstack( L, 32 ); /* same headroom guard as BEGIN_LUA_CALL_HOOK (2026-10-01) */ \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
     luasrc_PushScriptField(L, -1, functionName); \
@@ -286,6 +287,7 @@
   else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); }
 
 #define BEGIN_LUA_CALL_WEAPON_HOOK(functionName, pWeapon) \
+  lua_checkstack( L, 32 ); /* same headroom guard as BEGIN_LUA_CALL_HOOK (2026-10-01) */ \
   if (pWeapon->IsScripted() && lua_isrefvalid(L, pWeapon->m_nTableReference)) { \
     lua_getref(L, pWeapon->m_nTableReference); \
     luasrc_PushScriptField(L, -1, functionName); \
@@ -313,6 +315,7 @@
 // "attempt to index a number value" from an unprotected context -- outside any
 // pcall, with an empty Lua traceback -- and aborted the game.
 #define BEGIN_LUA_CALL_ENTITY_METHOD(functionName) \
+  lua_checkstack( L, 32 ); /* same headroom guard as BEGIN_LUA_CALL_HOOK (2026-10-01) */ \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
     luasrc_PushScriptField(L, -1, functionName); \
@@ -331,6 +334,7 @@
   else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); }
 
 #define BEGIN_LUA_CALL_TRIGGER_METHOD(functionName) \
+  lua_checkstack( L, 32 ); /* same headroom guard as BEGIN_LUA_CALL_HOOK (2026-10-01) */ \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
     luasrc_PushScriptField(L, -1, functionName); \
@@ -357,6 +361,13 @@
 ** of the live states; stale panels become inert instead of crashing.
 */
 #define BEGIN_LUA_CALL_PANEL_METHOD(functionName) \
+  /* Same room-for-pushes guard as BEGIN_LUA_CALL_HOOK above (2026-09-23):	\
+     panel dispatches fire from C++ mid-frame on whatever CallInfo is current,	\
+     and the pushes below (getref + field + panel + args) plus anything the	\
+     called Lua does -- vgui.Create pushing a C closure, say -- need headroom	\
+     in ci->top or api_incr_top fires the apicheck black-box and aborts		\
+     (2026-10-01: addons dialog filter spam). */								\
+  if ( m_lua_State != NULL ) lua_checkstack( m_lua_State, 32 ); \
   if ( m_lua_State != NULL && ( m_lua_State == L || m_lua_State == LGameUI ) && lua_isrefvalid(m_lua_State, m_nTableReference) ) { \
     lua_getref(m_lua_State, m_nTableReference); \
     lua_getfield(m_lua_State, -1, functionName); \
@@ -688,6 +699,26 @@ extern lua_State *LGameUI; // gameui state
 #endif
 
 extern lua_State *L;
+
+#ifdef CLIENT_DLL
+/*
+** HL2SB (2026-10-01): the outlives-the-state hazard the panel dispatch macro
+** guards against (comment above BEGIN_LUA_CALL_PANEL_METHOD) also fires in the
+** scripted control destructors.  Engine shutdown closes a realm's state with
+** lua_close() before vgui tears the panel tree down, so ~LPanel-family
+** destructors unref'd the panel table against a freed lua_State and crashed in
+** luaL_unref -> lua_rawgeti on exit (2026-10-01 addons dialog exit crash).
+** Unref only while the cached pointer is still one of the live global states;
+** the shutdown paths NULL the globals right after lua_close().
+*/
+inline void HL2SB_LuaPanelUnref( lua_State *pState, int nTableReference )
+{
+	if ( pState != NULL && ( pState == L || pState == LGameUI ) && lua_isrefvalid( pState, nTableReference ) )
+	{
+		lua_unref( pState, nTableReference );
+	}
+}
+#endif
 
 
 // Set to true between LevelInit and LevelShutdown.
