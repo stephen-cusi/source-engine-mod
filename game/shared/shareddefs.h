@@ -614,7 +614,7 @@ enum
 	EFL_DIRTY_ABSANGVELOCITY =	(1<<13),
 	EFL_DIRTY_SURROUNDING_COLLISION_BOUNDS	= (1<<14),
 	EFL_DIRTY_SPATIAL_PARTITION = (1<<15),
-//	UNUSED						= (1<<16),
+	EFL_TRANSMIT_WITH_PARENT =	(1<<16),	// HL2SB: GMod Entity:SetTransmitWithParent - transmitted whenever the move-parent is transmitted, even outside the recipient's PVS (consumed by CServerGameEnts::CheckTransmit)
 
 	EFL_IN_SKYBOX =				(1<<17),	// This is set if the entity detects that it's in the skybox.
 											// This forces it to pass the "in PVS" for transmission.

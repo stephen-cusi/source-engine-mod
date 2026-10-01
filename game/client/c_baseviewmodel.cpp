@@ -654,18 +654,27 @@ void C_BaseViewModel::PostDataUpdate( DataUpdateType_t updateType )
 //-----------------------------------------------------------------------------
 CStudioHdr *C_BaseViewModel::OnNewModel( void )
 {
+	// HL2SB (2026-10-02): GMod's contract is ENT:ViewModelChanged( vm, old, new )
+	// - capture the OLD model name before BaseClass swaps m_nModelIndex.
+	char szOldModel[ MAX_PATH ] = "";
+	if ( GetModel() != NULL )
+	{
+		const char *pszOld = modelinfo->GetModelName( GetModel() );
+		if ( pszOld != NULL )
+			Q_strncpy( szOldModel, pszOld, sizeof( szOldModel ) );
+	}
+
 	CStudioHdr *pResult = BaseClass::OnNewModel();
 #if defined( LUA_SDK )
 	// HL2SB (2026-09-27): GMod's engine hook (the name lives only in
 	// lua_shared's registry there -> by-ID dispatch; gmod_hands re-parents onto
 	// the fresh viewmodel through it).  Args mirror GMod's only consumer,
-	// ENT:ViewModelChanged( vm, old, new ) -- old is best-effort (we only know
-	// the model that is arriving).
+	// ENT:ViewModelChanged( vm, old, new ).
 	if ( L != NULL )
 	{
 		BEGIN_LUA_CALL_HOOK( "OnViewModelChanged" );
 			lua_pushentity( L, this );
-			lua_pushstring( L, "" );
+			lua_pushstring( L, szOldModel );
 			const char *pszModelName = modelinfo->GetModelName( GetModel() );
 			lua_pushstring( L, ( pszModelName != NULL ) ? pszModelName : "" );
 		END_LUA_CALL_HOOK( 3, 0 );

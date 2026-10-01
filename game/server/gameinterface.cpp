@@ -2765,6 +2765,25 @@ void CServerGameEnts::CheckTransmit( CCheckTransmitInfo *pInfo, const unsigned s
 			continue;
 		}
 
+		// HL2SB (2026-10-02): GMod Entity:SetTransmitWithParent - an entity with
+		// this EFlag rides its move-parent's transmit decision even outside the
+		// recipient's PVS (the gmod_hands arms entity parents onto the
+		// owner-only viewmodel).  Same parent-walk semantics as the
+		// FL_EDICT_ALWAYS branch above; the ALWAYS and FULLCHECK paths keep
+		// priority because this sits below them.
+		{
+			CBaseEntity *pFlagEnt = ( CBaseEntity * )pEdict->GetUnknown();
+			if ( pFlagEnt && ( pFlagEnt->GetEFlags() & EFL_TRANSMIT_WITH_PARENT ) )
+			{
+				CServerNetworkProperty *pFlagParent = static_cast< CServerNetworkProperty * >( pEdict->GetNetworkable() )->GetNetworkParent();
+				if ( pFlagParent && pInfo->m_pTransmitEdict->Get( pFlagParent->entindex() ) )
+				{
+					pFlagEnt->SetTransmit( pInfo, true );
+					continue;
+				}
+			}
+		}
+
 		// If the entity is marked "check PVS" but it's in hierarchy, walk up the hierarchy looking for the
 		//  for any parent which is also in the PVS.  If none are found, then we don't need to worry about sending ourself
 		CBaseEntity *orig = pEnt;

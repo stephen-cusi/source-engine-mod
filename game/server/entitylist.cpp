@@ -1277,6 +1277,14 @@ void CNotifyList::OnEntityCreated( CBaseEntity *pEntity )
 
 void CNotifyList::OnEntityDeleted( CBaseEntity *pEntity )
 {
+	// HL2SB (2026-10-02): GMod Entity:DeleteOnRemove - entities queued on this
+	// one die with it.  Runs before the EntityRemoved hook so victims are
+	// already marked while Lua observers still see the owner going away.
+	{
+		extern void HL2SB_ProcessDeleteOnRemove( CBaseEntity *pGone );
+		HL2SB_ProcessDeleteOnRemove( pEntity );
+	}
+
 #if defined ( LUA_SDK )
 	// HL2SB: GMod's EntityRemoved hook.  Fired before the notify list drops its
 	// reference so Lua can still inspect the entity (that is what GMod does).

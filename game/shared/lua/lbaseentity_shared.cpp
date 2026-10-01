@@ -4581,6 +4581,78 @@ static int CBaseEntity_GetFlexWeight (lua_State *L) {
   return 1;
 }
 
+// HL2SB (2026-10-02): GMod Entity:SetTransmitWithParent( transmit = nil ) and
+// Entity:GetTransmitWithParent().  GMod's own bindings (reference, both
+// realms) just set/clear/test one flag bit on the entity; the server-side bit
+// is what the transmit loop consumes - this fork carries it as
+// EFL_TRANSMIT_WITH_PARENT and CServerGameEnts::CheckTransmit makes the entity
+// ride its move-parent's transmit decision.
+static int CBaseEntity_SetTransmitWithParent (lua_State *L) {
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  if ( lua_isnone(L, 2) )
+  {
+    lua_pushboolean( L, ( pEnt->GetEFlags() & EFL_TRANSMIT_WITH_PARENT ) != 0 );
+    return 1;
+  }
+  if ( lua_toboolean(L, 2) )
+    pEnt->AddEFlags( EFL_TRANSMIT_WITH_PARENT );
+  else
+    pEnt->RemoveEFlags( EFL_TRANSMIT_WITH_PARENT );
+  return 0;
+}
+
+static int CBaseEntity_GetTransmitWithParent (lua_State *L) {
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  lua_pushboolean( L, ( pEnt->GetEFlags() & EFL_TRANSMIT_WITH_PARENT ) != 0 );
+  return 1;
+}
+
+#ifndef CLIENT_DLL
+
+// HL2SB (2026-10-02): GMod Entity:DeleteOnRemove( ent ) - server-only binding
+// (GMod's client.dll carries no such method name).  GMod implements it as a
+// virtual appending the argument's handle to a per-entity list drained when the
+// owner dies; this fork keeps the list in a side table so CBaseEntity's layout
+// stays put, and the drain runs in CNotifyList::OnEntityDeleted (entitylist.cpp)
+// right before the EntityRemoved hook.
+struct HL2SB_DeleteOnRemoveEntry_t
+{
+  EHANDLE m_hOwner;
+  EHANDLE m_hVictim;
+};
+
+static CUtlVector<HL2SB_DeleteOnRemoveEntry_t> s_HL2SBDeleteOnRemove;
+
+static int CBaseEntity_DeleteOnRemove (lua_State *L) {
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  CBaseEntity *pVictim = lua_toentity(L, 2);
+  if ( pVictim == NULL )
+    luaL_typerror(L, 2, "Entity");
+  if ( pVictim == NULL )
+    return 0;
+
+  int i = s_HL2SBDeleteOnRemove.AddToTail();
+  s_HL2SBDeleteOnRemove[i].m_hOwner = pEnt;
+  s_HL2SBDeleteOnRemove[i].m_hVictim = pVictim;
+  return 0;
+}
+
+void HL2SB_ProcessDeleteOnRemove( CBaseEntity *pGone )
+{
+  for ( int i = s_HL2SBDeleteOnRemove.Count(); --i >= 0; )
+  {
+    if ( s_HL2SBDeleteOnRemove[i].m_hOwner.Get() != pGone )
+      continue;
+
+    CBaseEntity *pVictim = s_HL2SBDeleteOnRemove[i].m_hVictim.Get();
+    s_HL2SBDeleteOnRemove.FastRemove( i );
+    if ( pVictim != NULL && !pVictim->IsMarkedForDeletion() )
+      UTIL_Remove( pVictim );
+  }
+}
+
+#endif
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"GetForward", CBaseEntity_GetForward},
   {"GetRight", CBaseEntity_GetRight},
@@ -5016,6 +5088,11 @@ static const luaL_Reg CBaseEntitymeta[] = {
   // which lands in c_particle_system.cpp's ParticleEffectStopCallback on every
   // client; on the client it stops locally through the same TE path.
   {"StopParticles", CBaseEntity_StopParticles},
+  {"SetTransmitWithParent", CBaseEntity_SetTransmitWithParent},
+  {"GetTransmitWithParent", CBaseEntity_GetTransmitWithParent},
+#ifndef CLIENT_DLL
+  {"DeleteOnRemove", CBaseEntity_DeleteOnRemove},
+#endif
   {"__index", CBaseEntity___index},
   {"__newindex", CBaseEntity___newindex},
   {"__eq", CBaseEntity___eq},

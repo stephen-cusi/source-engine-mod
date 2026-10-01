@@ -19,6 +19,9 @@
 #include "lvphysics_interface.h"
 #include "mathlib/lvector.h"
 #include "utlstring.h"	// HL2SB: CUtlString for the client draw-probe classnames
+#ifdef CLIENT_DLL
+#include "clientleafsystem.h"	// HL2SB (2026-10-02): re-report the render group after the script class binds
+#endif
 #ifndef CLIENT_DLL
 // HL2SB: gamevcollisionevent_t, for ENT:PhysicsCollide.
 #include "physics.h"
@@ -102,6 +105,13 @@ CBaseScripted::CBaseScripted( void )
 	// UNDONE: We're done in CBaseEntity
 	m_nTableReference = LUA_NOREF;
 #endif
+
+	// HL2SB (2026-10-02): belt+braces - the CNetworkString ctor already zeroes
+	// its buffer; this keeps the invariant explicit against future custom
+	// initialization paths.  The 2026-10-02 "cod-c4 binding gmod_hands" log
+	// turned out to be a classmap-constant DISPLAY bug (GetClassname() reads
+	// the first registered SENT's name pre-bind), not stale slot data.
+	m_iScriptedClassname.GetForModify()[0] = '\0';
 
 #ifdef CLIENT_DLL
 	// HL2SB: the script's render group is only read once, and "not read yet" has to
@@ -616,26 +626,52 @@ void CBaseScripted::OnDataChanged( DataUpdateType_t updateType )
 {
 	BaseClass::OnDataChanged( updateType );
 
-	if ( updateType == DATA_UPDATE_CREATED )
+	// HL2SB: bind on CREATED and RETRY on later datatable updates -- the
+	// networked script class can arrive after the create notification.
+	if ( updateType == DATA_UPDATE_CREATED || updateType == DATA_UPDATE_DATATABLE_CHANGED )
 	{
-		// HL2SB: probe.  A Lua nextbot's client entity has to be a
-		// C_NextBotCombatCharacter (that is where the RenderGroup/DrawModel hooks
-		// live); if it shows up here instead, it was built as a plain scripted
-		// entity and the whole nextbot draw path is unreachable.
-		static int s_nScriptedReports = 0;
-
-		if ( s_nScriptedReports < 40 )
+		if ( updateType == DATA_UPDATE_CREATED )
 		{
-			++s_nScriptedReports;
-			luasrc_LuaWarnMsgF( "[HL2SB] CLIENT CBaseScripted created: classname='%s' networkedScriptClass='%s'",
-				GetClassname(),
-				( m_iScriptedClassname.Get() != NULL ) ? m_iScriptedClassname.Get() : "(none)" );
+			// HL2SB: probe.  A Lua nextbot's client entity has to be a
+			// C_NextBotCombatCharacter (that is where the RenderGroup/DrawModel hooks
+			// live); if it shows up here instead, it was built as a plain scripted
+			// entity and the whole nextbot draw path is unreachable.
+			static int s_nScriptedReports = 0;
+
+			if ( s_nScriptedReports < 40 )
+			{
+				++s_nScriptedReports;
+				luasrc_LuaWarnMsgF( "[HL2SB] CLIENT CBaseScripted created: classname='%s' networkedScriptClass='%s'",
+					GetClassname(),
+					( m_iScriptedClassname.Get() != NULL ) ? m_iScriptedClassname.Get() : "(none)" );
+			}
 		}
 
-		if ( m_iScriptedClassname.Get() )
+		// HL2SB: the networked script class must have ARRIVED before binding
+		// (GMod loads the entity only once its class name is on the wire).
+		// Get() never returns NULL -- an empty string means "not synced yet"
+		// and must NOT fall through to GetClassname(): that is the classmap
+		// constant, i.e. the first registered scripted class, and binding it
+		// burns the wrong name via SetClassname below.  m_nTableReference ==
+		// LUA_NOREF keeps this one-shot per entity (a resolved instance, even
+		// one with no Lua table = LUA_REFNIL, never rebinds).
+		if ( m_iScriptedClassname.Get()[0] != '\0' && m_nTableReference == LUA_NOREF )
 		{
 			SetClassname( m_iScriptedClassname.Get() );
 			InitScriptedEntity();
+
+			// HL2SB (2026-10-02): the render group may have been cached from the
+			// pre-bind fallback answer - AddToLeafSystem runs before the Lua
+			// table exists, and GetRenderGroup() only reads ENT.RenderGroup once
+			// the table is bound.  Re-report now so ENT.RenderGroup =
+			// RENDERGROUP_OTHER (the gmod_hands entity must never be drawn by
+			// the world pass; GM:PostDrawViewModel owns its single draw) takes
+			// effect immediately instead of waiting for the next GetFxBlend.
+			if ( GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE )
+			{
+				ClientLeafSystem()->SetRenderGroup( GetRenderHandle(), GetRenderGroup() );
+				ClientLeafSystem()->RenderableChanged( GetRenderHandle() );
+			}
 		}
 	}
 }
