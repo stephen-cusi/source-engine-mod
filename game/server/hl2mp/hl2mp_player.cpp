@@ -766,8 +766,9 @@ void CHL2MP_Player::PostThink( void )
 			{
 				CAnimationLayer *pLayer = GetAnimOverlay( k );
 				Msg( "    [%d] seq=%d order=%d wt=%.4f cycle=%.4f prev=%.4f flags=%d\n",
-					 k, pLayer->m_nSequence, pLayer->m_nOrder, pLayer->m_flWeight,
-					 pLayer->m_flCycle, pLayer->m_flPrevCycle, pLayer->m_fFlags );
+					 k, (int)pLayer->m_nSequence, (int)pLayer->m_nOrder,
+					 (float)pLayer->m_flWeight, (float)pLayer->m_flCycle,
+					 (float)pLayer->m_flPrevCycle, (int)pLayer->m_fFlags );
 			}
 		}
 	}

@@ -476,9 +476,9 @@ void C_BaseAnimatingOverlay::AccumulateLayers( IBoneSetup &boneSetup, Vector pos
 			for ( int k = 0; k < m_AnimOverlay.Count(); k++ )
 			{
 				Msg( "    [%d] seq=%d order=%d wt=%.4f cycle=%.4f prev=%.4f\n",
-					 k, m_AnimOverlay[k].m_nSequence, m_AnimOverlay[k].m_nOrder,
-					 m_AnimOverlay[k].m_flWeight, m_AnimOverlay[k].m_flCycle,
-					 m_AnimOverlay[k].m_flPrevCycle );
+					 k, (int)m_AnimOverlay[k].m_nSequence, (int)m_AnimOverlay[k].m_nOrder,
+					 (float)m_AnimOverlay[k].m_flWeight, (float)m_AnimOverlay[k].m_flCycle,
+					 (float)m_AnimOverlay[k].m_flPrevCycle );
 			}
 		}
 	}
