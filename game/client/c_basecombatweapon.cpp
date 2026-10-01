@@ -467,6 +467,7 @@ bool C_BaseCombatWeapon::ShouldDrawPickup( void )
 //			by this player, otherwise draw the worldmodel.
 //-----------------------------------------------------------------------------
 extern bool g_bRenderingReflection; // HL2SB: mirror reflection flag in viewrender.cpp
+extern ConVar hl2sb_anim_debug; // HL2SB: replicated probe switch (hl2mp_player_shared.cpp)
 
 int C_BaseCombatWeapon::DrawModel( int flags )
 {
@@ -523,6 +524,38 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 	if ( GetWorldModelIndex() > 0 && GetWorldModelIndex() != GetModelIndex() )
 	{
 		SetModelIndex( GetWorldModelIndex() );
+	}
+
+	// HL2SB diagnostic (hl2sb_anim_debug): draw-side state of every weapon
+	// entity - owner, parent link, world/local origin versus the owner, and
+	// the weapon's own sequence/cycle.  The "weapon lying in the world with
+	// its own animation" report only reproduces on this realm, so the split
+	// (owner lost / parent lost / stale origin) has to be read here; the
+	// server probe prints the same fields for comparison.
+	if ( hl2sb_anim_debug.GetBool() )
+	{
+		static float s_flHL2SBWpnClDump[MAX_EDICTS + 1] = {};
+		int iEnt = entindex();
+		if ( iEnt > 0 && iEnt <= MAX_EDICTS && gpGlobals->curtime >= s_flHL2SBWpnClDump[iEnt] )
+		{
+			s_flHL2SBWpnClDump[iEnt] = gpGlobals->curtime + 1.0f;
+
+			C_BaseEntity *pOwnerEnt = GetOwner();
+			C_BaseEntity *pParent = GetMoveParent();
+			C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+			const Vector &vHere = GetAbsOrigin();
+			const Vector &vLocalOrg = GetLocalOrigin();
+			const Vector &vOwner = pOwnerEnt ? pOwnerEnt->GetAbsOrigin() : vec3_origin;
+			Msg( "[HL2SB wpns/cl] ent=%d wp=%s mine=%d owner=%d ownerpos=(%.0f %.0f %.0f) parent=%s#%d abs=(%.0f %.0f %.0f) local=(%.0f %.0f %.0f) seq=%d cyc=%.2f model=%s\n",
+				 iEnt, GetClassname(), ( pOwnerEnt == pLocal ) ? 1 : 0,
+				 pOwnerEnt ? pOwnerEnt->entindex() : -1,
+				 vOwner.x, vOwner.y, vOwner.z,
+				 pParent ? pParent->GetClassname() : "NONE",
+				 pParent ? pParent->entindex() : -1,
+				 vHere.x, vHere.y, vHere.z, vLocalOrg.x, vLocalOrg.y, vLocalOrg.z,
+				 GetSequence(), (float)GetCycle(),
+				 GetModel() ? modelinfo->GetModelName( GetModel() ) : "?" );
+		}
 	}
 
 	// HL2SB: a c_ model used as a world model (GMod SWEPs point WorldModel at a

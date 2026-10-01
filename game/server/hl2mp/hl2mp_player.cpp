@@ -853,21 +853,56 @@ void CHL2MP_Player::PostThink( void )
 			}
 			s_nHL2SBSvLastSeq[slot] = iLiveSeq;
 
-			if ( pszReason )
-			{
-				player_info_t info;
-				const char *pszName = engine->GetPlayerInfo( slot, &info ) ? info.name : "?";
-				Msg( "[HL2SB overlay/sv] DUMP(%s): ply=%d '%s' count=%d\n", pszReason, slot, pszName, GetNumAnimOverlays() );
-				for ( int k = 0; k < GetNumAnimOverlays(); k++ )
+				if ( pszReason )
 				{
-					CAnimationLayer *pLayer = GetAnimOverlay( k );
-					Msg( "    [%d] seq=%d order=%d wt=%.4f cycle=%.4f prev=%.4f flags=%d\n",
-						 k, (int)pLayer->m_nSequence, (int)pLayer->m_nOrder,
-						 (float)pLayer->m_flWeight, (float)pLayer->m_flCycle,
-						 (float)pLayer->m_flPrevCycle, (int)pLayer->m_fFlags );
+					player_info_t info;
+					const char *pszName = engine->GetPlayerInfo( slot, &info ) ? info.name : "?";
+					Msg( "[HL2SB overlay/sv] DUMP(%s): ply=%d '%s' count=%d\n", pszReason, slot, pszName, GetNumAnimOverlays() );
+					for ( int k = 0; k < GetNumAnimOverlays(); k++ )
+					{
+						CAnimationLayer *pLayer = GetAnimOverlay( k );
+						Msg( "    [%d] seq=%d order=%d wt=%.4f cycle=%.4f prev=%.4f flags=%d\n",
+							 k, (int)pLayer->m_nSequence, (int)pLayer->m_nOrder,
+							 (float)pLayer->m_flWeight, (float)pLayer->m_flCycle,
+							 (float)pLayer->m_flPrevCycle, (int)pLayer->m_fFlags );
+					}
+				}
+
+				// Active-weapon follow state: the "weapon lying in the world
+				// with its own animation" report is about the weapon ENTITY,
+				// not the gesture layers - the parent link plus both coordinate
+				// spaces (weapon world/local vs this player) split a lost
+				// server-side parent from a stale origin, and seq/cycle shows
+				// whether its own animation keeps advancing independently.
+				static float s_flHL2SBSvWeaponDump[MAX_PLAYERS + 1] = {};
+				if ( gpGlobals->curtime >= s_flHL2SBSvWeaponDump[slot] )
+				{
+					s_flHL2SBSvWeaponDump[slot] = gpGlobals->curtime + 1.0f;
+
+					CBaseCombatWeapon *pWpn = GetActiveWeapon();
+					player_info_t winfo;
+					const char *pszPlyName = engine->GetPlayerInfo( slot, &winfo ) ? winfo.name : "?";
+					if ( pWpn )
+					{
+						CBaseEntity *pParent = pWpn->GetMoveParent();
+						const Vector &vWpn = pWpn->GetAbsOrigin();
+						const Vector &vLocal = pWpn->GetLocalOrigin();
+						const Vector &vHere = GetAbsOrigin();
+						Msg( "[HL2SB wpns/sv] ply=%d '%s' wp=%s parent=%s#%d abs=(%.0f %.0f %.0f) local=(%.0f %.0f %.0f) here=(%.0f %.0f %.0f) seq=%d cyc=%.2f model=%s\n",
+							 slot, pszPlyName, pWpn->GetClassname(),
+							 pParent ? pParent->GetClassname() : "NONE",
+							 pParent ? pParent->entindex() : -1,
+							 vWpn.x, vWpn.y, vWpn.z, vLocal.x, vLocal.y, vLocal.z,
+							 vHere.x, vHere.y, vHere.z,
+							 pWpn->GetSequence(), (float)pWpn->GetCycle(),
+							 STRING( pWpn->GetModelName() ) );
+					}
+					else
+					{
+						Msg( "[HL2SB wpns/sv] ply=%d '%s' wp=NONE\n", slot, pszPlyName );
+					}
 				}
 			}
-		}
 	}
 
 	// HL2SB (2026-09-27): GM:UpdateAnimation( ply, velocity, maxSeqGroundSpeed )
