@@ -481,6 +481,18 @@ public:
 		return BaseClass::Holster();
 	}
 
+	// HL2SB: the reference physgun has no dedicated world model -- its script
+	// points the world at the same c_superphyscannon the viewmodel uses (the
+	// model is rigged for viewmodel space but drawn world-side, and the client
+	// syncs its pose to the viewmodel's sequence by name).  Answering the
+	// script's viewmodel string here makes Spawn/Precache/networking all resolve
+	// the world model to it, which is what the dropped and third-person states
+	// draw.
+	virtual const char *GetWorldModel( void ) const
+	{
+		return GetViewModel( 0 );
+	}
+
 	bool Reload( void );
 	void Equip( CBaseCombatCharacter *pOwner )
 	{

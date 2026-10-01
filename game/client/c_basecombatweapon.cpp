@@ -526,17 +526,20 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 	}
 
 	// HL2SB: a c_ model used as a world model (GMod SWEPs point WorldModel at a
-	// c_ model rigged for viewmodel space) reads as "held" only when it plays
-	// the pose the viewmodel is playing -- by default it sits in sequence 0
-	// (reference pose), which is why the mirror showed a wrongly gripped gun.
-	// Sync pose by sequence NAME from the active viewmodel, so real w_ models
-	// (whose sequence tables differ) are left untouched.  Same ordering rule
-	// as the fixup above: the Lua dispatch must see the synced pose.
-	if ( IsCarriedByLocalPlayer() && g_bRenderingReflection )
+	// c_ model rigged for viewmodel space; the physgun's world answer is its
+	// own viewmodel string) reads as "held" only when it plays the pose the
+	// viewmodel is playing -- by default it sits in sequence 0 (reference
+	// pose), which is why the mirror showed a wrongly gripped gun.  Sync pose
+	// by sequence NAME from the active viewmodel whenever the world model IS
+	// the viewmodel's model (pointer equality - real w_ models differ and are
+	// left untouched), not only in reflections: normal third person draws this
+	// path every frame too.  Same ordering rule as the fixup above: the Lua
+	// dispatch must see the synced pose.
+	if ( IsCarriedByLocalPlayer() )
 	{
 		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
 		C_BaseViewModel *pVM = pOwner ? pOwner->GetViewModel( 0 ) : NULL;
-		if ( pVM && GetModel() )
+		if ( pVM && GetModel() && pVM->GetModel() == GetModel() )
 		{
 			const char *pszSeqName = pVM->GetSequenceName( pVM->GetSequence() );
 			int iSeq = ( pszSeqName && pszSeqName[0] ) ? LookupSequence( pszSeqName ) : -1;
