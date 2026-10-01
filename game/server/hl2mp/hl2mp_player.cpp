@@ -1054,6 +1054,24 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 	if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT || activity <= ACT_INVALID )
 		return;
 
+	// Stale bookkeeping: the layer finished (autokill) since the slot was
+	// filled - forget it so the gesture can start again.
+	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && !IsValidLayer( m_iHL2SBSlotLayer[iSlot] ) )
+	{
+		m_iHL2SBSlotLayer[iSlot] = -1;
+		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
+	}
+
+	// GMod gestures play through the weapon acttable (ACT_MP_ATTACK_* ->
+	// ACT_HL2MP_GESTURE_RANGE_ATTACK_<holdtype>); fall back to the bare
+	// activity for model-authored layer activities (ACT_GMOD_IN_CHAT,
+	// ACT_GMOD_NOCLIP_LAYER).
+	Activity translated = Weapon_TranslateActivity( activity );
+	int iSequence = SelectWeightedSequence( translated );
+	Activity broadcastAct = ( iSequence > 0 ) ? translated : activity;
+	if ( iSequence <= 0 )
+		iSequence = SelectWeightedSequence( activity );
+
 	// HL2SB (2026-10-02): GMod gesture broadcast - overlay_vars is excluded
 	// from the player send table, so THIS is the only way other clients ever
 	// see the gesture.  One broadcast per server-side gesture creation (Lua
@@ -1063,15 +1081,17 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 	// the layer locally in GESTURE_SLOT_CUSTOM.  The server layer created
 	// below still exists for IsPlayingTaunt/slot bookkeeping but is invisible
 	// (excluded from the send table).
-	TE_PlayerAnimEvent( this, PLAYERANIMEVENT_CUSTOM_GESTURE, (int)activity );
-
-	// Stale bookkeeping: the layer finished (autokill) since the slot was
-	// filled - forget it so the gesture can start again.
-	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && !IsValidLayer( m_iHL2SBSlotLayer[iSlot] ) )
-	{
-		m_iHL2SBSlotLayer[iSlot] = -1;
-		m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
-	}
+	//
+	// Broadcast the RESOLVED activity, not the caller's ideal: the client has
+	// no Weapon_TranslateActivity (server-only), so an ideal
+	// ACT_MP_ATTACK_STAND_PRIMARYFIRE that the model only carries as
+	// ACT_HL2MP_GESTURE_RANGE_ATTACK_<holdtype> dead-ends in the client's
+	// SelectWeightedSequence and the remote player never animates (two-player
+	// log: sv OK translated=... vs cl NO SEQUENCE ideal=...).  Activities the
+	// acttable leaves alone translate to themselves, so act/land/wave traffic
+	// is unchanged.  Above the replay/NO SEQUENCE returns so every funnel
+	// call broadcasts exactly once, including rapid-fire replays.
+	TE_PlayerAnimEvent( this, PLAYERANIMEVENT_CUSTOM_GESTURE, (int)broadcastAct );
 
 	// GMod's authoritative semantics (CMultiPlayerAnimState::RestartGesture,
 	// game/shared/Multiplayer/multiplayer_animstate.cpp:545): asking for the
@@ -1090,14 +1110,6 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 	if ( m_iHL2SBSlotLayer[iSlot] >= 0 )
 		RemoveLayer( m_iHL2SBSlotLayer[iSlot], 0.0f, 0.0f );
 
-	// GMod gestures play through the weapon acttable (ACT_MP_ATTACK_* ->
-	// ACT_HL2MP_GESTURE_RANGE_ATTACK_<holdtype>); fall back to the bare
-	// activity for model-authored layer activities (ACT_GMOD_IN_CHAT,
-	// ACT_GMOD_NOCLIP_LAYER).
-	Activity translated = Weapon_TranslateActivity( activity );
-	int iSequence = SelectWeightedSequence( translated );
-	if ( iSequence <= 0 )
-		iSequence = SelectWeightedSequence( activity );
 	if ( iSequence <= 0 )
 	{
 		if ( hl2sb_anim_debug.GetBool() )
