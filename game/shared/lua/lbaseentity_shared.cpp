@@ -1139,15 +1139,18 @@ static int CBaseEntity_GetClass (lua_State *L) {
 static int CBaseEntity_SetPlayer (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
 
-  if (pEntity->m_nTableReference < 0)
+  if ( pEntity->m_nTableReference < 0 ||
+       !lua_isrefvalid( L, pEntity->m_nTableReference ) )
   {
-    lua_newtable(L);
-    pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
+    if ( pEntity->m_nTableReference > 0 )
+      lua_unref( L, pEntity->m_nTableReference );
+    lua_newtable( L );
+    pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
   }
-  lua_getref(L, pEntity->m_nTableReference);
-  lua_pushvalue(L, 2);              // ply (nil/NULL clears)
-  lua_setfield(L, -2, "Owner");
-  lua_pop(L, 1);
+  lua_getref( L, pEntity->m_nTableReference );
+  lua_pushvalue( L, 2 );            // ply (nil/NULL clears)
+  lua_setfield( L, -2, "Owner" );
+  lua_pop( L, 1 );
   return 0;
 }
 
@@ -1272,11 +1275,15 @@ static int CBaseEntity_GetRefTable (lua_State *L) {
   // here the same way the engine __newindex does - callers that only ever READ
   // through GetTable() (construct.lua indexes ent:GetTable().toggle) still get
   // working storage instead of nil.
-  if (pEntity->m_nTableReference < 0) {
-    lua_newtable(L);
-    pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
+  if ( pEntity->m_nTableReference < 0 ||
+       !lua_isrefvalid( L, pEntity->m_nTableReference ) )
+  {
+    if ( pEntity->m_nTableReference > 0 )
+      lua_unref( L, pEntity->m_nTableReference );
+    lua_newtable( L );
+    pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
   }
-  lua_getref(L, pEntity->m_nTableReference);
+  lua_getref( L, pEntity->m_nTableReference );
   return 1;
 }
 
@@ -2483,7 +2490,11 @@ static int CBaseEntity_SetMaterial (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   const char *pszMaterial = luaL_checkstring(L, 2);
 
-  if ( pEntity->m_nTableReference < 0 ) {
+  if ( pEntity->m_nTableReference < 0 ||
+       !lua_isrefvalid( L, pEntity->m_nTableReference ) )
+  {
+    if ( pEntity->m_nTableReference > 0 )
+      lua_unref( L, pEntity->m_nTableReference );
     lua_newtable( L );
     pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
   }
@@ -3403,14 +3414,21 @@ static int CBaseEntity___newindex (lua_State *L) {
     // the reference at -1, and lua_getref(-1) is not a valid table -- so any
     // field write after a failed first load was silently dropped (Owner.C4s
     // never stuck, the C4 list stayed nil).
-    if (pEntity->m_nTableReference < 0) {
-      lua_newtable(L);
-      pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
+    if ( pEntity->m_nTableReference < 0 ||
+         !lua_isrefvalid( L, pEntity->m_nTableReference ) )
+    {
+      // HL2SB: a stale reference points at a freed registry slot (its
+      // tombstone is a NUMBER) or at some other holder's object -- release
+      // it and start a fresh instance table instead of writing through it.
+      if ( pEntity->m_nTableReference > 0 )
+        lua_unref( L, pEntity->m_nTableReference );
+      lua_newtable( L );
+      pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
     }
-    lua_getref(L, pEntity->m_nTableReference);
-    lua_pushvalue(L, 3);
-    lua_setfield(L, -2, field);
-	lua_pop(L, 1);
+    lua_getref( L, pEntity->m_nTableReference );
+    lua_pushvalue( L, 3 );
+    lua_setfield( L, -2, field );
+	lua_pop( L, 1 );
   }
   return 0;
 }
@@ -4357,8 +4375,11 @@ static int CBaseEntity_SetUseType (lua_State *L) {
   (void)luaL_checkint(L, 2);  // USE_* / SIMPLE_USE -- accepted and kept on the
                               // entity's Lua field table for read-back; this
                               // fork's Use dispatch behaviour is unchanged.
-  if ( pEntity->m_nTableReference < 0 )
+  if ( pEntity->m_nTableReference < 0 ||
+       !lua_isrefvalid( L, pEntity->m_nTableReference ) )
   {
+    if ( pEntity->m_nTableReference > 0 )
+      lua_unref( L, pEntity->m_nTableReference );
     lua_newtable( L );
     pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
   }

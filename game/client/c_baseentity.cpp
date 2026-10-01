@@ -1013,6 +1013,9 @@ C_BaseEntity::~C_BaseEntity()
 	{
 		lua_unref( L, m_nTableReference );
 	}
+	// HL2SB: the released slot becomes a tombstone NUMBER until the registry
+	// reuses it - a resurrected or pooled successor must not inherit it.
+	m_nTableReference = LUA_NOREF;
 #endif
 }
 

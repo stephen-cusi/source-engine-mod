@@ -72,5 +72,19 @@ bool lua_isrefvalid( lua_State *L, int ref )
     // in a constructor somewhere.
     Assert( ref != 0 );
 
-    return ref != LUA_REFNIL && ref != LUA_NOREF;
+    // HL2SB (2026-10-01): a positive ref alone is not enough.  luaL_unref
+    // leaves a tombstone NUMBER in the freed registry slot until the next
+    // luaL_ref recycles it, and cleanup paths that unref do not reset the
+    // field, so a live holder of such a ref reads the tombstone back.
+    // Indexing it is the per-tick "attempt to index a number value" spam
+    // from entity field lookups.  Every caller of this helper guards an
+    // instance TABLE reference, so validity means the slot currently holds
+    // a table; anything else is treated as "no script table".
+    if ( ref < 0 || L == NULL )
+        return false;
+
+    lua_rawgeti( L, LUA_REGISTRYINDEX, ref );
+    bool bValid = ( lua_istable( L, -1 ) != 0 );
+    lua_pop( L, 1 );
+    return bValid;
 }
