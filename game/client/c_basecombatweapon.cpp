@@ -641,6 +641,36 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 	}
 #endif
 
+	// HL2SB diagnostic (hl2sb_anim_debug, second bucket): the world position
+	// of the merged hand bone right after the draw settles.  The pre-draw
+	// probe shows effects/cache/merge all healthy while the entity origin
+	// sits at the owner's WorldSpaceCenter - this line splits the two
+	// remaining stories: merged skinning in world space (bone rides the
+	// owner's gesture, origin irrelevant) versus the entity itself being
+	// what viewers see floating next to the owner.
+	{
+		static float s_flHL2SBWpnBoneDump[MAX_EDICTS + 1] = {};
+		int iEntB = entindex();
+		if ( hl2sb_anim_debug.GetBool() && iEntB > 0 && iEntB <= MAX_EDICTS && gpGlobals->curtime >= s_flHL2SBWpnBoneDump[iEntB] )
+		{
+			s_flHL2SBWpnBoneDump[iEntB] = gpGlobals->curtime + 1.0f;
+			int iHB = LookupBone( "ValveBiped.Bip01_R_Hand" );
+			if ( iHB >= 0 )
+			{
+				const matrix3x4_t &mBone = GetBone( iHB );
+				Vector vB;
+				MatrixGetColumn( mBone, 3, vB );
+				const Vector &vA = GetAbsOrigin();
+				Msg( "[HL2SB wpns/bone] ent=%d abs=(%.0f %.0f %.0f) handbone=(%.0f %.0f %.0f) seq=%d cyc=%.2f\n",
+					 iEntB, vA.x, vA.y, vA.z, vB.x, vB.y, vB.z, GetSequence(), (float)GetCycle() );
+			}
+			else
+			{
+				Msg( "[HL2SB wpns/bone] ent=%d handbone=MISS (lookup=%d)\n", iEntB, iHB );
+			}
+		}
+	}
+
 	return BaseClass::DrawModel( flags );
 }
 
