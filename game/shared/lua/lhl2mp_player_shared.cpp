@@ -24,6 +24,13 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+#ifndef CLIENT_DLL
+// HL2SB (2026-10-02): GMod gesture broadcast sender (defined in
+// game/server/hl2mp/hl2mp_player.cpp) - declared here because the
+// DoAnimationEvent default branch below fires it.
+void TE_PlayerAnimEvent( CBasePlayer *pPlayer, PlayerAnimEvent_t event, int nData );
+#endif
+
 /*
 ** access functions (stack -> C)
 */
@@ -119,6 +126,13 @@ static int CHL2MP_Player_AnimRestartGesture (lua_State *L) {
 #ifndef CLIENT_DLL
   luaL_checkhl2mpplayer(L, 1)->HL2SB_AnimRestartGesture(
       luaL_checkint(L, 2), (Activity)luaL_checkint(L, 3), luaL_optboolean(L, 4, false) );
+#else
+  // HL2SB (2026-10-02): GMod architecture - the binding is LIVE on the client
+  // too (GMod's client table has it; we reference ).  Shared
+  // animations.lua code calling ply:AnimRestartGesture now works in both
+  // realms; the client builds the layer locally.
+  luaL_checkhl2mpplayer(L, 1)->HL2SB_ClientRestartGesture(
+      luaL_checkint(L, 2), (Activity)luaL_checkint(L, 3), luaL_optboolean(L, 4, false) );
 #endif
   return 0;
 }
@@ -126,6 +140,8 @@ static int CHL2MP_Player_AnimRestartGesture (lua_State *L) {
 static int CHL2MP_Player_AnimResetGestureSlot (lua_State *L) {
 #ifndef CLIENT_DLL
   luaL_checkhl2mpplayer(L, 1)->HL2SB_AnimResetGestureSlot( luaL_checkint(L, 2) );
+#else
+  luaL_checkhl2mpplayer(L, 1)->HL2SB_ClientResetGestureSlot( luaL_checkint(L, 2) );
 #endif
   return 0;
 }
@@ -134,6 +150,12 @@ static int CHL2MP_Player_AnimSetGestureWeight (lua_State *L) {
 #ifndef CLIENT_DLL
   luaL_checkhl2mpplayer(L, 1)->HL2SB_AnimSetGestureWeight(
       luaL_checkint(L, 2), luaL_checknumber(L, 3) );
+#else
+  // Client-local layers own their weight (Lua fades, e.g. the chat gesture).
+  CHL2MP_Player *pPlayer = luaL_checkhl2mpplayer(L, 1);
+  int iSlot = luaL_checkint(L, 2);
+  if ( iSlot >= 0 && iSlot < pPlayer->GetNumAnimOverlays() )
+    pPlayer->GetAnimOverlay( iSlot )->m_flWeight = clamp( (float)luaL_checknumber(L, 3), 0.0f, 1.0f );
 #endif
   return 0;
 }
@@ -142,21 +164,32 @@ static int CHL2MP_Player_AnimSetGestureSequence (lua_State *L) {
 #ifndef CLIENT_DLL
   luaL_checkhl2mpplayer(L, 1)->HL2SB_AnimSetGestureSequence(
       luaL_checkint(L, 2), luaL_checkint(L, 3) );
+#else
+  CHL2MP_Player *pPlayer = luaL_checkhl2mpplayer(L, 1);
+  int iSlot = luaL_checkint(L, 2);
+  int iSequence = luaL_checkint(L, 3);
+  if ( iSlot >= 0 && iSlot < pPlayer->GetNumAnimOverlays() && iSequence > 0 )
+  {
+    pPlayer->GetAnimOverlay( iSlot )->m_nSequence = iSequence;
+    pPlayer->m_flOverlayPrevEventCycle[iSlot] = -1.0f;
+  }
 #endif
   return 0;
 }
 
 // GMod: AddVCDSequenceToGestureSlot( slot, sequence, weight = 1 ) - a looping
-// layer (taunts use it).  Approximated with a non-autokill looping overlay.
+// layer (taunts use it).  Approximated with a non-autokill overlay that holds
+// its last frame (the client CAnimationLayer has no looping flag; the Lua
+// weight fade drives visibility, see AnimSetGestureWeight above).
 static int CHL2MP_Player_AddVCDSequenceToGestureSlot (lua_State *L) {
-#ifndef CLIENT_DLL
   CHL2MP_Player *pPlayer = luaL_checkhl2mpplayer(L, 1);
   int iSlot = luaL_checkint(L, 2);
   int iSequence = luaL_checkint(L, 3);
   float flWeight = luaL_optnumber(L, 4, 1.0f);
-  pPlayer->HL2SB_AnimResetGestureSlot( iSlot );
   if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT || iSequence <= 0 )
     return 0;
+#ifndef CLIENT_DLL
+  pPlayer->HL2SB_AnimResetGestureSlot( iSlot );
   int iLayer = pPlayer->AddGestureSequence( iSequence, false );
   if ( iLayer >= 0 )
   {
@@ -165,6 +198,11 @@ static int CHL2MP_Player_AddVCDSequenceToGestureSlot (lua_State *L) {
     pPlayer->m_iHL2SBSlotLayer[iSlot] = iLayer;
     pPlayer->m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
   }
+#else
+  pPlayer->HL2SB_ClientResetGestureSlot( iSlot );
+  pPlayer->HL2SB_ClientSetLayerSequence( iSlot, iSequence, ACT_MP_VCD, false, 1.0f );
+  if ( iSlot < pPlayer->GetNumAnimOverlays() )
+    pPlayer->GetAnimOverlay( iSlot )->m_flWeight = clamp( flWeight, 0.0f, 1.0f );
 #endif
   return 0;
 }
@@ -213,8 +251,64 @@ static int CHL2MP_Player_DoAnimationEvent (lua_State *L) {
     pPlayer->HL2SB_AnimRestartGesture( GESTURE_SLOT_CUSTOM, (Activity)nData, true );
     break;
   default:
-    break;  // JUMP / SWIM / FLINCH stay with the state machine
+    // HL2SB (2026-10-02): anything the state machine above does not map to a
+    // server gesture goes out over the GMod gesture broadcast verbatim
+    // (FLINCH/JUMP/SWIM/... - the client's dispatch decides what to do with
+    // it; unhandled events log under hl2sb_anim_debug).
+    TE_PlayerAnimEvent( pPlayer, event, nData );
+    break;
   }
+#else
+  // HL2SB (2026-10-02): live on the client as well (GMod's client table has
+  // it) - shared SWEP bases calling ply:DoAnimationEvent on the client realm
+  // drive the local layer directly.
+  luaL_checkhl2mpplayer(L, 1)->HL2SB_ClientDoAnimationEvent(
+      luaL_checkint(L, 2), luaL_optinteger(L, 3, 0) );
+#endif
+  return 0;
+}
+
+#ifndef CLIENT_DLL
+// HL2SB (2026-10-02): GMod's raw event broadcasts - the exact server Lua
+// bindings we reference from server.dll (table at ..):
+// DoAttackEvent / DoSecondaryAttack / DoReloadEvent / DoCustomAnimEvent.
+// Each sends CTEPlayerAnimEvent directly; relay-style extra arguments are
+// accepted and ignored (our CPVSFilter is always anchored on the player).
+void TE_PlayerAnimEvent( CBasePlayer *pPlayer, PlayerAnimEvent_t event, int nData );
+
+static int CHL2MP_Player_DoAttackEvent (lua_State *L) {
+  (void)luaL_optboolean(L, 2, true);	// GMod's relay flag - see above
+  TE_PlayerAnimEvent( luaL_checkhl2mpplayer(L, 1), PLAYERANIMEVENT_ATTACK_PRIMARY, 0 );
+  return 0;
+}
+
+static int CHL2MP_Player_DoSecondaryAttack (lua_State *L) {
+  (void)luaL_optboolean(L, 2, true);
+  TE_PlayerAnimEvent( luaL_checkhl2mpplayer(L, 1), PLAYERANIMEVENT_ATTACK_SECONDARY, 0 );
+  return 0;
+}
+
+static int CHL2MP_Player_DoReloadEvent (lua_State *L) {
+  (void)luaL_optboolean(L, 2, true);
+  TE_PlayerAnimEvent( luaL_checkhl2mpplayer(L, 1), PLAYERANIMEVENT_RELOAD, 0 );
+  return 0;
+}
+#endif	// !CLIENT_DLL
+
+// HL2SB (2026-10-02): GMod's DoCustomAnimEvent exists on BOTH realms (client
+// binding reference at ): server -> raw TE broadcast, client ->
+// the local gesture dispatch.
+static int CHL2MP_Player_DoCustomAnimEvent (lua_State *L) {
+  int iEvent = luaL_checkint(L, 2);
+  int nData = luaL_optinteger(L, 3, 0);
+  // GMod clamps the event id to 0..39 in this binding.
+  if ( iEvent < 0 ) iEvent = 0;
+  if ( iEvent > 39 ) iEvent = 39;
+#ifndef CLIENT_DLL
+  (void)luaL_optboolean(L, 4, true);
+  TE_PlayerAnimEvent( luaL_checkhl2mpplayer(L, 1), (PlayerAnimEvent_t)iEvent, nData );
+#else
+  luaL_checkhl2mpplayer(L, 1)->HL2SB_ClientDoAnimationEvent( iEvent, nData );
 #endif
   return 0;
 }
@@ -488,6 +582,14 @@ static const luaL_Reg CHL2MP_Playermeta[] = {
   {"CalcView", CHL2MP_Player_CalcView},
   {"CanSprint", CHL2MP_Player_CanSprint},
   {"DoAnimationEvent", CHL2MP_Player_DoAnimationEvent},
+#ifndef CLIENT_DLL
+  // HL2SB (2026-10-02): GMod raw event broadcasts (server-only; GMod's
+  // client table does not carry these three).
+  {"DoAttackEvent", CHL2MP_Player_DoAttackEvent},
+  {"DoSecondaryAttack", CHL2MP_Player_DoSecondaryAttack},
+  {"DoReloadEvent", CHL2MP_Player_DoReloadEvent},
+#endif
+  {"DoCustomAnimEvent", CHL2MP_Player_DoCustomAnimEvent},
   {"__index", CHL2MP_Player___index},
   {"__newindex", CHL2MP_Player___newindex},
   {"__eq", CHL2MP_Player___eq},
@@ -505,6 +607,13 @@ static const luaL_Reg CHL2MP_Playermeta[] = {
 static const luaL_Reg CHL2MP_PlayerGModmeta[] = {
   // HL2SB (2026-09-27): GMod Player animation/movement surface.
   {"DoAnimationEvent", CHL2MP_Player_DoAnimationEvent},
+#ifndef CLIENT_DLL
+  // HL2SB (2026-10-02): GMod raw event broadcasts (server-only).
+  {"DoAttackEvent", CHL2MP_Player_DoAttackEvent},
+  {"DoSecondaryAttack", CHL2MP_Player_DoSecondaryAttack},
+  {"DoReloadEvent", CHL2MP_Player_DoReloadEvent},
+#endif
+  {"DoCustomAnimEvent", CHL2MP_Player_DoCustomAnimEvent},
   {"AnimRestartMainSequence", CHL2MP_Player_AnimRestartMainSequence},
   {"AnimRestartGesture", CHL2MP_Player_AnimRestartGesture},
   {"AnimResetGestureSlot", CHL2MP_Player_AnimResetGestureSlot},

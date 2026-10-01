@@ -45,12 +45,69 @@
 #include "SoundEmitterSystem/isoundemittersystembase.h"
 
 #include "ilagcompensationmanager.h"
+#include "basetempentity.h"		// HL2SB: CTEPlayerAnimEvent (GMod gesture broadcast)
+#include "recipientfilter.h"		// HL2SB: CPVSFilter for the same
 
 // HL2SB: flashlight turned on by default at spawn
 extern ConVar sv_flashlight_default;
 // HL2SB: replicated animation debug switch (defined in hl2mp_player_shared.cpp),
 // used by gesture/overlay probes in PostThink and HL2SB_AnimRestartGesture.
 extern ConVar hl2sb_anim_debug;
+
+// ============================================================================
+// HL2SB (2026-10-02): GMod gesture broadcast channel - CTEPlayerAnimEvent.
+//
+// GMod's DT_HL2MP_Player excludes DT_BaseAnimatingOverlay::overlay_vars, so
+// gesture layers are NEVER networked: every client builds them locally when
+// this tiny temp entity arrives (player handle + event + data - no layer
+// data at all).  This is what fixes "other players never play attack
+// animations": the old architecture networked the layers and the client-side
+// LATCH_ANIMATION_VAR interpolation clobbered them on remote entities
+// (phone RECV probe: correct first frame, zeroed 10ms later).
+//
+// Structure mirrors the in-tree CS/DOD CTEPlayerAnimEvent exactly (same
+// fields, same DT name); the single fire point is HL2SB_AnimRestartGesture
+// below, which sends PLAYERANIMEVENT_CUSTOM_GESTURE + the resolved
+// activity - the client lands it in GESTURE_SLOT_CUSTOM, matching GMod's
+// CMultiPlayerAnimState::DoAnimationEvent CUSTOM_GESTURE case.
+// ============================================================================
+class CTEPlayerAnimEvent : public CBaseTempEntity
+{
+public:
+	DECLARE_CLASS( CTEPlayerAnimEvent, CBaseTempEntity );
+	DECLARE_SERVERCLASS();
+
+	CTEPlayerAnimEvent( const char *name ) : CBaseTempEntity( name )
+	{
+	}
+
+	CNetworkHandle( CBasePlayer, m_hPlayer );
+	CNetworkVar( int, m_iEvent );
+	CNetworkVar( int, m_nData );
+};
+
+IMPLEMENT_SERVERCLASS_ST_NOBASE( CTEPlayerAnimEvent, DT_TEPlayerAnimEvent )
+	SendPropEHandle( SENDINFO( m_hPlayer ) ),
+	SendPropInt( SENDINFO( m_iEvent ), Q_log2( PLAYERANIMEVENT_COUNT ) + 1, SPROP_UNSIGNED ),
+	SendPropInt( SENDINFO( m_nData ), 32 )
+END_SEND_TABLE()
+
+static CTEPlayerAnimEvent g_TEPlayerAnimEvent( "PlayerAnimEvent" );
+
+void TE_PlayerAnimEvent( CBasePlayer *pPlayer, PlayerAnimEvent_t event, int nData )
+{
+	if ( !pPlayer )
+		return;
+
+	CPVSFilter filter( (const Vector &)pPlayer->EyePosition() );
+
+	g_TEPlayerAnimEvent.m_hPlayer = pPlayer;
+	g_TEPlayerAnimEvent.m_iEvent = event;
+	g_TEPlayerAnimEvent.m_nData = nData;
+	g_TEPlayerAnimEvent.Create( filter, 0 );
+}
+// ============================================================================
+
 
 CBaseEntity	 *g_pLastCombineSpawn = NULL;
 CBaseEntity	 *g_pLastRebelSpawn = NULL;
@@ -106,6 +163,14 @@ IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 
 	SendPropExclude( "DT_BaseAnimating", "m_flPoseParameter" ),
 	SendPropExclude( "DT_BaseFlex", "m_viewtarget" ),
+	// HL2SB (2026-10-02): GMod excludes this too - gesture/overlay layers are
+	// never networked for players.  Every client builds them locally from the
+	// CTEPlayerAnimEvent broadcast (see the class at the top of this file);
+	// networked layers were being zeroed by the client interpolation of
+	// remote entities, which is why other players never played attack
+	// animations.  Server-side layers are still created (slot bookkeeping,
+	// IsPlayingTaunt) - they are simply invisible to clients now.
+	SendPropExclude( "DT_BaseAnimatingOverlay", "overlay_vars" ),
 
 //	SendPropExclude( "DT_ServerAnimationData" , "m_flCycle" ),	
 //	SendPropExclude( "DT_AnimTimeMustBeFirst" , "m_flAnimTime" ),
@@ -989,6 +1054,17 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 	if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT || activity <= ACT_INVALID )
 		return;
 
+	// HL2SB (2026-10-02): GMod gesture broadcast - overlay_vars is excluded
+	// from the player send table, so THIS is the only way other clients ever
+	// see the gesture.  One broadcast per server-side gesture creation (Lua
+	// GM:DoAnimationEvent attacks/reloads, animations.lua land/chat, the act
+	// command, the C++ SetAnimation fallbacks - every path funnels through
+	// here).  The client receives CUSTOM_GESTURE + this activity and builds
+	// the layer locally in GESTURE_SLOT_CUSTOM.  The server layer created
+	// below still exists for IsPlayingTaunt/slot bookkeeping but is invisible
+	// (excluded from the send table).
+	TE_PlayerAnimEvent( this, PLAYERANIMEVENT_CUSTOM_GESTURE, (int)activity );
+
 	// Stale bookkeeping: the layer finished (autokill) since the slot was
 	// filled - forget it so the gesture can start again.
 	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && !IsValidLayer( m_iHL2SBSlotLayer[iSlot] ) )
@@ -1422,7 +1498,10 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 
 	if ( idealActivity == ACT_HL2MP_GESTURE_RANGE_ATTACK )
 	{
-		RestartGesture( Weapon_TranslateActivity( idealActivity ) );
+		// HL2SB (2026-10-02): routed through the funnel so the GMod gesture
+		// broadcast (TE PlayerAnimEvent) fires for the no-Lua-gamemode path
+		// too; the funnel applies Weapon_TranslateActivity itself.
+		HL2SB_AnimRestartGesture( GESTURE_SLOT_ATTACK_AND_RELOAD, idealActivity, true );
 
 		// HL2SB (2026-09-30): Lua SWEPs skip this.  CBaseCombatWeapon::
 		// SetActivity is Valve's own "Oh man..." hack -- it flips the weapon
@@ -1444,7 +1523,8 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 	}
 	else if ( idealActivity == ACT_HL2MP_GESTURE_RELOAD )
 	{
-		RestartGesture( Weapon_TranslateActivity( idealActivity ) );
+		// HL2SB (2026-10-02): funnel - same translation + gesture broadcast.
+		HL2SB_AnimRestartGesture( GESTURE_SLOT_ATTACK_AND_RELOAD, idealActivity, true );
 		return;
 	}
 	else

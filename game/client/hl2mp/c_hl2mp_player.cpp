@@ -7,6 +7,7 @@
 #include "cbase.h"
 #include "vcollide_parse.h"
 #include "c_hl2mp_player.h"
+#include "c_basetempentity.h"	// HL2SB: C_TEPlayerAnimEvent (GMod gesture broadcast)
 
 #include "view.h"
 #include "takedamageinfo.h"
@@ -40,8 +41,48 @@ extern void CAM_ToFirstPerson( void );
 
 // Don't alias here
 #if defined( CHL2MP_Player )
-#undef CHL2MP_Player	
+#undef CHL2MP_Player
 #endif
+
+// ============================================================================
+// HL2SB (2026-10-02): GMod gesture broadcast receiver - C_TEPlayerAnimEvent.
+//
+// The server excludes DT_BaseAnimatingOverlay::overlay_vars from
+// DT_HL2MP_Player, so this temp entity is the ONLY thing that makes other
+// players' gestures (attacks/reloads/act/land/chat) appear: it carries
+// (player handle, event, data) - zero layer data - and the client rebuilds
+// the layer locally via HL2SB_ClientDoAnimationEvent.  Structure mirrors the
+// in-tree CS/DOD C_TEPlayerAnimEvent; the body mirrors GMod's reference
+// PostDataUpdate (): handle -> entity, dormant check, dispatch.
+// ============================================================================
+class C_TEPlayerAnimEvent : public C_BaseTempEntity
+{
+public:
+	DECLARE_CLASS( C_TEPlayerAnimEvent, C_BaseTempEntity );
+	DECLARE_CLIENTCLASS();
+
+	virtual void PostDataUpdate( DataUpdateType_t updateType )
+	{
+		C_HL2MP_Player *pPlayer = dynamic_cast<C_HL2MP_Player *>( m_hPlayer.Get() );
+		if ( pPlayer && !pPlayer->IsDormant() )
+		{
+			pPlayer->HL2SB_ClientDoAnimationEvent( m_iEvent.Get(), m_nData.Get() );
+		}
+	}
+
+public:
+	CNetworkHandle( CBasePlayer, m_hPlayer );
+	CNetworkVar( int, m_iEvent );
+	CNetworkVar( int, m_nData );
+};
+
+IMPLEMENT_CLIENTCLASS_EVENT( C_TEPlayerAnimEvent, DT_TEPlayerAnimEvent, CTEPlayerAnimEvent );
+
+BEGIN_RECV_TABLE_NOBASE( C_TEPlayerAnimEvent, DT_TEPlayerAnimEvent )
+	RecvPropEHandle( RECVINFO( m_hPlayer ) ),
+	RecvPropInt( RECVINFO( m_iEvent ) ),
+	RecvPropInt( RECVINFO( m_nData ) )
+END_RECV_TABLE()
 
 LINK_ENTITY_TO_CLASS( player, C_HL2MP_Player );
 
@@ -684,6 +725,12 @@ const QAngle &C_HL2MP_Player::EyeAngles()
 //-----------------------------------------------------------------------------
 void C_HL2MP_Player::UpdateClientSideAnimation()
 {
+	// HL2SB (2026-10-02): advance the client-local gesture layers (GMod TE
+	// architecture).  This override runs for EVERY player - local and remote -
+	// through m_bClientSideAnimation, which is exactly the set of players whose
+	// locally-built gesture layers need their cycle driven.
+	HL2SB_ClientAdvanceGestures();
+
 	// HL2SB diagnostic: this override IS the client-side animation entry point for
 	// this entity (it deliberately does not chain to the base class, the same way
 	// C_CSPlayer does not), so the "was it called" counter has to live here.

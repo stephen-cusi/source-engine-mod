@@ -19,6 +19,7 @@
 
 #include "hl2mp_gamerules.h"
 #include "activitylist.h"
+#include "Multiplayer/multiplayer_animstate.h"	// HL2SB: GESTURE_SLOT_* + PlayerAnimEvent_t for the client gesture system
 
 // HL2SB diagnostic. Prints the body animation state of every HL2MP player once
 // per second, on both realms, so the "legs play a few frames then stop" class of
@@ -1125,6 +1126,289 @@ void CPlayerAnimState::Update()
 	}
 }
 
+#ifdef CLIENT_DLL
+// ============================================================================
+// HL2SB (2026-10-02): client-local gesture layers - GMod TE_PlayerAnimEvent
+// architecture.
+//
+// overlay_vars is excluded from DT_HL2MP_Player (hl2mp_player.cpp), so the
+// layers a remote player's model blends are NEVER decoded from the network:
+// each client builds them itself when the "PlayerAnimEvent" temp entity
+// arrives (C_TEPlayerAnimEvent in c_hl2mp_player.cpp ->
+// HL2SB_ClientDoAnimationEvent below).  The previous architecture networked
+// the layers and the client-side LATCH_ANIMATION_VAR interpolation zeroed
+// them on remote entities (probe: correct first frame, dead 10ms later) -
+// which is why nobody could see other players attack.
+//
+// Semantics follow the GMod/TF ported CMultiPlayerAnimState gesture-slot
+// machinery (game/shared/Multiplayer/multiplayer_animstate.cpp): one layer
+// per gesture slot, m_nOrder = slot, same-slot-same-activity restarts the
+// cycle, autokill removes the layer when the cycle completes.  Slot state is
+// keyed by entindex in file statics so the client class layout is untouched.
+// ============================================================================
+namespace HL2SBClientGesture
+{
+	struct SlotState_t
+	{
+		Activity	m_iActivity;
+		int			m_iSequence;
+		bool		m_bActive;
+		bool		m_bAutoKill;
+	};
+
+	// GESTURE_SLOT_COUNT gesture slots + one dedicated noclip slot (its layer
+	// is persistent and must not fight CUSTOM gestures for a slot).
+	enum { NOCLIP_SLOT = GESTURE_SLOT_COUNT, SLOT_COUNT = GESTURE_SLOT_COUNT + 1 };
+
+	static SlotState_t s_pSlots[MAX_PLAYERS + 1][SLOT_COUNT];
+
+	static void ClearSlot( int iEnt, int iSlot )
+	{
+		if ( iEnt <= 0 || iEnt > MAX_PLAYERS || iSlot < 0 || iSlot >= SLOT_COUNT )
+			return;
+		s_pSlots[iEnt][iSlot].m_bActive = false;
+		s_pSlots[iEnt][iSlot].m_iActivity = ACT_INVALID;
+		s_pSlots[iEnt][iSlot].m_iSequence = 0;
+		s_pSlots[iEnt][iSlot].m_bAutoKill = false;
+	}
+}
+
+// Sizes the (client-only) overlay vector the first time a gesture is needed.
+// The vector grows WITHOUT m_iv_AnimOverlay - that is fine: no overlay decode
+// can arrive for players anymore, so CheckForLayerChanges' interpolation loop
+// (bounded by m_iv_AnimOverlay.Count()) simply never runs for them.
+static void HL2SB_ClientEnsureOverlaySlots( C_HL2MP_Player *pPlayer )
+{
+	if ( pPlayer->GetNumAnimOverlays() < HL2SBClientGesture::SLOT_COUNT )
+	{
+		pPlayer->SetNumAnimOverlays( HL2SBClientGesture::SLOT_COUNT );
+		for ( int k = 0; k < C_BaseAnimatingOverlay::MAX_OVERLAYS; k++ )
+			pPlayer->m_flOverlayPrevEventCycle[k] = -1.0f;
+	}
+}
+
+// Low-level layer write used by RestartGesture and the noclip layer.
+// GMod's CLIENT AddToGestureSlot writes the layer fields directly (ported
+// multiplayer_animstate.cpp CLIENT branch) - no AddGestureSequence needed.
+void CHL2MP_Player::HL2SB_ClientSetLayerSequence( int iSlot, int iSequence, Activity activity, bool bAutoKill, float flPlaybackRate )
+{
+	int iEnt = entindex();
+	if ( iEnt <= 0 || iEnt > MAX_PLAYERS )
+		return;
+	if ( iSlot < 0 || iSlot >= HL2SBClientGesture::SLOT_COUNT || iSequence <= 0 )
+		return;
+
+	HL2SB_ClientEnsureOverlaySlots( this );
+	if ( iSlot >= GetNumAnimOverlays() )	// belt+braces after ensure
+		return;
+
+	C_AnimationLayer *pLayer = GetAnimOverlay( iSlot );
+	pLayer->m_nSequence = iSequence;
+	pLayer->m_nOrder = iSlot;
+	pLayer->m_flWeight = 1.0f;
+	pLayer->m_flPlaybackRate = flPlaybackRate;
+	pLayer->m_flCycle = 0.0f;
+	pLayer->m_flPrevCycle = 0.0f;
+	pLayer->m_flLayerAnimtime = 0.0f;
+	pLayer->m_flLayerFadeOuttime = 0.0f;
+	pLayer->m_flBlendIn = 0.0f;
+	pLayer->m_flBlendOut = 0.0f;
+	pLayer->m_bClientBlend = false;
+	m_flOverlayPrevEventCycle[iSlot] = -1.0f;
+
+	HL2SBClientGesture::SlotState_t &s = HL2SBClientGesture::s_pSlots[iEnt][iSlot];
+	s.m_bActive = true;
+	s.m_iActivity = activity;
+	s.m_iSequence = iSequence;
+	s.m_bAutoKill = bAutoKill;
+
+	if ( hl2sb_anim_debug.GetBool() )
+	{
+		Msg( "[HL2SB gesture/cl] LOCAL LAYER: ent=%d slot=%d seq=%d act=%s autokill=%d\n",
+			 iEnt, iSlot, iSequence, ActivityList_NameForIndex( (int)activity ), bAutoKill ? 1 : 0 );
+	}
+}
+
+// GMod CMultiPlayerAnimState::RestartGesture semantics: same slot + same
+// activity = restart the cycle (replay), otherwise replace the layer.
+void CHL2MP_Player::HL2SB_ClientRestartGesture( int iSlot, Activity activity, bool bAutoKill )
+{
+	int iEnt = entindex();
+	if ( iEnt <= 0 || iEnt > MAX_PLAYERS )
+		return;
+	if ( iSlot < 0 || iSlot >= HL2SBClientGesture::SLOT_COUNT || activity <= ACT_INVALID )
+		return;
+
+	int iSequence = SelectWeightedSequence( activity );
+	if ( iSequence <= 0 )
+	{
+		if ( hl2sb_anim_debug.GetBool() )
+		{
+			Msg( "[HL2SB gesture/cl] NO SEQUENCE: ent=%d slot=%d act=%s (model %s lacks it)\n",
+				 iEnt, iSlot, ActivityList_NameForIndex( (int)activity ),
+				 GetModelPtr() ? GetModelPtr()->pszName() : "?" );
+		}
+		return;
+	}
+
+	HL2SBClientGesture::SlotState_t &s = HL2SBClientGesture::s_pSlots[iEnt][iSlot];
+	if ( s.m_bActive && s.m_iActivity == activity && s.m_iSequence == iSequence
+		 && iSlot < GetNumAnimOverlays() && (int)GetAnimOverlay( iSlot )->m_nSequence == iSequence )
+	{
+		// replay: the gesture an active slot is ALREADY playing restarts
+		// its cycle (GMod RestartGesture), so rapid fire re-animates.
+		GetAnimOverlay( iSlot )->m_flCycle = 0.0f;
+		GetAnimOverlay( iSlot )->m_flPrevCycle = 0.0f;
+		m_flOverlayPrevEventCycle[iSlot] = -1.0f;
+		return;
+	}
+
+	HL2SB_ClientSetLayerSequence( iSlot, iSequence, activity, bAutoKill, 1.0f );
+}
+
+void CHL2MP_Player::HL2SB_ClientResetGestureSlot( int iSlot )
+{
+	int iEnt = entindex();
+	if ( iEnt <= 0 || iEnt > MAX_PLAYERS )
+		return;
+	if ( iSlot < 0 || iSlot >= HL2SBClientGesture::SLOT_COUNT )
+		return;
+
+	HL2SBClientGesture::ClearSlot( iEnt, iSlot );
+
+	if ( iSlot < GetNumAnimOverlays() )
+	{
+		C_AnimationLayer *pLayer = GetAnimOverlay( iSlot );
+		pLayer->m_flWeight = 0.0f;
+		pLayer->m_nOrder = C_BaseAnimatingOverlay::MAX_OVERLAYS;
+		pLayer->m_nSequence = 0;
+		pLayer->m_flCycle = 0.0f;
+		pLayer->m_flPrevCycle = 0.0f;
+	}
+}
+
+// TE receiver entry: GMod's CHL2MPPlayerAnimState::DoAnimationEvent switch
+// (reference  + the ported base-class cases), reduced to the
+// events this fork actually emits.  CUSTOM_GESTURE - what the server funnel
+// broadcasts - lands in GESTURE_SLOT_CUSTOM exactly like GMod's
+// CMultiPlayerAnimState::DoAnimationEvent CUSTOM_GESTURE case.
+void CHL2MP_Player::HL2SB_ClientDoAnimationEvent( int event, int nData )
+{
+	bool bDucking = ( GetFlags() & FL_DUCKING ) != 0;
+
+	switch ( event )
+	{
+	case PLAYERANIMEVENT_ATTACK_PRIMARY:
+		HL2SB_ClientRestartGesture( GESTURE_SLOT_ATTACK_AND_RELOAD,
+			bDucking ? ACT_MP_ATTACK_CROUCH_PRIMARYFIRE : ACT_MP_ATTACK_STAND_PRIMARYFIRE, true );
+		break;
+
+	case PLAYERANIMEVENT_ATTACK_SECONDARY:
+		HL2SB_ClientRestartGesture( GESTURE_SLOT_ATTACK_AND_RELOAD,
+			bDucking ? ACT_MP_ATTACK_CROUCH_SECONDARYFIRE : ACT_MP_ATTACK_STAND_SECONDARYFIRE, true );
+		break;
+
+	case PLAYERANIMEVENT_ATTACK_GRENADE:
+		HL2SB_ClientRestartGesture( GESTURE_SLOT_GRENADE, ACT_MP_ATTACK_STAND_GRENADE, true );
+		break;
+
+	case PLAYERANIMEVENT_RELOAD:
+		HL2SB_ClientRestartGesture( GESTURE_SLOT_ATTACK_AND_RELOAD,
+			bDucking ? ACT_MP_RELOAD_CROUCH : ACT_MP_RELOAD_STAND, true );
+		break;
+
+	case PLAYERANIMEVENT_RELOAD_LOOP:
+		HL2SB_ClientRestartGesture( GESTURE_SLOT_ATTACK_AND_RELOAD,
+			bDucking ? ACT_MP_RELOAD_CROUCH_LOOP : ACT_MP_RELOAD_STAND_LOOP, true );
+		break;
+
+	case PLAYERANIMEVENT_RELOAD_END:
+		HL2SB_ClientRestartGesture( GESTURE_SLOT_ATTACK_AND_RELOAD,
+			bDucking ? ACT_MP_RELOAD_CROUCH_END : ACT_MP_RELOAD_STAND_END, true );
+		break;
+
+	case PLAYERANIMEVENT_CUSTOM_GESTURE:
+		// The funnel broadcasts (CUSTOM_GESTURE, activity); raw
+		// DoCustomAnimEvent traffic lands here too.  GMod's ported base
+		// class puts these in GESTURE_SLOT_CUSTOM.
+		HL2SB_ClientRestartGesture( GESTURE_SLOT_CUSTOM, (Activity)nData, true );
+		break;
+
+	default:
+		// JUMP/DIE/SPAWN/FLINCH etc: the fork's remote main-sequence state
+		// (jump pose, ragdoll) is already networked through m_nSequence, so
+		// these need no client gesture - identical net result to before the
+		// TE port.  Log under the debug switch instead of dropping silently.
+		if ( hl2sb_anim_debug.GetBool() )
+		{
+			Msg( "[HL2SB gesture/cl] unhandled event=%d data=%d (ent=%d)\n",
+				 event, nData, entindex() );
+		}
+		break;
+	}
+}
+
+// Called every frame from C_HL2MP_Player::UpdateClientSideAnimation, which
+// runs for EVERY player (local and remote) through m_bClientSideAnimation.
+// Mirrors the ported CMultiPlayerAnimState::UpdateGestureLayer CLIENT branch:
+// advance the cycle, autokill-remove when it completes.
+void CHL2MP_Player::HL2SB_ClientAdvanceGestures( void )
+{
+	int iEnt = entindex();
+	if ( iEnt <= 0 || iEnt > MAX_PLAYERS )
+		return;
+	if ( GetNumAnimOverlays() <= 0 )
+		return;
+
+	float flInterval = gpGlobals->frametime;
+	if ( flInterval <= 0.0f )
+		return;
+
+	CStudioHdr *pHdr = GetModelPtr();
+
+	for ( int iSlot = 0; iSlot < HL2SBClientGesture::SLOT_COUNT; iSlot++ )
+	{
+		HL2SBClientGesture::SlotState_t &s = HL2SBClientGesture::s_pSlots[iEnt][iSlot];
+		if ( !s.m_bActive )
+			continue;
+		if ( iSlot >= GetNumAnimOverlays() )
+		{
+			HL2SBClientGesture::ClearSlot( iEnt, iSlot );
+			continue;
+		}
+
+		C_AnimationLayer *pLayer = GetAnimOverlay( iSlot );
+		// Model changed (playermodel switch resets the layers in OnNewModel)
+		// - drop the bookkeeping; self-healing.
+		if ( (int)pLayer->m_nSequence <= 0 || (int)pLayer->m_nOrder != iSlot )
+		{
+			HL2SBClientGesture::ClearSlot( iEnt, iSlot );
+			continue;
+		}
+		if ( !pHdr )
+			continue;
+
+		float flCycle = pLayer->m_flCycle
+			+ GetSequenceCycleRate( pHdr, pLayer->m_nSequence ) * flInterval
+			* pLayer->m_flPlaybackRate;
+
+		pLayer->m_flPrevCycle = pLayer->m_flCycle;
+		pLayer->m_flCycle = flCycle;
+
+		if ( flCycle > 1.0f )
+		{
+			if ( s.m_bAutoKill )
+			{
+				// GMod: RunGestureSlotAnimEventsToCompletion + ResetGestureSlot.
+				HL2SB_ClientResetGestureSlot( iSlot );
+				continue;
+			}
+			pLayer->m_flCycle = 1.0f;
+		}
+	}
+}
+#endif	// CLIENT_DLL
+
 //-----------------------------------------------------------------------------
 // HL2SB: GMod's noclip pose.
 //
@@ -1179,11 +1463,13 @@ void CPlayerAnimState::UpdateNoclipLayer( void )
 	if ( bNoclipping && ( iSequence > 0 ) )
 	{
 #ifdef CLIENT_DLL
-		// HL2SB: nothing to do on the client. The server branch below puts the pose
-		// into the player's overlay layer and DT_BaseAnimatingOverlay networks it -
-		// writing a local layer instead (the first attempt, which also called
-		// SetNumAnimOverlays) got clobbered by the next networked decode and was the
-		// crash of 20260915_094606.
+		// HL2SB (2026-10-02): overlay_vars is excluded from the send table
+		// now (GMod architecture), so the networked decode that clobbered the
+		// first client-side attempt - and crashed the 20260915_094606 dump -
+		// can no longer arrive.  Build the persistent layer locally, held at
+		// cycle 0 with playback rate 0 (upper-body hold pose).
+		pPlayer->HL2SB_ClientSetLayerSequence( HL2SBClientGesture::NOCLIP_SLOT,
+			iSequence, ACT_GMOD_NOCLIP_LAYER, false, 0.0f );
 #else
 		m_iHL2SBNoclipLayer = pPlayer->AddLayeredSequence( iSequence, 0 );
 		pPlayer->SetLayerCycle( m_iHL2SBNoclipLayer, 0.0f, 0.0f );
@@ -1195,7 +1481,9 @@ void CPlayerAnimState::UpdateNoclipLayer( void )
 	}
 	else if ( !bNoclipping )
 	{
-#ifndef CLIENT_DLL
+#ifdef CLIENT_DLL
+		pPlayer->HL2SB_ClientResetGestureSlot( HL2SBClientGesture::NOCLIP_SLOT );
+#else
 		if ( m_iHL2SBNoclipLayer >= 0 )
 			pPlayer->RemoveLayer( m_iHL2SBNoclipLayer, 0.0f, 0.0f );
 

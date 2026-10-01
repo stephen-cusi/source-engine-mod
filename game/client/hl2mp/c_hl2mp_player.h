@@ -120,6 +120,17 @@ public:
 	C_BaseEntity	*HL2SB_GetHandsEntity( void ) { return m_hHands; }
 	void			HL2SB_SetHandsEntity( C_BaseEntity *pEnt ) { m_hHands = pEnt; }
 
+	// HL2SB (2026-10-02): client-local gesture layers (GMod TE_PlayerAnimEvent
+	// architecture - overlay_vars is excluded from the player send table, so
+	// every client builds the layers itself; implementations in
+	// hl2mp_player_shared.cpp, driven by C_TEPlayerAnimEvent in
+	// c_hl2mp_player.cpp and the Lua Anim* bindings).
+	void	HL2SB_ClientRestartGesture( int iSlot, Activity activity, bool bAutoKill );
+	void	HL2SB_ClientSetLayerSequence( int iSlot, int iSequence, Activity activity, bool bAutoKill, float flPlaybackRate );
+	void	HL2SB_ClientResetGestureSlot( int iSlot );
+	void	HL2SB_ClientDoAnimationEvent( int event, int nData );
+	void	HL2SB_ClientAdvanceGestures( void );
+
 	// HL2SB: remaining GMod Player knobs, stored for the Lua bindings (see the
 	// server header for the v1 scope note).
 	float			m_flHL2SBCrouchedWalkSpeed;
