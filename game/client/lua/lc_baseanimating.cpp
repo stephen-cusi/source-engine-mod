@@ -100,6 +100,8 @@ static studiohdr_t *HL2SB_GetStudioHdrSafe( const C_BaseAnimating *pEntity )
 
 // Called from C_BaseAnimating::SetupBones via a local extern declaration
 // (AGENTS.md: avoid touching headers - waf does not propagate them).
+static bool s_bInEntityCallbacks = false;
+
 void HL2SB_RunEntityCallbacks( C_BaseAnimating *pEntity, const char *pszName )
 {
 	// HL2SB (2026-09-24 crash): the dispatch MUST be re-entrancy guarded.  The
@@ -110,7 +112,8 @@ void HL2SB_RunEntityCallbacks( C_BaseAnimating *pEntity, const char *pszName )
 	// callback again, and the cycle recursed until the corrupted walk died in
 	// engine.dll!CModelInfo::GetStudiomodel (engine.log: the same 7 client.dll
 	// frames repeating 4x).  One level only, same rule as GMod's own dispatch.
-	static bool s_bInEntityCallbacks = false;
+	// HL2SB (2026-10-03): hoisted to file scope - the bone-manipulation
+	// immediate write consults it to recognise callback context.
 	if ( s_bInEntityCallbacks || L == NULL || pEntity == NULL || s_EntityCallbacks.Count() == 0 )
 		return;
 
@@ -192,15 +195,39 @@ static HL2SB_BoneManip_t *HL2SB_FindBoneManip( C_BaseAnimating *pEntity, int nBo
 	return &manip;
 }
 
-static void HL2SB_ApplyBoneManipEntry( C_BaseAnimating *pEntity, HL2SB_BoneManip_t &manip )
+// bBonesReady: called from the C_BaseAnimating::SetupBones tail, where the
+// bone array under construction is already allocated and filled - the write
+// happens in place and NO SetupBones call may happen here: the tail itself
+// lives inside SetupBones, so calling it again is unbounded recursion (the
+// 1MB-stack-eating crash when the minecraft SWEP manipulated every bone).
+// The !bBonesReady path serves the immediate write from the Lua bindings.
+static void HL2SB_ApplyBoneManipEntry( C_BaseAnimating *pEntity, HL2SB_BoneManip_t &manip, bool bBonesReady )
 {
 	if ( manip.nLastAppliedFrame == gpGlobals->framecount )
 		return;
 	studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
 	if ( pHdr == NULL || manip.nBone < 0 || manip.nBone >= pHdr->numbones )
 		return;
-	if ( !pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
-		return;
+
+	if ( !bBonesReady )
+	{
+		// Mid-setup (a BuildBonePositions callback manipulating its own
+		// bones): the array is already being written, fall through to the
+		// in-place write like the reference behaviour does.
+		// s_bInEntityCallbacks covers the BuildBonePositions callback (the
+		// EFL is already cleared by the time the tail runs).
+		if ( !pEntity->IsEFlagSet( EFL_SETTING_UP_BONES ) && !s_bInEntityCallbacks )
+		{
+			// Outside bone setup: complete a full SetupBones first.  Its tail
+			// walks every stored manipulation through the bBonesReady path
+			// above (this entry included, stamped); if an early-out skipped
+			// the tail the bones still exist and the write below is safe.
+			if ( !pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
+				return;	// bones could not be set up - the array may be invalid
+			if ( manip.nLastAppliedFrame == gpGlobals->framecount )
+				return;
+		}
+	}
 
 	matrix3x4_t &bone = pEntity->GetBoneForWrite( manip.nBone );
 	if ( manip.bHasPos )
@@ -233,7 +260,7 @@ void HL2SB_ApplyBoneManipulations( C_BaseAnimating *pEntity )
 			continue;
 		}
 		if ( s_BoneManips[i].hEntity == pEntity )
-			HL2SB_ApplyBoneManipEntry( pEntity, s_BoneManips[i] );
+			HL2SB_ApplyBoneManipEntry( pEntity, s_BoneManips[i], true );
 	}
 }
 
@@ -732,7 +759,7 @@ static int CBaseAnimating_ManipulateBoneScale (lua_State *L) {
   pManip->bHasScale = true;
 
   if ( bImmediate )
-    HL2SB_ApplyBoneManipEntry( pEntity, *pManip );
+    HL2SB_ApplyBoneManipEntry( pEntity, *pManip, false );
   return 0;
 }
 
@@ -1134,7 +1161,7 @@ static int CBaseAnimating_ManipulateBonePosition (lua_State *L) {
   pManip->bHasPos = true;
 
   if ( bImmediate )
-    HL2SB_ApplyBoneManipEntry( pEntity, *pManip );
+    HL2SB_ApplyBoneManipEntry( pEntity, *pManip, false );
   return 0;
 }
 
