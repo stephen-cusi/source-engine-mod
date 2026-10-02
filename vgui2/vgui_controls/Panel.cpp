@@ -4276,6 +4276,18 @@ void Panel::InternalPerformLayout()
 	PerformDocking();
 
 	PerformLayout();
+
+	// HL2SB: a Lua PerformLayout routinely resizes a docked child - GMod's own
+	// DNumSlider sets its label to 1/2.4 of the row, DForm rows size their
+	// wrappers - which leaves the dock rectangles computed above stale for the
+	// remaining children (the FILL child keeps a boundary computed from the
+	// child's pre-resize width, so the slider runs under the label).  GMod
+	// re-docks from its bounds-changed panel flag on the next layout pass;
+	// re-run the dock pass here once instead so the children settle within
+	// this same frame.  The second pass is bounded: it only repositions the
+	// same docked children, and SetPos/SetSize no-op when nothing moved.
+	PerformDocking();
+
 	_flags.ClearFlag( IN_PERFORM_LAYOUT );
 }
 
