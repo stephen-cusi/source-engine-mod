@@ -362,6 +362,12 @@ struct HL2SB_ImageColorCache_t
 
 static CUtlVector< HL2SB_ImageColorCache_t * > s_ImageColorCache;
 
+// s_ImageColorCache is a bare CUtlVector and stb_image keeps its failure state
+// in a file-scope global, so the miss path (append + decode) has to be
+// serialised - a second thread would otherwise push a duplicate entry and the
+// two decodes would scribble over each other (issue #41, 7.4).
+static CThreadFastMutex s_ImageColorCacheMutex;
+
 static const char *s_pImageTextureExtensions[] = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
 
 // HL2SB: case-insensitive "does pName end with pExt".
@@ -391,6 +397,8 @@ static HL2SB_ImageColorCache_t *HL2SB_GetImageColorCache( const char *pTextureNa
 {
     if ( !pTextureName || !pTextureName[0] )
         return NULL;
+
+    AUTO_LOCK( s_ImageColorCacheMutex );
 
     HL2SB_ImageColorCache_t *pCached = HL2SB_FindCachedImage( pTextureName );
     if ( pCached )
@@ -467,10 +475,16 @@ struct HL2SB_ImageMaterial_t
 
 static CUtlVector< HL2SB_ImageMaterial_t > s_ImageMaterials;
 
+// s_ImageMaterials is a bare CUtlVector; two Material("x.png") calls from
+// different threads would race the push_back against the linear scan above.
+static CThreadFastMutex s_ImageMaterialsMutex;
+
 // Returns NULL when pMaterialName is not a loadable image file.  pMaterialName
 // must carry the extension ("nyan/cat.png"), which is GMod's documented form.
 static IMaterial *HL2SB_FindOrCreateImageMaterial( const char *pMaterialName )
 {
+    AUTO_LOCK( s_ImageMaterialsMutex );
+
     for ( int i = 0; i < s_ImageMaterials.Count(); ++i )
     {
         if ( !Q_stricmp( s_ImageMaterials[i].m_szName, pMaterialName ) )

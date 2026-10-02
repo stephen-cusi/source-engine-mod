@@ -2054,6 +2054,19 @@ ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const 
 	if ( !g_pFullFileSystem->FileExists( szVTFFile, "GAME" ) &&
 		 HL2SB_ResolveImageTexture( pTextureName, szImageName, sizeof( szImageName ) ) )
 	{
+		// AsyncFindOrLoadTexture inserts its result under the material lock
+		// while we hold no lock here, so a second arrival can miss the
+		// dictionary lookup the caller did and go on to decode the file and
+		// build a second procedural texture under one key.  Cheap re-check
+		// before paying for either (issue #41, 8.1).
+		//
+		// NOTE: CreateProceduralTexture already hands back a texture at
+		// refcount 1 (ctexture.cpp), so unlike a file texture this one cannot
+		// be swept by RemoveUnusedTextures() - no extra pin needed.
+		ITextureInternal *pExisting = FindTexture( pTextureName );
+		if ( pExisting )
+			return pExisting;
+
 		int nImageWidth = 0, nImageHeight = 0;
 		ITextureRegenerator *pImageRegenerator = HL2SB_CreateImageTextureRegenerator( szImageName, &nImageWidth, &nImageHeight );
 		if ( pImageRegenerator )
