@@ -99,6 +99,15 @@ static int filesystem_CreateDirHierarchy (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: file.CreateDir( path, pathID ) -- GMod's spelling of the
+// same operation (GMod creates intermediate directories too).  hitnumbers'
+// settings save and every addon that writes into a fresh data/ subfolder
+// calls this name.
+static int filesystem_CreateDir (lua_State *L) {
+  filesystem->CreateDirHierarchy(luaL_checkstring(L, 1), luaL_optstring(L, 2, 0));
+  return 0;
+}
+
 static int filesystem_DiscardPreloadData (lua_State *L) {
   filesystem->DiscardPreloadData();
   return 0;
@@ -341,6 +350,7 @@ static const luaL_Reg filesystemlib[] = {
   {"CancelWaitForResources",   filesystem_CancelWaitForResources},
   {"Close",   filesystem_Close},
   {"CreateDirHierarchy",   filesystem_CreateDirHierarchy},
+  {"CreateDir",   filesystem_CreateDir},
   {"DiscardPreloadData",   filesystem_DiscardPreloadData},
   {"Disconnect",   filesystem_Disconnect},
   {"EnableWhitelistFileTracking",   filesystem_EnableWhitelistFileTracking},

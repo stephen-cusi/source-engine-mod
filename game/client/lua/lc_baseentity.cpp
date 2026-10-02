@@ -275,11 +275,29 @@ static int CBaseEntity_StopParticlesInvolving (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: Entity:PrintMessage( type, message ) -- client realm.
+// GMod prints locally, routed per the HUD_PRINT_* type (chat, center,
+// console, notify).  The HUD routing lives with the chat panels and the
+// server-realm binding already delivers the real HUD print through the
+// recipient filter; here every type lands in the console so a client-side
+// call (hitnumbers' permission notice) is at least delivered instead of
+// dying on a missing method.
+static int CBaseEntity_PrintMessage (lua_State *L) {
+  luaL_checkentity(L, 1);
+  int nType = luaL_checkinteger(L, 2);
+  const char *pszMessage = luaL_checkstring(L, 3);
+
+  (void)nType;
+  Msg( "%s\n", pszMessage );
+  return 0;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"SpawnClientEntity", CBaseEntity_SpawnClientEntity},
   {"Interp_HierarchyUpdateInterpolationAmounts", CBaseEntity_Interp_HierarchyUpdateInterpolationAmounts},
   {"Init", CBaseEntity_Init},
   {"Term", CBaseEntity_Term},
+  {"PrintMessage", CBaseEntity_PrintMessage},
   {"EnableInToolView", CBaseEntity_EnableInToolView},
   {"IsEnabledInToolView", CBaseEntity_IsEnabledInToolView},
   {"SetToolRecording", CBaseEntity_SetToolRecording},

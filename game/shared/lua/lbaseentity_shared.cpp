@@ -21,9 +21,11 @@
 #ifdef CLIENT_DLL
 #include "lc_baseanimating.h"
 #include "lc_recipientfilter.h"
+#include "c_baseplayer.h"			// HL2SB: Entity:GetViewEntity (C_BasePlayer::GetLocalPlayer)
 #include "view.h"					// CurrentViewOrigin - the global EyePos()
 #else
 #include "lbaseanimating.h"
+#include "player.h"					// HL2SB: Entity:GetViewEntity (CBasePlayer::m_hViewEntity)
 #ifdef CLIENT_DLL
 #include "c_baseflex.h"
 #else
@@ -1305,6 +1307,34 @@ static int CBaseEntity_GetSolid (lua_State *L) {
 static int CBaseEntity_GetSolidFlags (lua_State *L) {
   lua_pushinteger(L, luaL_checkentity(L, 1)->GetSolidFlags());
   return 1;
+}
+
+// HL2SB GMod compat: Entity:GetViewEntity() -- the entity the player is
+// seeing through when a camera entity overrides their eyes, NULL otherwise.
+// Servers answer from the player's own m_hViewEntity; on the client only the
+// local player's answer is knowable (the engine's current view entity), any
+// other entity reports NULL, which is what the branching addons expect.
+static int CBaseEntity_GetViewEntity (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+#ifdef CLIENT_DLL
+  C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+  if ( pLocal != NULL && pEntity == pLocal )
+  {
+      CBaseEntity *pCamera = cl_entitylist->GetEnt( render->GetViewEntity() );
+      lua_pushentity( L, pCamera );
+      return 1;
+  }
+  lua_pushentity( L, NULL );
+  return 1;
+#else
+  if ( pEntity->IsPlayer() )
+  {
+      lua_pushentity( L, static_cast< CBasePlayer * >( pEntity )->GetViewEntity() );
+      return 1;
+  }
+  lua_pushentity( L, NULL );
+  return 1;
+#endif
 }
 
 static int CBaseEntity_GetSoundDuration (lua_State *L) {
@@ -4829,6 +4859,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetTracerAttachment", CBaseEntity_GetTracerAttachment},
   {"GetTracerType", CBaseEntity_GetTracerType},
   {"GetVectors", CBaseEntity_GetVectors},
+  {"GetViewEntity", CBaseEntity_GetViewEntity},
   {"GetViewOffset", CBaseEntity_GetViewOffset},
   {"GetWaterLevel", CBaseEntity_GetWaterLevel},
   // HL2SB GMod compat (2026-09-25): GMod spells it Entity:WaterLevel() (0 dry,

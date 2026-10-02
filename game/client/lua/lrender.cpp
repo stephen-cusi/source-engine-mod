@@ -820,9 +820,16 @@ static int cam_End (lua_State *L) {
   return 0;
 }
 
-// cam.IgnoreZ( ignore ) -- this branch's IMatRenderContext has no SetIgnoreZ;
-// accepted and no-op'd (halo.lua defaults ignorez=false anyway).
+// cam.IgnoreZ( ignore ) -- depth override for subsequent 2D/3D2D draws.
+// Reference behavior (GMod): the context's depth range is clamped to
+// (0, 0.01) while ignored -- everything drawn afterwards maps to the near
+// plane, so already-rendered geometry cannot occlude it -- and restored to
+// (0, 1) when the override is lifted.
 static int cam_IgnoreZ (lua_State *L) {
+  bool bIgnore = lua_toboolean( L, 1 ) != 0;
+
+  CMatRenderContextPtr pRenderContext( materials );
+  pRenderContext->DepthRange( 0.0f, bIgnore ? 0.01f : 1.0f );
   return 0;
 }
 
