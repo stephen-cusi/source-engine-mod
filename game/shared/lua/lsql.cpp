@@ -19,9 +19,9 @@
 //     false and records sql.m_strError
 //   * sql.QueryTyped runs a single statement with "?" parameters bound from
 //     the Lua arguments (nil, boolean, integer, number, string) and returns
-//     typed values, always a table (empty when nothing matched); INTEGER
-//     values beyond double precision come back formatted as strings, and an
-//     INTEGER column named "bool"/"boolean" comes back as a boolean
+//     typed values, always a table (empty when nothing matched); an INTEGER
+//     column whose declared type is bool/boolean comes back as a boolean,
+//     and integers beyond double precision come back formatted as strings
 //
 // Only plain C library surface is used (sqlite3 + the engine game dir), so
 // this builds unchanged on every platform the game DLLs build for.
@@ -241,12 +241,13 @@ static int sql_QueryTyped( lua_State *L )
 				case SQLITE_INTEGER:
 				{
 					sqlite3_int64 iValue = sqlite3_column_int64( pStmt, c );
-					// Reference quirk kept: an INTEGER column named
-					// "bool"/"boolean" comes back as a Lua boolean.
-					const unsigned char *pszText = sqlite3_column_text( pStmt, c );
-					if ( pszText != NULL &&
-						( Q_stricmp( ( const char * )pszText, "bool" ) == 0 ||
-						  Q_stricmp( ( const char * )pszText, "boolean" ) == 0 ) )
+					// Reference quirk kept: an INTEGER column whose DECLARED
+					// type (sqlite3_column_decltype) is "bool"/"boolean",
+					// case-insensitively, comes back as a Lua boolean.
+					const char *pszType = sqlite3_column_decltype( pStmt, c );
+					if ( pszType != NULL &&
+						( Q_stricmp( pszType, "bool" ) == 0 ||
+						  Q_stricmp( pszType, "boolean" ) == 0 ) )
 					{
 						lua_pushboolean( L, iValue != 0 );
 					}
