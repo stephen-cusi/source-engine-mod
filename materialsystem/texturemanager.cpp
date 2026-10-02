@@ -2067,7 +2067,16 @@ ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const 
 		// m_TextureList stay lock-free elsewhere (unchanged engine behavior).
 		AUTO_LOCK( HL2SB_ImageDecodeMutex() );
 
+		// HL2SB (2026-10-03): per-arrival trace behind hl2sb_image_debug.
+		// ThreadGetCurrentId separates the resolver threads; the dict verdict
+		// says whether this arrival hit the entry the previous arrival
+		// inserted (hit -> return, no decode) or genuinely had to decode.
+		extern ConVar hl2sb_image_debug;
+		const bool bImgDbg = hl2sb_image_debug.GetBool();
 		ITextureInternal *pExisting = FindTexture( pTextureName );
+		if ( bImgDbg )
+			Msg( "[HL2SB imgdb] tid=%u raw='%s' dict=%s\n",
+				( unsigned )ThreadGetCurrentId(), pTextureName, pExisting ? "HIT" : "miss" );
 		if ( pExisting )
 			return pExisting;
 

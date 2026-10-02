@@ -786,6 +786,12 @@ InitReturnVal_t CMaterialSystem::Init()
 	if ( nRetVal != INIT_OK )
 		return nRetVal;
 
+	// HL2SB (2026-10-03): identity stamp for the image-texture path.  User
+	// test sessions must be able to prove WHICH materialsystem.dll they ran -
+	// file mtimes have been ambiguous twice now (a deployed DLL is not
+	// necessarily the binary that produced a given engine.log).
+	Msg( "[HL2SB] materialsystem image-cache build %s %s rev %d\n", __DATE__, __TIME__, HL2SB_IMAGECACHE_BUILD_REV );
+
 	// NOTE! : Overbright is 1.0 so that Hammer will work properly with the white bumped and unbumped lightmaps.
 	MathLib_Init( 2.2f, 2.2f, 0.0f, 2.0f );
 

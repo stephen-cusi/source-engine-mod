@@ -49,4 +49,10 @@ ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalNa
 // freshly inserted dictionary entry instead of decoding the same file again.
 CThreadFastMutex &HL2SB_ImageDecodeMutex();
 
+// HL2SB (2026-10-03): source-tree revision of the image-texture path.  Bump
+// whenever this file or the LoadTexture image branch changes; the value is
+// printed at material system init ("[HL2SB] materialsystem image-cache build
+// ...") so a user test session can prove which build it ran.
+#define HL2SB_IMAGECACHE_BUILD_REV 5
+
 #endif // HL2SB_PNGTEXTURE_H

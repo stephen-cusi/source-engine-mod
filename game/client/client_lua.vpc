@@ -75,6 +75,9 @@ $Project "Client (HL2SB)"
 		// HL2SB: ported from Experiment: Source (render.* and ITexture userdata)
 		$File "lua/litexture.cpp"
 		$File "lua/lrender.cpp"
+		// HL2SB: hl2sb_framestats per-second frame profile (hl2sb_framestats 1)
+		$File "hl2sb_framestats.cpp"
+		$File "hl2sb_framestats.h"
 		// HL2SB: GMod's lua/effects/*.lua runtime (EFFECT:Init/Think/Render)
 		$File "lua/lua_effects.cpp"
 		// HL2SB: GMod's effects.* C functions (Bubbles/BubbleTrail/BeamRingPoint)

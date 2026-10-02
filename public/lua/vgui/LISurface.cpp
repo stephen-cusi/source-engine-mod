@@ -20,6 +20,7 @@
 #include "lua/materialsystem/limaterial.h"
 #include "vgui/IInput.h"
 #include "ienginevgui.h"
+#include "hl2sb_framestats.h"	// HL2SB: hl2sb_framestats surface draw counter
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -287,6 +288,7 @@ static int surface_CreatePopup (lua_State *L) {
 }
 
 static int surface_DrawFilledRect (lua_State *L) {
+  HL2SB_FrameStats_AddSurfaceDraw();
   surface()->DrawFilledRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
   return 0;
 }
@@ -345,11 +347,13 @@ static int surface_DrawOutlinedCircle (lua_State *L) {
 }
 
 static int surface_DrawOutlinedRect (lua_State *L) {
+  HL2SB_FrameStats_AddSurfaceDraw();
   surface()->DrawOutlinedRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
   return 0;
 }
 
 static int surface_DrawPrintText (lua_State *L) {
+  HL2SB_FrameStats_AddSurfaceDraw();
   const char *sz = luaL_checkstring(L, 1);
   int bufSize = (strlen( sz ) + 1 ) * sizeof(wchar_t);
   wchar_t *wbuf = static_cast<wchar_t *>( _alloca( bufSize ) );
@@ -536,11 +540,13 @@ static int surface_DrawSetTextureFile (lua_State *L) {
 }
 
 static int surface_DrawTexturedRect (lua_State *L) {
+  HL2SB_FrameStats_AddSurfaceDraw();
   surface()->DrawTexturedRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
   return 0;
 }
 
 static int surface_DrawTexturedSubRect (lua_State *L) {
+  HL2SB_FrameStats_AddSurfaceDraw();
   surface()->DrawTexturedSubRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checknumber(L, 5), luaL_checknumber(L, 6), luaL_checknumber(L, 7), luaL_checknumber(L, 8));
   return 0;
 }
@@ -588,6 +594,7 @@ static int surface_DrawTexturedRectUV (lua_State *L) {
 // fonts, which live in a shared page and are never drawn through this path.
 // ---------------------------------------------------------------------------
 static int surface_DrawTexturedRectRotated (lua_State *L) {
+  HL2SB_FrameStats_AddSurfaceDraw();
   const float flX  = (float)luaL_checknumber(L, 1);
   const float flY  = (float)luaL_checknumber(L, 2);
   const float flW  = (float)luaL_checknumber(L, 3);

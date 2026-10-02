@@ -18,6 +18,7 @@
 #include "tier0/threadtools.h"
 #include "tier1/utlvector.h"
 #include "utlbuffer.h"
+#include "convar.h"
 #include "filesystem.h"
 #include "bitmap/imageformat.h"
 #include "pixelwriter.h"
@@ -66,6 +67,18 @@ bool HL2SB_IsImageFileName( const char *pFileName )
 
 	return false;
 }
+
+//-----------------------------------------------------------------------------
+// HL2SB (2026-10-03): set to 1 before loading an addon to trace every image
+// texture resolution: thread id, raw requested name, dictionary verdict and
+// whether the pixels came from the on-disk cache or a fresh decode.  The
+// engine log alone (the "[HL2SB] image texture" Msg in LoadTexture) cannot
+// distinguish these, which is how 35/35 PNGs double-decoded for two rounds
+// without the funnel becoming visible.
+//-----------------------------------------------------------------------------
+ConVar hl2sb_image_debug(
+	"hl2sb_image_debug", "0", 0,
+	"Trace image texture loads (thread id, name, dictionary hit, disk cache vs decode)." );
 
 //-----------------------------------------------------------------------------
 // "materials/<name>" is how texture files are addressed through the search
@@ -142,6 +155,15 @@ public:
 		m_nWidth( nWidth ), m_nHeight( nHeight )
 	{
 		m_RGBA.SetSize( nWidth * nHeight * 4 );
+	}
+
+	// HL2SB (2026-10-03): pre-decoded bits (disk-cache hit or stb decode) are
+	// handed in by the caller instead of the regenerator zero-filling first.
+	CImageTextureRegenerator( int nWidth, int nHeight, const unsigned char *pBits ) :
+		m_nWidth( nWidth ), m_nHeight( nHeight )
+	{
+		m_RGBA.SetSize( nWidth * nHeight * 4 );
+		Q_memcpy( m_RGBA.Base(), pBits, (size_t)nWidth * nHeight * 4 );
 	}
 
 	unsigned char *GetImageBits() { return m_RGBA.Base(); }
@@ -355,63 +377,245 @@ CThreadFastMutex &HL2SB_ImageDecodeMutex()
 	return g_HL2SBImageDecodeMutex;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB (2026-10-03): on-disk decode cache.
+//
+// Decoded pixels are persisted under cache/images/<fnv1a64>.h2i inside the
+// game dir, keyed by source logical name + source file size + source mtime, so
+// an updated PNG gets a new key automatically.  A hit skips the source read
+// AND the stb decode; the only per-session cost left is one small metadata
+// read (GetFileSize/GetFileTime) and one file read of raw RGBA, which is far
+// cheaper than PNG inflate on the ARM64-emulated test machines.  Every cache
+// failure (missing dir, read-only disk, corrupt file) falls back silently to
+// the decode path.
+//-----------------------------------------------------------------------------
+
+// FNV-1a 64 over a NUL-terminated string, then mixed with two integers.
+static unsigned long long HL2SB_ImageCacheKey( const char *pLogicalName, int nFileSize, long nFileTime )
+{
+	unsigned long long h = 0xcbf29ce484222325ULL;
+	for ( const char *p = pLogicalName; *p; ++p )
+	{
+		h ^= (unsigned char)*p;
+		h *= 0x100000001b3ULL;
+	}
+	unsigned long long mix[2] =
+	{
+		( unsigned long long )( unsigned int )nFileSize,
+		( unsigned long long )( unsigned int )nFileTime
+	};
+	for ( int i = 0; i < 2; ++i )
+	{
+		for ( int b = 0; b < 8; ++b )
+		{
+			h ^= ( mix[i] >> ( b * 8 ) ) & 0xFF;
+			h *= 0x100000001b3ULL;
+		}
+	}
+	return h;
+}
+
+// Finds the actual readable file behind a logical image name ("x/y.png" or
+// "x/y" relative to materials/).  Returns false if none of the probe
+// combinations exist.  On success pOutPath is the filesystem path that later
+// GetFileSize/GetFileTime/ReadFile calls must reuse (same pathID).
+static bool HL2SB_LocateImageSource( const char *pLogicalName, char *pOutPath, int nOutPathLen,
+	const char **ppOutPathID, int *pOutSize, long *pOutTime )
+{
+	const char *pPathIDs[] = { "GAME", "MOD", NULL };
+	for ( int i = 0; pPathIDs[i]; ++i )
+	{
+		Q_snprintf( pOutPath, nOutPathLen, "materials/%s", pLogicalName );
+		if ( g_pFullFileSystem->FileExists( pOutPath, pPathIDs[i] ) )
+		{
+			*ppOutPathID = pPathIDs[i];
+			*pOutSize = ( int )g_pFullFileSystem->Size( pOutPath, pPathIDs[i] );
+			*pOutTime = g_pFullFileSystem->GetFileTime( pOutPath, pPathIDs[i] );
+			return ( *pOutSize > 0 );
+		}
+
+		Q_strncpy( pOutPath, pLogicalName, nOutPathLen );
+		if ( g_pFullFileSystem->FileExists( pOutPath, pPathIDs[i] ) )
+		{
+			*ppOutPathID = pPathIDs[i];
+			*pOutSize = ( int )g_pFullFileSystem->Size( pOutPath, pPathIDs[i] );
+			*pOutTime = g_pFullFileSystem->GetFileTime( pOutPath, pPathIDs[i] );
+			return ( *pOutSize > 0 );
+		}
+	}
+	return false;
+}
+
+// cache/images/<16 hex>.h2i inside the game dir.
+static void HL2SB_ImageCachePath( unsigned long long nKey, char *pOut, int nOutLen )
+{
+	Q_snprintf( pOut, nOutLen, "cache/images/%016I64x.h2i", nKey );
+}
+
+// Header layout (little endian): magic 'H','2','I','C', version 1, width,
+// height, payload bytes, logical-name length, logical name bytes, RGBA.
+static const unsigned int HL2SB_IMAGECACHE_MAGIC = 0x43493248u;	// "H2IC" LE
+static const unsigned int HL2SB_IMAGECACHE_VERSION = 1u;
+
+static bool HL2SB_TryReadCachedImage( const char *pLogicalName, const char *pCachePath,
+	CUtlVector< unsigned char > &outBits, int &nOutWidth, int &nOutHeight )
+{
+	if ( !g_pFullFileSystem->FileExists( pCachePath, "GAME" ) )
+		return false;
+
+	CUtlBuffer bufFile;
+	if ( !g_pFullFileSystem->ReadFile( pCachePath, "GAME", bufFile ) || bufFile.TellPut() <= 0 )
+		return false;
+
+	bufFile.SeekGet( CUtlBuffer::SEEK_HEAD, 0 );
+
+	if ( bufFile.GetUnsignedInt() != HL2SB_IMAGECACHE_MAGIC )
+		return false;
+	if ( bufFile.GetUnsignedInt() != HL2SB_IMAGECACHE_VERSION )
+		return false;
+
+	const int nWidth = ( int )bufFile.GetUnsignedInt();
+	const int nHeight = ( int )bufFile.GetUnsignedInt();
+	const unsigned int nPayload = bufFile.GetUnsignedInt();
+	const unsigned int nNameBytes = bufFile.GetUnsignedInt();
+
+	if ( nWidth <= 0 || nHeight <= 0 )
+		return false;
+	if ( nPayload != ( unsigned int )nWidth * nHeight * 4 )
+		return false;
+	if ( nNameBytes == 0 || nNameBytes > 1024 )
+		return false;
+
+	char szStoredName[1025];
+	bufFile.Get( szStoredName, nNameBytes );
+	szStoredName[ nNameBytes - 1 ] = '\0';
+	if ( Q_stricmp( szStoredName, pLogicalName ) != 0 )
+		return false;
+
+	const int nBytes = nWidth * nHeight * 4;
+	outBits.SetSize( nBytes );
+	if ( !bufFile.Get( outBits.Base(), nBytes ) )
+	{
+		outBits.Purge();
+		return false;
+	}
+
+	nOutWidth = nWidth;
+	nOutHeight = nHeight;
+	return true;
+}
+
+static bool HL2SB_TryWriteCachedImage( const char *pLogicalName, const char *pCachePath,
+	const unsigned char *pBits, int nWidth, int nHeight )
+{
+	const int nBytes = nWidth * nHeight * 4;
+	if ( nBytes <= 0 || nBytes > 128 * 1024 * 1024 )
+		return false;
+
+	static bool s_bDirTried = false;
+	if ( !s_bDirTried )
+	{
+		s_bDirTried = true;
+		g_pFullFileSystem->CreateDirHierarchy( "cache/images", NULL );
+	}
+
+	const unsigned int nNameBytes = ( unsigned int )Q_strlen( pLogicalName ) + 1;
+
+	CUtlBuffer bufOut;
+	bufOut.EnsureCapacity( 4 * 6 + nNameBytes + nBytes );
+	bufOut.PutUnsignedInt( HL2SB_IMAGECACHE_MAGIC );
+	bufOut.PutUnsignedInt( HL2SB_IMAGECACHE_VERSION );
+	bufOut.PutUnsignedInt( ( unsigned int )nWidth );
+	bufOut.PutUnsignedInt( ( unsigned int )nHeight );
+	bufOut.PutUnsignedInt( ( unsigned int )nBytes );
+	bufOut.PutUnsignedInt( nNameBytes );
+	bufOut.Put( pLogicalName, nNameBytes );
+	bufOut.Put( pBits, nBytes );
+
+	return g_pFullFileSystem->WriteFile( pCachePath, NULL, bufOut );
+}
+
 ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalName, int *pOutWidth, int *pOutHeight )
 {
 	if ( !pLogicalName || !pLogicalName[0] )
 		return NULL;
 
-	CUtlBuffer bufFile;
-	bool bRead = false;
+	// Locate the source first: its concrete path feeds the cache key (size +
+	// mtime), so an updated PNG invalidates its own cache entry.
+	char szSourcePath[MAX_PATH];
+	const char *pSourcePathID = NULL;
+	int nFileSize = 0;
+	long nFileTime = 0;
+	bool bLocated = HL2SB_LocateImageSource( pLogicalName, szSourcePath, sizeof( szSourcePath ), &pSourcePathID, &nFileSize, &nFileTime );
 
-	const char *pPathIDs[] = { "GAME", "MOD", NULL };
-	for ( int i = 0; pPathIDs[i]; ++i )
+	const bool bDbg = hl2sb_image_debug.GetBool();
+
+	CUtlVector< unsigned char > bits;
+	int nWidth = 0, nHeight = 0;
+	const char *pSource = "none";
+
+	if ( bLocated )
 	{
-		char szPath[MAX_PATH];
-		Q_snprintf( szPath, sizeof( szPath ), "materials/%s", pLogicalName );
+		char szCachePath[MAX_PATH];
+		HL2SB_ImageCachePath( HL2SB_ImageCacheKey( pLogicalName, nFileSize, nFileTime ), szCachePath, sizeof( szCachePath ) );
 
-		bufFile.Purge();
-		if ( g_pFullFileSystem->ReadFile( szPath, pPathIDs[i], bufFile ) && bufFile.TellPut() > 0 )
+		if ( HL2SB_TryReadCachedImage( pLogicalName, szCachePath, bits, nWidth, nHeight ) )
 		{
-			bRead = true;
-			break;
+			pSource = "cache";
 		}
-
-		bufFile.Purge();
-		if ( g_pFullFileSystem->ReadFile( pLogicalName, pPathIDs[i], bufFile ) && bufFile.TellPut() > 0 )
+		else
 		{
-			bRead = true;
-			break;
+			CUtlBuffer bufFile;
+			if ( g_pFullFileSystem->ReadFile( szSourcePath, pSourcePathID, bufFile ) && bufFile.TellPut() > 0 )
+			{
+				int nChannels = 0;
+				unsigned char *pRGBA = NULL;
+				// Caller holds HL2SB_ImageDecodeMutex() (see the note on the
+				// lock above) - locking it here again would self-deadlock.
+				pRGBA = stbi_load_from_memory( ( const stbi_uc * )bufFile.Base(), bufFile.TellPut(), &nWidth, &nHeight, &nChannels, 4 );
+
+				if ( pRGBA && nWidth > 0 && nHeight > 0 )
+				{
+					bits.SetSize( nWidth * nHeight * 4 );
+					Q_memcpy( bits.Base(), pRGBA, (size_t)nWidth * nHeight * 4 );
+					pSource = "decode";
+				}
+
+				if ( pRGBA )
+					stbi_image_free( pRGBA );
+
+				// Persist for the next session; a read-only disk or a full
+				// drive just means the next load decodes again.
+				if ( bits.Count() > 0 )
+				{
+					if ( !HL2SB_TryWriteCachedImage( pLogicalName, szCachePath, bits.Base(), nWidth, nHeight ) && bDbg )
+						Msg( "[HL2SB imgdb] cache write failed for '%s'\n", pLogicalName );
+				}
+			}
 		}
 	}
 
-	if ( !bRead )
-		return NULL;
-
-	int nWidth = 0, nHeight = 0, nChannels = 0;
-	unsigned char *pRGBA = NULL;
-	// Caller holds HL2SB_ImageDecodeMutex() (see the note on the lock above) -
-	// locking it here again would self-deadlock.
-	pRGBA = stbi_load_from_memory( (const stbi_uc *)bufFile.Base(), bufFile.TellPut(), &nWidth, &nHeight, &nChannels, 4 );
-
-	if ( !pRGBA || nWidth <= 0 || nHeight <= 0 )
+	if ( bits.Count() <= 0 || nWidth <= 0 || nHeight <= 0 )
 	{
-		if ( pRGBA )
-			stbi_image_free( pRGBA );
+		if ( bDbg )
+			Msg( "[HL2SB imgdb] tid=%u FAILED locate/decode '%s' (located=%d)\n",
+				( unsigned )ThreadGetCurrentId(), pLogicalName, bLocated ? 1 : 0 );
 		return NULL;
 	}
 
 	// CImageTextureRegenerator sizes its buffer with a 32-bit count; reject
 	// anything that would overflow it rather than wrap to a tiny allocation.
-	if ( (int64_t)nWidth * (int64_t)nHeight * 4 > (int64_t)0x7fffffff )
+	if ( (int64)nWidth * (int64)nHeight * 4 > (int64)0x7fffffff )
 	{
 		Warning( "[HL2SB] image \"%s\" is %dx%d - too large, skipped\n", pLogicalName, nWidth, nHeight );
-		stbi_image_free( pRGBA );
 		return NULL;
 	}
 
-	CImageTextureRegenerator *pRegenerator = new CImageTextureRegenerator( nWidth, nHeight );
-	Q_memcpy( pRegenerator->GetImageBits(), pRGBA, (size_t)nWidth * nHeight * 4 );
-	stbi_image_free( pRGBA );
+	if ( bDbg )
+		Msg( "[HL2SB imgdb] tid=%u '%s' %dx%d via %s\n",
+			( unsigned )ThreadGetCurrentId(), pLogicalName, nWidth, nHeight, pSource );
+
+	CImageTextureRegenerator *pRegenerator = new CImageTextureRegenerator( nWidth, nHeight, bits.Base() );
 
 	if ( pOutWidth )
 		*pOutWidth = nWidth;
