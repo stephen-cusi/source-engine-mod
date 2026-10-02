@@ -2346,8 +2346,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     "SENSORBONE = SENSORBONE or {}\n"
     // sql used to be a dostring stub here (IsStub, swallow-everything Query).
     // It is the real SQLite-backed library now: C side registered above in
-    // luasrclibs (lsql.cpp), Lua side unchanged in
-    // lua/includes/util/sql.lua.  The stub block is gone.
+    // luasrclibs (lsql.cpp).  The stub block is gone; the Lua shell is
+    // attached right below.
     ) == 0 )
   {
     lua_pcall( L, 0, 0, 0 );
@@ -2358,6 +2358,19 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     Warning( "[HL2SB] lsrcinit: GMod global stubs failed to compile: %s\n", lua_tostring( L, -1 ) );
     lua_pop( L, 1 );
   }
+
+  //-----------------------------------------------------------------------------
+  // HL2SB: attach GMod's Lua shell for the sql library right here, at
+  // openlibs time.  Both realms run the extensions and modules folder passes
+  // BEFORE lua/includes/init.lua, and those passes consume sql.TableExists
+  // at load time (extensions/player.lua playerpdata, modules/cookie.lua) --
+  // so SQLStr / TableExists / IndexExists / QueryRow / QueryValue / Begin /
+  // Commit / LastError / the global SQLStr must exist here, not at
+  // init.lua time.  The old stub lived in this exact spot for the same
+  // reason.  init.lua still does include( "util/sql.lua" ) later, which just
+  // re-runs the file (it only redefines the same functions).
+  //-----------------------------------------------------------------------------
+  luasrc_dofile_includes( L, "util/sql.lua" );
 
   //-----------------------------------------------------------------------------
   // HL2SB: GMod's `game` table.
