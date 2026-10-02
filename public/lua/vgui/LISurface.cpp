@@ -21,6 +21,7 @@
 #include "vgui/IInput.h"
 #include "ienginevgui.h"
 #include "hl2sb_framestats.h"	// HL2SB: hl2sb_framestats surface draw counter
+#include "hl2sb_framestats_cat.h"	// HL2SB: per-category wall-time buckets
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -289,11 +290,13 @@ static int surface_CreatePopup (lua_State *L) {
 
 static int surface_DrawFilledRect (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_RECT );
   surface()->DrawFilledRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
   return 0;
 }
 
 static int surface_DrawFilledRectFade (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_RECT );
   surface()->DrawFilledRectFade(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5), luaL_checkint(L, 6), luaL_checkboolean(L, 7));
   return 0;
 }
@@ -348,12 +351,14 @@ static int surface_DrawOutlinedCircle (lua_State *L) {
 
 static int surface_DrawOutlinedRect (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_RECT );
   surface()->DrawOutlinedRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
   return 0;
 }
 
 static int surface_DrawPrintText (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXTPRINT );
   const char *sz = luaL_checkstring(L, 1);
   int bufSize = (strlen( sz ) + 1 ) * sizeof(wchar_t);
   wchar_t *wbuf = static_cast<wchar_t *>( _alloca( bufSize ) );
@@ -381,6 +386,7 @@ static int surface_DrawSetTextColor (lua_State *L) {
 }
 
 static int surface_DrawSetTextFont (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_SETFONT );
   surface()->DrawSetTextFont(luaL_checkfont(L, 1));
   return 0;
 }
@@ -418,6 +424,7 @@ static int surface_DrawSetTexture (lua_State *L) {
 static int s_nMaterialDrawTextureID = -1;
 
 static int surface_SetMaterial (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_SETMATERIAL );
   int &nMaterialDrawTextureID = s_nMaterialDrawTextureID;
 
   if ( nMaterialDrawTextureID == -1 ) {
@@ -541,12 +548,14 @@ static int surface_DrawSetTextureFile (lua_State *L) {
 
 static int surface_DrawTexturedRect (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
   surface()->DrawTexturedRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
   return 0;
 }
 
 static int surface_DrawTexturedSubRect (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
   surface()->DrawTexturedSubRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checknumber(L, 5), luaL_checknumber(L, 6), luaL_checknumber(L, 7), luaL_checknumber(L, 8));
   return 0;
 }
@@ -561,6 +570,8 @@ static int surface_DrawTexturedSubRect (lua_State *L) {
 // argument-shape translation.  draw.RoundedBox() builds its corners with it.
 // ---------------------------------------------------------------------------
 static int surface_DrawTexturedRectUV (lua_State *L) {
+  HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
   int x = luaL_checkint(L, 1);
   int y = luaL_checkint(L, 2);
   int w = luaL_checkint(L, 3);
@@ -595,6 +606,7 @@ static int surface_DrawTexturedRectUV (lua_State *L) {
 // ---------------------------------------------------------------------------
 static int surface_DrawTexturedRectRotated (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
   const float flX  = (float)luaL_checknumber(L, 1);
   const float flY  = (float)luaL_checknumber(L, 2);
   const float flW  = (float)luaL_checknumber(L, 3);
@@ -732,6 +744,7 @@ static int surface_GetScreenSize (lua_State *L) {
 // here; GetTextSize falls back to it for the single-argument form.
 static HFont s_hLastSetTextFont = 0;
 static int surface_GetTextSize (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXTMEASURE );
   // HL2SB GMod compat (2026-09-25): wiki - surface.GetTextSize( text )
   // measures with the font last set by surface.SetFont.  The older
   // Experiment:Source spelling GetTextSize( font, text ) still works.
@@ -911,6 +924,7 @@ static int surface_SetBitmapFontName (lua_State *L) {
 // scheme's "Default" font when the name is unknown (HL2SB's clientscheme only
 // defines Default / DefaultSmall / DefaultVerySmall).
 static int surface_SetFont (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_SETFONT );
   const char *szName = luaL_checkstring(L, 1);
 
   // HL2SB: the shared resolver (LuaFont_ResolveByName above) -- registry first

@@ -17,6 +17,7 @@
 #include "lconvar.h"
 #include "lbaseplayer_shared.h"
 #include "datacache/imdlcache.h"
+#include "hl2sb_framestats_cat.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -392,6 +393,7 @@ static int ConVar_AddFlags (lua_State *L) {
 }
 
 static int ConVar_GetBool (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CONVAR_READ );
   lua_pushboolean(L, luaL_checkconvar(L, 1)->GetBool());
   return 1;
 }
@@ -402,6 +404,7 @@ static int ConVar_GetDefault (lua_State *L) {
 }
 
 static int ConVar_GetFloat (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CONVAR_READ );
   lua_pushnumber(L, luaL_checkconvar(L, 1)->GetFloat());
   return 1;
 }
@@ -412,6 +415,7 @@ static int ConVar_GetHelpText (lua_State *L) {
 }
 
 static int ConVar_GetInt (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CONVAR_READ );
   lua_pushinteger(L, luaL_checkconvar(L, 1)->GetInt());
   return 1;
 }
@@ -436,6 +440,7 @@ static int ConVar_GetName (lua_State *L) {
 }
 
 static int ConVar_GetString (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CONVAR_READ );
   lua_pushstring(L, luaL_checkconvar(L, 1)->GetString());
   return 1;
 }
@@ -540,6 +545,20 @@ static const luaL_Reg ConVarmeta[] = {
 
 static CUtlDict< ConVar*, unsigned short > m_ConVarDatabase;
 
+// HL2SB (2026-10-03): name -> ConVar* lookup accelerator for the read form
+// of ConVar(name) / GetConVar_Internal.  cvar->FindVar walks the whole
+// registered-command list with one Q_stricmp per entry, so an addon asking
+// ConVarExists("some_other_addons_var") every frame repeated that O(n) scan
+// each frame.  A NULL entry is a cached miss (the name was not found in the
+// engine list); a hit is the engine- or Lua-owned pointer - the cache owns
+// neither the names' meaning nor the convars, so ResetConVarDatabase just
+// drops it.  Staleness is bounded by what can register a convar AFTER a
+// cached miss: the create path below refreshes the cache entry, and C-side
+// static ConVars register at DLL load, before any Lua state exists.  A lazy
+// function-local static ConVar registered later would stay "missing" until
+// map change - accepted, that pattern does not exist in this tree.
+static CUtlDict< ConVar*, unsigned short > m_ConVarLookupCache;
+
 static int luasrc_ConVar (lua_State *L) {
   const char *pName = luaL_checkstring(L, 1);
 
@@ -552,10 +571,28 @@ static int luasrc_ConVar (lua_State *L) {
   // "C4_Convars_Change" net string and the client callbacks never existed.
   if ( lua_gettop( L ) < 2 )
   {
+    HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CONVAR_LOOKUP );
+
+    unsigned short cached = m_ConVarLookupCache.Find( pName );
+    if ( cached != m_ConVarLookupCache.InvalidIndex() )
+    {
+      if ( m_ConVarLookupCache[ cached ] )
+      {
+        lua_pushconvar( L, m_ConVarLookupCache[ cached ] );
+        return 1;
+      }
+      lua_pushnil( L );
+      return 1;
+    }
+
     unsigned short existing = m_ConVarDatabase.Find( pName );
     ConVar *pFound = ( existing != m_ConVarDatabase.InvalidIndex() )
       ? m_ConVarDatabase[ existing ]
       : cvar->FindVar( pName );
+
+    // Cache both outcomes: the pointer, or the miss (NULL) so the next
+    // per-frame lookup is a dict search instead of a full command-list scan.
+    m_ConVarLookupCache.Insert( pName, pFound );
 
     if ( pFound )
     {
@@ -591,6 +628,12 @@ static int luasrc_ConVar (lua_State *L) {
   // GetConVar_Internal's cvar->FindVar fallback could never see them.
   cvar->RegisterConCommand( pConVar );
 
+  // HL2SB (2026-10-03): a ConVarExists() before this create cached a miss
+  // for the name - refresh it so later lookups see the new variable.
+  unsigned short cachedEntry = m_ConVarLookupCache.Find( pName );
+  if ( cachedEntry != m_ConVarLookupCache.InvalidIndex() )
+    m_ConVarLookupCache[ cachedEntry ] = pConVar;
+
   lookup = m_ConVarDatabase.Insert( pName, pConVar );
   Assert( lookup != m_ConVarDatabase.InvalidIndex() );
   lua_pushconvar(L, pConVar);
@@ -613,9 +656,24 @@ static int luasrc_ConVar (lua_State *L) {
 static int luasrc_GetConVar_Internal (lua_State *L) {
   const char *pName = luaL_checkstring(L, 1);
 
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CONVAR_LOOKUP );
+
+  unsigned short cached = m_ConVarLookupCache.Find( pName );
+  if ( cached != m_ConVarLookupCache.InvalidIndex() )
+  {
+    if ( m_ConVarLookupCache[ cached ] )
+    {
+      lua_pushconvar(L, m_ConVarLookupCache[ cached ] );
+      return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+  }
+
   unsigned short lookup = m_ConVarDatabase.Find( pName );
   if ( lookup != m_ConVarDatabase.InvalidIndex() )
   {
+    m_ConVarLookupCache.Insert( pName, m_ConVarDatabase[ lookup ] );
     lua_pushconvar(L, m_ConVarDatabase[ lookup ] );
     return 1;
   }
@@ -623,16 +681,19 @@ static int luasrc_GetConVar_Internal (lua_State *L) {
   ConVar *pConVar = cvar->FindVar( pName );
   if ( !pConVar )
   {
+    m_ConVarLookupCache.Insert( pName, NULL );
     lua_pushnil(L);
     return 1;
   }
 
+  m_ConVarLookupCache.Insert( pName, pConVar );
   lua_pushconvar(L, pConVar);
   return 1;
 }
 
 void ResetConVarDatabase( void )
 {
+	m_ConVarLookupCache.RemoveAll();  // owns nothing
 	for ( int i=m_ConVarDatabase.First(); i != m_ConVarDatabase.InvalidIndex(); i=m_ConVarDatabase.Next( i ) )
 	{
 		ConVar *pConVar = m_ConVarDatabase[ i ];

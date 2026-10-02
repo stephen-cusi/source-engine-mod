@@ -6,6 +6,7 @@
 
 #include "cbase.h"
 #include "hl2sb_framestats.h"
+#include "hl2sb_framestats_cat.h"
 #include "convar.h"
 #include "tier0/dbg.h"
 #include "tier0/platform.h"
@@ -56,9 +57,49 @@ void HL2SB_FrameStats_NoteLuaHook( const char *pHookName, double flSeconds )
 		s_flLuaPostDrawEffects += flSeconds;
 }
 
+// --- category micro-accounting ---------------------------------------------
+
+// Report order matches the enum in hl2sb_framestats_cat.h.
+static const char *s_pCatNames[HL2SB_FCAT_COUNT] =
+{
+	"matImg", "matVmt", "setMat", "texRect", "rect", "txt", "txtMeas",
+	"setFont", "cvRead", "cvLook", "curTime", "trace",
+};
+
+// Drain the shared category buckets into a second report line.  flHudPaint is
+// the GM:HUDPaint wall time of the same window; the difference against the
+// accounted categories is printed as the residual bucket.
+static void HL2SB_FrameStats_ReportCategories( double flHudPaint )
+{
+	HL2SB_FrameCatAcc_t *pCats = HL2SB_FrameStats_Cats();
+	double flAccounted = 0.0;
+
+	for ( int i = 0; i < HL2SB_FCAT_COUNT; ++i )
+	{
+		flAccounted += pCats[i].flSeconds;
+	}
+
+	Msg( "[HL2SB framestats] cats:" );
+	for ( int i = 0; i < HL2SB_FCAT_COUNT; ++i )
+	{
+		Msg( " %s=%.2f/%d", s_pCatNames[i], pCats[i].flSeconds * 1000.0, pCats[i].nCalls );
+	}
+	Msg( " | accounted=%.2fms hudResidual=%.2fms\n",
+		flAccounted * 1000.0, ( flHudPaint - flAccounted ) * 1000.0 );
+
+	for ( int i = 0; i < HL2SB_FCAT_COUNT; ++i )
+	{
+		pCats[i].flSeconds = 0.0;
+		pCats[i].nCalls = 0;
+	}
+}
+
 void HL2SB_FrameStats_FramePulse()
 {
-	if ( !hl2sb_framestats.GetBool() )
+	bool bEnabled = hl2sb_framestats.GetBool() != 0;
+	HL2SB_FrameStats_CatsEnabled() = bEnabled;
+
+	if ( !bEnabled )
 	{
 		// Keep the window anchored at "next frame" so a freshly enabled convar
 		// does not report an interval spanning the disabled gap.
@@ -100,6 +141,7 @@ void HL2SB_FrameStats_FramePulse()
 			s_flLuaRse * 1000.0,
 			s_flLuaPostDrawEffects * 1000.0,
 			s_nSurfaceDraws );
+		HL2SB_FrameStats_ReportCategories( s_flLuaHudPaint );
 	}
 
 	s_flIntervalSum = 0.0;

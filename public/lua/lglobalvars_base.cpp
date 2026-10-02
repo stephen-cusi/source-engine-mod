@@ -9,6 +9,7 @@
 #include "cbase.h"
 #include "lua.hpp"
 #include "luasrclib.h"
+#include "hl2sb_framestats_cat.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -21,6 +22,7 @@ static int gpGlobals_absoluteframetime (lua_State *L) {
 }
 
 static int gpGlobals_curtime (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CURTIME );
   lua_pushnumber(L, gpGlobals->curtime);
   return 1;
 }

@@ -11,6 +11,7 @@
 #include "luasrclib.h"
 #include "lColor.h"
 #include "tier1/lconvar.h"
+#include "hl2sb_framestats_cat.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -37,6 +38,7 @@ static int cvar_ConsolePrintf (lua_State *L) {
 }
 
 static int cvar_FindVar (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CONVAR_LOOKUP );
   lua_pushconvar(L, cvar->FindVar(luaL_checkstring(L, 1)));
   return 1;
 }

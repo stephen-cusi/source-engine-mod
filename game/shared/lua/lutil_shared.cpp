@@ -32,6 +32,7 @@
 #include "soundenvelope.h"
 #include "leffect_dispatch_data.h"
 #include <lColor.h>
+#include "hl2sb_framestats_cat.h"	// HL2SB frame profiler: per-category buckets
 
 #ifdef CLIENT_DLL
 #include "c_te_effect_dispatch.h"
@@ -449,6 +450,7 @@ static bool luasrc_TraceArgsFromTable (lua_State *L, Vector *pStart, Vector *pEn
 }
 
 static int luasrc_UTIL_TraceLine (lua_State *L) {
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_UTIL_TRACE );
   if ( lua_istable( L, 1 ) ) {
     Vector vecStart, vecEnd, vecMins, vecMaxs;
     CBaseEntity *pFilter = NULL;
