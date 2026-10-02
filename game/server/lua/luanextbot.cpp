@@ -121,7 +121,7 @@ static void LuaNextBot_ReportLookupMiss( const char *pszClassname, const char *p
 		if ( !s_bTruncated )
 		{
 			s_bTruncated = true;
-			Warning( "[HL2SB] nextbot lookup report: 128 distinct (class, callback) pairs seen, muting the rest\n" );
+			luasrc_LuaWarnMsgF( "[HL2SB] nextbot lookup report: 128 distinct (class, callback) pairs seen, muting the rest\n" );
 		}
 		return;
 	}
@@ -413,7 +413,7 @@ void CLuaNextBot::Spawn( void )
 
 	if ( !LoadNextBotScript() )
 	{
-		Warning( "[HL2SB] Lua nextbot '%s' has no lua/entities script - removing it\n", GetClassname() );
+		luasrc_LuaWarnMsgF( "[HL2SB] Lua nextbot '%s' has no lua/entities script - removing it\n", GetClassname() );
 		UTIL_Remove( this );
 		return;
 	}

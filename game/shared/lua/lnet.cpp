@@ -118,7 +118,7 @@ static void MsgFunc_LuaNet( bf_read &msg )
 
 			if ( !L )
 			{
-				Msg( "[net] no lua state for receive\n" );
+				luasrc_LuaInfoMsgF( "[net] no lua state for receive\n" );
 				g_pNetRead = NULL;
 				return;
 			}
@@ -539,7 +539,7 @@ static int net_SendToServer( lua_State *L )
 {
 	if ( !g_cnetActive )
 	{
-		Msg( "[net] SendToServer called without a Start\n" );
+		luasrc_LuaWarnMsgF( "[net] SendToServer called without a Start\n" );
 		return 0;
 	}
 	g_cnetActive = false;
@@ -554,7 +554,7 @@ static int net_SendToServer( lua_State *L )
 	// caps are enforced.
 	if ( nNameLen < 1 || nNameLen >= 64 || nBytes < 0 || nBytes > 255 )
 	{
-		Warning( "[net] SendToServer: message '%s' out of transport range (name %d, payload %d bytes)\n",
+		luasrc_LuaWarnMsgF( "[net] SendToServer: message '%s' out of transport range (name %d, payload %d bytes)\n",
 			pszName, nNameLen, nBytes );
 		return 0;
 	}
@@ -589,7 +589,7 @@ static int net_SendToServer( lua_State *L )
 		static bool s_bOverflowWarned = false;
 		if ( !s_bOverflowWarned )
 		{
-			Warning( "[net] SendToServer: client->server queue full (%d) -- dropping '%s'; the transport is rate-limited to %d commands/frame\n",
+			luasrc_LuaWarnMsgF( "[net] SendToServer: client->server queue full (%d) -- dropping '%s'; the transport is rate-limited to %d commands/frame\n",
 				HL2SB_NETCMD_QUEUE_MAX, pszName, HL2SB_NETCMD_PER_FRAME );
 			s_bOverflowWarned = true;
 		}
@@ -758,7 +758,7 @@ static void SendNetMessage( CRecipientFilter &filter )
 {
 	if ( !g_netActive )
 	{
-		Msg( "[net] Send called without a Start\n" );
+		luasrc_LuaWarnMsgF( "[net] Send called without a Start\n" );
 		return;
 	}
 

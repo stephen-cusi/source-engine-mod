@@ -5154,7 +5154,7 @@ static int luasrc_ents_Create (lua_State *L) {
   // (method ...)".  GMod answers ENT methods immediately after ents.Create.
   if ( pEntity == NULL )
   {
-    Warning( "[HL2SB] ents.Create('%s'): no entity factory registered\n", pszClassName );
+    luasrc_LuaErrorMsgF( "[HL2SB] ents.Create('%s'): no entity factory registered\n", pszClassName );
   }
   else
   {
@@ -5169,7 +5169,7 @@ static int luasrc_ents_Create (lua_State *L) {
     }
     else
     {
-      Warning( "[HL2SB] ents.Create('%s'): created a non-scripted '%s' - no Lua class will be bound\n",
+      luasrc_LuaWarnMsgF( "[HL2SB] ents.Create('%s'): created a non-scripted '%s' - no Lua class will be bound\n",
         pszClassName, pEntity->GetClassname() );
     }
   }

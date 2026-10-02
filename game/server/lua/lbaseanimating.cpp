@@ -563,7 +563,7 @@ static int CBaseAnimating_BecomeRagdoll (lua_State *L) {
     if ( pRagdollPhys != NULL )
       pRagdollPhys->AddVelocity( &vecImpulse, NULL );
     else
-      Warning( "[HL2SB] BecomeRagdoll: ragdoll for '%s' has no vphysics object, skipping momentum\n", pCharacter->GetClassname() );
+      luasrc_LuaWarnMsgF( "[HL2SB] BecomeRagdoll: ragdoll for '%s' has no vphysics object, skipping momentum\n", pCharacter->GetClassname() );
   }
 
   // HL2SB GMod compat: the wiki's contract for NPC:BecomeRagdoll is

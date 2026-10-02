@@ -761,16 +761,16 @@ static int lua_game_AddParticles (lua_State *L) {
   }
 
   if ( g_pParticleSystemMgr == NULL ) {
-    Warning( "[HL2SB] game.AddParticles: particle system manager not ready, '%s' not loaded\n", pszParticleFile );
+    luasrc_LuaWarnMsgF( "[HL2SB] game.AddParticles: particle system manager not ready, '%s' not loaded\n", pszParticleFile );
   }
   else if ( !filesystem->FileExists( pszParticleFile, "GAME" ) ) {
-    Warning( "[HL2SB] game.AddParticles: '%s' is not in the search paths - its particle systems stay unknown\n", pszParticleFile );
+    luasrc_LuaWarnMsgF( "[HL2SB] game.AddParticles: '%s' is not in the search paths - its particle systems stay unknown\n", pszParticleFile );
   }
   else {
     bLoaded = g_pParticleSystemMgr->ReadParticleConfigFile( pszParticleFile, true, false );
 
     if ( !bLoaded ) {
-      Warning( "[HL2SB] game.AddParticles: '%s' exists but could not be parsed\n", pszParticleFile );
+      luasrc_LuaWarnMsgF( "[HL2SB] game.AddParticles: '%s' exists but could not be parsed\n", pszParticleFile );
     }
   }
 
@@ -2203,7 +2203,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     // "function" while the Lua probe still says nil, something between
     // openlibs and the extension scan REMOVES or shadows the global.
     lua_getglobal( L, szName );
-    Warning( "[HL2SB] openlibs: DEFINE_BASECLASS registered as %s\n",
+    luasrc_LuaWarnMsgF( "[HL2SB] openlibs: DEFINE_BASECLASS registered as %s\n",
              luaL_typename( L, -1 ) );
     lua_pop( L, 1 );
   }
@@ -2355,7 +2355,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   else
   {
     // A syntax error here is a bug in this snippet, not in the game.
-    Warning( "[HL2SB] lsrcinit: GMod global stubs failed to compile: %s\n", lua_tostring( L, -1 ) );
+    luasrc_LuaWarnMsgF( "[HL2SB] lsrcinit: GMod global stubs failed to compile: %s\n", lua_tostring( L, -1 ) );
     lua_pop( L, 1 );
   }
 
@@ -2520,7 +2520,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   }
   else
   {
-    Warning( "[HL2SB] lsrcinit: achievements stub failed to compile: %s\n", lua_tostring( L, -1 ) );
+    luasrc_LuaWarnMsgF( "[HL2SB] lsrcinit: achievements stub failed to compile: %s\n", lua_tostring( L, -1 ) );
     lua_pop( L, 1 );
   }
 

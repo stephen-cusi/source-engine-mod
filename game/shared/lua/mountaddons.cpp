@@ -197,7 +197,7 @@ static void HL2SB_WriteDisabledAddons( void )
 	FILE *fp = fopen( szFull, "w" );
 	if ( fp == NULL )
 	{
-		Warning( "[HL2SB] addons: could not write %s\n", szFull );
+		luasrc_LuaWarnMsgF( "[HL2SB] addons: could not write %s\n", szFull );
 		return;
 	}
 

@@ -123,7 +123,7 @@ void HL2SB_WarnOnce (const char *pszKey, const char *pszFormat, ...) {
   Q_vsnprintf( szBuf, sizeof( szBuf ), pszFormat, args );
   va_end( args );
 
-  Warning( "[HL2SB] %s\n", szBuf );
+  luasrc_LuaWarnMsgF( "[HL2SB] %s\n", szBuf );
 }
 
 /*

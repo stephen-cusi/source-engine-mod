@@ -6,6 +6,8 @@
 
 #include "cbase.h"
 #include "filesystem.h"
+// HL2SB (sbrust): wall-clock for the hl2sb_lua.log entry timestamps.
+#include <time.h>
 
 // HL2SB: the Lua panic handler wants a message box and a hard exit, but pulling
 // in <windows.h> here drags in min/max and the window-message macros, which
@@ -619,7 +621,7 @@ void luasrc_init_gameui (void) {
     // Non-fatal: a missing optional dependency must not take the menu down, and
     // luasrc_dofile already reports what went wrong.
     if (luasrc_dofile(LGameUI, menuFiles[i]) != 0)
-      Warning("HL2SB: main menu module failed to load: %s\n", menuFiles[i]);
+      luasrc_LuaWarnMsgF("HL2SB: main menu module failed to load: %s\n", menuFiles[i]);
   }
 
   // ---------------------------------------------------------------------------
@@ -650,13 +652,13 @@ void luasrc_init_gameui (void) {
   // istable at load time and died with
   // "attempt to call a nil value (global 'istable')" (hl2sb_derma.lua:190).
   if (luasrc_dofile(LGameUI, LUA_ROOT "/includes/util.lua") != 0)
-    Warning("HL2SB: menu realm: GMod type helpers (lua/includes/util.lua) failed to load\n");
+    luasrc_LuaWarnMsgF("HL2SB: menu realm: GMod type helpers (lua/includes/util.lua) failed to load\n");
 
   // GMod's DEFINE_BASECLASS is a PREPROCESSOR keyword here (see the rewrite pass
   // below): it expands to `local BaseClass = baseclass.Get( "X" )`, so the
   // module has to exist in whatever realm runs such a file.
   if (luasrc_dofile(LGameUI, LUA_ROOT "/includes/modules/baseclass.lua") != 0)
-    Warning("HL2SB: menu realm: baseclass module failed to load\n");
+    luasrc_LuaWarnMsgF("HL2SB: menu realm: baseclass module failed to load\n");
 
   // NOTE: the full derma stack (lua/derma + lua/includes/vgui_base.lua) is NOT
   // loaded here any more.  It registered nothing in this realm -- every control
@@ -699,7 +701,7 @@ void luasrc_init_gameui (void) {
   luasrc_dostring(LGameUI, s_pMenuSelfCheck);
 #endif
 
-  Msg("Lua Menu initialized (" LUA_VERSION ")\n");
+  luasrc_LuaInfoMsgF("Lua Menu initialized (" LUA_VERSION ")\n");
 }
 
 void luasrc_shutdown_gameui (void) {
@@ -763,6 +765,13 @@ static ConVar hl2sb_lua_log( "hl2sb_lua_log", "1", FCVAR_ARCHIVE | FCVAR_CLIENTD
 	"Write all Lua console output (errors/warnings/diagnostics) to hl2sb_lua.log" );
 static ConVar hl2sb_lua_log_colors( "hl2sb_lua_log_colors", "0", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
 	"Prefix each hl2sb_lua.log line with [E]/[W]/[I] severity markers" );
+// HL2SB (sbrust): GMod's Lua log entries carry the standard Source log prefix
+// ("L MM/DD/YYYY - HH:MM:SS: " -- what the engine prints into console.log and
+// what lua_log_cl/sv write into lua_errors_client/server.txt).  The fork's log
+// is the primary diagnostic channel, so timestamps default ON here; 0 restores
+// the bare GMod-less format.
+static ConVar hl2sb_lua_log_timestamp( "hl2sb_lua_log_timestamp", "1", FCVAR_ARCHIVE | FCVAR_CLIENTDLL,
+	"Prefix each hl2sb_lua.log entry with a \"L MM/DD/YYYY - HH:MM:SS:\" timestamp" );
 // HL2SB: GMod's own log switches (2026-09-20).  GMod defaults these to 0; we
 // default to 1 so the fork's debugging workflow (hl2sb_lua.log is the primary
 // diagnostic channel) does not silently change.  They gate per-realm, on top of
@@ -813,10 +822,32 @@ void luasrc_LuaLogToFile( const char *pszText, char cSeverity )
 	else
 		Q_snprintf( szLine, sizeof( szLine ), "%.*s", nLen, pszText );
 
+	// HL2SB (sbrust): entry-level Source log timestamp ("L MM/DD/YYYY - HH:MM:SS:"),
+	// same shape the engine gives console.log lines and GMod gives its Lua error
+	// log entries.  The prefix marks the ENTRY head only -- a message that embeds
+	// its own newlines (error + traceback) keeps those lines bare, which is also
+	// how GMod's "[ERROR] ..." block sits under its timestamped head.
+	char szStamped[ sizeof( szLine ) + 40 ];
+	const char *pszOut = szLine;
+	if ( hl2sb_lua_log_timestamp.GetBool() )
+	{
+		time_t now = time( NULL );
+		struct tm today;
+#ifdef _WIN32
+		localtime_s( &today, &now );
+#else
+		localtime_r( &now, &today );
+#endif
+		Q_snprintf( szStamped, sizeof( szStamped ), "L %02i/%02i/%04i - %02i:%02i:%02i: %s",
+			today.tm_mon + 1, today.tm_mday, 1900 + today.tm_year,
+			today.tm_hour, today.tm_min, today.tm_sec, szLine );
+		pszOut = szStamped;
+	}
+
 	FileHandle_t fh = g_pFullFileSystem->Open( s_pszLuaLogFile, "at", "MOD" );
 	if ( fh == FILESYSTEM_INVALID_HANDLE )
 		return;
-	g_pFullFileSystem->FPrintf( fh, "%s\n", szLine );
+	g_pFullFileSystem->FPrintf( fh, "%s\n", pszOut );
 	g_pFullFileSystem->Close( fh );
 }
 // HL2SB: ONE console write per message.  These helpers used to print twice --
@@ -1580,7 +1611,7 @@ LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
 	FileHandle_t fh = g_pFullFileSystem->Open( filename, "rb", "MOD" );
 	if ( !fh )
 	{
-		Warning( "luasrc_dofile: cannot open %s\n", filename );
+		luasrc_LuaWarnMsgF( "luasrc_dofile: cannot open %s\n", filename );
 		lua_pushnil( L );
 		lua_pushfstring( L, "cannot open %s: No such file or directory", filename );
 		return 2;

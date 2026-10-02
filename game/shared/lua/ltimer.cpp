@@ -428,8 +428,14 @@ LUA_API void HL2SB_TimerTick ( void )
 		if ( lua_pcall( L, 0, 0, 0 ) != 0 )
 		{
 			const char *pszErr = lua_tostring( L, -1 );
-			Warning( "Timer Failed! [Simple][%s]\n", sLoc.Get() );
+			// HL2SB (sbrust): GMod prints the real error next to the "Timer Failed!"
+			// head; the raw Warning here showed only the head on the console and
+			// carried neither the message nor hl2sb_lua.log.
+			luasrc_LuaErrorMsgF( "Timer Failed! [Simple][%s]\n%s", sLoc.Get(),
+				pszErr ? pszErr : "(no error message)" );
 			luaL_traceback( L, L, pszErr, 0 );
+			if ( lua_isstring( L, -1 ) )
+				luasrc_LuaErrorMsg( lua_tostring( L, -1 ) );
 			HL2SB_CollectLuaError( pszErr, lua_tostring( L, -1 ) );
 			lua_pop( L, 2 );
 		}
@@ -472,8 +478,13 @@ LUA_API void HL2SB_TimerTick ( void )
 		{
 			bFailed = true;
 			const char *pszErr = lua_tostring( L, -1 );
-			Warning( "Timer Failed! [%s][%s]\n", sKey.Get(), sLoc.Get() );
+			// HL2SB (sbrust): same fix as the simple-timer branch -- the head plus
+			// the real error both go to the console and to hl2sb_lua.log.
+			luasrc_LuaErrorMsgF( "Timer Failed! [%s][%s]\n%s", sKey.Get(), sLoc.Get(),
+				pszErr ? pszErr : "(no error message)" );
 			luaL_traceback( L, L, pszErr, 0 );
+			if ( lua_isstring( L, -1 ) )
+				luasrc_LuaErrorMsg( lua_tostring( L, -1 ) );
 			HL2SB_CollectLuaError( pszErr, lua_tostring( L, -1 ) );
 			lua_pop( L, 2 );
 		}

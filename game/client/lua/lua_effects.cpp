@@ -412,7 +412,7 @@ void CLuaEffect::Draw( double frametime )
 				}
 				lua_pop( L, 1 );
 
-				Warning( "[HL2SB] CLuaEffect '%s': StartPos=%s EndPos=%s Dist=%s\n", GetName(), szStart, szEnd, szDist );
+				luasrc_LuaWarnMsgF( "[HL2SB] CLuaEffect '%s': StartPos=%s EndPos=%s Dist=%s\n", GetName(), szStart, szEnd, szDist );
 			}
 			}
 		}

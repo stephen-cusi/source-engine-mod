@@ -46,7 +46,7 @@ LUA_BINDING_BEGIN( CBaseAnimating, GetBoneCount, "class", "Get the amount of bon
 
     if ( !pstudiohdr )
     {
-        Warning( "CBaseAnimating::GetBoneCount failed: no model\n" );
+        luasrc_LuaWarnMsgF( "CBaseAnimating::GetBoneCount failed: no model\n" );
         return 0;
     }
 
@@ -170,7 +170,7 @@ LUA_BINDING_BEGIN( CBaseAnimating, GetBodyGroups, "class", "Get the bodygroup va
 
     if ( !pstudiohdr )
     {
-        Warning( "CBaseAnimating::GetBodyGroups failed: no model\n" );
+        luasrc_LuaWarnMsgF( "CBaseAnimating::GetBodyGroups failed: no model\n" );
         return 0;
     }
 

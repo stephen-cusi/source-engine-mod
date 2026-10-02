@@ -982,7 +982,7 @@ void CBaseScripted::VPhysicsCollision( int index, gamevcollisionevent_t *pEvent 
 	// never froze it); a single dispatch then silence = the stick took effect.
 	if ( hl2sb_physicscollide_debug.GetBool() )
 	{
-		Msg( "[HL2SB][PhysicsCollide] %s#%d hit '%s' speed %.1f pos (%.1f %.1f %.1f) normal (%.2f %.2f %.2f) phys=%s\n",
+		luasrc_LuaInfoMsgF( "[HL2SB][PhysicsCollide] %s#%d hit '%s' speed %.1f pos (%.1f %.1f %.1f) normal (%.2f %.2f %.2f) phys=%s\n",
 			GetClassname(), entindex(),
 			pHitEntity ? pHitEntity->GetClassname() : "<NULL>",
 			pEvent->collisionSpeed,

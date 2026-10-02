@@ -55,7 +55,7 @@ LUA_BINDING_BEGIN( Entities, CreateByName, "library", "Creates an entity by the 
     // (method ...)" back in the addon.
     if ( pEntity == NULL )
     {
-        Warning( "[HL2SB] ents.Create('%s'): no entity factory registered\n", pszClassName );
+        luasrc_LuaErrorMsgF( "[HL2SB] ents.Create('%s'): no entity factory registered\n", pszClassName );
     }
 
     CBaseScripted *pScripted = dynamic_cast< CBaseScripted * >( pEntity );
