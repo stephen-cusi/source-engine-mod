@@ -848,21 +848,22 @@ static int cam_Start3D2D (lua_State *L) {
 	if ( !g_pMatSystemSurface )
 		return 0;
 
+	// Reference matrix, bit for bit: AngleMatrix( angles, pos ) multiplied by
+	// diag( scale, -scale, 1 ).  The product's COLUMNS carry the scale, so the
+	// translation column survives untouched and the 2D origin lands exactly
+	// at pos.  The previous implementation scaled ROWS, which dragged the
+	// translation along (pos became (pos.x*scale, -pos.y*scale, pos.z)) and
+	// planted the plane at world coordinates unrelated to the caller's --
+	// every draw executed without an error and nothing was ever on screen.
+	// The negative y mirrors vgui's downward text axis onto the plane.
 	matrix3x4_t mat;
 	AngleMatrix( ang, pos, mat );
-	VMatrix vm( mat );
+	VMatrix vmAngle( mat );
+	VMatrix vmScale;
+	MatrixBuildScale( vmScale, scale, -scale, 1.0f );
 
-	// HL2SB GMod compat (2026-09-25): exact wiki formula - SetAngles,
-	// SetTranslation, SetScale( Vector( scale, -scale, 1 ) ).  Rows of the
-	// AngleMatrix are the world-space basis (row0 = forward = 2D +x,
-	// row1 = -right = 2D +y), so SetScale scales ROWS: x by +scale, y by
-	// -scale (flips vgui's downward y), z (out of the plane) left at 1.
-	// The old uniform scale mirrored the text and broke the winding.
-	for ( int c = 0; c < 4; c++ )
-	{
-		vm.m[0][c] *= scale;
-		vm.m[1][c] *= -scale;
-	}
+	VMatrix vm;
+	MatrixMultiply( vmAngle, vmScale, vm );
 
 	g_pMatSystemSurface->PushModelMatrix( vm );
 	CMatRenderContextPtr pRenderContext( materials );
