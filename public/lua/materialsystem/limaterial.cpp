@@ -10,6 +10,7 @@
 
 #include "cbase.h"
 #include "materialsystem/imaterial.h"
+#include "materialsystem/imaterialvar.h"	// HL2SB (2026-10-03): IMaterialVar for IMaterial:SetString
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "limaterial.h"
@@ -332,6 +333,26 @@ static int IMaterial_GetColor (lua_State *L) {
 }
 
 
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-10-03): IMaterial:SetString( var, value ). The
+// reference halo module resets "$color"/"$alpha" on the pp/copy material through the
+// string path before the screen-quad restore draw.
+// string path before the screen-quad restore draw.  Undefined vars are a
+// silent no-op here, same as IMaterialVar's own contract.
+//-----------------------------------------------------------------------------
+static int IMaterial_SetString (lua_State *L) {
+  IMaterial *pMaterial = luaL_checkmaterial(L, 1);
+  const char *pszVarName = luaL_checkstring(L, 2);
+  const char *pszValue = luaL_checkstring(L, 3);
+
+  bool bFound = false;
+  IMaterialVar *pVar = pMaterial->FindVar( pszVarName, &bFound, false );
+  if ( pVar != NULL )
+    pVar->SetStringValue( pszValue );
+  return 0;
+}
+
 static const luaL_Reg IMaterialmeta[] = {
   {"AddRef", IMaterial_AddRef},
   {"AlphaModulate", IMaterial_AlphaModulate},
@@ -374,6 +395,7 @@ static const luaL_Reg IMaterialmeta[] = {
   {"RefreshPreservingMaterialVars", IMaterial_RefreshPreservingMaterialVars},
   {"Release", IMaterial_Release},
   {"SetMaterialVarFlag", IMaterial_SetMaterialVarFlag},
+  {"SetString", IMaterial_SetString},
   {"SetShader", IMaterial_SetShader},
   {"SetUseFixedFunctionBakedLighting", IMaterial_SetUseFixedFunctionBakedLighting},
   {"ShaderParamCount", IMaterial_ShaderParamCount},
