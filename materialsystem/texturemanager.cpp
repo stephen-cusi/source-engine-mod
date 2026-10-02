@@ -2080,6 +2080,21 @@ ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const 
 			{
 				Msg( "[HL2SB] image texture \"%s\" (%dx%d)\n", pTextureName, nImageWidth, nImageHeight );
 
+				// HL2SB (2026-10-02): insert into the dictionary right here, not
+				// only in the caller.  FindOrLoadTexture inserts after we return,
+				// but the ASYNC caller (AsyncFindOrLoadTexture) defers its insert
+				// all the way to CompleteAsyncLoad -- a synchronous arrival in
+				// between misses both dictionary lookups, decodes the same file a
+				// second time and builds a second procedural texture under one
+				// key (observed: every addon PNG loaded exactly twice, the
+				// 1920x1080 one doubling the worst first-draw hitch).  Guarded
+				// insert, same shape as the one CompleteAsyncLoad does under the
+				// material lock; the caller's later insert then no-ops.
+				if ( m_TextureList.Find( pImageTexture->GetName() ) == m_TextureList.InvalidIndex() )
+				{
+					m_TextureList.Insert( pImageTexture->GetName(), pImageTexture );
+				}
+
 				int iIndex = m_TextureExcludes.Find( pImageTexture->GetName() );
 				if ( m_TextureExcludes.IsValidIndex( iIndex ) )
 				{
@@ -2307,8 +2322,14 @@ ITextureInternal *CTextureManager::FindOrLoadTexture( const char *pTextureName, 
 		pTexture = LoadTexture( pTextureName, pTextureGroupName, nAdditionalCreationFlags );
 		if ( pTexture )
 		{
-			// insert into the dictionary using the processed texture name
-			m_TextureList.Insert( pTexture->GetName(), pTexture );
+			// insert into the dictionary using the processed texture name.
+			// HL2SB (2026-10-02): guarded -- LoadTexture's image branch inserts
+			// the texture itself now (closing the async/sync double-decode
+			// window), and CUtlDict::Insert does NOT deduplicate keys.
+			if ( m_TextureList.Find( pTexture->GetName() ) == m_TextureList.InvalidIndex() )
+			{
+				m_TextureList.Insert( pTexture->GetName(), pTexture );
+			}
 		}
 	}
 

@@ -271,16 +271,23 @@ LUA_BINDING_END( "Texture", "The screen effect texture." )
 // client lazily creates a named 256x256 render target ("s_pMoBlurTex0") on
 // first use; do the same through the same creation call the spawnicon
 // snapshot helper uses, so repeated calls return the same texture.
+// HL2SB (2026-10-02, second pass): the creation must sit inside a render
+// target allocation window -- CMaterialSystem refuses named RT creation
+// outside one (Warning + NULL every call), which meant a per-frame failed
+// attempt + warning once DrawMotionBlur ran from the HUD (213 warnings in
+// one session).  Wrap the one-shot creation in the public allocation APIs.
 LUA_BINDING_BEGIN( Renders, GetMoBlurTex0, "library", "Get the motion blur render target texture.", "client" )
 {
     static ITexture *s_pMoBlurTex0 = NULL;
     if ( s_pMoBlurTex0 == NULL )
     {
+        materials->BeginRenderTargetAllocation();
         s_pMoBlurTex0 = materials->CreateNamedRenderTargetTextureEx2(
             "s_pMoBlurTex0", 256, 256, RT_SIZE_LITERAL, IMAGE_FORMAT_RGBA8888,
             MATERIAL_RT_DEPTH_SEPARATE,
             TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD,
             0 );
+        materials->EndRenderTargetAllocation();
         if ( s_pMoBlurTex0 == NULL )
         {
             lua_pushnil( L );
