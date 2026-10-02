@@ -879,7 +879,8 @@ static int CBaseAnimating_GetBodygroups (lua_State *L) {
   if ( pHdr == NULL )
     return 1;
 
-  const int nGroups = GetNumBodyGroups( &CStudioHdr( pHdr ) );
+  CStudioHdr hdr( pHdr );
+  const int nGroups = GetNumBodyGroups( &hdr );
   for ( int i = 0; i < nGroups; i++ )
   {
     lua_createtable( L, 0, 3 );
