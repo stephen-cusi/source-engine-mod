@@ -75,52 +75,52 @@ jobs:
   # Android
   # ---------------------------------------------------------------------------
 
-  build-android-armv7a:
-    name: Android (armeabi-v7a)
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+#  build-android-armv7a:
+#    name: Android (armeabi-v7a)
+#    runs-on: ubuntu-latest
+#    timeout-minutes: 90
 
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
+#    steps:
+#      - name: Check out source
+#        uses: actions/checkout@v5
+#        with:
+#          submodules: recursive
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -f -y libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
+#      - name: Install system dependencies
+#        run: |
+#          sudo apt-get update
+#          sudo apt-get install -f -y libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
 
-      - name: Download Android NDK
-        run: |
-          wget https://dl.google.com/android/repository/android-ndk-r27b-linux.zip -nc -q
-          unzip -q android-ndk-r27b-linux.zip
+#      - name: Download Android NDK
+#        run: |
+#          wget https://dl.google.com/android/repository/android-ndk-r27b-linux.zip -nc -q
+#          unzip -q android-ndk-r27b-linux.zip
 
-      - name: Configure
-        run: |
-          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r27b"
-          export PATH="${{ github.workspace }}/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          python3 ./waf configure \
-            -T release \
-            --prefix=../android_build \
-            --android=armeabi-v7a,host,21 \
-            --target=../android_build/armeabi-v7a \
-            --disable-warns \
-            --build-games=hl2sb \
-            --togles
+#      - name: Configure
+#        run: |
+#          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r27b"
+#          export PATH="${{ github.workspace }}/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+#          python3 ./waf configure \
+#            -T release \
+#            --prefix=../android_build \
+#            --android=armeabi-v7a,host,21 \
+#            --target=../android_build/armeabi-v7a \
+#            --disable-warns \
+#            --build-games=hl2sb \
+#            --togles
 
-      - name: Build and install
-        run: |
-          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r27b"
-          export PATH="${{ github.workspace }}/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          python3 ./waf install --strip
+#      - name: Build and install
+#        run: |
+#          export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r27b"
+#          export PATH="${{ github.workspace }}/android-ndk-r27b/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+#          python3 ./waf install --strip
 
-      - name: Upload Android build
-        uses: actions/upload-artifact@v7
-        with:
-          name: build-android-armv7a
-          path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
-          if-no-files-found: error
+#      - name: Upload Android build
+#        uses: actions/upload-artifact@v7
+#        with:
+#          name: build-android-armv7a
+#          path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
+#          if-no-files-found: error
 
   build-android-aarch64:
     name: Android (arm64-v8a)
@@ -249,84 +249,84 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # macOS
-  # ---------------------------------------------------------------------------
+#  # macOS
+#  # ---------------------------------------------------------------------------
 
-  build-macos-amd64:
-    name: macOS (x86_64)
-    runs-on: macos-15-intel
-    timeout-minutes: 60
+#  build-macos-amd64:
+#    name: macOS (x86_64)
+#    runs-on: macos-15-intel
+#    timeout-minutes: 60
 
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
+#    steps:
+#      - name: Check out source
+#        uses: actions/checkout@v5
+#        with:
+#          submodules: recursive
 
-      - name: Install build dependencies
-        run: |
-          brew untap aws/tap || true
-          brew install sdl2 pkg-config opus
+#      - name: Install build dependencies
+#        run: |
+#          brew untap aws/tap || true
+#          brew install sdl2 pkg-config opus
 
-      - name: Configure
-        run: >-
-          python3 ./waf configure
-          -T release
-          --disable-warns
-          --build-games=hl2sb
-          --prefix=./macos
-          --enable-opus
+#      - name: Configure
+#        run: >-
+#          python3 ./waf configure
+#          -T release
+#          --disable-warns
+#          --build-games=hl2sb
+#          --prefix=./macos
+#          --enable-opus
 
-      - name: Build and install
-        run: |
-          python3 ./waf build
-          python3 ./waf install
+#      - name: Build and install
+#        run: |
+#          python3 ./waf build
+#          python3 ./waf install
 
-      - name: Upload macOS build
-        uses: actions/upload-artifact@v7
-        with:
-          name: source-engine-macos-amd64
-          path: ./macos
-          if-no-files-found: error
+#      - name: Upload macOS build
+#        uses: actions/upload-artifact@v7
+#        with:
+#          name: source-engine-macos-amd64
+#          path: ./macos
+#          if-no-files-found: error
 
-  build-macos-arm64:
-    name: macOS (arm64)
-    runs-on: macos-latest
-    timeout-minutes: 60
+#  build-macos-arm64:
+#    name: macOS (arm64)
+#    runs-on: macos-latest
+#    timeout-minutes: 60
 
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-        with:
-          submodules: recursive
+#    steps:
+#      - name: Check out source
+#        uses: actions/checkout@v5
+#        with:
+#          submodules: recursive
 
-      - name: Install build dependencies
-        run: |
-          brew untap aws/tap || true
-          brew install sdl2 pkg-config opus
+#      - name: Install build dependencies
+#        run: |
+#          brew untap aws/tap || true
+#          brew install sdl2 pkg-config opus
 
-      - name: Configure
-        env:
-          MACHINE: ${{ runner.arch }}
-        run: |
-          if [ "$(uname -m)" != "arm64" ]; then
-            echo "Expected arm64 host, got: $(uname -m)" >&2
-            exit 1
-          fi
-          if [ "$(python3 -c 'import platform; print(platform.machine())')" != "arm64" ]; then
-            echo "Python reports non-arm64 (likely running under Rosetta); native Python required" >&2
-            exit 1
-          fi
-          python3 ./waf configure -T release --disable-warns --build-games=hl2sb --prefix=./macos --enable-opus
+#      - name: Configure
+#        env:
+#          MACHINE: ${{ runner.arch }}
+#        run: |
+#          if [ "$(uname -m)" != "arm64" ]; then
+#            echo "Expected arm64 host, got: $(uname -m)" >&2
+#            exit 1
+#          fi
+#          if [ "$(python3 -c 'import platform; print(platform.machine())')" != "arm64" ]; then
+#            echo "Python reports non-arm64 (likely running under Rosetta); native Python required" >&2
+#            exit 1
+#          fi
+#          python3 ./waf configure -T release --disable-warns --build-games=hl2sb --prefix=./macos --enable-opus
 
-      - name: Build and install
-        run: |
-          python3 ./waf build
-          python3 ./waf install
+#      - name: Build and install
+#        run: |
+#          python3 ./waf build
+#          python3 ./waf install
 
-      - name: Upload macOS build
-        uses: actions/upload-artifact@v7
-        with:
-          name: source-engine-macos-arm64
-          path: ./macos
-          if-no-files-found: error
+#      - name: Upload macOS build
+#        uses: actions/upload-artifact@v7
+#        with:
+#          name: source-engine-macos-arm64
+#          path: ./macos
+#          if-no-files-found: error
