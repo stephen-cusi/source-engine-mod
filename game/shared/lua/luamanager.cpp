@@ -503,6 +503,15 @@ void luasrc_init_gameui (void) {
   lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "_GAMEUI");  /* set global _GAMEUI */
 
+  /* HL2SB: this function opens every library straight from its own C frame -
+     no lua_CFunction LUA_MINSTACK guarantee backs it - and luaL_register
+     leaves each library table sitting on the stack.  The base frame's
+     api_check line is ~20 slots up and a long open sequence outgrows it:
+     luaopen_Systems pushed past it at startup and the 2026-09-23 api
+     guard aborted (hl2sb_api_stack_overflow.log: top=22 stacksize=40).
+     Raise the frame once, before the opens start. */
+  lua_checkstack( LGameUI, 128 );
+
   luasrc_setmodulepaths(LGameUI);
 
   luaopen_ConCommand(LGameUI);
