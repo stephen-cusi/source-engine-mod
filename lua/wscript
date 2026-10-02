@@ -135,3 +135,28 @@ def build(bld):
 		install_path = install_path,
 		idx      = bld.get_taskgen_count()
 	)
+
+	# HL2SB: the vendored SQLite amalgamation (public domain, sqlite.org), as
+	# its own C static library linked into client and server -- the same
+	# layout the reference implementation uses (each game DLL carries its own
+	# copy and opens sv.db / cl.db respectively).  This cannot be a plain
+	# entry in the game vpc lists: the game targets compile everything as C++
+	# on MSVC (project-wide /TP), and the amalgamation is C-only source (it
+	# uses C identifiers like `new` as variable names).  Linux and Android
+	# compile .c as C already, so only the Windows taskgen needs the /TP
+	# strip below.
+	bld.stlib(
+		source       = ['../game/shared/lua/sqlite/sqlite3.c'],
+		target       = 'sqlite3_amalg',
+		name         = 'sqlite3_amalg',
+		features     = 'c cstlib',
+		includes     = '.',
+		# Nothing in the Lua surface needs extension loading, and dropping it
+		# avoids a dlopen link dependency on linux/android.
+		defines      = ['SQLITE_OMIT_LOAD_EXTENSION'],
+		install_path = None,
+		idx          = bld.get_taskgen_count()
+	)
+	if bld.env.DEST_OS == 'win32':
+		tg = bld.get_tgen_by_name('sqlite3_amalg')
+		tg.env.CFLAGS = [f for f in tg.env.CFLAGS if f != '/TP']

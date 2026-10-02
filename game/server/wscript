@@ -62,7 +62,7 @@ def build(bld):
 
 	defines = []
 
-	libs = ['tier0','particles','dmxloader','tier1','tier2','tier3','mathlib','vstdlib','choreoobjects','steam_api','lua_shared']
+	libs = ['tier0','particles','dmxloader','tier1','tier2','tier3','mathlib','vstdlib','choreoobjects','steam_api','lua_shared','sqlite3_amalg']
 	if bld.env.DEST_OS == 'win32':
 		libs += ['USER32']
 

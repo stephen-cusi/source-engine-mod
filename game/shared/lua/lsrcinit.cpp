@@ -13,6 +13,7 @@
 
 #include "luasrclib.h"
 #include "lauxlib.h"
+#include "lsql.h"
 
 // HL2SB: game.AddParticles() below drives the particle system manager directly.
 #include "particles/particles.h"
@@ -192,6 +193,12 @@ static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.
   {LUA_PARTICLESYSTEMLIBNAME, luaopen_ParticleSystem},
   {LUA_SYSTEMSLIBNAME, luaopen_Systems},
+  // HL2SB: SQLite-backed sql library (C side: sql.Query / sql.QueryTyped in
+  // lsql.cpp, which also maintains sql.m_strError).  The rest of GMod's sql
+  // surface -- SQLStr, TableExists, IndexExists, QueryRow, QueryValue, Begin,
+  // Commit, LastError -- is Lua in lua/includes/util/sql.lua, which
+  // includes/init.lua loads right after util.lua, so this must open first.
+  {"sql", luaopen_Sql},
   // HL2SB: ported from Experiment: Source.  `Entities` is merged onto the same
   // global table as the Team Sandbox era `ents` (Create/GetByIndex).
   {LUA_ENTITIESLIBNAME, luaopen_Entities},
@@ -2337,47 +2344,11 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     "player = player or {}\n"
     "LoadPresets = LoadPresets or function() end\n"
     "SENSORBONE = SENSORBONE or {}\n"
-    //---------------------------------------------------------------------
-    // sql: GMod's sql library is SQLite-backed and this engine ships no
-    // sqlite3 at all (no sqlite3.h/.c anywhere; the only sql code is the
-    // MySQL developer tools under utils/, which are not in client.dll or
-    // server.dll).  luasrclib.h declares no sql library either, so there is
-    // nothing to bind.
-    //
-    // This is a STUB, not an implementation.  It keeps GMod's shapes so the
-    // three imported files that merely CALL it can load --
-    //
-    //     modules/cookie.lua:2            attempt to index a nil value (global sql)
-    //     extensions/player.lua:37        ... (global sql)
-    //     extensions/entity_iter.lua:14   (cascade: player.lua never ran)
-    //
-    // Queries return empty results and LastError says so, instead of
-    // pretending to persist.  Replacing this with sqlite3 is a build-level
-    // job (vendor the amalgamation + register the library in lsrcinit.cpp),
-    // not a Lua one.
-    //---------------------------------------------------------------------
-    "sql = sql or {\n"
-    "  IsStub = true,\n"
-    "  LastError = function() return 'sqlite is not available in this engine; nothing is persisted' end,\n"
-    "  SQLStr = function( str, bNoQuotes )\n"
-    "    local s = tostring( str ):gsub( \"'\", \"''\" )\n"
-    "    if ( bNoQuotes ) then return s end\n"
-    "    return \"'\" .. s .. \"'\"\n"
-    "  end,\n"
-    "  TableExists = function() return false end,\n"
-    "  Query = function( q )\n"
-    "    if ( !sql._warned ) then\n"
-    "      sql._warned = true\n"
-    "      Msg( \"[HL2SB] sql is a STUB: this engine ships no sqlite3 (see lsrcinit.cpp), so nothing written through sql is persisted and every read comes back empty.\\n\" )\n"
-    "      Msg( \"[HL2SB]   first statement swallowed: \" .. tostring( q ) .. \"\\n\" )\n"
-    "    end\n"
-    "    return {}\n"
-    "  end,\n"
-    "  QueryRow = function() return nil end,\n"
-    "  QueryValue = function() return nil end,\n"
-    "  Begin = function() end,\n"
-    "  Commit = function() end,\n"
-    "}\n" ) == 0 )
+    // sql used to be a dostring stub here (IsStub, swallow-everything Query).
+    // It is the real SQLite-backed library now: C side registered above in
+    // luasrclibs (lsql.cpp), Lua side unchanged in
+    // lua/includes/util/sql.lua.  The stub block is gone.
+    ) == 0 )
   {
     lua_pcall( L, 0, 0, 0 );
   }
