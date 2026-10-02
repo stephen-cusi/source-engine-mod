@@ -2978,6 +2978,12 @@ bool C_BaseAnimating::SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, i
 	// unless some entity actually registered callbacks.
 	{
 		extern void HL2SB_RunEntityCallbacks( C_BaseAnimating *pEntity, const char *pszName );
+		// HL2SB GMod compat (2026-10-03): re-apply the stored bone
+		// manipulations (Entity:ManipulateBonePosition/Scale) before the
+		// callbacks so they survive every rebuild and the callbacks observe
+		// the manipulated bones.
+		extern void HL2SB_ApplyBoneManipulations( C_BaseAnimating *pEntity );
+		HL2SB_ApplyBoneManipulations( this );
 		HL2SB_RunEntityCallbacks( this, "BuildBonePositions" );
 	}
 #endif
@@ -3142,6 +3148,21 @@ int C_BaseAnimating::DrawModel( int flags )
 	VPROF_BUDGET( "C_BaseAnimating::DrawModel", VPROF_BUDGETGROUP_MODEL_RENDERING );
 	if ( !m_bReadyToDraw )
 		return 0;
+
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-10-03): an entity whose Lua table carries a
+	// RenderOverride function draws through it INSTEAD of the engine path
+	// (First Person Body's body/shadow copies clip themselves below the camera
+	// and gate the shadow-depth passes this way).  Scripted entities and
+	// nextbots override this virtual and never land here, and the
+	// Entity:DrawModel binding goes straight to InternalDrawModel, so the
+	// field check cannot double-dispatch or recurse.
+	{
+		extern bool HL2SB_RunRenderOverride( C_BaseAnimating *pEntity, int nFlags );
+		if ( HL2SB_RunRenderOverride( this, flags ) )
+			return 1;
+	}
+#endif
 
 	// HL2SB GMod compat: the physgun held-entity glow shell.  The shell is an
 	// additive pass over the model -- it MUST draw AFTER the normal pass:

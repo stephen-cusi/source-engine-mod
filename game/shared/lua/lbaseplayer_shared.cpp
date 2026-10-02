@@ -32,6 +32,9 @@ void HL2SB_GetLastMouseDeltas( int &dx, int &dy );
 #include "iclientvehicle.h"
 // HL2SB: Player:IsSprinting reads the live C_BaseHLPlayer::m_fIsSprinting state.
 #include "c_basehlplayer.h"
+// HL2SB (2026-10-03): Player:ShouldDrawLocalPlayer reads the view entity
+// through the engine's render interface.
+#include "ivrenderview.h"
 #else
 #include "lbaseanimating.h"
 // HL2SB: Player:IsSprinting reads the live CHL2_Player::m_fIsSprinting state
@@ -388,7 +391,7 @@ static int CBasePlayer_GetVehicle (lua_State *L) {
 // Mirrors util.TraceLine from the eye along the aim vector a long distance.
 // Mask: GMod's Lua GetEyeTrace/GetEyeTraceNoCursor traces through
 // util.GetPlayerTrace, whose table carries no "mask" key, so the engine
-// default MASK_SOLID applies (reference, not MASK_SHOT).
+// default MASK_SOLID applies (reference behaviour, not MASK_SHOT).
 static int CBasePlayer_GetEyeTrace (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
   Vector vForward;
@@ -1220,6 +1223,38 @@ static int CBasePlayer_Alive (lua_State *L) {
 // constant while ducked instead of animating.
 static int CBasePlayer_GetCurrentViewOffset (lua_State *L) {
   lua_pushvector(L, lua_toplayer(L, 1)->GetViewOffset());
+  return 1;
+}
+
+// HL2SB GMod compat (2026-10-03): Player:GetViewOffset() - the STANDING view
+// offset (reference behaviour: a fixed member read, not the live
+// blend that GetCurrentViewOffset's virtual answers).  The pair's difference
+// (standing minus current) is what drives First Person Body's crouch/jump
+// leg offset.  VEC_VIEW is the gamerules' standing view vector.
+static int CBasePlayer_GetViewOffset (lua_State *L) {
+  // No gamerules (level teardown) would make the macro dereference NULL;
+  // 64 is the universal standing height every HL2 rules set answers.
+  if ( g_pGameRules == NULL )
+  {
+    Vector vStanding( 0.0f, 0.0f, 64.0f );
+    lua_pushvector( L, vStanding );
+    return 1;
+  }
+  lua_pushvector( L, VEC_VIEW );
+  return 1;
+}
+
+// HL2SB GMod compat (2026-10-03): Player:ShouldDrawLocalPlayer() - the
+// engine's draw question for this player.  Deliberately WITHOUT the
+// ShouldDrawLocalPlayer Lua hook (that hook can itself call this method, and
+// the reference binding consults engine state, not the hook) - this mirrors
+// the view-entity half of ClientModeShared::ShouldDrawLocalPlayer.
+static int CBasePlayer_ShouldDrawLocalPlayer (lua_State *L) {
+  C_BasePlayer *pPlayer = lua_toplayer(L, 1);
+  bool bShouldDraw = true;
+  if ( pPlayer->index == render->GetViewEntity() && !C_BasePlayer::ShouldDrawLocalPlayer() )
+    bShouldDraw = false;
+  lua_pushboolean( L, bShouldDraw );
   return 1;
 }
 
@@ -2424,6 +2459,8 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetRagdollEntity", CBasePlayer_GetRagdollEntity},
   {"GetAllowWeaponsInVehicle", CBasePlayer_GetAllowWeaponsInVehicle},
   {"GetCurrentViewOffset", CBasePlayer_GetCurrentViewOffset},
+  {"GetViewOffset", CBasePlayer_GetViewOffset},
+  {"ShouldDrawLocalPlayer", CBasePlayer_ShouldDrawLocalPlayer},
 #endif
   {"__index", CBasePlayer___index},
   {"__newindex", CBasePlayer___newindex},

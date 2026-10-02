@@ -15,7 +15,8 @@
 #include "mathlib/lvector.h"
 #include "model_types.h"	// HL2SB: STUDIO_RENDER, the default of Entity:DrawModel()
 #include "lvphysics_interface.h"
-#include "mathlib/lvmatrix.h"	// HL2SB: lua_pushvmatrix for Entity:GetBoneMatrix()
+#include "mathlib/lvmatrix.h"
+#include "animation.h"	// HL2SB (2026-10-03): GetNumBodyGroups for Entity:GetBodygroups	// HL2SB: lua_pushvmatrix for Entity:GetBoneMatrix()
 #include "studio.h"			// HL2SB: studiohdr_t for Entity:GetBoneCount()
 #include "c_baseflex.h"		// HL2SB: C_BaseFlex flex weights (GetFlexWeight/SetFlexWeight)
 
@@ -142,6 +143,135 @@ void HL2SB_RunEntityCallbacks( C_BaseAnimating *pEntity, const char *pszName )
 	}
 
 	s_bInEntityCallbacks = false;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-10-03): Entity:ManipulateBonePosition / ManipulateBoneScale.
+// Reference behaviour: the offset/scale is stored per (entity, bone) and applied
+// on every bone setup; the optional 4th boolean (default true) also applies it
+// to the live bone array immediately.  A side table keyed by EHANDLE keeps
+// C_BaseAnimating's layout untouched (same pattern as the callback list above).
+// Position offsets are added to the bone matrix translation in world space and
+// the scale multiplies the matrix basis - that is what the observed reference
+// consumers need (hiding a bone far away / zeroing it), and it is what the
+// read side (GetBoneMatrix) hands back afterwards.
+//-----------------------------------------------------------------------------
+struct HL2SB_BoneManip_t
+{
+	EHANDLE hEntity;
+	int nBone;
+	Vector vecPos;
+	Vector vecScale;
+	bool bHasPos;
+	bool bHasScale;
+	// Applied at most once per frame: the offset is added onto whatever the
+	// live bone array holds, so an unguarded second apply in the same frame
+	// (immediate write + the SetupBones pass) would double it.
+	int nLastAppliedFrame;
+};
+
+static CUtlVector< HL2SB_BoneManip_t > s_BoneManips;
+
+static HL2SB_BoneManip_t *HL2SB_FindBoneManip( C_BaseAnimating *pEntity, int nBone, bool bCreate )
+{
+	for ( int i = 0; i < s_BoneManips.Count(); ++i )
+	{
+		if ( s_BoneManips[i].hEntity.Get() == pEntity && s_BoneManips[i].nBone == nBone )
+			return &s_BoneManips[i];
+	}
+	if ( !bCreate )
+		return NULL;
+	HL2SB_BoneManip_t &manip = s_BoneManips[s_BoneManips.AddToTail()];
+	manip.hEntity = pEntity;
+	manip.nBone = nBone;
+	manip.vecPos = vec3_origin;
+	manip.vecScale = vec3_origin;
+	manip.bHasPos = false;
+	manip.bHasScale = false;
+	manip.nLastAppliedFrame = -1;
+	return &manip;
+}
+
+static void HL2SB_ApplyBoneManipEntry( C_BaseAnimating *pEntity, HL2SB_BoneManip_t &manip )
+{
+	if ( manip.nLastAppliedFrame == gpGlobals->framecount )
+		return;
+	studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+	if ( pHdr == NULL || manip.nBone < 0 || manip.nBone >= pHdr->numbones )
+		return;
+	if ( !pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
+		return;
+
+	matrix3x4_t &bone = pEntity->GetBoneForWrite( manip.nBone );
+	if ( manip.bHasPos )
+	{
+		Vector vTranslation;
+		MatrixGetTranslation( bone, vTranslation );
+		vTranslation += manip.vecPos;
+		MatrixSetTranslation( vTranslation, bone );
+	}
+	if ( manip.bHasScale )
+	{
+		MatrixScaleBy( manip.vecScale.x, bone );
+	}
+
+	manip.nLastAppliedFrame = gpGlobals->framecount;
+}
+
+// Called from C_BaseAnimating::SetupBones right before the BuildBonePositions
+// callbacks, so manipulations survive every rebuild and Lua callbacks observe
+// the manipulated bones.  Dead-entity entries are swept here too.
+void HL2SB_ApplyBoneManipulations( C_BaseAnimating *pEntity )
+{
+	if ( L == NULL || pEntity == NULL )
+		return;
+	for ( int i = s_BoneManips.Count() - 1; i >= 0; --i )
+	{
+		if ( s_BoneManips[i].hEntity.Get() == NULL )
+		{
+			s_BoneManips.FastRemove( i );
+			continue;
+		}
+		if ( s_BoneManips[i].hEntity == pEntity )
+			HL2SB_ApplyBoneManipEntry( pEntity, s_BoneManips[i] );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-10-03): the RenderOverride Lua field.  Reference
+// behaviour: an entity whose Lua table carries a RenderOverride function draws
+// through that function INSTEAD of the engine path; the function receives the
+// entity and the studio draw flags (STUDIO_RENDER / shadow-depth / SSAO bits -
+// how reference addons gate their projected-shadow copies).  Scripted entities
+// and nextbots override DrawModel themselves and never reach the base version,
+// so a plain field check here cannot double-dispatch.  Entity:DrawModel (the
+// binding) uses InternalDrawModel directly and does not re-enter this.
+//-----------------------------------------------------------------------------
+bool HL2SB_RunRenderOverride( C_BaseAnimating *pEntity, int nFlags )
+{
+	if ( L == NULL || pEntity == NULL )
+		return false;
+	if ( !lua_isrefvalid( L, pEntity->m_nTableReference ) )
+		return false;
+
+	lua_getref( L, pEntity->m_nTableReference );
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+	lua_getfield( L, -1, "RenderOverride" );
+	lua_remove( L, -2 );
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	lua_pushanimating( L, pEntity );
+	lua_pushinteger( L, nFlags );
+	luasrc_pcall( L, 2, 0, 0 );
+	return true;
 }
 
 /*
@@ -449,6 +579,12 @@ static int CBaseAnimating_SetBoneMatrix (lua_State *L) {
 
   // HL2SB (2026-09-25): the incoming matrix is WORLD space and the accessor
   // stores WORLD space - write it through unchanged (see GetBoneMatrix).
+  // HL2SB (2026-10-03): the write itself was missing until now - every caller
+  // (First Person Body's garbage-bone hiding and player-bone mirroring)
+  // silently rendered the untouched setup pose, i.e. a full body stuck in
+  // front of the camera.  Reference behaviour: the world-space 3x4 of the
+  // VMatrix is copied straight into the live bone array the renderer reads.
+  pEntity->GetBoneForWrite( nBone ) = vm.As3x4();
   return 0;
 }
 
@@ -581,14 +717,22 @@ static int CBaseAnimating_GetCallbacks (lua_State *L) {
 }
 
 static int CBaseAnimating_ManipulateBoneScale (lua_State *L) {
-  // HL2SB: the client C_BaseAnimating has no per-bone scale storage (that is
-  // a server-side bonemanip feature this fork never ported).  The minecraft
-  // world model sets the SAME uniform scale on every bone, which is exactly
-  // Entity:SetModelScale -- apply it there so the held block shrinks; any
-  // non-uniform per-bone scale degrades to whole-model scaling.
+  // HL2SB (2026-10-03): real per-bone scale (reference behaviour, see
+  // HL2SB_BoneManip_t above).  The old whole-model degrade broke First Person
+  // Body's vehicle head-hiding (scale 0 on ONE bone shrank the entire body);
+  // a uniform scale on EVERY bone is still visually SetModelScale, so the
+  // minecraft held-block usage is unaffected.
   C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
   Vector scale = luaL_checkvector(L, 3);
-  pEntity->SetModelScale( scale.x, 0.0f );
+  bool bImmediate = lua_isnoneornil(L, 4) ? true : ( lua_toboolean(L, 4) != 0 );
+
+  HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, nBone, true );
+  pManip->vecScale = scale;
+  pManip->bHasScale = true;
+
+  if ( bImmediate )
+    HL2SB_ApplyBoneManipEntry( pEntity, *pManip );
   return 0;
 }
 
@@ -722,6 +866,31 @@ static int CBaseAnimating_GetBody (lua_State *L) {
 
 static int CBaseAnimating_GetBodygroup (lua_State *L) {
   lua_pushinteger(L, luaL_checkanimating(L, 1)->GetBodygroup(luaL_checkint(L, 2)));
+  return 1;
+}
+
+// HL2SB GMod compat (2026-10-03): Entity:GetBodygroups() - every bodygroup as
+// a 1-based array of { id, name, num } tables.  First Person Body copies the
+// player's bodygroups onto its body copies through this.
+static int CBaseAnimating_GetBodygroups (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  lua_newtable( L );
+  if ( pHdr == NULL )
+    return 1;
+
+  const int nGroups = GetNumBodyGroups( &CStudioHdr( pHdr ) );
+  for ( int i = 0; i < nGroups; i++ )
+  {
+    lua_createtable( L, 0, 3 );
+    lua_pushinteger( L, i );
+    lua_setfield( L, -2, "id" );
+    lua_pushstring( L, pEntity->GetBodygroupName( i ) );
+    lua_setfield( L, -2, "name" );
+    lua_pushinteger( L, pEntity->GetBodygroupCount( i ) );
+    lua_setfield( L, -2, "num" );
+    lua_rawseti( L, -2, i + 1 );
+  }
   return 1;
 }
 
@@ -948,15 +1117,23 @@ static int CBaseAnimating_GetPoseParameterName (lua_State *L) {
   return 1;
 }
 
-// HL2SB GMod compat (2026-09-25): Entity:ManipulateBonePosition( bone, vec ) -
-// accepted as a safe NO-OP.  GMod keeps a per-bone offset applied at bone
-// build; this fork has no client storage for it (same limitation as
-// ManipulateBoneScale above).  First Person Body only uses it for a cosmetic
-// head-bone offset; the body still draws without it.
+// HL2SB GMod compat (2026-09-25, real 2026-10-03): Entity:ManipulateBonePosition(
+// bone, vec [, immediate=true] ) - the offset is stored per (entity, bone) and
+// applied on every bone setup plus immediately by default (reference
+// behaviour: the optional 4th boolean defaults to true).  First
+// Person Body pushes the head bone to (0, 10000, 0) to hide it.
 static int CBaseAnimating_ManipulateBonePosition (lua_State *L) {
-  luaL_checkanimating(L, 1);
-  luaL_checkint(L, 2);
-  luaL_checkvector(L, 3);
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
+  const Vector &vecPos = luaL_checkvector(L, 3);
+  bool bImmediate = lua_isnoneornil(L, 4) ? true : ( lua_toboolean(L, 4) != 0 );
+
+  HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, nBone, true );
+  pManip->vecPos = vecPos;
+  pManip->bHasPos = true;
+
+  if ( bImmediate )
+    HL2SB_ApplyBoneManipEntry( pEntity, *pManip );
   return 0;
 }
 
@@ -1804,6 +1981,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"GetBlendedLinearVelocity", CBaseAnimating_GetBlendedLinearVelocity},
   {"GetBody", CBaseAnimating_GetBody},
   {"GetBodygroup", CBaseAnimating_GetBodygroup},
+  {"GetBodygroups", CBaseAnimating_GetBodygroups},
   {"GetBodygroupCount", CBaseAnimating_GetBodygroupCount},
   {"GetBodygroupName", CBaseAnimating_GetBodygroupName},
   {"GetBoneControllers", CBaseAnimating_GetBoneControllers},

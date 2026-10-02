@@ -299,6 +299,19 @@ LUA_BINDING_BEGIN( Renders, GetMoBlurTex0, "library", "Get the motion blur rende
 }
 LUA_BINDING_END( "Texture", "The motion blur texture." )
 
+LUA_BINDING_BEGIN( Renders, EnableClipping, "library", "Enable or disable clipping, returns the previous state.", "client" )
+{
+    CMatRenderContextPtr pRenderContext( materials );
+    // Reference behaviour: the engine's EnableClipping returns
+    // the PREVIOUS clipping state and that value is pushed -- First Person
+    // Body saves it around its clip plane and restores it afterwards.
+    bool bPrevious = pRenderContext->EnableClipping( LUA_BINDING_ARGUMENT( lua_toboolean, 1, "isEnabled" ) );
+    lua_pushboolean( L, bPrevious );
+    return 1;
+}
+LUA_BINDING_END( "boolean", "The previous clipping state." )
+
+// Legacy alias kept for content that predates the GMod name.
 LUA_BINDING_BEGIN( Renders, SetClippingEnabled, "library", "Set the clipping enabled.", "client" )
 {
     CMatRenderContextPtr pRenderContext( materials );
@@ -306,6 +319,27 @@ LUA_BINDING_BEGIN( Renders, SetClippingEnabled, "library", "Set the clipping ena
     return 0;
 }
 LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, GetColorModulation, "library", "Get the color modulation.", "client" )
+{
+    float flColor[3] = { 1.0f, 1.0f, 1.0f };
+
+    // IVRenderView carries the modulation query (IMatRenderContext in this
+    // fork does not expose a getter).
+    render->GetColorModulation( flColor );
+    lua_pushnumber( L, flColor[0] );
+    lua_pushnumber( L, flColor[1] );
+    lua_pushnumber( L, flColor[2] );
+    return 3;
+}
+LUA_BINDING_END( "number, number, number", "The r, g, b modulation." )
+
+LUA_BINDING_BEGIN( Renders, GetBlend, "library", "Get the alpha blend.", "client" )
+{
+    lua_pushnumber( L, render->GetBlend() );
+    return 1;
+}
+LUA_BINDING_END( "number", "The alpha blend." )
 
 LUA_BINDING_BEGIN( Renders, UpdateScreenEffectTexture, "library", "Update the screen effect texture.", "client" )
 {

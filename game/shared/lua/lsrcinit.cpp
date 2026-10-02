@@ -2305,8 +2305,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   if ( luaL_loadstring( L,
     "AddCSLuaFile = AddCSLuaFile or function( path ) return path end\n"
     "IncludeCS = IncludeCS or function( path ) return path end\n"
-    // HL2SB (sbrust): 补 arch 字段（GMod jit.arch 取值：x86/x64/arm/arm64）--
-    // util.IsBinaryModuleInstalled 的后缀公式吃它，32/64 位不再共用一个槽位。
+    // HL2SB (sbrust): arch field (GMod jit.arch values: x86/x64/arm/arm64) --
+    // util.IsBinaryModuleInstalled derives the suffix from it; 32/64-bit no longer share one slot.
 #if defined( __aarch64__ ) || defined( _M_ARM64 ) || defined( _M_ARM64EC )
     "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'arm64' }\n"
 #elif defined( _WIN64 ) || defined( __x86_64__ )
@@ -2421,10 +2421,21 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
 #ifndef STUDIO_DRAWTRANSLUCENTSUBMODELS
 #define STUDIO_DRAWTRANSLUCENTSUBMODELS 0x00000004
 #endif
+// HL2SB (2026-10-03): the shadow/depth draw flags that reference addons test
+// inside RenderOverride (First Person Body gates its projected-shadow copies
+// with bit.band on these); values from public/model_types.h:31,34.
+#ifndef STUDIO_SSAODEPTHTEXTURE
+#define STUDIO_SSAODEPTHTEXTURE 0x08000000
+#endif
+#ifndef STUDIO_SHADOWDEPTHTEXTURE
+#define STUDIO_SHADOWDEPTHTEXTURE 0x40000000
+#endif
 
   lua_pushinteger( L, STUDIO_RENDER );                   lua_setglobal( L, "STUDIO_RENDER" );
   lua_pushinteger( L, STUDIO_VIEWXFORMATTACHMENTS );     lua_setglobal( L, "STUDIO_VIEWXFORMATTACHMENTS" );
   lua_pushinteger( L, STUDIO_DRAWTRANSLUCENTSUBMODELS ); lua_setglobal( L, "STUDIO_DRAWTRANSLUCENTSUBMODELS" );
+  lua_pushinteger( L, STUDIO_SSAODEPTHTEXTURE );         lua_setglobal( L, "STUDIO_SSAODEPTHTEXTURE" );
+  lua_pushinteger( L, STUDIO_SHADOWDEPTHTEXTURE );       lua_setglobal( L, "STUDIO_SHADOWDEPTHTEXTURE" );
 
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
