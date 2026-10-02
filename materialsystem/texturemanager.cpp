@@ -39,6 +39,7 @@
 #define MATSYS_INTERNAL
 #include "cmatlightmaps.h"
 #include "cmaterialsystem.h"
+#include "tier0/threadtools.h"	// HL2SB: CThreadFastMutex definition for AUTO_LOCK( HL2SB_ImageDecodeMutex() )
 #include "hl2sb_pngtexture.h"
 #undef MATSYS_INTERNAL
 
@@ -2054,15 +2055,18 @@ ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const 
 	if ( !g_pFullFileSystem->FileExists( szVTFFile, "GAME" ) &&
 		 HL2SB_ResolveImageTexture( pTextureName, szImageName, sizeof( szImageName ) ) )
 	{
-		// AsyncFindOrLoadTexture inserts its result under the material lock
-		// while we hold no lock here, so a second arrival can miss the
-		// dictionary lookup the caller did and go on to decode the file and
-		// build a second procedural texture under one key.  Cheap re-check
-		// before paying for either (issue #41, 8.1).
-		//
-		// NOTE: CreateProceduralTexture already hands back a texture at
-		// refcount 1 (ctexture.cpp), so unlike a file texture this one cannot
-		// be swept by RemoveUnusedTextures() - no extra pin needed.
+		// HL2SB (2026-10-02): the whole [re-check -> read -> decode -> create ->
+		// insert] sequence sits under one lock.  The re-check alone (issue #41,
+		// 8.1) did not stop double decodes: two resolver threads (material
+		// precache vs the queued/vgui-side bind) both passed it while the first
+		// was still decoding, then serialized on the old decode-only mutex and
+		// decoded again - every addon PNG loaded exactly twice.  Holding the
+		// lock across the decision AND the insert closes that window: the
+		// second thread re-checks only after the first has inserted, and
+		// returns the fresh entry instead of its own copy.  FindTexture and
+		// m_TextureList stay lock-free elsewhere (unchanged engine behavior).
+		AUTO_LOCK( HL2SB_ImageDecodeMutex() );
+
 		ITextureInternal *pExisting = FindTexture( pTextureName );
 		if ( pExisting )
 			return pExisting;
@@ -2105,8 +2109,8 @@ ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const 
 				if ( bDownload )
 					pImageTexture->Download( NULL, nAdditionalCreationFlags );
 
-				// NOTE: the caller (FindOrLoadTexture) inserts us into the texture
-				// dictionary, same as it does for file textures.
+				// NOTE: the guarded insert above means FindOrLoadTexture's own
+				// insert becomes a no-op for this texture.
 				return pImageTexture;
 			}
 

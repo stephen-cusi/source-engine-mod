@@ -338,7 +338,22 @@ private:
 // stb_image keeps its failure reason in a file-scope global, so two decodes
 // running at once would scribble over each other.  Async texture loads and the
 // main thread both land here, so serialise the decode (issue #41, 7.4).
-static CThreadFastMutex g_HL2SBImageDecodeMutex;
+//
+// HL2SB (2026-10-02, second issue): the lock is now EXPORTED
+// (HL2SB_ImageDecodeMutex) and taken by CTextureManager::LoadTexture around
+// the WHOLE image branch - dictionary re-check included.  Locking only the
+// decode left the check/insert window open: two resolver threads (material
+// precache vs the queued/vgui-side bind) both passed the "is it already in
+// the dictionary?" probe while the first was still decoding, and every addon
+// PNG loaded exactly twice.  Do NOT re-lock it inside this file - the only
+// caller is LoadTexture, which already holds it, and CThreadFastMutex is not
+// recursive.
+CThreadFastMutex g_HL2SBImageDecodeMutex;
+
+CThreadFastMutex &HL2SB_ImageDecodeMutex()
+{
+	return g_HL2SBImageDecodeMutex;
+}
 
 ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalName, int *pOutWidth, int *pOutHeight )
 {
@@ -374,10 +389,9 @@ ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalNa
 
 	int nWidth = 0, nHeight = 0, nChannels = 0;
 	unsigned char *pRGBA = NULL;
-	{
-		AUTO_LOCK( g_HL2SBImageDecodeMutex );
-		pRGBA = stbi_load_from_memory( (const stbi_uc *)bufFile.Base(), bufFile.TellPut(), &nWidth, &nHeight, &nChannels, 4 );
-	}
+	// Caller holds HL2SB_ImageDecodeMutex() (see the note on the lock above) -
+	// locking it here again would self-deadlock.
+	pRGBA = stbi_load_from_memory( (const stbi_uc *)bufFile.Base(), bufFile.TellPut(), &nWidth, &nHeight, &nChannels, 4 );
 
 	if ( !pRGBA || nWidth <= 0 || nHeight <= 0 )
 	{
