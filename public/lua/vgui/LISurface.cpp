@@ -423,13 +423,55 @@ static int surface_DrawSetTexture (lua_State *L) {
 // build faults.  The fallback below only covers "library open did not run".
 static int s_nMaterialDrawTextureID = -1;
 
+// HL2SB (2026-10-03): DrawSetTextureFile resolves its name through the
+// texture system (path search + dictionary) on EVERY call -- measured at
+// ~2.3ms per call on the ARM64-emulated test machine, with tarkov_hud
+// calling SetMaterial ~33x per frame (950ms/s, the single largest cost of
+// the whole session).  A material's texture-file resolution result never
+// changes, so the resolution runs ONCE per material name and the bound
+// texture id is cached; every later SetMaterial for the same material pays
+// only the cheap DrawSetTexture.  The one shared s_nMaterialDrawTextureID
+// stays for the uncached fallback path.
+struct HL2SB_MaterialTextureCacheEntry_t
+{
+	char m_szName[ 128 ];
+	int  m_nTextureID;
+};
+static CUtlVector< HL2SB_MaterialTextureCacheEntry_t > s_MaterialTextureCache;
+
+static int HL2SB_CachedMaterialTexture( IMaterial *pMaterial )
+{
+	const char *pName = pMaterial->GetName();
+
+	FOR_EACH_VEC( s_MaterialTextureCache, i )
+	{
+		if ( Q_stricmp( s_MaterialTextureCache[ i ].m_szName, pName ) == 0 )
+			return s_MaterialTextureCache[ i ].m_nTextureID;
+	}
+
+	if ( s_MaterialTextureCache.Count() >= 256 )
+	{
+		// Pathological material count: fall back to the original per-call
+		// resolve on the shared id rather than skipping the bind.
+		if ( s_nMaterialDrawTextureID == -1 )
+			s_nMaterialDrawTextureID = surface()->CreateNewTextureID();
+		surface()->DrawSetTextureFile( s_nMaterialDrawTextureID, pName, true, false );
+		return s_nMaterialDrawTextureID;
+	}
+
+	// Each cached material binds its OWN texture id: sharing one id would let
+	// the next DrawSetTextureFile overwrite the previous material's binding.
+	int nTextureID = surface()->CreateNewTextureID();
+	surface()->DrawSetTextureFile( nTextureID, pName, true, false );
+
+	HL2SB_MaterialTextureCacheEntry_t &entry = s_MaterialTextureCache[ s_MaterialTextureCache.AddToTail() ];
+	Q_strncpy( entry.m_szName, pName, sizeof( entry.m_szName ) );
+	entry.m_nTextureID = nTextureID;
+	return nTextureID;
+}
+
 static int surface_SetMaterial (lua_State *L) {
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_SETMATERIAL );
-  int &nMaterialDrawTextureID = s_nMaterialDrawTextureID;
-
-  if ( nMaterialDrawTextureID == -1 ) {
-    nMaterialDrawTextureID = surface()->CreateNewTextureID();
-  }
 
   IMaterial *pMaterial = luaL_checkmaterial(L, 1);
 
@@ -438,8 +480,12 @@ static int surface_SetMaterial (lua_State *L) {
   // this fork (the deployed vgui2/MatSystemSurface is an older interface version,
   // so the virtual slot does not match) -- verified with a minidump.  Bind by
   // name instead: DrawSetTextureFile resolves the material through FindMaterial
-  // and hands that very material to the dictionary slot.
-  surface()->DrawSetTextureFile( nMaterialDrawTextureID, pMaterial->GetName(), true, false );
+  // and hands that very material to the dictionary slot.  The resolution is
+  // cached per material name (see HL2SB_CachedMaterialTexture above).
+  int nMaterialDrawTextureID = HL2SB_CachedMaterialTexture( pMaterial );
+  if ( nMaterialDrawTextureID == -1 )
+    return 0;
+
   surface()->DrawSetTexture( nMaterialDrawTextureID );
   return 0;
 }
