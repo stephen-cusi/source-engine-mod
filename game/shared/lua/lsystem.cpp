@@ -157,13 +157,14 @@ static bool Win_GetOSVersion( char *pszOut, int len )
 	return true;
 }
 
-// The OS native machine, not the process view: an x64 binary running under
-// ARM64 Windows is served by the x64 emulator, which makes GetSystemInfo and
-// GetNativeSystemInfo report AMD64 to the process.  IsWow64Process2 (Win10
-// 1709+) exposes the physical machine in nativeMachine and the process view
-// in processMachine; fall back to GetNativeSystemInfo where it is missing
-// (honest outside emulation).
-static bool Win_GetArch( char *pszNative, char *pszProcess, int len )
+// The OS native machine vs the process view.  Both the WOW64 layer and the
+// x64 emulator feed the process a fake view: GetSystemInfo reports the arch
+// the process is served as (AMD64 for an x64 build translated on ARM64
+// Windows), while IsWow64Process2's nativeMachine (Win10 1709+) exposes the
+// physical machine.  processMachine is useless for the emulator -- recent
+// builds report UNKNOWN there even for a translated process -- so the
+// translated state is the disagreement between the two views.
+static bool Win_GetArch( char *pszNative, int lenNative, char *pszProcess, int lenProcess )
 {
 	typedef BOOL ( WINAPI *IsWow64Process2_t )( HANDLE, USHORT *, USHORT * );
 	HMODULE hKernel32 = GetModuleHandleA( "kernel32.dll" );
@@ -171,11 +172,9 @@ static bool Win_GetArch( char *pszNative, char *pszProcess, int len )
 		hKernel32 ? ( IsWow64Process2_t )GetProcAddress( hKernel32, "IsWow64Process2" ) : NULL;
 
 	const char *pszNativeArch = NULL;
-	const char *pszProcessArch = NULL;
 
 	USHORT usProcessMachine = 0, usNativeMachine = 0;
-	if ( pfnIsWow64Process2 && pfnIsWow64Process2( GetCurrentProcess(), &usProcessMachine, &usNativeMachine )
-		&& usNativeMachine != IMAGE_FILE_MACHINE_UNKNOWN )
+	if ( pfnIsWow64Process2 && pfnIsWow64Process2( GetCurrentProcess(), &usProcessMachine, &usNativeMachine ) )
 	{
 		switch ( usNativeMachine )
 		{
@@ -184,34 +183,39 @@ static bool Win_GetArch( char *pszNative, char *pszProcess, int len )
 			case IMAGE_FILE_MACHINE_I386:  pszNativeArch = "x86"; break;
 			default: break;
 		}
+	}
 
-		// processMachine is UNKNOWN when the process runs natively; any other
-		// value is the emulated view the process is served as.
-		switch ( usProcessMachine )
-		{
-			case IMAGE_FILE_MACHINE_ARM64: pszProcessArch = "arm64"; break;
-			case IMAGE_FILE_MACHINE_AMD64: pszProcessArch = "x64"; break;
-			case IMAGE_FILE_MACHINE_I386:  pszProcessArch = "x86"; break;
-			default: pszProcessArch = pszNativeArch; break;
-		}
+	// What the process itself is told: AMD64 under the x64 emulator, x86
+	// under WOW64, the true arch for a native process.
+	SYSTEM_INFO si;
+	GetSystemInfo( &si );
+	const char *pszProcessArch = NULL;
+	switch ( si.wProcessorArchitecture )
+	{
+		case PROCESSOR_ARCHITECTURE_ARM64: pszProcessArch = "arm64"; break;
+		case PROCESSOR_ARCHITECTURE_AMD64: pszProcessArch = "x64"; break;
+		case PROCESSOR_ARCHITECTURE_INTEL: pszProcessArch = "x86"; break;
+		default: return false;
 	}
 
 	if ( !pszNativeArch )
 	{
-		SYSTEM_INFO si;
+		// No IsWow64Process2 (pre-1709, so no x64 emulator either): outside
+		// WOW64's fake view GetNativeSystemInfo is honest about the machine.
 		GetNativeSystemInfo( &si );
 		switch ( si.wProcessorArchitecture )
 		{
 			case PROCESSOR_ARCHITECTURE_ARM64: pszNativeArch = "arm64"; break;
 			case PROCESSOR_ARCHITECTURE_AMD64: pszNativeArch = "x64"; break;
 			case PROCESSOR_ARCHITECTURE_INTEL: pszNativeArch = "x86"; break;
-			default: return false;
+			default: pszNativeArch = pszProcessArch; break;
 		}
-		pszProcessArch = pszNativeArch;
 	}
 
-	Q_strncpy( pszNative, pszNativeArch, len );
-	Q_strncpy( pszProcess, pszProcessArch, len );
+	// strncpy zero-pads to the length it is given, so each buffer gets its
+	// own bound.
+	Q_strncpy( pszNative, pszNativeArch, lenNative );
+	Q_strncpy( pszProcess, pszProcessArch, lenProcess );
 	return true;
 }
 
@@ -344,7 +348,7 @@ static bool Platform_Arch( char *pszOut, int len )
 {
 #ifdef _WIN32
 	char szProcess[64];
-	return Win_GetArch( pszOut, szProcess, len );
+	return Win_GetArch( pszOut, len, szProcess, ( int )sizeof( szProcess ) );
 #elif defined( __ANDROID__ )
 	// arm64-v8a -> "arm64", armeabi-v7a -> "armv7"
 	char szAbi[PROP_VALUE_MAX];
@@ -486,7 +490,7 @@ LUA_BINDING_BEGIN( Systems, GetPlatformInfo, "library", "Returns a table of plat
 
 #ifdef _WIN32
     char szProcess[64];
-    if ( Win_GetArch( szBuffer, szProcess, ( int )sizeof( szBuffer ) ) )
+    if ( Win_GetArch( szBuffer, ( int )sizeof( szBuffer ), szProcess, ( int )sizeof( szProcess ) ) )
     {
         lua_pushstring( L, szBuffer );
         lua_setfield( L, -2, "arch" );
