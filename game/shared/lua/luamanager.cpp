@@ -561,6 +561,12 @@ void luasrc_init_gameui (void) {
   // that is what its "LuaMenu" path ID is for.
   luaopen_Files(LGameUI);
 
+  // HL2SB: platform facts for the menu realm (system.IsAndroid() picks the
+  // touch layout in the Addons dialog, the same switch the derma skin's
+  // hl2sb_touch_ui default applies in the client realm).  Opened before the
+  // alias pass so the lowercase "system" spelling appears with the rest.
+  luaopen_Systems(LGameUI);
+
   // ...and the GMod SPELLINGS for every library opened above.  luaopen_Files
   // publishes "Files"; GMod scripts (and lua/gameui/*.lua) ask for `file`.  The
   // game realms get this from luasrc_openlibs, which this state never calls --
