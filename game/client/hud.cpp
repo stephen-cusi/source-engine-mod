@@ -371,6 +371,21 @@ bool CHudElement::ShouldDraw( void )
 		}
 	}
 
+	// HL2SB (2026-10-02) GMod compat: the gamemode-hook veto.  GMod consults
+	// hook.Add( "HUDShouldDraw", ... ) / GM:HUDShouldDraw( name ) for every
+	// HUD element every frame; only an explicit false hides the element
+	// (RETURN_LUA_VETO), nil keeps the engine answer.  tarkov_hud's
+	// stock-HUD hider registered into this hook and stayed silently dead
+	// because nothing ever dispatched it -- until now only the active SWEP
+	// could veto.
+	if ( bShouldDraw )
+	{
+		BEGIN_LUA_CALL_HOOK( "HUDShouldDraw" );
+			lua_pushstring( L, GetName() );
+		END_LUA_CALL_HOOK( 1, 1 );
+		RETURN_LUA_VETO();
+	}
+
 	return bShouldDraw;
 }
 

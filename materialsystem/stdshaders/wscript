@@ -60,6 +60,8 @@ def build(bld):
 		'floatcombine_autoexpose.cpp',
 		'floattoscreen.cpp',
 		'floattoscreen_vanilla.cpp',
+		'g_colourmodify.cpp',
+		'gmodscreenspace.cpp',
 		'HDRCombineTo16Bit.cpp',
 		'HDRSelectRange.cpp',
 		'hsl_filmgrain_pass1.cpp',
