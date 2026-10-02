@@ -1815,6 +1815,14 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 	luasrc_dofolder( L, LUA_PATH_GAME_SHARED );
 	luasrc_dofolder( L, LUA_PATH_GAME_CLIENT );
 
+	// HL2SB (2026-10-02) GMod compat: lua/postprocess/*.lua -- GMod's client
+	// loads this folder in the same stage (its loader's folder list runs
+	// autorun/client, postprocess, vgui, ...).  These files define the global
+	// DrawColorModify / DrawMotionBlur / DrawToyTown entry points and the
+	// pp_* convar effects behind them; addons call the globals from HUDPaint
+	// and their own RenderScreenspaceEffects hooks.
+	luasrc_dofolder( L, LUA_ROOT "/postprocess" );
+
 	// HL2SB: GMod's autorun stage (wiki: Lua_Loading_Order).  GMod runs
 	// lua/autorun/*.lua and then lua/autorun/client/** before the gamemode and
 	// before weapons/entities, alphabetically and recursing into subfolders.

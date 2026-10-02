@@ -259,12 +259,38 @@ LUA_BINDING_BEGIN( Renders, GetScreenEffectTexture, "library", "Get the screen e
     // this arrangement: halo captures with UpdateScreenEffectTexture BEFORE
     // drawing any silhouette, so the FB holds the pre-halo scene and is only
     // sampled after the pass.
-    int nIndex = (int)LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "textureIndex" );
+    int nIndex = (int)LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 1, 0, "textureIndex" );
     nIndex = clamp( nIndex, 0, 1 );
     lua_pushitexture( L, GetFullFrameFrameBufferTexture( nIndex ) );
     return 1;
 }
 LUA_BINDING_END( "Texture", "The screen effect texture." )
+
+// HL2SB (2026-10-02) GMod compat: render.GetMoBlurTex0() -- the motion-blur
+// accumulation target lua/postprocess/motion_blur.lua draws with.  GMod's
+// client lazily creates a named 256x256 render target ("s_pMoBlurTex0") on
+// first use; do the same through the same creation call the spawnicon
+// snapshot helper uses, so repeated calls return the same texture.
+LUA_BINDING_BEGIN( Renders, GetMoBlurTex0, "library", "Get the motion blur render target texture.", "client" )
+{
+    static ITexture *s_pMoBlurTex0 = NULL;
+    if ( s_pMoBlurTex0 == NULL )
+    {
+        s_pMoBlurTex0 = materials->CreateNamedRenderTargetTextureEx2(
+            "s_pMoBlurTex0", 256, 256, RT_SIZE_LITERAL, IMAGE_FORMAT_RGBA8888,
+            MATERIAL_RT_DEPTH_SEPARATE,
+            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD,
+            0 );
+        if ( s_pMoBlurTex0 == NULL )
+        {
+            lua_pushnil( L );
+            return 1;
+        }
+    }
+    lua_pushitexture( L, s_pMoBlurTex0 );
+    return 1;
+}
+LUA_BINDING_END( "Texture", "The motion blur texture." )
 
 LUA_BINDING_BEGIN( Renders, SetClippingEnabled, "library", "Set the clipping enabled.", "client" )
 {

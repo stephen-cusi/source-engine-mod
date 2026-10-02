@@ -30,6 +30,14 @@
 //-----------------------------------------------------------------------------
 vgui::HScheme g_hVGuiCombineScheme = 0;
 
+// HL2SB (2026-10-02): fov_desired must be registered on the client as a
+// USERINFO convar or the engine never includes it in the client's userinfo and
+// the server has nothing to apply.  Stock HL2MP's clientmode never defined it
+// (the hl2 single-player clientmode does, but that file is not part of this
+// build), so FOV changes were a silent no-op.  Default and clamp match the
+// shared CGameRules::ClientSettingsChanged read (75..110) and the HL2/GMod
+// default of 75.
+ConVar fov_desired( "fov_desired", "75", FCVAR_ARCHIVE | FCVAR_USERINFO, "Sets the base field-of-view.", true, 75.0, true, 110.0 );
 
 // Instance the singleton and expose the interface to it.
 IClientMode *GetClientModeNormal()

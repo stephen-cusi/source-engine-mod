@@ -1045,8 +1045,13 @@ private:
 	PlayerConnectedState	m_iConnected;
 
 	// from edict_t
-	// CBasePlayer doesn't send this but CCSPlayer does.
-	CNetworkVarForDerived( int, m_ArmorValue );
+	// HL2SB (2026-10-02): sent from DT_BasePlayer now (Player:Armor), so the
+	// change tracking must be live: with CNetworkVarForDerived every write
+	// routed to a no-op virtual and the prop never flagged dirty -- it would
+	// have been sent only in the initial full update.  This swaps two
+	// NetworkStateChanged_m_ArmorValue vtable slots out of CBasePlayer, so the
+	// whole game/server tree must rebuild together.
+	CNetworkVar( int, m_ArmorValue );
 	float					m_AirFinished;
 	float					m_PainFinished;
 

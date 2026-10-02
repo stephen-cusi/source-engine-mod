@@ -2217,6 +2217,23 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 
 		CleanupMain3DView( view );
 
+		// HL2SB GMod compat: fire GM:RenderScreenspaceEffects once per frame,
+		// after the 3D scene and its screen-space effects and before the HUD --
+		// GMod's postprocessing stage.  This is where GMod's own
+		// lua/postprocess/*.lua effects (pp_colormod, pp_motionblur, ...) and
+		// every addon's hook.Add("RenderScreenspaceEffects", ...) run; without
+		// a dispatcher those hooks were registered but never called.  Must come
+		// BEFORE the PostDrawEffects pump below (GMod order: RSE, then
+		// PostDrawEffects).  Same in-game guard as PostDrawEffects.
+		{
+			extern bool g_bRenderingReflection;
+			if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+			{
+				BEGIN_LUA_CALL_HOOK( "RenderScreenspaceEffects" );
+				END_LUA_CALL_HOOK( 0, 0 );
+			}
+		}
+
 		// HL2SB GMod compat: fire GM:PostDrawEffects once per frame, after the
 		// 3D scene (world/entities/viewmodel) and screen-space effects, before
 		// the HUD.  This is the hook GMod's own modules/halo.lua renders on

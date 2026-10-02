@@ -30,8 +30,13 @@ void HL2SB_GetLastMouseDeltas( int &dx, int &dy );
 // GetVehicleEnt() call.  cbase.h's c_baseplayer.h only uses the type as a
 // pointer, so every client file that dereferences it includes this itself.
 #include "iclientvehicle.h"
+// HL2SB: Player:IsSprinting reads the live C_BaseHLPlayer::m_fIsSprinting state.
+#include "c_basehlplayer.h"
 #else
 #include "lbaseanimating.h"
+// HL2SB: Player:IsSprinting reads the live CHL2_Player::m_fIsSprinting state
+// (CHL2MP_Player derives from CHL2_Player).
+#include "hl2_player.h"
 #endif
 #include "lbasecombatweapon_shared.h"
 #include "lbaseentity_shared.h"
@@ -483,6 +488,38 @@ static int CBasePlayer_GetHealth (lua_State *L) {
   return 1;
 }
 
+// HL2SB (2026-10-02) GMod compat: Player:Armor() / GetArmor() / SetArmor() /
+// GetMaxArmor() / SetMaxArmor() -- the shipped tarkov_hud addon reads these
+// every HUDPaint frame (ply:Armor(), ply:GetMaxArmor()), and the nil methods
+// took the whole HUD hook down with them.
+// The engine value is CBasePlayer::m_ArmorValue, networked through
+// DT_BasePlayer in the same change (server SendProp + client recv member).
+// GetMaxArmor answers 100: this fork has no per-player max-armor concept (the
+// battery caps at MAX_NORMAL_BATTERY == 100) and 100 is GMod's documented
+// default, so the HUD's armor ratio stays sane.  SetMaxArmor exists for
+// signature parity only.
+static int CBasePlayer_Armor (lua_State *L) {
+  lua_pushinteger(L, luaL_checkplayer(L, 1)->ArmorValue());
+  return 1;
+}
+
+static int CBasePlayer_SetArmor (lua_State *L) {
+  luaL_checkplayer(L, 1)->SetArmorValue(luaL_checkint(L, 2));
+  return 0;
+}
+
+static int CBasePlayer_GetMaxArmor (lua_State *L) {
+  luaL_checkplayer(L, 1);
+  lua_pushinteger(L, 100);
+  return 1;
+}
+
+static int CBasePlayer_SetMaxArmor (lua_State *L) {
+  luaL_checkplayer(L, 1);
+  luaL_checkint(L, 2);
+  return 0;
+}
+
 static int CBasePlayer_GetImpulse (lua_State *L) {
   lua_pushinteger(L, luaL_checkplayer(L, 1)->GetImpulse());
   return 1;
@@ -895,6 +932,26 @@ static int CBasePlayer_SetAnimation (lua_State *L) {
 static int CBasePlayer_Crouching (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
   lua_pushboolean(L, (pPlayer->GetFlags() & FL_DUCKING) != 0);
+  return 1;
+}
+
+// HL2SB (2026-10-02) GMod compat: Player:IsSprinting() -- tarkov_hud polls it
+// every HUDPaint frame for its movement indicator.
+// GMod's contract (wiki): "holding their sprint key and are allowed to
+// sprint".  This fork already tracks exactly that state on both realms --
+// CHL2_Player (server) / C_BaseHLPlayer (client) flip m_fIsSprinting from
+// HandleSpeedChanges on IN_SPEED presses, gated by CanSprint (suit equipped +
+// suit power) and drive HL2_SPRINT_SPEED.  Reading that state is the exact
+// GMod semantic; a raw IN_SPEED button guess would report "sprinting" while
+// merely holding shift against a wall and miss the suit gate.
+static int CBasePlayer_IsSprinting (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  C_BaseHLPlayer *pHLEPlayer = static_cast< C_BaseHLPlayer * >( pPlayer );
+#else
+  CHL2_Player *pHLEPlayer = static_cast< CHL2_Player * >( pPlayer );
+#endif
+  lua_pushboolean( L, pHLEPlayer != NULL && pHLEPlayer->IsSprinting() );
   return 1;
 }
 
@@ -2232,6 +2289,13 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetFOVDistanceAdjustFactor", CBasePlayer_GetFOVDistanceAdjustFactor},
   {"GetFOVTime", CBasePlayer_GetFOVTime},
   {"GetHealth", CBasePlayer_GetHealth},
+  // HL2SB GMod compat: armor accessors (tarkov_hud) -- GMod's spellings plus
+  // the GetArmor alias some addons use.
+  {"Armor", CBasePlayer_Armor},
+  {"GetArmor", CBasePlayer_Armor},
+  {"SetArmor", CBasePlayer_SetArmor},
+  {"GetMaxArmor", CBasePlayer_GetMaxArmor},
+  {"SetMaxArmor", CBasePlayer_SetMaxArmor},
   {"GetImpulse", CBasePlayer_GetImpulse},
   {"GetLaggedMovementValue", CBasePlayer_GetLaggedMovementValue},
   {"GetLastKnownPlaceName", CBasePlayer_GetLastKnownPlaceName},
@@ -2317,6 +2381,8 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SetAnimationExtension", CBasePlayer_SetAnimationExtension},
   // HL2SB (2026-09-22): GMod names -- cf_beast's weapon base calls both.
   {"Crouching", CBasePlayer_Crouching},
+  // HL2SB GMod compat: Player:IsSprinting (tarkov_hud).
+  {"IsSprinting", CBasePlayer_IsSprinting},
   {"DoAnimationEvent", CBasePlayer_DoAnimationEvent},
   {"SetBloodColor", CBasePlayer_SetBloodColor},
   {"SetFOV", CBasePlayer_SetFOV},

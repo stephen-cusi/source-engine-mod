@@ -8304,6 +8304,11 @@ void SendProxy_CropFlagsToPlayerFlagBitsLength( const SendProp *pProp, const voi
 		// `health >= maxhealth` check true on the client for every living player, so
 		// the predicted heal always failed -- deny sound, no viewmodel animation.
 		SendPropInt		(SENDINFO(m_iMaxHealth), -1, SPROP_VARINT | SPROP_CHANGES_OFTEN ),
+		// HL2SB (2026-10-02): Player:Armor() client source.  RecvProps match
+		// SendProps BY NAME (dt_recv_eng.cpp FindRecvProp), so the client prop's
+		// position is free -- what matters is m_ArmorValue being declared
+		// exactly once per side.
+		SendPropInt		(SENDINFO(m_ArmorValue), -1, SPROP_VARINT | SPROP_CHANGES_OFTEN ),
 		SendPropInt		(SENDINFO(m_lifeState), 3, SPROP_UNSIGNED ),
 		SendPropInt		(SENDINFO(m_iBonusProgress), 15 ),
 		SendPropInt		(SENDINFO(m_iBonusChallenge), 4 ),

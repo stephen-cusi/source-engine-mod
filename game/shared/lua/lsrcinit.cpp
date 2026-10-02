@@ -67,6 +67,9 @@ static ConVar cl_drawownshadow("cl_drawownshadow", "0", FCVAR_ARCHIVE, "Render t
 #include "cliententitylist.h"			// HL2SB_RPC: entity index -> C_BaseEntity
 #endif
 
+// HL2SB (2026-10-02): game.GetAmmoName reads the shared ammo def.
+#include "ammodef.h"
+
 
 // HL2SB: local prototype -- deliberately NOT added to luasrclib.h: a header
 // touch there would force a full-tree rebuild (waf has no header dependency
@@ -813,6 +816,23 @@ static int lua_game_IsDedicated (lua_State *L) {
 #else
   lua_pushboolean( L, engine->IsDedicatedServer() != 0 );
 #endif
+  return 1;
+}
+
+// HL2SB (2026-10-02) GMod compat: game.GetAmmoName( ammoID ) -> string|nil.
+// Wiki: "Returns the ammo name for given ammo type ID ... or nil if ammo type
+// ID is invalid."  Complements Player:GiveAmmo's numeric form, whose pickup
+// notification now resolves through the same ammo def.
+static int lua_game_GetAmmoName (lua_State *L) {
+  const int iAmmoType = luaL_checkint( L, 1 );
+  CAmmoDef *pAmmoDef = GetAmmoDef();
+  Ammo_t *pAmmo = ( pAmmoDef != NULL && iAmmoType >= 0 )
+    ? pAmmoDef->GetAmmoOfIndex( iAmmoType ) : NULL;
+  if ( pAmmo == NULL || pAmmo->pName == NULL || pAmmo->pName[ 0 ] == '\0' ) {
+    lua_pushnil( L );
+  } else {
+    lua_pushstring( L, pAmmo->pName );
+  }
   return 1;
 }
 
@@ -1707,6 +1727,16 @@ static void __MsgFunc_HL2SB_NW( bf_read &read )
 // would show the pickup popup (hidePopup == false); the client turns it into
 // the shared HUDAmmoPickedUp hook, which the GMod base gamemode normally draws
 // (wiki GM:HUDAmmoPickedUp -- "Called when the client has picked up ammo").
+//
+// HL2SB (2026-10-02): dispatch through hook.Run, not hook.call.  hook.lua's
+// call() signature is ( eventName, gamemodeTable, ... ) -- the old three-value
+// push put the ammo NAME into the gamemode slot and left the amount as the
+// only vararg, so every registered callback received ( amount, nil ) and any
+// addon reading the second argument raised "concatenate a nil value" on each
+// pickup.  hook.Run( name, ... ) forwards ( ammoName, amount ) to registered
+// hooks and then falls back to GM:HUDAmmoPickedUp, which is exactly the GMod
+// contract.  Stack discipline matches __MsgFunc_HL2SB_RPC below: snapshot the
+// top and restore unconditionally instead of hand-counting pops.
 static void __MsgFunc_HL2SB_AMMO( bf_read &read )
 {
 	char szName[ 128 ];
@@ -1719,21 +1749,21 @@ static void __MsgFunc_HL2SB_AMMO( bf_read &read )
 	if ( L == NULL )
 		return;
 
+	const int iBase = lua_gettop( L );
+
 	lua_getglobal( L, "hook" );
 	if ( lua_istable( L, -1 ) ) {
-		lua_getfield( L, -1, "call" );
+		lua_getfield( L, -1, "Run" );
 		if ( lua_isfunction( L, -1 ) ) {
 			lua_remove( L, -2 );
 			lua_pushstring( L, "HUDAmmoPickedUp" );
 			lua_pushstring( L, szName );
 			lua_pushinteger( L, nAmount );
 			luasrc_pcall( L, 3, 0, 0 );
-		} else {
-			lua_pop( L, 1 );
 		}
-	} else {
-		lua_pop( L, 1 );
 	}
+
+	lua_settop( L, iBase );		// unconditional restore
 }
 
 // HL2SB (2026-09-22): Entity:CallOnClient( name, data ) receiver -- the server
@@ -2392,6 +2422,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pushcfunction( L, lua_game_GetMap );       lua_setfield( L, -2, "GetMap" );
     lua_pushcfunction( L, lua_game_SinglePlayer ); lua_setfield( L, -2, "SinglePlayer" );
     lua_pushcfunction( L, lua_game_IsDedicated );  lua_setfield( L, -2, "IsDedicated" );
+    lua_pushcfunction( L, lua_game_GetAmmoName );  lua_setfield( L, -2, "GetAmmoName" );
   }
   lua_pop( L, 1 );
 

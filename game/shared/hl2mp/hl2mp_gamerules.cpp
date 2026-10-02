@@ -1207,6 +1207,23 @@ void CHL2MPRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 	if ( pHL2Player == NULL )
 		return;
 
+	// HL2SB (2026-10-02): run the base handling BEFORE the model logic.  The
+	// settled-model check below returns on every ordinary settings write
+	// (that is its purpose -- silencing the Minecraft-style convar churn),
+	// and with the old bottom-of-function BaseClass call those returns also
+	// swallowed player renames.  CTeamplayRules::ClientSettingsChanged handles
+	// names only and never forwards to CGameRules, so fov_desired is dead in
+	// the HL2MP rule chain; apply it here exactly like CGameRules does.
+	BaseClass::ClientSettingsChanged( pPlayer );
+
+	const char *pszFov = engine->GetClientConVarValue( pPlayer->entindex(), "fov_desired" );
+	if ( pszFov )
+	{
+		int iFov = atoi( pszFov );
+		iFov = clamp( iFov, 75, 110 );
+		pPlayer->SetDefaultFOV( iFov );
+	}
+
 	const char *pCurrentModel = modelinfo->GetModelName( pPlayer->GetModel() );
 	const char *szModelName = engine->GetClientConVarValue( engine->IndexOfEdict( pPlayer->edict() ), "cl_playermodel" );
 
@@ -1331,9 +1348,11 @@ void CHL2MPRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 		UTIL_LogPrintf( "\"%s\" cl_cmdrate = \"%s\"\n", pHL2Player->GetPlayerName(), engine->GetClientConVarValue( pHL2Player->entindex(), "cl_cmdrate" ));
 	}
 
-	BaseClass::ClientSettingsChanged( pPlayer );
+	// HL2SB (2026-10-02): BaseClass::ClientSettingsChanged moved to the top of
+	// this function -- see the note there.  Calling it here again would double
+	// the name-change announce.
 #endif
-	
+
 }
 
 int CHL2MPRules::PlayerRelationship( CBaseEntity *pPlayer, CBaseEntity *pTarget )

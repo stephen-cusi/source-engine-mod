@@ -417,7 +417,14 @@ protected:
 
 public:
 	int m_StuckLast;
-	
+
+	// HL2SB (2026-10-02): armor, mirrored from the server's
+	// CBasePlayer::m_ArmorValue through the DT_BasePlayer recv table.  Feeds
+	// Player:Armor() / Player:SetArmor() on the client (tarkov_hud reads both).
+	int m_ArmorValue;
+	int  ArmorValue() const { return m_ArmorValue; }
+	void SetArmorValue( int value ) { m_ArmorValue = value; }
+
 	// Data for only the local player
 	CNetworkVarEmbedded( CPlayerLocalData, m_Local );
 

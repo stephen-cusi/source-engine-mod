@@ -14,6 +14,7 @@
 #include "ltakedamageinfo.h"
 #include "mathlib/lvector.h"
 #include "entitylist.h"
+#include "ammodef.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -78,18 +79,23 @@ static int CBasePlayer_GiveAmmo (lua_State *L) {
   // (base gamemode cl_hudpickup.lua draws it).  Relay the name across a user
   // message and let the client raise the shared hook.
   const char *pszAmmoName = NULL;
-  char szIdName[ 32 ];
   const bool bHidePopup = luaL_optboolean(L, 4, false);
   int nGiven = 0;
 
   switch(lua_type(L, 3)) {
-    case LUA_TNUMBER:
-      nGiven = pPlayer->GiveAmmo(nAmount, luaL_checkint(L, 3), bHidePopup);
-      if ( lua_isstring(L, 3) == 0 ) {
-        Q_snprintf( szIdName, sizeof( szIdName ), "ammo_%d", luaL_checkint(L, 3) );
-        pszAmmoName = szIdName;
-      }
+    case LUA_TNUMBER: {
+      const int iAmmoId = luaL_checkint(L, 3);
+      nGiven = pPlayer->GiveAmmo(nAmount, iAmmoId, bHidePopup);
+      // HL2SB (2026-10-02): the popup is keyed on the ammo NAME, so a numeric
+      // ammo ID must be resolved back through the ammo def -- the old
+      // lua_isstring gate could never fire here (lua_isstring is true for
+      // numbers too), leaving pszAmmoName NULL and numeric GiveAmmo calls
+      // permanently silent on the HUD.  pName lives as long as the ammo def.
+      Ammo_t *pAmmo = GetAmmoDef()->GetAmmoOfIndex( iAmmoId );
+      if ( pAmmo != NULL && pAmmo->pName != NULL )
+        pszAmmoName = pAmmo->pName;
       break;
+    }
     case LUA_TSTRING:
       pszAmmoName = luaL_checkstring(L, 3);
       nGiven = pPlayer->GiveAmmo(nAmount, pszAmmoName, bHidePopup);
