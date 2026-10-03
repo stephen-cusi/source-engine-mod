@@ -4900,10 +4900,17 @@ const char *C_BaseEntity::GetClassname( void )
 	}
 #endif
 #ifndef NO_ENTITY_PREDICTION
-	if ( GetPredDescMap() )
+	// HL2SB: GMod semantics (binary-verified): the networked class name wins
+	// and short-circuits; the classmap lookup below is only a FALLBACK for
+	// entities that carry no network name (engine predictable weapons resolve
+	// their weapon_* name here). Without the gotname guard this branch
+	// overwrote a scripted entity's real name with the first registered
+	// classmap entry, so every client-side ent:GetClassname() collapsed to
+	// the same constant.
+	if ( GetPredDescMap() && !gotname )
 	{
 		const char *mapname =  GetClassMap().Lookup( GetPredDescMap()->dataClassName );
-		if ( mapname && mapname[ 0 ] ) 
+		if ( mapname && mapname[ 0 ] )
 		{
 			Q_strncpy( outstr, mapname, sizeof( outstr ) );
 			gotname = true;

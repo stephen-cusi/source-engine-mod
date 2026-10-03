@@ -175,7 +175,7 @@ void HL2SB_LoadAllModelConfigs( void )
 		filesystem->FindClose( findHandle );
 	}
 
-	// HL2SB: put the runtime entries back.  ⚠️ The duplicate check must NOT go
+	// HL2SB: put the runtime entries back.  NOTE: the duplicate check must NOT go
 	// through HL2SB_GetModelConfigByName(): that helper lazy-loads, and we are
 	// inside the load - it would recurse forever.
 	int nRestored = 0;

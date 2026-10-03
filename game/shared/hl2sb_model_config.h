@@ -11,7 +11,10 @@
 
 #define HL2SB_MAX_MODEL_NAME 64
 #define HL2SB_MAX_MODEL_PATH 128
-#define HL2SB_MAX_MODELS 128
+// HL2SB: was 128; a full table dropped player models silently (the
+// models/player/ scan plus the hands cast list registers ~250 keys per
+// session). Purely local per-DLL state -- not networked, not serialized.
+#define HL2SB_MAX_MODELS 512
 
 // Model config structure
 struct HL2SB_ModelConfig_t
