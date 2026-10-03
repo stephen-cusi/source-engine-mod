@@ -1623,6 +1623,92 @@ void CBasePlayer::CalcViewModelView( const Vector& eyeOrigin, const QAngle& eyeA
 	}
 }
 
+#if defined( CLIENT_DLL ) && defined( LUA_SDK )
+// HL2SB (2026-10-04): the GMod CalcView dispatch, shared by CalcPlayerView and
+// CalcVehicleView.  reference contract (GMod client.dll -- the single
+// HookExists(ctx, 4) call site): push copies of ( player, origin, angles, fov,
+// znear, zfar ), take ONE return value and read the CamData fields
+// origin/angles/fov/znear/zfar back with the current values as defaults.  GMod
+// never reads the pushed userdata back itself, but its base gamemode
+// GM:CalcView forwards the argument vectors into the returned view table BY
+// REFERENCE -- that is how in-place edits (First Person Body's eye-attachment
+// snap) reach the engine.  This dispatch keeps copies of the pushed
+// origin/angles across the call so the same convention works even when the
+// gamemode method returns nothing.  A returned table always wins.
+// pOutNear/pOutFar: only the vehicle path has znear/zfar out-parameters.
+static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &eyeAngles,
+							   float &fov, float flZNear, float flZFar,
+							   float *pOutNear = NULL, float *pOutFar = NULL )
+{
+	if ( L == NULL || !pPlayer->IsLocalPlayer() )
+		return;
+
+	BEGIN_LUA_CALL_HOOK( "CalcView" );
+		lua_pushplayer( L, pPlayer );
+		lua_pushvector( L, eyeOrigin );
+		lua_pushangle( L, eyeAngles );
+		lua_pushnumber( L, fov );
+		lua_pushnumber( L, flZNear );
+		lua_pushnumber( L, flZFar );
+		// keep copies of the pushed origin/angles: the END macro's pcall
+		// consumes the arguments, so in-place edits by hooks only survive in
+		// these pushed-aside copies
+		int iTop = lua_gettop( L );
+		lua_pushvalue( L, iTop - 4 );		// origin
+		lua_pushvalue( L, iTop - 3 );		// angles
+	END_LUA_CALL_HOOK( 6, 1 );
+
+	Vector vecOrigin = eyeOrigin;
+	QAngle angAngles = eyeAngles;
+	float flNewFov = fov;
+
+	if ( lua_istable( L, -3 ) )		// stack: [ result, originCopy, anglesCopy ]
+	{
+		lua_getfield( L, -3, "origin" );
+		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "Vector" ) )
+			vecOrigin = luaL_checkvector( L, -1 );
+		lua_pop( L, 1 );
+
+		lua_getfield( L, -3, "angles" );
+		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
+			angAngles = luaL_checkangle( L, -1 );
+		lua_pop( L, 1 );
+
+		lua_getfield( L, -3, "fov" );
+		if ( lua_isnumber( L, -1 ) )
+			flNewFov = luaL_checknumber( L, -1 );
+		lua_pop( L, 1 );
+
+		if ( pOutNear != NULL )
+		{
+			lua_getfield( L, -3, "znear" );
+			if ( lua_isnumber( L, -1 ) )
+				*pOutNear = luaL_checknumber( L, -1 );
+			lua_pop( L, 1 );
+
+			lua_getfield( L, -3, "zfar" );
+			if ( lua_isnumber( L, -1 ) )
+				*pOutFar = luaL_checknumber( L, -1 );
+			lua_pop( L, 1 );
+		}
+	}
+	else
+	{
+		// no table returned: honour in-place edits through the kept copies
+		if ( lua_isuserdata( L, -2 ) && luaL_checkudata( L, -2, "Vector" ) )
+			vecOrigin = luaL_checkvector( L, -2 );
+		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
+			angAngles = luaL_checkangle( L, -1 );
+	}
+
+	eyeOrigin = vecOrigin;
+	eyeAngles = angAngles;
+	fov = flNewFov;
+
+	lua_pop( L, 3 );	// result + the two kept copies
+}
+#endif // CLIENT_DLL && LUA_SDK
+
 void CBasePlayer::CalcPlayerView( Vector& eyeOrigin, QAngle& eyeAngles, float& fov )
 {
 #if defined( CLIENT_DLL )
@@ -1701,39 +1787,16 @@ void CBasePlayer::CalcPlayerView( Vector& eyeOrigin, QAngle& eyeAngles, float& f
 #if defined( CLIENT_DLL )
 	// HL2SB GMod compat (2026-09-24): GM:CalcView - the GMod name for the view
 	// override, fired on the CLIENT realm only (the raw-value "CalcPlayerView"
-	// dispatch above is this fork's legacy hook and keeps working).  CalcView
-	// in GMod hands addons a CamData TABLE: { origin=Vector, angles=Angle,
-	// fov=n, znear=n, zfar=n, drawviewer=bool }.  This engine's CalcPlayerView
-	// has no clip-plane params, so znear/zfar are not dispatched and a table's
-	// znear/zfar/drawviewer are ignored - origin/angles/fov are applied, which
-	// is what the First Person Body addon (reads ply/vec/ang) needs.
+	// dispatch above is this fork's legacy hook and keeps working).  Since
+	// 2026-10-04 this goes through HL2SB_LuaCalcView below: GMod's reference
+	// contract pushes SIX values (player, origin, angles, fov, znear, zfar) and
+	// reads a returned CamData table back -- the old 4-argument push here also
+	// read junk stack slots after the pcall had consumed the arguments.
 	if ( L != NULL )
 	{
-		BEGIN_LUA_CALL_HOOK( "CalcView" );
-			lua_pushplayer( L, this );
-			lua_pushvector( L, eyeOrigin );
-			lua_pushangle( L, eyeAngles );
-			lua_pushnumber( L, fov );
-		END_LUA_CALL_HOOK( 4, 1 );
-
-		if ( lua_istable( L, -1 ) )
-		{
-			lua_getfield( L, -1, "origin" );
-			if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "Vector" ) )
-				VectorCopy( luaL_checkvector( L, -1 ), eyeOrigin );
-			lua_pop( L, 1 );
-
-			lua_getfield( L, -1, "angles" );
-			if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
-				VectorCopy( luaL_checkangle( L, -1 ), eyeAngles );
-			lua_pop( L, 1 );
-
-			lua_getfield( L, -1, "fov" );
-			if ( lua_isnumber( L, -1 ) )
-				fov = luaL_checknumber( L, -1 );
-			lua_pop( L, 1 );
-		}
-		lua_pop( L, 1 );
+		HL2SB_LuaCalcView( this, eyeOrigin, eyeAngles, fov,
+						   view != NULL ? view->GetZNear() : 3.0f,
+						   view != NULL ? view->GetZFar() : 1000.0f );
 	}
 #endif // CLIENT_DLL
 #endif
@@ -1791,6 +1854,14 @@ void CBasePlayer::CalcVehicleView(
 	// inside the jeep") in the first place, because GetVehicleEnt() is player-backed on
 	// the client: "[HL2SB veh/cl] player=player vehicle=player" vs the server's
 	// "vehicle=prop_vehicle_jeep".
+
+	// HL2SB (2026-10-04) GMod compat: GM:CalcView fires for VEHICLE views too --
+	// GMod's single hook-id-4 dispatch site sits on the shared view path, and
+	// base gamemode's GM:CalcView branches on ply:GetVehicle().  Until now this
+	// function dispatched no Lua at all, so addons with in-vehicle view logic
+	// (First Person Body's eye-attachment snap) sat dead while seated.  The
+	// vehicle clip planes matter: GetVehicleClipPlanes answered 6 for the jeep.
+	HL2SB_LuaCalcView( this, eyeOrigin, eyeAngles, fov, zNear, zFar, &zNear, &zFar );
 #endif
 
 }
