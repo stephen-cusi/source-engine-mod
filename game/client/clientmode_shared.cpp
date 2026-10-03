@@ -620,8 +620,9 @@ void HL2SB_DebugVehicleCamera( const char *pszWhere, const Vector &vecOrigin, co
 		return;
 	}
 
-	// Four call sites exist today: OverrideView ("calc"), the second calc from
-	// MP_PostSimulate, SetUpViews ("final") and KeyInput ("wheel").
+	// Call sites today: OverrideView ("calc"), SetUpViews ("final") and
+	// KeyInput ("wheel") -- the MP_PostSimulate second calc was removed with
+	// the stage itself (2026-10-04).
 	struct HL2SB_VehCamDebugCache_t
 	{
 		const char *pszWhere;
@@ -695,12 +696,11 @@ void HL2SB_DebugVehicleCamera( const char *pszWhere, const Vector &vecOrigin, co
 //
 // WHY THIS IS A SHARED FUNCTION AND NOT INLINE IN OverrideView:
 //
-// The vehicle eye position is computed TWICE per frame in this tree - once by
-// C_BasePlayer::CalcView (what OverrideView sees) and again at the very end of
-// CViewRender::SetUpViews() by CViewRender::MP_PostSimulate(), which recomputes the
-// vehicle view with a freshly invalidated bone cache and writes it straight back into
-// m_View (view.cpp:1346). That second write happens AFTER OverrideView and therefore used
-// to throw this camera away completely: the rendered view was the bare pod eye and
+// The vehicle eye position used to be computed TWICE per frame - once by
+// C_BasePlayer::CalcView (what OverrideView sees) and again by the Lua-SDK-era
+// CViewRender::MP_PostSimulate(), which recomputed the vehicle view with a freshly
+// invalidated bone cache and wrote it straight back into m_View AFTER OverrideView,
+// throwing this camera away completely: the rendered view was the bare pod eye and
 // nothing about the third person camera - neither this distance nor the mouse wheel that
 // writes it - could be seen on screen. view.cpp now calls back into this function with the
 // FRESH eye so the offset is applied exactly once, on top of the correct eye.
@@ -839,17 +839,39 @@ void ClientModeShared::OverrideView( CViewSetup *pSetup )
 	// pod itself, with GMod's own `limitview 0` key - see
 	// C_PropVehiclePrisonerPod::UpdateViewAngles in game/client/hl2/c_vehicle_prisoner_pod.cpp.
 	//
-	// NOTE: this is NOT the last write to the view. CViewRender::MP_PostSimulate() runs at
-	// the end of SetUpViews() (view.cpp:832) and recomputes the vehicle eye into m_View
-	// after this returns; it calls HL2SB_ApplyVehicleThirdPersonView() again with the fresh
-	// eye, which is why that work lives in a function instead of here. Read the comment on
-	// it before changing this.
+	// HL2SB (2026-10-04): this IS the last write to the view now.  The Lua-SDK-era
+	// CViewRender::MP_PostSimulate() stage (which recomputed the vehicle eye over
+	// everything, including the offset applied here) was removed -- GMod's
+	// SetUpViews (reference ) ends at the render-origin swap with no
+	// post pass, and their single GM:CalcView dispatch lives inside
+	// ClientMode::OverrideView, which is exactly where the dispatch below sits.
 	// vecEyeOrigin was captured before the engine's third-person block above, so the two
 	// systems can never stack.
 	Vector vecVehThirdPerson;
 	if ( HL2SB_ApplyVehicleThirdPersonView( vecEyeOrigin, pSetup->angles, &vecVehThirdPerson ) )
 	{
 		pSetup->origin = vecVehThirdPerson;
+	}
+
+	// HL2SB (2026-10-04) GMod parity: GM:CalcView dispatched from OverrideView,
+	// against the FULLY assembled view (vehicle eye, third-person offset
+	// included) -- GMod's single hook-id-4 call site sits in this same stage of
+	// their SetUpViews flow, and nothing writes the view afterwards.  The
+	// returned CamData (origin/angles/fov/znear/zfar) is applied into pSetup by
+	// HL2SB_LuaCalcView; in-place edits of its pushed origin/angles vectors
+	// reach the engine because the gamemode's GM:CalcView forwards them into
+	// the returned table by reference (First Person Body's vehicle eye snap).
+	// znear/zfar are written back too -- the seat handed in real clip planes.
+	C_BasePlayer *pCalcViewPlayer = C_BasePlayer::GetLocalPlayer();
+	if ( pCalcViewPlayer != NULL )
+	{
+#ifdef LUA_SDK
+		extern void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &eyeAngles,
+									   float &fov, float flZNear, float flZFar,
+									   float *pOutNear, float *pOutFar );
+		HL2SB_LuaCalcView( pCalcViewPlayer, pSetup->origin, pSetup->angles, pSetup->fov,
+						   pSetup->zNear, pSetup->zFar, &pSetup->zNear, &pSetup->zFar );
+#endif
 	}
 }
 

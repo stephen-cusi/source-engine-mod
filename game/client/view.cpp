@@ -827,10 +827,14 @@ void CViewRender::SetUpViews()
 	s_DbgSetupAngles = view.angles;
 #endif
 
-#ifdef HL2SB
-	// hl2sb: recompute the vehicle view with a fresh bone cache to avoid stale-bone jitter/lag.
-	MP_PostSimulate();
-#endif
+	// HL2SB (2026-10-04): the Lua-SDK-era MP_PostSimulate() stage that used to
+	// run here (re-pin the seated view to the bare vehicle eye attachment and
+	// recompute the tail) is GONE.  GMod's SetUpViews ends at the render
+	// origin swap exactly like this now -- reference , no post
+	// pass, no vehicle bone-cache invalidation.  The GM:CalcView chain answers
+	// inside ClientModeShared::OverrideView above and nothing writes the view
+	// afterwards, which is what makes addon camera work (First Person Body's
+	// vehicle eye snap) and the absence of view lag possible.
 }
 
 
@@ -1328,120 +1332,15 @@ void CViewRender::Render( vrect_t *rect )
 		render->PopView( GetFrustum() );
 	}
 }
-#if HL2SB
-void CViewRender::MP_PostSimulate()
-{
-	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-	if ( !pLocal )
-		return;
-
-	//Tony; if the local player is in a vehicle, then we need to kill the bone cache, and re-calculate the view.
-	if ( !pLocal->IsInAVehicle() && !pLocal->GetVehicle())
-	{
-		// HL2SB (2026-10-04): on foot the override stash is never consumed
-		// below -- drop it here so a stale answer cannot leak into the next
-		// vehicle entry (the CalcView chain answers fresh every frame, but
-		// only this function runs late enough to matter).
-		{
-			extern bool HL2SB_TakeLuaCalcViewOverride( Vector *pOutOrigin, QAngle *pOutAngles, float *pOutFov );
-			Vector vecDiscardOrigin;
-			QAngle angDiscardAngles;
-			float flDiscardFov = 0.0f;
-			HL2SB_TakeLuaCalcViewOverride( &vecDiscardOrigin, &angDiscardAngles, &flDiscardFov );
-		}
-		return;
-	}
-
-	IClientVehicle *pVehicle = pLocal->GetVehicle();
-	Assert( pVehicle );
-	CBaseAnimating *pVehicleEntity = (CBaseAnimating*)pVehicle->GetVehicleEnt();
-	Assert( pVehicleEntity );
-
-	int nRole = pVehicle->GetPassengerRole( pLocal );
-
-	//Tony; we have to invalidate the bone cache in order for the attachment lookups to be correct!
-	pVehicleEntity->InvalidateBoneCache();
-	pVehicle->GetVehicleViewPosition( nRole, &m_View.origin, &m_View.angles, &m_View.fov );
-
-	// HL2SB: the two lines above have just REPLACED m_View.origin/m_View.angles with the
-	// bare vehicle eye attachment. This function runs at the very end of
-	// CViewRender::SetUpViews() (view.cpp, the MP_PostSimulate() call below), i.e. AFTER
-	// ClientModeShared::OverrideView() already moved the view out to the GMod vehicle
-	// third person camera - so without this the offset is silently discarded for every
-	// player in a vehicle and the rendered view is the pod's own eye.
-	//
-	// That is precisely why "the wheel zoom does nothing" and why changing
-	// hl2sb_veh_thirdperson_dist "did nothing": both only ever changed the value the
-	// OverrideView pass used, and this call threw that pass away. Re-apply the offset on
-	// top of the FRESH eye so it is applied exactly once and on the correct origin; the
-	// bone cache refresh above (the reason this function exists) is preserved.
-	{
-		extern bool HL2SB_ApplyVehicleThirdPersonView( const Vector &vecEyeOrigin,
-													   const QAngle &angEyeAngles,
-													   Vector *pOutOrigin );
-		// Take a copy: HL2SB_ApplyVehicleThirdPersonView() must not alias its input with
-		// the output it writes.
-		const Vector vecFreshEyeOrigin = m_View.origin;
-		Vector vecThirdPersonOrigin;
-		if ( HL2SB_ApplyVehicleThirdPersonView( vecFreshEyeOrigin, m_View.angles, &vecThirdPersonOrigin ) )
-		{
-			m_View.origin = vecThirdPersonOrigin;
-		}
-	}
-
-	// HL2SB (2026-10-04): the GM:CalcView chain answered during CalcPlayerView /
-	// CalcVehicleView, long before this function re-pinned the view to the bare
-	// vehicle eye attachment above -- without this the Lua answer (and every
-	// registered hook's in-place edit that rode into the returned CamData, i.e.
-	// First Person Body's vehicle eye snap) never survived the frame.  The
-	// stash is the LAST writer, exactly where GMod's readback sits in its view
-	// flow.  fov too: the seat handed the dispatch a real znear/zfar-fov trio.
-	{
-		extern bool HL2SB_TakeLuaCalcViewOverride( Vector *pOutOrigin, QAngle *pOutAngles, float *pOutFov );
-		Vector vecLuaOrigin;
-		QAngle angLuaAngles;
-		float flLuaFov = 0.0f;
-		if ( HL2SB_TakeLuaCalcViewOverride( &vecLuaOrigin, &angLuaAngles, &flLuaFov ) )
-		{
-			m_View.origin = vecLuaOrigin;
-			m_View.angles = angLuaAngles;
-			m_View.fov = flLuaFov;
-		}
-	}
-
-	//Tony; everything below is from SetupView - the things that should be recalculated.. are recalculated!
-	pLocal->CalcViewModelView( m_View.origin, m_View.angles );
-
-	// Compute the world->main camera transform
-	ComputeCameraVariables( m_View.origin, m_View.angles,
-		&g_vecVForward, &g_vecVRight, &g_vecVUp, &g_matCamInverse );
-
-	// set up the hearing origin...
-	AudioState_t audioState;
-	audioState.m_Origin = m_View.origin;
-	audioState.m_Angles = m_View.angles;
-	audioState.m_bIsUnderwater = pLocal && pLocal->AudioStateIsUnderwater( m_View.origin );
-
-	ToolFramework_SetupAudioState( audioState );
-
-	m_View.origin = audioState.m_Origin;
-	m_View.angles = audioState.m_Angles;
-
-	engine->SetAudioState( audioState );
-
-	g_vecPrevRenderOrigin = g_vecRenderOrigin;
-	g_vecPrevRenderAngles = g_vecRenderAngles;
-	g_vecRenderOrigin = m_View.origin;
-	g_vecRenderAngles = m_View.angles;
-
-#ifdef _DEBUG
-	s_DbgSetupOrigin = m_View.origin;
-	s_DbgSetupAngles = m_View.angles;
-#endif
-
-
-}
-#endif
+// HL2SB (2026-10-04): CViewRender::MP_PostSimulate() was removed.  It re-pinned
+// the seated view to the bare vehicle eye attachment at the end of SetUpViews
+// and recomputed the viewmodel/camera/audio/render-origin tail from it, which
+// (a) silently discarded ClientModeShared::OverrideView's work -- the vehicle
+// third-person offset, and, once GM:CalcView was dispatched from OverrideView,
+// the whole Lua camera chain -- and (b) had no GMod counterpart (their
+// SetUpViews  ends at the render-origin swap; the only vehicle
+// bone-cache invalidation in their client is none).  The vehicle third-person
+// offset is applied exactly once, in OverrideView.
 
 static void GetPos( const CCommand &args, Vector &vecOrigin, QAngle &angles )
 {

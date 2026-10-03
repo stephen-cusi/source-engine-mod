@@ -1624,10 +1624,11 @@ void CBasePlayer::CalcViewModelView( const Vector& eyeOrigin, const QAngle& eyeA
 }
 
 #if defined( CLIENT_DLL ) && defined( LUA_SDK )
-static void HL2SB_StoreLuaCalcViewOverride( const Vector &vecOrigin, const QAngle &angAngles, float flFov );
-
-// HL2SB (2026-10-04): the GMod CalcView dispatch, shared by CalcPlayerView and
-// CalcVehicleView.  reference contract (GMod client.dll -- the single
+// HL2SB (2026-10-04): the GMod CalcView dispatch, called from
+// ClientModeShared::OverrideView -- GMod's single hook-id-4 call site lives in
+// the same stage of their SetUpViews flow (verified: the only
+// HookExists(ctx, 4) site, and their SetUpViews  has no post-pass
+// rewriting the view afterwards).  reference contract (GMod client.dll -- the single
 // HookExists(ctx, 4) call site): push copies of ( player, origin, angles, fov,
 // znear, zfar ), take ONE return value and read the CamData fields
 // origin/angles/fov/znear/zfar back with the current values as defaults.  GMod
@@ -1637,7 +1638,7 @@ static void HL2SB_StoreLuaCalcViewOverride( const Vector &vecOrigin, const QAngl
 // snap) reach the engine.  A returned table always wins; anything else keeps
 // the engine view.  pOutNear/pOutFar: only the vehicle path has znear/zfar
 // out-parameters.
-static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &eyeAngles,
+void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &eyeAngles,
 							   float &fov, float flZNear, float flZFar,
 							   float *pOutNear = NULL, float *pOutFar = NULL )
 {
@@ -1702,52 +1703,11 @@ static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &
 			lua_pop( L, 1 );
 		}
 
-		// HL2SB (2026-10-04): this dispatch runs inside CalcPlayerView /
-		// CalcVehicleView, but CViewRender::MP_PostSimulate() re-pins the
-		// seated view to the bare vehicle eye attachment at the very end of
-		// SetUpViews -- anything applied here was silently discarded one
-		// stage later (the probe showed EyePos == vehEye bit-exact while the
-		// hooks had moved the view).  Stash the answer; MP_PostSimulate
-		// consumes it after its own re-pin, making the Lua chain the last
-		// writer the way GMod's readback is.
-		HL2SB_StoreLuaCalcViewOverride( eyeOrigin, eyeAngles, fov );
 	}
 
 	lua_settop( L, iBase );	// exact restore
 }
 
-// The CalcView chain's final word -- produced by HL2SB_LuaCalcView above,
-// consumed at the end of CViewRender::MP_PostSimulate (view.cpp).
-static Vector g_hl2sbLuaViewOrigin( 0, 0, 0 );
-static QAngle g_hl2sbLuaViewAngles( 0, 0, 0 );
-static float g_hl2sbLuaViewFov = 0;
-static bool g_hl2sbLuaViewOverride = false;
-
-static void HL2SB_StoreLuaCalcViewOverride( const Vector &vecOrigin, const QAngle &angAngles, float flFov )
-{
-	g_hl2sbLuaViewOrigin = vecOrigin;
-	g_hl2sbLuaViewAngles = angAngles;
-	g_hl2sbLuaViewFov = flFov;
-	g_hl2sbLuaViewOverride = true;
-}
-
-// Always clears the stash; returns true when an override was pending this
-// frame.  Callers that must not apply it (e.g. the not-in-vehicle early
-// return of MP_PostSimulate) still need to call this so a stale answer
-// cannot leak into a later frame.
-bool HL2SB_TakeLuaCalcViewOverride( Vector *pOutOrigin, QAngle *pOutAngles, float *pOutFov )
-{
-	const bool bHad = g_hl2sbLuaViewOverride;
-	g_hl2sbLuaViewOverride = false;
-	if ( bHad && pOutOrigin )
-	{
-		*pOutOrigin = g_hl2sbLuaViewOrigin;
-		*pOutAngles = g_hl2sbLuaViewAngles;
-		if ( pOutFov )
-			*pOutFov = g_hl2sbLuaViewFov;
-	}
-	return bHad;
-}
 #endif // CLIENT_DLL && LUA_SDK
 
 void CBasePlayer::CalcPlayerView( Vector& eyeOrigin, QAngle& eyeAngles, float& fov )
@@ -1825,21 +1785,11 @@ void CBasePlayer::CalcPlayerView( Vector& eyeOrigin, QAngle& eyeAngles, float& f
 
 	lua_pop( L, 3 );
 
-#if defined( CLIENT_DLL )
-	// HL2SB GMod compat (2026-09-24): GM:CalcView - the GMod name for the view
-	// override, fired on the CLIENT realm only (the raw-value "CalcPlayerView"
-	// dispatch above is this fork's legacy hook and keeps working).  Since
-	// 2026-10-04 this goes through HL2SB_LuaCalcView below: GMod's reference
-	// contract pushes SIX values (player, origin, angles, fov, znear, zfar) and
-	// reads a returned CamData table back -- the old 4-argument push here also
-	// read junk stack slots after the pcall had consumed the arguments.
-	if ( L != NULL )
-	{
-		HL2SB_LuaCalcView( this, eyeOrigin, eyeAngles, fov,
-						   view != NULL ? view->GetZNear() : 3.0f,
-						   view != NULL ? view->GetZFar() : 1000.0f );
-	}
-#endif // CLIENT_DLL
+// HL2SB (2026-10-04): the GM:CalcView hook no longer fires from inside the
+// player's Calc functions -- GMod dispatches it from ClientMode::OverrideView
+// (client.dll, the single hook-id-4 site), AFTER the vehicle eye / third
+// person / bob stages have assembled the view, and nothing writes the view
+// afterwards.  See ClientModeShared::OverrideView in clientmode_shared.cpp.
 #endif
 }
 

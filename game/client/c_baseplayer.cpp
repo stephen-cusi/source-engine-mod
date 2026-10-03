@@ -1903,10 +1903,9 @@ extern ConVar hl2sb_veh_thirdperson;
 		// (GMod: view.drawviewer = true in GM:CalcVehicleView).
 		//
 		// HL2SB: a rider's camera is the VEHICLE's own eye attachment, not the engine's
-		// third-person rig: CViewRender::MP_PostSimulate() writes the vehicle eye into
-		// m_View at the very end of SetUpViews() (view.cpp:1346) whatever the camera flags
-		// say, and only HL2SB's GMod vehicle camera (GM:CalcVehicleView) pulls it back out
-		// again. So for a seated player "first person" is exactly "no HL2SB camera is
+		// third-person rig (CBasePlayer::CalcVehicleView computes it; the Lua-SDK-era
+		// MP_PostSimulate re-pin that used to fight every other stage was removed
+		// 2026-10-04). So for a seated player "first person" is exactly "no HL2SB camera is
 		// moving the view", and the engine's own flag must not be consulted.
 		//
 		// That is the "in first person the view is inside the player model's face" bug:
