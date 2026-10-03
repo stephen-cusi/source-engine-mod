@@ -3643,6 +3643,19 @@ int D3DToGL::TranslateShader( uint32* code, CUtlBuffer *pBufDisassembledCode, bo
 
 	// Uniforms
 
+	// ES user clip planes: the two constant slots above the general parameter block
+	// (DXABSTRACT_VS_CLIP_PLANE_BASE, +1) hold the plane equations the translated
+	// shader dots gl_Position against.  Grow the high-water mark so the uniform
+	// array is declared large enough and the flush uploads those slots, even when
+	// the bone-uniform-buffer remap shifted everything down.
+	if ( m_bVertexShader && m_bDoUserClipPlanes )
+	{
+		int nClipRegHigh = DXABSTRACT_VS_CLIP_PLANE_BASE + 1;
+		if ( m_bGenerateBoneUniformBuffer )
+			nClipRegHigh -= ( DXABSTRACT_VS_LAST_BONE_SLOT + 1 ) - DXABSTRACT_VS_FIRST_BONE_SLOT;
+		if ( m_nHighestRegister < nClipRegHigh )
+			m_nHighestRegister = nClipRegHigh;
+	}
 	PrintToBuf( *m_pBufHeaderCode, "//HIGHWATER-%d\n", m_nHighestRegister + 1 );
 	if ( ( m_bVertexShader ) && ( m_bGenerateBoneUniformBuffer ) )
 	{
@@ -3805,6 +3818,29 @@ int D3DToGL::TranslateShader( uint32* code, CUtlBuffer *pBufDisassembledCode, bo
 			StrcatToALUCode( "vTempPos.xy += vcscreen.xy * vTempPos.w;\n" );
 
 			StrcatToALUCode( "gl_Position = vTempPos;\n" );
+
+			// ES has no gl_ClipVertex and no fixed-function clip planes; clip in the
+			// shader instead.  SetClipPlane (dxabstract.cpp) hands over the plane
+			// equations pre-munged in the two constant slots above the parameter
+			// block, remapped here the same way the bone-uniform-buffer path remaps
+			// every other register, so the sign of dot(gl_Position, plane) matches
+			// what the desktop fixed-function path clips on.  A disabled plane
+			// latches as (0,0,0,1) and never discards anything.
+			if ( m_bDoUserClipPlanes )
+			{
+				int nClipReg0 = DXABSTRACT_VS_CLIP_PLANE_BASE;
+				int nClipReg1 = DXABSTRACT_VS_CLIP_PLANE_BASE + 1;
+				if ( m_bGenerateBoneUniformBuffer )
+				{
+					nClipReg0 -= ( DXABSTRACT_VS_LAST_BONE_SLOT + 1 ) - DXABSTRACT_VS_FIRST_BONE_SLOT;
+					nClipReg1 -= ( DXABSTRACT_VS_LAST_BONE_SLOT + 1 ) - DXABSTRACT_VS_FIRST_BONE_SLOT;
+				}
+				char szClipCode[96];
+				V_snprintf( szClipCode, sizeof( szClipCode ), "gl_ClipDistance[0] = dot( vTempPos, vc[%d] );\n", nClipReg0 );
+				StrcatToALUCode( szClipCode );
+				V_snprintf( szClipCode, sizeof( szClipCode ), "gl_ClipDistance[1] = dot( vTempPos, vc[%d] );\n", nClipReg1 );
+				StrcatToALUCode( szClipCode );
+			}
 		}
 		else
 		{
