@@ -4166,12 +4166,19 @@ HRESULT IDirect3DDevice9::CreateVertexShader(CONST DWORD* pFunction, IDirect3DVe
 			
 		uint glslVertexShaderOptions = D3DToGL_OptionUseEnvParams | D3DToGL_OptionDoFixupZ | D3DToGL_OptionDoFixupY;
 
-		// ES has no gl_ClipVertex and no fixed-function clip planes; every vertex
-		// shader writes gl_ClipDistance from the two plane constant slots instead
-		// (emitted by the translator, fed by SetClipPlane below), so the option is
-		// unconditional here.  Desktop togl keeps gating this on
-		// m_hasNativeClipVertexMode for its gl_ClipVertex path.
-		glslVertexShaderOptions |= D3DToGL_OptionDoUserClipPlanes;
+		if ( m_ctx->Caps().m_hasNativeClipVertexMode )
+		{
+			// note the matched trickery over in IDirect3DDevice9::FlushStates - 
+			// if on a chipset that does no have native gl_ClipVertex support, then
+			// omit writes to gl_ClipVertex, and instead submit plane equations that have been altered,
+			// and clipping will take place in GL space using gl_Position instead of gl_ClipVertex.
+				
+			// note that this is very much a hack to mate up with ATI R5xx hardware constraints, and with older
+			// drivers even for later ATI parts like r6xx/r7xx.   And it doesn't work on NV parts, so you really
+			// do have to choose the right way to go.
+				
+			glslVertexShaderOptions |= D3DToGL_OptionDoUserClipPlanes; 
+		}
 			
 		if ( !CommandLine()->CheckParm("-disableboneuniformbuffers") )
 		{
@@ -5856,40 +5863,6 @@ HRESULT IDirect3DDevice9::SetClipPlane(DWORD Index,CONST float* pPlane)
 
 		// m_ctx->WriteClipPlaneEquation( &peq, Index );
 	}
-
-	// Hand the translated vertex shader the same munged equation the desktop
-	// fixed-function path clips with (Antonio's trick: { x, -y, z/2, w + z/2 } keeps
-	// dot(gl_Position, plane) sign-equivalent to the original plane against the
-	// final clip-space position).  The materialsystem disables unused planes by
-	// handing us a NaN plane; detect it by bit pattern -- not float math, the
-	// Android build compiles with -funsafe-math-optimizations -- and substitute an
-	// always-positive plane, so the always-on ES gl_ClipDistance never discards
-	// anything.
-	float flShaderPlane[4];
-	flShaderPlane[0] = pPlane[0];
-	flShaderPlane[1] = -pPlane[1];
-	flShaderPlane[2] = pPlane[2] * 0.5f;
-	flShaderPlane[3] = pPlane[3] + ( pPlane[2] * 0.5f );
-
-	bool bDisabledPlane = false;
-	for ( int i = 0; i < 4; i++ )
-	{
-		if ( ( *( reinterpret_cast< const unsigned int * >( &flShaderPlane[i] ) ) & 0x7FFFFFFFu ) > 0x7F800000u )
-		{
-			bDisabledPlane = true;
-			break;
-		}
-	}
-
-	if ( bDisabledPlane )
-	{
-		flShaderPlane[0] = 0.0f;
-		flShaderPlane[1] = 0.0f;
-		flShaderPlane[2] = 0.0f;
-		flShaderPlane[3] = 1.0f;
-	}
-
-	this->SetVertexShaderConstantF( DXABSTRACT_VS_CLIP_PLANE_BASE + Index, flShaderPlane, 1 );
 
 	return S_OK;
 }
