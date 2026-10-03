@@ -2114,6 +2114,16 @@ void MIX_BuildChannelList( CChannelList &list )
 	for ( int i = list.Count(); --i >= 0; )
 	{
 		channel_t *ch = list.GetChannel(i);
+		// HL2SB (2026-10-04): a channel claimed for teardown on another thread
+		// (S_FreeChannel nulls the mixer atomically) must drop out of this
+		// snapshot - the teardown owner completes it.  The snapshot was taken
+		// before the claim, so the empty slot can be observed here (the
+		// 02:56 crash: IsReadyToMix on a nulled mixer, read at NULL+0x48).
+		if ( !ch->pMixer )
+		{
+			list.RemoveChannelFromList(i);
+			continue;
+		}
 		bool bRemove = false;
 		// Certain async loaded sounds lazily load into memory in the background, use this to determine
 		//  if the sound is ready for mixing
