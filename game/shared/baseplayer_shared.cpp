@@ -1895,14 +1895,13 @@ void CBasePlayer::CalcVehicleView(
 	// inside the jeep") in the first place, because GetVehicleEnt() is player-backed on
 	// the client: "[HL2SB veh/cl] player=player vehicle=player" vs the server's
 	// "vehicle=prop_vehicle_jeep".
-
-	// HL2SB (2026-10-04) GMod compat: GM:CalcView fires for VEHICLE views too --
-	// GMod's single hook-id-4 dispatch site sits on the shared view path, and
-	// base gamemode's GM:CalcView branches on ply:GetVehicle().  Until now this
-	// function dispatched no Lua at all, so addons with in-vehicle view logic
-	// (First Person Body's eye-attachment snap) sat dead while seated.  The
-	// vehicle clip planes matter: GetVehicleClipPlanes answered 6 for the jeep.
-	HL2SB_LuaCalcView( this, eyeOrigin, eyeAngles, fov, zNear, zFar, &zNear, &zFar );
+	//
+	// HL2SB (2026-10-04, ROLLED BACK): dispatching GM:CalcView from here worked
+	// but activated First Person Body's in-vehicle branch, whose pose-zero ->
+	// forced SetupBones -> restore sequence inside the view pass made the
+	// seated model vibrate between the two poses every frame.  Rolled back per
+	// user report; the vehicle dispatch stays out until the addon-side frame
+	// ordering is solved (b58583e4..b4d639bf document everything learned).
 #endif
 
 }
