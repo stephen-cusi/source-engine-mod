@@ -139,8 +139,8 @@ static bool HL2SB_ResolveLuaSoundScript( const char *pName, char *pOutPath, int 
 	lua_pushstring( L, pName );
 	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
 	{
-		// luasrc_pcall reported + popped the message: only [sound] is left.
-		lua_pop( L, 1 );
+		// error path leaves the nil placeholder (2026-10-04): [sound][nil]
+		lua_pop( L, 2 );
 		return false;
 	}
 	if ( !lua_istable( L, -1 ) )				// not a registered script

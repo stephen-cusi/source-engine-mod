@@ -567,7 +567,7 @@ static bool HL2SB_ApplyLuaPlayerColor (lua_State *L, int nEntity, float *pflPrev
 
   lua_pushvalue(L, nEntity);               // self
 
-  if (luasrc_pcall(L, 1, 1, 0) != 0) {     // the pcall leaves the error message
+  if (luasrc_pcall(L, 1, 1, 0) != 0) {     // error path leaves the nil placeholder (2026-10-04)
     lua_pop(L, 1);
     return false;
   }

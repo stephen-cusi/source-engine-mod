@@ -1662,7 +1662,8 @@ bool HL2SB_GetWeaponTracerOrigin( CBaseEntity *pShooter, Vector &vecOut )
 
 	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
 	{
-		// luasrc_pcall logged the traceback and popped the message
+		// error path leaves the nil placeholder (2026-10-04)
+		lua_pop( L, 1 );
 		return false;
 	}
 
@@ -1749,12 +1750,9 @@ bool HL2SB_ViewmodelFireAnimationEvent( C_BaseCombatWeapon *pWpn, const Vector &
 
 	if ( luasrc_pcall( L, 6, 1, 0 ) != 0 )
 	{
-		// On error luasrc_pcall logged the traceback and popped the message
-		// itself, so ONLY the weapon table is left here.  The success path
-		// pops 2 (result + table); doing that after an error pops one value
-		// past this frame - the next event dispatch then calls garbage/nil
-		// unprotected and aborts the process (2026-09-23 cf_beast crash).
-		lua_pop( L, 1 );
+		// Error path leaves [weapon table][nil placeholder] (2026-10-04);
+		// popping both matches the success path's pop of (result + table).
+		lua_pop( L, 2 );
 		return false;
 	}
 	// A non-boolean result (nil = "no opinion") lets the default event run.
@@ -2732,8 +2730,9 @@ int CHL2MPScriptedWeapon::DispatchShouldDropOnDieVote( void )
 
 	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
 	{
-		// luasrc_pcall logged the traceback and popped the message; the
-		// table went in as the argument, so nothing is left to pop
+		// error path leaves the nil placeholder (2026-10-04); the table
+		// went in as the argument and stays below it
+		lua_pop( L, 1 );
 		return -1;
 	}
 

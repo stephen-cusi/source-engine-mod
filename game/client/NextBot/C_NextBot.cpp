@@ -202,8 +202,11 @@ static int C_NextBotCombatCharacter_PushScriptTableHelper( lua_State *L )
 
 	lua_pushstring( L, pszClassname );
 
-	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 || !lua_istable( L, -1 ) )
+	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
+		return 1;		// the nil placeholder IS the answer (2026-10-04)
+	if ( !lua_istable( L, -1 ) )
 	{
+		lua_pop( L, 1 );
 		lua_pushnil( L );
 		return 1;
 	}
@@ -232,11 +235,13 @@ bool C_NextBotCombatCharacter::PushLuaScriptTable( void )
 	lua_pushcfunction( L, C_NextBotCombatCharacter_PushScriptTableHelper );
 	lua_pushstring( L, pszClassname );
 
-	// luasrc_pcall() reports an error with its traceback and pops the message
-	// itself, so a failure here leaves nothing behind -- the contract every caller
-	// of this function relies on.
+	// luasrc_pcall() reports an error with its traceback; since 2026-10-04 it
+	// leaves ONE nil placeholder behind, so pop it before reporting failure.
 	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
+	{
+		lua_pop( L, 1 );	// the nil placeholder (2026-10-04)
 		return false;
+	}
 
 	if ( !lua_istable( L, -1 ) )
 	{

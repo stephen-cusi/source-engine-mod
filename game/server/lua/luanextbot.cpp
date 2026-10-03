@@ -846,7 +846,10 @@ bool CLuaNextBot::LoadNextBotScript( void )
 	lua_pushstring( L, pszClassname );	// [get][classname]
 
 	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
-		return false;					// the error object is already popped
+	{
+		lua_pop( L, 1 );	// the nil placeholder (2026-10-04)
+		return false;
+	}
 
 	if ( !lua_istable( L, -1 ) )
 	{

@@ -1643,6 +1643,15 @@ static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &
 	if ( L == NULL || !pPlayer->IsLocalPlayer() )
 		return;
 
+	// Anchor the stack: the reading below must be SHAPE-AGNOSTIC.  A hook that
+	// RAISES leaves nothing on the stack (luasrc_pcall pops the error object,
+	// the fork convention), and the macro's no-hook branches never push the
+	// argument copies at all - so "result + two copies" is only one of the
+	// shapes this code can see.  Reading a fixed -3 crashed the process
+	// through the armed api_check ("invalid index") on the first erroring
+	// CalcView hook (2026-10-04).
+	int iBase = lua_gettop( L );
+
 	BEGIN_LUA_CALL_HOOK( "CalcView" );
 		lua_pushplayer( L, pPlayer );
 		lua_pushvector( L, eyeOrigin );
@@ -1662,50 +1671,61 @@ static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &
 	QAngle angAngles = eyeAngles;
 	float flNewFov = fov;
 
-	if ( lua_istable( L, -3 ) )		// stack: [ result, originCopy, anglesCopy ]
+	// Shapes above iBase:
+	//   +3  [ result, originCopy, anglesCopy ]  the call returned
+	//   +2  [ originCopy, anglesCopy ]          the call RAISED (error popped)
+	//   +1/+2  [ nil ] / [ hooktbl, nil ]       no hook system (no copies)
+	// The copies are always the TOP TWO slots; the result slot only exists in
+	// the first shape.  Absolute indices keep every read inside the frame.
+	int iTopAfter = lua_gettop( L );
+	int iResult = iTopAfter - 2;
+	int iOriginCopy = iTopAfter - 1;
+	int iAnglesCopy = iTopAfter;
+
+	if ( iTopAfter - iBase >= 3 && lua_istable( L, iResult ) )
 	{
-		lua_getfield( L, -3, "origin" );
+		lua_getfield( L, iResult, "origin" );
 		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "Vector" ) )
 			vecOrigin = luaL_checkvector( L, -1 );
 		lua_pop( L, 1 );
 
-		lua_getfield( L, -3, "angles" );
+		lua_getfield( L, iResult, "angles" );
 		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
 			angAngles = luaL_checkangle( L, -1 );
 		lua_pop( L, 1 );
 
-		lua_getfield( L, -3, "fov" );
+		lua_getfield( L, iResult, "fov" );
 		if ( lua_isnumber( L, -1 ) )
 			flNewFov = luaL_checknumber( L, -1 );
 		lua_pop( L, 1 );
 
 		if ( pOutNear != NULL )
 		{
-			lua_getfield( L, -3, "znear" );
+			lua_getfield( L, iResult, "znear" );
 			if ( lua_isnumber( L, -1 ) )
 				*pOutNear = luaL_checknumber( L, -1 );
 			lua_pop( L, 1 );
 
-			lua_getfield( L, -3, "zfar" );
+			lua_getfield( L, iResult, "zfar" );
 			if ( lua_isnumber( L, -1 ) )
 				*pOutFar = luaL_checknumber( L, -1 );
 			lua_pop( L, 1 );
 		}
 	}
-	else
+	else if ( iTopAfter > iBase )
 	{
 		// no table returned: honour in-place edits through the kept copies
-		if ( lua_isuserdata( L, -2 ) && luaL_checkudata( L, -2, "Vector" ) )
-			vecOrigin = luaL_checkvector( L, -2 );
-		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
-			angAngles = luaL_checkangle( L, -1 );
+		if ( lua_isuserdata( L, iOriginCopy ) && luaL_checkudata( L, iOriginCopy, "Vector" ) )
+			vecOrigin = luaL_checkvector( L, iOriginCopy );
+		if ( lua_isuserdata( L, iAnglesCopy ) && luaL_checkudata( L, iAnglesCopy, "QAngle" ) )
+			angAngles = luaL_checkangle( L, iAnglesCopy );
 	}
 
 	eyeOrigin = vecOrigin;
 	eyeAngles = angAngles;
 	fov = flNewFov;
 
-	lua_pop( L, 3 );	// result + the two kept copies
+	lua_settop( L, iBase );	// exact restore for every shape
 }
 #endif // CLIENT_DLL && LUA_SDK
 

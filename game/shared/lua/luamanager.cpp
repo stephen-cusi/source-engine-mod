@@ -2055,8 +2055,18 @@ LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
     lua_remove(L, errfunc);
 
   if (iError != 0) {
-	luasrc_LuaErrorMsg( lua_tostring(L, -1) );
-	lua_pop(L, 1);
+    luasrc_LuaErrorMsg( lua_tostring(L, -1) );
+    lua_pop(L, 1);
+    /* HL2SB (2026-10-04): leave ONE nil behind when results were requested.
+    ** The old "errors leave nothing" convention made the stack one slot
+    ** SHORT of the promised shape, so every -1 reader after an erroring
+    ** hook read the value below it - through the armed api_check that is
+    ** a hard abort (the CalcView crash of 2026-10-04).  With the
+    ** placeholder the shape is always "nresults slots, nil on error";
+    ** the few callers that hand-balanced for the empty stack are
+    ** adjusted in this same round. */
+    if (nresults != 0)
+      lua_pushnil(L);
   }
   return iError;
 }
@@ -2135,16 +2145,15 @@ LUA_API bool luasrc_PushScriptField (lua_State *L, int nTableIdx, const char *ps
 	lua_pushvalue( L, nTableIdx );					// [..][t][helper][t]
 	lua_pushstring( L, pszKey );					// [..][t][helper][t][k]
 
-	if ( luasrc_pcall( L, 2, 1, 0 ) != 0 )
-	{
-		// luasrc_pcall reported the error with a traceback and popped the message
-		// itself, so the stack is empty here and the caller still gets its value.
-		if ( pbLookupErrored != NULL )
-			*pbLookupErrored = true;
+		if ( luasrc_pcall( L, 2, 1, 0 ) != 0 )
+		{
+			// luasrc_pcall reported the error and left the nil placeholder
+			// (2026-10-04): the caller still gets its value slot.
+			if ( pbLookupErrored != NULL )
+				*pbLookupErrored = true;
 
-		lua_pushnil( L );
-		return false;
-	}
+			return false;
+		}
 
 	return lua_isfunction( L, -1 ) ? true : false;
 }
