@@ -147,58 +147,46 @@ LUA_BINDING_BEGIN( Renders, CreateNamedRenderTarget, "library", "Creates or find
 }
 LUA_BINDING_END( "Texture", "The render target texture." )
 
+// render.SetFrameBufferCopyTexture( texture, slot ) -- HL2SB (2026-10-03).
+// Registers a texture into the frame-buffer-copy slot that "$basetexture
+// _rt_FullFrameFB[N]" materials resolve through AT BIND TIME
+// (BindStandardTexture case TEXTURE_FRAME_BUFFER_FULL_TEXTURE_N reads
+// m_pCurrentFrameBufferCopyTexture[N]; an unregistered slot binds nothing).
+// The reference engine binds these materials directly, but engine code that
+// re-registers a slot mid-frame silently redirects every later quad sampling
+// the screen copy: view_scene.h UpdateRefractTexture puts the power-of-two
+// FB into slot 0, so the halo restore/composite read the post-clear BLACK
+// POT copy instead of the captured scene.  The halo module re-asserts its
+// registrations after each such call.
+LUA_BINDING_BEGIN( Renders, SetFrameBufferCopyTexture, "library", "Registers a texture into a frame-buffer-copy slot.", "client" )
+{
+    ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
+    int nIndex = (int)LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 2, 0, "textureIndex" );
+
+    CMatRenderContextPtr pRenderContext( materials );
+    pRenderContext->SetFrameBufferCopyTexture( pTexture, nIndex );
+
+    return 0;
+}
+LUA_BINDING_END()
+
 LUA_BINDING_BEGIN( Renders, CopyRenderTargetToTexture, "library", "Copies the currently active Render Target to the specified texture.", "client" )
 {
     CMatRenderContextPtr pRenderContext( materials );
     ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
 
-    // HL2SB (2026-09-26): GMod parity, implemented as the ENGINE'S OWN
-    // UpdateScreenEffectTexture inline (view_scene.h) minus the FB lookup --
-    // that is the copy path the working halo capture always used.  The src
-    // rect comes from GetRenderTargetDimensions (the LIVE render-target
-    // size), NOT GetViewport (stale/wrong at PostDrawEffects -- a small src
-    // rect StretchRects a corner of garbage into the copy, which blacked the
-    // scene-restore step), and the dest rect is scaled like the inline when
-    // the texture differs in size.
-    int nSrcW, nSrcH;
-    pRenderContext->GetRenderTargetDimensions( nSrcW, nSrcH );
-    int nDstW = pTexture->GetActualWidth();
-    int nDstH = pTexture->GetActualHeight();
+    // HL2SB (2026-10-03): reference behaviour, reference -- the binding is
+    // the plain ONE-ARG engine call.  Source = the CURRENT render target
+    // (the backbuffer at PostDrawEffects), source and dest rects NULL =
+    // full-surface copy (the SDK body resolves to
+    // CopyRenderTargetToTextureEx( pTexture, 0, NULL, NULL ) ->
+    // ITextureInternal::CopyFrameBufferToMe( 0, NULL, NULL )).  No rect
+    // math, no SetFrameBufferCopyTexture registration -- the reference
+    // samples the stored texture through a plain $basetexture, which never
+    // consults the frame-buffer-copy slot.  The earlier custom rect-scaling
+    // implementation diverged from this and is gone.
 
-    Rect_t srcRect;
-    srcRect.x = 0;
-    srcRect.y = 0;
-    srcRect.width = nSrcW;
-    srcRect.height = nSrcH;
-
-    Rect_t destRect = srcRect;
-    if ( nSrcW > nDstW || nSrcH > nDstH )
-    {
-        float scaleX = ( float )nDstW / ( float )nSrcW;
-        float scaleY = ( float )nDstH / ( float )nSrcH;
-        destRect.x = ( int )( srcRect.x * scaleX );
-        destRect.y = ( int )( srcRect.y * scaleY );
-        destRect.width = ( int )( srcRect.width * scaleX );
-        destRect.height = ( int )( srcRect.height * scaleY );
-        destRect.x = clamp( destRect.x, 0, nDstW );
-        destRect.y = clamp( destRect.y, 0, nDstH );
-        destRect.width = clamp( destRect.width, 0, nDstW - destRect.x );
-        destRect.height = clamp( destRect.height, 0, nDstH - destRect.y );
-    }
-
-    pRenderContext->CopyRenderTargetToTextureEx( pTexture, 0, &srcRect, &destRect );
-
-    // HL2SB (2026-09-26): GMod-parity registration -- same slots the engine
-    // inline registers (the frame-buffer pair handed out by
-    // render.GetScreenEffectTexture).
-    if ( pTexture == GetFullFrameFrameBufferTexture( 0 ) )
-    {
-        pRenderContext->SetFrameBufferCopyTexture( pTexture, 0 );
-    }
-    else if ( pTexture == GetFullFrameFrameBufferTexture( 1 ) )
-    {
-        pRenderContext->SetFrameBufferCopyTexture( pTexture, 1 );
-    }
+    pRenderContext->CopyRenderTargetToTexture( pTexture );
 
     return 0;
 }
@@ -344,13 +332,21 @@ LUA_BINDING_END( "number", "The alpha blend." )
 LUA_BINDING_BEGIN( Renders, UpdateScreenEffectTexture, "library", "Update the screen effect texture.", "client" )
 {
     const CViewSetup *pViewSetup = view->GetViewSetup();
+
+    // HL2SB (2026-10-03): optional bDestFullScreen (arg 2).  The engine's own
+    // screen-effect consumers (DoImageSpaceMotionBlur and the bloom composite
+    // in viewpostprocess.cpp) pass true so the copy uses a NULL dest rect and
+    // "_rt_FullFrameFB is always 100% filled"; modules/halo.lua passes it too.
+    bool bDestFullScreen = luaL_optboolean( L, 2, 0 ) ? true : false;
+
     UpdateScreenEffectTexture(
         LUA_BINDING_ARGUMENT_WITH_DEFAULT(
             luaL_optnumber, 1, 0, "textureIndex" ),
         pViewSetup->x,
         pViewSetup->y,
         pViewSetup->width,
-        pViewSetup->height );
+        pViewSetup->height,
+        bDestFullScreen );
     return 0;
 }
 LUA_BINDING_END()
@@ -523,6 +519,7 @@ LUA_BINDING_BEGIN( Renders, Clear, "library", "Clears the current render target 
     bool bClearStencil = luaL_optboolean( L, 6, 0 ) ? true : false;
 
     CMatRenderContextPtr pRenderContext( materials );
+
     pRenderContext->ClearColor4ub( clr.r, clr.g, clr.b, clr.a );
     pRenderContext->ClearBuffers( true, bClearDepth, bClearStencil );
 
@@ -534,6 +531,10 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( Renders, SetRenderTarget, "library", "Sets the render target to draw into.", "client" )
 {
     CMatRenderContextPtr pRenderContext( materials );
+    // Reference behaviour (reference): the binding flushes the context
+    // BEFORE the switch, so draws queued in the outgoing target are
+    // submitted to it and cannot bleed into the incoming one.
+    pRenderContext->Flush( false );
     if ( lua_isnoneornil( L, 1 ) )
     {
         pRenderContext->SetRenderTarget( NULL );
@@ -584,6 +585,7 @@ LUA_BINDING_BEGIN( Renders, DrawScreenQuad, "library", "Draws a fullscreen quad 
     IMaterial *pMaterial = s_pRendersLastSetMaterial;
     if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
         return luaL_error( L, "render.DrawScreenQuad: no material bound (call render.SetMaterial first)" );
+
     pRenderContext->DrawScreenSpaceQuad( pMaterial );
     return 0;
 }

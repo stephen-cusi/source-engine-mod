@@ -1221,31 +1221,6 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 	cmd->buttons = GetButtonBits( 1 );
 #endif
 
-	// HL2SB diag (2026-09-24 physgun input): dump the raw button bits once a
-	// second WHILE HOLDING with the physgun (E-rotate / RMB-freeze were never
-	// seen server-side).  Gated on IsHolding so the cap covers the moment the
-	// user actually presses E, not the first 12s after drawing the gun.
-	{
-		static int s_nCmDiag = 0;
-		static float s_flNextCmDiag = 0.0f;
-		C_BasePlayer *pDiagLocal = C_BasePlayer::GetLocalPlayer();
-		CBaseCombatWeapon *pDiagWpn = pDiagLocal ? pDiagLocal->GetActiveWeapon() : NULL;
-		extern bool HL2SB_PhysgunIsHolding( void );
-		if ( pDiagWpn != NULL && s_nCmDiag < 12
-			&& !Q_stricmp( pDiagWpn->GetClassname(), "weapon_physgun" )
-			&& HL2SB_PhysgunIsHolding()
-			&& gpGlobals->curtime >= s_flNextCmDiag )
-		{
-			s_flNextCmDiag = gpGlobals->curtime + 1.0f;
-			++s_nCmDiag;
-			Msg( "[HL2SB physgun] CM2 buttons=0x%X (use=%d atk2=%d dx=%d dy=%d)\n",
-				( unsigned )cmd->buttons,
-				( cmd->buttons & IN_USE ) ? 1 : 0,
-				( cmd->buttons & IN_ATTACK2 ) ? 1 : 0,
-				cmd->mousedx, cmd->mousedy );
-		}
-	}
-
 	// Using joystick?
 #ifdef SIXENSE
 	if ( in_joystick.GetInt() || g_pSixenseInput->IsEnabled() || touch_enable.GetInt() )

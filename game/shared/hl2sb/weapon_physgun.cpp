@@ -14,7 +14,12 @@
 #ifdef CLIENT_DLL
 #include "clienteffectprecachesystem.h"
 #endif
-#ifndef CLIENT_DLL
+// HL2SB (2026-10-03): the ViewModelDrawn anchor type.  Client: the client
+// view model class (which also pulls in the full C_BaseAnimating for the
+// beam-end bone transform).  Server: the shared header the old code used.
+#ifdef CLIENT_DLL
+#include "c_baseviewmodel.h"
+#else
 #include "baseviewmodel.h"
 #endif
 #include "vphysics/constraints.h"
@@ -37,6 +42,8 @@
 #include "SoundEmitterSystem/isoundemittersystembase.h"
 #ifdef CLIENT_DLL
 #include "model_types.h"
+#include "c_baseanimating.h"	// HL2SB (2026-10-03): C_BaseAnimating full type - the
+								// beam-end m_vecHoldPos transform reads GetBone/GetModelPtr
 #include "view_shared.h"
 #include "view.h"
 #include "iviewrender.h"
@@ -64,6 +71,8 @@ Color HL2SB_GetWeaponColor( int iUserID );
 // HL2SB GMod compat: the physgun's held-prop glow sprite + the GMod physgun
 // hooks (GM:PhysgunPickup / GM:PhysgunDrop).
 #include "Sprite.h"
+// HL2SB (2026-10-03): the networked beam entity this weapon drives.
+#include "physgun_beam.h"
 #endif
 
 // HL2SB GMod compat: the GMod physgun hooks fire in BOTH realms (server:
@@ -81,9 +90,6 @@ Color HL2SB_GetWeaponColor( int iUserID );
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
-static int g_physgunBeam1;
-static int g_physgunBeam;
-static int g_physgunGlow;
 
 // HL2SB GMod compat (ConVars In Garrysmod): the physgun's dynamic feel, same
 // names GMod exposes.  SERVER side: the shadow controller and the input maths
@@ -113,100 +119,21 @@ ConVar physgun_maxrange( "physgun_maxrange", "4096", FCVAR_ARCHIVE, "Physgun: ma
 ConVar phys_spinspeed( "phys_spinspeed", "200", FCVAR_ARCHIVE, "Physgun: E+A/D spin speed (degrees per second)" );
 ConVar gm_snapangles( "gm_snapangles", "45", FCVAR_ARCHIVE, "Physgun: Shift+E angle snap grid (degrees, 0 disables)" );
 
-#define PHYSGUN_BEAM_SPRITE1	"sprites/physbeam1.vmt"
-#define PHYSGUN_BEAM_SPRITE		"sprites/physbeam.vmt"
-#define PHYSGUN_BEAM_GLOW		"sprites/physglow.vmt"
-
-// HL2SB (2026-09-26): the HL2 physcannon gun-glow set.  reference-OUT
-// (2026-09-26): GMod's physgun does NOT use ANY of these -- GMod's client.dll
-// contains no "physcannon_bluecore1/2", "physcannon_blueflare1" or
-// "physcannon_bluelight1" string at all.  Those belong to HL2's separate
-// C_WeaponPhysCannon (the EP2 mega-cannon / gravity gun), a different weapon.
-// The macro block is kept only so the (now disabled) HL2 sprite machine below
-// still compiles; nothing renders it.
-#define PHYSGUN_FORKGLOW_SPRITE	"sprites/glow04_noz"
-#define PHYSGUN_FORKEND_SPRITE	"sprites/physcannon_blueflare1"
-#define PHYSGUN_CORE_SPRITE		"sprites/physcannon_bluecore1"
-#define PHYSGUN_BLAST_SPRITE	"sprites/physcannon_bluecore2"
-#define PHYSGUN_TENDRIL_SPRITE	"sprites/physcannon_bluelight1.vmt"
-#define PHYSGUN_TENDRIL_NOZ		"sprites/physcannon_bluelight1b.vmt"
-#define PHYSGUN_SPRITE_SCALE	128.0f
-
-// HL2SB (2026-09-26, reference-confirmed): GMod's physgun rendering is exactly
-// a beam trail plus an endpoint glow, and the materials are GMod's OWN:
-//   * beam          = sprites/physbeam.vmt        (basetexture physbeam_white)
-//   * active beam   = sprites/physbeama.vmt       (basetexture physbeam_active_white)
-//   * endpoint glow = sprites/physg_glow1.vmt / sprites/physg_glow2.vmt
-//                     (basetexture physgun_glow, two additive layers).
-// C_PhysBeam::DrawModel (client.dll) builds exactly two engine
-// beam trails (physbeam always, physbeama while active) and the two glow
-// layers; there is no core/blast/fork/endcap sprite anywhere.  physbeam.vmt
-// and physbeama.vmt were MISSING from this fork's content until now -- their
-// absence is the long-standing "beam never looked right / no glow" cause.
-#define PHYSGUN_BEAM_ACTIVE		"sprites/physbeama.vmt"
-#define PHYSGUN_ENDGLOW_SPRITE	"sprites/physg_glow1"
-#define PHYSGUN_ENDGLOW_SPRITE2	"sprites/physg_glow2"
-
-#define	PHYSGUN_SKIN	1
-
-// HL2SB (2026-09-26): HL2 physcannon effect/enumeration states (shared --
-// both realms drive the machine locally).
-enum
-{
-	EFFECT_NONE = 0,
-	EFFECT_CLOSED,
-	EFFECT_READY,
-	EFFECT_HOLDING,
-	EFFECT_LAUNCH,
-};
-
-enum
-{
-	ELEMENT_STATE_NONE = -1,
-	ELEMENT_STATE_OPEN = 0,
-	ELEMENT_STATE_CLOSED,
-};
-
-#ifdef CLIENT_DLL
-// Sprite parameter slots (must be in order; NUM_PHYSGUN_EFFECTS = 11)
-enum PhysgunEffectType_t
-{
-	PHYSGUN_CORE = 0,
-	PHYSGUN_BLAST,
-	PHYSGUN_GLOW1,	// Must be in order!
-	PHYSGUN_GLOW2,
-	PHYSGUN_GLOW3,
-	PHYSGUN_GLOW4,
-	PHYSGUN_GLOW5,
-	PHYSGUN_GLOW6,
-	PHYSGUN_ENDCAP1,	// Must be in order!
-	PHYSGUN_ENDCAP2,
-	PHYSGUN_ENDCAP3,
-	PHYSGUN_NUM_EFFECTS,
-};
-#define NUM_GLOW_SPRITES	6
-#define NUM_ENDCAP_SPRITES	3
-#endif
-
-class CWeaponGravityGun;
-
-#ifdef CLIENT_DLL
-CLIENTEFFECT_REGISTER_BEGIN( PrecacheEffectGravityGun )
-CLIENTEFFECT_MATERIAL( "sprites/physbeam1" )
-CLIENTEFFECT_MATERIAL( PHYSGUN_BEAM_SPRITE )
-CLIENTEFFECT_MATERIAL( PHYSGUN_BEAM_ACTIVE )
-CLIENTEFFECT_MATERIAL( PHYSGUN_BEAM_GLOW )
-CLIENTEFFECT_MATERIAL( PHYSGUN_ENDGLOW_SPRITE )
-CLIENTEFFECT_MATERIAL( PHYSGUN_ENDGLOW_SPRITE2 )
-CLIENTEFFECT_MATERIAL( PHYSGUN_FORKGLOW_SPRITE )
-CLIENTEFFECT_MATERIAL( PHYSGUN_FORKEND_SPRITE )
-CLIENTEFFECT_MATERIAL( PHYSGUN_CORE_SPRITE )
-CLIENTEFFECT_MATERIAL( PHYSGUN_BLAST_SPRITE )
-CLIENTEFFECT_MATERIAL( "sprites/physcannon_bluelight1" )
-CLIENTEFFECT_MATERIAL( "sprites/physcannon_bluelight1b" )
-CLIENTEFFECT_REGISTER_END()
-
-#endif
+// HL2SB (2026-10-03): physgun visual diagnostics, BOTH realms (the server
+// prints its beam-entity spawn, the client prints the client entity's
+// constructor and draw calls).  The networked physgun_beam entity draws ONLY
+// while this is on: the shipping renderer is the weapon's own
+// DrawModel / ViewModelDrawn path, the entity stays as the diagnostic and
+// future net-reference.  With it on, the answer to "no visuals" is one of
+//   no "client entity created" line -> the client entity is never created;
+//   "created" but no "draw" line      -> it exists but never reaches
+//                                       DrawModel (leaf system gate).
+// HL2SB (2026-10-03): renamed from hl2sb_physgun_debug (its archived "1" in
+// existing config.cfg files would keep re-enabling the debug renderer after
+// the default flip; a fresh non-archived name starts clean).  The only
+// remaining function is the beam entity's debug renderer - all visual
+// probes were removed.
+ConVar hl2sb_physgun_beamdebug( "hl2sb_physgun_beamdebug", "0", FCVAR_NONE, "Physgun: draw the physgun_beam entity's diagnostic renderer" );
 
 IPhysicsObject *GetPhysObjFromPhysicsBone( CBaseEntity *pEntity, short physicsbone )
 {
@@ -480,143 +407,11 @@ IMotionEvent::simresult_e CGravControllerPoint::Simulate( IPhysicsMotionControll
 	return SIM_LOCAL_ACCELERATION;
 }
 
-#ifdef CLIENT_DLL
-
 //-----------------------------------------------------------------------------
-// HL2SB (2026-09-26): the HL2 physcannon effect system (GMod parity) --
-// ported from game/shared/hl2mp/weapon_physcannon.cpp.  GMod's physgun IS
-// HL2's CWeaponPhysCannon client (reference: same attachments fork1..3m/t/b,
-// same DT fields, same HoldSound), so the gun-glow / claw / tendril rendering
-// comes straight across, tinted by the player's weapon colour.
+// HL2SB (2026-10-03): the HL2 physcannon client effect system is GONE - the
+// reference physgun renders nothing itself; the networked physgun_beam entity
+// owns the whole visual (game/client/c_physgun_beam.cpp).
 //-----------------------------------------------------------------------------
-
-class CPhysgunEffectSprite
-{
-public:
-	CPhysgunEffectSprite( void ) : m_vecColor( 255, 255, 255 ), m_bVisible( true ), m_nAttachment( -1 ) {};
-
-	void SetAttachment( int attachment ) { m_nAttachment = attachment; }
-	int	GetAttachment( void ) const { return m_nAttachment; }
-
-	void SetVisible( bool visible = true ) { m_bVisible = visible; }
-	bool IsVisible( void ) const { return m_bVisible; }
-
-	void SetColor( const Vector &color ) { m_vecColor = color; }
-	const Vector &GetColor( void ) const { return m_vecColor; }
-
-	bool SetMaterial( const char *materialName )
-	{
-		m_hMaterial.Init( materialName, TEXTURE_GROUP_CLIENT_EFFECTS );
-		return ( m_hMaterial != NULL );
-	}
-
-	CMaterialReference &GetMaterial( void ) { return m_hMaterial; }
-
-	CInterpolatedValue &GetAlpha( void ) { return m_Alpha; }
-	CInterpolatedValue &GetScale( void ) { return m_Scale; }
-
-private:
-	CInterpolatedValue	m_Alpha;
-	CInterpolatedValue	m_Scale;
-
-	Vector				m_vecColor;
-	bool				m_bVisible;
-	int					m_nAttachment;
-	CMaterialReference	m_hMaterial;
-};
-
-class CPhysgunEffectBeam
-{
-public:
-	CPhysgunEffectBeam( void ) : m_pBeam( NULL ) {};
-
-	~CPhysgunEffectBeam( void )
-	{
-		Release();
-	}
-
-	void Release( void )
-	{
-		if ( m_pBeam != NULL )
-		{
-			m_pBeam->flags = 0;
-			m_pBeam->die = gpGlobals->curtime - 1;
-
-			m_pBeam = NULL;
-		}
-	}
-
-	void Init( int startAttachment, int endAttachment, CBaseEntity *pEntity, bool firstPerson )
-	{
-		if ( m_pBeam != NULL )
-			return;
-
-		BeamInfo_t beamInfo;
-
-		beamInfo.m_pStartEnt = pEntity;
-		beamInfo.m_nStartAttachment = startAttachment;
-		beamInfo.m_pEndEnt = pEntity;
-		beamInfo.m_nEndAttachment = endAttachment;
-		beamInfo.m_nType = TE_BEAMPOINTS;
-		beamInfo.m_vecStart = vec3_origin;
-		beamInfo.m_vecEnd = vec3_origin;
-
-		beamInfo.m_pszModelName = ( firstPerson ) ? PHYSGUN_TENDRIL_NOZ : PHYSGUN_TENDRIL_SPRITE;
-
-		beamInfo.m_flHaloScale = 0.0f;
-		beamInfo.m_flLife = 0.0f;
-
-		if ( firstPerson )
-		{
-			beamInfo.m_flWidth = 0.0f;
-			beamInfo.m_flEndWidth = 4.0f;
-		}
-		else
-		{
-			beamInfo.m_flWidth = 0.5f;
-			beamInfo.m_flEndWidth = 2.0f;
-		}
-
-		beamInfo.m_flFadeLength = 0.0f;
-		beamInfo.m_flAmplitude = 16;
-		beamInfo.m_flBrightness = 255.0;
-		beamInfo.m_flSpeed = 150.0f;
-		beamInfo.m_nStartFrame = 0.0;
-		beamInfo.m_flFrameRate = 30.0;
-		beamInfo.m_flRed = 255.0;
-		beamInfo.m_flGreen = 255.0;
-		beamInfo.m_flBlue = 255.0;
-		beamInfo.m_nSegments = 8;
-		beamInfo.m_bRenderable = true;
-		beamInfo.m_nFlags = FBEAM_FOREVER;
-
-		m_pBeam = beams->CreateBeamEntPoint( beamInfo );
-	}
-
-	// HL2SB: GMod tints every physgun effect with the player's weapon colour.
-	void SetColor( float r, float g, float b )
-	{
-		if ( m_pBeam == NULL )
-			return;
-
-		m_pBeam->r = r;
-		m_pBeam->g = g;
-		m_pBeam->b = b;
-	}
-
-	void SetVisible( bool state = true )
-	{
-		if ( m_pBeam == NULL )
-			return;
-
-		m_pBeam->brightness = ( state ) ? 255.0f : 0.0f;
-	}
-
-private:
-	Beam_t	*m_pBeam;
-};
-
-#endif // CLIENT_DLL
 
 #ifdef CLIENT_DLL
 #define CWeaponGravityGun C_WeaponGravityGun
@@ -644,12 +439,6 @@ public:
 		AddPointToBounds( vec3_origin, mins, maxs );
 		AddPointToBounds( m_targetPosition, mins, maxs );
 		AddPointToBounds( m_worldPosition, mins, maxs );
-		CBaseEntity *pEntity = GetBeamEntity();
-		if ( pEntity )
-		{
-			mins -= pEntity->GetRenderOrigin();
-			maxs -= pEntity->GetRenderOrigin();
-		}
 	}
 
 	void GetRenderBoundsWorldspace( Vector& mins, Vector& maxs )
@@ -706,37 +495,18 @@ public:
 		}
 	}
 
-	int	 DrawModel( int flags );
-	void ViewModelDrawn( C_BaseViewModel *pBaseViewModel );
-	bool IsTransparent( void );
-
-	// HL2SB (2026-09-26): HL2 physcannon effect system, CLIENT side (GMod parity)
+	// HL2SB (2026-10-03, GUARANTEED RENDER PATH): the beam visual draws from
+	// the WEAPON's own DrawModel / ViewModelDrawn.  The weapon is always in
+	// the render lists (it carries a studio model), so the visual cannot be
+	// lost to leaf-system classification the way a model-less entity's can.
+	// The networked physgun_beam entity stays for STATE and draws only as a
+	// hl2sb_physgun_debug diagnostic.
+	int					DrawModel( int flags );
+	void				ViewModelDrawn( C_BaseViewModel *pBaseViewModel );
+	bool				IsTransparent( void );
+	void				DrawPhysgunVisuals( C_BaseViewModel *pViewModel );
 	void				OnDataChanged( DataUpdateType_t type );
-	void				ClientThink( void );
-	void				StartEffects( void );
-	void				DoEffectClosed( void );
-	void				DoEffectReady( void );
-	void				DoEffectHolding( void );
-	void				DoEffectLaunch( Vector *pos );
-	void				DoEffectNone( void );
-	void				DoEffectIdle( void );
-	void				UpdateElementPosition( void );
-	void				GetEffectParameters( int effectID, color32 &color, float &scale, IMaterial **pMaterial, Vector &vecAttachment );
-	bool				IsEffectVisible( int effectID );
-	void				DrawEffectSprite( int effectID );
-	void				DrawEffects( CBaseViewModel *pVM = NULL );
-	void				DrawPhysgunVisuals( class C_BaseViewModel *pViewModel );
-
-	// We need to render opaque and translucent pieces
-	RenderGroup_t	GetRenderGroup( void ) {	return RENDER_GROUP_TWOPASS;	}
 #endif
-
-	// HL2SB (2026-09-26): HL2 physcannon effect system, SHARED side -- both
-	// realms drive the same machine from the locally-known hold state.
-	void				DestroyEffects( void );
-	void				DoEffect( int effectType, Vector *pos = NULL );
-	void				OpenElements( void );
-	void				CloseElements( void );
 
 	void Spawn( void );
 	void OnRestore( void );
@@ -803,8 +573,6 @@ public:
 		return caps;
 	}
 
-	CBaseEntity *GetBeamEntity();
-
 	// HL2SB GMod compat: client helpers for the glow shell / mouse-rotate /
 	// wheel-distance intercepts
 	bool	IsHolding( void ) const { return m_hObject != NULL; }
@@ -840,25 +608,12 @@ private:
 	// transforms it back every frame so the beam sticks to the grabbed spot.
 	CNetworkVector	( m_vecHoldPos );
 
-	// HL2SB (2026-09-26): HL2 physcannon effect state -- driven locally on
-	// BOTH realms (the shared OpenElements/CloseElements/DoEffect run where
-	// the hold state changes), so no new netvars are needed for GMod parity.
-	int			m_EffectState;
-	int			m_nChangeState;
-	float		m_flElementDebounce;
-	bool		m_bOpen;
-
-#ifdef CLIENT_DLL
-	// Gun-glow sprite set + fork tendrils (HL2 physcannon rendering)
-	CInterpolatedValue	m_ElementParameter;
-	float		m_flLastPoseWritten;	// HL2SB: skip redundant per-frame pose writes
-	CPhysgunEffectSprite	m_Parameters[11];	// CORE, BLAST, GLOW1-6, ENDCAP1-3
-	CPhysgunEffectBeam		m_Beams[3];
-	int			m_nOldEffectState;
-	bool		m_bOldOpen;
-#endif
-
 #ifndef CLIENT_DLL
+	// HL2SB (2026-10-03): the reference's physgun_beam entity - created on
+	// the first grab, carrying the beam state to the client class that
+	// draws everything.  The weapon itself renders nothing.
+	EHANDLE		m_hBeam;
+
 	// HL2SB GMod compat: the held prop's soft full-body light is a CLIENT
 	// dlight (see EffectUpdate) - no server-side entity needed.
 	float		m_flLastReloadPress;	// for the double-tap-R unfreeze-all
@@ -973,6 +728,9 @@ BEGIN_DATADESC( CWeaponGravityGun )
 	DEFINE_FIELD( m_movementLength,		FIELD_FLOAT ),
 	DEFINE_FIELD( m_soundState,			FIELD_INTEGER ),
 	DEFINE_FIELD( m_originalObjectPosition,	FIELD_POSITION_VECTOR ),
+#ifndef CLIENT_DLL
+	DEFINE_FIELD( m_hBeam,					FIELD_EHANDLE ),
+#endif
 	DEFINE_SOUNDPATCH( m_sndMotor ),
 	DEFINE_SOUNDPATCH( m_sndLockedOn ),
 	DEFINE_SOUNDPATCH( m_sndLightObject ),
@@ -996,21 +754,12 @@ CWeaponGravityGun::CWeaponGravityGun()
 	m_bInWeapon1 = false;
 	m_bInWeapon2 = false;
 	m_bFreezeReleaseLatch = false;
-	m_bOpen = false;
-	m_nChangeState = ELEMENT_STATE_NONE;
-	m_flElementDebounce = 0.0f;
-#ifdef CLIENT_DLL
-	m_flLastPoseWritten = -1.0f;
-#endif
-	m_EffectState = EFFECT_NONE;
 #ifndef CLIENT_DLL
 	m_flLastReloadPress = 0.0f;
 	m_bDraggingNPC = false;
 	m_heldWorldAngles = vec3_angle;
 	m_vecGrabOffset = vec3_origin;
-#else
-	m_nOldEffectState = EFFECT_NONE;
-	m_bOldOpen = false;
+	m_hBeam = NULL;
 #endif
 }
 
@@ -1019,9 +768,20 @@ CWeaponGravityGun::CWeaponGravityGun()
 //-----------------------------------------------------------------------------
 void CWeaponGravityGun::UpdateOnRemove(void)
 {
-	DestroyEffects();
 	EffectDestroy();
 	SoundDestroy();
+
+#ifndef CLIENT_DLL
+	// HL2SB (2026-10-03): the weapon is gone - take the beam entity with it.
+	if ( m_hBeam != NULL )
+	{
+		CBaseEntity *pBeamEnt = (CBaseEntity *)m_hBeam;
+		if ( pBeamEnt != NULL )
+			UTIL_Remove( pBeamEnt );
+		m_hBeam = NULL;
+	}
+#endif
+
 	BaseClass::UpdateOnRemove();
 }
 
@@ -1048,8 +808,14 @@ void CWeaponGravityGun::Spawn( )
 	BaseClass::Spawn();
 //	SetModel( GetWorldModel() );
 
-	// The physgun uses a different skin
-	//m_nSkin = PHYSGUN_SKIN;
+	// HL2SB (2026-10-03): the third-person gun is w_Physics wearing skin 1 -
+	// w_physics_sheet2, the material carrying the PlayerWeaponColor proxy
+	// (the tinted look).  Skin 0 is the stock HL2 gold sheet, and the
+	// reference install ships only those two skins, so the tint REQUIRES
+	// skin 1.  m_nSkin is the standard networked BaseAnimating prop, so this
+	// reaches every third-person render (map-placed, given and dropped
+	// weapons alike); the first-person c_ model has its own materials.
+	m_nSkin = 1;
 
 #ifndef CLIENT_DLL
 	FallInit();
@@ -1071,12 +837,6 @@ void CWeaponGravityGun::OnRestore( void )
 void CWeaponGravityGun::Precache( void )
 {
 	BaseClass::Precache();
-
-	// HL2SB (2026-09-26, reference-confirmed): precache GMod's own beam
-	// materials -- physbeam (idle trail) + physbeama (active/held overlay).
-	g_physgunBeam1 = PrecacheModel(PHYSGUN_BEAM_SPRITE1);
-	g_physgunBeam = PrecacheModel(PHYSGUN_BEAM_SPRITE);
-	g_physgunGlow = PrecacheModel(PHYSGUN_BEAM_ACTIVE);
 
 	PrecacheScriptSound( "Weapon_Physgun.Scanning" );
 	PrecacheScriptSound( "Weapon_Physgun.LockedOn" );
@@ -1182,19 +942,32 @@ void CWeaponGravityGun::EffectUpdate( void )
 	CBaseEntity *pObject = m_hObject;
 
 #ifndef CLIENT_DLL
-	// HL2SB diag (2026-09-24 physgun input): what buttons ACTUALLY reach the
-	// weapon while holding?  1/sec, capped -- pairs with the client-side
-	// "CM buttons" dump to bisect client-input vs transport vs weapon code.
-	if ( pObject != NULL )
+	// HL2SB (2026-10-03): keep the physgun_beam entity in lockstep with the
+	// hold.  Created on the first activate and kept for the weapon's life;
+	// m_bIsOn is the LMB-held state, so the beam also shows with NO target -
+	// ending at the gate-traced scan point - exactly like the reference.
 	{
-		static int s_nSrvBtnDiag = 0;
-		static float s_flNextSrvBtnDiag = 0.0f;
-		if ( s_nSrvBtnDiag < 12 && gpGlobals->curtime >= s_flNextSrvBtnDiag )
+		CPhysBeam *pBeam = dynamic_cast< CPhysBeam * >( (CBaseEntity *)m_hBeam );
+		if ( pBeam == NULL )
 		{
-			s_flNextSrvBtnDiag = gpGlobals->curtime + 1.0f;
-			++s_nSrvBtnDiag;
-			luasrc_LuaInfoMsgF( "[HL2SB physgun] srv buttons=0x%X obj='%s'\n",
-				( unsigned )pOwner->m_nButtons, pObject->GetClassname() );
+			CPhysBeam *pNew = (CPhysBeam *)CreateEntityByName( "physgun_beam" );
+			if ( pNew != NULL )
+			{
+				pNew->SetHolder( pOwner );
+				pNew->Spawn();
+				m_hBeam = pNew;
+				pBeam = pNew;
+			}
+		}
+		if ( pBeam != NULL )
+		{
+			pBeam->SetHolder( pOwner );
+			if ( pObject != NULL )
+				pBeam->SetTarget( pObject, m_physicsBone, m_vecHoldPos );
+			else
+				pBeam->SetTarget( NULL, 0, vec3_origin );
+			if ( m_active )
+				pBeam->TurnOn();
 		}
 	}
 #endif
@@ -1228,15 +1001,6 @@ void CWeaponGravityGun::EffectUpdate( void )
 
 		IPhysicsObject *pPhys = GetPhysObjFromPhysicsBone( pObject, m_physicsBone );
 
-		// HL2SB diagnostic: RMB freeze reached the server? (capped)
-		static int s_nFreezeDiag = 0;
-		if ( s_nFreezeDiag < 6 )
-		{
-			++s_nFreezeDiag;
-			luasrc_LuaInfoMsgF( "[HL2SB physgun] RMB freeze: obj='%s' phys=%p\n",
-				pObject->GetClassname(), (void *)pPhys );
-		}
-
 		if ( pPhys != NULL )
 		{
 			// GM:OnPhysgunFreeze( weapon, physobj, ent, ply ) -- GMod contract:
@@ -1264,11 +1028,14 @@ void CWeaponGravityGun::EffectUpdate( void )
 				pPhys->EnableMotion( false );
 
 				// HL2SB (2026-10-03, reference correction): the freeze DOES
-				// fire one grab animation through the weapon (the reference
+				// fire ONE grab animation through the weapon (the reference
 				// freeze body ends in the slot-translate vcall with activity
 				// 181 = ACT_VM_PRIMARYATTACK -- the same one-shot the grab
 				// plays).  The earlier "silent and effect-free" reading was
-				// right about sounds/effects but missed this anim.
+				// right about sounds/effects but missed this anim.  A second
+				// fire in the same freeze used to sit below -- it only
+				// restarted the sequence this one just started (the one-shot
+				// must stay single on this engine's ideal-activity path).
 				SendWeaponAnim( ACT_VM_PRIMARYATTACK );
 
 				// HL2SB GMod compat: RMB freeze also ENDS the hold (GMod
@@ -1290,11 +1057,6 @@ void CWeaponGravityGun::EffectUpdate( void )
 				// TeslaHitboxes zap + "Weapon_Physgun.Special1" EmitSound
 				// (an HL2 cannon lock-on cue mislabelled as freeze feedback)
 				// were fork inventions -- gone.
-
-				// HL2SB: GMod's freeze fires the SAME ACT_VM_PRIMARYATTACK
-				// one-shot before releasing (: slot-translate
-				// +0x930(181) then release) -- RMB visibly "动作" too.
-				SendWeaponAnim( ACT_VM_PRIMARYATTACK );
 
 				// HL2SB GMod compat: GM:PhysgunDrop( ply, ent ) -- the freeze
 				// releases the object, so the drop hook fires here too.
@@ -1368,18 +1130,6 @@ void CWeaponGravityGun::EffectUpdate( void )
 				m_heldWorldAngles.z = roundf( m_heldWorldAngles.z / flSnap ) * flSnap;
 				m_heldWorldAngles.x = clamp( m_heldWorldAngles.x, -89.0f, 89.0f );
 			}
-
-			// HL2SB diagnostic: are RAW MOUSE MOVEMENT deltas reaching the
-			// server?  Only on actual movement frames -- the first cut burned
-			// its 3-print cap on the zero-delta frames between E-press and
-			// the first mouse move and left real movement unobserved.
-			static int s_nRotDiag = 0;
-			if ( ( nMouseDx != 0 || nMouseDy != 0 ) && s_nRotDiag < 4 )
-			{
-				++s_nRotDiag;
-				luasrc_LuaInfoMsgF( "[HL2SB physgun] E-rot MOVE dx=%d dy=%d angles=(%.1f %.1f %.1f)\n",
-					nMouseDx, nMouseDy, m_heldWorldAngles.x, m_heldWorldAngles.y, m_heldWorldAngles.z );
-			}
 		}
 
 #ifndef CLIENT_DLL
@@ -1417,16 +1167,6 @@ void CWeaponGravityGun::EffectUpdate( void )
 			pObject->Teleport( &npcTarget, &angles, NULL );
 			pObject->SetAbsVelocity( vec3_origin );
 			m_movementLength = ( npcTarget - pObject->GetLocalOrigin() ).Length();
-
-			// HL2SB diagnostic: is the NPC teleport-drive even ticking?
-			static int s_nNpcDriveDiag = 0;
-			if ( s_nNpcDriveDiag < 3 )
-			{
-				++s_nNpcDriveDiag;
-				luasrc_LuaInfoMsgF( "[HL2SB physgun] drive tick '%s' dist=%.0f target=(%.0f %.0f %.0f)\n",
-					pObject->GetClassname(), m_distance,
-					npcTarget.x, npcTarget.y, npcTarget.z );
-			}
 			return;
 		}
 #else
@@ -1632,19 +1372,6 @@ void CWeaponGravityGun::SoundUpdate( void )
 	}
 }
 
-CBaseEntity *CWeaponGravityGun::GetBeamEntity()
-{
-	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
-	if ( !pOwner )
-		return NULL;
-
-	// Make sure I've got a view model
-	CBaseViewModel *vm = pOwner->GetViewModel();
-	if ( vm )
-		return vm;
-
-	return pOwner;
-}
 
 void CWeaponGravityGun::EffectDestroy( void )
 {
@@ -1669,68 +1396,14 @@ void CWeaponGravityGun::EffectDestroy( void )
 //-----------------------------------------------------------------------------
 // Gets the complete list of values needed to render an effect
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::GetEffectParameters( int effectID, color32 &color, float &scale, IMaterial **pMaterial, Vector &vecAttachment )
-{
-	const float dt = gpGlobals->curtime;
-
-	float alpha = m_Parameters[effectID].GetAlpha().Interp( dt );
-	scale = m_Parameters[effectID].GetScale().Interp( dt );
-	*pMaterial = (IMaterial *) m_Parameters[effectID].GetMaterial();
-
-	// HL2SB: GMod tints the gun glow with the player's weapon colour.
-	color.r = (int) m_Parameters[effectID].GetColor().x;
-	color.g = (int) m_Parameters[effectID].GetColor().y;
-	color.b = (int) m_Parameters[effectID].GetColor().z;
-	color.a = (int) alpha;
-
-	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-	if ( pOwner != NULL )
-	{
-		Color clrW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
-		color.r = (byte)MIN( 255, (int)( color.r * clrW.r() / 255.0f ) );
-		color.g = (byte)MIN( 255, (int)( color.g * clrW.g() / 255.0f ) );
-		color.b = (byte)MIN( 255, (int)( color.b * clrW.b() / 255.0f ) );
-	}
-
-	int	attachment = m_Parameters[effectID].GetAttachment();
-	QAngle	angles;
-
-	// HL2SB: the fork resolves weapon attachments on the weapon entity itself
-	// (the same proven path the first-person beam uses -- the hidden world
-	// model follows the viewmodel in first person).
-	GetAttachment( attachment, vecAttachment, angles );
-}
 
 //-----------------------------------------------------------------------------
 // Whether or not an effect is set to display
 //-----------------------------------------------------------------------------
-bool CWeaponGravityGun::IsEffectVisible( int effectID )
-{
-	return m_Parameters[effectID].IsVisible();
-}
 
 //-----------------------------------------------------------------------------
 // Draws the effect sprite, given an effect parameter ID
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::DrawEffectSprite( int effectID )
-{
-	color32 color;
-	float scale;
-	IMaterial *pMaterial;
-	Vector	vecAttachment;
-
-	if ( IsEffectVisible( effectID ) == false )
-		return;
-
-	GetEffectParameters( effectID, color, scale, &pMaterial, vecAttachment );
-
-	if ( color.a <= 0.0f )
-		return;
-
-	CMatRenderContextPtr pRenderContext( materials );
-	pRenderContext->Bind( pMaterial, this );
-	DrawSprite( vecAttachment, scale, scale, color );
-}
 
 //-----------------------------------------------------------------------------
 // Render the physgun gun-glow sprite cluster
@@ -1762,247 +1435,18 @@ void CWeaponGravityGun::DrawEffectSprite( int effectID )
 //  itself, whose own tint block also reads +0x73c) are tinted
 // by the PLAYER'S WEAPON COLOUR, always.  The earlier "white / held-object
 // colour" readings ignored the -8 pointer shift.
-void CWeaponGravityGun::DrawEffects( CBaseViewModel *pVM )
-{
-	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-	if ( !pOwner )
-		return;
-
-	// First person: the VIEW model owns the muzzle-side attachments (the world
-	// entity's transform does not follow it).  Third person/mirrors: the world
-	// weapon entity is the one being drawn -- anchor on itself.
-	CBaseAnimating *pAnchor = ( pVM != NULL ) ? static_cast<CBaseAnimating *>( pVM )
-	                                          : static_cast<CBaseAnimating *>( this );
-
-	Vector vecMuzzle;
-	QAngle angMuzzle;
-	const char *pszAnchor = ( pVM != NULL ) ? "vm_att1" : "self_att1";
-	if ( !pAnchor->GetAttachment( 1, vecMuzzle, angMuzzle ) )
-	{
-		// index-1 lookup failed (model swapped / odd third-person model):
-		// fall back to the named muzzle, then to the shoot position, so the
-		// cluster always draws at SOMETHING sane instead of vanishing.
-		int nMuzzle = pAnchor->LookupAttachment( "muzzle" );
-		if ( nMuzzle > 0 && pAnchor->GetAttachment( nMuzzle, vecMuzzle, angMuzzle ) )
-		{
-			pszAnchor = "vm_named";
-		}
-		else
-		{
-			vecMuzzle = pOwner->Weapon_ShootPosition();
-			angMuzzle = pOwner->EyeAngles();
-			pszAnchor = "shootpos";
-		}
-	}
-
-	// HL2SB diag (rate-limited): which path draws the cluster, where it
-	// anchors -- ds_debug.log picks up Msg output; ground truth beats another
-	// round of video archaeology.
-	{
-		static float s_flNextGlowDiag = 0.0f;
-		static int s_nGlowDiag = 0;
-		if ( s_nGlowDiag < 8 && gpGlobals->curtime >= s_flNextGlowDiag )
-		{
-			s_flNextGlowDiag = gpGlobals->curtime + 2.0f;
-			++s_nGlowDiag;
-			Msg( "[HL2SB] physgun glow path=%s anchor=(%.0f %.0f %.0f) active=%d hold=%d owner=%p local=%p\n",
-				pszAnchor, vecMuzzle.x, vecMuzzle.y, vecMuzzle.z,
-				(int)m_active, (int)( m_hObject != NULL ),
-				(void *)pOwner, (void *)C_BasePlayer::GetLocalPlayer() );
-		}
-	}
-
-	Vector vecFwd;
-	AngleVectors( angMuzzle, &vecFwd );
-
-	const bool bActive = m_active;
-
-	// tint: the player's weapon colour (see the -8 note above).
-	Color clrW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
-	byte r = clrW.r(), g = clrW.g(), b = clrW.b();
-
-	IMaterial *pGlow[ 2 ] =
-	{
-		materials->FindMaterial( PHYSGUN_ENDGLOW_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS ),
-		materials->FindMaterial( PHYSGUN_ENDGLOW_SPRITE2, TEXTURE_GROUP_CLIENT_EFFECTS ),
-	};
-
-	const bool bHolding = ( m_hObject != NULL );
-	const int nSprites = bActive ? ( bHolding ? 7 : 2 ) : 3;
-	const float flDrift = bActive ? 2.0f : 5.0f;
-	const float dt = gpGlobals->curtime;
-
-	for ( int i = 0; i < nSprites; ++i )
-	{
-		float scale, alpha;
-		if ( bActive )
-		{
-			scale = random->RandomFloat( 16.0f, 64.0f );
-			alpha = (float)random->RandomInt( 100, 255 );
-		}
-		else
-		{
-			scale = sinf( dt * 5.0f + (float)i * 15.0f ) * 8.0f + 48.0f;
-			alpha = (float)random->RandomInt( 120, 255 );
-		}
-
-		Vector vecPos = vecMuzzle + vecFwd * ( flDrift * (float)i );
-
-		color32 color;
-		color.r = r; color.g = g; color.b = b; color.a = (byte)alpha;
-
-		CMatRenderContextPtr pRenderContext( materials );
-		pRenderContext->Bind( pGlow[ i & 1 ] );
-		DrawSprite( vecPos, scale, scale, color );
-	}
-}
 
 //-----------------------------------------------------------------------------
 // Initialize all sprites and beams
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::StartEffects( void )
-{
-	// ------------------------------------------
-	// Core
-	// ------------------------------------------
-	if ( m_Parameters[PHYSGUN_CORE].GetMaterial() == NULL )
-	{
-		m_Parameters[PHYSGUN_CORE].GetScale().Init( 0.0f, 1.0f, 0.1f );
-		m_Parameters[PHYSGUN_CORE].GetAlpha().Init( 255.0f, 255.0f, 0.1f );
-		m_Parameters[PHYSGUN_CORE].SetAttachment( 1 );
-
-		m_Parameters[PHYSGUN_CORE].SetMaterial( PHYSGUN_CORE_SPRITE );
-	}
-
-	// ------------------------------------------
-	// Blast
-	// ------------------------------------------
-	if ( m_Parameters[PHYSGUN_BLAST].GetMaterial() == NULL )
-	{
-		m_Parameters[PHYSGUN_BLAST].GetScale().Init( 0.0f, 1.0f, 0.1f );
-		m_Parameters[PHYSGUN_BLAST].GetAlpha().Init( 255.0f, 255.0f, 0.1f );
-		m_Parameters[PHYSGUN_BLAST].SetAttachment( 1 );
-		m_Parameters[PHYSGUN_BLAST].SetVisible( false );
-
-		m_Parameters[PHYSGUN_BLAST].SetMaterial( PHYSGUN_BLAST_SPRITE );
-	}
-
-	// ------------------------------------------
-	// Glows (fork mid/tips)
-	// ------------------------------------------
-	const char *attachNamesGlowThirdPerson[NUM_GLOW_SPRITES] =
-	{
-		"fork1m",
-		"fork1t",
-		"fork2m",
-		"fork2t",
-		"fork3m",
-		"fork3t",
-	};
-
-	const char *attachNamesGlow[NUM_GLOW_SPRITES] =
-	{
-		"fork1b",
-		"fork1m",
-		"fork1t",
-		"fork2b",
-		"fork2m",
-		"fork2t"
-	};
-
-	for ( int i = PHYSGUN_GLOW1; i < (PHYSGUN_GLOW1+NUM_GLOW_SPRITES); i++ )
-	{
-		if ( m_Parameters[i].GetMaterial() != NULL )
-			continue;
-
-		m_Parameters[i].GetScale().SetAbsolute( 0.05f * PHYSGUN_SPRITE_SCALE );
-		m_Parameters[i].GetAlpha().SetAbsolute( 64.0f );
-
-		// Different for different views
-		if ( ShouldDrawUsingViewModel() )
-		{
-			m_Parameters[i].SetAttachment( LookupAttachment( attachNamesGlow[i-PHYSGUN_GLOW1] ) );
-		}
-		else
-		{
-			m_Parameters[i].SetAttachment( LookupAttachment( attachNamesGlowThirdPerson[i-PHYSGUN_GLOW1] ) );
-		}
-		m_Parameters[i].SetColor( Vector( 255, 255, 255 ) );
-
-		m_Parameters[i].SetMaterial( PHYSGUN_FORKGLOW_SPRITE );
-	}
-
-	// ------------------------------------------
-	// End caps (fork tips)
-	// ------------------------------------------
-	const char *attachNamesEndCap[NUM_ENDCAP_SPRITES] =
-	{
-		"fork1t",
-		"fork2t",
-		"fork3t"
-	};
-
-	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
-	{
-		if ( m_Parameters[i].GetMaterial() != NULL )
-			continue;
-
-		m_Parameters[i].GetScale().SetAbsolute( 0.05f * PHYSGUN_SPRITE_SCALE );
-		m_Parameters[i].GetAlpha().SetAbsolute( 255.0f );
-		m_Parameters[i].SetAttachment( LookupAttachment( attachNamesEndCap[i-PHYSGUN_ENDCAP1] ) );
-		m_Parameters[i].SetVisible( false );
-
-		m_Parameters[i].SetMaterial( PHYSGUN_FORKEND_SPRITE );
-	}
-}
 
 //-----------------------------------------------------------------------------
 // Closing effects
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::DoEffectClosed( void )
-{
-	// Turn off the end-caps
-	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
-	{
-		m_Parameters[i].SetVisible( false );
-	}
-}
 
 //-----------------------------------------------------------------------------
 // Ready effects
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::DoEffectReady( void )
-{
-	// Special POV case
-	if ( ShouldDrawUsingViewModel() )
-	{
-		//Turn on the center sprite
-		m_Parameters[PHYSGUN_CORE].GetScale().InitFromCurrent( 14.0f, 0.2f );
-		m_Parameters[PHYSGUN_CORE].GetAlpha().InitFromCurrent( 128.0f, 0.2f );
-		m_Parameters[PHYSGUN_CORE].SetVisible();
-	}
-	else
-	{
-		//Turn off the center sprite
-		m_Parameters[PHYSGUN_CORE].GetScale().InitFromCurrent( 8.0f, 0.2f );
-		m_Parameters[PHYSGUN_CORE].GetAlpha().InitFromCurrent( 0.0f, 0.2f );
-		m_Parameters[PHYSGUN_CORE].SetVisible();
-	}
-
-	// Turn on the glow sprites
-	for ( int i = PHYSGUN_GLOW1; i < (PHYSGUN_GLOW1+NUM_GLOW_SPRITES); i++ )
-	{
-		m_Parameters[i].GetScale().InitFromCurrent( 0.4f * PHYSGUN_SPRITE_SCALE, 0.2f );
-		m_Parameters[i].GetAlpha().InitFromCurrent( 64.0f, 0.2f );
-		m_Parameters[i].SetVisible();
-	}
-
-	// Turn off the end-caps
-	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
-	{
-		m_Parameters[i].SetVisible( false );
-	}
-}
 
 //-----------------------------------------------------------------------------
 // Holding effects
@@ -2013,151 +1457,28 @@ void CWeaponGravityGun::DoEffectReady( void )
 // physbeama "active" beam overlay plus the physg_glow endpoint pair, both
 // driven by the beam draw path.  This hook is a no-op now; the state machine
 // keeps running so m_EffectState networking is unchanged.
-void CWeaponGravityGun::DoEffectHolding( void )
-{
-}
 
 //-----------------------------------------------------------------------------
 // Launch effects
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::DoEffectLaunch( Vector *pos )
-{
-	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-	if ( pOwner == NULL )
-		return;
-
-	Vector	endPos;
-	Vector	shotDir;
-
-	if ( pos == NULL )
-	{
-		endPos = pOwner->Weapon_ShootPosition();
-		pOwner->EyeVectors( &shotDir );
-
-		trace_t	tr;
-		UTIL_TraceLine( endPos, endPos + ( shotDir * MAX_TRACE_LENGTH ), MASK_SHOT, pOwner, COLLISION_GROUP_NONE, &tr );
-
-		endPos = tr.endpos;
-		shotDir = endPos - pOwner->Weapon_ShootPosition();
-		VectorNormalize( shotDir );
-	}
-	else
-	{
-		endPos = *pos;
-		shotDir = ( endPos - pOwner->Weapon_ShootPosition() );
-		VectorNormalize( shotDir );
-	}
-
-	//Turn on the blast sprite and scale
-	m_Parameters[PHYSGUN_BLAST].GetScale().Init( 8.0f, 64.0f, 0.1f );
-	m_Parameters[PHYSGUN_BLAST].GetAlpha().Init( 255.0f, 0.0f, 0.2f );
-	m_Parameters[PHYSGUN_BLAST].SetVisible();
-}
 
 //-----------------------------------------------------------------------------
 // Shutdown for the weapon when it's holstered
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::DoEffectNone( void )
-{
-	//Turn off main glows
-	m_Parameters[PHYSGUN_CORE].SetVisible( false );
-	m_Parameters[PHYSGUN_BLAST].SetVisible( false );
-
-	for ( int i = PHYSGUN_GLOW1; i < (PHYSGUN_GLOW1+NUM_GLOW_SPRITES); i++ )
-	{
-		m_Parameters[i].SetVisible( false );
-	}
-
-	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
-	{
-		m_Parameters[i].SetVisible( false );
-	}
-
-	m_Beams[0].SetVisible( false );
-	m_Beams[1].SetVisible( false );
-	m_Beams[2].SetVisible( false );
-}
 
 //-----------------------------------------------------------------------------
 // Idle effect (pulsing)
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::DoEffectIdle( void )
-{
-	StartEffects();
-
-	// Turn on the glow sprites
-	for ( int i = PHYSGUN_GLOW1; i < (PHYSGUN_GLOW1+NUM_GLOW_SPRITES); i++ )
-	{
-		m_Parameters[i].GetScale().SetAbsolute( random->RandomFloat( 0.05f, 0.075f ) * PHYSGUN_SPRITE_SCALE );
-		m_Parameters[i].GetAlpha().SetAbsolute( random->RandomInt( 24, 32 ) );
-	}
-
-	// Turn on the end-cap sprites
-	for ( int i = PHYSGUN_ENDCAP1; i < (PHYSGUN_ENDCAP1+NUM_ENDCAP_SPRITES); i++ )
-	{
-		m_Parameters[i].GetScale().SetAbsolute( random->RandomFloat( 3, 5 ) );
-		m_Parameters[i].GetAlpha().SetAbsolute( random->RandomInt( 200, 255 ) );
-	}
-
-	if ( m_EffectState != EFFECT_HOLDING )
-	{
-		// Turn beams off
-		m_Beams[0].SetVisible( false );
-		m_Beams[1].SetVisible( false );
-		m_Beams[2].SetVisible( false );
-	}
-}
 
 //-----------------------------------------------------------------------------
 // Update the pose parameter for the gun (the claw open/close animation)
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::UpdateElementPosition( void )
-{
-	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
-
-	float flElementPosition = m_ElementParameter.Interp( gpGlobals->curtime );
-
-	// HL2SB (2026-09-28, GMod parity): GMod's physgun never drives per-frame
-	// viewmodel state (reference: zero SendWeaponAnim, no pose pump).  A
-	// same-value pose write every frame still dirties the viewmodel's bone
-	// setup every frame, and that constant re-setup read as a small
-	// persistent jitter of the gun both idle and holding (GMod: rock still).
-	// Write only when the interpolated value actually changes.
-	if ( flElementPosition == m_flLastPoseWritten )
-		return;
-	m_flLastPoseWritten = flElementPosition;
-
-	if ( ShouldDrawUsingViewModel() )
-	{
-		if ( pOwner != NULL )
-		{
-			CBaseViewModel *vm = pOwner->GetViewModel();
-
-			if ( vm != NULL )
-			{
-				vm->SetPoseParameter( "active", flElementPosition );
-			}
-		}
-	}
-	else
-	{
-		SetPoseParameter( "active", flElementPosition );
-	}
-}
 
 //-----------------------------------------------------------------------------
 // Think function for the client
+// HL2SB (2026-10-03): GONE - the reference weapon has NO ClientThink and
+// renders nothing itself; there is nothing to pump.
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::ClientThink( void )
-{
-	// Update our elements visually
-	UpdateElementPosition();
-
-	// Update our effects
-	DoEffectIdle();
-
-	BaseClass::ClientThink();
-}
 
 #endif // CLIENT_DLL
 
@@ -2165,118 +1486,18 @@ void CWeaponGravityGun::ClientThink( void )
 // Effect dispatcher (shared -- the client realm applies the sprite state,
 // the server realm just tracks the state value)
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::DoEffect( int effectType, Vector *pos )
-{
-	m_EffectState = effectType;
-
-#ifdef CLIENT_DLL
-	// Save predicted state
-	m_nOldEffectState = m_EffectState;
-
-	switch( effectType )
-	{
-	case EFFECT_CLOSED:
-		DoEffectClosed( );
-		break;
-
-	case EFFECT_READY:
-		DoEffectReady( );
-		break;
-
-	case EFFECT_HOLDING:
-		DoEffectHolding();
-		break;
-
-	case EFFECT_LAUNCH:
-		DoEffectLaunch( pos );
-		break;
-
-	default:
-	case EFFECT_NONE:
-		DoEffectNone();
-		break;
-	}
-#endif
-}
 
 //-----------------------------------------------------------------------------
 // Destroy all sprites and beams
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::DestroyEffects( void )
-{
-#ifdef CLIENT_DLL
-	// Free our beams
-	m_Beams[0].Release();
-	m_Beams[1].Release();
-	m_Beams[2].Release();
-#endif
-}
 
 //-----------------------------------------------------------------------------
 // Open the claw elements (both realms drive this from the shared hold state)
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::OpenElements( void )
-{
-	if ( m_bOpen )
-		return;
-
-#ifndef CLIENT_DLL
-	EmitSound( "Weapon_PhysCannon.OpenClaws" );
-#endif
-
-	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
-
-	if ( pOwner == NULL )
-		return;
-
-	// HL2SB (2026-09-29, GMod reference): NO SendWeaponAnim here (and in every
-	// other claw-state path).  GMod's whole weapon band makes zero anim calls;
-	// re-sending ACT_VM_IDLE when the claws opened was re-starting the
-	// viewmodel sequence at grab time -- the bone-merged arms dropped out for
-	// its first frames and the gun visibly snapped once ("arm disappears +
-	// only one twitch when grabbing").  The claw open/close is a POSE effect
-	// (the "active" parameter below), exactly as GMod drives it.
-
-	m_bOpen = true;
-
-	DoEffect( EFFECT_READY );
-
-#ifdef CLIENT_DLL
-	// Element prediction
-	m_ElementParameter.InitFromCurrent( 1.0f, 0.2f, INTERP_SPLINE );
-	m_bOldOpen = true;
-#endif
-}
 
 //-----------------------------------------------------------------------------
 // Close the claw elements
 //-----------------------------------------------------------------------------
-void CWeaponGravityGun::CloseElements( void )
-{
-	if ( m_bOpen == false )
-		return;
-
-#ifndef CLIENT_DLL
-	EmitSound( "Weapon_PhysCannon.CloseClaws" );
-#endif
-
-	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
-
-	if ( pOwner == NULL )
-		return;
-
-	// HL2SB (2026-09-29): see OpenElements -- no anim send in GMod, pose only.
-
-	m_bOpen = false;
-
-	DoEffect( EFFECT_CLOSED );
-
-#ifdef CLIENT_DLL
-	// Element prediction
-	m_ElementParameter.InitFromCurrent( 0.0f, 0.5f, INTERP_SPLINE );
-	m_bOldOpen = false;
-#endif
-}
 
 //-----------------------------------------------------------------------------
 // Client entity created / received -- start the gun-glow system
@@ -2289,29 +1510,6 @@ void CWeaponGravityGun::OnDataChanged( DataUpdateType_t type )
 	if ( type == DATA_UPDATE_CREATED )
 	{
 		SetNextClientThink( CLIENT_THINK_ALWAYS );
-		StartEffects();
-	}
-
-	// Update effect state when out of parity with the server
-	if ( m_nOldEffectState != m_EffectState )
-	{
-		DoEffect( m_EffectState );
-		m_nOldEffectState = m_EffectState;
-	}
-
-	// Update element state when out of parity
-	if ( m_bOldOpen != m_bOpen )
-	{
-		if ( m_bOpen )
-		{
-			m_ElementParameter.InitFromCurrent( 1.0f, 0.2f, INTERP_SPLINE );
-		}
-		else
-		{
-			m_ElementParameter.InitFromCurrent( 0.0f, 0.5f, INTERP_SPLINE );
-		}
-
-		m_bOldOpen = (bool) m_bOpen;
 	}
 }
 #endif
@@ -2324,6 +1522,19 @@ void CWeaponGravityGun::UpdateObject( void )
 	CBaseEntity *pObject = m_hObject;
 	if ( !pObject )
 		return;
+
+	// HL2SB (2026-10-03): teleport-drive targets (NPCs, nextbots, brush
+	// models, body-less script ents) have NO shadow controller - the drive
+	// moves them in its own per-tick path.  Feeding them through the vphysics
+	// callback here made it fail (no controller / no physics bone) and
+	// DetachObject drop the handle, so the next EffectUpdate re-attached and
+	// replayed the grab ACT_VM_PRIMARYATTACK - the "gun twitches the whole
+	// time an NPC is held" report.  The handle stays put for drive targets.
+	// (The flag is server-side only; the update itself runs server-side too.)
+#ifndef CLIENT_DLL
+	if ( m_bDraggingNPC )
+		return;
+#endif
 
 	if ( !m_gravCallback.UpdateObject( pPlayer, pObject ) )
 	{
@@ -2363,10 +1574,16 @@ void CWeaponGravityGun::DetachObject( void )
 		m_hObject = NULL;
 		m_physicsBone = 0;
 
-		// HL2SB (2026-09-26): HL2 physcannon effect machine -- claws close,
-		// gun-glow drops back to idle (GMod parity).
-		CloseElements();
-		DoEffect( EFFECT_CLOSED );
+
+#ifndef CLIENT_DLL
+	// HL2SB (2026-10-03): the beam entity goes dark with the hold.
+	if ( m_hBeam != NULL )
+	{
+		CPhysBeam *pBeam = dynamic_cast< CPhysBeam * >( (CBaseEntity *)m_hBeam );
+		if ( pBeam != NULL )
+			pBeam->TurnOff();
+	}
+#endif
 	}
 }
 
@@ -2380,21 +1597,6 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 	m_useDown = false;
 
 #ifndef CLIENT_DLL
-	// HL2SB diagnostic (2026-09-22): WHY did the attach fail/choose a mode?
-	// One line per attach attempt (capped): class, NPC/player flags, movetype,
-	// the physics body the trace handed us.
-	static int s_nAttachDiag = 0;
-	if ( s_nAttachDiag < 12 )
-	{
-		++s_nAttachDiag;
-		luasrc_LuaInfoMsgF( "[HL2SB physgun] attach: '%s' npc=%d player=%d movetype=%d phys=%p bone=%d\n",
-			pObject->GetClassname(),
-			pObject->IsNPC() ? 1 : 0,
-			pObject->IsPlayer() ? 1 : 0,
-			(int)pObject->GetMoveType(),
-			(void *)pPhysics, (int)physicsbone );
-	}
-
 	// HL2SB GMod compat: the gamemode rules live in GM:PhysgunPickup( ply, ent ).
 	// GMod contract: literal false vetoes, literal true force-allows (that is
 	// how gamemodes allow grabbing PLAYERS), nil keeps the physgun's own rules
@@ -2423,15 +1625,6 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 
 	if ( !bPhysgunPickupAllowed )
 	{
-		// HL2SB diag (2026-09-24): a veto here silently drops what we just
-		// grabbed; a veto storm shows up as the rapid re-attach bursts in the
-		// session log (attach x6 same pointer).
-		static int s_nVetoDiag = 0;
-		if ( s_nVetoDiag < 4 )
-		{
-			++s_nVetoDiag;
-			luasrc_LuaInfoMsgF( "[HL2SB physgun] pickup VETO '%s'\n", pObject->GetClassname() );
-		}
 		m_hObject = NULL;
 		return;
 	}
@@ -2481,30 +1674,21 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 		// entity does not snap toward the player's eye line.
 		m_vecGrabOffset = pObject->GetAbsOrigin() - end;
 
-		// HL2SB (2026-10-03): GMod m_HoldPos for a non-physics drag target -
-		// entity-local (or a plain world offset while unrotated).
-	if ( pObject->GetAbsAngles() == vec3_angle )
-		{
-			m_vecHoldPos = end - pObject->GetAbsOrigin();
-		}
-		else
-		{
-			VMatrix mWorld( pObject->EntityToWorldTransform() );
-			VMatrix mLocal;
-			MatrixInverseTR( mWorld, mLocal );
-			Vector vecLocalHit;
-			VectorITransform( end, mLocal.As3x4(), vecLocalHit );
-			m_vecHoldPos = vecLocalHit;
-		}
+		// HL2SB (2026-10-03, branch-free hold point): ALWAYS store the grab
+		// point in ENTITY-LOCAL space.  The old two-way branch (world offset
+		// while unrotated, entity-local otherwise) is the "beam offsets on
+		// NPC grabs" root cause: server stores by the grab-time angles,
+		// client re-branches by the CURRENT networked angles, and any
+		// disagreement (nextbot/script-NPC angle jitter, a yaw that changed
+		// between grab and draw) applies the vector in the wrong frame and
+		// throws the beam end across the room.  One frame, both realms.
+		VMatrix mWorld( pObject->EntityToWorldTransform() );
+		VMatrix mLocal;
+		MatrixInverseTR( mWorld, mLocal );
+		Vector vecLocalHit;
+		VectorITransform( end, mLocal.As3x4(), vecLocalHit );
+		m_vecHoldPos = vecLocalHit;
 		Pickup_OnPhysGunPickup( pObject, pOwner );
-
-		static int s_nNpcGrabDiag = 0;
-		if ( s_nNpcGrabDiag < 15 )
-		{
-			++s_nNpcGrabDiag;
-			luasrc_LuaInfoMsgF( "[HL2SB physgun] drive-drag attached '%s' (offset %.0f %.0f %.0f)\n",
-				pObject->GetClassname(), m_vecGrabOffset.x, m_vecGrabOffset.y, m_vecGrabOffset.z );
-		}
 
 		m_distance = distance;
 
@@ -2523,13 +1707,12 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 		// ACT_VM_PRIMARYATTACK).  The earlier "GMod plays no anim" reading was
 		// wrong -- the scan matched the SendWeaponAnim symbol, not the slot
 		// path.  What DID kill the arms was HL2's per-tick re-send pinning the
-		// sequence at frame 0; a single fire is exactly GMod's "动一下".
-		// ItemPostFrame hands the model back to idle once it finished.
+		// sequence at frame 0; a single fire is exactly GMod's "动一下"
+		// (2026-10-03: no ItemPostFrame hand-back to idle any more - the
+		// reference weapon has ZERO SendWeaponAnim on the per-frame path).
 		SendWeaponAnim( ACT_VM_PRIMARYATTACK );
 
-		// HL2SB (2026-09-26): claws open + gun-glow to holding (GMod parity)
-		OpenElements();
-		DoEffect( EFFECT_HOLDING );
+
 		return;
 	}
 #endif
@@ -2592,9 +1775,7 @@ void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, IPhysicsObject *pPhy
 		// reference rationale.
 		SendWeaponAnim( ACT_VM_PRIMARYATTACK );
 
-		// HL2SB (2026-09-26): claws open + gun-glow to holding (GMod parity)
-		OpenElements();
-		DoEffect( EFFECT_HOLDING );
+
 	}
 	else
 	{
@@ -2638,73 +1819,42 @@ void CWeaponGravityGun::SecondaryAttack( void )
 extern bool g_bRenderingReflection; // HL2SB: mirror reflection flag in viewrender.cpp
 
 //-----------------------------------------------------------------------------
-// Purpose: Third-person function call to render world model
-//-----------------------------------------------------------------------------
-int CWeaponGravityGun::DrawModel( int flags )
-{
-	// Only render these on the transparent pass.  HL2SB (2026-10-03): the
-	// entire beam/sprite visual moved into DrawPhysgunVisuals -- a direct
-	// port of the reference client's C_PhysBeam draw path -- and BOTH view
-	// paths (this one for third person / mirrors, ViewModelDrawn for first
-	// person) funnel into it, exactly like the reference where the beam is a
-	// separate entity drawn once per view.
-	if ( flags & STUDIO_TRANSPARENCY )
-	{
-		if ( !m_active )
-			return 0;
-
-		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-		if ( !pOwner )
-			return 0;
-
-		// The local player's world weapon stays in the render lists for mirror
-		// reflections, so skip the first-person copy here; ViewModelDrawn
-		// draws it at the view model.
-		if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawUsingViewModel() )
-			return 0;
-
-		DrawPhysgunVisuals( NULL );
-		return 1;
-	}
-
-	// Only do this on the opaque pass
-	return BaseClass::DrawModel( flags );
-}
-
-//-----------------------------------------------------------------------------
-// HL2SB (2026-10-03): the reference client's physgun beam visual, ported
-// from the reference C_PhysBeam draw path.  One implementation serves
-// every view; pViewModel is the anchor when the caller draws from the
-// view-model pass (first person), NULL anchors on this weapon entity
-// (third person / mirrors).
+// HL2SB (2026-10-03): the reference client's physgun beam visual, drawn from
+// the WEAPON's own networked state (m_active / m_hObject / m_physicsBone /
+// m_vecHoldPos - all already in DT_WeaponGravityGun).  One implementation
+// serves every view; pViewModel is the anchor when the caller draws from the
+// view-model pass (first person), NULL anchors on this weapon entity's
+// attachment 1 (third person / mirrors), falling back to the owner's shoot
+// position.
 //
 //   gate      : physgun_drawbeams + the DrawPhysgunBeam Lua hook (6 args,
-//               literal false suppresses everything)
+//               literal false suppresses everything).  This path is the ONE
+//               authoritative hook source; the debug-only beam entity does
+//               not fire it.
 //   idle      : 3 claw sprites at the anchor's attachment 1, pulsing
 //               sin(t*5 + i*15)*8+48, alpha RandomInt(120,255); NO beam,
-//               NO end dot
-//   holding   : quadratic-Bezier ribbon (17 points) muzzle -> hold point,
+//               NO end dot.  Shows whenever the physgun is the holder's
+//               active weapon - NOT tied to holding.
+//   active    : quadratic-Bezier ribbon (17 points) muzzle -> hold point,
 //               3 passes with widths 2.0 / rand(2,5) / rand(2,6) and black
-//               endpoints; claw sprites (2, or 7 on a bone target) march
-//               along the anchor forward at 2 units each; end dot = 2 (7
-//               on a bone target) sprites of size rand(1,16), alpha
-//               RandomInt(100,255) at the hold point
+//               endpoints (physbeama + reversed scroll on bone holds); claw
+//               sprites (2, or 7 on a bone target) march along the aim
+//               direction at 2 units each; end dot = 2 (7 on a bone target)
+//               sprites of size rand(1,16), alpha RandomInt(100,255) at the
+//               hold point
 //   colour    : every sprite is the OWNER PLAYER's weapon colour (the
 //               reference reads m_hPlayer's render colour); the ribbon
 //               carries the same colour
 //   hold point: m_vecHoldPos transformed by the target -- a plain world
 //               offset while the target is unrotated, the physics
 //               element's bone matrix for MOVETYPE_VPHYSICS, the entity
-//               matrix otherwise; no target -> trace endpos
+//               matrix otherwise; no target -> the scan trace endpos
 //-----------------------------------------------------------------------------
-#ifdef CLIENT_DLL
-static void HL2SB_DrawPhysgunRibbon( const Vector &start, const Vector &control, const Vector &end, float width, const Vector &color )
+static void HL2SB_DrawPhysgunRibbon( const Vector &start, const Vector &control, const Vector &end, float width, const Vector &color, float scroll )
 {
-	// The engine's DrawBeamQuadratic shares the 17-point quadratic Bezier
-	// and the black endpoints; the reference additionally scales the
-	// texture scroll by the span length (texcoord = fmod(scroll,1) -
-	// len * t * 0.02), which the engine helper's unit-speed scroll cannot
-	// express.
+	// 17-point quadratic Bezier with black endpoints; the texture scroll is
+	// scaled by the span length (texcoord = fmod(scroll,1) - len * t * 0.02),
+	// which the engine's unit-speed DrawBeamQuadratic cannot express.
 	const int subdivisions = 16;
 	const float flSpan = start.DistTo( end );
 
@@ -2716,7 +1866,7 @@ static void HL2SB_DrawPhysgunRibbon( const Vector &start, const Vector &control,
 	seg.m_flAlpha = 1.0f;
 	seg.m_flWidth = width;
 
-	float u = fmod( gpGlobals->curtime, 1.0f );
+	float u = fmod( scroll, 1.0f );
 	float dt = 1.0f / (float)subdivisions;
 	float t = 0.0f;
 	for ( int i = 0; i <= subdivisions; i++, t += dt )
@@ -2742,17 +1892,27 @@ static void HL2SB_DrawPhysgunSprites( IMaterial *pMaterial, const Vector &pos, c
 		clr.r = r; clr.g = g; clr.b = b;
 		clr.a = (byte)random->RandomInt( nAlphaMin, nAlphaMax );
 		pRenderContext->Bind( pMaterial );
-		DrawSprite( vecPos, flSize, flSize, clr );
+		// HL2SB (2026-10-03): every "size" in this file is a HALF extent in
+		// the reference's sprite quad, while DrawSprite takes FULL width and
+		// height -- the same rule the idle claw loop below applies with its
+		// explicit * 2.0f.  Without the doubling the holding sprites drew
+		// half-size and vanished behind the weapon body.
+		DrawSprite( vecPos, flSize * 2.0f, flSize * 2.0f, clr );
 		vecPos += fwd * flDrift;
 	}
 }
-#endif
 
 void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 {
-#ifdef CLIENT_DLL
 	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
-	if ( !pOwner )
+	if ( pOwner == NULL )
+		return;
+
+	// Idle glow policy: the claw glow shows whenever the physgun is the
+	// holder's ACTIVE weapon - not tied to holding.  DrawModel and
+	// ViewModelDrawn only run for a drawn weapon; this re-checks the
+	// holder's inventory so a holstered gun never glows.
+	if ( pOwner->GetActiveWeapon() != this )
 		return;
 
 	{
@@ -2761,9 +1921,9 @@ void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 			return;
 	}
 
-	// The anchor is ALWAYS the view model's attachment 1 (muzzle), first
-	// and third person alike; the weapon entity itself is only the fallback
-	// when there is no view model (mirror passes with the vm culled).
+	// The anchor is the view model's attachment 1 (muzzle) in first person;
+	// the weapon entity's attachment 1 otherwise (the mirror passes may cull
+	// the view model).  Fallback: the owner's shoot position.
 	C_BaseAnimating *pAnchor = pViewModel;
 	if ( pAnchor == NULL )
 		pAnchor = this;
@@ -2776,68 +1936,96 @@ void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 		angMuzzle = pOwner->EyeAngles();
 	}
 
+	// The ribbon direction is the PLAYER'S AIM - the eye angles (body angles
+	// in a vehicle).  Not the muzzle attachment's angles, which sway with
+	// the view-model animation.
 	Vector vecAimDir;
-	AngleVectors( angMuzzle, &vecAimDir );
+	if ( pOwner->GetVehicle() != NULL )
+		AngleVectors( pOwner->GetAbsAngles(), &vecAimDir );
+	else
+		AngleVectors( pOwner->EyeAngles(), &vecAimDir );
 
-	bool bHolding = ( m_hObject != NULL );
+	bool bBoneTarget = ( m_physicsBone > 0 );
 
-	// GM:DrawPhysgunBeam( ply, weapon, enabled, target, physBone, hitPos )
-	// -- literal false suppresses the whole visual.
-	if ( L != NULL )
+	// The beam end: m_vecHoldPos transformed back by the target, or the scan
+	// trace endpos when nothing is held.  HL2SB (2026-10-03, branch-free):
+	// non-vphysics targets ALWAYS get the entity-matrix transform, matching
+	// the server's always-local storage - the old angle-equality re-branch
+	// let the two realms disagree and threw the end off NPC grabs.
+	C_BaseEntity *pTarget = m_hObject;
+	Vector vecEnd;
+	if ( pTarget != NULL )
 	{
-		C_BaseEntity *pHeld = m_hObject;
-		Vector vecHookHit( vec3_origin );
-		if ( pHeld != NULL )
+		if ( pTarget->GetMoveType() == MOVETYPE_VPHYSICS && m_physicsBone >= 0 )
 		{
-			if ( pHeld->GetMoveType() == MOVETYPE_VPHYSICS && m_physicsBone >= 0 )
+			C_BaseAnimating *pAnim = static_cast< C_BaseAnimating * >( pTarget );
+			CStudioHdr *pHdr = pAnim ? pAnim->GetModelPtr() : NULL;
+			if ( pHdr != NULL && pHdr->IsValid() && m_physicsBone < pHdr->numbones() )
 			{
-				C_BaseAnimating *pAnim = static_cast< C_BaseAnimating * >( pHeld );
-				const matrix3x4_t &boneToWorld = pAnim->GetBone( m_physicsBone );
-				VectorTransform( m_vecHoldPos, boneToWorld, vecHookHit );
+				VectorTransform( m_vecHoldPos, pAnim->GetBone( m_physicsBone ), vecEnd );
 			}
 			else
 			{
-				pHeld->EntityToWorldSpace( m_vecHoldPos, &vecHookHit );
+				pTarget->EntityToWorldSpace( m_vecHoldPos, &vecEnd );
 			}
 		}
 		else
 		{
-			trace_t tr;
-			TraceLine( &tr );
-			vecHookHit = tr.endpos;
+			pTarget->EntityToWorldSpace( m_vecHoldPos, &vecEnd );
 		}
+	}
+	else
+	{
+		trace_t tr;
+		TraceLine( &tr );
+		vecEnd = tr.endpos;
+	}
 
+	// GM:DrawPhysgunBeam( ply, weapon, bOn, target, boneid, pos ) - a literal
+	// false suppresses the entire visual.
+	bool bSuppressed = false;
+	if ( L != NULL )
+	{
 		BEGIN_LUA_CALL_HOOK( "DrawPhysgunBeam" );
 			lua_pushplayer( L, pOwner );
 			lua_pushentity( L, this );
 			lua_pushboolean( L, m_active != 0 );
-			lua_pushentity( L, pHeld );
+			lua_pushentity( L, pTarget );
 			lua_pushinteger( L, m_physicsBone );
-			lua_pushvector( L, vecHookHit );
+			lua_pushvector( L, vecEnd );
 		END_LUA_CALL_HOOK( 6, 1 );
 
 		if ( lua_gettop( L ) > 0 )
 		{
-			bool bSuppressed = ( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) == 0 );
+			bSuppressed = ( lua_isboolean( L, -1 ) && lua_toboolean( L, -1 ) == 0 );
 			lua_pop( L, 1 );
-			if ( bSuppressed )
-				return;
 		}
 	}
 
-	// Colour: the OWNER PLAYER's weapon colour everywhere (reference reads
-	// m_hPlayer's render colour for both clusters and the ribbon).
+	if ( bSuppressed )
+		return;
+
+	// Every sprite and the ribbon carry the HOLDER's weapon colour.
 	Color clrW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
 	byte r = clrW.r(), g = clrW.g(), b = clrW.b();
 
-	IMaterial *pGlowClaw = materials->FindMaterial( PHYSGUN_ENDGLOW_SPRITE2, TEXTURE_GROUP_CLIENT_EFFECTS );
-	IMaterial *pGlowEnd = materials->FindMaterial( PHYSGUN_ENDGLOW_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS );
+	IMaterial *pGlowClaw = materials->FindMaterial( "sprites/physg_glow2", TEXTURE_GROUP_CLIENT_EFFECTS );
+	IMaterial *pGlowEnd = materials->FindMaterial( "sprites/physg_glow1", TEXTURE_GROUP_CLIENT_EFFECTS );
 
-	if ( !bHolding )
+	// IDLE (scan beam off): 3 pulsing claw sprites at the muzzle only.
+	// HL2SB (2026-10-03, reference alignment): the reference's idle call site
+	// hands the sprite pass the VIEWMODEL MUZZLE attachment angles (it reads
+	// GetAttachment(1) pos AND ang), so the drift rides the barrel and sways
+	// with the view model - the player's eye aim is only the holding-path
+	// direction.  And the reference sprite quad takes HALF extents while
+	// DrawSprite takes full width/height, so every "size" below is a half
+	// extent and goes through DrawSprite doubled.
+	if ( !m_active )
 	{
-		// IDLE: 3 pulsing claw sprites at the muzzle only.
-		Vector vecPos = vecMuzzle;
 		CMatRenderContextPtr pRenderContext( materials );
+		Vector vecPos = vecMuzzle;
+		Vector vecDrift;
+		AngleVectors( angMuzzle, &vecDrift );
 		for ( int i = 0; i < 3; i++ )
 		{
 			float flSize = sinf( gpGlobals->curtime * 5.0f + (float)i * 15.0f ) * 8.0f + 48.0f;
@@ -2845,73 +2033,140 @@ void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 			clr.r = r; clr.g = g; clr.b = b;
 			clr.a = (byte)random->RandomInt( 120, 255 );
 			pRenderContext->Bind( pGlowClaw );
-			DrawSprite( vecPos, flSize, flSize, clr );
-			vecPos += vecAimDir * 5.0f;
+			DrawSprite( vecPos, flSize * 2.0f, flSize * 2.0f, clr );
+			vecPos += vecDrift * 5.0f;
 		}
 		return;
 	}
 
-	// HOLDING: the beam end is m_vecHoldPos transformed by the target (the
-	// same three-way rule the server stored it with).
-	C_BaseEntity *pObject = m_hObject;
-	Vector vecEnd;
-	if ( pObject->GetAbsAngles() == vec3_angle )
+	// ACTIVE: claw sprites (2, or 7 on a bone target) marching along the aim
+	// direction at 2 units each.
+	int nClaw = bBoneTarget ? 7 : 2;
+	// HL2SB (2026-10-03): the reference's hold claw size arguments were
+	// optimized out of the binary, but gameplay footage shows the muzzle glow
+	// keeps the IDLE scale on grab.  The previous RandomFloat(4, 48) shrank
+	// the light on every attack ("muzzle light got smaller") - use the idle
+	// pulsing formula instead.
 	{
-		vecEnd = pObject->GetAbsOrigin() + m_vecHoldPos;
-	}
-	else if ( pObject->GetMoveType() == MOVETYPE_VPHYSICS && m_physicsBone >= 0 )
-	{
-		C_BaseAnimating *pAnim = static_cast< C_BaseAnimating * >( pObject );
-		const matrix3x4_t &boneToWorld = pAnim->GetBone( m_physicsBone );
-		VectorTransform( m_vecHoldPos, boneToWorld, vecEnd );
-	}
-	else
-	{
-		pObject->EntityToWorldSpace( m_vecHoldPos, &vecEnd );
+		CMatRenderContextPtr pSpriteContext( materials );
+		Vector vecPos = vecMuzzle;
+		for ( int i = 0; i < nClaw; i++ )
+		{
+			float flSize = sinf( gpGlobals->curtime * 5.0f + (float)i * 15.0f ) * 8.0f + 48.0f;
+			color32 clr;
+			clr.r = r; clr.g = g; clr.b = b;
+			clr.a = (byte)random->RandomInt( 100, 255 );
+			pSpriteContext->Bind( pGlowClaw );
+			DrawSprite( vecPos, flSize * 2.0f, flSize * 2.0f, clr );
+			vecPos += vecAimDir * 2.0f;
+		}
 	}
 
-	// Bezier control: the muzzle forward at half the span (reference:
-	// muzzle + aimdir * physgun_maxrange * 0.5 when there is no target;
-	// with a target the span itself carries the curve).
-	Vector vecControl = vecMuzzle + vecAimDir * ( vecEnd.DistTo( vecMuzzle ) * 0.5f );
+	// HL2SB (2026-10-03): the ribbon is STRAIGHT, like the reference beam.
+	// The control point used to ride the AIM direction at half the span,
+	// which bows the quadratic Bezier whenever the hold end sits off the aim
+	// line (an NPC grabbed at its hit point, a bone hold) - the "beam bends
+	// when grabbing NPCs" report.  A control point at the midpoint of the
+	// endpoints degenerates the quadratic Bezier to the exact straight
+	// segment; the width flicker and scroll keep the reference look.  A bone
+	// hold swaps the ribbon material and scroll direction.
+	Vector vecControl = ( vecMuzzle + vecEnd ) * 0.5f;
 
 	CMatRenderContextPtr pRenderContext( materials );
-	IMaterial *pRibbon = materials->FindMaterial( PHYSGUN_BEAM_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS );
+	IMaterial *pRibbon = materials->FindMaterial( bBoneTarget ? "sprites/physbeama" : "sprites/physbeam", TEXTURE_GROUP_CLIENT_EFFECTS );
 	pRenderContext->Bind( pRibbon );
 	Vector vecRibbonColor( r / 255.0f, g / 255.0f, b / 255.0f );
-	HL2SB_DrawPhysgunRibbon( vecMuzzle, vecControl, vecEnd, 2.0f, vecRibbonColor );
-	HL2SB_DrawPhysgunRibbon( vecMuzzle, vecControl, vecEnd, random->RandomFloat( 2.0f, 5.0f ), vecRibbonColor );
-	HL2SB_DrawPhysgunRibbon( vecMuzzle, vecControl, vecEnd, random->RandomFloat( 2.0f, 6.0f ), vecRibbonColor );
 
-	// Claw sprites: 2 (7 on a bone target) marching at 2 units along the
-	// muzzle forward, alpha RandomInt(100,255).
-	int nClaw = ( m_physicsBone > 0 ) ? 7 : 2;
-	HL2SB_DrawPhysgunSprites( pGlowClaw, vecMuzzle, vecAimDir, nClaw, 2.0f, r, g, b, 4.0f, 48.0f, 100, 255 );
+	float flScroll = gpGlobals->curtime * ( bBoneTarget ? 2.5625f : -2.0f );
+	HL2SB_DrawPhysgunRibbon( vecMuzzle, vecControl, vecEnd, 2.0f, vecRibbonColor, flScroll );
+	HL2SB_DrawPhysgunRibbon( vecMuzzle, vecControl, vecEnd, random->RandomFloat( 2.0f, 5.0f ), vecRibbonColor, flScroll );
+	HL2SB_DrawPhysgunRibbon( vecMuzzle, vecControl, vecEnd, random->RandomFloat( 2.0f, 6.0f ), vecRibbonColor, flScroll );
 
-	// End dot: 2 (7 on a bone target) sprites of size rand(1,16) at the
-	// hold point -- the "aim dot"; idle shows NOTHING there.
-	int nEnd = ( m_physicsBone > 0 ) ? 7 : 2;
+	// End dot at the hold point - the "aim dot"; idle shows NOTHING there.
+	int nEnd = bBoneTarget ? 7 : 2;
 	HL2SB_DrawPhysgunSprites( pGlowEnd, vecEnd, vecAimDir, nEnd, 0.0f, r, g, b, 1.0f, 16.0f, 100, 255 );
-#endif
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: First-person function call after viewmodel has been drawn
+// Third-person / mirror draw.  The weapon is always in the render lists (it
+// carries a studio model), so this is the render path that CANNOT silently
+// vanish.  The weapon body renders exactly like the base class on whatever
+// pass the engine asks for; the beam visual joins it on the transparency
+// pass.  First person is ViewModelDrawn's job.
+//-----------------------------------------------------------------------------
+int CWeaponGravityGun::DrawModel( int flags )
+{
+	// Keep the weapon body drawing exactly like the base class on both
+	// passes (IsTransparent classifies this renderable as translucent, so
+	// the transparency pass is the only one that carries the body).
+	int nRet = BaseClass::DrawModel( flags );
+
+	if ( flags & STUDIO_TRANSPARENCY )
+	{
+		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		if ( pOwner != NULL )
+		{
+			// The local player's world weapon stays in the render lists for
+			// mirror reflections, so skip the first-person copy here -
+			// ViewModelDrawn draws it at the view model.
+			if ( !IsCarriedByLocalPlayer() || g_bRenderingReflection || !ShouldDrawUsingViewModel() )
+			{
+				DrawPhysgunVisuals( NULL );
+			}
+		}
+	}
+
+	return nRet;
+}
+
+//-----------------------------------------------------------------------------
+// First-person function call after the view model has been drawn.  The
+// visual draws in WORLD SPACE while the view-model pass is active; without
+// a 3D view push, world-space draws made here get depth-clipped (proven in
+// the earlier build whose beam rendered) - so wrap them in the player view.
 //-----------------------------------------------------------------------------
 void CWeaponGravityGun::ViewModelDrawn( C_BaseViewModel *pBaseViewModel )
 {
-	// HL2SB (2026-10-03): first person funnels into the same visual port as
-	// third person; the view model is the claw-sprite anchor (reference
-	// behaviour: ALWAYS the view model's attachment 1, first and third
-	// person alike -- there is no "anchor the weapon itself" branch).
-	DrawPhysgunVisuals( pBaseViewModel );
+	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+	if ( pOwner != NULL && pOwner == C_BasePlayer::GetLocalPlayer() )
+	{
+		CViewSetup beamView = *view->GetPlayerViewSetup();
+
+		Frustum dummyFrustum;
+		render->Push3DView( beamView, 0, NULL, dummyFrustum );
+
+		// HACK HACK: munge the depth range to prevent the beam from poking
+		// into walls (same trick the working build used).
+		CMatRenderContextPtr pRenderContext( materials );
+		pRenderContext->DepthRange( 0.1f, 0.2f );
+
+		DrawPhysgunVisuals( pBaseViewModel );
+
+		// HL2SB (2026-10-03, the "first-person arms invisible" root cause):
+		// this runs INSIDE the view model pass (viewrender.cpp DrawViewModels
+		// set DepthRange(0.0f, 0.1f) for the whole pass, the depth hack that
+		// keeps the gun from clipping into walls).  Restoring the WORLD range
+		// (0,1) here leaked that state into everything the pass draws AFTER
+		// this weapon - the gmod_hands entity drawn from GM:PostDrawViewModel.
+		// The gun is already in the depth buffer compressed into [0,0.1]; the
+		// arms, merged onto the very same bones at the same world positions,
+		// then map to depth values ten times larger and lose the depth test
+		// everywhere they overlap the gun - drawn every frame, never visible.
+		// Restore the pass's working band; DrawViewModels itself puts the full
+		// range back after PostDrawViewModel.
+		pRenderContext->DepthRange( 0.0f, 0.1f );
+
+		render->PopView( dummyFrustum );
+	}
 
 	// Pass this back up
 	BaseClass::ViewModelDrawn( pBaseViewModel );
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: We are always considered transparent
+// We are always considered transparent - this is what gives DrawModel its
+// STUDIO_TRANSPARENCY pass (the leaf system classifies the renderable by
+// IsTransparent) and puts the beam visual on the sorted translucent pass.
 //-----------------------------------------------------------------------------
 bool CWeaponGravityGun::IsTransparent( void )
 {
@@ -2941,15 +2196,54 @@ void CWeaponGravityGun::ItemPostFrame( void )
 	if (!pOwner)
 		return;
 
-	// HL2SB (2026-09-29, GMod parity): the grab/freeze ACT_VM_PRIMARYATTACK
-	// one-shots have no slot auto-restore on this engine (SendWeaponAnim only
-	// sets the ideal activity), so return the view model to idle EXACTLY ONCE
-	// when the one-shot has finished playing. The != idle guard means a
-	// settled idle is never re-touched -- the HL2 per-tick re-send that pinned
-	// frame 0 and dropped the merged arms stays dead for good.
 #ifndef CLIENT_DLL
-	if ( IsViewModelSequenceFinished() && GetSequence() != SelectWeightedSequence( ACT_VM_IDLE ) )
+	// HL2SB (2026-10-03): the beam entity exists from deploy (the reference
+	// creates it on its holster/deploy path), so the idle claw glow shows as
+	// soon as the gun is out - not only after the first grab.
+	if ( m_hBeam == NULL )
+	{
+		CPhysBeam *pNew = (CPhysBeam *)CreateEntityByName( "physgun_beam" );
+		if ( pNew != NULL )
+		{
+			pNew->SetHolder( pOwner );
+			pNew->Spawn();
+			m_hBeam = pNew;
+		}
+	}
+#endif
+
+	// HL2SB (2026-10-03, ONE-SHOT return-to-idle): the reference viewmodel
+	// loops its idle forever, but this engine's SendWeaponAnim is
+	// SetIdealActivity with no slot auto-recovery -- after a one-shot finishes
+	// (the deploy draw, the grab twitch, the RMB freeze) nothing ever
+	// re-selects ACT_VM_IDLE, and C_BaseViewModel::Interpolate pins a finished
+	// NON-looping sequence at cycle 0.999 forever.  That is the probe
+	// signature "vm anim: seq=4 cycle=0.999 rate=0.00/s" from deploy onward:
+	// the idle sequence never plays at all and the gun is a statue.
+	// The re-arm fires ONCE per finished one-shot, never per tick:
+	//  - m_flTimeWeaponIdle is (re)set by SetIdealActivity at the same moment
+	//    it sends a sequence (curtime + that sequence's own duration), so
+	//    HasWeaponIdleTimeElapsed() is a real finished-check that cannot go
+	//    stale -- unlike IsViewModelSequenceFinished(), which reads the server
+	//    viewmodel's m_bSequenceFinished, a field the server viewmodel never
+	//    advances (no StudioFrameAdvance pump) -- the stale-guard trap the
+	//    previous per-tick re-send fell into.
+	//  - GetActivity() != ACT_VM_IDLE keeps it a one-shot.  Re-sending the
+	//    sequence that is ALREADY playing would RESTART it:
+	//    SendViewModelMatchingSequence bumps m_nAnimationParity and zeroes
+	//    m_flCycle unconditionally, and the client resets on any parity
+	//    change -- the historical per-tick re-send that pinned frame 0,
+	//    jittered the idle and dropped the merged arms.
+	//  - Runs every frame INCLUDING while LMB is held (before the button
+	//    handling below): the reference viewmodel settles back on idle even
+	//    with the fire button down.
+	// The grab/freeze one-shots in AttachObject/freeze stay exactly as they
+	// are; this only hands the viewmodel back to the looping idle afterwards.
+#ifndef CLIENT_DLL
+	if ( GetActivity() != ACT_VM_IDLE && HasWeaponIdleTimeElapsed() )
+	{
 		SendWeaponAnim( ACT_VM_IDLE );
+	}
 #endif
 
 	// HL2SB GMod compat: R works whether or not LMB is held (unfreeze aimed /
@@ -2957,40 +2251,6 @@ void CWeaponGravityGun::ItemPostFrame( void )
 	if ( pOwner->m_afButtonPressed & IN_RELOAD )
 	{
 		Reload();
-	}
-
-	// HL2SB (2026-09-26): HL2 physcannon scan glow (CheckForTarget parity,
-	// both realms) -- the claws open when the beam points at a grabbable
-	// target and close after a 0.5 s debounce when it does not.
-	if ( m_hObject == NULL && !m_bFreezeReleaseLatch )
-	{
-		trace_t trScan;
-		TraceLine( &trScan );
-
-		if ( trScan.DidHitNonWorldEntity() )
-		{
-			m_nChangeState = ELEMENT_STATE_NONE;
-			OpenElements();
-		}
-		else if ( !m_active && ( m_flElementDebounce < gpGlobals->curtime ) && ( m_nChangeState == ELEMENT_STATE_NONE ) )
-		{
-			m_nChangeState = ELEMENT_STATE_CLOSED;
-			m_flElementDebounce = gpGlobals->curtime + 0.5f;
-		}
-	}
-
-	if ( ( m_flElementDebounce < gpGlobals->curtime ) && ( m_nChangeState != ELEMENT_STATE_NONE ) )
-	{
-		if ( m_nChangeState == ELEMENT_STATE_OPEN )
-		{
-			OpenElements();
-		}
-		else if ( m_nChangeState == ELEMENT_STATE_CLOSED )
-		{
-			CloseElements();
-		}
-
-		m_nChangeState = ELEMENT_STATE_NONE;
 	}
 
 	if ( pOwner->m_nButtons & IN_ATTACK )
@@ -3008,10 +2268,13 @@ void CWeaponGravityGun::ItemPostFrame( void )
 			SoundDestroy();
 		}
 
-		// HL2SB (2026-09-29, GMod reference): the last "re-arm ACT_VM_IDLE"
-		// resend is gone too -- GMod's weapon band has ZERO SendWeaponAnim
-		// calls, DefaultDeploy's idle sequence simply runs forever, and any
-		// re-send restarts the viewmodel sequence (arms blink, gun pops).
+		// HL2SB (2026-10-03): the unguarded per-tick "re-arm ACT_VM_IDLE"
+		// resend stays gone -- any re-send restarts the viewmodel sequence
+		// (arms blink, gun pops).  The guarded ONE-SHOT re-arm at the top of
+		// this function is the replacement: it fires only when the current
+		// non-idle sequence has actually run out its duration, and the
+		// GetActivity() gate makes it impossible to re-send an idle that is
+		// already the active sequence.
 		return;
 	}
 }

@@ -217,6 +217,8 @@ $Project "Server (HL2MP)"
 	{
 		$File "$SRCDIR/game/shared/hl2sb/weapon_toolgun.cpp"
 		$File "$SRCDIR/game/shared/hl2sb/weapon_physgun.cpp"
+		$File "$SRCDIR/game/server/physgun_beam.cpp"
+		$File "$SRCDIR/game/server/physgun_beam.h"
 		// HL2SB: Garry's Mod .gma addon archives (addons/*.gma)
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.cpp"
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.h"
