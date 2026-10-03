@@ -1244,6 +1244,13 @@ static int CBaseAnimating_SetLOD (lua_State *L) {
 // from becoming a real one).  Returns the engine's success flag.
 static int CBaseAnimating_SetupBones (lua_State *L) {
   C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  // HL2SB (2026-10-04) GMod contract: Entity:SetupBones FORCES a bone rebuild.
+  // Honoring the per-frame dedup here let one mid-frame forced build serve as
+  // the render build: First Person Body's CalcView work zeroes head/steer pose
+  // parameters around its own SetupBones and restores them right after -- with
+  // a cache hit on the render pass the restore was never rebuilt, and the
+  // seated model vibrated between the two poses every frame.
+  pEntity->InvalidateBoneCache();
   lua_pushboolean(L, pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ));
   return 1;
 }
@@ -1781,15 +1788,25 @@ static int CBaseAnimating_SetPlaybackRate (lua_State *L) {
 }
 
 static int CBaseAnimating_SetPoseParameter (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  float flNewValue;
   switch(lua_type(L, 2)) {
 	case LUA_TNUMBER:
-	  lua_pushnumber(L, luaL_checkanimating(L, 1)->SetPoseParameter(luaL_checkint(L, 2), luaL_checknumber(L, 3)));
+	  flNewValue = pEntity->SetPoseParameter(luaL_checkint(L, 2), luaL_checknumber(L, 3));
 	  break;
 	case LUA_TSTRING:
 	default:
-	  lua_pushnumber(L, luaL_checkanimating(L, 1)->SetPoseParameter(luaL_checkstring(L, 2), luaL_checknumber(L, 3)));
+	  flNewValue = pEntity->SetPoseParameter(luaL_checkstring(L, 2), luaL_checknumber(L, 3));
 	  break;
   }
+  // HL2SB (2026-10-04) GMod contract: a pose write must be visible to the next
+  // bone build.  CBaseAnimating::SetPoseParameter only stores the value -- the
+  // per-frame bone cache then kept serving a build made from the poses that
+  // were current when it last ran (First Person Body zeroes head/steer poses
+  // around a forced SetupBones in its CalcView work and restores them right
+  // after; without this the seated model vibrated between the two poses).
+  pEntity->InvalidateBoneCache();
+  lua_pushnumber(L, flNewValue);
   return 1;
 }
 

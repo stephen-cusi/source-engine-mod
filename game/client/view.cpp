@@ -1337,7 +1337,20 @@ void CViewRender::MP_PostSimulate()
 
 	//Tony; if the local player is in a vehicle, then we need to kill the bone cache, and re-calculate the view.
 	if ( !pLocal->IsInAVehicle() && !pLocal->GetVehicle())
+	{
+		// HL2SB (2026-10-04): on foot the override stash is never consumed
+		// below -- drop it here so a stale answer cannot leak into the next
+		// vehicle entry (the CalcView chain answers fresh every frame, but
+		// only this function runs late enough to matter).
+		{
+			extern bool HL2SB_TakeLuaCalcViewOverride( Vector *pOutOrigin, QAngle *pOutAngles, float *pOutFov );
+			Vector vecDiscardOrigin;
+			QAngle angDiscardAngles;
+			float flDiscardFov = 0.0f;
+			HL2SB_TakeLuaCalcViewOverride( &vecDiscardOrigin, &angDiscardAngles, &flDiscardFov );
+		}
 		return;
+	}
 
 	IClientVehicle *pVehicle = pLocal->GetVehicle();
 	Assert( pVehicle );
@@ -1373,6 +1386,26 @@ void CViewRender::MP_PostSimulate()
 		if ( HL2SB_ApplyVehicleThirdPersonView( vecFreshEyeOrigin, m_View.angles, &vecThirdPersonOrigin ) )
 		{
 			m_View.origin = vecThirdPersonOrigin;
+		}
+	}
+
+	// HL2SB (2026-10-04): the GM:CalcView chain answered during CalcPlayerView /
+	// CalcVehicleView, long before this function re-pinned the view to the bare
+	// vehicle eye attachment above -- without this the Lua answer (and every
+	// registered hook's in-place edit that rode into the returned CamData, i.e.
+	// First Person Body's vehicle eye snap) never survived the frame.  The
+	// stash is the LAST writer, exactly where GMod's readback sits in its view
+	// flow.  fov too: the seat handed the dispatch a real znear/zfar-fov trio.
+	{
+		extern bool HL2SB_TakeLuaCalcViewOverride( Vector *pOutOrigin, QAngle *pOutAngles, float *pOutFov );
+		Vector vecLuaOrigin;
+		QAngle angLuaAngles;
+		float flLuaFov = 0.0f;
+		if ( HL2SB_TakeLuaCalcViewOverride( &vecLuaOrigin, &angLuaAngles, &flLuaFov ) )
+		{
+			m_View.origin = vecLuaOrigin;
+			m_View.angles = angLuaAngles;
+			m_View.fov = flLuaFov;
 		}
 	}
 

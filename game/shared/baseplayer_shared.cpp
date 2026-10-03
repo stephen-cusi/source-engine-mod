@@ -1624,6 +1624,8 @@ void CBasePlayer::CalcViewModelView( const Vector& eyeOrigin, const QAngle& eyeA
 }
 
 #if defined( CLIENT_DLL ) && defined( LUA_SDK )
+static void HL2SB_StoreLuaCalcViewOverride( const Vector &vecOrigin, const QAngle &angAngles, float flFov );
+
 // HL2SB (2026-10-04): the GMod CalcView dispatch, shared by CalcPlayerView and
 // CalcVehicleView.  reference contract (GMod client.dll -- the single
 // HookExists(ctx, 4) call site): push copies of ( player, origin, angles, fov,
@@ -1699,9 +1701,52 @@ static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &
 				*pOutFar = luaL_checknumber( L, -1 );
 			lua_pop( L, 1 );
 		}
+
+		// HL2SB (2026-10-04): this dispatch runs inside CalcPlayerView /
+		// CalcVehicleView, but CViewRender::MP_PostSimulate() re-pins the
+		// seated view to the bare vehicle eye attachment at the very end of
+		// SetUpViews -- anything applied here was silently discarded one
+		// stage later (the probe showed EyePos == vehEye bit-exact while the
+		// hooks had moved the view).  Stash the answer; MP_PostSimulate
+		// consumes it after its own re-pin, making the Lua chain the last
+		// writer the way GMod's readback is.
+		HL2SB_StoreLuaCalcViewOverride( eyeOrigin, eyeAngles, fov );
 	}
 
 	lua_settop( L, iBase );	// exact restore
+}
+
+// The CalcView chain's final word -- produced by HL2SB_LuaCalcView above,
+// consumed at the end of CViewRender::MP_PostSimulate (view.cpp).
+static Vector g_hl2sbLuaViewOrigin( 0, 0, 0 );
+static QAngle g_hl2sbLuaViewAngles( 0, 0, 0 );
+static float g_hl2sbLuaViewFov = 0;
+static bool g_hl2sbLuaViewOverride = false;
+
+static void HL2SB_StoreLuaCalcViewOverride( const Vector &vecOrigin, const QAngle &angAngles, float flFov )
+{
+	g_hl2sbLuaViewOrigin = vecOrigin;
+	g_hl2sbLuaViewAngles = angAngles;
+	g_hl2sbLuaViewFov = flFov;
+	g_hl2sbLuaViewOverride = true;
+}
+
+// Always clears the stash; returns true when an override was pending this
+// frame.  Callers that must not apply it (e.g. the not-in-vehicle early
+// return of MP_PostSimulate) still need to call this so a stale answer
+// cannot leak into a later frame.
+bool HL2SB_TakeLuaCalcViewOverride( Vector *pOutOrigin, QAngle *pOutAngles, float *pOutFov )
+{
+	const bool bHad = g_hl2sbLuaViewOverride;
+	g_hl2sbLuaViewOverride = false;
+	if ( bHad && pOutOrigin )
+	{
+		*pOutOrigin = g_hl2sbLuaViewOrigin;
+		*pOutAngles = g_hl2sbLuaViewAngles;
+		if ( pOutFov )
+			*pOutFov = g_hl2sbLuaViewFov;
+	}
+	return bHad;
 }
 #endif // CLIENT_DLL && LUA_SDK
 

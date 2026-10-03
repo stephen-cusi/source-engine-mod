@@ -4622,6 +4622,12 @@ static int CBaseEntity_SetPoseParameter (lua_State *L) {
     return 1;
   }
   lua_pushnumber( L, pAnim->SetPoseParameter( nIndex, flValue ) );
+#ifdef CLIENT_DLL
+  // HL2SB (2026-10-04) GMod contract: a pose write must be visible to the next
+  // bone build -- see the twin binding in lc_baseanimating.cpp for the jitter
+  // this per-frame bone cache dedup caused with pose-manipulating addons.
+  pAnim->InvalidateBoneCache();
+#endif
   return 1;
 }
 
