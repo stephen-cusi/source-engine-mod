@@ -597,6 +597,16 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 
+	// HL2SB GMod compat (2026-10-03): SWEP.DeploySpeed seeds the weapon's
+	// deploy-speed scale (WEAPON:SetDeploySpeed); the member already defaults
+	// to 1.0, so an absent key changes nothing.
+	lua_pushweaponfield( L, m_nTableReference, "DeploySpeed" );
+	if ( lua_isnumber( L, -1 ) && lua_tonumber( L, -1 ) > 0.0f )
+	{
+		m_flDeploySpeed = lua_tonumber( L, -1 );
+	}
+	lua_pop( L, 1 );
+
 	lua_pushweaponfield( L, m_nTableReference, "rumble" );
 	if ( lua_isnumber( L, -1 ) )
 	{
@@ -1887,6 +1897,39 @@ void CHL2MPScriptedWeapon::Equip( CBaseCombatCharacter *pOwner )
 	}
 #endif
 #endif
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB GMod compat (2026-10-03): WEAPON:OnRemove() -- GMod dispatches
+//          it right before a scripted weapon entity goes away (weapon_base
+//          stubs it; addons release sounds/particles there).  UpdateOnRemove
+//          is the entity-removal chain every scripted weapon walks.
+//-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::UpdateOnRemove( void )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "OnRemove" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+#endif
+
+	BaseClass::UpdateOnRemove();
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB GMod compat (2026-10-03): WEAPON:OnDrop() -- GMod dispatches
+//          it when the weapon is dropped.  Server only: the base Drop body is
+//          server-only too, so a client-side drop has nothing to hook.
+//-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::Drop( const Vector &vecVelocity )
+{
+#ifndef CLIENT_DLL
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "OnDrop" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+#endif
+#endif
+
+	BaseClass::Drop( vecVelocity );
 }
 
 Activity CHL2MPScriptedWeapon::GetDrawActivity( void )

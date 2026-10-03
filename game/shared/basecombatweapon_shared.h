@@ -618,6 +618,15 @@ public:
 	float					m_fFireDuration;		// The amount of time that the weapon has sustained firing
 	int						m_iSubType;
 
+	// HL2SB GMod compat (2026-10-03): WEAPON:SetDeploySpeed -- scales the
+	// deploy stamps DefaultDeploy lays down.  Seeded from the SWEP.DeploySpeed
+	// script key for scripted weapons; defaults to 1.0 (bit-identical stamps).
+	float					m_flDeploySpeed;
+public:
+	float					GetDeploySpeed( void ) const			{ return m_flDeploySpeed; }
+	void					SetDeploySpeed( float flDeploySpeed )	{ m_flDeploySpeed = flDeploySpeed; }
+public:
+
 	float					m_flUnlockTime;
 	EHANDLE					m_hLocker;				// Who locked this weapon.
 

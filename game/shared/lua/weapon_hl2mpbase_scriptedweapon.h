@@ -81,6 +81,12 @@ public:
 	// CBaseCombatWeapon::Equip virtual (same vtable slot, no layout change).
 	virtual void			Equip( CBaseCombatCharacter *pOwner );
 
+	// HL2SB GMod compat (2026-10-03): WEAPON:OnRemove() / WEAPON:OnDrop() --
+	// overrides of the EXISTING CBaseEntity::UpdateOnRemove and
+	// CBaseCombatWeapon::Drop virtuals (same vtable slots, no layout change).
+	virtual void			UpdateOnRemove( void );
+	virtual void			Drop( const Vector &vecVelocity );
+
 	// Default calls through to m_hOwner, but plasma weapons can override and shoot projectiles here.
 	// HL2SB: GMod's client-side weapon view hooks (SWEP:TranslateFOV / SWEP:CalcView).
 	// Deliberately NON-virtual: waf does not track header changes (AGENTS.md 5.0), so

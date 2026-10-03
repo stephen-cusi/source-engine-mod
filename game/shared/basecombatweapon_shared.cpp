@@ -81,6 +81,10 @@ CBaseCombatWeapon::CBaseCombatWeapon() : BASECOMBATWEAPON_DERIVED_FROM()
 	m_bFlipViewModel	= false;
 	m_iSubType = 0;
 
+	// HL2SB GMod compat: WEAPON:SetDeploySpeed -- 1.0 keeps the deploy
+	// stamps bit-identical to the pre-field behaviour.
+	m_flDeploySpeed		= 1.0f;
+
 #if defined( CLIENT_DLL )
 	m_iState = m_iOldState = WEAPON_NOT_CARRIED;
 	m_iClip1 = -1;
@@ -1454,12 +1458,14 @@ bool CBaseCombatWeapon::DefaultDeploy( char *szViewModel, char *szWeaponModel, i
 		SetViewModel();
 		SendWeaponAnim( iActivity );
 
-		pOwner->SetNextAttack( gpGlobals->curtime + SequenceDuration() );
+		// HL2SB GMod compat: WEAPON:SetDeploySpeed (default 1.0) scales the
+		// deploy stamps the same way it scales GMod's.
+		pOwner->SetNextAttack( gpGlobals->curtime + SequenceDuration() / m_flDeploySpeed );
 	}
 
 	// Can't shoot again until we've finished deploying
-	m_flNextPrimaryAttack	= gpGlobals->curtime + SequenceDuration();
-	m_flNextSecondaryAttack	= gpGlobals->curtime + SequenceDuration();
+	m_flNextPrimaryAttack	= gpGlobals->curtime + SequenceDuration() / m_flDeploySpeed;
+	m_flNextSecondaryAttack	= gpGlobals->curtime + SequenceDuration() / m_flDeploySpeed;
 	m_flHudHintMinDisplayTime = 0;
 
 	m_bAltFireHudHintDisplayed = false;

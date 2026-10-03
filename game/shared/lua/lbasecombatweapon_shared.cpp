@@ -69,9 +69,16 @@ static int CBaseCombatWeapon_ActivityListCount (lua_State *L) {
 }
 
 static int CBaseCombatWeapon_ActivityOverride (lua_State *L) {
-  bool *pRequired = (bool *)luaL_checkboolean(L, 3);
-  lua_pushinteger(L, luaL_checkweapon(L, 1)->ActivityOverride((Activity)luaL_checkint(L, 2), pRequired));
-  return 1;
+  // HL2SB (2026-10-03): the out-flag was (bool *)luaL_checkboolean -- the 0/1
+  // int CAST to a pointer, and ActivityOverride writes *pRequired whenever the
+  // base act resolves, so a `true` argument wrote to address 0x1.  Take the
+  // address of a real local and hand both answers back.
+  CBaseCombatWeapon *pWeapon = luaL_checkweapon(L, 1);
+  Activity baseAct = (Activity)luaL_checkint(L, 2);
+  bool bRequired = luaL_optboolean(L, 3, false);
+  lua_pushinteger(L, pWeapon->ActivityOverride(baseAct, &bRequired));
+  lua_pushboolean(L, bRequired);
+  return 2;
 }
 
 static int CBaseCombatWeapon_AddViewKick (lua_State *L) {
@@ -320,9 +327,17 @@ static int CBaseCombatWeapon_GetName (lua_State *L) {
   return 1;
 }
 
-// FIXME: push CBaseCombatCharacter instead
+// HL2SB (2026-10-03): GMod's GetOwner answers a Player for player owners and
+// a plain Entity for anything else; the old cast pushed NPCs wrapped in
+// Player userdata.
 static int CBaseCombatWeapon_GetOwner (lua_State *L) {
-  lua_pushplayer(L, (CBasePlayer *)luaL_checkweapon(L, 1)->GetOwner());
+  CBaseCombatCharacter *pOwner = luaL_checkweapon(L, 1)->GetOwner();
+  if (pOwner == NULL)
+    lua_pushnil(L);
+  else if (pOwner->IsPlayer())
+    lua_pushplayer(L, (CBasePlayer *)pOwner);
+  else
+    lua_pushentity(L, pOwner);
   return 1;
 }
 
@@ -433,6 +448,27 @@ static int CBaseCombatWeapon_GetWeaponIdleTime (lua_State *L) {
   lua_pushnumber(L, luaL_checkweapon(L, 1)->GetWeaponIdleTime());
   return 1;
 }
+
+// HL2SB GMod compat (2026-10-03): WEAPON:GetDeploySpeed / SetDeploySpeed --
+// scales the deploy stamps in DefaultDeploy.  The member defaults to 1.0.
+static int CBaseCombatWeapon_GetDeploySpeed (lua_State *L) {
+  lua_pushnumber(L, luaL_checkweapon(L, 1)->GetDeploySpeed());
+  return 1;
+}
+
+static int CBaseCombatWeapon_SetDeploySpeed (lua_State *L) {
+  luaL_checkweapon(L, 1)->SetDeploySpeed(luaL_checknumber(L, 2));
+  return 0;
+}
+
+#ifdef CLIENT_DLL
+// HL2SB GMod compat (2026-10-03): WEAPON:IsCarriedByLocalPlayer -- the
+// C_BaseCombatWeapon member already exists; GMod binds it client-only.
+static int CBaseCombatWeapon_IsCarriedByLocalPlayer (lua_State *L) {
+  lua_pushboolean(L, luaL_checkweapon(L, 1)->IsCarriedByLocalPlayer());
+  return 1;
+}
+#endif
 
 static int CBaseCombatWeapon_GetWeight (lua_State *L) {
   lua_pushinteger(L, luaL_checkweapon(L, 1)->GetWeight());
@@ -849,7 +885,10 @@ static int CBaseCombatWeapon_WeaponIdle (lua_State *L) {
 }
 
 static int CBaseCombatWeapon_WeaponSound (lua_State *L) {
-  luaL_checkweapon(L, 1)->WeaponSound((WeaponSound_t)luaL_checkint(L, 2), luaL_optnumber(L, 2, 0.0f));
+  // HL2SB (2026-10-03): the optional soundtime read slot 2 -- the sound
+  // CATEGORY itself -- so WeaponSound(SINGLE) emitted with soundtime 1.0
+  // instead of "now".  It lives on argument 3.
+  luaL_checkweapon(L, 1)->WeaponSound((WeaponSound_t)luaL_checkint(L, 2), luaL_optnumber(L, 3, 0.0f));
   return 0;
 }
 
@@ -877,6 +916,20 @@ static int CBaseCombatWeapon___index (lua_State *L) {
   const char *field = luaL_checkstring(L, 2);
   /* GMod SWEP compat: stock scripts use self.Owner instead of GetOwner(). */
   if (Q_strcmp(field, "Owner") == 0) {
+    /* HL2SB (2026-10-03): reads and writes must agree.  __newindex stores a
+    ** script-supplied self.Owner into the per-instance table; answering the
+    ** C++ owner first means that value can never be read back -- the same
+    ** asymmetry fixed on the entity __index on 2026-09-29 ("instance fields
+    ** beat C branches").  Script value wins, C++ owner is the fallback. */
+    if (lua_isrefvalid(L, pWeapon->m_nTableReference)) {
+      lua_getref(L, pWeapon->m_nTableReference);
+      lua_getfield(L, -1, field);
+      if (!lua_isnil(L, -1)) {
+        lua_remove(L, -2);
+        return 1;
+      }
+      lua_pop(L, 2);
+    }
     CBasePlayer *pOwner = (CBasePlayer *)pWeapon->GetOwner();
     if (pOwner) lua_pushplayer(L, pOwner); else lua_pushnil(L);
     return 1;
@@ -1057,9 +1110,9 @@ static int CBaseCombatWeapon___eq (lua_State *L) {
 static int CBaseCombatWeapon___tostring (lua_State *L) {
   CBaseCombatWeapon *pWeapon = lua_toweapon(L, 1);
   if (pWeapon == NULL)
-    lua_pushstring(L, "NULL");
+    lua_pushstring(L, "Weapon [NULL]");
   else
-    lua_pushfstring(L, "CBaseCombatWeapon: %d %s", pWeapon->entindex(), pWeapon->GetClassname());
+    lua_pushfstring(L, "Weapon [%i][%s]", pWeapon->entindex(), pWeapon->GetClassname());
   return 1;
 }
 
@@ -1100,6 +1153,7 @@ static const luaL_Reg CBaseCombatWeaponmeta[] = {
   {"GetBulletType", CBaseCombatWeapon_GetBulletType},
   {"GetDamage", CBaseCombatWeapon_GetDamage},
   {"GetDeathNoticeName", CBaseCombatWeapon_GetDeathNoticeName},
+  {"GetDeploySpeed", CBaseCombatWeapon_GetDeploySpeed},
   {"GetDefaultAnimSpeed", CBaseCombatWeapon_GetDefaultAnimSpeed},
   {"GetDefaultClip1", CBaseCombatWeapon_GetDefaultClip1},
   {"GetDefaultClip2", CBaseCombatWeapon_GetDefaultClip2},
@@ -1142,12 +1196,14 @@ static const luaL_Reg CBaseCombatWeaponmeta[] = {
   {"GiveDefaultAmmo", CBaseCombatWeapon_GiveDefaultAmmo},
   {"HandleFireOnEmpty", CBaseCombatWeapon_HandleFireOnEmpty},
   {"HasAmmo", CBaseCombatWeapon_HasAmmo},
-  {"HasAmmo", CBaseCombatWeapon_HasAnyAmmo},
   {"HasPrimaryAmmo", CBaseCombatWeapon_HasPrimaryAmmo},
   {"HasSecondaryAmmo", CBaseCombatWeapon_HasSecondaryAmmo},
   {"HasWeaponIdleTimeElapsed", CBaseCombatWeapon_HasWeaponIdleTimeElapsed},
   {"HideThink", CBaseCombatWeapon_HideThink},
   {"IsAllowedToSwitch", CBaseCombatWeapon_IsAllowedToSwitch},
+#ifdef CLIENT_DLL
+  {"IsCarriedByLocalPlayer", CBaseCombatWeapon_IsCarriedByLocalPlayer},
+#endif
   {"IsLocked", CBaseCombatWeapon_IsLocked},
   {"IsMeleeWeapon", CBaseCombatWeapon_IsMeleeWeapon},
   {"IsPredicted", CBaseCombatWeapon_IsPredicted},
@@ -1175,6 +1231,7 @@ static const luaL_Reg CBaseCombatWeaponmeta[] = {
   {"SendViewModelAnim", CBaseCombatWeapon_SendViewModelAnim},
   {"SendWeaponAnim", CBaseCombatWeapon_SendWeaponAnim},
   {"SetActivity", CBaseCombatWeapon_SetActivity},
+  {"SetDeploySpeed", CBaseCombatWeapon_SetDeploySpeed},
   {"SetIdealActivity", CBaseCombatWeapon_SetIdealActivity},
   {"SetPickupTouch", CBaseCombatWeapon_SetPickupTouch},
   {"SetPrimaryAmmoCount", CBaseCombatWeapon_SetPrimaryAmmoCount},

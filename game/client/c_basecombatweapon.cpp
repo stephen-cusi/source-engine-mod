@@ -18,6 +18,7 @@
 #include "toolframework_client.h"
 #include "luamanager.h"	// HL2SB GMod compat: SWEP:DrawWorldModel / DrawWorldModelTranslucent
 #include "lbasecombatweapon_shared.h"	// HL2SB: lua_pushweapon
+#include "lbaseentity_shared.h"	// HL2SB: lua_pushentity (WEAPON:ViewModelDrawn)
 #include "model_types.h"	// HL2SB: STUDIO_TRANSPARENCY
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -306,6 +307,32 @@ void C_BaseCombatWeapon::DrawCrosshair()
 //-----------------------------------------------------------------------------
 void C_BaseCombatWeapon::ViewModelDrawn( C_BaseViewModel *pViewModel )
 {
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-10-03): WEAPON:ViewModelDrawn( viewModel ) --
+	// dispatched straight after the viewmodel was drawn (GMod, wiki).  The
+	// base body used to be an empty stub, so the weapon_base stub never ran
+	// and addons drawing viewmodel overlays silently did nothing.  Same stack
+	// shape as the DrawWorldModel dispatch below: push [table, func], then
+	// self and the argument, then drop the table so the function sits at
+	// -(nargs)-1 for pcall.
+	if ( IsScripted() && L != NULL && lua_isrefvalid( L, m_nTableReference ) )
+	{
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "ViewModelDrawn" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_pushweapon( L, this );
+			if ( pViewModel != NULL )
+				lua_pushentity( L, pViewModel );
+			else
+				lua_pushnil( L );
+			lua_remove( L, -4 );
+			luasrc_pcall( L, 2, 0, 0 );
+			return;
+		}
+		lua_pop( L, 2 );
+	}
+#endif
 }
 
 //-----------------------------------------------------------------------------
