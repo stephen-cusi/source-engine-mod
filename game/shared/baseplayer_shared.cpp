@@ -1632,10 +1632,9 @@ void CBasePlayer::CalcViewModelView( const Vector& eyeOrigin, const QAngle& eyeA
 // never reads the pushed userdata back itself, but its base gamemode
 // GM:CalcView forwards the argument vectors into the returned view table BY
 // REFERENCE -- that is how in-place edits (First Person Body's eye-attachment
-// snap) reach the engine.  This dispatch keeps copies of the pushed
-// origin/angles across the call so the same convention works even when the
-// gamemode method returns nothing.  A returned table always wins.
-// pOutNear/pOutFar: only the vehicle path has znear/zfar out-parameters.
+// snap) reach the engine.  A returned table always wins; anything else keeps
+// the engine view.  pOutNear/pOutFar: only the vehicle path has znear/zfar
+// out-parameters.
 static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &eyeAngles,
 							   float &fov, float flZNear, float flZFar,
 							   float *pOutNear = NULL, float *pOutFar = NULL )
@@ -1643,13 +1642,6 @@ static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &
 	if ( L == NULL || !pPlayer->IsLocalPlayer() )
 		return;
 
-	// Anchor the stack: the reading below must be SHAPE-AGNOSTIC.  A hook that
-	// RAISES leaves nothing on the stack (luasrc_pcall pops the error object,
-	// the fork convention), and the macro's no-hook branches never push the
-	// argument copies at all - so "result + two copies" is only one of the
-	// shapes this code can see.  Reading a fixed -3 crashed the process
-	// through the armed api_check ("invalid index") on the first erroring
-	// CalcView hook (2026-10-04).
 	int iBase = lua_gettop( L );
 
 	BEGIN_LUA_CALL_HOOK( "CalcView" );
@@ -1659,73 +1651,57 @@ static void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &
 		lua_pushnumber( L, fov );
 		lua_pushnumber( L, flZNear );
 		lua_pushnumber( L, flZFar );
-		// keep copies of the pushed origin/angles: the END macro's pcall
-		// consumes the arguments, so in-place edits by hooks only survive in
-		// these pushed-aside copies
-		int iTop = lua_gettop( L );
-		lua_pushvalue( L, iTop - 4 );		// origin
-		lua_pushvalue( L, iTop - 3 );		// angles
 	END_LUA_CALL_HOOK( 6, 1 );
 
-	Vector vecOrigin = eyeOrigin;
-	QAngle angAngles = eyeAngles;
-	float flNewFov = fov;
-
-	// Shapes above iBase:
-	//   +3  [ result, originCopy, anglesCopy ]  the call returned
-	//   +2  [ originCopy, anglesCopy ]          the call RAISED (error popped)
-	//   +1/+2  [ nil ] / [ hooktbl, nil ]       no hook system (no copies)
-	// The copies are always the TOP TWO slots; the result slot only exists in
-	// the first shape.  Absolute indices keep every read inside the frame.
-	int iTopAfter = lua_gettop( L );
-	int iResult = iTopAfter - 2;
-	int iOriginCopy = iTopAfter - 1;
-	int iAnglesCopy = iTopAfter;
-
-	if ( iTopAfter - iBase >= 3 && lua_istable( L, iResult ) )
+	// END's pcall consumed the function and all eight arguments (hook.call
+	// name/gamemode + the six view values), so exactly ONE value sits above
+	// iBase now: the hook's return -- nil when nothing was returned or the
+	// call raised (the 0080ddd6 pcall convention keeps the result shape as a
+	// nil).  GMod reads the CamData table back per named field with the
+	// current values as defaults; a non-table keeps the engine view.
+	//
+	// Do NOT keep spare copies of the pushed arguments above the args here:
+	// luasrc_pcall pops its argument window from the TOP, so anything pushed
+	// past the args becomes part of the argument list -- the first revision
+	// of this helper pushed two origin/angles copies for a writeback fallback
+	// and that shifted the window onto the gamemode table, making every
+	// single frame call the GAMEMODE TABLE as if it were hook.call (the
+	// "callee at 3 is a table" probe signature, 2026-10-04).  In-place edits
+	// by hooks still reach the engine without any fallback: the base
+	// gamemode's GM:CalcView forwards the argument vectors into its returned
+	// view table by reference.
+	if ( lua_istable( L, -1 ) )
 	{
-		lua_getfield( L, iResult, "origin" );
+		lua_getfield( L, -1, "origin" );
 		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "Vector" ) )
-			vecOrigin = luaL_checkvector( L, -1 );
+			eyeOrigin = luaL_checkvector( L, -1 );
 		lua_pop( L, 1 );
 
-		lua_getfield( L, iResult, "angles" );
+		lua_getfield( L, -1, "angles" );
 		if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
-			angAngles = luaL_checkangle( L, -1 );
+			eyeAngles = luaL_checkangle( L, -1 );
 		lua_pop( L, 1 );
 
-		lua_getfield( L, iResult, "fov" );
+		lua_getfield( L, -1, "fov" );
 		if ( lua_isnumber( L, -1 ) )
-			flNewFov = luaL_checknumber( L, -1 );
+			fov = luaL_checknumber( L, -1 );
 		lua_pop( L, 1 );
 
 		if ( pOutNear != NULL )
 		{
-			lua_getfield( L, iResult, "znear" );
+			lua_getfield( L, -1, "znear" );
 			if ( lua_isnumber( L, -1 ) )
 				*pOutNear = luaL_checknumber( L, -1 );
 			lua_pop( L, 1 );
 
-			lua_getfield( L, iResult, "zfar" );
+			lua_getfield( L, -1, "zfar" );
 			if ( lua_isnumber( L, -1 ) )
 				*pOutFar = luaL_checknumber( L, -1 );
 			lua_pop( L, 1 );
 		}
 	}
-	else if ( iTopAfter > iBase )
-	{
-		// no table returned: honour in-place edits through the kept copies
-		if ( lua_isuserdata( L, iOriginCopy ) && luaL_checkudata( L, iOriginCopy, "Vector" ) )
-			vecOrigin = luaL_checkvector( L, iOriginCopy );
-		if ( lua_isuserdata( L, iAnglesCopy ) && luaL_checkudata( L, iAnglesCopy, "QAngle" ) )
-			angAngles = luaL_checkangle( L, iAnglesCopy );
-	}
 
-	eyeOrigin = vecOrigin;
-	eyeAngles = angAngles;
-	fov = flNewFov;
-
-	lua_settop( L, iBase );	// exact restore for every shape
+	lua_settop( L, iBase );	// exact restore
 }
 #endif // CLIENT_DLL && LUA_SDK
 
