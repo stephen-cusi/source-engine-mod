@@ -1698,6 +1698,19 @@ void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 	const char *pszScriptedTracerName = HL2SB_ConsumeBulletTracerName();
 	Q_strncpy( s_szHL2SB_ShotTracerName, pszScriptedTracerName, sizeof( s_szHL2SB_ShotTracerName ) );
 
+#if defined( GAME_DLL ) && defined( LUA_SDK )
+	// HL2SB GMod compat (2026-10-03): hook.Run( "EntityFireBullets", ent, bullet )
+	// - GMod hands the shot's info to Lua before it flies.  Server realm only:
+	// the consumer this is for (the portalgun's bullet-through-portal relay)
+	// runs ents.FindByClass + its own FireBullets calls, which are server
+	// operations; firing the hook during client prediction would double the
+	// relay.  Local extern on purpose: waf has no header propagation.
+	{
+		extern bool HL2SB_LuaEntityFireBullets( CBaseEntity *pShooter, const FireBulletsInfo_t &info );
+		HL2SB_LuaEntityFireBullets( this, info );
+	}
+#endif
+
 	// HL2SB: wiki WEAPON:GetTracerOrigin() -> Vector -- a scripted weapon can
 	// move the visual source of this shot's tracers.  Asked once per shot and
 	// held in a local (the tracer NAME needs a static because MakeTracer() is

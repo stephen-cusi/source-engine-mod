@@ -1351,14 +1351,10 @@ static int CBasePlayer___index (lua_State *L) {
 
 static int CBasePlayer___newindex (lua_State *L) {
   CBasePlayer *pPlayer = lua_toplayer(L, 1);
-  if (pPlayer == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+  if (pPlayer == NULL) {
+    /* HL2SB (2026-10-03): field writes on the NULL sentinel are silently
+    ** discarded (reference behaviour; see CBaseEntity___newindex). */
+    return 0;
   }
   const char *field = luaL_checkstring(L, 2);
   if (Q_strcmp(field, "m_afButtonLast") == 0)
@@ -2578,6 +2574,35 @@ static int MoveData_SetVelocity (lua_State *L) {
   return 0;
 }
 
+// GMod's CMoveData surface: the wish-speed trio plus KeyDown and the
+// GetMoveAngles spelling.  This engine's CMoveData predates GMod's added
+// m_flForwardSpeed/SideSpeed/UpSpeed fields, so the speeds answer the cmd
+// move values, which are the wish speeds in u/s by the time movement runs
+// (cl_forwardspeed is driven to maxspeed) - the same quantity the wiki
+// documents, and what the portalgun's in-portal movement feeds its wishdir
+// from: mv:GetMoveAngles() + GetForwardSpeed()/GetSideSpeed(), jump gated
+// by mv:KeyDown( IN_JUMP ).
+static int MoveData_GetForwardSpeed (lua_State *L) {
+  lua_pushnumber(L, HL2SB_CheckMoveData(L, 1)->m_flForwardMove);
+  return 1;
+}
+static int MoveData_GetSideSpeed (lua_State *L) {
+  lua_pushnumber(L, HL2SB_CheckMoveData(L, 1)->m_flSideMove);
+  return 1;
+}
+static int MoveData_GetUpSpeed (lua_State *L) {
+  lua_pushnumber(L, HL2SB_CheckMoveData(L, 1)->m_flUpMove);
+  return 1;
+}
+static int MoveData_GetMoveAngles (lua_State *L) {
+  lua_pushangle(L, HL2SB_CheckMoveData(L, 1)->m_vecAngles);
+  return 1;
+}
+static int MoveData_KeyDown (lua_State *L) {
+  lua_pushboolean(L, (HL2SB_CheckMoveData(L, 1)->m_nButtons & luaL_checkint(L, 2)) != 0);
+  return 1;
+}
+
 static const luaL_Reg HL2SB_MoveDatameta[] = {
   {"GetButtons",          MoveData_GetButtons},
   {"SetButtons",          MoveData_SetButtons},
@@ -2603,6 +2628,11 @@ static const luaL_Reg HL2SB_MoveDatameta[] = {
   {"SetViewAngles",       MoveData_SetViewAngles},
   {"GetAngles",           MoveData_GetAngles},
   {"SetAngles",           MoveData_SetAngles},
+  {"GetForwardSpeed",     MoveData_GetForwardSpeed},
+  {"GetSideSpeed",        MoveData_GetSideSpeed},
+  {"GetUpSpeed",          MoveData_GetUpSpeed},
+  {"GetMoveAngles",       MoveData_GetMoveAngles},
+  {"KeyDown",             MoveData_KeyDown},
   {NULL, NULL}
 };
 
@@ -2638,4 +2668,26 @@ void HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *psz
 		lua_pushnil( L );  // cmd slot: GMod passes CUserCmd; no binding here
 	END_LUA_CALL_HOOK( 3, 1 );
 	lua_pop( L, 1 );
+}
+
+// GM:Move( ply, mv ) - the replace-the-movement hook, fired as
+// CGameMovement::ProcessMovement's FIRST statement (reference behaviour: the
+// dispatch sits before any init, takes the player and the CMoveData and -
+// per the binary - NO third CUserCmd argument despite what the wiki
+// documents).  Returns true when a hook or the gamemode method returned
+// true: the hook moved the player itself (mv:SetOrigin/SetVelocity) and the
+// engine's movement code is skipped entirely for this tick.  The portalgun's
+// in-portal locomotion lives entirely in this hook.
+bool HL2SB_LuaMoveHookReplace( CBasePlayer *pPlayer, CMoveData *pMove )
+{
+	if ( L == NULL || pPlayer == NULL || pMove == NULL )
+		return false;
+
+	BEGIN_LUA_CALL_HOOK( "Move" );
+		lua_pushplayer( L, pPlayer );
+		HL2SB_PushMoveData_Internal( L, pMove );
+	END_LUA_CALL_HOOK( 2, 1 );
+	bool bReplace = lua_toboolean( L, -1 ) != 0;
+	lua_pop( L, 1 );
+	return bReplace;
 }

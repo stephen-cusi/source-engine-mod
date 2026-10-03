@@ -732,6 +732,54 @@ static int CBaseEntity_IsItem (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (2026-10-03): hook.Run( "EntityFireBullets", ent, bullet )
+// fired from CBaseEntity::FireBullets before the shot goes out.  GMod's hook
+// may return a modified bullet table which replaces the shot; nothing in this
+// fork's addon set uses that half - the consumer here (the portalgun's
+// bullet-through-portal relay) only reads Num/Src/Dir and fires its own relay
+// bullets - so the return value is currently observed and dropped.
+bool HL2SB_LuaEntityFireBullets( CBaseEntity *pShooter, const FireBulletsInfo_t &info )
+{
+  if ( L == NULL )
+    return false;
+
+  BEGIN_LUA_CALL_HOOK( "EntityFireBullets" );
+    lua_pushentity( L, pShooter );
+    lua_newtable( L );
+    lua_pushinteger( L, info.m_iShots );            lua_setfield( L, -2, "Num" );
+    lua_pushvector( L, info.m_vecSrc );             lua_setfield( L, -2, "Src" );
+    lua_pushvector( L, info.m_vecDirShooting );     lua_setfield( L, -2, "Dir" );
+    lua_pushnumber( L, info.m_flDistance );         lua_setfield( L, -2, "Distance" );
+    lua_pushnumber( L, info.m_flDamage );           lua_setfield( L, -2, "Damage" );
+    lua_pushnumber( L, info.m_flDamageForceScale ); lua_setfield( L, -2, "Force" );
+    lua_pushentity( L, info.m_pAttacker );          lua_setfield( L, -2, "Attacker" );
+    lua_pushentity( L, info.m_pAdditionalIgnoreEnt ); lua_setfield( L, -2, "IgnoreEntity" );
+    lua_pushinteger( L, info.m_iAmmoType );         lua_setfield( L, -2, "AmmoType" );
+  END_LUA_CALL_HOOK( 2, 1 );
+  lua_pop( L, 1 );
+  return true;
+}
+
+
+// HL2SB GMod compat (2026-10-03): hook.Run( "SetupPlayerVisibility", ply, viewEnt )
+// fired from CServerGameClients::ClientSetupVisibility before the player's PVS
+// is committed.  Addons call AddOriginToPVS() inside it to widen what
+// transmits (the portalgun keeps the far portal networked through the near
+// one's view).
+void HL2SB_LuaSetupPlayerVisibility( CBasePlayer *pPlayer, CBaseEntity *pViewEntity )
+{
+  if ( L == NULL )
+    return;
+
+  BEGIN_LUA_CALL_HOOK( "SetupPlayerVisibility" );
+    lua_pushplayer( L, pPlayer );
+    if ( pViewEntity != NULL )
+      lua_pushentity( L, pViewEntity );
+    else
+      lua_pushnil( L );
+  END_LUA_CALL_HOOK( 2, 0 );
+}
+
 
 static const luaL_Reg CBaseEntitymeta[] = {
   {"RecalcHasPlayerChildBit", CBaseEntity_RecalcHasPlayerChildBit},

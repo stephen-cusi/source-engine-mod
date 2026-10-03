@@ -2000,6 +2000,28 @@ const char *COM_GetModDirectory();
 // This renders the entire 3D view.
 void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatToDraw )
 {
+	// HL2SB GMod compat (2026-10-04): nested-render state protection.  render.RenderView()
+	// re-enters this function from Lua draw hooks while the outer view is still mid-scene,
+	// and the tail of this function resets per-frame state the outer view still needs
+	// (m_CurrentView, the current-view access flag, g_bRenderingView) and tears down the
+	// underwater overlay reference the outer scene drew with.  The overlay branch further
+	// down already save/restores m_CurrentView around its own nested RenderView for exactly
+	// this reason; do the same for every nested render so a view rendered from inside a
+	// draw hook cannot dismantle the outer view's in-flight state.
+	static int s_nNestedRenderViewDepth = 0;
+	const bool bNestedRenderView = ( ++s_nNestedRenderViewDepth > 1 );
+	CViewSetup savedCurrentView = m_CurrentView;
+	bool bSavedCanAccessCurrentView = s_bCanAccessCurrentView;
+	bool bSavedRenderingView = g_bRenderingView;
+	IMaterial *pSavedUnderwaterOverlay = NULL;
+	if ( bNestedRenderView )
+	{
+		pSavedUnderwaterOverlay = m_UnderWaterOverlayMaterial;	// keep the object alive ourselves
+		if ( pSavedUnderwaterOverlay )
+			pSavedUnderwaterOverlay->IncrementReferenceCount();
+		m_UnderWaterOverlayMaterial.Shutdown();	// the nested view starts with clean overlay state
+	}
+
 	m_UnderWaterOverlayMaterial.Shutdown();					// underwater view will set
 
 	m_CurrentView = view;
@@ -2020,6 +2042,10 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 			{
 				bFirstTime = false;
 				Msg( "This game has a minimum requirement of DirectX 8.0 to run properly.\n" );
+			}
+			if ( bNestedRenderView )
+			{
+				--s_nNestedRenderViewDepth;
 			}
 			return;
 		}
@@ -2528,6 +2554,20 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 
 	render->PopView( GetFrustum() );
 	g_WorldListCache.Flush();
+
+	if ( bNestedRenderView )
+	{
+		// hand the in-flight outer view its state back (see the comment at the top)
+		if ( pSavedUnderwaterOverlay )
+		{
+			m_UnderWaterOverlayMaterial.Init( pSavedUnderwaterOverlay );
+			pSavedUnderwaterOverlay->DecrementReferenceCount();
+		}
+		m_CurrentView = savedCurrentView;
+		s_bCanAccessCurrentView = bSavedCanAccessCurrentView;
+		g_bRenderingView = bSavedRenderingView;
+		--s_nNestedRenderViewDepth;
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -4563,6 +4603,24 @@ void CRendering3dView::DrawTranslucentRenderables( bool bInSkybox, bool bShadowD
 		}
 	}
 #endif
+
+	// HL2SB GMod compat (2026-10-03): GM:PostDrawOpaqueRenderables( bDrawingDepth,
+	// bDrawingSkybox ) - fired between the opaque and translucent passes with a
+	// live 3D context (GMod's args; the shadow-depth pass funnels through here
+	// with bShadowDepth=true, which is exactly the flag the portalgun lenses
+	// gate on).  Guarded like RenderScene: not during reflections, not in the
+	// menu realm.  Sits before the NoWorld early-out so both translucent paths
+	// see exactly one fire per view.
+	{
+		extern bool g_bRenderingReflection;
+		if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+		{
+			BEGIN_LUA_CALL_HOOK( "PostDrawOpaqueRenderables" );
+			lua_pushboolean( L, bShadowDepth ? true : false );
+			lua_pushboolean( L, bInSkybox ? true : false );
+			END_LUA_CALL_HOOK( 2, 0 );
+		}
+	}
 
 	if ( !r_drawtranslucentworld.GetBool() )
 	{

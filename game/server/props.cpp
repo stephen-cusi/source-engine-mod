@@ -7,6 +7,9 @@
 
 
 #include "cbase.h"
+#include "luamanager.h"	// HL2SB GMod compat: AllowPlayerPickup gate in CPhysicsProp::Use
+#include "lbaseentity_shared.h"	// lua_pushentity
+#include "lbaseplayer_shared.h"	// lua_pushplayer
 #include "BasePropDoor.h"
 #include "ai_basenpc.h"
 #include "npcevent.h"
@@ -2925,6 +2928,27 @@ void CPhysicsProp::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE 
 		{
 			m_OnPlayerUse.FireOutput( this, this );
 		}
+
+#if defined( LUA_SDK )
+		// HL2SB GMod compat (2026-10-03): hook.Run( "AllowPlayerPickup", ply, ent )
+		// - GMod's +use-grab gate.  Sits on the ENGINE grab path only: a false
+		// return vetoes the pickup.  The Lua Player:PickupObject binding must
+		// stay ungated (the portalgun's own carry system uses it, and its
+		// AllowPlayerPickup hook returns false for every pickup made while the
+		// gun is out - GMod's addon contract is "block +use, keep my own").
+		{
+			bool bAllow = true;
+			BEGIN_LUA_CALL_HOOK( "AllowPlayerPickup" );
+				lua_pushplayer( L, pPlayer );
+				lua_pushentity( L, this );
+			END_LUA_CALL_HOOK( 2, 1 );
+			if ( lua_isboolean( L, -1 ) )
+				bAllow = lua_toboolean( L, -1 ) != 0;
+			lua_pop( L, 1 );
+			if ( !bAllow )
+				return;
+		}
+#endif
 
 		pPlayer->PickupObject( this );
 	}

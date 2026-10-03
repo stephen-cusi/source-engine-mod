@@ -466,7 +466,19 @@ static int Vector___mul (lua_State *L) {
 	  break;
 	case LUA_TUSERDATA:
 	default:
-      lua_pushvector(L, luaL_checkvector(L, 1) * luaL_checknumber(L, 2));
+      // HL2SB (2026-10-04): Vector * Vector is component-wise in the
+      // reference engine (the portalgun viewmodel bone-mod base accumulates
+      // inherited bone scales with ms = ms * pscale); a Vector operand here
+      // used to raise "bad argument #2 to 'mul' (number expected, got Vector)"
+      // every frame.
+      if ( lua_isnumber(L, 2) )
+      {
+        lua_pushvector(L, luaL_checkvector(L, 1) * luaL_checknumber(L, 2));
+      }
+      else
+      {
+        lua_pushvector(L, luaL_checkvector(L, 1) * luaL_checkvector(L, 2));
+      }
 	  break;
   }
   return 1;
@@ -499,6 +511,7 @@ static const luaL_Reg Vectormeta[] = {
   {"DistTo", Vector_DistTo},
   {"DistToSqr", Vector_DistToSqr},
   {"Dot", Vector_Dot},
+  {"DotProduct", Vector_Dot},  // HL2SB 2026-10-04: GMod's long spelling
   {"Init", Vector_Init},
   {"Invalidate", Vector_Invalidate},
   {"IsLengthGreaterThan", Vector_IsLengthGreaterThan},

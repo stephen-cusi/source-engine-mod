@@ -187,6 +187,19 @@ void CBaseScripted::LoadScriptedEntity( void )
 	}
 }
 
+static int HL2SB_EntityTableIsValid (lua_State *L)
+{
+	// Upvalue 1: the entity this script table belongs to (see the seeding in
+	// InitScriptedEntity).  Same contract as the metatable IsValid: a NULL
+	// (removed / stale handle) entity is not valid.  toanimating fallback
+	// because the seeding pushes through the animating userdata.
+	CBaseEntity *pEntity = lua_toentity( L, lua_upvalueindex( 1 ) );
+	if ( pEntity == NULL )
+		pEntity = lua_toanimating( L, lua_upvalueindex( 1 ) );
+	lua_pushboolean( L, pEntity != NULL );
+	return 1;
+}
+
 void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 {
 #if defined ( LUA_SDK )
@@ -308,6 +321,17 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 			// the field nil that raised on line one and skipped the whole setup).
 			lua_pushanimating( L, this );
 			lua_setfield( L, -2, "Entity" );
+
+			// HL2SB GMod compat (2026-10-04): self:IsValid() on the SCRIPT TABLE.
+			// Entity-file timer closures capture the table as self (the portalgun
+			// projectile does timer.Simple(.01, function() if self:IsValid() ...
+			// end)), and indexing the table resolved to a boolean somewhere down
+			// its chain - "attempt to call a boolean value (method 'IsValid')".
+			// Seed the method form, with the entity bound as the upvalue; the
+			// answer matches the metatable's IsValid (toentity != NULL).
+			lua_pushanimating( L, this );
+			lua_pushcclosure( L, HL2SB_EntityTableIsValid, 1 );
+			lua_setfield( L, -2, "IsValid" );
 
 			lua_getglobal( L, "HL2SB_EntityNetworkVar" );
 			if ( lua_isfunction( L, -1 ) )
@@ -537,6 +561,40 @@ RenderGroup_t CBaseScripted::GetRenderGroup( void )
 
 int CBaseScripted::DrawModel( int flags )
 {
+#if defined( LUA_SDK ) && defined( CLIENT_DLL )
+	// HL2SB (2026-10-03): the per-entity clip plane (Entity:SetRenderClipPlane /
+	// SetRenderClipPlaneEnabled) applies for the whole draw - the portalgun's
+	// player clone must be cut at the portal plane no matter which Lua draw
+	// path takes over below.  Scope object, because the Lua dispatch has
+	// several return paths.  Local extern on purpose: waf has no header
+	// dependency propagation (the definition lives in lc_baseanimating.cpp).
+	Vector vecClipNormal;
+	float flClipDist = 0.0f;
+	extern bool HL2SB_GetEntityRenderClipPlane( C_BaseEntity *pEntity, Vector &outNormal, float &outDist );
+	const bool bClip = HL2SB_GetEntityRenderClipPlane( this, vecClipNormal, flClipDist );
+	struct HL2SB_ClipPlaneScope
+	{
+		bool m_bActive;
+		HL2SB_ClipPlaneScope( bool bActive, const Vector &vecNormal, float flDist ) : m_bActive( bActive )
+		{
+			if ( !m_bActive )
+				return;
+			CMatRenderContextPtr pRenderContext( materials );
+			Vector4D vecPlane;
+			VectorCopy( vecNormal, vecPlane.AsVector3D() );
+			vecPlane.w = flDist;
+			pRenderContext->PushCustomClipPlane( vecPlane.Base() );
+		}
+		~HL2SB_ClipPlaneScope()
+		{
+			if ( !m_bActive )
+				return;
+			CMatRenderContextPtr pRenderContext( materials );
+			pRenderContext->PopCustomClipPlane();
+		}
+	} clipScope( bClip, vecClipNormal, flClipDist );
+#endif
+
 #ifdef LUA_SDK
 	// HL2SB: the script decides which of the draw hooks runs, exactly as GMod's
 	// wiki describes it -- ENTITY:RenderOverride() first, then the render group

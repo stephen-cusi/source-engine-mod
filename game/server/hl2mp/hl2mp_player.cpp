@@ -2175,6 +2175,20 @@ void CHL2MP_Player::Event_Killed( const CTakeDamageInfo &info )
 
 	DetonateTripmines();
 
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-10-03): hook.Run( "DoPlayerDeath", victim, inflictor, attacker )
+	// - fired at the same point in GMod's death pipeline (before the death
+	// hooks like PlayerDeath run their UI); the portalgun fizzles the dead
+	// player's portals here.
+	{
+		BEGIN_LUA_CALL_HOOK( "DoPlayerDeath" );
+			lua_pushplayer( L, this );
+			lua_pushentity( L, info.GetInflictor() );
+			lua_pushentity( L, info.GetAttacker() );
+		END_LUA_CALL_HOOK( 3, 0 );
+	}
+#endif
+
 	BaseClass::Event_Killed( subinfo );
 
 	if ( info.GetDamageType() & DMG_DISSOLVE )

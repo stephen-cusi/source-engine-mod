@@ -165,8 +165,10 @@ struct HL2SB_BoneManip_t
 	int nBone;
 	Vector vecPos;
 	Vector vecScale;
+	QAngle angAngles;
 	bool bHasPos;
 	bool bHasScale;
+	bool bHasAngles;
 	// Applied at most once per frame: the offset is added onto whatever the
 	// live bone array holds, so an unguarded second apply in the same frame
 	// (immediate write + the SetupBones pass) would double it.
@@ -189,8 +191,10 @@ static HL2SB_BoneManip_t *HL2SB_FindBoneManip( C_BaseAnimating *pEntity, int nBo
 	manip.nBone = nBone;
 	manip.vecPos = vec3_origin;
 	manip.vecScale = vec3_origin;
+	manip.angAngles = vec3_angle;
 	manip.bHasPos = false;
 	manip.bHasScale = false;
+	manip.bHasAngles = false;
 	manip.nLastAppliedFrame = -1;
 	return &manip;
 }
@@ -241,6 +245,19 @@ static void HL2SB_ApplyBoneManipEntry( C_BaseAnimating *pEntity, HL2SB_BoneManip
 	{
 		MatrixScaleBy( manip.vecScale.x, bone );
 	}
+	if ( manip.bHasAngles )
+	{
+		// Rotate the basis around the bone origin; the translation column is
+		// kept so a ManipulateBonePosition offset and a rotation compose
+		// independently of write order.
+		matrix3x4_t rot, out;
+		AngleMatrix( manip.angAngles, rot );
+		Vector vTranslation;
+		MatrixGetTranslation( bone, vTranslation );
+		ConcatTransforms( rot, bone, out );
+		MatrixSetTranslation( vTranslation, out );
+		MatrixCopy( out, bone );
+	}
 
 	manip.nLastAppliedFrame = gpGlobals->framecount;
 }
@@ -262,6 +279,82 @@ void HL2SB_ApplyBoneManipulations( C_BaseAnimating *pEntity )
 		if ( s_BoneManips[i].hEntity == pEntity )
 			HL2SB_ApplyBoneManipEntry( pEntity, s_BoneManips[i], true );
 	}
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-10-03): Entity:SetRenderClipPlaneEnabled( bool ) /
+// Entity:SetRenderClipPlane( vec normal, float dist ).  Reference behaviour:
+// per-entity clip plane storage the renderer consults while drawing that
+// entity; the confirmed engine consumer is the shadow pass, and the addon
+// consumer that needs it visible is the portalgun's player clone, whose
+// raster must be cut at the portal plane so the clone does not bleed through
+// walls.  EHANDLE-keyed side table (class layout untouched); the plane is
+// applied around CBaseScripted::DrawModel via the getter below.
+//-----------------------------------------------------------------------------
+struct HL2SB_RenderClipPlane_t
+{
+	EHANDLE hEntity;
+	Vector vecNormal;
+	float flDist;
+	bool bEnabled;
+};
+
+static CUtlVector< HL2SB_RenderClipPlane_t > s_RenderClipPlanes;
+
+static HL2SB_RenderClipPlane_t *HL2SB_FindRenderClipPlane( C_BaseEntity *pEntity, bool bCreate )
+{
+	for ( int i = 0; i < s_RenderClipPlanes.Count(); ++i )
+	{
+		if ( s_RenderClipPlanes[i].hEntity.Get() == pEntity )
+			return &s_RenderClipPlanes[i];
+	}
+	if ( !bCreate )
+		return NULL;
+	HL2SB_RenderClipPlane_t &plane = s_RenderClipPlanes[s_RenderClipPlanes.AddToTail()];
+	plane.hEntity = pEntity;
+	plane.vecNormal = vec3_origin;
+	plane.flDist = 0.0f;
+	plane.bEnabled = false;
+	return &plane;
+}
+
+// Consumed by CBaseScripted::DrawModel: answers whether the entity draws
+// behind a clip plane, and sweeps dead entries while it is at it.
+bool HL2SB_GetEntityRenderClipPlane( C_BaseEntity *pEntity, Vector &outNormal, float &outDist )
+{
+	for ( int i = s_RenderClipPlanes.Count() - 1; i >= 0; --i )
+	{
+		if ( s_RenderClipPlanes[i].hEntity.Get() == NULL )
+		{
+			s_RenderClipPlanes.FastRemove( i );
+			continue;
+		}
+		if ( s_RenderClipPlanes[i].hEntity.Get() == pEntity && s_RenderClipPlanes[i].bEnabled )
+		{
+			outNormal = s_RenderClipPlanes[i].vecNormal;
+			outDist = s_RenderClipPlanes[i].flDist;
+			return true;
+		}
+	}
+	return false;
+}
+
+static int CBaseAnimating_SetRenderClipPlaneEnabled (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  HL2SB_RenderClipPlane_t *pPlane = HL2SB_FindRenderClipPlane( pEntity, lua_toboolean(L, 2) != 0 );
+  if ( pPlane != NULL )
+    pPlane->bEnabled = lua_toboolean(L, 2) != 0;
+  return 0;
+}
+
+static int CBaseAnimating_SetRenderClipPlane (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  const Vector &vecNormal = luaL_checkvector(L, 2);
+  float flDist = (float)luaL_checknumber(L, 3);
+  HL2SB_RenderClipPlane_t *pPlane = HL2SB_FindRenderClipPlane( pEntity, true );
+  pPlane->vecNormal = vecNormal;
+  pPlane->flDist = flDist;
+  return 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -615,6 +708,27 @@ static int CBaseAnimating_SetBoneMatrix (lua_State *L) {
   return 0;
 }
 
+// Entity:SetBonePosition( bone, vecPos, angAng ): GMod's pos+ang spelling of
+// SetBoneMatrix - the portalgun's player clone mirrors every bone of the real
+// player through the portal with it.  Same contract: SetupBones first, then a
+// straight world-space write into the live bone array.
+static int CBaseAnimating_SetBonePosition (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
+  const Vector &vecPos = luaL_checkvector(L, 3);
+  const QAngle &angAng = luaL_checkangle(L, 4);
+
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  const int nBoneTotal = pHdr ? pHdr->numbones : 0;
+  if ( !pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
+    return 0;
+  if ( nBone < 0 || nBone >= nBoneTotal )
+    return 0;
+
+  QuaternionMatrix( Quaternion( angAng ), vecPos, pEntity->GetBoneForWrite( nBone ) );
+  return 0;
+}
+
 // HL2SB GMod compat (2026-09-24): Entity:GetBoneName( bone ) - the First
 // Person Body addon classifies bones by name ("ValveBiped.*") to decide which
 // to hide while mirroring.
@@ -624,7 +738,11 @@ static int CBaseAnimating_GetBoneName (lua_State *L) {
   studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
   if ( !pHdr || nBone < 0 || nBone >= pHdr->numbones )
   {
-    lua_pushnil( L );
+    // Reference behaviour: every out-of-range bone answers the placeholder
+    // string, never nil - the viewmodel bone-mod base iterates 0..GetBoneCount()
+    // INCLUSIVE and table-indexes each name, so a nil here raised
+    // "table index is nil" every frame (the portalgun's viewmodel lights).
+    lua_pushstring( L, "__INVALIDBONE__" );
     return 1;
   }
   lua_pushstring( L, pHdr->pBone( nBone )->pszName() );
@@ -1163,6 +1281,81 @@ static int CBaseAnimating_ManipulateBonePosition (lua_State *L) {
   if ( bImmediate )
     HL2SB_ApplyBoneManipEntry( pEntity, *pManip, false );
   return 0;
+}
+
+// HL2SB GMod compat (2026-10-03): Entity:ManipulateBoneAngles( bone, ang ).
+// Same per-(entity, bone) storage as Position/Scale; the portalgun's viewmodel
+// bone-mod base writes angles, scales and offsets together every frame and
+// reads all three back through GetManipulateBone*.
+static int CBaseAnimating_ManipulateBoneAngles (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
+  const QAngle &angAngles = luaL_checkangle(L, 3);
+  bool bImmediate = lua_isnoneornil(L, 4) ? true : ( lua_toboolean(L, 4) != 0 );
+
+  HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, nBone, true );
+  pManip->angAngles = angAngles;
+  pManip->bHasAngles = true;
+
+  if ( bImmediate )
+    HL2SB_ApplyBoneManipEntry( pEntity, *pManip, false );
+  return 0;
+}
+
+// GetManipulateBone{Scale,Angles,Position}: the stored manipulated values.
+// Unmanipulated bones answer the identity (1 1 1 / 0 0 0 / 0 0 0) - the
+// viewmodel bone-mod base compares these against what it is about to write,
+// so the identity defaults are what keeps it from re-writing every frame.
+static int CBaseAnimating_GetManipulateBoneScale (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, luaL_checkint(L, 2), false );
+  if ( pManip == NULL || !pManip->bHasScale )
+  {
+    lua_pushvector( L, Vector( 1.0f, 1.0f, 1.0f ) );
+    return 1;
+  }
+  lua_pushvector( L, pManip->vecScale );
+  return 1;
+}
+
+static int CBaseAnimating_GetManipulateBoneAngles (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, luaL_checkint(L, 2), false );
+  if ( pManip == NULL || !pManip->bHasAngles )
+  {
+    lua_pushangle( L, QAngle( 0.0f, 0.0f, 0.0f ) );
+    return 1;
+  }
+  lua_pushangle( L, pManip->angAngles );
+  return 1;
+}
+
+static int CBaseAnimating_GetManipulateBonePosition (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, luaL_checkint(L, 2), false );
+  if ( pManip == NULL || !pManip->bHasPos )
+  {
+    lua_pushvector( L, Vector( 0.0f, 0.0f, 0.0f ) );
+    return 1;
+  }
+  lua_pushvector( L, pManip->vecPos );
+  return 1;
+}
+
+// Entity:GetBoneParent( bone ): the studio bone's parent index, -1 when the
+// bone has no parent or is out of range.  The portalgun's bone-mod base walks
+// parents to accumulate inherited scales.
+static int CBaseAnimating_GetBoneParent (lua_State *L) {
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  int nBone = luaL_checkint(L, 2);
+  studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
+  if ( !pHdr || nBone < 0 || nBone >= pHdr->numbones )
+  {
+    lua_pushinteger( L, -1 );
+    return 1;
+  }
+  lua_pushinteger( L, pHdr->pBone( nBone )->parent );
+  return 1;
 }
 
 // HL2SB GMod compat (2026-09-24): Entity:CreateShadow(radius) /
@@ -1906,14 +2099,10 @@ static int CBaseAnimating___index (lua_State *L) {
 
 static int CBaseAnimating___newindex (lua_State *L) {
   CBaseAnimating *pEntity = lua_toanimating(L, 1);
-  if (pEntity == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+  if (pEntity == NULL) {
+    /* HL2SB (2026-10-03): field writes on the NULL sentinel are silently
+    ** discarded (reference behaviour; see CBaseEntity___newindex). */
+    return 0;
   }
   const char *field = luaL_checkstring(L, 2);
   if (Q_strcmp(field, "m_bClientSideAnimation") == 0)
@@ -1984,6 +2173,10 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"GetBoneMatrix", CBaseAnimating_GetBoneMatrix},
   {"GetBoneName", CBaseAnimating_GetBoneName},
   {"GetBoneNames", CBaseAnimating_GetBoneNames},
+  {"GetBoneParent", CBaseAnimating_GetBoneParent},
+  {"GetManipulateBoneScale", CBaseAnimating_GetManipulateBoneScale},
+  {"GetManipulateBoneAngles", CBaseAnimating_GetManipulateBoneAngles},
+  {"GetManipulateBonePosition", CBaseAnimating_GetManipulateBonePosition},
   {"GetCallbacks", CBaseAnimating_GetCallbacks},
   {"GetChildBones", CBaseAnimating_GetChildBones},
   {"GetFlexNum", CBaseAnimating_GetFlexNum},
@@ -1993,6 +2186,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"GetModelRenderBounds", CBaseAnimating_GetModelRenderBounds},
   {"GetNumPoseParameters", CBaseAnimating_GetNumPoseParameters},
   {"ManipulateBoneScale", CBaseAnimating_ManipulateBoneScale},
+  {"ManipulateBoneAngles", CBaseAnimating_ManipulateBoneAngles},
   {"FindBodygroupByName", CBaseAnimating_FindBodygroupByName},
   {"FindFollowedEntity", CBaseAnimating_FindFollowedEntity},
   {"FindTransitionSequence", CBaseAnimating_FindTransitionSequence},
@@ -2085,6 +2279,9 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"SetBodygroup", CBaseAnimating_SetBodygroup},
   {"SetBoneController", CBaseAnimating_SetBoneController},
   {"SetBoneMatrix", CBaseAnimating_SetBoneMatrix},
+  {"SetBonePosition", CBaseAnimating_SetBonePosition},
+  {"SetRenderClipPlane", CBaseAnimating_SetRenderClipPlane},
+  {"SetRenderClipPlaneEnabled", CBaseAnimating_SetRenderClipPlaneEnabled},
   {"SetFlexScale", CBaseAnimating_SetFlexScale},
   {"SetFlexWeight", CBaseAnimating_SetFlexWeight},
   {"GetPoseParameterName", CBaseAnimating_GetPoseParameterName},

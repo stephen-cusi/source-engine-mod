@@ -1668,6 +1668,59 @@ static int CBaseEntity_LocalToWorld (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat (2026-10-04): Entity:WorldToLocal( vec ) and the angle
+// pair Entity:WorldToLocalAngles( ang ) / Entity:LocalToWorldAngles( ang ).
+// The portalgun transforms every portal teleport through these
+// (GetPortalPosOffsets / GetPortalAngleOffsets / PlayerWithinBounds), so with
+// them missing the enter-path died on "attempt to call a nil value
+// (method 'WorldToLocal')" the moment a player touched a portal.
+static int CBaseEntity_WorldToLocal (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  Vector vecWorld = luaL_checkvector(L, 2);
+  Vector vecLocal;
+
+  matrix3x4_t mEntity;
+  AngleMatrix( pEntity->GetAbsAngles(), pEntity->GetAbsOrigin(), mEntity );
+  VectorITransform( vecWorld, mEntity, vecLocal );
+
+  lua_pushvector(L, vecLocal);
+  return 1;
+}
+
+static int CBaseEntity_WorldToLocalAngles (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  QAngle angWorld = luaL_checkangle(L, 2);
+  QAngle angLocal;
+
+  matrix3x4_t mEntity, mEntityInv, mWorld, mLocal;
+  AngleMatrix( pEntity->GetAbsAngles(), pEntity->GetAbsOrigin(), mEntity );
+  MatrixInvert( mEntity, mEntityInv );
+  AngleMatrix( angWorld, mWorld );
+  ConcatTransforms( mEntityInv, mWorld, mLocal );
+  MatrixAngles( mLocal, angLocal );
+
+  lua_pushangle(L, angLocal);
+  return 1;
+}
+
+static int CBaseEntity_LocalToWorldAngles (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+
+  QAngle angLocal = luaL_checkangle(L, 2);
+  QAngle angWorld;
+
+  matrix3x4_t mEntity, mLocal, mWorld;
+  AngleMatrix( pEntity->GetAbsAngles(), pEntity->GetAbsOrigin(), mEntity );
+  AngleMatrix( angLocal, mLocal );
+  ConcatTransforms( mEntity, mLocal, mWorld );
+  MatrixAngles( mWorld, angWorld );
+
+  lua_pushangle(L, angWorld);
+  return 1;
+}
+
 static int CBaseEntity_SetTrigger (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
 
@@ -2286,7 +2339,13 @@ static int CBaseEntity_SetGroundChangeTime (lua_State *L) {
 }
 
 static int CBaseEntity_SetGroundEntity (lua_State *L) {
-  luaL_checkentity(L, 1)->SetGroundEntity(luaL_checkentity(L, 2));
+  /* HL2SB (2026-10-04): GMod accepts the NULL sentinel here and the
+  ** portalgun clears carried props with ent:SetGroundEntity( NULL ) - the
+  ** old luaL_checkentity rejected it with "CBaseEntity expected, got NULL
+  ** entity" and killed the portal Touch callback every time. */
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  CBaseEntity *pGround = lua_isnil(L, 2) ? NULL : lua_toentity(L, 2);
+  pEntity->SetGroundEntity( pGround );
   return 0;
 }
 
@@ -3065,8 +3124,17 @@ static int CBaseEntity_GetNWEntity (lua_State *L) {
   CBaseEntity *pResult = p ? p->hEnt.Get() : NULL;
   if ( pResult )
     lua_pushentity( L, pResult );
+  else if ( lua_gettop( L ) >= 3 && !lua_isnil( L, 3 ) )
+    lua_pushvalue( L, 3 );
   else
-    lua_pushnil( L );
+    /* HL2SB (2026-10-03): GMod answers an unset (or invalid) entity var with
+    ** the NULL sentinel, never Lua nil - the portalgun reads
+    ** owner:GetNWEntity("Portal:Blue", nil) and then indexes EntToUse.Sides
+    ** off the result unconditionally, so a nil here raised
+    ** "attempt to index a nil value (local 'EntToUse')" and killed every shot
+    ** before a portal could exist.  A non-nil third argument is the default
+    ** and is passed through (GetNWEntity("Potal:Other", NULL)). */
+    lua_pushentity( L, NULL );
   return 1;
 }
 
@@ -3410,14 +3478,15 @@ static int CBaseEntity___index (lua_State *L) {
 
 static int CBaseEntity___newindex (lua_State *L) {
   CBaseEntity *pEntity = lua_toentity(L, 1);
-  if (pEntity == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+  if (pEntity == NULL) {
+    /* HL2SB (2026-10-03): a field WRITE on the NULL sentinel is silently
+    ** discarded.  GMod's Entity metatable __newindex is a plain (empty)
+    ** table, so `ent:GetActiveWeapon().UseReleased = true` on an unarmed
+    ** player lands in that table without any error - this branch used to
+    ** raise "attempt to index a NULL entity" and killed the portalgun's
+    ** Think pump once per unarmed player per tick.  Reads stay soft too
+    ** (see CBaseEntity___index). */
+    return 0;
   }
   const char *field = luaL_checkstring(L, 2);
   if (Q_strcmp(field, "m_bAllowPrecache") == 0)
@@ -4914,6 +4983,9 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"StopSound", CBaseEntity_StopSound},
   {"GetParent", CBaseEntity_GetParent},
   {"LocalToWorld", CBaseEntity_LocalToWorld},
+  {"WorldToLocal", CBaseEntity_WorldToLocal},
+  {"WorldToLocalAngles", CBaseEntity_WorldToLocalAngles},
+  {"LocalToWorldAngles", CBaseEntity_LocalToWorldAngles},
   {"LookupAttachment", CBaseEntity_LookupAttachment},
   {"SetTrigger", CBaseEntity_SetTrigger},
   {"ManipulateBoneAngles", CBaseEntity_ManipulateBoneAngles},

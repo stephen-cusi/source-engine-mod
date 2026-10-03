@@ -577,6 +577,50 @@ LUA_BINDING_BEGIN( Renders, PopRenderTarget, "library", "Pops a render target pu
 }
 LUA_BINDING_END()
 
+// render.GetSuperFPTex() / render.GetSuperFPTex2() -- GMod's portal-view
+// render targets.  Reference behaviour: two lazily created, name-keyed
+// literal-size render targets ("__rt_SuperTexture1" / "__rt_SuperTexture2",
+// 512x512), handed out as real ITexture userdata; repeat calls return the
+// same texture.  The portalgun renders the view through each portal into one
+// of these (SetRenderTarget -> Clear -> RenderView) and samples it back
+// through an UnlitGeneric $basetexture.
+static ITexture *HL2SB_GetSuperFPTex( int nIndex )
+{
+    static ITexture *s_pSuperFPTex[ 2 ] = { NULL, NULL };
+    if ( s_pSuperFPTex[ nIndex ] == NULL )
+    {
+        s_pSuperFPTex[ nIndex ] = materials->CreateNamedRenderTargetTextureEx2(
+            nIndex == 0 ? "__rt_SuperTexture1" : "__rt_SuperTexture2",
+            512, 512, RT_SIZE_LITERAL, IMAGE_FORMAT_RGBA8888,
+            MATERIAL_RT_DEPTH_SEPARATE,
+            TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD,
+            0 );
+    }
+    return s_pSuperFPTex[ nIndex ];
+}
+
+LUA_BINDING_BEGIN( Renders, GetSuperFPTex, "library", "Returns the first SuperFP render target texture.", "client" )
+{
+    ITexture *pTexture = HL2SB_GetSuperFPTex( 0 );
+    if ( pTexture == NULL )
+        lua_pushnil( L );
+    else
+        lua_pushitexture( L, pTexture );
+    return 1;
+}
+LUA_BINDING_END( "Texture", "The SuperFP render target texture." )
+
+LUA_BINDING_BEGIN( Renders, GetSuperFPTex2, "library", "Returns the second SuperFP render target texture.", "client" )
+{
+    ITexture *pTexture = HL2SB_GetSuperFPTex( 1 );
+    if ( pTexture == NULL )
+        lua_pushnil( L );
+    else
+        lua_pushitexture( L, pTexture );
+    return 1;
+}
+LUA_BINDING_END( "Texture", "The second SuperFP render target texture." )
+
 // render.DrawScreenQuad() -- one quad over the current viewport with the
 // material set by render.SetMaterial.
 LUA_BINDING_BEGIN( Renders, DrawScreenQuad, "library", "Draws a fullscreen quad with the currently bound material.", "client" )
@@ -587,6 +631,122 @@ LUA_BINDING_BEGIN( Renders, DrawScreenQuad, "library", "Draws a fullscreen quad 
         return luaL_error( L, "render.DrawScreenQuad: no material bound (call render.SetMaterial first)" );
 
     pRenderContext->DrawScreenSpaceQuad( pMaterial );
+    return 0;
+}
+LUA_BINDING_END()
+
+// render.RenderView( viewData ) -- GMod's recursive scene render: runs a full
+// world/entity draw into the CURRENT render target from inside a hook.  The
+// portalgun renders each portal's view into its own render target with this
+// (SetRenderTarget -> Clear -> RenderView -> UpdateScreenEffectTexture).
+// Fields, GMod wiki: origin, angles, x, y, w, h, fov, znear, zfar, aspect,
+// drawviewmodel (default true), drawhud (default false), ortho (table with
+// left/top/right/bottom).  Unset fields inherit the frame's own view, so a
+// nested render matches the screen the hook is drawing inside.
+LUA_BINDING_BEGIN( Renders, RenderView, "library", "Renders a scene view into the current render target.", "client" )
+{
+    luaL_checktype( L, 1, LUA_TTABLE );
+
+    CViewSetup viewSetup;
+    viewSetup.fov = 90.0f;
+    viewSetup.zNear = 4.0f;
+    viewSetup.zFar = 3000.0f;
+    viewSetup.x = 0;
+    viewSetup.y = 0;
+    viewSetup.width = 640;
+    viewSetup.height = 480;
+
+    const CViewSetup *pCurrent = view->GetViewSetup();
+    int nScreenWidth = 640, nScreenHeight = 480;
+    if ( pCurrent != NULL )
+    {
+        viewSetup = *pCurrent;
+        nScreenWidth = pCurrent->width;
+        nScreenHeight = pCurrent->height;
+    }
+    else
+    {
+        engine->GetScreenSize( nScreenWidth, nScreenHeight );
+        viewSetup.width = nScreenWidth;
+        viewSetup.height = nScreenHeight;
+        viewSetup.origin = vec3_origin;
+        viewSetup.angles = vec3_angle;
+    }
+
+    lua_getfield( L, 1, "origin" );
+    if ( !lua_isnil( L, -1 ) )
+        viewSetup.origin = luaL_checkvector( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "angles" );
+    if ( !lua_isnil( L, -1 ) )
+        viewSetup.angles = luaL_checkangle( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "x" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.x = (int)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "y" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.y = (int)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "w" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.width = (int)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "h" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.height = (int)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "fov" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.fov = (float)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "znear" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.zNear = (float)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "zfar" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.zFar = (float)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "aspect" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.m_flAspectRatio = (float)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "ortho" );
+    if ( lua_istable( L, -1 ) )
+    {
+        viewSetup.m_bOrtho = true;
+        lua_getfield( L, -1, "left" );   viewSetup.m_OrthoLeft   = (float)luaL_optnumber( L, -1, 0.0f );  lua_pop( L, 1 );
+        lua_getfield( L, -1, "top" );    viewSetup.m_OrthoTop     = (float)luaL_optnumber( L, -1, 0.0f );  lua_pop( L, 1 );
+        lua_getfield( L, -1, "right" );  viewSetup.m_OrthoRight   = (float)luaL_optnumber( L, -1, 0.0f );  lua_pop( L, 1 );
+        lua_getfield( L, -1, "bottom" ); viewSetup.m_OrthoBottom  = (float)luaL_optnumber( L, -1, 0.0f );  lua_pop( L, 1 );
+    }
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "drawviewmodel" );
+    bool bDrawViewModel = lua_isnoneornil( L, -1 ) ? true : ( lua_toboolean( L, -1 ) != 0 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "drawhud" );
+    bool bDrawHud = lua_toboolean( L, -1 ) != 0;
+    lua_pop( L, 1 );
+
+    viewSetup.m_bRenderToSubrectOfLargerScreen =
+        ( viewSetup.x != 0 || viewSetup.y != 0 ||
+          viewSetup.width != nScreenWidth || viewSetup.height != nScreenHeight );
+
+    int whatToDraw = 0;
+    if ( bDrawViewModel )
+        whatToDraw |= RENDERVIEW_DRAWVIEWMODEL;
+    if ( bDrawHud )
+        whatToDraw |= RENDERVIEW_DRAWHUD;
+
+    // GMod renders color+depth and leaves the stencil to the caller
+    // (render.Clear does it first).
+    view->RenderView( viewSetup, VIEW_CLEAR_COLOR | VIEW_CLEAR_DEPTH, whatToDraw );
     return 0;
 }
 LUA_BINDING_END()

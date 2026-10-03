@@ -1109,6 +1109,18 @@ static int lua_IsFirstTimePredicted (lua_State *L) {
   return 1;
 }
 
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-10-03): AddOriginToPVS( vector ) - the server global
+// GMod addons call from SetupPlayerVisibility to widen an entity's transmit
+// set.  One line over the engine's own PVS accumulator.
+//-----------------------------------------------------------------------------
+static int lua_AddOriginToPVS (lua_State *L) {
+  engine->AddOriginToPVS( luaL_checkvector( L, 1 ) );
+  return 0;
+}
+#endif
+
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: the scripted-entity network variable shim.
 //
@@ -2478,6 +2490,11 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
 
   lua_pushcfunction( L, lua_IsFirstTimePredicted );
   lua_setglobal( L, "IsFirstTimePredicted" );
+
+#ifndef CLIENT_DLL
+  lua_pushcfunction( L, lua_AddOriginToPVS );
+  lua_setglobal( L, "AddOriginToPVS" );
+#endif
 
   /* HL2SB: the scripted-entity network variable shim.  CBaseScripted::
   ** InitScriptedEntity() installs these two onto each entity's Lua table (as

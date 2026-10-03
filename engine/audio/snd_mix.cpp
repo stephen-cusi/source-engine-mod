@@ -430,14 +430,21 @@ void S_FreeChannel(channel_t *ch)
 
 	SND_CloseMouth(ch);
 
-	g_pSoundServices->OnSoundStopped( ch->guid, ch->soundsource, ch->entchannel, ch->sfx->getname() );
+	// HL2SB (2026-10-04): guard the name lookup and detach the channel's owned
+	// objects before tearing them down.  The mixer delete below runs source
+	// reference bookkeeping and async cache unload, i.e. arbitrary destructor
+	// code; anything that re-enters the sound system for this channel during
+	// that window (steal, stop, alter) must observe an already emptied channel,
+	// or the next channel steal deletes the same mixer a second time.
+	if ( ch->sfx )
+		g_pSoundServices->OnSoundStopped( ch->guid, ch->soundsource, ch->entchannel, ch->sfx->getname() );
 
 	ch->flags.isSentence = false;
-//	Msg("End sound %s\n", ch->sfx->getname() );
-	
-	delete ch->pMixer;
+	CAudioMixer *pMixer = ch->pMixer;
 	ch->pMixer = NULL;
 	ch->sfx = NULL;
+
+	delete pMixer;
 
 	// zero all data in channel
 	g_ActiveChannels.Remove( ch );

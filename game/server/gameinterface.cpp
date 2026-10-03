@@ -3188,6 +3188,19 @@ void CServerGameClients::ClientSetupVisibility( edict_t *pViewEntity, edict_t *p
 	if ( pPlayer )
 	{
 		org = pPlayer->EyePosition();
+
+#if defined( LUA_SDK )
+		// HL2SB GMod compat (2026-10-03): hook.Run( "SetupPlayerVisibility", ply, viewEntity )
+		// - addons add origin PVS entries here (AddOriginToPVS) so things
+		// outside the eye's PVS still transmit; the portalgun keeps the
+		// far portal networked while looking through the near one.  Runs
+		// BEFORE the PVS is committed below.  Local extern on purpose.
+		{
+			extern void HL2SB_LuaSetupPlayerVisibility( CBasePlayer *pPlayer, CBaseEntity *pViewEntity );
+			HL2SB_LuaSetupPlayerVisibility( pPlayer, pVE );
+		}
+#endif
+
 		pPlayer->SetupVisibility( pVE, pvs, pvssize );
 		UTIL_SetClientVisibilityPVS( pClient, pvs, pvssize );
 		fovDistanceAdjustFactor = pPlayer->GetFOVDistanceAdjustFactorForNetworking();

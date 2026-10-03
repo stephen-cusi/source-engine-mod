@@ -701,14 +701,10 @@ static int CBaseAnimating___index (lua_State *L) {
 
 static int CBaseAnimating___newindex (lua_State *L) {
   CBaseAnimating *pEntity = lua_toanimating(L, 1);
-  if (pEntity == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+  if (pEntity == NULL) {
+    /* HL2SB (2026-10-03): field writes on the NULL sentinel are silently
+    ** discarded (reference behaviour; see CBaseEntity___newindex). */
+    return 0;
   }
   const char *field = luaL_checkstring(L, 2);
   if (Q_strcmp(field, "m_bClientSideAnimation") == 0)

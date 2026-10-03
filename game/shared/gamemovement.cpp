@@ -1138,6 +1138,22 @@ void CGameMovement::ProcessMovement( CBasePlayer *pPlayer, CMoveData *pMove )
 
 	float flStoreFrametime = gpGlobals->frametime;
 
+	// HL2SB GMod compat (2026-10-03): GM:Move( ply, mv ) - the reference engine
+	// fires this as ProcessMovement's very FIRST statement, before any
+	// initialisation, and a true return abandons the whole tick (the hook moved
+	// the player itself via mv:SetOrigin/SetVelocity).  Same predicted-realm
+	// behaviour as the SetupMove dispatch further down: server always, client
+	// during prediction.  Local extern on purpose: waf has no header
+	// dependency propagation.
+	{
+		extern bool HL2SB_LuaMoveHookReplace( CBasePlayer *pPlayer, CMoveData *pMove );
+		if ( HL2SB_LuaMoveHookReplace( pPlayer, pMove ) )
+		{
+			gpGlobals->frametime = flStoreFrametime;
+			return;
+		}
+	}
+
 	//!!HACK HACK: Adrian - slow down all player movement by this factor.
 	//!!Blame Yahn for this one.
 	gpGlobals->frametime *= pPlayer->GetLaggedMovementValue();
