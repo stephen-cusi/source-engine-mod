@@ -1263,6 +1263,50 @@ static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty,
 		case LUA_TNUMBER:	JSON_EmitNumber( out, lua_tonumber( L, i ) ); break;
 		case LUA_TSTRING:	JSON_EmitEscaped( out, lua_tostring( L, i ) ); break;
 		case LUA_TTABLE:	JSON_EmitTable( L, i, out, pretty, depth, indent ); break;
+		case LUA_TUSERDATA:
+		{
+			// HL2SB (2026-10-05): GMod's encoder serializes Vector / Angle as
+			// plain x/y/z (p/y/r) objects instead of dropping them - without
+			// this a duplicator save loses every position and angle (the first
+			// gm_save produced {"Player":{"MoveType":2}} with Origin silently
+			// gone).  Metatable identity, not luaL_checkudata: the checker
+			// raises on mismatch and the encoder must skip non-serializable
+			// values, not abort.
+			luaL_getmetatable( L, "Vector" );
+			const bool bIsVector = lua_rawequal( L, -1, i ) != 0;
+			lua_pop( L, 1 );
+			luaL_getmetatable( L, "QAngle" );
+			const bool bIsAngle = lua_rawequal( L, -1, i ) != 0;
+			lua_pop( L, 1 );
+
+			if ( bIsVector )
+			{
+				const Vector &v = luaL_checkvector( L, i );
+				out += "{\"x\":";
+				JSON_EmitNumber( out, v.x );
+				out += ",\"y\":";
+				JSON_EmitNumber( out, v.y );
+				out += ",\"z\":";
+				JSON_EmitNumber( out, v.z );
+				out += "}";
+			}
+			else if ( bIsAngle )
+			{
+				const QAngle &a = luaL_checkangle( L, i );
+				out += "{\"p\":";
+				JSON_EmitNumber( out, a.x );
+				out += ",\"y\":";
+				JSON_EmitNumber( out, a.y );
+				out += ",\"r\":";
+				JSON_EmitNumber( out, a.z );
+				out += "}";
+			}
+			else
+			{
+				out += "null";
+			}
+			break;
+		}
 		default:			out += "null"; break;
 	}
 
@@ -1351,6 +1395,61 @@ static void JSON_KVToLua( lua_State *L, KeyValues *pNode )
 				lua_pushstring( L, pszKey );
 			JSON_KVToLua( L, p );
 			lua_settable( L, -3 );
+		}
+	}
+
+	// HL2SB (2026-10-05): GMod's decoder hands {"x":..,"y":..,"z":..} objects
+	// back as real Vector userdata (the duplicator round-trip feeds them
+	// straight into SetPos / MakeProp - plain tables would error there).  The
+	// p/y/r shape comes back as a QAngle.  A table that merely happens to
+	// carry those three numeric keys is rare enough that GMod accepts the same
+	// ambiguity.
+	if ( !isArray )
+	{
+		bool bX = false, bY = false, bZ = false, bP = false, bR = false;
+		lua_Integer nY = 0;
+
+		lua_pushnil( L );
+		while ( lua_next( L, -2 ) != 0 )
+		{
+			if ( lua_isnumber( L, -1 ) && lua_type( L, -2 ) == LUA_TSTRING )
+			{
+				const char *pszKey = lua_tostring( L, -2 );
+				if ( !V_stricmp( pszKey, "x" ) ) { bX = true; }
+				else if ( !V_stricmp( pszKey, "y" ) ) { bY = true; nY = lua_tointeger( L, -1 ); }
+				else if ( !V_stricmp( pszKey, "z" ) ) { bZ = true; }
+				else if ( !V_stricmp( pszKey, "p" ) ) { bP = true; }
+				else if ( !V_stricmp( pszKey, "r" ) ) { bR = true; }
+			}
+			lua_pop( L, 1 );
+		}
+
+		if ( bX && bY && bZ && !bP && !bR )
+		{
+			lua_getfield( L, -1, "x" );
+			float x = (float)lua_tonumber( L, -1 );
+			lua_getfield( L, -1, "y" );
+			float y = (float)lua_tonumber( L, -1 );
+			lua_getfield( L, -1, "z" );
+			float z = (float)lua_tonumber( L, -1 );
+			lua_pop( L, 3 );
+			lua_pop( L, 1 );
+			lua_pushvector( L, Vector( x, y, z ) );
+			return;
+		}
+
+		if ( bP && bY && bR && !bX && !bZ )
+		{
+			lua_getfield( L, -1, "p" );
+			float p = (float)lua_tonumber( L, -1 );
+			lua_getfield( L, -1, "y" );
+			float y = (float)lua_tonumber( L, -1 );
+			lua_getfield( L, -1, "r" );
+			float r = (float)lua_tonumber( L, -1 );
+			lua_pop( L, 3 );
+			lua_pop( L, 1 );
+			lua_pushangle( L, QAngle( p, y, r ) );
+			return;
 		}
 	}
 }

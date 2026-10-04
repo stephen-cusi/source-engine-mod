@@ -4931,7 +4931,15 @@ static const luaL_Reg CBaseEntitymeta[] = {
   // never registered, so extensions/gmod_compat.lua's "GetTable = GetRefTable"
   // alias (and player.lua's __index fallback) saw nil.  Everything that indexes
   // ent:GetTable() (construct.lua, saverestore.lua, player.lua) depends on it.
+  //
+  // HL2SB (2026-10-05): register the GMod spelling as well - gmod_compat.lua
+  // is not in any load path (no include, no folder pass), so the alias never
+  // installed and every ent:GetTable() caller saw nil.  animations.lua's
+  // CalcMainActivity chain dies on it on the first dispatch, and once
+  // hook.lua's error path removes the gamemode method, every later dispatch
+  // answers nothing.
   {"GetRefTable", CBaseEntity_GetRefTable},
+  {"GetTable", CBaseEntity_GetRefTable},
   {"GetRenderColor", CBaseEntity_GetRenderColor},
   // HL2SB GMod compat: GMod's spellings of the same idea (a Color rather than a
   // normalised Vector), plus a material name that has no engine-side override.

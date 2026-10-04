@@ -11,6 +11,7 @@
 
 #ifdef CLIENT_DLL
 	#include "c_hl2mp_player.h"
+	#include "cdll_int.h"
 #else
 	#include "hl2mp_player.h"
 #endif
@@ -174,14 +175,36 @@ void CWeapon357::PrimaryAttack( void )
 	pPlayer->FireBullets( info );
 
 	//Disorient the player
+	int iKickX = random->RandomInt( -1, 1 );
+	int iKickY = random->RandomInt( -1, 1 );
+
 	QAngle angles = pPlayer->GetLocalAngles();
 
-	angles.x += random->RandomInt( -1, 1 );
-	angles.y += random->RandomInt( -1, 1 );
+	angles.x += iKickX;
+	angles.y += iKickY;
 	angles.z = 0;
 
 #ifndef CLIENT_DLL
-	pPlayer->SnapEyeAngles( angles );
+	// HL2SB (sbrust): reference behavior - GMod perturbs the aim from the
+	// server only in single player.  Multiplayer leaves the kick to the
+	// firing client's own predicted fire, so the server must not snap eye
+	// angles on top of it.
+	if ( gpGlobals->maxClients == 1 )
+	{
+		pPlayer->SnapEyeAngles( angles );
+	}
+#else
+	// HL2SB (sbrust): multiplayer counterpart - the firing client perturbs
+	// its own view angles; single player runs unperturbed (no prediction,
+	// the server half above owns the kick).
+	if ( gpGlobals->maxClients > 1 && pPlayer->IsLocalPlayer() )
+	{
+		QAngle vaPerturbed;
+		engine->GetViewAngles( vaPerturbed );
+		vaPerturbed.x += iKickX;
+		vaPerturbed.y += iKickY;
+		engine->SetViewAngles( vaPerturbed );
+	}
 #endif
 
 	pPlayer->ViewPunch( QAngle( -8, random->RandomFloat( -2, 2 ), 0 ) );

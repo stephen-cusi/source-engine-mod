@@ -161,12 +161,59 @@ static int lua_HL2SB_MenuDumpLayout_Entry( lua_State *L )
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: the menu realm's way into the engine console.
+//
+//   The menu state opens no engine library (luamanager.cpp gives it only
+//   QAngle/gpGlobals/input/Color/Vector/Files/Systems), and RunConsoleCommand's
+//   Lua shim only reaches commands registered in the SAME Lua state - a server
+//   Lua concommand such as gm_load is invisible from there.  The Addons dialog
+//   already solves the same problem by talking straight to the mount layer;
+//   the saves page needs the general shape, so this takes a command string,
+//   strips everything that could chain or quote a second command, and hands
+//   the line to the engine console.
+//-----------------------------------------------------------------------------
+static int lua_HL2SB_MenuConsoleCommand( lua_State *L )
+{
+	const char *pszCommand = luaL_checkstring( L, 1 );
+	if ( pszCommand == NULL )
+	{
+		lua_pushboolean( L, 0 );
+		return 1;
+	}
+
+	// Only what a save name / plain command needs; a ';', '"' or CR in a name
+	// would otherwise let the menu run arbitrary console lines.
+	char szClean[256];
+	int nOut = 0;
+	for ( const char *p = pszCommand; *p != '\0' && nOut < ( int )sizeof( szClean ) - 1; ++p )
+	{
+		char c = *p;
+		bool bAllowed = ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
+						( c >= '0' && c <= '9' ) || c == ' ' || c == '-' || c == '_' || c == '.';
+		if ( bAllowed )
+			szClean[nOut++] = c;
+	}
+	szClean[nOut] = '\0';
+
+	if ( nOut == 0 )
+	{
+		lua_pushboolean( L, 0 );
+		return 1;
+	}
+
+	engine->ClientCmd_Unrestricted( szClean );
+	lua_pushboolean( L, 1 );
+	return 1;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: the menu realm's own library table.
 //-----------------------------------------------------------------------------
 static const luaL_Reg gameui_menu_funcs[] =
 {
 	{ "HL2SB_MenuLayout",     lua_HL2SB_MenuLayout },
 	{ "HL2SB_MenuDumpLayout", lua_HL2SB_MenuDumpLayout_Entry },
+	{ "HL2SB_MenuConsoleCommand", lua_HL2SB_MenuConsoleCommand },
 	{ NULL, NULL }
 };
 
