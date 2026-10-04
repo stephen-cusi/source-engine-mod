@@ -53,3 +53,6 @@ lua/_src_51_backup/
 
 # Working plans: this repo tracks no .md at all (AGENTS.md is local notes).
 GMod_SWEP_compat_plan.md
+
+# --- vendored SDK/build inputs (216M, not source) ---
+thirdparty/

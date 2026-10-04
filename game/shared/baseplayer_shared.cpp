@@ -1733,6 +1733,15 @@ void HL2SB_LuaCalcView( CBasePlayer *pPlayer, Vector &eyeOrigin, QAngle &eyeAngl
 			lua_pop( L, 1 );
 		}
 
+		// HL2SB (2026-10-04, TEMPORARY): bisect instrumentation for the seated
+		// view chain -- shows whether this dispatch runs at all and what the
+		// readback applied.  Shares the veh-third-person debug throttle/channel
+		// ("luacalc" site, one line per second with hl2sb_veh_thirdperson_debug 1).
+		{
+			extern void HL2SB_DebugVehicleCamera( const char *pszWhere, const Vector &vecOrigin,
+											   const QAngle &angView, const char *pszDetail );
+			HL2SB_DebugVehicleCamera( "luacalc", eyeOrigin, eyeAngles, NULL );
+		}
 
 	}
 

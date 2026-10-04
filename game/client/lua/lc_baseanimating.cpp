@@ -1375,6 +1375,15 @@ static int CBaseAnimating_GetBoneParent (lua_State *L) {
 // ground shadow (cosmetic) - everything else in the addon degrades cleanly.
 static int CBaseAnimating_CreateShadow (lua_State *L) {
   C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  // HL2SB (2026-10-04) GMod contract: Entity:CreateShadow renders the clone
+  // ONLY into the shadow depth pass.  This fork has no clientside shadow-depth
+  // rendering, and a plain clientside model left visible draws as a FULL model
+  // in the main view at whatever stale bone state it last built -- First Person
+  // Body's Body_Shadow_1..4 appeared as a second player (head included) and
+  // were the "shaking model" inside vehicles.  NODRAW the clone: the fake-body
+  // shadow feature stays disabled here until a clientside depth pass exists
+  // (GMod with shadows disabled behaves the same way).
+  pEntity->AddEffects( EF_NODRAW );
   return 0;
 }
 
