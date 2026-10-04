@@ -170,10 +170,6 @@ struct HL2SB_BoneManip_t
 	bool bHasPos;
 	bool bHasScale;
 	bool bHasAngles;
-	// Applied at most once per frame: the offset is added onto whatever the
-	// live bone array holds, so an unguarded second apply in the same frame
-	// (immediate write + the SetupBones pass) would double it.
-	int nLastAppliedFrame;
 };
 
 static CUtlVector< HL2SB_BoneManip_t > s_BoneManips;
@@ -196,7 +192,6 @@ static HL2SB_BoneManip_t *HL2SB_FindBoneManip( C_BaseAnimating *pEntity, int nBo
 	manip.bHasPos = false;
 	manip.bHasScale = false;
 	manip.bHasAngles = false;
-	manip.nLastAppliedFrame = -1;
 	return &manip;
 }
 
@@ -208,30 +203,35 @@ static HL2SB_BoneManip_t *HL2SB_FindBoneManip( C_BaseAnimating *pEntity, int nBo
 // The !bBonesReady path serves the immediate write from the Lua bindings.
 static void HL2SB_ApplyBoneManipEntry( C_BaseAnimating *pEntity, HL2SB_BoneManip_t &manip, bool bBonesReady )
 {
-	if ( manip.nLastAppliedFrame == gpGlobals->framecount )
-		return;
 	studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
 	if ( pHdr == NULL || manip.nBone < 0 || manip.nBone >= pHdr->numbones )
 		return;
 
 	if ( !bBonesReady )
 	{
+		// Outside bone setup (a Lua ManipulateBone* call): re-run a full
+		// SetupBones -- its tail replays every stored manipulation onto the
+		// freshly rebuilt array, so each call takes effect and the relative
+		// offset can never double-apply.  (The old per-frame stamp skipped
+		// same-frame replays AND same-frame Lua calls; predicted players
+		// invalidate their bone cache several times a frame in multiplayer,
+		// which dropped the manipulation and left the FPB head visible.)
+		if ( !pEntity->IsEFlagSet( EFL_SETTING_UP_BONES ) && !s_bInEntityCallbacks )
+		{
+			// Force a rebuild even when the bone cache believes it is current --
+			// otherwise a second ManipulateBone* call in the same frame would be
+			// short-circuited by the cache and the new value never applied.
+			pEntity->InvalidateBoneCache();
+			pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime );
+			// the tail replay above applied this entry already
+			return;
+		}
+
 		// Mid-setup (a BuildBonePositions callback manipulating its own
 		// bones): the array is already being written, fall through to the
 		// in-place write like the reference behaviour does.
 		// s_bInEntityCallbacks covers the BuildBonePositions callback (the
 		// EFL is already cleared by the time the tail runs).
-		if ( !pEntity->IsEFlagSet( EFL_SETTING_UP_BONES ) && !s_bInEntityCallbacks )
-		{
-			// Outside bone setup: complete a full SetupBones first.  Its tail
-			// walks every stored manipulation through the bBonesReady path
-			// above (this entry included, stamped); if an early-out skipped
-			// the tail the bones still exist and the write below is safe.
-			if ( !pEntity->SetupBones( NULL, 0, BONE_USED_BY_ANYTHING, gpGlobals->curtime ) )
-				return;	// bones could not be set up - the array may be invalid
-			if ( manip.nLastAppliedFrame == gpGlobals->framecount )
-				return;
-		}
 	}
 
 	matrix3x4_t &bone = pEntity->GetBoneForWrite( manip.nBone );
@@ -260,7 +260,6 @@ static void HL2SB_ApplyBoneManipEntry( C_BaseAnimating *pEntity, HL2SB_BoneManip
 		MatrixCopy( out, bone );
 	}
 
-	manip.nLastAppliedFrame = gpGlobals->framecount;
 }
 
 // Called from C_BaseAnimating::SetupBones right before the BuildBonePositions
@@ -875,9 +874,10 @@ static int CBaseAnimating_ManipulateBoneScale (lua_State *L) {
 
   HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, nBone, true );
   pManip->vecScale = scale;
+    bool bChanged = ( !pManip->bHasScale || !( pManip->vecScale == scale ) );
   pManip->bHasScale = true;
 
-  if ( bImmediate )
+  if ( bImmediate && bChanged )
     HL2SB_ApplyBoneManipEntry( pEntity, *pManip, false );
   return 0;
 }
@@ -1284,9 +1284,10 @@ static int CBaseAnimating_ManipulateBonePosition (lua_State *L) {
 
   HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, nBone, true );
   pManip->vecPos = vecPos;
+    bool bChanged = ( !pManip->bHasPos || !( pManip->vecPos == vecPos ) );
   pManip->bHasPos = true;
 
-  if ( bImmediate )
+  if ( bImmediate && bChanged )
     HL2SB_ApplyBoneManipEntry( pEntity, *pManip, false );
   return 0;
 }
@@ -1303,9 +1304,10 @@ static int CBaseAnimating_ManipulateBoneAngles (lua_State *L) {
 
   HL2SB_BoneManip_t *pManip = HL2SB_FindBoneManip( pEntity, nBone, true );
   pManip->angAngles = angAngles;
+    bool bChanged = ( !pManip->bHasAngles || !( pManip->angAngles == angAngles ) );
   pManip->bHasAngles = true;
 
-  if ( bImmediate )
+  if ( bImmediate && bChanged )
     HL2SB_ApplyBoneManipEntry( pEntity, *pManip, false );
   return 0;
 }
@@ -1372,7 +1374,7 @@ static int CBaseAnimating_GetBoneParent (lua_State *L) {
 // shadow machinery, and First Person Body only uses them for the body's fake
 // ground shadow (cosmetic) - everything else in the addon degrades cleanly.
 static int CBaseAnimating_CreateShadow (lua_State *L) {
-  luaL_checkanimating(L, 1);
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
   return 0;
 }
 

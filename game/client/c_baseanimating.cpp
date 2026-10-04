@@ -2960,6 +2960,16 @@ bool C_BaseAnimating::SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, i
 			
 			RemoveFlag( EFL_SETTING_UP_BONES );
 			ControlMouth( hdr );
+
+			// HL2SB (sbrust): replay the stored bone manipulations HERE, inside
+			// the rebuild branch -- the array was just rebuilt, so the relative
+			// offsets apply exactly once and a cache-hit pass leaves the
+			// previously manipulated array untouched.  The replay used to sit
+			// in the common tail below, where every cache hit doubled the
+			// offsets once the per-frame stamp was lifted (the stretched FPB
+			// body regression).
+			extern void HL2SB_ApplyBoneManipulations( C_BaseAnimating *pEntity );
+			HL2SB_ApplyBoneManipulations( this );
 		}
 		
 		if( !( oldReadableBones & BONE_USED_BY_ATTACHMENT ) && ( boneMask & BONE_USED_BY_ATTACHMENT ) )
@@ -2978,12 +2988,13 @@ bool C_BaseAnimating::SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, i
 	// unless some entity actually registered callbacks.
 	{
 		extern void HL2SB_RunEntityCallbacks( C_BaseAnimating *pEntity, const char *pszName );
-		// HL2SB GMod compat (2026-10-03): re-apply the stored bone
-		// manipulations (Entity:ManipulateBonePosition/Scale) before the
-		// callbacks so they survive every rebuild and the callbacks observe
-		// the manipulated bones.
-		extern void HL2SB_ApplyBoneManipulations( C_BaseAnimating *pEntity );
-		HL2SB_ApplyBoneManipulations( this );
+		// HL2SB (sbrust): the stored bone manipulations are replayed INSIDE the
+		// rebuild branch (just above, after BuildTransformations) -- the array
+		// there is freshly rebuilt so the relative offsets apply exactly once.
+		// The replay used to sit in this common tail, where a cache-hit pass
+		// re-applied it onto the already-manipulated live array: once the
+		// per-frame stamp was lifted the offsets doubled every cache hit and
+		// First Person Body's +10000 head translation stretched the whole body.
 		HL2SB_RunEntityCallbacks( this, "BuildBonePositions" );
 	}
 #endif
