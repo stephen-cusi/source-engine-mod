@@ -244,7 +244,16 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 	// and that value is not LUA_NOREF (-2) -- so the old test fell into the
 	// "already loaded" branch below and tried table.merge() against a bogus
 	// reference on every subsequent Spawn.
-	if ( m_nTableReference < 0 )
+	// HL2SB (2026-10-04) GMod-faithful bind: fresh (no ref yet) loads the class
+	// table; a re-run merges it into an existing instance table.  The re-run is
+	// the healed path for the burnable one-shot the OnDataChanged gate used to
+	// have (a pre-bind Lua field write allocates the auto-instance table via
+	// CBaseAnimating___newindex and used to veto the bind forever) -- GMod's
+	// bind is a re-runnable content copy (scripted_ents.Get(name, retval)), so
+	// the merge + reseed below is the fork-idiomatic equivalent.
+	const bool bFreshBind = ( m_nTableReference < 0 );
+
+	if ( bFreshBind )
 	{
 #ifndef CLIENT_DLL
 		// HL2SB: a Lua nextbot binds through CLuaNextBot::LoadNextBotScript()
@@ -298,90 +307,6 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 					className, bGotTable ? 1 : 0, nFuncs );
 			}
 		}
-
-		// HL2SB GMod SENT compat: GMod's engine calls ENT:SetupDataTables() while
-		// it sets a scripted entity up, and that is where ENT:NetworkVar()
-		// declares the per-instance accessors the script uses.  GMod's sent_ball
-		// declares BallSize/BallColor there and its SpawnFunction calls
-		// SetBallSize() before Spawn(), so without this call the entity throws on
-		// its first line ("attempt to call a method 'SetBallSize'").
-		//
-		// The shim itself is not defined by the entity script: it is installed
-		// here from the globals the engine publishes, so a stock GMod entity
-		// script runs unmodified.  When those globals are absent this is a no-op,
-		// which keeps entities that do not use NetworkVar working.
-		if ( lua_istable( L, -1 ) )
-		{
-			// HL2SB GMod compat: `self.Entity` is the entity, exactly as GMod's
-			// scripted-entity tables have it (GMod's engine sets it, and addons
-			// call self.Entity:Foo() as freely as self:Foo()).  It has to be in
-			// place before ENT:Initialize() runs - that is where a script
-			// usually reaches for it first (SCP-096's nextbot opens its
-			// Initialize() with self.Entity:SetCollisionBounds(...), and with
-			// the field nil that raised on line one and skipped the whole setup).
-			lua_pushanimating( L, this );
-			lua_setfield( L, -2, "Entity" );
-
-			// HL2SB GMod compat (2026-10-04): self:IsValid() on the SCRIPT TABLE.
-			// Entity-file timer closures capture the table as self (the portalgun
-			// projectile does timer.Simple(.01, function() if self:IsValid() ...
-			// end)), and indexing the table resolved to a boolean somewhere down
-			// its chain - "attempt to call a boolean value (method 'IsValid')".
-			// Seed the method form, with the entity bound as the upvalue; the
-			// answer matches the metatable's IsValid (toentity != NULL).
-			lua_pushanimating( L, this );
-			lua_pushcclosure( L, HL2SB_EntityTableIsValid, 1 );
-			lua_setfield( L, -2, "IsValid" );
-
-			lua_getglobal( L, "HL2SB_EntityNetworkVar" );
-			if ( lua_isfunction( L, -1 ) )
-			{
-				lua_setfield( L, -2, "NetworkVar" );
-			}
-			else
-			{
-				lua_pop( L, 1 );
-			}
-
-			lua_getglobal( L, "HL2SB_EntityNetworkVarNotify" );
-			if ( lua_isfunction( L, -1 ) )
-			{
-				lua_setfield( L, -2, "NetworkVarNotify" );
-			}
-			else
-			{
-				lua_pop( L, 1 );
-			}
-
-			// HL2SB: GMod's Entity:DTVar needs the same treatment as NetworkVar above, and
-			// for the same reason: SetupDataTables() is invoked with the entity's LUA TABLE
-			// (lua_pushvalue below, "self: the entity's Lua table"), not with the entity
-			// userdata - so a method that lives only on the entity metatable is invisible
-			// inside it.  cod_c4's ENT:SetupDataTables calls self:DTVar( "Float", 0, ... )
-			// and raised "attempt to call a nil value (method 'DTVar')" on every C4 spawn.
-			lua_getglobal( L, "HL2SB_EntityDTVar" );
-			if ( lua_isfunction( L, -1 ) )
-			{
-				lua_setfield( L, -2, "DTVar" );
-			}
-			else
-			{
-				lua_pop( L, 1 );
-			}
-
-			lua_getfield( L, -1, "SetupDataTables" );
-			if ( lua_isfunction( L, -1 ) )
-			{
-				lua_pushvalue( L, -2 );		// self: the entity's Lua table
-				luasrc_pcall( L, 1, 0, 0 );
-			}
-			else
-			{
-				lua_pop( L, 1 );
-			}
-		}
-
-		m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
 	}
 	else
 	{
@@ -405,6 +330,121 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 		{
 			lua_pop( L, 1 );
 		}
+
+		// put the instance table back on top for the shared seeding below
+		lua_getref( L, m_nTableReference );
+	}
+
+	// HL2SB GMod SENT compat: GMod's engine calls ENT:SetupDataTables() while
+	// it sets a scripted entity up, and that is where ENT:NetworkVar()
+	// declares the per-instance accessors the script uses.  GMod's sent_ball
+	// declares BallSize/BallColor there and its SpawnFunction calls
+	// SetBallSize() before Spawn(), so without this call the entity throws on
+	// its first line ("attempt to call a method 'SetBallSize'").
+	//
+	// The shim itself is not defined by the entity script: it is installed
+	// here from the globals the engine publishes, so a stock GMod entity
+	// script runs unmodified.  When those globals are absent this is a no-op,
+	// which keeps entities that do not use NetworkVar working.
+	//
+	// HL2SB (2026-10-04) shared by BOTH branches: the fresh bind's class table
+	// and the healed merge's instance table land here, and an instance table
+	// created by a pre-bind field write has none of the seeds the fresh branch
+	// used to install -- GMod's scripted_ents.Get re-copies them on every
+	// re-run, so re-seed here whenever the Entity field is missing.
+	bool bSeeded = false;
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "Entity" );
+		bSeeded = !lua_isnil( L, -1 );
+		lua_pop( L, 1 );
+	}
+	if ( lua_istable( L, -1 ) && !bSeeded )
+	{
+		// HL2SB GMod compat: `self.Entity` is the entity, exactly as GMod's
+		// scripted-entity tables have it (GMod's engine sets it, and addons
+		// call self.Entity:Foo() as freely as self:Foo()).  It has to be in
+		// place before ENT:Initialize() runs - that is where a script
+		// usually reaches for it first (SCP-096's nextbot opens its
+		// Initialize() with self.Entity:SetCollisionBounds(...), and with
+		// the field nil that raised on line one and skipped the whole setup).
+		lua_pushanimating( L, this );
+		lua_setfield( L, -2, "Entity" );
+
+		// HL2SB GMod compat (2026-10-04): self:IsValid() on the SCRIPT TABLE.
+		// Entity-file timer closures capture the table as self (the portalgun
+		// projectile does timer.Simple(.01, function() if self:IsValid() ...
+		// end)), and indexing the table resolved to a boolean somewhere down
+		// its chain - "attempt to call a boolean value (method 'IsValid')".
+		// Seed the method form, with the entity bound as the upvalue; the
+		// answer matches the metatable's IsValid (toentity != NULL).
+		lua_pushanimating( L, this );
+		lua_pushcclosure( L, HL2SB_EntityTableIsValid, 1 );
+		lua_setfield( L, -2, "IsValid" );
+
+		lua_getglobal( L, "HL2SB_EntityNetworkVar" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_setfield( L, -2, "NetworkVar" );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+
+		lua_getglobal( L, "HL2SB_EntityNetworkVarNotify" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_setfield( L, -2, "NetworkVarNotify" );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+
+		// HL2SB: GMod's Entity:DTVar needs the same treatment as NetworkVar above, and
+		// for the same reason: SetupDataTables() is invoked with the entity's LUA TABLE
+		// (lua_pushvalue below, "self: the entity's Lua table"), not with the entity
+		// userdata - so a method that lives only on the entity metatable is invisible
+		// inside it.  cod_c4's ENT:SetupDataTables calls self:DTVar( "Float", 0, ... )
+		// and raised "attempt to call a nil value (method 'DTVar')" on every C4 spawn.
+		lua_getglobal( L, "HL2SB_EntityDTVar" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_setfield( L, -2, "DTVar" );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+
+		lua_getfield( L, -1, "SetupDataTables" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_pushvalue( L, -2 );		// self: the entity's Lua table
+			luasrc_pcall( L, 1, 0, 0 );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+	}
+	else if ( lua_istable( L, -1 ) && !bFreshBind )
+	{
+		// healed/merge path on an already-seeded table: re-stamp ClassName so
+		// the OnDataChanged gate sees this class as bound even when the merge
+		// source was a different registration (addon-reload semantics).
+		lua_pushstring( L, className );
+		lua_setfield( L, -2, "ClassName" );
+	}
+
+	if ( bFreshBind )
+	{
+		// HL2SB: < 0, not == LUA_NOREF.  luaL_ref() returns LUA_REFNIL (-1) when
+		// entity.get() yielded no table (a classname with no lua/entities script),
+		// and that value is not LUA_NOREF (-2) -- the ref is taken only here, in
+		// the fresh branch, AFTER the shared seeding above has run.
+		m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
 	}
 
 	// HL2SB GMod SENT compat: the engine defaults for an "anim" scripted entity.
@@ -710,12 +750,45 @@ void CBaseScripted::OnDataChanged( DataUpdateType_t updateType )
 		// Get() never returns NULL -- an empty string means "not synced yet"
 		// and must NOT fall through to GetClassname(): that is the classmap
 		// constant, i.e. the first registered scripted class, and binding it
-		// burns the wrong name via SetClassname below.  m_nTableReference ==
-		// LUA_NOREF keeps this one-shot per entity (a resolved instance, even
-		// one with no Lua table = LUA_REFNIL, never rebinds).
-		if ( m_iScriptedClassname.Get()[0] != '\0' && m_nTableReference == LUA_NOREF )
+		// burns the wrong name via SetClassname below.
+		//
+		// HL2SB (2026-10-04) GMod-faithful gate: bind = "this entity's table
+		// carries this class", retried on every update.  The old one-shot
+		// (m_nTableReference == LUA_NOREF) was burnable: any Lua field write
+		// between entity creation and OnDataChanged allocates the auto-instance
+		// table (CBaseAnimating___newindex), consumed the one-shot, and
+		// permanently vetoed the bind -- the SP gmod_hands regression (the
+		// entity rendered by the world pass under the classmap name while
+		// hands:DrawModel no-oped).  GMod's bind is a re-runnable content copy
+		// (scripted_ents.Get(name, retval)); mirror that by testing the
+		// ClassName stamp the bind installs.  A plain lua_getfield compare --
+		// no protected call, so the 0080ddd6 nil-fill convention is untouched.
+		bool bBoundToClass = false;
+		if ( m_nTableReference >= 0 && L != NULL && m_iScriptedClassname.Get()[0] != '\0' )
+		{
+			lua_getref( L, m_nTableReference );						// [t]
+			if ( lua_istable( L, -1 ) )
+			{
+				lua_getfield( L, -1, "ClassName" );					// [t][s]
+				const char *pszBound = lua_tostring( L, -1 );
+				bBoundToClass = ( pszBound != NULL &&
+					Q_stricmp( pszBound, m_iScriptedClassname.Get() ) == 0 );
+				lua_pop( L, 1 );
+			}
+			lua_pop( L, 1 );
+		}
+
+		if ( m_iScriptedClassname.Get()[0] != '\0' &&
+			 !bBoundToClass && m_nTableReference != LUA_REFNIL )
 		{
 			SetClassname( m_iScriptedClassname.Get() );
+
+			// a pre-bind GetRenderGroup (AddToLeafSystem runs during
+			// PostDataUpdate, before OnDataChanged) may have latched the
+			// empty-table answer; let it read again now that the instance
+			// table will carry ENT.RenderGroup
+			m_bLuaRenderGroupRead = false;
+
 			InitScriptedEntity();
 
 			// HL2SB (2026-10-02): the render group may have been cached from the

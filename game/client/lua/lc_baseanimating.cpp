@@ -12,6 +12,7 @@
 #include "lc_baseanimating.h"
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
+#include "basescripted.h"	// HL2SB (2026-10-04): pre-bind write diagnostic reads C_BaseScripted::GetScriptedClassname
 #include "mathlib/lvector.h"
 #include "model_types.h"	// HL2SB: STUDIO_RENDER, the default of Entity:DrawModel()
 #include "lvphysics_interface.h"
@@ -2137,6 +2138,24 @@ static int CBaseAnimating___newindex (lua_State *L) {
     // state; the old test let lua_getref(-1) push nil and silently drop the
     // field write (see CBaseEntity___newindex).
     if (pEntity->m_nTableReference < 0) {
+      // HL2SB (2026-10-04) diagnostic: a field write on a scripted entity that
+      // has a networked class but no bound table yet is what used to burn the
+      // one-shot class bind (the SP gmod_hands regression).  The OnDataChanged
+      // gate now heals, but name the writer once per entity anyway -- it pins
+      // down WHICH addon/hook writes before OnDataChanged if the heal ever
+      // misfires.
+      C_BaseScripted *pScripted = dynamic_cast<C_BaseScripted *>(pEntity);
+      if ( pScripted != NULL && pScripted->GetScriptedClassname() != NULL &&
+           pScripted->GetScriptedClassname()[ 0 ] != '\0' )
+      {
+        static int s_nPreBindWrites = 0;
+        if ( s_nPreBindWrites < 40 )
+        {
+          ++s_nPreBindWrites;
+          Warning( "[HL2SB] pre-bind field write '%s' on scripted entity ent=%d (class '%s') -- auto-table allocated before OnDataChanged\n",
+                   field, pEntity->entindex(), pScripted->GetScriptedClassname() );
+        }
+      }
       lua_newtable(L);
       pEntity->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
