@@ -1112,7 +1112,7 @@ static int CBaseCombatWeapon___tostring (lua_State *L) {
   if (pWeapon == NULL)
     lua_pushstring(L, "Weapon [NULL]");
   else
-    lua_pushfstring(L, "Weapon [%i][%s]", pWeapon->entindex(), pWeapon->GetClassname());
+    lua_pushfstring(L, "Weapon [%d][%s]", pWeapon->entindex(), pWeapon->GetClassname());
   return 1;
 }
 
