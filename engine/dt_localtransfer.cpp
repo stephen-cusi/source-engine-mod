@@ -21,9 +21,17 @@
 #define PROP_INDEX_VECTOR_ELEM_MARKER 0x8000
 
 
-static ConVar dt_UsePartialChangeEnts( 
+// HL2SB (2026-10-04): default OFF.  The partial-change fast copy keys on
+// edict change-info records that are SHARED per SendTable, and in this fork's
+// single-player loopback (LocalNetworkBackdoor -> LocalTransfer) the exit-
+// vehicle change storm zeroed gmod_hands' networked m_hMoveParent and origin
+// under it -- the entity stayed alive and bound but detached at (0,0,0)
+// (arms gone, SP only; multiplayer never runs this client path and is clean).
+// GMod's single player never shows this, and the full-copy fallback below is
+// order-independent for a little more per-entity CPU.  (Valve default was 1.)
+static ConVar dt_UsePartialChangeEnts(
 	"dt_UsePartialChangeEnts",
-	"1",
+	"0",
 	0,
 	"(SP only) - enable FL_EDICT_PARTIAL_CHANGE optimization."
 	);
