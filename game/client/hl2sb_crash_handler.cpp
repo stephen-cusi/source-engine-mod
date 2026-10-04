@@ -289,7 +289,23 @@ static void HL2SB_EngineLogCrashBlock( const char *pszKind, unsigned int uExcept
 
 // MINIDUMP_TYPE: DataSegs | IndirectlyReferencedMemory | ProcessThreadData.
 // Same shape as the engine's own dumps (~29 MB, enough for a usable stack).
+// HL2SB (2026-10-04): set HL2SB_FULL_DUMP=1 in the environment to add
+// MiniDumpWithFullMemory (0x1) - a 1-2 GB dump with the whole heap, for the
+// cross-thread object-lifetime crashes where the faulting object's content
+// is the diagnosis (the audio mixer use-after-free family).
 #define HL2SB_MINIDUMP_TYPE ( 0x00000001 | 0x00000040 | 0x00000100 )
+static DWORD HL2SB_GetMinidumpType( void )
+{
+	static DWORD s_nType = 0;
+	if ( s_nType == 0 )
+	{
+		s_nType = HL2SB_MINIDUMP_TYPE;
+		char szFull[ 8 ] = { 0 };
+		if ( GetEnvironmentVariableA( "HL2SB_FULL_DUMP", szFull, sizeof( szFull ) ) && szFull[ 0 ] == '1' )
+			s_nType |= 0x1;	// MiniDumpWithFullMemory
+	}
+	return s_nType;
+}
 
 // CONTEXT names its instruction pointer per architecture.  32-bit x86 has no
 // Rip at all - that is what the win32 CI job failed on (C2039: 'Rip' is not a
@@ -348,7 +364,7 @@ static void HL2SB_WriteAbortDump( const char *pszReason, const char *pszDetail )
 	info.ExceptionRecord = &rec;
 	info.ContextRecord = &ctx;
 
-	WriteMiniDumpUsingExceptionInfo( 0xC0000409, &info, HL2SB_MINIDUMP_TYPE, "abort" );
+	WriteMiniDumpUsingExceptionInfo( 0xC0000409, &info, HL2SB_GetMinidumpType(), "abort" );
 
 	Msg( "\n[HL2SB] CRASH (abort): %s%s%s\n", pszReason,
 		pszDetail ? " - " : "", pszDetail ? pszDetail : "" );
@@ -527,7 +543,7 @@ static LONG CALLBACK HL2SB_VectoredHandler( PEXCEPTION_POINTERS pExceptionInfo )
 	if ( code != EXCEPTION_STACK_OVERFLOW )
 	{
 		WriteMiniDumpUsingExceptionInfo( (unsigned int)code, pExceptionInfo,
-			HL2SB_MINIDUMP_TYPE, "veh" );
+			HL2SB_GetMinidumpType(), "veh" );
 	}
 
 	return EXCEPTION_CONTINUE_SEARCH;	// let the normal teardown / WER run as well
@@ -572,7 +588,7 @@ static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS lpExceptionInfo )
 	// A real minidump for SEH-reachable exceptions too.
 	WriteMiniDumpUsingExceptionInfo(
 		(unsigned int)lpExceptionInfo->ExceptionRecord->ExceptionCode,
-		lpExceptionInfo, HL2SB_MINIDUMP_TYPE, "hl2sb" );
+		lpExceptionInfo, HL2SB_GetMinidumpType(), "hl2sb" );
 
 	// Also write to console
 	Msg( "\n[HL2SB] CRASH DETECTED! Exception 0x%08X at 0x%p\n", 
@@ -650,7 +666,7 @@ static DWORD WINAPI HL2SB_HangWatchdogThread( LPVOID pArg )
 				if ( hFile != INVALID_HANDLE_VALUE )
 				{
 					pfnWrite( GetCurrentProcess(), GetCurrentProcessId(), hFile,
-						HL2SB_MINIDUMP_TYPE, NULL, NULL, NULL );
+						HL2SB_GetMinidumpType(), NULL, NULL, NULL );
 					CloseHandle( hFile );
 				}
 			}
