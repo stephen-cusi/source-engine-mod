@@ -58,6 +58,10 @@ void S_AmbientOff (void);
 void S_AmbientOn (void);
 void S_FreeChannel(channel_t *ch);
 
+// HL2SB (2026-10-04): mixers S_FreeChannel parked for deferred destruction;
+// drained at every MIX_PaintChannels entry and again at S_Shutdown.
+void HL2SB_DrainMixerGraveyard( void );
+
 // resync the sample-timing adjustment clock (for scheduling a group of waves with precise timing - e.g. machine gun sounds)
 extern void S_SyncClockAdjust( clocksync_index_t );
 

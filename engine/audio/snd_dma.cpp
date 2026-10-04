@@ -761,6 +761,11 @@ void S_Shutdown(void)
 	S_StopAllSounds( true );
 	S_ShutdownMixThread();
 
+	// HL2SB (2026-10-04): the mix thread is gone; destroy whatever mixers
+	// S_FreeChannel parked since the last paint so nothing leaks past the
+	// audio source cache shutdown below.
+	HL2SB_DrainMixerGraveyard();
+
 	TRACESHUTDOWN( audiosourcecache->Shutdown() );
 
 	SNDDMA_Shutdown();

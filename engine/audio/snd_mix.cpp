@@ -14,8 +14,9 @@
 #include "video/ivideoservices.h"
 #include "engine/IEngineSound.h"
 // HL2SB (2026-10-04): ThreadInterlockedExchangePointer for the S_FreeChannel
-// mixer ownership claim.
+// mixer ownership claim, and CTSList for the deferred-mixer-delete graveyard.
 #include "tier0/threadtools.h"
+#include "tier0/tslist.h"
 
 #if defined( REPLAY_ENABLED )
 #include "demo.h"
@@ -420,9 +421,33 @@ CHANNEL MIXING
 
 
 // free channel so that it may be allocated by the
-// next request to play a sound.  If sound is a 
+// next request to play a sound.  If sound is a
 // word in a sentence, release the sentence.
 // Works for static, dynamic, sentence and stream sounds
+
+// HL2SB (2026-10-04): mixers freed by S_FreeChannel are parked here and only
+// destroyed at the next MIX_PaintChannels entry - on the mixing thread,
+// between frames, where no channel walk can observe the object half-dead.
+// The lock-free list makes the claiming thread's push safe from any realm.
+static CTSList< CAudioMixer * > s_MixerGraveyard;
+
+void HL2SB_DeferMixerDelete( CAudioMixer *pMixer )
+{
+	if ( pMixer == NULL )
+		return;
+	s_MixerGraveyard.Push( new CTSList< CAudioMixer * >::Node_t( pMixer ) );
+}
+
+void HL2SB_DrainMixerGraveyard( void )
+{
+	CTSList< CAudioMixer * >::Node_t *pNode;
+	while ( ( pNode = s_MixerGraveyard.Pop() ) != NULL )
+	{
+		CAudioMixer *pMixer = pNode->elem;
+		delete pNode;
+		delete pMixer;
+	}
+}
 
 void S_FreeChannel(channel_t *ch)
 {
@@ -457,13 +482,27 @@ void S_FreeChannel(channel_t *ch)
 	ch->sfx = NULL;
 	ch->flags.isSentence = false;
 
+	// Leave the active list BEFORE the callback and the delete: both can run
+	// arbitrary game/loader code for a long time, and a channel that is
+	// enlisted with a nulled mixer is exactly what the mix thread's snapshot
+	// crashed on at map load (IsReadyToMix on NULL, 2026-10-04 03:00 dump).
+	g_ActiveChannels.Remove( ch );
+
 	if ( sfx )
 		g_pSoundServices->OnSoundStopped( ch->guid, ch->soundsource, ch->entchannel, sfx->getname() );
 
-	delete pMixer;	// deleting NULL is a no-op
+	// HL2SB (2026-10-04 04:26/04:31 dumps): the mixer OBJECT must not die on
+	// the claiming thread.  The atomic claim above serialises the pointer
+	// swap, but a mix-thread walk that read the non-NULL slot before the
+	// claim still holds a stale local across the claim-callback-delete
+	// sequence - IsReadyToMix on freed memory (read of member 0x30 then
+	// deref 0x48) and a double delete (vptr already NULL) were both caught
+	// live.  Defer the delete to the mix frame: the graveyard is drained at
+	// MIX_PaintChannels entry, between frames, on the thread that walks the
+	// channels - no delete can ever overlap a walk again.
+	HL2SB_DeferMixerDelete( pMixer );
 
 	// zero all data in channel
-	g_ActiveChannels.Remove( ch );
 	Q_memset(ch, 0, sizeof(channel_t));
 }
 
@@ -568,12 +607,14 @@ void MIX_MixChannelsToPaintbuffer( CChannelList &list, int endtime, int flags, i
 			continue;
 		}
 
-		// HL2SB (2026-10-04): the main thread may steal this channel (and
-		// atomically claim its mixer in S_FreeChannel) while we walk the mix
-		// list snapshot - a nulled pMixer here just means the teardown is
-		// owned elsewhere; drop it from this list and move on instead of
-		// dereferencing the empty slot.
-		if ( !ch->pMixer )
+		// HL2SB (2026-10-04): read the mixer ONCE into a local - the main
+		// thread may claim (atomically null) ch->pMixer on a channel steal
+		// while we walk this snapshot.  Two separate reads of ch->pMixer
+		// observed non-NULL then NULL within one iteration's span; a local
+		// cannot be nulled mid-flight (see the matching note in
+		// MIX_BuildChannelList).
+		CAudioMixer *pSnapshotMixer = ch->pMixer;
+		if ( !pSnapshotMixer )
 		{
 			list.RemoveChannelFromList(i);
 			continue;
@@ -600,19 +641,19 @@ void MIX_MixChannelsToPaintbuffer( CChannelList &list, int endtime, int flags, i
 		if (list.IsQuashed(i))
 		{
 			// If the sound has been silenced as a performance heuristic, quash it.
-			ch->pMixer->SkipSamples( ch, sampleCount, outputRate, 0 );
+			pSnapshotMixer->SkipSamples( ch, sampleCount, outputRate, 0 );
 			// DevMsg("Quashed channel %d (%s)\n", i, ch->sfx->GetFileName());
 		}
 		else
 		{
 			tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "MixDataToDevice" );
-			ch->pMixer->MixDataToDevice( g_AudioDevice, ch, sampleCount, outputRate, 0 );
+			pSnapshotMixer->MixDataToDevice( g_AudioDevice, ch, sampleCount, outputRate, 0 );
 		}
 
 		// restore to original pitch settings
 		ch->pitch = flPitch;
 
-		if ( !ch->pMixer->ShouldContinueMixing() )
+		if ( !pSnapshotMixer->ShouldContinueMixing() )
 		{
 			S_FreeChannel( ch );
 			list.RemoveChannelFromList(i);
@@ -2114,12 +2155,14 @@ void MIX_BuildChannelList( CChannelList &list )
 	for ( int i = list.Count(); --i >= 0; )
 	{
 		channel_t *ch = list.GetChannel(i);
-		// HL2SB (2026-10-04): a channel claimed for teardown on another thread
-		// (S_FreeChannel nulls the mixer atomically) must drop out of this
-		// snapshot - the teardown owner completes it.  The snapshot was taken
-		// before the claim, so the empty slot can be observed here (the
-		// 02:56 crash: IsReadyToMix on a nulled mixer, read at NULL+0x48).
-		if ( !ch->pMixer )
+		// HL2SB (2026-10-04): read the mixer pointer ONCE into a local.
+		// S_FreeChannel claims (nulls) it atomically on another thread; two
+		// separate reads of ch->pMixer observed non-NULL then NULL two
+		// instructions apart (the 03:00 map-load crash: IsReadyToMix called
+		// on the second, nulled read).  A local cannot be nulled mid-flight.
+		CAudioMixer *pSnapshotMixer = ch->pMixer;
+		CSfxTable *pSnapshotSfx = ch->sfx;
+		if ( !pSnapshotMixer || !pSnapshotSfx )
 		{
 			list.RemoveChannelFromList(i);
 			continue;
@@ -2128,9 +2171,9 @@ void MIX_BuildChannelList( CChannelList &list )
 		// Certain async loaded sounds lazily load into memory in the background, use this to determine
 		//  if the sound is ready for mixing
 		CAudioSource *pSource = NULL;
-		if ( ch->pMixer->IsReadyToMix() )
+		if ( pSnapshotMixer->IsReadyToMix() )
 		{
-			pSource = S_LoadSound( ch->sfx, ch );
+			pSource = S_LoadSound( pSnapshotSfx, ch );
 
 			// Don't mix sound data for sounds with 'zero' volume. If it's a non-looping sound, 
 			// just remove the sound when its volume goes to zero. If it's a 'dry' channel sound (ie: music)
@@ -2310,6 +2353,12 @@ void MIX_PaintChannels( int endtime, bool bIsUnderwater )
 {
 	VPROF("MIX_PaintChannels");
 	tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s", __FUNCTION__ );
+
+	// HL2SB (2026-10-04): destroy the mixers S_FreeChannel parked since the
+	// last frame.  This runs on the mixing thread between frames - no channel
+	// walk is in flight, so the objects die where nothing can observe them
+	// half-dead (the 04:26/04:31 use-after-free pair).
+	HL2SB_DrainMixerGraveyard();
 
 	int 	end;
 	int		count;
