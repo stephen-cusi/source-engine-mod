@@ -53,6 +53,7 @@ public:
 		random_seed = 0;
 		mousedx = 0;
 		mousedy = 0;
+		m_mouseWheel = 0;
 
 		hasbeenpredicted = false;
 #if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
@@ -78,6 +79,7 @@ public:
 		random_seed			= src.random_seed;
 		mousedx				= src.mousedx;
 		mousedy				= src.mousedy;
+		m_mouseWheel		= src.m_mouseWheel;
 
 		hasbeenpredicted	= src.hasbeenpredicted;
 
@@ -111,6 +113,7 @@ public:
 		CRC32_ProcessBuffer( &crc, &random_seed, sizeof( random_seed ) );
 		CRC32_ProcessBuffer( &crc, &mousedx, sizeof( mousedx ) );
 		CRC32_ProcessBuffer( &crc, &mousedy, sizeof( mousedy ) );
+		CRC32_ProcessBuffer( &crc, &m_mouseWheel, sizeof( m_mouseWheel ) );
 		CRC32_Final( &crc );
 
 		return crc;
@@ -125,6 +128,7 @@ public:
 		upmove = 0.f;
 		buttons = 0;
 		impulse = 0;
+		m_mouseWheel = 0;
 	}
 
 	// For matching server and client commands for debugging
@@ -152,6 +156,11 @@ public:
 
 	int		random_seed;	// For shared random functions
 
+	short	m_mouseWheel;	// mouse wheel ticks accumulated by create move.  HL2SB
+							// (sbrust): GMod extends CUserCmd with the wheel for
+							// GM:VehicleMove -- the driveable vehicle's server-side
+							// camera zoom consumes it (CPropVehicleDriveable::
+							// HL2SB_UpdateCameraState).
 	short	mousedx;		// mouse accum in x from create move
 	short	mousedy;		// mouse accum in y from create move
 

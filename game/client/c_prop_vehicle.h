@@ -91,6 +91,25 @@ public:
 	int		HL2SB_BoostTimeLeft( void ) const	{ return m_nBoostTimeLeft; }
 	int		HL2SB_HasBoost( void ) const		{ return m_nHasBoost; }
 
+	// HL2SB (sbrust): the vehicle third person camera state, networked from the
+	// server (single writer: CPropVehicleDriveable::HL2SB_UpdateCameraState --
+	// GMod's GM:VehicleMove port).  The client camera (GM:CalcVehicleView in the
+	// deathmatch gamemode) reads these; the Lua Vehicle:Set* pair mirrors a local
+	// value until the network state arrives, exactly like a GMod DT write on the
+	// client.  Non-virtual, appended at the class end: no vtable slot anywhere.
+	bool	HL2SB_GetThirdPersonMode( void ) const { return m_bThirdPersonMode; }
+	float	HL2SB_GetCameraDistance( void ) const { return m_flCameraDistance; }
+	void	HL2SB_SetThirdPersonMode( bool bEnable ) { m_bThirdPersonMode = bEnable; }
+	void	HL2SB_SetCameraDistance( float flDistance ) { m_flCameraDistance = flDistance; }
+
+	// HL2SB (sbrust): the vehicle TABLE name (networked; the seat pose lookup
+	// key in animations.lua HandlePlayerDriving -- GMod's SetDTString pattern).
+	const char *HL2SB_GetVehicleClass( void ) const { return m_szVehicleClass; }
+	void	HL2SB_SetVehicleClass( const char *pszClass )
+	{
+		Q_strncpy( m_szVehicleClass, pszClass ? pszClass : "", sizeof( m_szVehicleClass ) );
+	}
+
 protected:
 
 	virtual void OnEnteredVehicle( C_BaseCombatCharacter *pPassenger );
@@ -139,6 +158,16 @@ protected:
 	CHandle<C_BasePlayer>		m_hPrevPlayer;
 
 	ViewSmoothingData_t			m_ViewSmoothingData;
+
+	// HL2SB (sbrust): networked vehicle third person camera state (appended at
+	// the recv table END in c_prop_vehicle.cpp; props match BY NAME).
+	bool						m_bThirdPersonMode;
+	float						m_flCameraDistance;
+
+	// HL2SB: the vehicle TABLE name (plain char array on the client:
+	// RecvPropString's RECVINFO member, same shape as C_BasePlayer's
+	// m_szLastPlaceName).
+	char						m_szVehicleClass[64];
 };
 
 

@@ -353,6 +353,16 @@ IMPLEMENT_SERVERCLASS_ST(CPropVehicleDriveable, DT_PropVehicleDriveable)
 	SendPropVector(SENDINFO(m_vecEyeExitEndpoint), -1, SPROP_COORD),
 	SendPropBool(SENDINFO(m_bHasGun)),
 	SendPropVector(SENDINFO(m_vecGunCrosshair), -1, SPROP_COORD),
+
+	// HL2SB (sbrust): the vehicle third person camera state (GMod's DT-Var
+	// pattern, Vehicle:SetThirdPersonMode/SetCameraDistance).  Server-written,
+	// read by the client camera in GM:CalcVehicleView.  Appended at the END --
+	// recv/send props match BY NAME, the client table carries the same two.
+	SendPropBool(SENDINFO(m_bThirdPersonMode)),
+	SendPropFloat(SENDINFO(m_flCameraDistance), 0, SPROP_NOSCALE ),
+
+	// HL2SB: the vehicle TABLE name (seat pose lookup key, GMod's SetDTString).
+	SendPropString( SENDINFO(m_szVehicleClass) ),
 END_SEND_TABLE();
 
 BEGIN_DATADESC( CPropVehicleDriveable )
@@ -362,6 +372,14 @@ BEGIN_DATADESC( CPropVehicleDriveable )
 	DEFINE_INPUTFUNC( FIELD_VOID, "TurnOn",	InputTurnOn ),
 	DEFINE_INPUTFUNC( FIELD_VOID, "TurnOff", InputTurnOff ),
 	DEFINE_INPUT( m_bHasGun, FIELD_BOOLEAN, "EnableGun" ),
+
+	// HL2SB (sbrust): the vehicle TABLE name (GMod's list "Vehicles" seat pose
+	// key -- sandbox writes it with SetVehicleClass at spawn; the fork's SMenu
+	// applies the `vehicleclass` KeyValue explicitly in GM_SpawnAtEyeTrace --
+	// not a datamap keyfield, FIELD_CHARACTER key values write one byte).  The
+	// VehicleClass input function covers map vehicles and outputs.
+	DEFINE_INPUTFUNC( FIELD_STRING, "VehicleClass", InputVehicleClass ),
+	DEFINE_ARRAY( m_szVehicleClass, FIELD_CHARACTER, 64 ),
 
 	// Outputs
 	DEFINE_OUTPUT( m_playerOn, "PlayerOn" ),
@@ -407,10 +425,73 @@ CPropVehicleDriveable::CPropVehicleDriveable( void ) :
 	m_pServerVehicle( NULL ),
 	m_hKeepUpright( NULL ),
 	m_flTurnOffKeepUpright( 0 ),
-	m_flNoImpactDamageTime( 0 )
+	m_flNoImpactDamageTime( 0 ),
+	m_bHL2SBDuckHeld( false )
 {
 	m_vecEyeExitEndpoint.Init();
 	m_vecGunCrosshair.Init();
+
+	// HL2SB: GMod's DT defaults -- first person, and the camera distance is the
+	// multiplier whose zero value frames the vehicle at exactly its
+	// render-bounds radius (radius * (1 + 0)).
+	m_bThirdPersonMode = false;
+	m_flCameraDistance = 0.0f;
+	Q_strncpy( m_szVehicleClass.GetForModify(), "", 64 );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB (sbrust): the single server writer for the vehicle third person camera
+// state -- the C++ port of GMod's base-gamemode GM:VehicleMove
+// (gamemodes/base/gamemode/init.lua).  Runs in the driver's ItemPostFrame on the
+// driveable vehicle (CBaseServerVehicle / the prisoner pod's own server vehicle),
+// exactly once per seated server tick:
+//
+//   * CTRL (IN_DUCK) flips the mode on the press EDGE, as GMod does with
+//     mv:KeyPressed( IN_DUCK ).  m_pCurrentCommand is already gone by
+//     ItemPostFrame, and the pressed edge can be consumed by other systems
+//     during the move, so the held bit is shadowed one tick and the edge is
+//     computed here -- the same observable behavior (AGENTS: the exit trigger
+//     reads the raw held bits for exactly this reason).
+//   * The mouse wheel drives the camera distance multiplier with GMod's own
+//     formula, newdist = dist - wheel * 0.03 * (1.1 + dist), clamped [-1, 10].
+//     -1 means radius * (1 - 1) = right on top of the vehicle.
+//
+// Both values are the vehicle's CNetworkVars (DT stream); the client camera
+// (GM:CalcVehicleView in the deathmatch gamemode) only reads them.  A fast
+// tap press+release within a single server tick is not an edge here (GMod's
+// per-command edge would catch it at high cmdrate) -- the same class of input
+// loss every held-bit consumer in this engine already has.
+//-----------------------------------------------------------------------------
+void CPropVehicleDriveable::HL2SB_UpdateCameraState( CBasePlayer *pDriver )
+{
+	if ( pDriver == NULL )
+		return;
+
+	const bool bDuckHeld = ( pDriver->m_nButtons & IN_DUCK ) != 0;
+	if ( bDuckHeld && !m_bHL2SBDuckHeld )
+	{
+		m_bThirdPersonMode = !m_bThirdPersonMode;
+	}
+	m_bHL2SBDuckHeld = bDuckHeld;
+
+	const int iWheel = pDriver->HL2SB_GetUserCmdMouseWheel();
+	if ( iWheel != 0 )
+	{
+		float flDistance = m_flCameraDistance;
+		flDistance = clamp( flDistance - iWheel * 0.03f * ( 1.1f + flDistance ), -1.0f, 10.0f );
+		m_flCameraDistance = flDistance;
+
+		// HL2SB (sbrust): throttled wheel diagnostic (hl2sb_veh_thirdperson_debug 1):
+		// the tick's wheel aggregate and where it landed -- answers "is the wheel
+		// reaching the server at all, and how much of it".
+		static float s_flNextWheelLine = 0.0f;
+		extern ConVar hl2sb_vehicle_anim_debug;
+		if ( hl2sb_vehicle_anim_debug.GetBool() && gpGlobals->curtime >= s_flNextWheelLine )
+		{
+			s_flNextWheelLine = gpGlobals->curtime + 0.5f;
+			Msg( "[HL2SB vehcam] %s wheel=%d dist=%.3f\n", GetClassname(), iWheel, flDistance );
+		}
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -856,6 +937,18 @@ void CPropVehicleDriveable::InputLock( inputdata_t &inputdata )
 void CPropVehicleDriveable::InputUnlock( inputdata_t &inputdata )
 {
 	m_bLocked = false;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB (sbrust): the vehicle TABLE name (GMod's list "Vehicles" seat pose key
+// -- the GMod sandbox equivalent is vehicle:SetVehicleClass(VName) at spawn,
+// gamemodes/sandbox/gamemode/commands.lua:1057; the fork's SMenu passes the
+// `vehicleclass` keyvalue).  Animations.lua's HandlePlayerDriving looks the
+// entry up with pVehicle:GetVehicleClass() and runs its Members.HandleAnimation.
+//-----------------------------------------------------------------------------
+void CPropVehicleDriveable::InputVehicleClass( inputdata_t &inputdata )
+{
+	HL2SB_SetVehicleClass( inputdata.value.String() );
 }
 
 //-----------------------------------------------------------------------------

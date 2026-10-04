@@ -169,6 +169,19 @@ void WriteUsercmd( bf_write *buf, const CUserCmd *to, const CUserCmd *from )
 		buf->WriteOneBit( 0 );
 	}
 
+	// HL2SB (sbrust): mouse wheel ticks -- read server-side by the driveable
+	// vehicle's camera zoom (GMod's GM:VehicleMove semantics).  Same delta-coding
+	// shape as mousedx/mousedy; both realms share this codec.
+	if ( to->m_mouseWheel != from->m_mouseWheel )
+	{
+		buf->WriteOneBit( 1 );
+		buf->WriteShort( to->m_mouseWheel );
+	}
+	else
+	{
+		buf->WriteOneBit( 0 );
+	}
+
 #if defined( HL2_CLIENT_DLL )
 	if ( to->entitygroundcontact.Count() != 0 )
 	{
@@ -287,6 +300,13 @@ void ReadUsercmd( bf_read *buf, CUserCmd *move, CUserCmd *from )
 	if ( buf->ReadOneBit() )
 	{
 		move->mousedy = buf->ReadShort();
+	}
+
+	// HL2SB (sbrust): wheel delta (see WriteUsercmd; the "no change" copy at the
+	// top of this function inherits the previous value).
+	if ( buf->ReadOneBit() )
+	{
+		move->m_mouseWheel = buf->ReadShort();
 	}
 
 #if defined( HL2_DLL )

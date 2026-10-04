@@ -105,10 +105,26 @@ static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszCla
 	// them -- the hutao pack's citizentype = 4 (CT_UNIQUE) is the difference
 	// between npc_citizen keeping the reskin model and rewriting the path into
 	// models/Humans/Group01/<file> (a file that does not exist -> ERROR model).
+	//
+	// HL2SB (sbrust): `vehicleclass` is the exception -- skipped here, applied
+	// after Spawn below.  It is GMod's sandbox SetVehicleClass(VName) equivalent
+	// (gamemodes/sandbox/gamemode/commands.lua:1057, "Store spawnmenu data for
+	// addons and stuff"), the seat-pose lookup key of animations.lua
+	// HandlePlayerDriving; the datamap FIELD_CHARACTER key-value path would
+	// write a single byte into the vehicle's char array.
+	extern void HL2SB_SetEntityVehicleClass( CBaseEntity *pEntity, const char *pszClass );
+	const char *pszVehicleClass = NULL;
 	if ( pKVArgs != NULL )
 	{
 		for ( int i = iKVStart; i + 1 < pKVArgs->ArgC(); i += 2 )
+		{
+			if ( !Q_stricmp( pKVArgs->Arg( i ), "vehicleclass" ) )
+			{
+				pszVehicleClass = pKVArgs->Arg( i + 1 );
+				continue;
+			}
 			pEnt->KeyValue( pKVArgs->Arg( i ), pKVArgs->Arg( i + 1 ) );
+		}
 	}
 
 	// equipment is a KEYVALUE - it has to be set before DispatchSpawn, which is when
@@ -120,6 +136,12 @@ static CBaseEntity *GM_SpawnAtEyeTrace( CBasePlayer *pPlayer, const char *pszCla
 
 	DispatchSpawn( pEnt );
 	pEnt->Activate();
+
+	// HL2SB (sbrust): the spawnmenu's vehicle table name, post-Spawn like GMod's
+	// sandbox does it.  Driveables and chairs both carry the field (free
+	// function in game/server/hl2/vehicle_prisoner_pod.cpp).
+	if ( pszVehicleClass != NULL && pszVehicleClass[0] != '\0' )
+		HL2SB_SetEntityVehicleClass( pEnt, pszVehicleClass );
 
 	return pEnt;
 }

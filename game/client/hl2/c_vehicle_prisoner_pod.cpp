@@ -81,6 +81,19 @@ public:
 	virtual void ItemPostFrame( C_BasePlayer *pPlayer ) {}
 	virtual bool IsSelfAnimating() { return false; };
 
+	// HL2SB (sbrust): accessor pair for the camera-state trio (private members
+	// below; the exported Vehicle Lua dispatch at the bottom of this file needs
+	// them, and the class itself stays file-local).  Non-virtual: no vtable slot.
+	bool	HL2SB_GetThirdPersonMode( void ) const { return m_bThirdPersonMode; }
+	float	HL2SB_GetCameraDistance( void ) const { return m_flCameraDistance; }
+	void	HL2SB_SetThirdPersonMode( bool bEnable ) { m_bThirdPersonMode = bEnable; }
+	void	HL2SB_SetCameraDistance( float flDistance ) { m_flCameraDistance = flDistance; }
+	const char *HL2SB_GetVehicleClass( void ) const { return m_szVehicleClass; }
+	void	HL2SB_SetVehicleClass( const char *pszClass )
+	{
+		Q_strncpy( m_szVehicleClass, pszClass ? pszClass : "", sizeof( m_szVehicleClass ) );
+	}
+
 private:
 
 	CHandle<C_BasePlayer>	m_hPlayer;
@@ -99,6 +112,18 @@ private:
 	// a pod that was not spawned with the key.
 	bool					m_bLimitView;
 
+	// HL2SB (sbrust): the vehicle third person camera state and the vehicle
+	// TABLE name -- GMod's per-vehicle DT trio (Vehicle:GetThirdPersonMode /
+	// GetCameraDistance / GetVehicleClass on a chair read these).  The server
+	// writes them (HL2SB_UpdateCameraState + the `vehicleclass` keyvalue / Lua
+	// SetVehicleClass); the client camera GM:CalcVehicleView only reads.  This
+	// pod is not a C_PropVehicleDriveable in this fork, so it carries its own
+	// copy; the Vehicle Lua dispatch reaches them through the exported free
+	// functions at the bottom of this file (the class is local to this file).
+	bool					m_bThirdPersonMode;
+	float					m_flCameraDistance;
+	char					m_szVehicleClass[64];
+
 	ViewSmoothingData_t		m_ViewSmoothingData;
 };
 
@@ -111,6 +136,12 @@ IMPLEMENT_CLIENTCLASS_DT(C_PropVehiclePrisonerPod, DT_PropVehiclePrisonerPod, CP
 	// HL2SB: must stay LAST on both sides - the send table (game/server/hl2/vehicle_prisoner_pod.cpp)
 	// appends its SendPropBool in the same position.
 	RecvPropBool( RECVINFO( m_bLimitView ) ),
+
+	// HL2SB (sbrust): third person camera state + vehicle TABLE name (names match
+	// the send table; read by GM:CalcVehicleView / the Vehicle Lua dispatch).
+	RecvPropBool( RECVINFO( m_bThirdPersonMode ) ),
+	RecvPropFloat( RECVINFO( m_flCameraDistance ) ),
+	RecvPropString( RECVINFO( m_szVehicleClass ) ),
 END_RECV_TABLE()
 
 
@@ -120,10 +151,69 @@ END_DATADESC()
 
 
 //-----------------------------------------------------------------------------
+// HL2SB (sbrust): the Vehicle Lua dispatch path (game/shared/lua/
+// lvehicle_shared.cpp).  This class is local to this file, so the camera-state
+// trio is exposed as free functions -- the exact mirror of the server half in
+// game/server/hl2/vehicle_prisoner_pod.cpp.  A chair's Vehicle:GetThirdPersonMode
+// / GetCameraDistance / GetVehicleClass answer from the networked fields here;
+// the Set pair mirrors locally like a GMod client-side DT write (the next
+// networked update replaces it).  Non-pod entities get the defaults / NULL.
+//-----------------------------------------------------------------------------
+bool HL2SB_IsPrisonerPodEntity( CBaseEntity *pEntity )
+{
+	return dynamic_cast< C_PropVehiclePrisonerPod * >( pEntity ) != NULL;
+}
+
+bool HL2SB_PodGetThirdPerson( CBaseEntity *pEntity )
+{
+	C_PropVehiclePrisonerPod *pPod = dynamic_cast< C_PropVehiclePrisonerPod * >( pEntity );
+	return pPod ? pPod->HL2SB_GetThirdPersonMode() : false;
+}
+
+float HL2SB_PodGetCameraDistance( CBaseEntity *pEntity )
+{
+	C_PropVehiclePrisonerPod *pPod = dynamic_cast< C_PropVehiclePrisonerPod * >( pEntity );
+	return pPod ? pPod->HL2SB_GetCameraDistance() : 0.0f;
+}
+
+void HL2SB_PodSetThirdPerson( CBaseEntity *pEntity, bool bEnable )
+{
+	C_PropVehiclePrisonerPod *pPod = dynamic_cast< C_PropVehiclePrisonerPod * >( pEntity );
+	if ( pPod )
+		pPod->HL2SB_SetThirdPersonMode( bEnable );
+}
+
+void HL2SB_PodSetCameraDistance( CBaseEntity *pEntity, float flDistance )
+{
+	C_PropVehiclePrisonerPod *pPod = dynamic_cast< C_PropVehiclePrisonerPod * >( pEntity );
+	if ( pPod )
+		pPod->HL2SB_SetCameraDistance( flDistance );
+}
+
+const char *HL2SB_PodGetVehicleClass( CBaseEntity *pEntity )
+{
+	C_PropVehiclePrisonerPod *pPod = dynamic_cast< C_PropVehiclePrisonerPod * >( pEntity );
+	return pPod ? pPod->HL2SB_GetVehicleClass() : NULL;
+}
+
+void HL2SB_PodSetVehicleClass( CBaseEntity *pEntity, const char *pszClass )
+{
+	C_PropVehiclePrisonerPod *pPod = dynamic_cast< C_PropVehiclePrisonerPod * >( pEntity );
+	if ( pPod )
+		pPod->HL2SB_SetVehicleClass( pszClass );
+}
+
+
+//-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
 C_PropVehiclePrisonerPod::C_PropVehiclePrisonerPod( void )
 {
+	// HL2SB (sbrust): GMod's DT defaults (same trio as the server pod file).
+	m_bThirdPersonMode = false;
+	m_flCameraDistance = 0.0f;
+	m_szVehicleClass[0] = '\0';
+
 	memset( &m_ViewSmoothingData, 0, sizeof( m_ViewSmoothingData ) );
 
 	m_ViewSmoothingData.pVehicle = this;

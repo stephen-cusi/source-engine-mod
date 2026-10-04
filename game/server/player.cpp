@@ -594,6 +594,7 @@ CBasePlayer::CBasePlayer( )
 	m_bForceOrigin = false;
 	m_hVehicle = NULL;
 	m_pCurrentCommand = NULL;
+	m_iHL2SBTickMouseWheel = 0;
 	
 	// Setup our default FOV
 	m_iDefaultFOV = g_pGameRules->DefaultFOV();
@@ -3511,6 +3512,11 @@ void CBasePlayer::ForceSimulation()
 void CBasePlayer::ProcessUsercmds( CUserCmd *cmds, int numcmds, int totalcmds,
 	int dropped_packets, bool paused )
 {
+	// HL2SB (sbrust): start the tick's wheel accumulation fresh; the per-command
+	// capture happens in CPlayerMove::RunCommand, consumers read it in
+	// ItemPostFrame (see CBasePlayer::HL2SB_GetUserCmdMouseWheel).
+	HL2SB_ResetUserCmdMouseWheel();
+
 	CCommandContext *ctx = AllocCommandContext();
 	Assert( ctx );
 

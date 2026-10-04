@@ -46,6 +46,11 @@ void CPlayerMove::StartCommand( CBasePlayer *player, CUserCmd *cmd )
 #endif
 
 	player->m_pCurrentCommand = cmd;
+	// HL2SB (sbrust): accumulate this command's mouse wheel for the tick's
+	// consumers (the vehicle third person camera state update runs in
+	// ItemPostFrame, after this command's scope ends).  GMod's GM:VehicleMove
+	// reads the wheel from the current command the same way.
+	player->HL2SB_AddUserCmdMouseWheel( cmd->m_mouseWheel );
 	CBaseEntity::SetPredictionRandomSeed( cmd );
 	CBaseEntity::SetPredictionPlayer( player );
 	

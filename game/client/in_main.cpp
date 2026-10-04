@@ -563,6 +563,14 @@ KeyEvent
 Return 1 to allow engine to process the key, otherwise, act on it as needed
 ============
 */
+// HL2SB (sbrust): mouse wheel ticks accumulated for the next usercmd.  GMod
+// extends CUserCmd with the wheel and its base gamemode's GM:VehicleMove reads it
+// server-side to zoom the vehicle third person camera; the accumulation happens
+// BEFORE the clientmode/Lua KeyInput routing so a hook that consumes the event
+// cannot starve the cmd, and it never suppresses the event itself (the gravity
+// gun still gets its own MOUSE_WHEEL handling downstream).
+static int s_iHL2SBMouseWheel = 0;
+
 int CInput::KeyEvent( int down, ButtonCode_t code, const char *pszCurrentBinding )
 {
 	// Deal with camera intercepting the mouse
@@ -570,6 +578,14 @@ int CInput::KeyEvent( int down, ButtonCode_t code, const char *pszCurrentBinding
 	{
 		if ( m_fCameraInterceptingMouse )
 			return 0;
+	}
+
+	if ( down )
+	{
+		if ( code == MOUSE_WHEEL_UP )
+			++s_iHL2SBMouseWheel;
+		else if ( code == MOUSE_WHEEL_DOWN )
+			--s_iHL2SBMouseWheel;
 	}
 
 	if ( g_pClientMode )
@@ -1192,6 +1208,13 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 	// Latch and clear impulse
 	cmd->impulse = in_impulse;
 	in_impulse = 0;
+
+	// HL2SB (sbrust): latch the mouse wheel accumulator into the command (see
+	// CInput::KeyEvent; GMod's GM:VehicleMove reads this server-side for the
+	// vehicle camera zoom).  Consumed even when inactive so a paused or
+	// console-open frame cannot bank wheel ticks into the next live command.
+	cmd->m_mouseWheel = (short)clamp( s_iHL2SBMouseWheel, -32767, 32767 );
+	s_iHL2SBMouseWheel = 0;
 
 	// Latch and clear weapon selection
 	if ( m_hSelectedWeapon != NULL )

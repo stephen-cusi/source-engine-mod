@@ -194,6 +194,8 @@ public:
 	// Inputs
 	void	InputLock( inputdata_t &inputdata );
 	void	InputUnlock( inputdata_t &inputdata );
+	// HL2SB (sbrust): vehicle TABLE name keyvalue (see m_szVehicleClass).
+	void	InputVehicleClass( inputdata_t &inputdata );
 	void	InputTurnOn( inputdata_t &inputdata );
 	void	InputTurnOff( inputdata_t &inputdata );
 
@@ -294,6 +296,34 @@ public:
 	bool IsExitAnimOn( void ) { return m_bExitAnimOn; }
 	const Vector &GetEyeExitEndpoint( void ) { return m_vecEyeExitEndpoint; }
 
+	// HL2SB (sbrust): GMod keeps the vehicle third person camera state ON the
+	// vehicle as networked DT values (Vehicle:SetThirdPersonMode /
+	// Vehicle:SetCameraDistance are SetDTBool/SetDTFloat there); the server is
+	// the single writer -- CPropVehicleDriveable::HL2SB_UpdateCameraState, fired
+	// from the driver's control tick, is the port of GMod's base-gamemode
+	// GM:VehicleMove (IN_DUCK edge flips the mode, the usercmd mouse wheel
+	// drives the distance multiplier, clamp [-1, 10]) -- and the client camera
+	// (GM:CalcVehicleView in Lua) only reads them.  These are plain data
+	// members + non-virtual accessors: no vtable slot is added anywhere (see
+	// the iron rule).
+	bool	HL2SB_GetThirdPersonMode( void ) const { return m_bThirdPersonMode; }
+	float	HL2SB_GetCameraDistance( void ) const { return m_flCameraDistance; }
+	void	HL2SB_SetThirdPersonMode( bool bEnable ) { m_bThirdPersonMode = bEnable; }
+	void	HL2SB_SetCameraDistance( float flDistance ) { m_flCameraDistance = flDistance; }
+	void	HL2SB_UpdateCameraState( CBasePlayer *pDriver );
+
+	// HL2SB (sbrust): the vehicle TABLE name -- GMod's list "Vehicles" key for
+	// the seat pose lookup (animations.lua HandlePlayerDriving reads
+	// pVehicle:GetVehicleClass() and asks for the entry's Members.HandleAnimation;
+	// sandbox fills it at spawn with SetVehicleClass, commands.lua:1057).  The
+	// Lua Vehicle:GetVehicleClass / SetVehicleClass pair reaches this field in
+	// both realms; ent_create / SMenu pass it as the `vehicleclass` keyvalue.
+	const char *HL2SB_GetVehicleClass( void ) const { return m_szVehicleClass; }
+	void	HL2SB_SetVehicleClass( const char *pszClass )
+	{
+		Q_strncpy( m_szVehicleClass.GetForModify(), pszClass ? pszClass : "", 64 );
+	}
+
 protected:
 	// Entering / Exiting
 	bool		m_bEngineLocked;	// Mapmaker override on whether the vehicle's allowed to be turned on/off
@@ -305,6 +335,19 @@ protected:
 	// Used to turn the keepupright off after a short time
 	float		m_flTurnOffKeepUpright;
 	float		m_flNoImpactDamageTime;
+
+	// HL2SB: networked third person camera state (see the accessors above).
+	// Appended at the class end; the SendProps go at the END of
+	// DT_PropVehicleDriveable and the client RecvProps at the END of its recv
+	// table -- matched by name, order does not carry meaning.
+	CNetworkVar( bool, m_bThirdPersonMode );
+	CNetworkVar( float, m_flCameraDistance );
+
+	// HL2SB: the vehicle TABLE name (see the public accessors above).
+	CNetworkString(	m_szVehicleClass, 64 );
+
+	// CTRL edge shadow for HL2SB_UpdateCameraState (not networked).
+	bool		m_bHL2SBDuckHeld;
 };
 
 

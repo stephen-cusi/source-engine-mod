@@ -924,16 +924,17 @@ static ConCommand firstperson( "firstperson", ::CAM_ToFirstPerson, "Switch to fi
 // what "thirdperson is on but the camera is still inside the jeep" looked like.
 // Keeping the preference and the live state in sync is also what
 // CThirdPersonManager::Update() re-checks every frame.
-// HL2SB: the vehicle third person camera owns its own switch (it is what GMod calls
-// Vehicle:SetThirdPersonMode, and what the Lua API drives), so the console commands have
-// to move it too - otherwise `firstperson` could not get you back out of the vehicle
-// camera and `thirdperson` could not get you in.
-extern ConVar hl2sb_veh_thirdperson;
+//
+// HL2SB (sbrust): these commands no longer touch the VEHICLE third person.  In
+// GMod `thirdperson`/`firstperson` drive only the engine's own on-foot camera;
+// the vehicle mode is per-vehicle networked state toggled by CTRL while seated
+// (Vehicle:SetThirdPersonMode semantics -- server-written here, see
+// CPropVehicleDriveable::HL2SB_UpdateCameraState).  The old pair of
+// hl2sb_veh_thirdperson writes here was another way for the global convar and
+// the vehicle state to drift apart.
 
 static void HL2SB_ThirdPerson_f( void )
 {
-	hl2sb_veh_thirdperson.SetValue( 1 );
-
 	ConVarRef clThirdPerson( "cl_thirdperson" );
 	if ( clThirdPerson.IsValid() )
 	{
@@ -946,8 +947,6 @@ static void HL2SB_ThirdPerson_f( void )
 
 static void HL2SB_FirstPerson_f( void )
 {
-	hl2sb_veh_thirdperson.SetValue( 0 );
-
 	ConVarRef clThirdPerson( "cl_thirdperson" );
 	if ( clThirdPerson.IsValid() )
 	{

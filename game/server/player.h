@@ -588,6 +588,16 @@ public:
 	CUserCmd *				GetCurrentCommand( void )	{ return m_pCurrentCommand; }
 	float					GetTimeSinceLastUserCommand( void ) { return ( !IsConnected() || IsFakeClient() || IsBot() ) ? 0.f : gpGlobals->curtime - m_flLastUserCommandTime; }
 
+	// HL2SB (sbrust): the mouse wheel ticks of the usercmds processed during THIS
+	// tick.  m_pCurrentCommand is only valid inside CPlayerMove::RunCommand, while
+	// the driveable vehicle's camera zoom consumes the value in ItemPostFrame
+	// (CPropVehicleDriveable::HL2SB_UpdateCameraState, the GMod GM:VehicleMove
+	// port) -- so it is latched into a player field at command time.  Accumulated
+	// across all commands of the tick; reset at the top of ProcessUsercmds.
+	void					HL2SB_AddUserCmdMouseWheel( int iDelta ) { m_iHL2SBTickMouseWheel += iDelta; }
+	int						HL2SB_GetUserCmdMouseWheel( void ) const { return m_iHL2SBTickMouseWheel; }
+	void					HL2SB_ResetUserCmdMouseWheel( void ) { m_iHL2SBTickMouseWheel = 0; }
+
 	// Team Handling
 	virtual void			ChangeTeam( int iTeamNum ) { ChangeTeam(iTeamNum,false, false); }
 	virtual void			ChangeTeam( int iTeamNum, bool bAutoTeam, bool bSilent );
@@ -1066,6 +1076,11 @@ protected:
 	// Last received usercmd (in case we drop a lot of packets )
 	CUserCmd				m_LastCmd;
 	CUserCmd				*m_pCurrentCommand;
+
+	// HL2SB (sbrust): usercmd mouse wheel ticks accumulated for the current tick
+	// (see the accessors; consumed by the vehicle third person camera state
+	// update in the driveable vehicle's ItemPostFrame).
+	int						m_iHL2SBTickMouseWheel;
 
 	float					m_flStepSoundTime;	// time to check for next footstep sound
 

@@ -94,6 +94,13 @@ public:
 		// Set HERE, in the constructor: the keyvalue is applied after construction and
 		// before Spawn(), so a default written in Spawn() would clobber it.
 		m_bLimitView = true;
+
+		// HL2SB (sbrust): GMod's DT defaults -- first person, the distance
+		// multiplier whose zero frames the vehicle at its render-bounds radius.
+		m_bThirdPersonMode = false;
+		m_flCameraDistance = 0.0f;
+		m_bHL2SBDuckHeld = false;
+		Q_strncpy( m_szVehicleClass.GetForModify(), "", 64 );
 	}
 
 	~CPropVehiclePrisonerPod( void )
@@ -123,6 +130,25 @@ public:
 	bool ShouldForceExit() { return m_bForcedExit; }
 	void ClearForcedExit() { m_bForcedExit = false; }
 
+	// HL2SB (sbrust): GMod keeps the third person camera state and the vehicle
+	// TABLE name ON the vehicle (their Vehicle:SetThirdPersonMode /
+	// SetCameraDistance / SetVehicleClass are DT slot writes), and the seat pose
+	// resolves through list "Vehicles" keyed by GetVehicleClass().  This pod is
+	// not a CPropVehicleDriveable in this fork (CPhysicsProp + IDrivableVehicle),
+	// so it carries the same trio itself.  Appended fields + non-virtual
+	// accessors: no vtable slot anywhere (iron rule).  The writer is
+	// HL2SB_UpdateCameraState (the C++ port of GMod's base-gamemode
+	// GM:VehicleMove: IN_DUCK press edge flips the mode, the usercmd mouse wheel
+	// drives the distance multiplier), run from CPrisonerPodServerVehicle::
+	// ItemPostFrame -- the pod's driver control tick.
+	bool	HL2SB_GetThirdPersonMode( void ) const { return m_bThirdPersonMode; }
+	float	HL2SB_GetCameraDistance( void ) const { return m_flCameraDistance; }
+	void	HL2SB_SetThirdPersonMode( bool bEnable ) { m_bThirdPersonMode = bEnable; }
+	void	HL2SB_SetCameraDistance( float flDistance ) { m_flCameraDistance = flDistance; }
+	const char *HL2SB_GetVehicleClass( void ) const { return m_szVehicleClass; }
+	void	HL2SB_SetVehicleClass( const char *pszClass );
+	void	HL2SB_UpdateCameraState( CBasePlayer *pDriver );
+
 	// CBaseAnimating
 	void HandleAnimEvent( animevent_t *pEvent );
 
@@ -132,6 +158,8 @@ public:
 	void InputExitVehicle( inputdata_t &inputdata );
 	void InputLock( inputdata_t &inputdata );
 	void InputUnlock( inputdata_t &inputdata );
+	// HL2SB (sbrust): vehicle TABLE name keyvalue input (see m_szVehicleClass).
+	void InputVehicleClass( inputdata_t &inputdata );
 	void InputOpen( inputdata_t &inputdata );
 	void InputClose( inputdata_t &inputdata );
 
@@ -189,6 +217,17 @@ private:
 	// (C_PropVehiclePrisonerPod::UpdateViewAngles, game/client/hl2/c_vehicle_prisoner_pod.cpp).
 	CNetworkVar( bool,	m_bLimitView );
 
+	// HL2SB (sbrust): GMod's per-vehicle camera state + vehicle TABLE name (the
+	// seat-pose lookup key).  Appended at the class end; the SendProps go at the
+	// END of DT_PropVehiclePrisonerPod and the client RecvProps at the END of its
+	// recv table -- matched BY NAME.
+	CNetworkVar( bool,	m_bThirdPersonMode );
+	CNetworkVar( float,	m_flCameraDistance );
+	CNetworkString(	m_szVehicleClass, 64 );
+
+	// CTRL held-bit shadow for HL2SB_UpdateCameraState (not networked).
+	bool				m_bHL2SBDuckHeld;
+
 	// Vehicle script filename
 	string_t			m_vehicleScript;
 
@@ -206,6 +245,8 @@ BEGIN_DATADESC( CPropVehiclePrisonerPod )
 	// Inputs
 	DEFINE_INPUTFUNC( FIELD_VOID, "Lock",	InputLock ),
 	DEFINE_INPUTFUNC( FIELD_VOID, "Unlock",	InputUnlock ),
+	// HL2SB (sbrust): the vehicle TABLE name keyvalue (see m_szVehicleClass).
+	DEFINE_INPUTFUNC( FIELD_STRING, "VehicleClass", InputVehicleClass ),
 	DEFINE_INPUTFUNC( FIELD_VOID, "EnterVehicle", InputEnterVehicle ),
 	DEFINE_INPUTFUNC( FIELD_VOID, "EnterVehicleImmediate", InputEnterVehicleImmediate ),
 	DEFINE_INPUTFUNC( FIELD_VOID, "ExitVehicle", InputExitVehicle ),
@@ -225,6 +266,15 @@ BEGIN_DATADESC( CPropVehiclePrisonerPod )
 	DEFINE_KEYFIELD( m_bLocked, FIELD_BOOLEAN, "vehiclelocked" ),
 	// HL2SB: GMod's `limitview` key (`ent_create prop_vehicle_prisoner_pod ... limitview 0`).
 	DEFINE_KEYFIELD( m_bLimitView, FIELD_BOOLEAN, "limitview" ),
+	// HL2SB (sbrust): the vehicle TABLE name (GMod's list "Vehicles" key that the
+	// seat pose lookup in animations.lua HandlePlayerDriving consumes -- GMod
+	// writes it with SetVehicleClass at spawn time, gamemodes/sandbox/gamemode/
+	// commands.lua:1057).  NOT a keyfield: the datamap FIELD_CHARACTER key
+	// path writes a single byte into the array, so the spawn menu applies the
+	// `vehicleclass` KeyValue explicitly (GM_SpawnAtEyeTrace,
+	// game/server/hl2sb_gm_commands.cpp).  The VehicleClass input function
+	// below covers map entities and outputs; the array keeps save/restore.
+	DEFINE_ARRAY( m_szVehicleClass, FIELD_CHARACTER, 64 ),
 
 	DEFINE_OUTPUT( m_playerOn, "PlayerOn" ),
 	DEFINE_OUTPUT( m_playerOff, "PlayerOff" ),
@@ -242,6 +292,12 @@ IMPLEMENT_SERVERCLASS_ST(CPropVehiclePrisonerPod, DT_PropVehiclePrisonerPod)
 	// (game/client/hl2/c_vehicle_prisoner_pod.cpp) appends its RecvPropBool in the same
 	// position.
 	SendPropBool(SENDINFO(m_bLimitView)),
+
+	// HL2SB (sbrust): camera state + vehicle table name appended at the END
+	// (props match by name; the client table carries the same three).
+	SendPropBool(SENDINFO(m_bThirdPersonMode)),
+	SendPropFloat(SENDINFO(m_flCameraDistance), 0, SPROP_NOSCALE ),
+	SendPropString( SENDINFO(m_szVehicleClass) ),
 END_SEND_TABLE();
 
 
@@ -656,6 +712,119 @@ void CPropVehiclePrisonerPod::InputUnlock( inputdata_t &inputdata )
 
 
 //-----------------------------------------------------------------------------
+// HL2SB (sbrust): the vehicle TABLE name (GMod's list "Vehicles" key for the
+// seat pose lookup) + the third person camera state, GMod's per-vehicle
+// pattern: their Vehicle:SetVehicleClass / SetThirdPersonMode /
+// SetCameraDistance are DT slot writes on the vehicle (gamemodes/base/gamemode/
+// entity.lua:666), and sandbox writes the spawnmenu's table name at spawn
+// (gamemodes/sandbox/gamemode/commands.lua:1057).  The fork's SMenu passes the
+// same value as the `vehicleclass` keyvalue, and HL2SB_SetVehicleClass is the
+// single C++ entry point both paths share.  This pod class is local to this
+// file, so the accessors are exported as free functions for the Vehicle Lua
+// dispatch (game/shared/lua/lvehicle_shared.cpp) -- same mechanism the client
+// half of the pod file uses.
+//-----------------------------------------------------------------------------
+void CPropVehiclePrisonerPod::InputVehicleClass( inputdata_t &inputdata )
+{
+	HL2SB_SetVehicleClass( inputdata.value.String() );
+}
+
+void CPropVehiclePrisonerPod::HL2SB_SetVehicleClass( const char *pszClass )
+{
+	Q_strncpy( m_szVehicleClass.GetForModify(), pszClass ? pszClass : "", 64 );
+}
+
+void CPropVehiclePrisonerPod::HL2SB_UpdateCameraState( CBasePlayer *pDriver )
+{
+	if ( pDriver == NULL )
+		return;
+
+	const bool bDuckHeld = ( pDriver->m_nButtons & IN_DUCK ) != 0;
+	if ( bDuckHeld && !m_bHL2SBDuckHeld )
+	{
+		m_bThirdPersonMode = !m_bThirdPersonMode;
+	}
+	m_bHL2SBDuckHeld = bDuckHeld;
+
+	const int iWheel = pDriver->HL2SB_GetUserCmdMouseWheel();
+	if ( iWheel != 0 )
+	{
+		float flDistance = m_flCameraDistance;
+		flDistance = clamp( flDistance - iWheel * 0.03f * ( 1.1f + flDistance ), -1.0f, 10.0f );
+		m_flCameraDistance = flDistance;
+
+		// HL2SB (sbrust): throttled wheel diagnostic (hl2sb_veh_thirdperson_debug 1).
+		static float s_flNextWheelLine = 0.0f;
+		extern ConVar hl2sb_vehicle_anim_debug;
+		if ( hl2sb_vehicle_anim_debug.GetBool() && gpGlobals->curtime >= s_flNextWheelLine )
+		{
+			s_flNextWheelLine = gpGlobals->curtime + 0.5f;
+			Msg( "[HL2SB vehcam] pod wheel=%d dist=%.3f\n", iWheel, flDistance );
+		}
+	}
+}
+
+bool HL2SB_IsPrisonerPodEntity( CBaseEntity *pEntity )
+{
+	return dynamic_cast< CPropVehiclePrisonerPod * >( pEntity ) != NULL;
+}
+
+bool HL2SB_PodGetThirdPerson( CBaseEntity *pEntity )
+{
+	CPropVehiclePrisonerPod *pPod = dynamic_cast< CPropVehiclePrisonerPod * >( pEntity );
+	return pPod ? pPod->HL2SB_GetThirdPersonMode() : false;
+}
+
+float HL2SB_PodGetCameraDistance( CBaseEntity *pEntity )
+{
+	CPropVehiclePrisonerPod *pPod = dynamic_cast< CPropVehiclePrisonerPod * >( pEntity );
+	return pPod ? pPod->HL2SB_GetCameraDistance() : 0.0f;
+}
+
+void HL2SB_PodSetThirdPerson( CBaseEntity *pEntity, bool bEnable )
+{
+	CPropVehiclePrisonerPod *pPod = dynamic_cast< CPropVehiclePrisonerPod * >( pEntity );
+	if ( pPod )
+		pPod->HL2SB_SetThirdPersonMode( bEnable );
+}
+
+void HL2SB_PodSetCameraDistance( CBaseEntity *pEntity, float flDistance )
+{
+	CPropVehiclePrisonerPod *pPod = dynamic_cast< CPropVehiclePrisonerPod * >( pEntity );
+	if ( pPod )
+		pPod->HL2SB_SetCameraDistance( flDistance );
+}
+
+const char *HL2SB_PodGetVehicleClass( CBaseEntity *pEntity )
+{
+	CPropVehiclePrisonerPod *pPod = dynamic_cast< CPropVehiclePrisonerPod * >( pEntity );
+	return pPod ? pPod->HL2SB_GetVehicleClass() : NULL;
+}
+
+void HL2SB_PodSetVehicleClass( CBaseEntity *pEntity, const char *pszClass )
+{
+	CPropVehiclePrisonerPod *pPod = dynamic_cast< CPropVehiclePrisonerPod * >( pEntity );
+	if ( pPod )
+		pPod->HL2SB_SetVehicleClass( pszClass );
+}
+
+// HL2SB (sbrust): the spawn-menu path for the vehicle TABLE name (GMod's
+// SetVehicleClass(VName) at spawn -- gamemodes/sandbox/gamemode/commands.lua:1057).
+// The datamap FIELD_CHARACTER key-value path writes one byte into an array, so
+// gm_spawnvehicle applies this key explicitly here, onto either vehicle kind.
+void HL2SB_SetEntityVehicleClass( CBaseEntity *pEntity, const char *pszClass )
+{
+	CPropVehicleDriveable *pDriveable = dynamic_cast< CPropVehicleDriveable * >( pEntity );
+	if ( pDriveable != NULL )
+	{
+		pDriveable->HL2SB_SetVehicleClass( pszClass );
+		return;
+	}
+	HL2SB_PodSetVehicleClass( pEntity, pszClass );
+}
+
+
+//-----------------------------------------------------------------------------
 // Purpose: Force the player to enter the vehicle.
 //-----------------------------------------------------------------------------
 void CPropVehiclePrisonerPod::InputEnterVehicle( inputdata_t &inputdata )
@@ -763,6 +932,13 @@ void CPrisonerPodServerVehicle::ItemPostFrame( CBasePlayer *player )
 			}
 		}
 	}
+
+	// HL2SB (sbrust): this pod overrides ItemPostFrame entirely, so the third
+	// person camera state writer that the generic CBaseServerVehicle::ItemPostFrame
+	// runs for driveables must fire here too (GMod lets you CTRL-toggle and
+	// wheel-zoom the seat camera; the seat is a driveable in GMod because the
+	// pod class inherits it -- here it carries the state itself).
+	GetPod()->HL2SB_UpdateCameraState( player );
 }
 
 

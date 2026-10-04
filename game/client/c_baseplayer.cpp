@@ -1879,10 +1879,13 @@ void C_BasePlayer::ThirdPersonSwitch( bool bThirdperson )
 }
 
 
-// HL2SB: our own vehicle third person camera lives in ClientModeShared::OverrideView
-// (the GMod GM:CalcVehicleView port) and is driven by this convar, not by the engine's
-// third-person flag.
-extern ConVar hl2sb_veh_thirdperson;
+// HL2SB (sbrust): the vehicle third person camera is the gamemode Lua
+// GM:CalcVehicleView (re-architected to GMod's shape 2026-10-04: state networked
+// on the vehicle, server-written; camera computed in Lua, dispatched through
+// GM:CalcView in ClientModeShared::OverrideView).  Its "show the driver" request
+// is the frame's view.drawviewer latch -- the same signal GMod's CalcView
+// readback produces -- not a convar.
+extern bool HL2SB_GetLuaViewDrawViewer( void );
 
 //-----------------------------------------------------------------------------
 // Purpose: single place to decide whether the camera is in the first-person position
@@ -1898,29 +1901,32 @@ extern ConVar hl2sb_veh_thirdperson;
 	int ObserverMode = pLocalPlayer->GetObserverMode();
 	if ( ( ObserverMode == OBS_MODE_NONE ) || ( ObserverMode == OBS_MODE_IN_EYE ) )
 	{
-		// HL2SB: the vehicle third-person camera moves the view out of the eye without
-		// touching the engine's third-person flag, so the local body must be drawn for it
-		// (GMod: view.drawviewer = true in GM:CalcVehicleView).
+		// HL2SB: the vehicle third person camera moves the view out of the eye
+		// without touching the engine's third-person flag, so the local body must be
+		// drawn for it (GMod: view.drawviewer = true in GM:CalcVehicleView).
 		//
 		// HL2SB: a rider's camera is the VEHICLE's own eye attachment, not the engine's
 		// third-person rig (CBasePlayer::CalcVehicleView computes it; the Lua-SDK-era
 		// MP_PostSimulate re-pin that used to fight every other stage was removed
-		// 2026-10-04). So for a seated player "first person" is exactly "no HL2SB camera is
-		// moving the view", and the engine's own flag must not be consulted.
+		// 2026-10-04). So for a seated player "first person" is exactly "no camera is
+		// asking for the viewer to be drawn", and the engine's own flag must not be
+		// consulted.
 		//
 		// That is the "in first person the view is inside the player model's face" bug:
-		// with hl2sb_veh_thirdperson 0 (Ctrl in a vehicle, or `firstperson`) and
-		// cl_thirdperson 1, the old test below saw CAM_IsThirdPerson() == 1 and kept the
-		// local body in the render list while the rendered camera sat at the seated eye
-		// attachment - i.e. inside the model's head. GMod hides the body there too
-		// (view.drawviewer = false in first person).
+		// in vehicle first person with cl_thirdperson 1, the old test below saw
+		// CAM_IsThirdPerson() == 1 and kept the local body in the render list while the
+		// rendered camera sat at the seated eye attachment - i.e. inside the model's
+		// head. GMod hides the body there too (view.drawviewer = false in first person).
 		if ( pLocalPlayer->GetVehicle() != NULL )
 		{
+			// HL2SB: the vehicle camera (and anything else that set view.drawviewer
+			// this frame, e.g. First Person Body's own requests) means "the view is
+			// NOT inside the head" -- the same signal GMod feeds into this decision.
 			extern bool HL2SB_CustomThirdPersonActive( void );
-			const bool bVehicleThirdPerson = hl2sb_veh_thirdperson.GetBool();
+			const bool bLuaDrawViewer = HL2SB_GetLuaViewDrawViewer();
 			const bool bActThirdPerson = HL2SB_CustomThirdPersonActive();
 
-			return !( bVehicleThirdPerson || bActThirdPerson );
+			return !( bLuaDrawViewer || bActThirdPerson );
 		}
 
 		// HL2SB (2026-09-27): the Lua taunt (act) camera orbits the body WITHOUT

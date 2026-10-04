@@ -42,12 +42,6 @@
 
 #ifdef CLIENT_DLL
 #include "iclientvehicle.h"
-// HL2SB: the vehicle third person camera state is the pair of archived client
-// convars defined in game/client/clientmode_shared.cpp and applied to the final
-// CViewSetup by ClientModeShared::OverrideView.  Declared extern here exactly the
-// way game/client/c_baseplayer.cpp:1906 declares hl2sb_veh_thirdperson.
-extern ConVar hl2sb_veh_thirdperson;
-extern ConVar hl2sb_veh_thirdperson_dist;
 #else
 #include "vehicle_baseserver.h"
 #include "fourwheelvehiclephysics.h"
@@ -70,15 +64,14 @@ extern ConVar hl2sb_veh_thirdperson_dist;
 ** nothing here can leak or outlive the vehicle.
 ** ===========================================================================
 */
-static const char *const s_pszKeyVehicleClass    = "hl2sb_vehicleclass";
-static const char *const s_pszKeyThirdPerson     = "hl2sb_thirdperson";
-static const char *const s_pszKeyCameraDistance  = "hl2sb_cameradistance";
 static const char *const s_pszKeyBrakePedal      = "hl2sb_brakepedal";
 static const char *const s_pszKeyEngineEnabled   = "hl2sb_engineenabled";
 
-// The default third person distance; the same value hl2sb_veh_thirdperson_dist
-// ships with (game/client/clientmode_shared.cpp).
-#define VEHICLE_DEFAULT_CAMERA_DISTANCE 280.0f
+// HL2SB (sbrust): s_pszKeyThirdPerson / s_pszKeyCameraDistance are gone -- the
+// third person camera state now lives on the vehicle as real networked fields
+// (CPropVehicleDriveable::m_bThirdPersonMode / m_flCameraDistance, GMod's
+// DT-Var pattern), so Vehicle:Get/SetThirdPersonMode and Get/SetCameraDistance
+// read and write the engine object directly in both realms.
 
 // CFourWheelVehiclePhysics stores the wheels in a 4 entry array (m_pWheels[4] in
 // fourwheelvehiclephysics.h) while IPhysicsVehicleController::GetWheelCount() can
@@ -103,7 +96,26 @@ static CBaseEntity *VehicleToEntity (lua_Vehicle *pVehicle) {
   return pVehicle;
 }
 
-/* Resolves the entity's C++ type before anything is pushed.  The two virtuals are
+/*
+** HL2SB (sbrust): the prisoner pod's camera-state trio as free functions, the
+** mirror of GMod's DT slot steal on the pod (in GMod C_PropVehiclePrisonerPod
+** IS a CPropVehicleDriveable, so its Vehicle:GetThirdPersonMode /
+** GetCameraDistance / GetVehicleClass reach the driveable's DT vars; this
+** fork's pod is a physics prop with a vehicle interface on both realms, so the
+** same three values live on the pod class and arrive here through these
+** exports -- the class itself is local to game/server/hl2/vehicle_prisoner_pod
+** .cpp / game/client/hl2/c_vehicle_prisoner_pod.cpp).
+*/
+LUA_API bool         HL2SB_IsPrisonerPodEntity (CBaseEntity *pEntity);
+LUA_API bool         HL2SB_PodGetThirdPerson    (CBaseEntity *pEntity);
+LUA_API float        HL2SB_PodGetCameraDistance (CBaseEntity *pEntity);
+LUA_API void         HL2SB_PodSetThirdPerson    (CBaseEntity *pEntity, bool bEnable);
+LUA_API void         HL2SB_PodSetCameraDistance (CBaseEntity *pEntity, float flDistance);
+LUA_API const char  *HL2SB_PodGetVehicleClass   (CBaseEntity *pEntity);
+LUA_API void         HL2SB_PodSetVehicleClass   (CBaseEntity *pEntity, const char *pszClass);
+
+/*
+** Resolves the entity's C++ type before anything is pushed.  The two virtuals are
 ** overridden by every vehicle (C_BaseEntity::GetClientVehicle /
 ** CBaseEntity::GetServerVehicle) and answer NULL for everything else, so the
 ** dynamic_cast only runs for candidates -- but they are not sufficient on their
@@ -165,6 +177,26 @@ LUA_API void lua_pushvehicle (lua_State *L, lua_Vehicle *pVehicle) {
 ** CBaseEntity::PushLuaInstanceSafe() can fall through to their own push.
 ** Declared in lbaseentity_shared.h.
 */
+/*
+** HL2SB: the entity-level dispatch.  Answers false and leaves the stack
+** untouched when pEntity is not a drivable vehicle, or when the "Vehicle"
+** metatable has not been opened in this Lua state, so lua_pushentity() /
+** CBaseEntity::PushLuaInstanceSafe() can fall through to their own push.
+** Declared in lbaseentity_shared.h.
+**
+** HL2SB (sbrust): chairs (prisoner pods) deliberately do NOT get the Vehicle
+** metatable in this fork.  GMod hands it out (its pod class inherits the
+** driveable and its metas chain to the shared entity table), but here every
+** per-class metatable is standalone -- a chair wearing the Vehicle meta would
+** resolve EVERY driveable-only method (GetSpeed, IsVehicle, ...) through
+** luaL_checkvehicle and raise "Vehicle expected" for the many systems that
+** iterate all entities (halo's filter, properties, GM:CalcVehicleView's own
+** trace filter -- one error per chair per frame).  The chair instead keeps the
+** entity metatable, and the six camera/class methods it must answer are
+** mirrored onto that table (lbaseentity_shared.cpp's Entitymeta entries, same
+** functions as below).  lua_entityisvehicle() still counts chairs, so the
+** filters' `!e:IsVehicle()` matches GMod through either path.
+*/
 LUA_API bool lua_pushvehicleentity (lua_State *L, CBaseEntity *pEntity) {
   lua_Vehicle *pVehicle = ToVehicleFromEntity(pEntity);
   if (pVehicle == NULL)
@@ -181,9 +213,10 @@ LUA_API bool lua_pushvehicleentity (lua_State *L, CBaseEntity *pEntity) {
 }
 
 /* HL2SB: Entity:IsVehicle() (see lbaseentity_shared.cpp) -- same predicate, no
-** stack traffic. */
+** stack traffic.  Chairs count: GMod's filter `!e:IsVehicle()` in GM:CalcVehicleView
+** must see through the chair the camera is being pulled out of. */
 LUA_API bool lua_entityisvehicle (CBaseEntity *pEntity) {
-  return ToVehicleFromEntity(pEntity) != NULL;
+  return ToVehicleFromEntity(pEntity) != NULL || HL2SB_IsPrisonerPodEntity(pEntity);
 }
 
 
@@ -208,7 +241,7 @@ LUALIB_API lua_Vehicle *luaL_optvehicle (lua_State *L, int narg,
 
 /*
 ** ===========================================================================
-** Per-entity extra fields (see the comment above s_pszKeyVehicleClass).
+** Per-entity extra fields (see the comment at the key list).
 ** ===========================================================================
 */
 
@@ -254,15 +287,6 @@ static float Vehicle_GetExtraNumber (lua_State *L, CBaseEntity *pEntity, const c
   float flValue = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : flDefault;
   lua_pop(L, 1);
   return flValue;
-}
-
-/* Leaves the stored string (or pszDefault) on the stack. */
-static void Vehicle_PushExtraString (lua_State *L, CBaseEntity *pEntity, const char *pszKey, const char *pszDefault) {
-  Vehicle_PushExtraField(L, pEntity, pszKey);
-  if (lua_isstring(L, -1))
-    return;
-  lua_pop(L, 1);
-  lua_pushstring(L, pszDefault);
 }
 
 
@@ -445,20 +469,16 @@ static int Vehicle_GetAmmo (lua_State *L) {
   return 3;
 }
 
-static int Vehicle_GetCameraDistance (lua_State *L) {
-  CBaseEntity *pEntity = VehicleToEntity(luaL_checkvehicle(L, 1));
-
-#ifdef CLIENT_DLL
-  /* HL2SB: this is the live camera distance - ClientModeShared::OverrideView reads
-  ** hl2sb_veh_thirdperson_dist every frame.  The convar is global rather than per
-  ** vehicle (the engine has a single vehicle camera), so a distance this addon set
-  ** for this particular vehicle is kept per entity and preferred; with nothing set
-  ** the convar's current value is the exact distance the camera is using. */
-  lua_pushnumber(L, Vehicle_GetExtraNumber(L, pEntity, s_pszKeyCameraDistance,
-                                           hl2sb_veh_thirdperson_dist.GetFloat()));
-#else
-  lua_pushnumber(L, Vehicle_GetExtraNumber(L, pEntity, s_pszKeyCameraDistance, VEHICLE_DEFAULT_CAMERA_DISTANCE));
-#endif
+int Vehicle_GetCameraDistance (lua_State *L) {
+  // HL2SB (sbrust): GMod semantics -- the distance is per-vehicle NETWORKED
+  // state (their Vehicle:SetCameraDistance is SetDTFloat(3)).  Driveables and
+  // chairs answer from their own fields; anything else gets the DT default.
+  // The server's camera-state writer owns it; this reads the live value in
+  // both realms.
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  lua_Vehicle *pDriveable = dynamic_cast<lua_Vehicle *>(pEnt);
+  lua_pushnumber(L, pDriveable ? pDriveable->HL2SB_GetCameraDistance()
+                               : HL2SB_PodGetCameraDistance(pEnt));
   return 1;
 }
 
@@ -636,16 +656,18 @@ static int Vehicle_GetSteeringDegrees (lua_State *L) {
   return 1;
 }
 
-static int Vehicle_GetThirdPersonMode (lua_State *L) {
-  CBaseEntity *pEntity = VehicleToEntity(luaL_checkvehicle(L, 1));
-
-#ifdef CLIENT_DLL
-  /* HL2SB: real - the camera actually honours this convar
-  ** (ClientModeShared::OverrideView), so the answer is read straight from it. */
-  lua_pushboolean(L, hl2sb_veh_thirdperson.GetBool());
-#else
-  lua_pushboolean(L, Vehicle_GetExtraBool(L, pEntity, s_pszKeyThirdPerson, false));
-#endif
+// HL2SB (sbrust): the six camera/class functions are also mirrored onto the entity
+// metatable (lbaseentity_shared.cpp) so chairs -- which stay plain entities in
+// this fork -- answer them.  Not static anymore; declared in lvehicle_shared.h.
+int Vehicle_GetThirdPersonMode (lua_State *L) {
+  // HL2SB (sbrust): GMod's per-vehicle networked state (their
+  // Vehicle:GetThirdPersonMode is GetDTBool(3)).  Driveables and chairs answer
+  // from their own fields; the server camera-state writer owns the value and
+  // the DT stream carries it, so remote clients agree with the driver.
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  lua_Vehicle *pDriveable = dynamic_cast<lua_Vehicle *>(pEnt);
+  lua_pushboolean(L, pDriveable ? pDriveable->HL2SB_GetThirdPersonMode()
+                                : HL2SB_PodGetThirdPerson(pEnt));
   return 1;
 }
 
@@ -660,13 +682,21 @@ static int Vehicle_GetThrottle (lua_State *L) {
   return 1;
 }
 
-static int Vehicle_GetVehicleClass (lua_State *L) {
-  /* HL2SB fallback: neither vehicle class has a field for the Sandbox vehicle
-  ** class name - GMod keeps it on the vehicle too (Vehicle:SetVehicleClass is
-  ** "internal") - so it is stored per entity (see the comment at the key list).
-  ** The empty string, not nil, keeps `veh:GetVehicleClass() == ""` comparisons
-  ** and string concatenation working. */
-  Vehicle_PushExtraString(L, VehicleToEntity(luaL_checkvehicle(L, 1)), s_pszKeyVehicleClass, "");
+int Vehicle_GetVehicleClass (lua_State *L) {
+  /* HL2SB (sbrust): GMod keeps the Sandbox vehicle TABLE name on the vehicle
+  ** (their Vehicle:GetVehicleClass is GetDTString(3)) and animations.lua's
+  ** HandlePlayerDriving looks the list "Vehicles" entry up with it -- the seat
+  ** pose (Members.HandleAnimation) hinges on this value, which is why chairs
+  ** carry the field too.  The empty string, not nil, keeps
+  ** `veh:GetVehicleClass() == ""` comparisons and concatenation working. */
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  lua_Vehicle *pDriveable = dynamic_cast<lua_Vehicle *>(pEnt);
+  if ( pDriveable ) {
+    lua_pushstring(L, pDriveable->HL2SB_GetVehicleClass());
+    return 1;
+  }
+  const char *pszPodClass = HL2SB_PodGetVehicleClass(pEnt);
+  lua_pushstring(L, pszPodClass ? pszPodClass : "");
   return 1;
 }
 
@@ -801,18 +831,19 @@ static int Vehicle_SetBoost (lua_State *L) {
   return 0;
 }
 
-static int Vehicle_SetCameraDistance (lua_State *L) {
+int Vehicle_SetCameraDistance (lua_State *L) {
   float flDistance = (float)luaL_checknumber(L, 2);
-  CBaseEntity *pEntity = VehicleToEntity(luaL_checkvehicle(L, 1));
 
-  lua_pushnumber(L, flDistance);
-  Vehicle_SetExtraField(L, pEntity, s_pszKeyCameraDistance);
-
-#ifdef CLIENT_DLL
-  /* HL2SB: this is the live camera distance - ClientModeShared::OverrideView reads
-  ** hl2sb_veh_thirdperson_dist every frame, so the camera really moves. */
-  hl2sb_veh_thirdperson_dist.SetValue(flDistance);
-#endif
+  // HL2SB (sbrust): write the per-vehicle networked field (GMod's
+  // SetDTFloat(3)).  Server realm: authoritative, streams to the clients.
+  // Client realm (driveable or chair): mirrors locally until the networked
+  // state arrives, exactly like a client-side DT write in GMod.
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  lua_Vehicle *pDriveable = dynamic_cast<lua_Vehicle *>(pEnt);
+  if ( pDriveable )
+    pDriveable->HL2SB_SetCameraDistance(flDistance);
+  else
+    HL2SB_PodSetCameraDistance(pEnt, flDistance);
   return 0;
 }
 
@@ -930,21 +961,20 @@ static int Vehicle_SetSteeringDegrees (lua_State *L) {
   return 0;
 }
 
-static int Vehicle_SetThirdPersonMode (lua_State *L) {
+int Vehicle_SetThirdPersonMode (lua_State *L) {
   bool bEnable = luaL_checkboolean(L, 2) != 0;
-  CBaseEntity *pEntity = VehicleToEntity(luaL_checkvehicle(L, 1));
 
-  lua_pushboolean(L, bEnable);
-  Vehicle_SetExtraField(L, pEntity, s_pszKeyThirdPerson);
-
-#ifdef CLIENT_DLL
-  /* HL2SB: the engine has one vehicle camera, driven by the client convar pair
-  ** (ClientModeShared::OverrideView).  Setting the convar is what actually moves
-  ** the camera; the per-entity copy above keeps the value per vehicle for the
-  ** server realm and for GetThirdPersonMode's fallback.  This is the same convar
-  ** lua/autorun/client/hl2sb_vehicle_thirdperson.lua writes. */
-  hl2sb_veh_thirdperson.SetValue(bEnable ? 1 : 0);
-#endif
+  // HL2SB (sbrust): write the per-vehicle networked field (GMod's
+  // SetDTBool(3)).  The server is the authoritative writer in normal play
+  // (IN_DUCK press edge in HL2SB_UpdateCameraState, driveable or chair); an
+  // addon call here works in both realms like a GMod DT write -- on the client
+  // it is a local mirror that the next networked update replaces.
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  lua_Vehicle *pDriveable = dynamic_cast<lua_Vehicle *>(pEnt);
+  if ( pDriveable )
+    pDriveable->HL2SB_SetThirdPersonMode(bEnable);
+  else
+    HL2SB_PodSetThirdPerson(pEnt, bEnable);
   return 0;
 }
 
@@ -962,12 +992,19 @@ static int Vehicle_SetThrottle (lua_State *L) {
   return 0;
 }
 
-static int Vehicle_SetVehicleClass (lua_State *L) {
-  /* HL2SB fallback: stored per entity, see Vehicle_GetVehicleClass. */
-  luaL_checkvehicle(L, 1);
-  luaL_checkstring(L, 2);
-  lua_pushvalue(L, 2);
-  Vehicle_SetExtraField(L, VehicleToEntity(luaL_checkvehicle(L, 1)), s_pszKeyVehicleClass);
+int Vehicle_SetVehicleClass (lua_State *L) {
+  const char *pszClass = luaL_checkstring(L, 2);
+
+  /* HL2SB (sbrust): write the networked TABLE name on the vehicle (GMod's
+  ** SetDTString(3); sandbox calls exactly this at spawn --
+  ** gamemodes/sandbox/gamemode/commands.lua:1057).  Driveable or chair; other
+  ** entities are a no-op (GMod would raise a DT slot error there). */
+  CBaseEntity *pEnt = luaL_checkentity(L, 1);
+  lua_Vehicle *pDriveable = dynamic_cast<lua_Vehicle *>(pEnt);
+  if ( pDriveable )
+    pDriveable->HL2SB_SetVehicleClass(pszClass);
+  else
+    HL2SB_PodSetVehicleClass(pEnt, pszClass);
   return 0;
 }
 

@@ -434,15 +434,13 @@ bool HL2SB_CustomThirdPersonActive( void )
 // (The GMod taunt camera's mouse-orbit + body lock runs through Lua --
 // GM:CreateMove in gamemodes/deathmatch/gamemode -- since 2026-09-27.)
 //
-// HL2SB: the vehicle camera convar, so the in-vehicle IN_DUCK toggle below can flip it.
-// The camera itself is built from this convar in ClientModeShared::OverrideView
-// (game/client/clientmode_shared.cpp).
-extern ConVar hl2sb_veh_thirdperson;
-
-// HL2SB: previous frame's IN_DUCK, for GMod's edge-triggered toggle. Updated on every
-// frame (also on foot), so entering a vehicle while Ctrl is already held does not fire
-// the toggle spuriously.
-static bool s_bHL2SBVehDuckLastFrame = false;
+// HL2SB (sbrust): the in-vehicle IN_DUCK third-person toggle detector that used
+// to sit in CreateMove is GONE -- the third CTRL path.  The toggle is now the
+// server's job alone (CPropVehicleDriveable::HL2SB_UpdateCameraState reads the
+// driver's IN_DUCK edge in the driveable's control tick and flips the networked
+// per-vehicle state, the C++ port of GMod's GM:VehicleMove); a client-side
+// toggle was one of the reasons CTRL double-fired against the ConCommand and
+// the Lua Think edge of the same era.
 
 bool C_HL2MP_Player::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 {
@@ -452,36 +450,6 @@ bool C_HL2MP_Player::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 	// (The old C++ act-camera body lock lived here; the GMod-parity act now runs
 	// the lock through Lua -- GM:CreateMove in gamemodes/deathmatch/gamemode --
 	// exactly like taunt_camera.lua's CAM.CreateMove.)
-
-	// ---------------------------------------------------------------------------
-	// HL2SB: the in-vehicle third person toggle, GMod's GM:VehicleMove
-	// (gamemodes/base/gamemode/init.lua:151):
-	//
-	//     if ( mv:KeyPressed( IN_DUCK ) && vehicle.SetThirdPersonMode ) then
-	//         vehicle:SetThirdPersonMode( !vehicle:GetThirdPersonMode() )
-	//     end
-	//
-	// CMoveData does not exist in HL2SB's Lua, and the toggle is a purely local camera,
-	// so it happens right here on the client: mv:KeyPressed() is edge-triggered, hence
-	// the previous frame's duck state. It only runs while seated, so crouching on foot
-	// is untouched (no IN_DUCK is ever cleared from the command).
-	// ---------------------------------------------------------------------------
-	{
-		// pCmd->buttons is GMod's own source (CMoveData carries the same bits), and
-		// in_duck is the raw +duck key state as belt-and-braces: HL2SB's input layer is
-		// the only place that can tell whether a command cleared the bit first. Either
-		// one counts; the edge filter below is what makes it a single press.
-		const bool bDuckDown = ( ( pCmd->buttons & IN_DUCK ) != 0 ) || ( ( in_duck.state & 1 ) != 0 );
-
-		if ( IsInAVehicle() && bDuckDown && !s_bHL2SBVehDuckLastFrame )
-		{
-			hl2sb_veh_thirdperson.SetValue( hl2sb_veh_thirdperson.GetBool() ? 0 : 1 );
-			Msg( "[HL2SB] vehicle third person = %d (IN_DUCK, vehicle camera)\n",
-				 hl2sb_veh_thirdperson.GetBool() ? 1 : 0 );
-		}
-
-		s_bHL2SBVehDuckLastFrame = bDuckDown;
-	}
 
 	return true;
 }

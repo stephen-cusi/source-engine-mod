@@ -4075,6 +4075,11 @@ static int CBaseEntity_SendLua (lua_State *L) {
 
 #include "datamap.h"			// datamap_t / typedescription_t / FIELD_* / TD_OFFSET_NORMAL
 #include "mathlib/lvector.h"	// lua_pushvector / luaL_checkvector / luaL_checkangle
+// HL2SB (sbrust): the six camera-state / vehicle-table-name accessors that the
+// Vehicle metatable also carries -- mirrored onto the entity metatable (the
+// registration at the Entitymeta table below) so chairs (prisoner pods, which
+// stay plain entities in this fork) answer them.
+#include "lvehicle_shared.h"
 
 // Push one data-description field as its Lua value.  Returns false for the field
 // kinds we do not expose (embedded classes, function pointers, arrays), so every
@@ -4797,6 +4802,17 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetVelocity", CBaseEntity_SetVelocity},
   {"IsValid", CBaseEntity_IsValid},
   {"IsVehicle", CBaseEntity_IsVehicle},
+  // HL2SB (sbrust): GMod hands chairs (prisoner pods) the same vehicle state
+  // methods it hands driveables -- here through the shared entity metatable
+  // (the functions themselves dispatch: driveable field / exported pod access /
+  // default). GM:CalcVehicleView's `Vehicle.GetThirdPersonMode == nil` guard
+  // relies on this for the seat camera; the Vehicle metatable keeps its copy.
+  {"GetThirdPersonMode", Vehicle_GetThirdPersonMode},
+  {"SetThirdPersonMode", Vehicle_SetThirdPersonMode},
+  {"GetCameraDistance", Vehicle_GetCameraDistance},
+  {"SetCameraDistance", Vehicle_SetCameraDistance},
+  {"GetVehicleClass", Vehicle_GetVehicleClass},
+  {"SetVehicleClass", Vehicle_SetVehicleClass},
   {"Activate", CBaseEntity_Activate},
   {"AddDataObjectType", CBaseEntity_AddDataObjectType},
   {"AddEffects", CBaseEntity_AddEffects},

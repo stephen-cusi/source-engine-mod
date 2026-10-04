@@ -1949,6 +1949,17 @@ void CBaseServerVehicle::ItemPostFrame( CBasePlayer *player )
 			}
 		}
 	}
+
+	// HL2SB (sbrust): the vehicle third person camera state -- single server
+	// writer per GMod's GM:VehicleMove (CTRL press edge flips the mode, the
+	// usercmd wheel accumulated for this tick drives the distance multiplier).
+	// Runs for the DRIVER only (Assert above); seats whose entity is not a
+	// CPropVehicleDriveable (choreo generic) are skipped by the cast.
+	CPropVehicleDriveable *pDriveableCam = dynamic_cast< CPropVehicleDriveable * >( m_pVehicle );
+	if ( pDriveableCam != NULL )
+	{
+		pDriveableCam->HL2SB_UpdateCameraState( player );
+	}
 }
 
 //-----------------------------------------------------------------------------

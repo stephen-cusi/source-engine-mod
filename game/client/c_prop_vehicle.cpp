@@ -46,6 +46,16 @@ IMPLEMENT_CLIENTCLASS_DT(C_PropVehicleDriveable, DT_PropVehicleDriveable, CPropV
 	RecvPropVector( RECVINFO( m_vecEyeExitEndpoint ) ),
 	RecvPropBool( RECVINFO( m_bHasGun ) ),
 	RecvPropVector( RECVINFO( m_vecGunCrosshair ) ),
+
+	// HL2SB (sbrust): vehicle third person camera state, written server-side per
+	// GMod's GM:VehicleMove (CTRL edge + mouse wheel) -- the client camera
+	// GM:CalcVehicleView reads these two only.  Appended at the END; props
+	// match by name.  Non-interpolated snaps, like GMod DT bool/float.
+	RecvPropBool( RECVINFO( m_bThirdPersonMode ) ),
+	RecvPropFloat( RECVINFO( m_flCameraDistance ) ),
+
+	// HL2SB: the vehicle TABLE name (seat pose lookup key, GMod's SetDTString).
+	RecvPropString( RECVINFO( m_szVehicleClass ) ),
 END_RECV_TABLE()
 
 
@@ -71,6 +81,11 @@ C_PropVehicleDriveable::C_PropVehicleDriveable() :
 
 {
 	m_hPrevPlayer = NULL;
+
+	// HL2SB: GMod's DT defaults (first person, radius framing at distance 0).
+	m_bThirdPersonMode = false;
+	m_flCameraDistance = 0.0f;
+	m_szVehicleClass[0] = '\0';
 
 	memset( &m_ViewSmoothingData, 0, sizeof( m_ViewSmoothingData ) );
 
@@ -203,7 +218,12 @@ void C_PropVehicleDriveable::DampenEyePosition( Vector &vecVehicleEyePos, QAngle
 //-----------------------------------------------------------------------------
 void C_PropVehicleDriveable::GetVehicleViewPosition( int nRole, Vector *pAbsOrigin, QAngle *pAbsAngles, float *pFOV /*=NULL*/ )
 {
-	if( m_hPlayer && m_hPlayer->IsLocalPlayer() )
+	// HL2SB (sbrust, GMod parity): the community hl2mp pass had wrapped this in
+	// m_hPlayer->IsLocalPlayer(); GMod's copy has no such gate -- the smoothing
+	// runs for whoever the handle points at, which is what lets an in-eye
+	// spectator of a driver (HLTV/SourceTV watching someone ride) get the same
+	// blended vehicle view.  The handle check stays.
+	if ( m_hPlayer )
 	{
 		SharedVehicleViewSmoothing( m_hPlayer,
 									pAbsOrigin, pAbsAngles,
