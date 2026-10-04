@@ -1576,6 +1576,26 @@ int CNetChan::SendDatagram(bf_write *datagram)
 {
 	ALIGN4 byte		send_buf[ NET_MAX_MESSAGE ] ALIGN4_POST;
 
+	// HL2SB (2026-10-04): re-entrancy gate.  On a listen server the loopback
+	// path can re-enter networking from inside a send: NET_SendLoopPacket
+	// queues the packet, the same frame's NET_ProcessSocket delivers it, and
+	// code reached from that packet (or the file transfer feeding
+	// CompressFragments) sends again.  Each nested cycle keeps its own 4KB
+	// send_buf plus trace/compression frames, and the 2026-10-04 map-load
+	// dumps show the 1MB stack exhausted inside exactly this cycle
+	// (SendDatagram > FlowNewPacket > CompressFragments > ... >
+	// CEngineTrace::TraceRay > NET_SendPacket > SendDatagram).  A nested
+	// call is refused: its data stays queued in the stream buffers and goes
+	// out with the next outer packet.  Main thread only (all callers).
+	static bool s_bInSendDatagram = false;
+	if ( s_bInSendDatagram )
+	{
+		if ( net_showfragments.GetInt() )
+			ConMsg( "SendDatagram: re-entrant call suppressed\n" );
+		return 0;
+	}
+	s_bInSendDatagram = true;
+
 #ifndef NO_VCR
 	if ( vcr_verbose.GetInt() && datagram && datagram->GetNumBytesWritten() > 0 )
 		VCRGenericValueVerify( "datagram", datagram->GetBasePointer(), datagram->GetNumBytesWritten()-1 );
@@ -1591,9 +1611,9 @@ int CNetChan::SendDatagram(bf_write *datagram)
 	}
 
 	// first increase out sequence number
-	
+
 	// check, if fake client, then fake send also
-	if ( remote_address.GetType() == NA_NULL )	
+	if ( remote_address.GetType() == NA_NULL )
 	{
 		// this is a demo channel, fake sending all data
 		m_fClearTime = 0.0;		// no bandwidth delay
@@ -1601,6 +1621,7 @@ int CNetChan::SendDatagram(bf_write *datagram)
 		m_StreamReliable.Reset();		// clear current reliable buffer
 		m_StreamUnreliable.Reset();		// clear current unrelaible buffer
 		m_nOutSequenceNr++;
+		s_bInSendDatagram = false;
 		return m_nOutSequenceNr-1;
 	}
 
@@ -1610,6 +1631,7 @@ int CNetChan::SendDatagram(bf_write *datagram)
 	if ( m_StreamReliable.IsOverflowed() )
 	{
 		ConMsg ("%s:send reliable stream overflow\n" ,remote_address.ToString());
+		s_bInSendDatagram = false;
 		return 0;
 	}
 	else if ( m_StreamReliable.GetNumBitsWritten() > 0 )
@@ -1826,6 +1848,7 @@ int CNetChan::SendDatagram(bf_write *datagram)
 	m_nChokedPackets = 0;
 	m_nOutSequenceNr++;
 
+	s_bInSendDatagram = false;
 	return m_nOutSequenceNr-1; // return send seq nr
 }
 
