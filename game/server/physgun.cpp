@@ -251,8 +251,20 @@ void CGravControllerPoint::DetachEntity( void )
 		}
 	}
 	m_attachedEntity = NULL;
-	physenv->DestroyMotionController( m_controller );
-	m_controller = NULL;
+	// HL2SB (2026-10-05): guard the destroy.  When the held entity is force-
+	// removed (physgun-throwing a jeep off the map: out-of-world removal
+	// nulls the EHANDLE before DetachObject ever runs), this call is the
+	// ONLY thing that destroys the motion controller - the old unguarded
+	// call was fine for it, but the weapon-side skip (see DetachObject)
+	// meant this function never ran at all and the controller stayed
+	// registered with the freed jeep physics object in its attached list;
+	// the next entity deletion then swept the dangling entry and jumped
+	// through float data (the 2026-10-05 04:07 undo crash).
+	if ( m_controller )
+	{
+		physenv->DestroyMotionController( m_controller );
+		m_controller = NULL;
+	}
 
 	// UNDONE: Does this help the networking?
 	m_targetPosition = vec3_origin;
@@ -1216,10 +1228,20 @@ void CWeaponGravityGun::DetachObject( void )
 	{
 		CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 		Pickup_OnPhysGunDrop( m_hObject, pOwner, DROPPED_BY_CANNON );
-
-		m_gravCallback.DetachEntity();
 		m_hObject = NULL;
 	}
+
+	// HL2SB (2026-10-05): detach UNCONDITIONALLY.  m_hObject is an EHANDLE -
+	// when a held entity is force-removed while grabbed (physgun-throwing a
+	// jeep off the map into the out-of-world kill zone), the handle silently
+	// nulls and the old "if ( m_hObject )" guard skipped
+	// m_gravCallback.DetachEntity() forever, leaking the vphysics motion
+	// controller with the deleted entity's physics object still attached to
+	// it.  Every later entity deletion then walked the dangling reference and
+	// jumped through reused float data (the 2026-10-05 04:07 undo crash).
+	// DetachEntity is safe to call with nothing attached (its controller is
+	// NULL-guarded).
+	m_gravCallback.DetachEntity();
 }
 
 void CWeaponGravityGun::AttachObject( CBaseEntity *pObject, const Vector& start, const Vector &end, float distance )
