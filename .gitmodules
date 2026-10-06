@@ -3,7 +3,9 @@
 	url = https://github.com/nillerusr/source-thirdparty
 [submodule "ivp"]
 	path = ivp
-	url = https://github.com/nillerusr/source-physics
+	# HL2SB: fetch from our fork - it carries the local collision-guard commit
+	# the submodule pins reference to.
+	url = https://github.com/stephen-cusi/source-physics.git
 [submodule "lib"]
 	path = lib
 	url = https://github.com/nillerusr/source-engine-libs.git
