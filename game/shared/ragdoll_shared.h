@@ -27,7 +27,10 @@ class CBoneAccessor;
 #include "bone_accessor.h"
 
 // UNDONE: Remove and make dynamic?
-#define RAGDOLL_MAX_ELEMENTS	24
+// HL2SB: raised from 24 to 32 to match reference behavior; modern workshop models
+// routinely ship more than 24 collision solids and used to lose their ragdoll
+// entirely (silent abort, standing-pose corpse).
+#define RAGDOLL_MAX_ELEMENTS	32
 #define RAGDOLL_INDEX_BITS		5			// NOTE 1<<RAGDOLL_INDEX_BITS >= RAGDOLL_MAX_ELEMENTS
 
 #define CORE_DISSOLVE_FADE_START 0.2f
