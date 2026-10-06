@@ -40,6 +40,9 @@
 #include "NextBotInterface.h"
 #include "Path/NextBotPathFollow.h"
 
+// HL2SB: the NextBot movement diagnostics gate (defined in luanextbot.cpp).
+extern ConVar hl2sb_nextbot_debug;
+
 #include "tier0/memdbgon.h"
 
 #ifdef LUA_SDK
@@ -152,6 +155,14 @@ static void PushNavArea( lua_State *L, CNavArea *pArea )
 
 	luaL_getmetatable( L, "CNavArea" );
 	lua_setmetatable( L, -2 );
+}
+
+// HL2SB: exported so the NextBot metatable (lnpc_shared.cpp) can hand a bot's
+// last known nav area to Lua through the same CNavArea userdata this module
+// uses everywhere else.
+void LuaPushNavArea( lua_State *L, CNavArea *pArea )
+{
+	PushNavArea( L, pArea );
 }
 
 static int CNavArea_GetID( lua_State *L )
@@ -812,12 +823,13 @@ static int PathFollower_Compute( lua_State *L )
 	// HL2SB diagnostic: whether the script's path actually came out valid, and how
 	// long it is.  "The bot does not move" with no error is a path that fails to
 	// compute -- ChaseEnemy()/MoveToPos() then return "failed" silently.  Throttled
-	// to one line per second per path.
+	// to one line per second per path; gated behind hl2sb_nextbot_debug (defined
+	// in luanextbot.cpp) now that the movement chain is verified end to end.
 	{
 		static float s_flNextPathReport = 0.0f;
 		float flNow = (float)gpGlobals->curtime;
 
-		if ( flNow >= s_flNextPathReport )
+		if ( hl2sb_nextbot_debug.GetBool() && flNow >= s_flNextPathReport )
 		{
 			s_flNextPathReport = flNow + 1.0f;
 
@@ -865,7 +877,7 @@ static int PathFollower_Update( lua_State *L )
 		static float s_flNextUpdateReport = 0.0f;
 		float flNow = (float)gpGlobals->curtime;
 
-		if ( flNow >= s_flNextUpdateReport )
+		if ( hl2sb_nextbot_debug.GetBool() && flNow >= s_flNextUpdateReport )
 		{
 			s_flNextUpdateReport = flNow + 2.0f;
 

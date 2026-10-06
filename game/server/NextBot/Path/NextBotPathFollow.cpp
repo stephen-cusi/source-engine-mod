@@ -31,6 +31,11 @@ ConVar NextBotAllowGapJumping( "nb_allow_gap_jumping", "1", FCVAR_CHEAT );
 
 ConVar NextBotDebugClimbing( "nb_debug_climbing", "0", FCVAR_CHEAT );
 
+// HL2SB: gates the AdjustSpeed movement traces below (added while chasing
+// "the bot does not move"; the movement chain is verified now, so they are
+// off by default).  Defined in luanextbot.cpp.
+extern ConVar hl2sb_nextbot_debug;
+
 
 //--------------------------------------------------------------------------------------------------------------
 /**
@@ -122,7 +127,7 @@ void PathFollower::AdjustSpeed( INextBot *bot )
 	{
 		static float s_flNextAdjustReport = 0.0f;
 		float flNow = (float)gpGlobals->curtime;
-		bool bReport = ( flNow >= s_flNextAdjustReport );
+		bool bReport = ( hl2sb_nextbot_debug.GetBool() && flNow >= s_flNextAdjustReport );
 
 		if ( bReport )
 			s_flNextAdjustReport = flNow + 1.0f;

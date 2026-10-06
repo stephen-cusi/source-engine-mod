@@ -457,16 +457,14 @@ LUALIB_API int luaL_loadfile( lua_State *L, const char *fname )
     return luaL_loadfilex( L, fname, NULL );
 }
 
-/* GMod extension (lua_shared 0x184e0): stores an extra type id in a
- * module-global around luaL_newmetatable, then clears it -- the id feeds
- * GMod's own metatable type checking, which this fork does not have.
- * Modules only depend on the metatable existing, so the id is accepted
- * and ignored. */
-LUALIB_API int luaL_newmetatable_type( lua_State *L, const char *tname, int type )
-{
-    ( void )type;
-    return luaL_newmetatable( L, tname );
-}
+/* luaL_newmetatable_type() now lives in lauxlib.c, next to luaL_newmetatable:
+ * GMod's architecture keeps the type id in a module-global slot INSIDE the
+ * metatable-creation function -- the plain creation reads the slot while
+ * stamping MetaID/MetaName, and this function only sets and clears it around
+ * that call.  Both halves moved together so they share one static slot; the
+ * declaration is in lauxlib.c (kept out of lauxlib.h so the header -- which
+ * every game Lua translation unit pulls in through lua.hpp -- stays
+ * untouched). */
 
 /* {==== LuaJIT / GMod glue ====} */
 
@@ -658,6 +656,26 @@ LUA_API int AdvancedLuaErrorReporter( lua_State *L )
     lua_pushfstring( L, "%s was given as Lua error!", luaL_typename( L, 1 ) );
     return 1;
 }
+
+/* HL2SB: GMod's own lua_shared answers this reporter under its C++ DECORATED
+ * name as well as the plain one (GMod defines it in a .cpp; the decoration
+ * differs per architecture).  Our game DLLs link the plain C name above; the
+ * aliases below make the export table match GMod name-for-name, so a module
+ * built against GMod's import library resolves too.  This was the only name
+ * in GMod's 151-entry export table this DLL did not answer (full-table diff
+ * of the win64 and win32 lua_shared.dll export directories, 2026-10-06).
+ *
+ * MSVC-only by construction: the pragma is inert on every other toolchain,
+ * and the /export alias form renames nothing -- it publishes a second name
+ * for the same function.  The internal spellings are MSVC's own: win64 uses
+ * undecorated C internals, win32 prefixes one underscore. */
+#if defined( _MSC_VER ) && defined( LUA_BUILD_AS_DLL )
+#if defined( _WIN64 )
+#pragma comment( linker, "/export:?AdvancedLuaErrorReporter@@YAHPEAUlua_State@@@Z=AdvancedLuaErrorReporter" )
+#else
+#pragma comment( linker, "/export:?AdvancedLuaErrorReporter@@YAHPAUlua_State@@@Z=_AdvancedLuaErrorReporter" )
+#endif
+#endif
 
 #ifdef __cplusplus
 } /* extern "C" */

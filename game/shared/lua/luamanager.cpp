@@ -69,6 +69,7 @@ static bool luasrc_PathInDisabledAddon (const char *fullpath);
 #include "luasrclib.h"
 #include "luacachefile.h"
 #include "tier1/lconvar.h"
+#include "tier0/icommandline.h"
 #include "licvar.h"
 #include "lgameevents.h"
 #include "activitylist.h"
@@ -799,6 +800,21 @@ static ConVar lua_showerrors_cl( "lua_showerrors_cl", "1", FCVAR_ARCHIVE | FCVAR
 #else
 static ConVar lua_showerrors_sv( "lua_showerrors_sv", "1", FCVAR_ARCHIVE,
 	"Show Serverside Lua errors in the console (GMod-parity name)" );
+#endif
+
+// HL2SB: GMod registers gmod_language on BOTH realms (its client.dll and
+// server.dll both carry the name) -- the language helpers read it, and
+// clients report their language through it.  Archived so the choice
+// persists; replicated so a server-side language check agrees with the
+// client's.
+static ConVar gmod_language( "gmod_language", "en", FCVAR_ARCHIVE | FCVAR_REPLICATED,
+	"The clients language." );
+#ifdef CLIENT_DLL
+// HL2SB: GMod's multicore experiment toggle is client-side there too.
+// No behaviour is wired behind it in this fork yet; registered so addons
+// that read it get GMod's default ("0") instead of nil.
+static ConVar gmod_mcore_test( "gmod_mcore_test", "0", FCVAR_ARCHIVE,
+	"Toggles multicore processing experiments (compatibility stub)." );
 #endif
 
 static const char *s_pszLuaLogFile = "hl2sb_lua.log";
@@ -3486,7 +3502,10 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 // change to exercise auto-refresh); all three have the same semantics, so the
 // bodies are funnelled here instead of being pasted per command name.
 // ---------------------------------------------------------------------------
-static ConVar sv_allowcslua( "sv_allowcslua", "1", FCVAR_REPLICATED,
+// Flags match GMod's registration (ARCHIVE | NOTIFY | REPLICATED over the
+// replicated default "1"); the game side's flag-integrity check expects the
+// full set.
+static ConVar sv_allowcslua( "sv_allowcslua", "1", FCVAR_REPLICATED | FCVAR_ARCHIVE | FCVAR_NOTIFY,
 	"Allow clients to run client-side Lua (lua_openscript_cl / lua_run_cl)" );
 
 static void HL2SB_LuaDoFile_Impl( const CCommand &args, bool bClient, const char *cmdname )
@@ -3620,6 +3639,14 @@ static void HL2SB_LuaDoFile_Impl( const CCommand &args, bool bClient, const char
 	// 的 GMod 原名（lua_shared.dll 字符串簇里的两个 refresh 命令之一）。
 	CON_COMMAND_F_COMPLETION( lua_autorefresh_file, "Manually refresh a serverside Lua script, as if it was auto refreshed by editing it.", 0, DoFileCompletion )
 	{
+		// HL2SB: GMod's -disableluarefresh launch parameter turns the refresh
+		// system off.  This fork's refresh paths are manual, so honouring the
+		// flag means refusing the manual entry point too.
+		if ( CommandLine()->FindParm( "-disableluarefresh" ) != 0 )
+		{
+			Msg( "lua_autorefresh_file: -disableluarefresh is set\n" );
+			return;
+		}
 		HL2SB_LuaDoFile_Impl( args, false, "lua_autorefresh_file" );
 	}
 

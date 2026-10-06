@@ -308,16 +308,66 @@ LUALIB_API int luaL_execresult (lua_State *L, int stat) {
 ** =======================================================
 */
 
+/*
+** HL2SB (GMod lua_shared architecture): GMod's luaL_newmetatable stamps every
+** freshly created metatable with two script-visible fields --
+**
+**     MetaName = tname      (the registry/type name)
+**     MetaID   = <type id>  (0 unless the creation went through
+**                            luaL_newmetatable_type)
+**
+** -- which is what Garry's Mod's own lua/includes/util.lua type() / TypeID() /
+** isentity() read.  Only FRESH metatables are stamped: an already-registered
+** name returns the existing table untouched, so the game side's later
+** corrections (the s_LuaTypeInfo table in lsrcinit.cpp, which maps native
+** registry names to the GMod display names and links MetaBaseClass) cannot be
+** clobbered by a re-open.
+*/
+static int hl2sb_newmetatable_type_id = 0;
+
+/* Declared here rather than in lauxlib.h on purpose: every game Lua
+** translation unit pulls lauxlib.h in through lua.hpp, and a header change
+** would force a whole-tree rebuild.  The local extern "C" declaration keeps
+** the definition on the C ABI when this file is compiled as C++. */
+#if defined(__cplusplus)
+extern "C" {
+#endif
+LUALIB_API int luaL_newmetatable_type (lua_State *L, const char *tname, int type);
+#if defined(__cplusplus)
+}
+#endif
+
 LUALIB_API int luaL_newmetatable (lua_State *L, const char *tname) {
   if (luaL_getmetatable(L, tname) != LUA_TNIL)  /* name already in use? */
     return 0;  /* leave previous value on top, but return 0 */
   lua_pop(L, 1);
-  lua_createtable(L, 0, 2);  /* create metatable */
+  lua_createtable(L, 0, 3);  /* create metatable */
   lua_pushstring(L, tname);
   lua_setfield(L, -2, "__name");  /* metatable.__name = tname */
+  /* HL2SB (GMod): the two fields GMod's type() and tooling read. */
+  lua_pushstring(L, tname);
+  lua_setfield(L, -2, "MetaName");  /* metatable.MetaName = tname */
+  lua_pushinteger(L, hl2sb_newmetatable_type_id);
+  lua_setfield(L, -2, "MetaID");  /* metatable.MetaID = type id (0 default) */
   lua_pushvalue(L, -1);
   lua_setfield(L, LUA_REGISTRYINDEX, tname);  /* registry.name = metatable */
   return 1;
+}
+
+/*
+** HL2SB (GMod lua_shared extension): luaL_newmetatable with an explicit type
+** id for MetaID.  Third-party GMod binary modules import this name, and the
+** game side's entity classes use it for the shared TYPE_ENTITY id (9).  It
+** lives next to luaL_newmetatable so both halves share one slot; the previous
+** slot value is restored instead of blindly zeroed so a nested creation (a
+** finalizer running mid-creation) cannot steal the outer id.
+*/
+LUALIB_API int luaL_newmetatable_type (lua_State *L, const char *tname, int type) {
+  int nPrevious = hl2sb_newmetatable_type_id;
+  hl2sb_newmetatable_type_id = type;
+  int nCreated = luaL_newmetatable(L, tname);
+  hl2sb_newmetatable_type_id = nPrevious;
+  return nCreated;
 }
 
 

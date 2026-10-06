@@ -86,14 +86,28 @@ LUA_API lua_CBaseEntity *lua_toentity (lua_State *L, int idx) {
 // Keyed by serial so a recycled edict slot gets a fresh entry.
 static int s_iEntityCacheKey = 0;
 
+/* HL2SB GMod compat: the NPC / NextBot entity-level dispatch, same contract
+** as the Vehicle pair declared in lbaseentity_shared.h.  Defined in
+** lnpc_shared.cpp; declared here as LOCAL prototypes so this header-heavy
+** translation unit does not pull the AI headers, and so lbaseentity_shared.h
+** -- which dozens of files include -- stays untouched (a header change would
+** force a whole-tree rebuild). */
+LUA_API bool lua_pushnpcentity (lua_State *L, CBaseEntity *pEntity);
+LUA_API bool lua_pushnextbotentity (lua_State *L, CBaseEntity *pEntity);
+
 LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
-  /* HL2SB: GMod hands a drivable vehicle the Vehicle metatable, and it has to
-  ** happen for EVERY entity push -- ents.FindByClass, trace results,
-  ** Player:GetVehicle(), any binding that returns an entity -- not only for the
-  ** ones that go through PushLuaInstanceSafe().  lua_pushvehicleentity() answers
-  ** false (stack untouched) for everything that is not a vehicle, and for the
-  ** states that never opened the Vehicle library, so the plain push below is
-  ** still what every other entity gets. */
+  /* HL2SB: GMod hands each entity class family its own metatable, and that
+  ** has to happen for EVERY entity push -- ents.FindByClass, trace results,
+  ** Player:GetVehicle(), any binding that returns an entity -- not only for
+  ** the ones that go through PushLuaInstanceSafe().  Each dispatcher below
+  ** answers false (stack untouched) for everything that is not theirs, and
+  ** for states that never opened the matching library, so the plain push at
+  ** the bottom is still what every other entity gets.  NextBot is tested
+  ** before NPC because a Lua nextbot also reports IsNPC(). */
+  if (lua_pushnextbotentity(L, pEntity))
+    return;
+  if (lua_pushnpcentity(L, pEntity))
+    return;
   if (lua_pushvehicleentity(L, pEntity))
     return;
 
@@ -158,6 +172,14 @@ void CBaseEntity::PushLuaInstanceSafe (lua_State *L, CBaseEntity *pEntity) {
     lua_pushentity(L, NULL);
     return;
   }
+
+  /* HL2SB GMod compat: NPC / NextBot keep their own metatables -- type() and
+  ** FindMetaTable() must answer "NPC" / "NextBot".  NextBot first: a Lua
+  ** nextbot also reports IsNPC(). */
+  if (lua_pushnextbotentity(L, pEntity))
+    return;
+  if (lua_pushnpcentity(L, pEntity))
+    return;
 
   if (pEntity->IsPlayer()) {
     CBasePlayer *pPlayer = ToBasePlayer(pEntity);
@@ -4028,23 +4050,44 @@ static int CBaseEntity_IsConstraint (lua_State *L) {
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: Entity:SendLua( code ).
 //
-// GMod runs the string on that entity's owner client.  This engine has no such
-// plumbing (only the console commands lua_run / lua_run_cl), so the honest thing
-// is to accept the call and do nothing -- gmod_camera's drop path does
-//     owner:SendLua( [[RunConsoleCommand( "jpeg" )]] )
-// and the throw ("attempt to call a nil value (method 'SendLua')") aborted the
-// weapon's own cleanup, which is strictly worse than the command not happening.
-// Reported once per DLL load rather than silently swallowed.
+// GMod runs the string on that player's client.  The transport is the same
+// one GMod's own trio (SendLua / BroadcastLua / lua_run_cl) shares: the code
+// is stuffed to the client as a lua_run_cl console command, and the client's
+// own lua_run_cl handler runs it against its local state.  Same limitation
+// as GMod: the code must be a single console line (no raw newlines).  A
+// code-less or non-player target is ignored.
 //-----------------------------------------------------------------------------
 static int CBaseEntity_SendLua (lua_State *L) {
-  const char *pszCode = lua_tostring(L, 2);
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszCode = luaL_checkstring(L, 2);
 
-  HL2SB_WarnOnce("entity-sendlua-ignored",
-    "Entity:SendLua( '%s' ) ignored: this engine has no client Lua-channel (only lua_run / lua_run_cl in the console)\n",
-    (pszCode != NULL) ? pszCode : "<none>");
+#ifndef CLIENT_DLL
+  if (pEntity != NULL && pEntity->IsPlayer() && pszCode != NULL && engine != NULL)
+    engine->ClientCommand(pEntity->edict(), "lua_run_cl %s", pszCode);
+#endif
 
   return 0;
 }
+
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: BroadcastLua( code ) (server realm).
+//
+// SendLua to every connected player, the same transport as above.
+//-----------------------------------------------------------------------------
+static int luasrc_BroadcastLua (lua_State *L) {
+  const char *pszCode = luaL_checkstring(L, 1);
+  if (pszCode == NULL || engine == NULL)
+    return 0;
+
+  for (int i = 1; i <= gpGlobals->maxClients; ++i) {
+    CBasePlayer *pPlayer = ToBasePlayer(CBaseEntity::Instance(i));
+    if (pPlayer != NULL)
+      engine->ClientCommand(pPlayer->edict(), "lua_run_cl %s", pszCode);
+  }
+  return 0;
+}
+#endif
 
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: Entity:GetSaveTable(), Entity:GetInternalVariable( name )
@@ -5333,6 +5376,11 @@ static const luaL_Reg ents_funcs[] = {
 static const luaL_Reg CBaseEntity_funcs[] = {
   {"CreateEntityByName", luasrc_CreateEntityByName},
   {"EyePos", luasrc_EyePos},
+#ifndef CLIENT_DLL
+  // HL2SB: GMod's BroadcastLua( code ) (server realm) -- SendLua to every
+  // connected player through the same lua_run_cl transport.
+  {"BroadcastLua", luasrc_BroadcastLua},
+#endif
   /* SetEyeTarget used to be here.  It is an Entity METHOD in GMod
   ** (https://wiki.facepunch.com/gmod/Entity:SetEyeTarget), not a global, and as a global
   ** it could never answer `ent:SetEyeTarget( pos )` - it now lives in CBaseEntitymeta

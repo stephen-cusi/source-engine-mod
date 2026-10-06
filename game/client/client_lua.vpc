@@ -133,6 +133,9 @@ $Project "Client (HL2SB)"
 		// HL2SB: GMod's Vehicle Lua library (the "Vehicle" metatable).
 		$File "$SRCDIR/game/shared/lua/lvehicle_shared.cpp"
 		$File "$SRCDIR/game/shared/lua/lvehicle_shared.h"
+		// HL2SB: GMod 的 NPC / NextBot Lua 元表（lnpc_shared.cpp，client/server 双端各编一份）。
+		$File "$SRCDIR/game/shared/lua/lnpc_shared.cpp"
+		$File "$SRCDIR/game/shared/lua/lnpc_shared.h"
 		$File "$SRCDIR/game/shared/lua/limovehelper.cpp"
 		$File "$SRCDIR/game/shared/lua/lipredictionsystem.cpp"
 		$File "$SRCDIR/game/shared/lua/lin_buttons.cpp"

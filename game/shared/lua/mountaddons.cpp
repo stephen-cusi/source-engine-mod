@@ -8,6 +8,7 @@
 #include "filesystem.h"
 #include "luamanager.h"
 #include "hl2sb_gma.h"
+#include "tier0/icommandline.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -298,6 +299,18 @@ bool HL2SB_SetAddonEnabled( const char *pszAddonName, bool bEnabled )
 
 void MountAddons()
 {
+	// HL2SB: GMod's launch flags.  -noaddons skips addon mounting entirely
+	// (its engine.dll owns the flag; the game side just honours it), and
+	// -noworkshop skips the workshop layer -- this fork has no workshop layer,
+	// so honouring it is a logged no-op.
+	if ( CommandLine()->FindParm( "-noaddons" ) != 0 )
+	{
+		Msg( "[HL2SB] addons: -noaddons on the command line - not mounting any addon\n" );
+		return;
+	}
+	if ( CommandLine()->FindParm( "-noworkshop" ) != 0 )
+		Msg( "[HL2SB] addons: -noworkshop on the command line (no workshop layer in this fork; nothing to skip)\n" );
+
 	// Andrew; mount the Lua cache directory first. We consider this a temporary
 	// addon used across servers
 	char fullpath[ 512 ] = { 0 };

@@ -89,6 +89,11 @@ LUALIB_API int luaopen_ServerAIEnums( lua_State *L );
 #endif
 // HL2SB: the engine timer library (game/shared/lua/ltimer.cpp), both realms.
 LUALIB_API int luaopen_timer ( lua_State *L );
+// HL2SB: GMod's NPC / NextBot Lua metatables (game/shared/lua/lnpc_shared.cpp).
+// Same local-prototype rule as luaopen_CSEmitter above -- only this file needs
+// to see them, so luasrclib.h stays untouched.
+LUALIB_API int (luaopen_NPC_shared) (lua_State *L);
+LUALIB_API int (luaopen_NextBot_shared) (lua_State *L);
 
 static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.  Fills _E with the shared enums.
@@ -137,6 +142,11 @@ static const luaL_Reg luasrclibs[] = {
   // drivable vehicle.  One library for both realms; the realm split lives inside
   // its methods.
   {LUA_VEHICLELIBNAME, luaopen_Vehicle_shared},
+  // HL2SB: ported from Garry's Mod.  Register the "NPC" / "NextBot" metatables
+  // that lua_pushentity() installs for NPCs and bots.  One library per realm;
+  // the realm split lives inside the file.
+  {"NPC", luaopen_NPC_shared},
+  {"NextBot", luaopen_NextBot_shared},
   {LUA_COLORLIBNAME, luaopen_Color},
   {LUA_CONCOMMANDLIBNAME, luaopen_ConCommand},
   {LUA_CONTENTSLIBNAME, luaopen_CONTENTS},
@@ -527,6 +537,12 @@ static const LuaTypeInfo_t s_LuaTypeInfo[] = {
   // HL2SB: GMod reports TYPE_ENTITY for a vehicle and chains it onto Entity, so
   // isentity() walks it.  type( <vehicle> ) therefore answers "Vehicle".
   { LUA_VEHICLELIBNAME,         "Vehicle",         LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+  // HL2SB: GMod reports NPC and NextBot as their own type names chained onto
+  // Entity (MetaID 9, the same TYPE_ENTITY family) -- its registry carries
+  // both under those names.  FindMetaTable / isentity() / type() all read
+  // these.
+  { "NPC",                      "NPC",             LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+  { "NextBot",                  "NextBot",         LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
   { LUA_BASECOMBATWEAPONLIBNAME,"Weapon",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
   { "CBaseAnimating",           "Entity",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
   { "CBaseFlex",                "Entity",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
@@ -864,7 +880,7 @@ static int lua_type_gmod (lua_State *L) {
   // lua/includes/extensions/net.lua depends on that
   // (type( v ) == "userdata" and getmetatable( v ) ~= nil).
   static const char *s_pReportedTypes[] = {
-    "Entity", "Player", "Weapon", "NPC", "Vehicle",
+    "Entity", "Player", "Weapon", "NPC", "NextBot", "Vehicle",
     "Vector", "Angle", "Matrix", "Color",
     "Panel", "Material", "Texture", "PhysicsObject",
     "EffectData", "Trace", "ConsoleVariable", "TakeDamageInfo",

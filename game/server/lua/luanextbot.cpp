@@ -22,6 +22,16 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+// HL2SB: the NextBot movement diagnostics (the periodic tick one-liner here,
+// the Path Compute/Update reports in lnavmesh.cpp and the AdjustSpeed traces
+// in NextBotPathFollow.cpp) were added to chase down "the bot does not move".
+// They served that purpose and are off by default now -- set
+// hl2sb_nextbot_debug 1 to bring them back.  The "is NOT moving" warning
+// stays unconditional: it only fires when a bot wants to move but cannot,
+// which is always worth seeing.
+ConVar hl2sb_nextbot_debug( "hl2sb_nextbot_debug", "0", 0,
+	"Dump per-tick NextBot movement diagnostics (speeds, path reports)." );
+
 //-----------------------------------------------------------------------------
 // HL2SB: the entity factories for Lua nextbots.  Same shape as
 // m_EntityFactoryDatabase in basescripted.cpp: CEntityFactory<T> installs
@@ -482,8 +492,9 @@ void CLuaNextBot::Think( void )
 
 	// A periodic, unconditional one-liner: without it "it does not move" cannot be
 	// told apart from "it never asked to move" (the script's state machine) or
-	// "there is no nav mesh on this map".
-	if ( m_locomotor != NULL && ( m_nMoveCheckTicks % 320 ) == 0 )
+	// "there is no nav mesh on this map".  Gated behind hl2sb_nextbot_debug
+	// now that the movement chain is verified end to end.
+	if ( hl2sb_nextbot_debug.GetBool() && m_locomotor != NULL && ( m_nMoveCheckTicks % 320 ) == 0 )
 	{
 		// The script's own state: Count is SCP-096's anger timer (it only asks for a
 		// speed inside the chase branch) and Enemy tells whether it ever picked a
