@@ -354,6 +354,31 @@ static int HL2SB_IMaterial_IsError( lua_State *L )
 #define STBI_NO_PNM
 #include "../thirdparty/stb/stb_image.h"
 
+//-----------------------------------------------------------------------------
+// HL2SB: immediate PNG -> RGBA -> vgui texture upload for the main-menu UI.
+// File-backed vgui textures (DrawSetTextureFile) are owned by the texture
+// manager and are invalidated on level transitions; after one map load every
+// menu thumbnail drew as nothing while the manager kept retrying the load
+// (the "images gone and laggy" report against the Lua start-game dialog).
+// This mirrors gameui's PNGImagePanel: filesystem read, stbi decode, one
+// immediate DrawSetTextureRGBA.  No manager entry, nothing to flush.
+//-----------------------------------------------------------------------------
+bool HL2SB_UploadPNGToTexture( int nTextureID, const char *pszPath )
+{
+	CUtlBuffer bufFile;
+	if ( !g_pFullFileSystem->ReadFile( pszPath, "GAME", bufFile ) || bufFile.TellPut() <= 0 )
+		return false;
+
+	int nWidth = 0, nHeight = 0, nChannels = 0;
+	unsigned char *pRGBA = stbi_load_from_memory( (const stbi_uc *)bufFile.Base(), bufFile.TellPut(), &nWidth, &nHeight, &nChannels, 4 );
+	if ( pRGBA == NULL )
+		return false;
+
+	vgui::surface()->DrawSetTextureRGBA( nTextureID, pRGBA, nWidth, nHeight, false, true );
+	stbi_image_free( pRGBA );
+	return true;
+}
+
 struct HL2SB_ImageColorCache_t
 {
     char m_szTextureName[MAX_PATH];
@@ -620,6 +645,13 @@ static int HL2SB_IMaterial_GetFloat( lua_State *L )
     return 1;
 }
 
+static int HL2SB_IMaterial_GetShader( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    lua_pushstring( L, pMaterial ? pMaterial->GetShaderName() : "" );
+    return 1;
+}
+
 static int HL2SB_IMaterial_GetColor( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
@@ -857,6 +889,13 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
         lua_setfield( L, -2, "SetTexture" );
         lua_pushcfunction( L, HL2SB_IMaterial_SetString );
         lua_setfield( L, -2, "SetString" );
+
+        // HL2SB: IMaterial:GetShader() -- the shader NAME.  The stock DImage
+        // branches on it (lua/vgui/dimage.lua:122: string.find on
+        // "VertexLitGeneric"/"Cable" to pick its UV path); without the binding
+        // that call was "attempt to call a nil value (method 'GetShader')".
+        lua_pushcfunction( L, HL2SB_IMaterial_GetShader );
+        lua_setfield( L, -2, "GetShader" );
     }
     lua_pop( L, 1 );
 

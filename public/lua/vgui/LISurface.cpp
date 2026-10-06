@@ -592,6 +592,19 @@ static int surface_DrawSetTextureFile (lua_State *L) {
   return 0;
 }
 
+// HL2SB: decode a PNG straight onto this texture id (filesystem read + stbi +
+// DrawSetTextureRGBA, implemented next to the image-material loader in
+// litexture.cpp, which owns the stb translation unit).  File textures added
+// with DrawSetTextureFile are texture-manager entries that die on level
+// transitions; an immediate RGBA upload survives them.  Returns true when the
+// file was read and decoded.
+bool HL2SB_UploadPNGToTexture( int nTextureID, const char *pszPath );
+
+static int surface_DrawSetTexturePNG (lua_State *L) {
+  lua_pushboolean(L, HL2SB_UploadPNGToTexture(luaL_checkint(L, 1), luaL_checkstring(L, 2)) ? 1 : 0);
+  return 1;
+}
+
 static int surface_DrawTexturedRect (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
@@ -1065,6 +1078,7 @@ static const luaL_Reg surfacelib[] = {
   {"DrawSetTextScale",   surface_DrawSetTextScale},
   {"DrawSetTexture",   surface_DrawSetTexture},
   {"DrawSetTextureFile",   surface_DrawSetTextureFile},
+  {"DrawSetTexturePNG",    surface_DrawSetTexturePNG},
   {"DrawTexturedRect",   surface_DrawTexturedRect},
   {"DrawTexturedSubRect",   surface_DrawTexturedSubRect},
   // HL2SB: GMod spellings.  Both are pure translations onto the stock bindings

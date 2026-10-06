@@ -37,6 +37,10 @@ LPropertyPage::~LPropertyPage()
 {
 #if defined( LUA_SDK )
 	HL2SB_LuaPanelUnref( m_lua_State, m_nTableReference );
+	/* HL2SB (2026-10-06): luaL_unref leaves a tombstone number in the freed
+	** registry slot; reset the field so no later reader can hand that number
+	** back to lua_getref (see lua_isrefvalid in lua_compat.cpp). */
+	m_nTableReference = LUA_NOREF;
 #endif // LUA_SDK
 }
 
@@ -177,7 +181,10 @@ static int PropertyPage_GetPanelClassName (lua_State *L) {
 static int PropertyPage_GetRefTable (lua_State *L) {
   LPropertyPage *plPage = dynamic_cast<LPropertyPage *>(luaL_checkpropertypage(L, 1));
   if (plPage) {
-    if (plPage->m_nTableReference == LUA_NOREF) {
+    /* HL2SB (2026-10-06): isrefvalid, not just != LUA_NOREF -- a freed and
+    ** recycled slot number must be rebuilt, never handed to Lua (see
+    ** PropertyPage___index). */
+    if (!lua_isrefvalid( L, plPage->m_nTableReference )) {
       lua_newtable(L);
       plPage->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
@@ -250,7 +257,15 @@ static int PropertyPage___index (lua_State *L) {
       return 1;
   }
   LPropertyPage *plPage = dynamic_cast<LPropertyPage *>(pPage);
-  if (plPage && plPage->m_nTableReference != LUA_NOREF) {
+  /* HL2SB (2026-10-06): see Frame___index -- the reference belongs to the
+  ** panel's own lua_State; resolving it in any other registry, or after its
+  ** slot was freed and recycled, reads some other system's value and
+  ** lua_gettable on that raised "attempt to index a function value" from this
+  ** C frame.  Guard exactly like BEGIN_LUA_CALL_PANEL_METHOD does. */
+  bool bHaveRefTable = plPage != NULL
+    && plPage->m_lua_State == L
+    && lua_isrefvalid( L, plPage->m_nTableReference );
+  if (bHaveRefTable) {
     lua_getref(L, plPage->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_gettable(L, -2);
@@ -310,7 +325,12 @@ static int PropertyPage___newindex (lua_State *L) {
   }
   LPropertyPage *plPage = dynamic_cast<LPropertyPage *>(pPage);
   if (plPage) {
-    if (plPage->m_nTableReference == LUA_NOREF) {
+    /* HL2SB (2026-10-06): see PropertyPage___index -- the reference belongs
+    ** to the panel's own state; a foreign-realm panel ignores field writes. */
+    if (plPage->m_lua_State != L) {
+      return 0;
+    }
+    if (!lua_isrefvalid( L, plPage->m_nTableReference )) {
       lua_newtable(L);
       plPage->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }

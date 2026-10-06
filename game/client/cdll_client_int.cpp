@@ -411,6 +411,34 @@ static ConCommand hl2sb_menu_up_cmd( "-menu", HL2SB_SpawnMenuUp, "Close the GMod
 static ConCommand hl2sb_menu_context_down_cmd( "+menu_context", HL2SB_ContextMenuDown, "Open the GMod context menu (hold)" );
 static ConCommand hl2sb_menu_context_up_cmd( "-menu_context", HL2SB_ContextMenuUp, "Close the GMod context menu (release)" );
 
+// HL2SB: the fork's older "+smenu" / "-smenu" names.  Players' saved config.cfg
+// binds Q to "+smenu" (from the since-deleted game/client/menu/sm_menu_list.cpp),
+// so after that file went away pressing Q printed "Unknown command: +smenu" and
+// the menu never opened.  Registering the aliases keeps every existing bind
+// working and points them at the same GMod hooks.
+static ConCommand hl2sb_smenu_alias_down_cmd( "+smenu", HL2SB_SpawnMenuDown, "Open the spawnmenu (legacy alias of +menu)" );
+static ConCommand hl2sb_smenu_alias_up_cmd( "-smenu", HL2SB_SpawnMenuUp, "Close the spawnmenu (legacy alias of -menu)" );
+
+// HL2SB (2026-10-06): GMod also answers to the bare "spawnmenu" /
+// "spawnmenu_context" console commands (no plus prefix -- one tap opens, one
+// tap closes).  Users type them from the console to test the menu without
+// touching their binds, so the names are registered here as plain toggles
+// running the same hooks.
+static void HL2SB_SpawnMenuToggle( const CCommand &args )
+{
+	HL2SB_CallMenuHook( "OnSpawnMenuClose" );
+	HL2SB_CallMenuHook( "OnSpawnMenuOpen" );
+}
+
+static void HL2SB_ContextMenuToggle( const CCommand &args )
+{
+	HL2SB_CallMenuHook( "OnContextMenuClose" );
+	HL2SB_CallMenuHook( "OnContextMenuOpen" );
+}
+
+static ConCommand hl2sb_spawnmenu_cmd( "spawnmenu", HL2SB_SpawnMenuToggle, "Toggle the spawnmenu (console alias of +menu)" );
+static ConCommand hl2sb_spawnmenu_context_cmd( "spawnmenu_context", HL2SB_ContextMenuToggle, "Toggle the context menu (console alias of +menu_context)" );
+
 //-----------------------------------------------------------------------------
 // HL2SB: gmod_toolmode -- the convar the GMod spawnmenu reads and nothing here
 // ever created.

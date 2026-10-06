@@ -14,6 +14,11 @@
 // luamanager.h must come first -- it pulls lua.hpp (LUA_API, lua_State).
 #include "luamanager.h"
 #include "lbaseentity_shared.h"
+#include "mathlib/lvector.h"			// HL2SB: lua_pushvector in the footstep dispatch
+#ifndef CLIENT_DLL
+#include "lrecipientfilter.h"			// HL2SB: lua_pushrecipientfilter in the footstep dispatch
+#endif
+extern ConVar hl2sb_anim_debug;
 #endif
 #if defined ( TF_DLL ) || defined ( TF_CLIENT_DLL )
 #include "tf_gamerules.h"
@@ -738,6 +743,51 @@ void CBasePlayer::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, flo
 	}
 #endif
 
+#ifdef LUA_SDK
+	// HL2SB GMod compat (2026-10-05): GM:PlayerFootstep( ply, pos, foot, sound,
+	// volume, filter ) -- return true mutes the default step sound.  Dispatched
+	// after the sound is resolved so "sound" is the name that is about to play,
+	// and before the emit so a Lua replacement is the only thing heard.  "foot"
+	// is the raw step-side toggle the engine plays stepleft/stepright from.
+	// The filter is the live recipient list for this step; reference behavior
+	// passes no filter on the client realm.  Predicted hook: runs during
+	// prediction for the local player exactly once (first-time-predicted only).
+	{
+		bool bMuteFootstep = false;
+		BEGIN_LUA_CALL_HOOK( "PlayerFootstep" );
+			lua_pushplayer( L, this );
+			lua_pushvector( L, vecOrigin );
+			lua_pushinteger( L, nSide );
+			lua_pushstring( L, params.soundname );
+			lua_pushnumber( L, fvol );
+#ifndef CLIENT_DLL
+			lua_pushrecipientfilter( L, filter );
+			END_LUA_CALL_HOOK( 6, 1 );
+#else
+			END_LUA_CALL_HOOK( 5, 1 );
+#endif
+		if ( lua_toboolean( L, -1 ) )
+			bMuteFootstep = true;
+		lua_pop( L, 1 );
+
+		if ( hl2sb_anim_debug.GetBool() )
+		{
+#ifdef CLIENT_DLL
+			Msg( "[HL2SB footstep/cl] %s side=%d sound=%s vol=%.2f%s\n",
+				GetDebugName(), nSide, params.soundname, fvol,
+				bMuteFootstep ? " muted" : "" );
+#else
+			Msg( "[HL2SB footstep/sv] %s side=%d sound=%s vol=%.2f%s\n",
+				GetDebugName(), nSide, params.soundname, fvol,
+				bMuteFootstep ? " muted" : "" );
+#endif
+		}
+
+		if ( bMuteFootstep )
+			return;
+	}
+#endif
+
 	EmitSound_t ep;
 	ep.m_nChannel = CHAN_BODY;
 	ep.m_pSoundName = params.soundname;
@@ -802,6 +852,27 @@ void CBasePlayer::GetStepSoundVelocities( float *velwalk, float *velrun )
 //-----------------------------------------------------------------------------
 void CBasePlayer::SetStepSoundTime( stepsoundtimes_t iStepSoundTime, bool bWalking )
 {
+#ifdef LUA_SDK
+	// HL2SB GMod compat (2026-10-05): GM:PlayerStepSoundTime( ply, iType, bWalking )
+	// -- a numeric return is the absolute step interval in ms.  The duck/ladder
+	// +100 correction below belongs to the engine default only; reference
+	// behavior never applies it on top of a Lua override (the base gamemode
+	// adds its own +50 when crouched).
+	BEGIN_LUA_CALL_HOOK( "PlayerStepSoundTime" );
+		lua_pushplayer( L, this );
+		lua_pushinteger( L, iStepSoundTime );
+		lua_pushboolean( L, bWalking );
+	END_LUA_CALL_HOOK( 3, 1 );
+
+	if ( lua_type( L, -1 ) == LUA_TNUMBER )
+	{
+		m_flStepSoundTime = (float)lua_tonumber( L, -1 );
+		lua_pop( L, 1 );
+		return;
+	}
+	lua_pop( L, 1 );
+#endif
+
 	switch ( iStepSoundTime )
 	{
 	case STEPSOUNDTIME_NORMAL:

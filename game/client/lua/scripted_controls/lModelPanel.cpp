@@ -43,6 +43,10 @@ LModelPanel::~LModelPanel()
 {
 #if defined( LUA_SDK )
 	HL2SB_LuaPanelUnref( m_lua_State, m_nTableReference );
+	/* HL2SB (2026-10-06): luaL_unref leaves a tombstone number in the freed
+	** registry slot; reset the field so no later reader can hand that number
+	** back to lua_getref (see lua_isrefvalid in lua_compat.cpp). */
+	m_nTableReference = LUA_NOREF;
 #endif
 }
 
@@ -559,7 +563,16 @@ static int ModelPanel___index( lua_State *L )
 
 	LModelPanel *plPanel = dynamic_cast< LModelPanel * >( pPanel );
 
-	if ( plPanel && plPanel->m_nTableReference != LUA_NOREF )
+	/* HL2SB (2026-10-06): see Frame___index -- the reference belongs to the
+	** panel's own lua_State; resolving it in any other registry, or after its
+	** slot was freed and recycled, reads some other system's value and
+	** lua_gettable on that raised "attempt to index a function value" from
+	** this C frame.  Guard exactly like BEGIN_LUA_CALL_PANEL_METHOD does. */
+	bool bHaveRefTable = plPanel != NULL
+		&& plPanel->m_lua_State == L
+		&& lua_isrefvalid( L, plPanel->m_nTableReference );
+
+	if ( bHaveRefTable )
 	{
 		lua_getref( L, plPanel->m_nTableReference );
 		lua_pushvalue( L, 2 );
@@ -634,7 +647,15 @@ static int ModelPanel___newindex( lua_State *L )
 	LModelPanel *plPanel = dynamic_cast< LModelPanel * >( pPanel );
 	if ( plPanel )
 	{
-		if ( plPanel->m_nTableReference == LUA_NOREF )
+		/* HL2SB (2026-10-06): see ModelPanel___index -- the reference belongs
+		** to the panel's own state; a foreign-realm panel ignores field
+		** writes here. */
+		if ( plPanel->m_lua_State != L )
+		{
+			return 0;
+		}
+
+		if ( !lua_isrefvalid( L, plPanel->m_nTableReference ) )
 		{
 			lua_newtable( L );
 			plPanel->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
@@ -728,7 +749,10 @@ static int ModelPanel_GetRefTable( lua_State *L )
 	LModelPanel *plPanel = dynamic_cast< LModelPanel * >( luaL_checkpanel( L, 1 ) );
 	if ( plPanel )
 	{
-		if ( plPanel->m_nTableReference == LUA_NOREF )
+		/* HL2SB (2026-10-06): isrefvalid, not just != LUA_NOREF -- a freed and
+		** recycled slot number must be rebuilt, never handed to Lua (see
+		** ModelPanel___index). */
+		if ( !lua_isrefvalid( L, plPanel->m_nTableReference ) )
 		{
 			lua_newtable( L );
 			plPanel->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );

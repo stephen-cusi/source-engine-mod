@@ -220,8 +220,13 @@ static const luaL_Reg gameui_menu_funcs[] =
 LUALIB_API int luaopen_gameui_menu (lua_State *L)
 {
 	// Publish as plain globals: the menu scripts are plain Lua files, not modules, and
-	// GMod's own menu helpers are globals too.
+	// GMod's own menu helpers are globals too.  luaL_register( L, NULL, ... )
+	// registers into the table ON TOP OF THE STACK -- with nothing pushed, that
+	// was whatever leftover table the previous luaopen left, so these functions
+	// never actually reached _G.  Push the globals table explicitly.
+	lua_pushglobaltable( L );
 	luaL_register( L, NULL, gameui_menu_funcs );
+	lua_pop( L, 1 );
 	return 1;
 }
 

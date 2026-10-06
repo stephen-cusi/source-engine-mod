@@ -14,6 +14,7 @@
 #include "lrecipientfilter.h"
 #include "lbaseplayer_shared.h"
 #include "mathlib/lvector.h"
+#include "team.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -163,6 +164,82 @@ static int CRecipientFilter_RemoveRecipientsByPVS (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat (2026-10-05): the reference filter surface uses shorter
+// method names (gmod_thruster calls filter:AddPAS( pos ), TTT builds
+// RecipientFilter():AddAllPlayers()) and table/plural forms.  The SDK spellings
+// above stay registered; these are the reference-behavior aliases.
+static int CRecipientFilter_AddPlayers (lua_State *L) {
+  lua_CRecipientFilter &filter = luaL_checkrecipientfilter(L, 1);
+  luaL_checktype(L, 2, LUA_TTABLE);
+  lua_pushnil( L );
+  while ( lua_next( L, 2 ) != 0 )
+  {
+    if ( lua_type( L, -1 ) != LUA_TNIL )
+      filter.AddRecipient( luaL_checkplayer( L, -1 ) );
+    lua_pop( L, 1 );
+  }
+  return 0;
+}
+
+static int CRecipientFilter_RemovePlayers (lua_State *L) {
+  lua_CRecipientFilter &filter = luaL_checkrecipientfilter(L, 1);
+  luaL_checktype(L, 2, LUA_TTABLE);
+  lua_pushnil( L );
+  while ( lua_next( L, 2 ) != 0 )
+  {
+    if ( lua_type( L, -1 ) != LUA_TNIL )
+      filter.RemoveRecipient( luaL_checkplayer( L, -1 ) );
+    lua_pop( L, 1 );
+  }
+  return 0;
+}
+
+static int CRecipientFilter_GetPlayers (lua_State *L) {
+  lua_CRecipientFilter &filter = luaL_checkrecipientfilter(L, 1);
+  int n = filter.GetRecipientCount();
+  lua_createtable( L, n, 0 );
+  for ( int i = 0; i < n; i++ )
+  {
+    CBasePlayer *pPlayer = UTIL_PlayerByIndex( filter.GetRecipientIndex( i ) );
+    if ( pPlayer != NULL )
+    {
+      lua_pushplayer( L, pPlayer );
+      lua_rawseti( L, -2, i + 1 );
+    }
+  }
+  return 1;
+}
+
+static int CRecipientFilter_RemoveRecipientsByPAS (lua_State *L) {
+  lua_CRecipientFilter &filter = luaL_checkrecipientfilter(L, 1);
+  CPASFilter pas( luaL_checkvector(L, 2) );
+  for ( int i = 0; i < pas.GetRecipientCount(); i++ )
+    filter.RemoveRecipientByPlayerIndex( pas.GetRecipientIndex( i ) );
+  return 0;
+}
+
+// reference behavior takes a team number here, not a CTeam object
+static int CRecipientFilter_AddRecipientsByTeam (lua_State *L) {
+  CTeam *pTeam = GetGlobalTeam( luaL_checkint(L, 2) );
+  if ( pTeam != NULL )
+    luaL_checkrecipientfilter(L, 1).AddRecipientsByTeam( pTeam );
+  return 0;
+}
+
+static int CRecipientFilter_RemoveRecipientsByTeam (lua_State *L) {
+  CTeam *pTeam = GetGlobalTeam( luaL_checkint(L, 2) );
+  if ( pTeam != NULL )
+    luaL_checkrecipientfilter(L, 1).RemoveRecipientsByTeam( pTeam );
+  return 0;
+}
+
+static int CRecipientFilter_RemoveRecipientsNotOnTeam (lua_State *L) {
+  CTeam *pTeam = GetGlobalTeam( luaL_checkint(L, 2) );
+  if ( pTeam != NULL )
+    luaL_checkrecipientfilter(L, 1).RemoveRecipientsNotOnTeam( pTeam );
+  return 0;
+}
+
 static int CRecipientFilter_Reset (lua_State *L) {
   luaL_checkrecipientfilter(L, 1).Reset();
   return 0;
@@ -179,7 +256,12 @@ static int CRecipientFilter_UsePredictionRules (lua_State *L) {
 }
 
 static int CRecipientFilter___tostring (lua_State *L) {
-  lua_pushfstring(L, "CRecipientFilter: %p", luaL_checkudata(L, 1, "CRecipientFilter"));
+  lua_CRecipientFilter &filter = luaL_checkrecipientfilter(L, 1);
+  int n = filter.GetRecipientCount();
+  if ( n == 0 )
+    lua_pushstring( L, "CRecipientFilter [NULL]" );
+  else
+    lua_pushfstring( L, "CRecipientFilter [%d]", n );
   return 1;
 }
 
@@ -205,6 +287,20 @@ static const luaL_Reg CRecipientFiltermeta[] = {
   {"Reset", CRecipientFilter_Reset},
   {"SetIgnorePredictionCull", CRecipientFilter_SetIgnorePredictionCull},
   {"UsePredictionRules", CRecipientFilter_UsePredictionRules},
+  // HL2SB GMod compat (2026-10-05): reference-behavior method names.
+  {"AddPlayer", CRecipientFilter_AddRecipient},
+  {"AddPlayers", CRecipientFilter_AddPlayers},
+  {"RemovePlayer", CRecipientFilter_RemoveRecipient},
+  {"RemovePlayers", CRecipientFilter_RemovePlayers},
+  {"RemoveAllPlayers", CRecipientFilter_RemoveAllRecipients},
+  {"AddPVS", CRecipientFilter_AddRecipientsByPVS},
+  {"RemovePVS", CRecipientFilter_RemoveRecipientsByPVS},
+  {"AddPAS", CRecipientFilter_AddRecipientsByPAS},
+  {"RemovePAS", CRecipientFilter_RemoveRecipientsByPAS},
+  {"AddRecipientsByTeam", CRecipientFilter_AddRecipientsByTeam},
+  {"RemoveRecipientsByTeam", CRecipientFilter_RemoveRecipientsByTeam},
+  {"RemoveRecipientsNotOnTeam", CRecipientFilter_RemoveRecipientsNotOnTeam},
+  {"GetPlayers", CRecipientFilter_GetPlayers},
   {"__tostring", CRecipientFilter___tostring},
   {NULL, NULL}
 };
@@ -219,6 +315,9 @@ static int luasrc_CRecipientFilter (lua_State *L) {
 
 static const luaL_Reg CRecipientFilter_funcs[] = {
   {"CRecipientFilter", luasrc_CRecipientFilter},
+  // HL2SB GMod compat: reference behavior constructs the filter as
+  // RecipientFilter() (TTT and gmod_thruster both do).
+  {"RecipientFilter", luasrc_CRecipientFilter},
   {NULL, NULL}
 };
 

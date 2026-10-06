@@ -995,6 +995,14 @@ static int CBasePlayer_SetMaxSpeed (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat (2026-10-05): Player:GetMaxSpeed() -- TTT's
+// GM:PlayerFootstep gates silent footsteps on it and the ported
+// GM:PlayerStepSoundTime cadence method branches on it.
+static int CBasePlayer_GetMaxSpeed (lua_State *L) {
+  lua_pushnumber(L, luaL_checkplayer(L, 1)->MaxSpeed());
+  return 1;
+}
+
 static int CBasePlayer_SetNextAttack (lua_State *L) {
   luaL_checkplayer(L, 1)->SetNextAttack(luaL_checknumber(L, 2));
   return 0;
@@ -2419,6 +2427,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SetFOV", CBasePlayer_SetFOV},
   {"SetLadderNormal", CBasePlayer_SetLadderNormal},
   {"SetMaxSpeed", CBasePlayer_SetMaxSpeed},
+  {"GetMaxSpeed", CBasePlayer_GetMaxSpeed},
   {"SetNextAttack", CBasePlayer_SetNextAttack},
   {"SetPlayerLocalData", CBasePlayer_SetPlayerLocalData},
   {"SetPlayerUnderwater", CBasePlayer_SetPlayerUnderwater},

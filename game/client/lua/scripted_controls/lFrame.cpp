@@ -39,6 +39,10 @@ LFrame::~LFrame()
 {
 #if defined( LUA_SDK )
 	HL2SB_LuaPanelUnref( m_lua_State, m_nTableReference );
+	/* HL2SB (2026-10-06): luaL_unref leaves a tombstone number in the freed
+	** registry slot; reset the field so no later reader can hand that number
+	** back to lua_getref (see lua_isrefvalid in lua_compat.cpp). */
+	m_nTableReference = LUA_NOREF;
 #endif // LUA_SDK
 }
 
@@ -352,7 +356,10 @@ static int Frame_GetPanelClassName (lua_State *L) {
 static int Frame_GetRefTable (lua_State *L) {
   LFrame *plFrame = dynamic_cast<LFrame *>(luaL_checkframe(L, 1));
   if (plFrame) {
-    if (plFrame->m_nTableReference == LUA_NOREF) {
+    /* HL2SB (2026-10-06): isrefvalid, not just != LUA_NOREF -- a freed and
+    ** recycled slot number must be rebuilt, never handed to Lua (see
+    ** Frame___index). */
+    if (!lua_isrefvalid( L, plFrame->m_nTableReference )) {
       lua_newtable(L);
       plFrame->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
@@ -527,7 +534,23 @@ static int Frame___index (lua_State *L) {
       return 1;
   }
   LFrame *plFrame = dynamic_cast<LFrame *>(pFrame);
-  if (plFrame && plFrame->m_nTableReference != LUA_NOREF) {
+  /* HL2SB (2026-10-06): m_nTableReference is a ref into the panel's OWN
+  ** lua_State.  A panel can outlive that state (luasrc_shutdown lua_close()s L
+  ** on every map load while parented vgui panels survive) and a panel built in
+  ** one realm can be handed to the other (vgui.GetHoveredPanel() returns
+  ** menu-realm controls to the client state).  Resolving the number in any
+  ** other registry -- or in this one after luaL_unref freed it and luaL_ref
+  ** recycled the slot -- reads some other system's value, and lua_gettable on
+  ** that raised "attempt to index a function value" from this C frame with no
+  ** file:line (the per-frame PreDrawHalos spam, 2026-10-06 engine.log).  Same
+  ** guard as BEGIN_LUA_CALL_PANEL_METHOD: only consult the table while it
+  ** belongs to the executing state and the slot still holds a table; anything
+  ** else takes the metatable fallback below, which is what a foreign panel
+  ** should answer anyway. */
+  bool bHaveRefTable = plFrame != NULL
+    && plFrame->m_lua_State == L
+    && lua_isrefvalid( L, plFrame->m_nTableReference );
+  if (bHaveRefTable) {
     lua_getref(L, plFrame->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_gettable(L, -2);
@@ -587,7 +610,16 @@ static int Frame___newindex (lua_State *L) {
   }
   LFrame *plFrame = dynamic_cast<LFrame *>(pFrame);
   if (plFrame) {
-    if (plFrame->m_nTableReference == LUA_NOREF) {
+    /* HL2SB (2026-10-06): see Frame___index -- the reference belongs to the
+    ** panel's own state, and a freed-then-recycled slot number must not be
+    ** written through either.  A panel from another realm silently ignores
+    ** field writes here: its fields live in that other state, so storing them
+    ** here could never be read back, and GMod has no cross-realm panel access
+    ** at all. */
+    if (plFrame->m_lua_State != L) {
+      return 0;
+    }
+    if (!lua_isrefvalid( L, plFrame->m_nTableReference )) {
       lua_newtable(L);
       plFrame->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }

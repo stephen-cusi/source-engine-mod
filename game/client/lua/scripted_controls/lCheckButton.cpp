@@ -45,6 +45,10 @@ LCheckButton::~LCheckButton()
 {
 #if defined( LUA_SDK )
 	HL2SB_LuaPanelUnref( m_lua_State, m_nTableReference );
+	/* HL2SB (2026-10-06): luaL_unref leaves a tombstone number in the freed
+	** registry slot; reset the field so no later reader can hand that number
+	** back to lua_getref (see lua_isrefvalid in lua_compat.cpp). */
+	m_nTableReference = LUA_NOREF;
 #endif // LUA_SDK
 }
 
@@ -130,7 +134,10 @@ static int CheckButton_GetPanelClassName (lua_State *L) {
 static int CheckButton_GetRefTable (lua_State *L) {
   LCheckButton *plCheckButton = dynamic_cast<LCheckButton *>(luaL_checkcheckbutton(L, 1));
   if (plCheckButton) {
-    if (plCheckButton->m_nTableReference == LUA_NOREF) {
+    /* HL2SB (2026-10-06): isrefvalid, not just != LUA_NOREF -- a freed and
+    ** recycled slot number must be rebuilt, never handed to Lua (see
+    ** CheckButton___index). */
+    if (!lua_isrefvalid( L, plCheckButton->m_nTableReference )) {
       lua_newtable(L);
       plCheckButton->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
@@ -291,7 +298,15 @@ static int CheckButton___index (lua_State *L) {
       return 1;
   }
   LCheckButton *plCheckButton = dynamic_cast<LCheckButton *>(pCheckButton);
-  if (plCheckButton && plCheckButton->m_nTableReference != LUA_NOREF) {
+  /* HL2SB (2026-10-06): see Frame___index -- the reference belongs to the
+  ** panel's own lua_State; resolving it in any other registry, or after its
+  ** slot was freed and recycled, reads some other system's value and
+  ** lua_gettable on that raised "attempt to index a function value" from this
+  ** C frame.  Guard exactly like BEGIN_LUA_CALL_PANEL_METHOD does. */
+  bool bHaveRefTable = plCheckButton != NULL
+    && plCheckButton->m_lua_State == L
+    && lua_isrefvalid( L, plCheckButton->m_nTableReference );
+  if (bHaveRefTable) {
     lua_getref(L, plCheckButton->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_gettable(L, -2);
@@ -351,7 +366,12 @@ static int CheckButton___newindex (lua_State *L) {
   }
   LCheckButton *plCheckButton = dynamic_cast<LCheckButton *>(pCheckButton);
   if (plCheckButton) {
-    if (plCheckButton->m_nTableReference == LUA_NOREF) {
+    /* HL2SB (2026-10-06): see CheckButton___index -- the reference belongs to
+    ** the panel's own state; a foreign-realm panel ignores field writes. */
+    if (plCheckButton->m_lua_State != L) {
+      return 0;
+    }
+    if (!lua_isrefvalid( L, plCheckButton->m_nTableReference )) {
       lua_newtable(L);
       plCheckButton->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }

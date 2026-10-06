@@ -158,8 +158,43 @@ static int C_RecipientFilter_UsePredictionRules (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat (2026-10-05): reference-behavior method names (the client
+// C_RecipientFilter has no RemoveRecipientsByPVS/PAS or RemoveAllRecipients,
+// so those reference aliases stay server-only, matching reference behavior
+// where the filter binding itself is server-only).
+static int C_RecipientFilter_AddPlayers (lua_State *L) {
+  lua_CRecipientFilter &filter = luaL_checkrecipientfilter(L, 1);
+  luaL_checktype(L, 2, LUA_TTABLE);
+  lua_pushnil( L );
+  while ( lua_next( L, 2 ) != 0 )
+  {
+    if ( lua_type( L, -1 ) != LUA_TNIL )
+      filter.AddRecipient( luaL_checkplayer( L, -1 ) );
+    lua_pop( L, 1 );
+  }
+  return 0;
+}
+
+static int C_RecipientFilter_RemovePlayers (lua_State *L) {
+  lua_CRecipientFilter &filter = luaL_checkrecipientfilter(L, 1);
+  luaL_checktype(L, 2, LUA_TTABLE);
+  lua_pushnil( L );
+  while ( lua_next( L, 2 ) != 0 )
+  {
+    if ( lua_type( L, -1 ) != LUA_TNIL )
+      filter.RemoveRecipient( luaL_checkplayer( L, -1 ) );
+    lua_pop( L, 1 );
+  }
+  return 0;
+}
+
 static int C_RecipientFilter___tostring (lua_State *L) {
-  lua_pushfstring(L, "CRecipientFilter: %p", luaL_checkudata(L, 1, "CRecipientFilter"));
+  lua_CRecipientFilter &filter = luaL_checkrecipientfilter(L, 1);
+  int n = filter.GetRecipientCount();
+  if ( n == 0 )
+    lua_pushstring( L, "CRecipientFilter [NULL]" );
+  else
+    lua_pushfstring( L, "CRecipientFilter [%d]", n );
   return 1;
 }
 
@@ -181,6 +216,13 @@ static const luaL_Reg C_RecipientFiltermeta[] = {
   {"Reset", C_RecipientFilter_Reset},
   {"SetIgnorePredictionCull", C_RecipientFilter_SetIgnorePredictionCull},
   {"UsePredictionRules", C_RecipientFilter_UsePredictionRules},
+  // HL2SB GMod compat (2026-10-05): reference-behavior method names.
+  {"AddPlayer", C_RecipientFilter_AddRecipient},
+  {"AddPlayers", C_RecipientFilter_AddPlayers},
+  {"RemovePlayer", C_RecipientFilter_RemoveRecipient},
+  {"RemovePlayers", C_RecipientFilter_RemovePlayers},
+  {"AddPVS", C_RecipientFilter_AddRecipientsByPVS},
+  {"AddPAS", C_RecipientFilter_AddRecipientsByPAS},
   {"__tostring", C_RecipientFilter___tostring},
   {NULL, NULL}
 };
@@ -195,6 +237,9 @@ static int luasrc_C_RecipientFilter (lua_State *L) {
 
 static const luaL_Reg C_RecipientFilter_funcs[] = {
   {"CRecipientFilter", luasrc_C_RecipientFilter},
+  // HL2SB GMod compat: reference behavior constructs the filter as
+  // RecipientFilter().
+  {"RecipientFilter", luasrc_C_RecipientFilter},
   {NULL, NULL}
 };
 

@@ -70,6 +70,10 @@ LPanel::~LPanel()
 {
 #if defined( LUA_SDK )
 	HL2SB_LuaPanelUnref( m_lua_State, m_nTableReference );
+	/* HL2SB (2026-10-06): luaL_unref leaves a tombstone number in the freed
+	** registry slot; reset the field so no later reader can hand that number
+	** back to lua_getref (see lua_isrefvalid in lua_compat.cpp). */
+	m_nTableReference = LUA_NOREF;
 #endif // LUA_SDK
 }
 

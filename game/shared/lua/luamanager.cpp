@@ -522,6 +522,11 @@ void luasrc_init_gameui (void) {
   luaopen_enginevgui(LGameUI);
   luaopen_FCVAR(LGameUI);
   luaopen_KeyValues(LGameUI);
+  // HL2SB: Localizations (g_pVGuiLocalize bridge: Find / AddString).  Static
+  // control text resolves "#token" through vgui on its own, but composite
+  // strings (e.g. "%d 位玩家") need the phrase as a Lua string first, so the
+  // start-game dialog calls Localizations.Find() before formatting.
+  luaopen_Localizations(LGameUI);
   luaopen_Panel(LGameUI);
   luaopen_surface(LGameUI);
   luaopen_vgui(LGameUI);

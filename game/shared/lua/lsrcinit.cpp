@@ -2166,7 +2166,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
  * it here in C++ where the name is assembled from two literals -- the
  * rewriter never sees it. */
   {
-    // ⚠️ the baseclass module does NOT exist yet at openlibs time (it loads
+    // NOTE: the baseclass module does NOT exist yet at openlibs time (it loads
     // with the modules/ pass) -- the closure must read it lazily at CALL time.
     // The first version gated the definition on baseclass being present, which
     // was always false and left DEFINE_BASECLASS nil (probed 2026-09-20 22:41).
@@ -2462,6 +2462,13 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_pushinteger( L, STUDIO_SSAODEPTHTEXTURE );         lua_setglobal( L, "STUDIO_SSAODEPTHTEXTURE" );
   lua_pushinteger( L, STUDIO_SHADOWDEPTHTEXTURE );       lua_setglobal( L, "STUDIO_SHADOWDEPTHTEXTURE" );
 
+  // HL2SB (2026-10-05): footstep-timing enum family (game/shared/
+  // baseplayer_shared.h stepsoundtimes_t) that GM:PlayerStepSoundTime
+  // dispatches with; the ported gamemode method branches on these names.
+  lua_pushinteger( L, 0 );  lua_setglobal( L, "STEPSOUNDTIME_NORMAL" );
+  lua_pushinteger( L, 1 );  lua_setglobal( L, "STEPSOUNDTIME_ON_LADDER" );
+  lua_pushinteger( L, 2 );  lua_setglobal( L, "STEPSOUNDTIME_WATER_KNEE" );
+
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
 
@@ -2516,7 +2523,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   ** GMod's stock sent_ball names it in ENT:Use:
   **     activator:SendLua( "achievements.EatBall()" )
   **
-  ** ⚠️ This stub does NOT fix that call, and nothing here claims it does:
+  ** NOTE: This stub does NOT fix that call, and nothing here claims it does:
   ** Entity:SendLua is a no-op in this fork -- it warns once and returns
   ** (lbaseentity_shared.cpp:2433-2441, "this engine has no client Lua-channel")
   ** -- so the string is never evaluated on either realm and a missing
