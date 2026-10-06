@@ -1205,7 +1205,11 @@ struct mstudioboneweight_t
 {
 	DECLARE_BYTESWAP_DATADESC();
 	float	weight[MAX_NUM_BONES_PER_VERT];
-	char	bone[MAX_NUM_BONES_PER_VERT]; 
+	// HL2SB: bone indices are unsigned by file format. With the bone limit at
+	// 256, a signed char here read indices >= 128 back as negative, and every
+	// skinning/decal lookup through these turned into a wild index (visible as
+	// garbage skinning at best, a fault in the decal path at worst).
+	unsigned char	bone[MAX_NUM_BONES_PER_VERT];
 	byte	numbones;
 
 //	byte	material;
