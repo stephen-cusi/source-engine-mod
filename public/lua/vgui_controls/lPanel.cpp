@@ -426,7 +426,10 @@ static void luaDropPanelRefTable ( lua_State *L, Panel *pPanel )
 static int Panel_GetRefTable (lua_State *L) {
   LPanel *plPanel = dynamic_cast<LPanel *>(luaL_checkpanel(L, 1));
   if (plPanel) {
-    if (plPanel->m_nTableReference == LUA_NOREF) {
+    /* HL2SB (2026-10-06): isrefvalid, not just != LUA_NOREF -- a freed and
+    ** recycled slot number must be rebuilt, never handed to Lua (see
+    ** Panel___index). */
+    if (!lua_isrefvalid( L, plPanel->m_nTableReference )) {
       lua_newtable(L);
       plPanel->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
@@ -986,8 +989,19 @@ static int Panel_SetBlockDragChaining (lua_State *L) {
   return 0;
 }
 
+/* HL2SB: defined further down, next to the SetPos/SetSize bindings. */
+static void Panel_SyncLuaGeometry (lua_State *L, Panel *pPanel);
+
 static int Panel_SetBounds (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetBounds(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5));
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  pPanel->SetBounds(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5));
+  /* HL2SB: SetPos/SetSize feed the panel's Lua geometry fields (x/y/w/h)
+     through Panel_SyncLuaGeometry; SetBounds is SetPos+SetSize in one call
+     and must feed the same fields.  HL2SB_MenuLayout's walk reads those
+     fields back and re-applies whatever it reads, so a panel positioned
+     only through SetBounds answered (0,0,0,0) there and was slammed to the
+     frame origin (the collapsed main-menu dialogs, 2026-10-07). */
+  Panel_SyncLuaGeometry( L, pPanel );
   return 0;
 }
 
@@ -1129,7 +1143,24 @@ static void Panel_SyncLuaGeometry (lua_State *L, Panel *pPanel) {
   int w = 0, h = 0;
   pPanel->GetSize(w, h);
 
-  luaPushPanelRefTable(L, pPanel, true);
+  /* HL2SB (2026-10-07): write the table Panel___index actually serves.
+     __index answers geometry from m_nTableReference for LPanel panels
+     and from the registry table only for the rest; this used to always
+     write the registry table, so every panel that had ANY Lua field
+     assigned (Paint/OnMouseWheeled handlers - which creates the ref
+     table) read its geometry back as (0,0,0,0) and HL2SB_MenuLayout's
+     walk slammed it to the frame origin (the collapsed main-menu
+     dialogs). */
+  LPanel *plPanelSync = dynamic_cast<LPanel *>(pPanel);
+  if (plPanelSync != NULL && plPanelSync->m_lua_State == L) {
+    if (!lua_isrefvalid( L, plPanelSync->m_nTableReference )) {
+      lua_newtable( L );
+      plPanelSync->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
+    }
+    lua_getref( L, plPanelSync->m_nTableReference );
+  } else {
+    luaPushPanelRefTable( L, pPanel, true );
+  }
   if (!lua_istable(L, -1)) {
     lua_pop(L, 1);
     return;
@@ -1398,7 +1429,23 @@ static int Panel___index (lua_State *L) {
       return 1;
   }
   LPanel *plPanel = dynamic_cast<LPanel *>(pPanel);
-  if (plPanel && plPanel->m_nTableReference != LUA_NOREF) {
+  /* HL2SB (2026-10-06): m_nTableReference is a ref into the panel's OWN
+  ** lua_State.  A panel can outlive that state (luasrc_shutdown lua_close()s L
+  ** on every map load while parented vgui panels survive) and a panel built in
+  ** one realm can be handed to the other (vgui.GetHoveredPanel() returns
+  ** menu-realm controls to the client state).  Resolving the number in any
+  ** other registry -- or in this one after luaL_unref freed it and luaL_ref
+  ** recycled the slot -- reads some other system's value, and lua_gettable on
+  ** that raised "attempt to index a function value" from this C frame with no
+  ** file:line (the per-frame PreDrawHalos spam, 2026-10-06 engine.log).  Same
+  ** guard as BEGIN_LUA_CALL_PANEL_METHOD: only consult the table while it
+  ** belongs to the executing state and the slot still holds a table; anything
+  ** else takes the metatable fallbacks below, which is what a foreign panel
+  ** should answer anyway. */
+  bool bHaveRefTable = plPanel != NULL
+    && plPanel->m_lua_State == L
+    && lua_isrefvalid( L, plPanel->m_nTableReference );
+  if (bHaveRefTable) {
     lua_getref(L, plPanel->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_gettable(L, -2);
@@ -1487,7 +1534,16 @@ static int Panel___newindex (lua_State *L) {
   }
   LPanel *plPanel = dynamic_cast<LPanel *>(pPanel);
   if (plPanel) {
-    if (plPanel->m_nTableReference == LUA_NOREF) {
+    /* HL2SB (2026-10-06): see Panel___index -- the reference belongs to the
+    ** panel's own state, and a freed-then-recycled slot number must not be
+    ** written through either.  A panel from another realm silently ignores
+    ** field writes here: its fields live in that other state, so storing them
+    ** here could never be read back, and GMod has no cross-realm panel access
+    ** at all. */
+    if (plPanel->m_lua_State != L) {
+      return 0;
+    }
+    if (!lua_isrefvalid( L, plPanel->m_nTableReference )) {
       lua_newtable(L);
       plPanel->m_nTableReference = luaL_ref(L, LUA_REGISTRYINDEX);
     }
