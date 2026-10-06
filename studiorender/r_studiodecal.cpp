@@ -1192,19 +1192,29 @@ void CStudioRender::AddDecal( StudioDecalHandle_t hDecal, const StudioRenderCont
 		return;
 	}
 
-	if ( !IsX360() )
+	// HL2SB: the PC path used to stackalloc these per-vertex build buffers.
+	// Vertex counts on modern workshop models run into the tens of thousands,
+	// so a single decal asked the render thread for hundreds of kilobytes of
+	// stack and the chkstk page probe killed the process (shotguns apply one
+	// decal per pellet). Every platform heap-allocates now; the matching free
+	// at the end of this function is unconditional too.
+	buildInfo.m_pMeshVertices = (MeshVertexInfo_t*)malloc( nMeshCount * sizeof(MeshVertexInfo_t) );
+	int nVertexCount = ComputeVertexAllocation( iMaxLOD, body, list.m_pHardwareData, buildInfo.m_pMeshVertices );
+	if ( nVertexCount <= 0 || nVertexCount > MAXSTUDIOVERTS * 16 )
 	{
-		buildInfo.m_pMeshVertices = (MeshVertexInfo_t*)stackalloc( nMeshCount * sizeof(MeshVertexInfo_t) );	
-		int nVertexCount = ComputeVertexAllocation( iMaxLOD, body, list.m_pHardwareData, buildInfo.m_pMeshVertices );
-		buildInfo.m_pVertexBuffer = (DecalBuildVertexInfo_t*)stackalloc( nVertexCount * sizeof(DecalBuildVertexInfo_t) );
+		static bool s_bComplainedAboutDecalVerts = false;
+		if ( !s_bComplainedAboutDecalVerts )
+		{
+			s_bComplainedAboutDecalVerts = true;
+			Warning( "StudioRender: refusing to decal %s with a corrupt vertex count (%d)\n", m_pStudioHdr->pszName(), nVertexCount );
+		}
+		free( buildInfo.m_pMeshVertices );
+		m_pStudioHdr = NULL;
+		m_pRC = NULL;
+		m_pBoneToWorld = NULL;
+		return;
 	}
-	else
-	{
-		// Don't allocate on the stack
-		buildInfo.m_pMeshVertices = (MeshVertexInfo_t*)malloc( nMeshCount * sizeof(MeshVertexInfo_t) );	
-		int nVertexCount = ComputeVertexAllocation( iMaxLOD, body, list.m_pHardwareData, buildInfo.m_pMeshVertices );
-		buildInfo.m_pVertexBuffer = (DecalBuildVertexInfo_t*)malloc( nVertexCount * sizeof(DecalBuildVertexInfo_t) );
-	}
+	buildInfo.m_pVertexBuffer = (DecalBuildVertexInfo_t*)malloc( nVertexCount * sizeof(DecalBuildVertexInfo_t) );
 
 	// Project all mesh vertices
 	ProjectDecalsOntoMeshes( buildInfo, nMeshCount );
@@ -1328,11 +1338,9 @@ void CStudioRender::AddDecal( StudioDecalHandle_t hDecal, const StudioRenderCont
 		++m_nDecalId;
 	}
 
-	if ( IsX360() )
-	{
-		free( buildInfo.m_pMeshVertices );
-		free( buildInfo.m_pVertexBuffer );
-	}
+	// HL2SB: the decal build buffers are heap-allocated on every platform now
+	free( buildInfo.m_pMeshVertices );
+	free( buildInfo.m_pVertexBuffer );
 
 	m_pStudioHdr = NULL;
 	m_pRC = NULL;
