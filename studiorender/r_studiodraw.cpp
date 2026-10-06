@@ -294,8 +294,24 @@ int CStudioRender::R_StudioRenderModel( IMatRenderContext *pRenderContext, int s
 	}
 
 	// Build list of submodels
-	BodyPartInfo_t *pBodyPartInfo = (BodyPartInfo_t*)_alloca( m_pStudioHdr->numbodyparts * sizeof(BodyPartInfo_t) );
-	for ( int i=0 ; i < m_pStudioHdr->numbodyparts; ++i ) 
+	// HL2SB: the bodypart count is read straight out of the studio data. When
+	// that data goes stale underneath a queued render context (model torn down
+	// while the draw is still in flight), a garbage count used to size the
+	// alloca below and took the render thread's whole stack with it. Refuse
+	// anything a real model could never ship and name the file once.
+	int numBodyParts = m_pStudioHdr->numbodyparts;
+	if ( numBodyParts <= 0 || numBodyParts > 256 )
+	{
+		static bool s_bComplainedAboutBodyParts = false;
+		if ( !s_bComplainedAboutBodyParts )
+		{
+			s_bComplainedAboutBodyParts = true;
+			Warning( "StudioRender: refusing to draw %s with a corrupt bodypart count (%d)\n", m_pStudioHdr->pszName(), numBodyParts );
+		}
+		return numTrianglesRendered;
+	}
+	BodyPartInfo_t *pBodyPartInfo = (BodyPartInfo_t*)_alloca( numBodyParts * sizeof(BodyPartInfo_t) );
+	for ( int i=0 ; i < numBodyParts; ++i )
 	{
 		pBodyPartInfo[i].m_nSubModelIndex = R_StudioSetupModel( i, body, &pBodyPartInfo[i].m_pSubModel, m_pStudioHdr );
 	}
@@ -345,8 +361,10 @@ void CStudioRender::GenerateMorphAccumulator( mstudiomodel_t *pSubModel )
 		studiomeshdata_t *pMeshData = &m_pStudioMeshes[pMesh->meshid];
 		Assert( pMeshData );
 
+		// HL2SB: flex counts also come out of the raw studio data; anything
+		// outside the format cap must never reach the alloca below.
 		int nFlexCount = pMesh->numflexes;
-		if ( !nFlexCount )
+		if ( nFlexCount <= 0 || nFlexCount > MAXSTUDIOFLEXDESC )
 			continue;
 
 		for ( int j = 0; j < pMeshData->m_NumGroup; ++j )
@@ -356,7 +374,10 @@ void CStudioRender::GenerateMorphAccumulator( mstudiomodel_t *pSubModel )
 			if ( !bIsDeltaFlexed )
 				continue;
 
-			ppMeshes[nActiveMeshCount++] = pMesh;
+			if ( nActiveMeshCount < 512 )
+			{
+				ppMeshes[nActiveMeshCount++] = pMesh;
+			}
 			Assert( nActiveMeshCount < 512 );
 			break;
 		}
@@ -377,6 +398,16 @@ void CStudioRender::GenerateMorphAccumulator( mstudiomodel_t *pSubModel )
 		studiomeshdata_t *pMeshData = &m_pStudioMeshes[pMesh->meshid];
 
 		int nFlexCount = pMesh->numflexes;
+		if ( nFlexCount <= 0 || nFlexCount > MAXSTUDIOFLEXDESC )
+		{
+			static bool s_bComplainedAboutFlexCount = false;
+			if ( !s_bComplainedAboutFlexCount )
+			{
+				s_bComplainedAboutFlexCount = true;
+				Warning( "StudioRender: refusing morph accumulation for %s with a corrupt flex count (%d)\n", m_pStudioHdr->pszName(), nFlexCount );
+			}
+			continue;
+		}
 		MorphWeight_t *pWeights = (MorphWeight_t*)_alloca( nFlexCount * sizeof(MorphWeight_t) );
 		ComputeFlexWeights( nFlexCount, pMesh->pFlex(0), pWeights );
 
@@ -2842,13 +2873,20 @@ void InsertRenderable( int mesh, T val, int count, int* pIndices, T* pValList )
 int CStudioRender::SortMeshes( int* pIndices, IMaterial **ppMaterials, 
 	short* pskinref, Vector const& vforward, Vector const& r_origin )
 {
+	// HL2SB: mesh counts come out of the raw studio data; bound them before
+	// either alloca below touches the stack (same stale-data hazard as the
+	// bodypart list in R_StudioRenderModel).
+	int numMeshLimit = m_pSubModel->nummeshes;
+	if ( numMeshLimit <= 0 || numMeshLimit > 4096 )
+		return 0;
+
 	int numMeshes = 0;
 	if (m_bDrawTranslucentSubModels)
 	{
 //		float* pDist = (float*)_alloca( m_pSubModel->nummeshes * sizeof(float) );
 
 		// Sort each model piece by it's center, if it's translucent
-		for (int i = 0; i < m_pSubModel->nummeshes; ++i)
+		for (int i = 0; i < numMeshLimit; ++i)
 		{
 			// Don't add opaque materials
 			mstudiomesh_t*	pmesh = m_pSubModel->pMesh(i);
@@ -2870,10 +2908,10 @@ int CStudioRender::SortMeshes( int* pIndices, IMaterial **ppMaterials,
 	}
 	else
 	{
-		IMaterial** ppMat = (IMaterial**)_alloca( m_pSubModel->nummeshes * sizeof(IMaterial*) );
+		IMaterial** ppMat = (IMaterial**)_alloca( numMeshLimit * sizeof(IMaterial*) );
 
 		// Sort by material type
-		for (int i = 0; i < m_pSubModel->nummeshes; ++i)
+		for (int i = 0; i < numMeshLimit; ++i)
 		{
 			mstudiomesh_t*	pmesh = m_pSubModel->pMesh(i);
 			IMaterial *pMaterial = ppMaterials[pskinref[pmesh->material]];

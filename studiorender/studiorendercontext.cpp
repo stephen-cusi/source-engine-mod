@@ -378,12 +378,20 @@ int CStudioRenderContext::CountDeltaFlexedStripGroups( mstudiomodel_t *pModel, O
 //-----------------------------------------------------------------------------
 int CStudioRenderContext::CountFlexedVertices( mstudiomesh_t* pMesh, OptimizedModel::StripGroupHeader_t* pStripGroup )
 {
-	if ( !pMesh->numflexes )
+	// HL2SB: flex and vertex counts come straight out of the studio data; a
+	// stale header must not size the alloca below. Anything a real mesh could
+	// never ship is treated as "nothing to flex".
+	int nFlexCount = pMesh->numflexes;
+	if ( nFlexCount <= 0 || nFlexCount > MAXSTUDIOFLEXDESC )
+		return 0;
+
+	int numVertices = pMesh->pModel()->numvertices;
+	if ( numVertices <= 0 || numVertices > MAXSTUDIOVERTS )
 		return 0;
 
 	// an inverse mapping from mesh index to strip group index
-	unsigned short *pMeshIndexToGroupIndex = (unsigned short*)_alloca( pMesh->pModel()->numvertices * sizeof(unsigned short) );
-	memset( pMeshIndexToGroupIndex, 0xFF, pMesh->pModel()->numvertices * sizeof(unsigned short) );
+	unsigned short *pMeshIndexToGroupIndex = (unsigned short*)_alloca( numVertices * sizeof(unsigned short) );
+	memset( pMeshIndexToGroupIndex, 0xFF, numVertices * sizeof(unsigned short) );
 	for ( int i = 0; i < pStripGroup->numVerts; ++i )
 	{
 		int nMeshVert = pStripGroup->pVertex(i)->origMeshVertID;
