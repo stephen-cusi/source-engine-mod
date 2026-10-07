@@ -23,6 +23,8 @@
 // HL2SB: LUA_NOREF / the entity's Lua table reference, for the PlayerColor proxy's
 // "is this a Lua-created clientside model?" test.
 #include "luamanager.h"
+// HL2SB (2026-10-07): lua_pushmaterial for the Lua matproxy bridge below.
+#include "lua/materialsystem/limaterial.h"
 #include "tier0/memdbgon.h"
 
 // GMod "PlayerColor"?-style player sleeve color. GMod tints the c_arms sleeves
@@ -368,6 +370,181 @@ private:
 
 EXPOSE_INTERFACE( CPlayerWeaponColorProxy, IMaterialProxy, "PlayerWeaponColor" IMATERIAL_PROXY_INTERFACE_VERSION );
 
+// HL2SB (2026-10-07): GMod's Lua matproxy bridge.  GMod addons register
+// material proxies from Lua (matproxy.Add{ name=..., init=..., bind=... };
+// hl1sweps ships HL1Chrome / HL1GaussGlow / SnarkEye this way) and every vmt
+// naming such a proxy resolves through the Lua registry instead of failing
+// with "proxy not found".  The Lua side (modules/matproxy.lua) already keeps
+// ProxyList and ShouldOverrideProxy; nothing consumed them until now.
+
+// True when the Lua matproxy registry has an entry for this proxy name.
+// Answers false (fall through to the next factory) whenever Lua is not up --
+// material loads that happen before the game Lua state exists keep working.
+static bool HL2SB_LuaMatProxyOverride ( const char *pszName )
+{
+	if ( L == NULL || pszName == NULL || pszName[ 0 ] == '\0' )
+		return false;
+	lua_getglobal( L, "matproxy" );
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+	lua_getfield( L, -1, "ShouldOverrideProxy" );
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );
+		return false;
+	}
+	lua_pushstring( L, pszName );
+	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
+	{
+		lua_pop( L, 2 );	// nil placeholder + matproxy
+		return false;
+	}
+	bool bOverride = lua_toboolean( L, -1 ) != 0;
+	lua_pop( L, 2 );
+	return bOverride;
+}
+
+// One material's live binding to a Lua proxy.  GMod's C++ side does NOT touch
+// the registered table directly: Init pushes matproxy.Init( name, uname,
+// material, values ) and OnBind pushes matproxy.Call( name, material, ent ) --
+// the Lua module (modules/matproxy.lua, GMod verbatim) owns the per-material
+// instance copy in ActiveList keyed by uname, which is what keeps
+// "self.ResultTo = values.resultvar" written by one material's init from
+// leaking into another material sharing the proxy name.  values is the proxy's
+// KeyValues block (hl1sweps reads values.resultvar, a string).
+class CLuaMaterialProxy : public IMaterialProxy
+{
+public:
+	CLuaMaterialProxy( const char *pszName ) : m_pMaterial( NULL )
+	{
+		m_szName[ 0 ] = '\0';
+		m_szUName[ 0 ] = '\0';
+		if ( pszName != NULL )
+			Q_strncpy( m_szName, pszName, sizeof( m_szName ) );
+	}
+	virtual ~CLuaMaterialProxy( void ) { }
+
+	virtual bool Init( IMaterial *pMaterial, KeyValues *pKeyValues )
+	{
+		m_pMaterial = pMaterial;
+		if ( L == NULL || m_szName[ 0 ] == '\0' || m_pMaterial == NULL )
+			return true;
+
+		// GMod: Init silently skips the Lua call when not on the main thread
+		// (material instantiation can land off-main during async loads; the
+		// material keeps its compiled defaults and there is no error).
+		if ( !ThreadInMainThread() )
+			return true;
+
+		// ActiveList key: one entry per (material, proxy) pair.
+		Q_snprintf( m_szUName, sizeof( m_szUName ), "%s_%s", m_pMaterial->GetName(), m_szName );
+
+		lua_getglobal( L, "matproxy" );					// [mp]
+		if ( !lua_istable( L, -1 ) )
+		{
+			lua_pop( L, 1 );
+			return true;
+		}
+		lua_getfield( L, -1, "Init" );					// [mp][Init]
+		if ( !lua_isfunction( L, -1 ) )
+		{
+			lua_pop( L, 2 );
+			return true;
+		}
+		lua_pushstring( L, m_szName );
+		lua_pushstring( L, m_szUName );
+		lua_pushmaterial( L, m_pMaterial );
+
+		// values = the proxy's KeyValues block as a plain table with the keys
+		// lowercased (GMod lowercases; the addons read values.resultvar).
+		lua_newtable( L );
+		if ( pKeyValues != NULL )
+		{
+			for ( KeyValues *pKey = pKeyValues->GetFirstSubKey(); pKey; pKey = pKey->GetNextKey() )
+			{
+				char szLower[ 64 ];
+				Q_strncpy( szLower, pKey->GetName(), sizeof( szLower ) );
+				Q_strlower( szLower );
+				switch ( pKey->GetDataType() )
+				{
+				case KeyValues::TYPE_INT:
+					lua_pushinteger( L, pKey->GetInt() );
+					break;
+				case KeyValues::TYPE_FLOAT:
+					lua_pushnumber( L, pKey->GetFloat() );
+					break;
+				default:
+					lua_pushstring( L, pKey->GetString() );
+					break;
+				}
+				lua_setfield( L, -2, szLower );
+			}
+		}
+
+		if ( luasrc_pcall( L, 4, 0, 0 ) != 0 )
+			lua_pop( L, 1 );							// nil placeholder
+		lua_pop( L, 1 );								// matproxy
+		return true;
+	}
+
+	virtual void OnBind( void *pBindable )
+	{
+		if ( L == NULL || m_pMaterial == NULL || m_szName[ 0 ] == '\0' )
+			return;
+
+		// GMod gates the bind on the lua_matproxy master switch.
+		static ConVarRef s_lua_matproxy( "lua_matproxy" );
+		if ( s_lua_matproxy.IsValid() && !s_lua_matproxy.GetBool() )
+			return;
+
+		C_BaseEntity *pEntity = NULL;
+		if ( pBindable != NULL )
+		{
+			IClientRenderable *pRenderable = ( IClientRenderable * )pBindable;
+			IClientUnknown *pUnknown = pRenderable->GetIClientUnknown();
+			if ( pUnknown != NULL )
+				pEntity = pUnknown->GetBaseEntity();
+		}
+
+		lua_getglobal( L, "matproxy" );					// [mp]
+		if ( !lua_istable( L, -1 ) )
+		{
+			lua_pop( L, 1 );
+			return;
+		}
+		lua_getfield( L, -1, "Call" );					// [mp][Call]
+		if ( !lua_isfunction( L, -1 ) )
+		{
+			lua_pop( L, 2 );
+			return;
+		}
+		lua_pushstring( L, m_szName );
+		lua_pushmaterial( L, m_pMaterial );
+		if ( pEntity != NULL )
+			CBaseEntity::PushLuaInstanceSafe( L, pEntity );
+		else
+			lua_pushnil( L );
+		if ( luasrc_pcall( L, 3, 0, 0 ) != 0 )
+			lua_pop( L, 1 );							// nil placeholder
+		lua_pop( L, 1 );								// matproxy
+	}
+
+	virtual void Release( void )
+	{
+		m_pMaterial = NULL;
+	}
+
+	virtual IMaterial *GetMaterial( void ) { return m_pMaterial; }
+
+private:
+	char m_szName[ 64 ];
+	char m_szUName[ 128 ];
+	IMaterial *m_pMaterial;
+};
+
 // HL2SB: CPlayerColorProxy was only EXPOSE_INTERFACE'd, which never registers it
 // with the material system, so any vmt's "PlayerColor" proxy (the GMod player
 // model body / sleeve tint chain) found no handler and the colour did nothing.
@@ -382,6 +559,10 @@ public:
 			return new CPlayerColorProxy;
 		if ( proxyName && !Q_stricmp( proxyName, "PlayerWeaponColor" ) )
 			return new CPlayerWeaponColorProxy;
+		// HL2SB (2026-10-07): Lua-registered proxies (matproxy.Add) resolve
+		// here before the "not found" warning -- see CLuaMaterialProxy above.
+		if ( proxyName && HL2SB_LuaMatProxyOverride( proxyName ) )
+			return new CLuaMaterialProxy( proxyName );
 		return m_pOld ? m_pOld->CreateProxy( proxyName ) : NULL;
 	}
 	virtual void DeleteProxy( IMaterialProxy *pProxy )
