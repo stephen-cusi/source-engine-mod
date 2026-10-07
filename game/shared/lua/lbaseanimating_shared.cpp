@@ -129,6 +129,17 @@ LUA_BINDING_BEGIN( CBaseAnimating, SetBodyGroups, "class", "Set the bodygroup va
 }
 LUA_BINDING_END()
 
+LUA_BINDING_BEGIN( CBaseAnimating, SetBodygroup, "class", "Sets one bodygroup's value on the entity's model. GMod Entity:SetBodygroup( bodygroup, value )." )
+{
+    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
+
+    pAnimating->SetBodygroup( LUA_BINDING_ARGUMENT( luaL_checkint, 2, "bodyGroup" ),
+                              LUA_BINDING_ARGUMENT( luaL_checkint, 3, "value" ) );
+
+    return 0;
+}
+LUA_BINDING_END()
+
 LUA_BINDING_BEGIN( CBaseAnimating, GetBodyGroupsAsString, "class", "Get the bodygroup values as a string of hexadecimal values. Each hexadecimal character represents the bodygroup at its index, e.g: 0a00001 means bodygroup 1 is 10(a) and bodygroup 6 is 1, the rest are 0" )
 {
     lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
