@@ -1625,26 +1625,15 @@ Color HL2SB_GetWeaponColor( int iUserID )
 	if ( idx != s_WeaponColor.InvalidIndex() )
 		return s_WeaponColor[ idx ];
 
-	// 2026-09-24: the map only fills when Lua calls SetWeaponColor -- the
-	// player-model mixer writes the cl_weaponcolor CONVAR directly, so a
-	// fresh session fell through to the hardcoded cyan default and the
-	// physgun beam ignored the user's weapon colour.  Read the convar like
-	// the C++ PlayerWeaponColor proxy does (values are normalized and may
-	// exceed 1; GMod's default is "0.30 1.80 2.10").
-	static ConVarRef s_cl_weaponcolor( "cl_weaponcolor" );
-	if ( s_cl_weaponcolor.IsValid() )
-	{
-		float r = 0.0f, g = 0.0f, b = 0.0f;
-		if ( sscanf( s_cl_weaponcolor.GetString(), "%f %f %f", &r, &g, &b ) == 3 )
-		{
-			return Color(
-				clamp( (int)( r * 255.0f ), 0, 255 ),
-				clamp( (int)( g * 255.0f ), 0, 255 ),
-				clamp( (int)( b * 255.0f ), 0, 255 ), 255 );
-		}
-	}
-
-	return Color( 76, 255, 255, 255 );	// GMod's cl_weaponcolor default 0.30 1.80 2.10, clamped
+	// 2026-09-24: this used to fall back to the cl_weaponcolor CONVAR for any
+	// unknown userid.  The convar is the LOCAL player's value, so on the client
+	// every remote player whose entry had not arrived yet was tinted with the
+	// local player's colour (cross-player colour bleed on beams, claw sprites
+	// and muzzle glows).  The server now broadcasts the whole colour table
+	// (hl2sb_setplayercolor) and replays it on ClientActive, so a miss here
+	// only happens before that snapshot lands.  GMod's cl_weaponcolor default
+	// "0.30 1.80 2.10" clamped.
+	return Color( 76, 255, 255, 255 );
 }
 
 void HL2SB_SetWeaponColor( int iUserID, const Color &clr )
@@ -1652,6 +1641,45 @@ void HL2SB_SetWeaponColor( int iUserID, const Color &clr )
 	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
 	s_WeaponColor.InsertOrReplace( iUserID, clr );
 }
+
+#ifndef CLIENT_DLL
+// HL2SB: GMod networks the player colours (m_PlayerColor / m_WeaponColor data
+// props on the player data table), so every client natively sees every
+// player's colours.  The fork keeps them in per-userid server memory instead,
+// so the server pushes the table over the hl2sb_setplayercolor console
+// command: every Lua write broadcasts to all connected clients (below) and
+// CServerGameClients::ClientActive replays the current table to late joiners.
+// pOnlyTo limits the replay to a single freshly activated client.
+void HL2SB_SendPlayerColors( CBasePlayer *pOnlyTo )
+{
+	for ( int iClient = 1; iClient <= gpGlobals->maxClients; iClient++ )
+	{
+		CBasePlayer *pPlayer = UTIL_PlayerByIndex( iClient );
+		if ( !pPlayer || ( pOnlyTo != NULL && pOnlyTo != pPlayer ) )
+			continue;
+		if ( !pPlayer->IsConnected() || pPlayer->IsFakeClient() )
+			continue;
+
+		for ( int idx = s_PlayerColor.FirstInorder(); idx != s_PlayerColor.InvalidIndex(); idx = s_PlayerColor.NextInorder( idx ) )
+		{
+			const Color &c = s_PlayerColor[ idx ];
+			char szCmd[ 64 ];
+			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 0 %d %d %d %d\n",
+				s_PlayerColor.Key( idx ), c.r(), c.g(), c.b(), c.a() );
+			engine->ClientCommand( pPlayer->edict(), szCmd );
+		}
+
+		for ( int idx = s_WeaponColor.FirstInorder(); idx != s_WeaponColor.InvalidIndex(); idx = s_WeaponColor.NextInorder( idx ) )
+		{
+			const Color &c = s_WeaponColor[ idx ];
+			char szCmd[ 64 ];
+			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 1 %d %d %d %d\n",
+				s_WeaponColor.Key( idx ), c.r(), c.g(), c.b(), c.a() );
+			engine->ClientCommand( pPlayer->edict(), szCmd );
+		}
+	}
+}
+#endif
 
 // GMod's Player:SetPlayerColor / SetWeaponColor take a NORMALIZED Vector:
 //   sandbox/gamemode/player_class/player_sandbox.lua:108-115
@@ -1722,13 +1750,10 @@ static int CBasePlayer_SetPlayerColor (lua_State *L) {
 
   HL2SB_SetPlayerColor( pPlayer->GetUserID(), clr );
 #ifndef CLIENT_DLL
-  // Mirror the colour to the player's client so the PlayerColor material proxy
-  // (client) renders the tint. The colour decision stays in Lua; this only
-  // transports the chosen value.
-  char szCmd[ 64 ];
-  Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d %d %d %d\n",
-              clr.r(), clr.g(), clr.b(), clr.a() );
-  engine->ClientCommand( pPlayer->edict(), szCmd );
+  // GMod networks the colour to everyone; push the updated table to all
+  // clients (this player's own client included) so the PlayerColor proxy
+  // renders the tint on every screen, not just the owner's.
+  HL2SB_SendPlayerColors( NULL );
 #endif
   return 0;
 }
@@ -1749,7 +1774,13 @@ static int CBasePlayer_SetWeaponColor (lua_State *L) {
   Color clr;
 
   if ( HL2SB_LuaColorArg( L, 2, clr ) )
+  {
     HL2SB_SetWeaponColor( pPlayer->GetUserID(), clr );
+#ifndef CLIENT_DLL
+    // Broadcast like SetPlayerColor - GMod networks m_WeaponColor to everyone.
+    HL2SB_SendPlayerColors( NULL );
+#endif
+  }
 
   return 0;
 }

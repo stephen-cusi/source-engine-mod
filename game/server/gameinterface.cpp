@@ -2908,6 +2908,15 @@ void CServerGameClients::ClientActive( edict_t *pEdict, bool bLoadGame )
 			CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
 			SceneManager_ClientActive( pPlayer );
 		}
+		// HL2SB (2026-10-08): the per-player colour tables are server memory
+		// (GMod networks m_PlayerColor / m_WeaponColor on the player instead) -
+		// replay the whole table to every freshly activated client so late
+		// joiners see the other players' player/weapon colours too.
+		if ( pPlayer && !pPlayer->IsFakeClient() )
+		{
+			extern void HL2SB_SendPlayerColors( CBasePlayer *pOnlyTo );
+			HL2SB_SendPlayerColors( pPlayer );
+		}
 	#else
 		CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
 		SceneManager_ClientActive( pPlayer );

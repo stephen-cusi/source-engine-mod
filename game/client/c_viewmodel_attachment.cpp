@@ -35,23 +35,36 @@
 ConVar hl2sb_player_color( "hl2sb_player_color", "0.243 0.345 0.416", FCVAR_ARCHIVE,
 	"c_arms sleeve tint (PlayerColor proxy). GMod default teal 62/88/106. Format: 'r g b'" );
 
+// HL2SB_SetWeaponColor lives in the shared player bindings (game/shared/lua/
+// lbaseplayer_shared.cpp); the server pushes colour-table entries through this
+// console command for both colour kinds.
+void HL2SB_SetWeaponColor( int iUserID, const Color &clr );
+
 //-----------------------------------------------------------------------------
-// GMod-style per-player sleeve colour. The server sends "hl2sb_setplayercolor
-// <r> <g> <b> <a>" via ClientCommand to a client when a script calls
-// player:SetPlayerColor; this command stores it for the local player so the
-// PlayerColor proxy renders the tint (the colour decision stays in Lua).
+// GMod-style per-player colour table entry. GMod networks m_PlayerColor /
+// m_WeaponColor on the player data table; the fork's server instead broadcasts
+//   hl2sb_setplayercolor <userid> <0=player|1=weapon> <r> <g> <b> <a>
+// for every Player:SetPlayerColor / SetWeaponColor write and replays the whole
+// table on ClientActive, so every client's colour maps carry every player.
 //-----------------------------------------------------------------------------
 static void CC_HL2SB_SetPlayerColor( const CCommand &args )
 {
-	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-	if ( !pLocal || args.ArgC() < 4 )
+	if ( args.ArgC() < 7 )
 		return;
-	int r = atoi( args[1] ), g = atoi( args[2] ), b = atoi( args[3] );
-	int a = ( args.ArgC() >= 5 ) ? atoi( args[4] ) : 255;
-	HL2SB_SetPlayerColor( pLocal->GetUserID(), Color( r, g, b, a ) );
+	int iUserID = atoi( args[1] );
+	int iWeapon = atoi( args[2] );
+	int r = clamp( atoi( args[3] ), 0, 255 );
+	int g = clamp( atoi( args[4] ), 0, 255 );
+	int b = clamp( atoi( args[5] ), 0, 255 );
+	int a = clamp( atoi( args[6] ), 0, 255 );
+
+	if ( iWeapon )
+		HL2SB_SetWeaponColor( iUserID, Color( r, g, b, a ) );
+	else
+		HL2SB_SetPlayerColor( iUserID, Color( r, g, b, a ) );
 }
 static ConCommand hl2sb_setplayercolor( "hl2sb_setplayercolor", CC_HL2SB_SetPlayerColor,
-	"Set the local player's sleeve colour (server sends this). Usage: hl2sb_setplayercolor <r> <g> <b> <a>" );
+	"Server-pushed per-player colour table entry. Usage: hl2sb_setplayercolor <userid> <0=player|1=weapon> <r> <g> <b> <a>" );
 class CPlayerColorProxy : public IMaterialProxy
 {
 public:
