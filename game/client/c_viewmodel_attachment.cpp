@@ -25,6 +25,8 @@
 #include "luamanager.h"
 // HL2SB (2026-10-07): lua_pushmaterial for the Lua matproxy bridge below.
 #include "lua/materialsystem/limaterial.h"
+// HL2SB (2026-10-07): the SkyPaint proxy for the painted-skybox materials.
+#include "c_env_skypaint.h"
 #include "tier0/memdbgon.h"
 
 // GMod "PlayerColor"?-style player sleeve color. GMod tints the c_arms sleeves
@@ -559,6 +561,11 @@ public:
 			return new CPlayerColorProxy;
 		if ( proxyName && !Q_stricmp( proxyName, "PlayerWeaponColor" ) )
 			return new CPlayerWeaponColorProxy;
+		// HL2SB (2026-10-07): the painted-skybox proxy (skybox/painted*.vmt
+		// Proxies SkyPaint block); GMod answers it from a Lua matproxy, the
+		// C++ port lives in c_env_skypaint.cpp.
+		if ( proxyName && !Q_stricmp( proxyName, "SkyPaint" ) )
+			return HL2SB_CreateSkyPaintProxy();
 		// HL2SB (2026-10-07): Lua-registered proxies (matproxy.Add) resolve
 		// here before the "not found" warning -- see CLuaMaterialProxy above.
 		if ( proxyName && HL2SB_LuaMatProxyOverride( proxyName ) )

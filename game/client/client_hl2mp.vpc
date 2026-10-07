@@ -139,6 +139,10 @@ $Project "Client (HL2MP)"
 			$File	"$SRCDIR\game\shared\hl2sb_model_commands.cpp"
 			$File	"hl2sb_crash_handler.cpp"
 			$File	"hl2sb_crash_handler.h"
+			// HL2SB: client half of env_skypaint + the SkyPaint material proxy
+			// for the skybox/painted* materials (GMod painted skybox).
+			$File	"c_env_skypaint.cpp"
+			$File	"c_env_skypaint.h"
 
 			$Folder	"Weapons"
 			{
