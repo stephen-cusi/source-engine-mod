@@ -2908,6 +2908,17 @@ void CServerGameClients::ClientActive( edict_t *pEdict, bool bLoadGame )
 			CSoundEnvelopeController::GetController().CheckLoopingSoundsForPlayer( pPlayer );
 			SceneManager_ClientActive( pPlayer );
 		}
+		// HL2SB (2026-10-08): the Lua NetworkVar replication is write-driven,
+		// so values broadcast before this player could receive them (map-parse
+		// defaults and keyvalues; everything sent before a late joiner's
+		// signon) never reached it.  Re-transmit the current values of every
+		// entity that declared NetworkVars -- the data-table "state ships with
+		// the activation" contract on top of the user-message transport.
+		if ( pPlayer && !pPlayer->IsFakeClient() )
+		{
+			extern void HL2SB_NWResyncClient( CBasePlayer *pPlayer );
+			HL2SB_NWResyncClient( pPlayer );
+		}
 		// HL2SB (2026-10-08): the per-player colour tables are server memory
 		// (GMod networks m_PlayerColor / m_WeaponColor on the player instead) -
 		// replay the whole table to every freshly activated client so late

@@ -146,6 +146,8 @@ public:
 
 	void					SetEnumerationID( int id );
 	void					CallBindProxy( void *proxyData );
+	// HL2SB (2026-10-08): deferred proxy resolution -- see CallBindProxy.
+	void					RetryUnresolvedProxies( void );
 	virtual IMaterial		*CheckProxyReplacement( void *proxyData );
 	bool					HasProxy( void ) const;
 
@@ -328,6 +330,25 @@ private:
 
 	CUtlVector< IMaterialProxy * > m_ProxyInfo;
 
+	// HL2SB (2026-10-08): proxies the factory had no answer for at parse
+	// time.  The client game Lua state boots AFTER the world materials parse
+	// in this fork, so Lua-registered proxies (matproxy/sky_paint.lua's
+	// "SkyPaint", the painted-skybox driver) were asked for before
+	// matproxy.Add ran and the material kept none.  CallBindProxy retries
+	// these on the main thread (throttled) until the factory resolves them.
+	// The proxy's own KeyValues section must be COPIED here: the parsed VMT
+	// tree is not retained on the material (m_pVMTKeyValues only carries the
+	// optional block of manually created materials), so a name-only record
+	// had nothing to initialize from and silently gave up.
+	struct HL2SB_UnresolvedProxy_t
+	{
+		CUtlString	name;
+		KeyValues	*pSection;
+	};
+	CUtlVector< struct HL2SB_UnresolvedProxy_t > m_UnresolvedProxyNames;
+	float					m_flNextUnresolvedRetry;
+	bool					m_bLoggedFirstUnresolvedRetry;
+
 #ifdef PROXY_TRACK_NAMES
 	// Array to track names of above material proxies. Useful for tracking down issues with proxies.
 	CUtlVector< CUtlString > m_ProxyInfoNames;
@@ -507,8 +528,10 @@ CMaterial::CMaterial( char const* materialName, const char *pTextureGroupName, K
 	m_ShaderRenderState.m_Flags = 0;
 	m_ShaderRenderState.m_VertexFormat = m_ShaderRenderState.m_VertexUsage = 0;
 	m_ShaderRenderState.m_MorphFormat = 0;
-	m_ShaderRenderState.m_pSnapshots = CreateRenderPassList(); 
+	m_ShaderRenderState.m_pSnapshots = CreateRenderPassList();
 	m_ChangeID = 0;
+	m_flNextUnresolvedRetry = 0.0f;
+	m_bLoggedFirstUnresolvedRetry = false;
 
 	m_QueueFriendlyVersion.SetRealTimeVersion( this );
 }
@@ -530,7 +553,17 @@ CMaterial::~CMaterial()
 		m_pVMTKeyValues = NULL;
 	}
 
-	DestroyRenderPassList( m_ShaderRenderState.m_pSnapshots ); 
+	// HL2SB (2026-10-08): drop any still-unresolved deferred proxy sections
+	for ( int i = m_UnresolvedProxyNames.Count() - 1; i >= 0; i-- )
+	{
+		if ( m_UnresolvedProxyNames[ i ].pSection )
+		{
+			m_UnresolvedProxyNames[ i ].pSection->deleteThis();
+		}
+	}
+	m_UnresolvedProxyNames.RemoveAll();
+
+	DestroyRenderPassList( m_ShaderRenderState.m_pSnapshots );
 
 	m_representativeTexture = NULL;
 
@@ -771,6 +804,15 @@ void CMaterial::InitializeMaterialProxy( KeyValues* pFallbackKeyValues )
 			if (!pProxy)
 			{
 				Warning( "Error: Material \"%s\" : proxy \"%s\" not found!\n", GetName(), pProxyKey->GetName() );
+				// HL2SB (2026-10-08): remember it -- the factory may gain the
+				// answer later (the Lua matproxy registry boots after world
+				// materials in this fork); CallBindProxy retries.  The section
+				// is copied because the parsed VMT tree is not kept alive on
+				// the material.
+				HL2SB_UnresolvedProxy_t entry;
+				entry.name = pProxyKey->GetName();
+				entry.pSection = pProxyKey->MakeCopy();
+				m_UnresolvedProxyNames.AddToTail( entry );
 				continue;
 			}
 
@@ -816,6 +858,63 @@ void CMaterial::CleanUpMaterialProxy()
 #ifdef PROXY_TRACK_NAMES
 	m_ProxyInfoNames.RemoveAll();
 #endif
+}
+
+
+//-----------------------------------------------------------------------------
+// HL2SB (2026-10-08): second chance for proxies that resolved to nothing at
+// parse time.  GMod's client Lua state exists before any material parses, so
+// GMod never sees this; here the client Lua state (and with it the matproxy
+// registry -- matproxy/sky_paint.lua's "SkyPaint") comes up after the world
+// materials, so the parsed-with-no-answer list gets retried from
+// CallBindProxy until the factory resolves it.  The original KeyValues block
+// is retained on the material, so the deferred proxy can be initialized with
+// the same section the first pass would have used.
+//-----------------------------------------------------------------------------
+void CMaterial::RetryUnresolvedProxies( void )
+{
+	if ( m_UnresolvedProxyNames.Count() == 0 )
+		return;
+
+	IMaterialProxyFactory *pMaterialProxyFactory = MaterialSystem()->GetMaterialProxyFactory();
+	if ( !pMaterialProxyFactory )
+		return;
+
+	if ( !m_bLoggedFirstUnresolvedRetry )
+	{
+		m_bLoggedFirstUnresolvedRetry = true;
+		Msg( "[HL2SB] material \"%s\": retrying %d deferred proxy(ies)\n", GetName(), m_UnresolvedProxyNames.Count() );
+	}
+
+	for ( int i = m_UnresolvedProxyNames.Count() - 1; i >= 0; i-- )
+	{
+		const char *pszName = m_UnresolvedProxyNames[ i ].name;
+		KeyValues *pProxyKey = m_UnresolvedProxyNames[ i ].pSection;
+		if ( !pProxyKey )
+		{
+			// Remove() runs the element destructor (CUtlString frees itself)
+			m_UnresolvedProxyNames.Remove( i );
+			continue;
+		}
+
+		IMaterialProxy *pProxy = pMaterialProxyFactory->CreateProxy( pszName );
+		if ( !pProxy )
+			continue;
+
+		if ( !pProxy->Init( GetQueueFriendlyVersion(), pProxyKey ) )
+		{
+			pMaterialProxyFactory->DeleteProxy( pProxy );
+			continue;
+		}
+
+		m_ProxyInfo.AddToTail( pProxy );
+#ifdef PROXY_TRACK_NAMES
+		m_ProxyInfoNames.AddToTail( pszName );
+#endif
+		Msg( "[HL2SB] material \"%s\": deferred proxy \"%s\" resolved\n", GetName(), pszName );
+		pProxyKey->deleteThis();
+		m_UnresolvedProxyNames.Remove( i );
+	}
 }
 
 
@@ -2981,6 +3080,24 @@ void CMaterial::CallBindProxy( void *proxyData )
 {
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
 	bool bIsThreaded = ( pCallQueue != NULL );
+
+	// HL2SB (2026-10-08): second chance for proxies the factory could not
+	// answer at parse time (Lua matproxy registry boots after world
+	// materials here).  Main thread only -- the Lua-answering factory does
+	// unprotected Lua calls -- and throttled to one attempt per second.
+	// ThreadInMainThread, not the call-queue check: with a queued render
+	// context the queue exists on the main thread too, and binds record
+	// there (this very call site runs on the main thread before QueueCall).
+	if ( m_UnresolvedProxyNames.Count() != 0 && ThreadInMainThread() )
+	{
+		float flNow = Plat_FloatTime();
+		if ( flNow >= m_flNextUnresolvedRetry )
+		{
+			m_flNextUnresolvedRetry = flNow + 1.0f;
+			RetryUnresolvedProxies();
+		}
+	}
+
 	switch (g_config.proxiesTestMode)
 	{
 	case 0:

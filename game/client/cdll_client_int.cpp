@@ -1859,6 +1859,14 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 	luasrc_dofolder_sorted( L, LUA_PATH_AUTORUN, false );
 	luasrc_dofolder_sorted( L, LUA_PATH_AUTORUN_CLIENT, true );
 
+	// HL2SB (2026-10-08) GMod compat: lua/matproxy/*.lua -- GMod loads this
+	// folder on both realms; the files register material proxies through
+	// matproxy.Add (GMod's own sky_paint.lua drives the painted skybox).  The
+	// proxies are consumed the first time a naming material parses, which at
+	// map load happens around the entities pass -- so the registration has to
+	// land here, before weapons/entities, and not in a later stage.
+	luasrc_dofolder( L, LUA_ROOT "/matproxy" );
+
 	luasrc_LoadWeapons();
 	luasrc_LoadEntities();
 	// HL2SB: GMod's effects/ stage (Lua Loading Order step 9) -- the loader was

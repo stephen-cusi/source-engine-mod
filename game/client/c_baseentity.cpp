@@ -2613,7 +2613,11 @@ void C_BaseEntity::PostDataUpdate( DataUpdateType_t updateType )
 		// 2026-09-24: only CREATED, 25 total.  This used to print every
 		// PostDataUpdate for any npc-ish class up to 120 lines, which flooded
 		// the console on maps with crows/citizens (C_AI_BaseNPC matches "npc").
-		if ( updateType == DATA_UPDATE_CREATED && ( s_nPostDataReports < 25 || bInteresting ) )
+		// 2026-10-08: cap 25 -> 8 -- for SCRIPTED entities the pre-bind
+		// classname collapses to the classmap constant (usually "cod-c4"
+		// with this addon set), and the repeated line read like addon
+		// pollution when it is only that known display quirk.
+		if ( updateType == DATA_UPDATE_CREATED && ( s_nPostDataReports < 8 || bInteresting ) )
 		{
 			++s_nPostDataReports;
 			luasrc_LuaWarnMsgF( "[HL2SB] CLIENT entity class='%s' updateType=%d entindex=%d",

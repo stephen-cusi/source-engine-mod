@@ -25,8 +25,6 @@
 #include "luamanager.h"
 // HL2SB (2026-10-07): lua_pushmaterial for the Lua matproxy bridge below.
 #include "lua/materialsystem/limaterial.h"
-// HL2SB (2026-10-07): the SkyPaint proxy for the painted-skybox materials.
-#include "c_env_skypaint.h"
 #include "tier0/memdbgon.h"
 
 // GMod "PlayerColor"?-style player sleeve color. GMod tints the c_arms sleeves
@@ -536,14 +534,26 @@ public:
 			lua_pop( L, 2 );
 			return;
 		}
-		lua_pushstring( L, m_szName );
+		// HL2SB (2026-10-08): GMod's matproxy.lua keys ActiveList by the
+		// UNAME that Init stored ("material_proxyname"), so Call must be
+		// handed the uname -- pushing the plain proxy name answered
+		// ActiveList[nil] every bind and the Lua bind function silently
+		// never ran (sky_paint.lua attached, resolved, painted nothing).
+		lua_pushstring( L, m_szUName );
 		lua_pushmaterial( L, m_pMaterial );
 		if ( pEntity != NULL )
 			CBaseEntity::PushLuaInstanceSafe( L, pEntity );
 		else
 			lua_pushnil( L );
-		if ( luasrc_pcall( L, 3, 0, 0 ) != 0 )
-			lua_pop( L, 1 );							// nil placeholder
+		// luasrc_pcall was asked for ZERO results: per the 2026-10-04 error
+		// convention there is NO nil placeholder to clean up on error (the
+		// pcall wrapper already restored the stack to [.., matproxy]).
+		// Popping here anyway ran only after the uname fix made binds
+		// actually execute: one Lua error in a bind underflowed the shared
+		// client Lua stack by one slot PER BIND PER MATERIAL, and the skybox
+		// binds errored every frame -- the erosion ended in
+		// HL2SB_LuaApiCheckFail (lua_settop underflow) inside R_DrawSkyBox.
+		luasrc_pcall( L, 3, 0, 0 );
 		lua_pop( L, 1 );								// matproxy
 	}
 
@@ -574,13 +584,11 @@ public:
 			return new CPlayerColorProxy;
 		if ( proxyName && !Q_stricmp( proxyName, "PlayerWeaponColor" ) )
 			return new CPlayerWeaponColorProxy;
-		// HL2SB (2026-10-07): the painted-skybox proxy (skybox/painted*.vmt
-		// Proxies SkyPaint block); GMod answers it from a Lua matproxy, the
-		// C++ port lives in c_env_skypaint.cpp.
-		if ( proxyName && !Q_stricmp( proxyName, "SkyPaint" ) )
-			return HL2SB_CreateSkyPaintProxy();
 		// HL2SB (2026-10-07): Lua-registered proxies (matproxy.Add) resolve
 		// here before the "not found" warning -- see CLuaMaterialProxy above.
+		// (2026-10-08: "SkyPaint" resolves through this branch too -- the
+		// painted-skybox proxy went back to GMod's Lua shape, lua/matproxy/
+		// sky_paint.lua + the env_skypaint scripted entity.)
 		if ( proxyName && HL2SB_LuaMatProxyOverride( proxyName ) )
 			return new CLuaMaterialProxy( proxyName );
 		return m_pOld ? m_pOld->CreateProxy( proxyName ) : NULL;

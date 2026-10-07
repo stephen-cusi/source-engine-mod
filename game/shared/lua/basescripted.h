@@ -81,6 +81,16 @@ public:
 	// weapon_nyangun's bomb entity explodes from.
 	virtual void	VPhysicsCollision( int index, gamevcollisionevent_t *pEvent );
 
+	// HL2SB GMod compat (2026-10-08): the three map-lifecycle hooks GMod
+	// dispatches on scripted entities and this fork never did --
+	// ENTITY:KeyValue( key, value ) (BSP keyvalues, env_skypaint's colours),
+	// ENTITY:AcceptInput( activator, caller, data ) (Set<NetworkVar> I/O) and
+	// ENTITY:UpdateTransmitState() (TRANSMIT_* answers; env_skypaint must be
+	// transmitted always or the client sky proxy has no data).
+	virtual bool	KeyValue( const char *szKeyName, const char *szValue );
+	virtual bool	AcceptInput( const char *szInputName, CBaseEntity *pActivator, CBaseEntity *pCaller, variant_t Value, int outputID );
+	virtual int		UpdateTransmitState( void );
+
 	// HL2SB GMod compat (2026-09-21): ENT:Use( activator, caller ) -- GMod
 	// routes +use to every scripted entity; see basescripted.cpp UseHandler.
 	virtual int		ObjectCaps( void );

@@ -1871,6 +1871,159 @@ static void __MsgFunc_HL2SB_RPC( bf_read &read )
 // Hooked in luasrc_openlibs' client tail (usermessages->HookMessage).
 #endif // CLIENT_DLL
 
+#ifndef CLIENT_DLL
+// HL2SB (2026-10-08): sign-on resync for the Lua NetworkVar replication.
+//
+// The setter broadcasts a WRITE.  A scripted entity spawned from a map writes
+// its defaults (ENT:SetupDataTables) and its map keyvalues (ENT:KeyValue)
+// while the SERVER parses the level -- long before a connecting client's Lua
+// state exists and hooks the "HL2SB_NW" receiver, so those messages reach no
+// handler and the client keeps the type default.  GMod never has this window:
+// its data tables transmit the CURRENT state of every networked variable with
+// the entity snapshots.  The re-send below restores that contract on top of
+// the user-message transport: when a player finishes activating, every
+// entity that ever declared a NetworkVar re-transmits its current values to
+// that one player.  (A client joining a running dedicated server needs the
+// same re-transmission -- its signon is the first moment it can receive.)
+//
+// The declared type of each variable is recorded beside the accessors as
+// "__hl2sb_nwt_<name>" (HL2SB_Lua_EntityNetworkVar) -- a stored Lua number
+// alone cannot separate Float from Int on the walk out.
+static CUtlVector< EHANDLE > s_NWEntityRegistry;
+
+// Value guards for the resend: the serializers raise on a type mismatch and
+// this runs outside any pcall, so test before serialising.
+static bool HL2SB_NWValueMatchesTag (lua_State *L, int iValue, char tag) {
+  switch ( tag ) {
+    case HL2SB_NWTAG_FLOAT:
+    case HL2SB_NWTAG_INT:		return lua_isnumber( L, iValue ) ? true : false;
+    case HL2SB_NWTAG_VECTOR:	return luaL_testudata( L, iValue, "Vector" ) != NULL;
+    case HL2SB_NWTAG_ANGLE:		return luaL_testudata( L, iValue, "QAngle" ) != NULL;
+    case HL2SB_NWTAG_BOOL:		return lua_isboolean( L, iValue ) ? true : false;
+    case HL2SB_NWTAG_STRING:	return ( lua_isstring( L, iValue ) ) ? true : false;
+    case HL2SB_NWTAG_ENTITY:	return ( lua_toentity( L, iValue ) != NULL );
+    default:					return false;
+  }
+}
+
+// Append "<name>=<value>" to szDetail for the painted-sky precision line.
+static void HL2SB_NWDetailAppend (char *szDetail, size_t nMax, lua_State *L,
+				  const char *pszName, int iValue, char tag) {
+  char szOne[ 160 ];
+  szOne[ 0 ] = '\0';
+  switch ( tag ) {
+    case HL2SB_NWTAG_VECTOR:
+    {
+      Vector *v = ( Vector * )luaL_testudata( L, iValue, "Vector" );
+      if ( v != NULL ) {
+        Q_snprintf( szOne, sizeof( szOne ), "%s=(%.3f %.3f %.3f) ", pszName, v->x, v->y, v->z );
+      }
+      break;
+    }
+    case HL2SB_NWTAG_ANGLE:
+    {
+      QAngle *a = ( QAngle * )luaL_testudata( L, iValue, "QAngle" );
+      if ( a != NULL ) {
+        Q_snprintf( szOne, sizeof( szOne ), "%s=(%.2f %.2f %.2f) ", pszName, a->x, a->y, a->z );
+      }
+      break;
+    }
+    case HL2SB_NWTAG_FLOAT:
+      Q_snprintf( szOne, sizeof( szOne ), "%s=%.3f ", pszName, ( float )lua_tonumber( L, iValue ) );
+      break;
+    case HL2SB_NWTAG_INT:
+      Q_snprintf( szOne, sizeof( szOne ), "%s=%d ", pszName, ( int )lua_tonumber( L, iValue ) );
+      break;
+    case HL2SB_NWTAG_BOOL:
+      Q_snprintf( szOne, sizeof( szOne ), "%s=%d ", pszName, lua_toboolean( L, iValue ) ? 1 : 0 );
+      break;
+    case HL2SB_NWTAG_STRING:
+    {
+      const char *psz = lua_tostring( L, iValue );
+      Q_snprintf( szOne, sizeof( szOne ), "%s='%s' ", pszName, ( psz != NULL ) ? psz : "" );
+      break;
+    }
+    default:
+      Q_snprintf( szOne, sizeof( szOne ), "%s ", pszName );
+      break;
+  }
+  if ( szOne[ 0 ] != '\0' )
+    Q_strncat( szDetail, szOne, nMax, COPY_ALL_CHARACTERS );
+}
+
+void HL2SB_NWResyncClient (CBasePlayer *pPlayer)
+{
+  if ( pPlayer == NULL || L == NULL )
+    return;
+
+  const int iBase = lua_gettop( L );
+
+  for ( int i = 0; i < s_NWEntityRegistry.Count(); ++i ) {
+    CBaseEntity *pEnt = s_NWEntityRegistry[ i ];
+    if ( pEnt == NULL || pEnt->entindex() <= 0 )
+      continue;
+
+    CBaseEntity::PushLuaInstanceSafe( L, pEnt );              // [inst]
+    const int iTable = HL2SB_NWPushStorageTable( L, -1 );     // [inst, table]
+    if ( iTable == 0 ) {
+      lua_settop( L, iBase );
+      continue;
+    }
+
+    // The painted-sky driver shows its palette (the decisive signal that the
+    // map keyvalues reached the server-side store); every other entity just
+    // reports a count.
+    const bool bDetail = ( Q_stristr( pEnt->GetClassname(), "skypaint" ) != NULL );
+    char szDetail[ 1024 ];
+    szDetail[ 0 ] = '\0';
+    int nSent = 0;
+
+    lua_pushnil( L );                                         // [inst, table, key]
+    while ( lua_next( L, iTable ) != 0 ) {                    // [.., key, value]
+      const char *pszKey = lua_tostring( L, -2 );
+      if ( pszKey != NULL && Q_strnicmp( pszKey, "__hl2sb_nw_", 11 ) == 0 ) {
+        const char *pszName = pszKey + 11;
+        char szTypeKey[ 160 ];
+        Q_snprintf( szTypeKey, sizeof( szTypeKey ), "__hl2sb_nwt_%s", pszName );
+        lua_pushstring( L, szTypeKey );
+        lua_rawget( L, iTable );                              // [.., key, value, type]
+        const char *pszType = lua_tostring( L, -1 );
+        const char tag = ( pszType != NULL ) ? HL2SB_NWTagForType( pszType ) : 0;
+        const int iValue = lua_gettop( L ) - 1;               // absolute, under the type
+        if ( tag != 0 && HL2SB_NWValueMatchesTag( L, iValue, tag ) ) {
+          unsigned char payload[ 512 ];
+          int len = HL2SB_NWSerialize( L, iValue, tag, payload, sizeof( payload ) );
+          if ( len >= 0 ) {
+            CSingleUserRecipientFilter filter( pPlayer );
+            filter.MakeReliable();
+            UserMessageBegin( filter, "HL2SB_NW" );
+              WRITE_SHORT( pEnt->entindex() );
+              WRITE_STRING( pszName );
+              WRITE_BYTE( ( unsigned char )tag );
+              WRITE_BYTE( ( unsigned char )len );
+              for ( int b = 0; b < len; ++b )
+                WRITE_BYTE( payload[ b ] );
+            MessageEnd();
+            ++nSent;
+            if ( bDetail )
+              HL2SB_NWDetailAppend( szDetail, sizeof( szDetail ), L, pszName, iValue, tag );
+          }
+        }
+        lua_pop( L, 1 );                                      // type
+      }
+      lua_pop( L, 1 );                                        // value; key stays for lua_next
+    }
+
+    lua_settop( L, iBase );
+
+    Msg( "[HL2SB] NW resync %s (ent %d): %d variable(s) %s\n",
+         pEnt->GetClassname(), pEnt->entindex(), nSent, szDetail );
+  }
+
+  lua_settop( L, iBase );		// unconditional restore
+}
+#endif // CLIENT_DLL
+
 static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
   // Normalise the arguments to self, value (so the notify call below can build
   // its own frame regardless of what the caller passed).
@@ -2120,6 +2273,40 @@ static int HL2SB_Lua_EntityNetworkVar (lua_State *L) {
 
   lua_pushcclosure( L, HL2SB_Lua_EntityNetworkVarGet, 4 );
   lua_setfield( L, iTable, szGetter );
+
+  // HL2SB (2026-10-08): record the DECLARED type beside the accessors.  The
+  // sign-on resync (HL2SB_NWResyncClient) walks the raw storage keys and must
+  // serialise each value with the wire tag its declaration promised -- a Lua
+  // number alone cannot separate Float from Int.
+  char szTypeKey[ 160 ];
+  Q_snprintf( szTypeKey, sizeof( szTypeKey ), "__hl2sb_nwt_%s", pszName );
+  lua_pushstring( L, pszType );
+  lua_setfield( L, iTable, szTypeKey );
+
+#ifndef CLIENT_DLL
+  // Register the entity for the sign-on resync.  SetupDataTables can run with
+  // the entity's script TABLE as self, so resolve the owner the same way the
+  // setter's broadcast does.
+  {
+    CBaseEntity *pOwner = lua_toentity( L, 1 );
+    if ( pOwner == NULL && lua_istable( L, 1 ) ) {
+      lua_getfield( L, 1, "Entity" );
+      pOwner = lua_toentity( L, -1 );
+      lua_pop( L, 1 );
+    }
+    if ( pOwner != NULL && pOwner->entindex() > 0 ) {
+      bool bKnown = false;
+      for ( int i = 0; i < s_NWEntityRegistry.Count(); ++i ) {
+        if ( s_NWEntityRegistry[ i ] == pOwner ) {
+          bKnown = true;
+          break;
+        }
+      }
+      if ( !bKnown )
+        s_NWEntityRegistry.AddToTail( pOwner );
+    }
+  }
+#endif
 
   lua_remove( L, iTable );
   return 0;

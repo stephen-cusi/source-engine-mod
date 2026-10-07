@@ -418,6 +418,21 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 			lua_pop( L, 1 );
 		}
 
+		// HL2SB GMod compat (2026-10-08): NetworkVarElement gets the same
+		// treatment -- env_skypaint packs its three star values into one
+		// Angle slot through self:NetworkVarElement("Angle", 0, "p", ...).
+		// The implementation is a Lua shim (HL2SB_EntityNetworkVarElement);
+		// absent global, this is a no-op like the others.
+		lua_getglobal( L, "HL2SB_EntityNetworkVarElement" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_setfield( L, -2, "NetworkVarElement" );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+
 		lua_getfield( L, -1, "SetupDataTables" );
 		if ( lua_isfunction( L, -1 ) )
 		{
@@ -724,12 +739,20 @@ void CBaseScripted::OnDataChanged( DataUpdateType_t updateType )
 			// entity and the whole nextbot draw path is unreachable.
 			static int s_nScriptedReports = 0;
 
-			if ( s_nScriptedReports < 40 )
+			if ( s_nScriptedReports < 6 )
 			{
 				++s_nScriptedReports;
-				luasrc_LuaWarnMsgF( "[HL2SB] CLIENT CBaseScripted created: classname='%s' networkedScriptClass='%s'",
+				// HL2SB (2026-10-08): the first field is the PRE-BIND
+				// classname and reads as the classmap constant (the first
+				// registered scripted class -- typically "cod-c4" with this
+				// addon set) until the networked name lands and SetClassname
+				// fixes it below; that collapse is a known display quirk,
+				// not the entity's identity.  The networked script class is
+				// the real one.  Cap lowered: this fired per scripted entity
+				// and users read the collapsed constant as addon pollution.
+				luasrc_LuaWarnMsgF( "[HL2SB] CLIENT scripted entity created (classmap name='%s', real class='%s')",
 					GetClassname(),
-					( m_iScriptedClassname.Get() != NULL ) ? m_iScriptedClassname.Get() : "(none)" );
+					( m_iScriptedClassname.Get() != NULL ) ? m_iScriptedClassname.Get() : "(syncing)" );
 			}
 		}
 
@@ -836,6 +859,115 @@ void CBaseScripted::Precache( void )
 	// compiled out in release (see the comment there).
 	// InitScriptedEntity();
 }
+
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat (2026-10-08): the map-lifecycle dispatches.  GMod gives
+// every scripted entity ENTITY:KeyValue / ENTITY:AcceptInput /
+// ENTITY:UpdateTransmitState; this fork never did, so a map-placed scripted
+// entity (gm_construct's env_skypaint) could not receive its BSP keyvalues
+// and its colours never reached the client sky proxy.
+//
+// GMod lifecycle note: the instance table (and therefore SetupDataTables and
+// the networked defaults) exists BEFORE map keyvalues are applied, so an
+// entity script sees the defaults and the keyvalues replace them.  This
+// engine binds at Spawn instead, which would leave env_skypaint's KeyValue
+// with no instance at all -- so KeyValue forces the create-time bind
+// (bCallInitialize=false, exactly the ents.Create path); the later Spawn
+// bind sees the seeded table and does not re-run SetupDataTables, so the
+// map values survive.
+//-----------------------------------------------------------------------------
+
+bool CBaseScripted::KeyValue( const char *szKeyName, const char *szValue )
+{
+#ifdef LUA_SDK
+	if ( L != NULL && m_nTableReference < 0 )
+	{
+		// nextbots bind through CLuaNextBot::LoadNextBotScript instead
+		// (same guard as the bFreshBind branch in InitScriptedEntity).
+		char className[ 255 ];
+		const char *pszClass = GetClassname();
+		Q_strncpy( className, pszClass != NULL ? pszClass : "", sizeof( className ) );
+		Q_strlower( className );
+		if ( !IsLuaNextBot( className ) )
+		{
+			InitScriptedEntity( false );
+		}
+	}
+
+	if ( L != NULL && m_nTableReference >= 0 && lua_isrefvalid( L, m_nTableReference ) )
+	{
+		BEGIN_LUA_CALL_ENTITY_METHOD( "KeyValue" );
+		lua_pushstring( L, szKeyName );
+		lua_pushstring( L, szValue != NULL ? szValue : "" );
+		END_LUA_CALL_ENTITY_METHOD( 2, 1 );
+		// the macro leaves one result (or the nil placeholder) on top
+		bool bHandled = lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+		if ( bHandled )
+			return true;
+	}
+#endif
+	return BaseClass::KeyValue( szKeyName, szValue );
+}
+
+bool CBaseScripted::AcceptInput( const char *szInputName, CBaseEntity *pActivator, CBaseEntity *pCaller, variant_t Value, int outputID )
+{
+#ifdef LUA_SDK
+	if ( L != NULL && m_nTableReference >= 0 && lua_isrefvalid( L, m_nTableReference ) )
+	{
+		BEGIN_LUA_CALL_ENTITY_METHOD( "AcceptInput" );
+		// GMod's ENTITY:AcceptInput( name, activator, caller, data ) -- the
+		// input NAME is the first argument.  Pushing only the three entity
+		// arguments shifted every name into the activator slot: env_skypaint's
+		// SetNetworkVarsFromMapInput never saw a "Set<Var>" name, answered
+		// false, and the ent_fire input fell through to the data-desc lookup
+		// that has no such input -- silently dropped.
+		lua_pushstring( L, szInputName != NULL ? szInputName : "" );
+		if ( pActivator != NULL )
+			CBaseEntity::PushLuaInstanceSafe( L, pActivator );
+		else
+			lua_pushnil( L );
+		if ( pCaller != NULL )
+			CBaseEntity::PushLuaInstanceSafe( L, pCaller );
+		else
+			lua_pushnil( L );
+		const char *pszData = Value.String();
+		lua_pushstring( L, pszData != NULL ? pszData : "" );
+		END_LUA_CALL_ENTITY_METHOD( 4, 1 );
+		bool bHandled = lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+		if ( bHandled )
+			return true;
+	}
+#endif
+	return BaseClass::AcceptInput( szInputName, pActivator, pCaller, Value, outputID );
+}
+
+int CBaseScripted::UpdateTransmitState( void )
+{
+#ifdef LUA_SDK
+	if ( L != NULL && m_nTableReference >= 0 && lua_isrefvalid( L, m_nTableReference ) )
+	{
+		BEGIN_LUA_CALL_ENTITY_METHOD( "UpdateTransmitState" );
+		END_LUA_CALL_ENTITY_METHOD( 0, 1 );
+		int iScript = -1;
+		if ( lua_isnumber( L, -1 ) )
+			iScript = ( int )lua_tointeger( L, -1 );
+		lua_pop( L, 1 );
+		// GMod Enums/TRANSMIT: TRANSMIT_ALWAYS = 0, TRANSMIT_NEVER = 1,
+		// TRANSMIT_PVS = 2 (wiki Enums/TRANSMIT).
+		if ( iScript == 0 )
+			return SetTransmitState( FL_EDICT_ALWAYS );
+		if ( iScript == 1 )
+			return SetTransmitState( FL_EDICT_DONTSEND );
+		if ( iScript == 2 )
+			return SetTransmitState( FL_EDICT_PVSCHECK );
+	}
+#endif
+	return BaseClass::UpdateTransmitState();
+}
+#endif
 
 #ifdef CLIENT_DLL
 void CBaseScripted::ClientThink()

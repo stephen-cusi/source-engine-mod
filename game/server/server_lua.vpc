@@ -227,9 +227,6 @@ $Project "Server (HL2MP)"
 		$File "$SRCDIR/game/shared/hl2sb/hl2sb_gma.h"
 		$File "$SRCDIR/game/server/hl2sb_undo.cpp"
 		$File "$SRCDIR/game/server/hl2sb_undo.h"
-		// HL2SB: GMod's painted-sky controller (env_skypaint); feeds the
-		// client-side SkyPaint material proxy for skybox/painted* materials.
-		$File "$SRCDIR/game/server/env_skypaint.cpp"
 
 		// HL2SB: GMod's spawn commands, in the engine (gm_giveswep / gm_spawn /
 		// gm_spawnvehicle / gm_spawnnpc / gm_spawnprop) - one spawn path for every
