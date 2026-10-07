@@ -714,7 +714,7 @@ void CHL2MP_Player::SetPlayerModel( void )
 	// cl_playercolor / cl_weaponcolor, written by the player model selector's
 	// Bodygroups and Colors tabs.
 	//
-	// ⚠️ It has to be HERE, and AFTER SetModel(): SetModel() resets the bodygroups to
+	// It has to be HERE, and AFTER SetModel(): SetModel() resets the bodygroups to
 	// the model's own defaults.  Nothing in the tree called
 	// HL2SB_ApplyClientAppearance() before (the manager entry points it hangs off,
 	// HL2SB_ModelManager_PlayerSpawn / _ClientSettingsChanged, are never called), so
@@ -2040,6 +2040,12 @@ IMPLEMENT_SERVERCLASS_ST_NOBASE( CHL2MPRagdoll, DT_HL2MPRagdoll )
 	SendPropVector( SENDINFO(m_vecRagdollOrigin), -1,  SPROP_COORD ),
 	SendPropEHandle( SENDINFO( m_hPlayer ) ),
 	SendPropModelIndex( SENDINFO( m_nModelIndex ) ),
+	// HL2SB: the corpse has to carry the player's skin and bodygroup state
+	// (GMod's CreateRagdollEntity copies both onto the ragdoll).  This table is
+	// NOBASE, so without these props the networked m_nSkin/m_nBody never reach
+	// the client-side ragdoll and it renders the model's default bodygroups.
+	SendPropInt		( SENDINFO(m_nSkin), ANIMATION_SKIN_BITS ),
+	SendPropInt		( SENDINFO(m_nBody), ANIMATION_BODY_BITS ),
 	SendPropInt		( SENDINFO(m_nForceBone), 8, 0 ),
 	SendPropVector	( SENDINFO(m_vecForce), -1, SPROP_NOSCALE ),
 	SendPropVector( SENDINFO( m_vecRagdollVelocity ) )
@@ -2069,6 +2075,12 @@ void CHL2MP_Player::CreateRagdollEntity( void )
 		pRagdoll->m_vecRagdollOrigin = GetAbsOrigin();
 		pRagdoll->m_vecRagdollVelocity = GetAbsVelocity();
 		pRagdoll->m_nModelIndex = m_nModelIndex;
+		// HL2SB: GMod's CreateRagdollEntity copies the full visual state onto
+		// the corpse (skin and every bodygroup slot).  Both are networked via
+		// DT_HL2MPRagdoll above, so the client-side ragdoll keeps the bodygroups
+		// the living model had instead of snapping back to the model defaults.
+		pRagdoll->m_nSkin = m_nSkin;
+		pRagdoll->m_nBody = m_nBody;
 		pRagdoll->m_nForceBone = m_nForceBone;
 		pRagdoll->m_vecForce = m_vecTotalBulletForce;
 		pRagdoll->SetAbsOrigin( GetAbsOrigin() );

@@ -252,6 +252,67 @@ LUA_BINDING_BEGIN( CBaseAnimating, SkinCount, "class", "Returns the amount of sk
 }
 LUA_BINDING_END( "number", "The amount of skins the entity's model has" )
 
+// HL2SB: the per-group bodygroup readers used to live in the client-side
+// binding file only (game/client/lua/lc_baseanimating.cpp), so GMod code
+// running on the server (gamemode SetModel hooks, duplicator, sandbox menus)
+// saw GetBodygroup / GetNumBodyGroups / GetBodygroupCount / GetBodygroupName /
+// FindBodygroupByName as nil.  GMod registers all of them on BOTH realms
+// (server.dll and client.dll both carry the methods), so they live here where
+// the registration feeds both metatables.
+LUA_BINDING_BEGIN( CBaseAnimating, GetBodygroup, "class", "Get the entity's bodygroup value for the given bodygroup id" )
+{
+    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
+    int iGroup = LUA_BINDING_ARGUMENT( luaL_checkint, 2, "bodygroup" );
+
+    lua_pushinteger( L, pAnimating->GetBodygroup( iGroup ) );
+
+    return 1;
+}
+LUA_BINDING_END( "integer", "The bodygroup value" )
+
+LUA_BINDING_BEGIN( CBaseAnimating, GetNumBodyGroups, "class", "Returns the number of bodygroups on the entity's model" )
+{
+    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
+
+    lua_pushinteger( L, pAnimating->GetNumBodyGroups() );
+
+    return 1;
+}
+LUA_BINDING_END( "integer", "The number of bodygroups" )
+
+LUA_BINDING_BEGIN( CBaseAnimating, GetBodygroupCount, "class", "Returns how many values the given bodygroup of the entity's model has" )
+{
+    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
+    int iGroup = LUA_BINDING_ARGUMENT( luaL_checkint, 2, "bodygroup" );
+
+    lua_pushinteger( L, pAnimating->GetBodygroupCount( iGroup ) );
+
+    return 1;
+}
+LUA_BINDING_END( "integer", "The number of values the bodygroup has" )
+
+LUA_BINDING_BEGIN( CBaseAnimating, GetBodygroupName, "class", "Returns the name of the given bodygroup of the entity's model" )
+{
+    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
+    int iGroup = LUA_BINDING_ARGUMENT( luaL_checkint, 2, "bodygroup" );
+
+    lua_pushstring( L, pAnimating->GetBodygroupName( iGroup ) );
+
+    return 1;
+}
+LUA_BINDING_END( "string", "The name of the bodygroup" )
+
+LUA_BINDING_BEGIN( CBaseAnimating, FindBodygroupByName, "class", "Returns the bodygroup id with the given name on the entity's model" )
+{
+    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
+    const char *pName = LUA_BINDING_ARGUMENT( luaL_checkstring, 2, "name" );
+
+    lua_pushinteger( L, pAnimating->FindBodygroupByName( pName ) );
+
+    return 1;
+}
+LUA_BINDING_END( "integer", "The bodygroup id" )
+
 LUA_BINDING_BEGIN( CBaseAnimating, GetFlexBounds, "class", "Returns the min and max values for the target flex controller" )
 {
     lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );

@@ -1268,6 +1268,11 @@ IMPLEMENT_CLIENTCLASS_DT_NOBASE( C_HL2MPRagdoll, DT_HL2MPRagdoll, CHL2MPRagdoll 
 	RecvPropVector( RECVINFO(m_vecRagdollOrigin) ),
 	RecvPropEHandle( RECVINFO( m_hPlayer ) ),
 	RecvPropInt( RECVINFO( m_nModelIndex ) ),
+	// HL2SB: corpse skin/bodygroups - the server copies the dead player's
+	// values into these (GMod's CreateRagdollEntity does the same) and the
+	// client-side ragdoll renders with them.
+	RecvPropInt( RECVINFO( m_nSkin ) ),
+	RecvPropInt( RECVINFO( m_nBody ) ),
 	RecvPropInt( RECVINFO(m_nForceBone) ),
 	RecvPropVector( RECVINFO(m_vecForce) ),
 	RecvPropVector( RECVINFO( m_vecRagdollVelocity ) )
