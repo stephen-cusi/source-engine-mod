@@ -1,0 +1,31 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private texturize effect.
+//          Compiled programs shipped verbatim:
+//          shaders/fxc/g_texturize_vs20.vcs and
+//          shaders/fxc/g_texturize_ps20.vcs.  waf does not run fxc on this
+//          file; it documents the bytecode that ships (register use matches
+//          g_texturize.cpp).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_texturize_ps20 (ps_2_0) ----
+// c0 = $scalex, c1 = $scaley, s0 = $fbtexture (band source),
+// s1 = $basetexture (pattern, address mode WRAP).
+// Band index = min( floor( (r+g+b) * 8/3 ) * 0.125, 0.875 ).
+// U = wrapped (uv.x * $scalex), V = wrapped (uv.y * $scaley * 8) / 8 + band.
+// The reference wrap is a symmetric fractional wrap; under WRAP addressing
+// it is identical to frac() below.
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	float3 fb = tex2D( BaseTextureSampler, uv ).xyz;   // s0 = $fbtexture
+	float lum = fb.x + fb.y + fb.z;
+	float band = min( floor( lum * 2.66666675 ) * 0.125, 0.875 );
+
+	float u = frac( uv.x * c0.x );
+	float v = frac( uv.y * c1.x * 8.0 ) * 0.125 + band;
+
+	float4 pat = tex2D( PatternSampler, float2( u, v ) );   // s1 = $basetexture
+	return float4( pat.xyz, 1.0 );
+}

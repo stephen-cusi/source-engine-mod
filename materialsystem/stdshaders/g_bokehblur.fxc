@@ -1,0 +1,49 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference notes for the GMod private bokeh depth-of-field
+//          blur.  Compiled programs shipped verbatim:
+//          shaders/fxc/g_bokehblur_vs30.vcs and
+//          shaders/fxc/g_bokehblur_ps30.vcs.  waf does not run fxc on this
+//          file.  The ps_3_0 program is a fully unrolled 33-tap disc gather
+//          (roughly 1500 lines of instruction listing) whose exact
+//          instruction stream ships byte-for-byte in the .vcs; the compiled
+//          program listing is archived as g_bokehblur_ps30.c00.asm.txt in
+//          the evidence archive.  This file records the contract between the C++ side
+//          and the bytecode so g_bokehblur.cpp can be audited from this
+//          file plus the archived listing alone.
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// Uniform packing (g_bokehblur.cpp DYNAMIC_STATE):
+//   c0 = ( 1/backbufferWidth, 1/backbufferHeight, 0, 0 )
+//   c1 = $size        - circle-of-confusion scale in pixels
+//   c2 = $focus       - depth plane in focus
+//   c3 = $focusradius - exponent of the CoC power curve
+// Samplers:
+//   s0 = $basetexture     (color, linear filtering)
+//   s1 = $depthtexture    (scene depth in the red channel)
+//
+// Program structure of g_bokehblur_ps30:
+//   center  : coc0 = pow( | depth(uv) - $focus |, $focusradius ) * $size
+//   disc    : radiusUV = 2 * coc0 * c0   (per-axis UV scale)
+//   gather  : 33 taps at ring offsets embedded as def constants in
+//             c4..c42 (rings at 0.25 .. 0.9 of the disc radius; the exact
+//             (x, y) pairs are interleaved with the weight-shaping
+//             constants -2 / 3 / 0.1 / 0.249994 / luminance weights
+//             0.2126 / 0.7152 / 0.0722 / 0.125 in c4..c42 of the shipped
+//             program - so they are not repeated here).
+//   weight  : each tap's own CoC (from its depth sample) is compared with
+//             the center CoC; taps in front of / behind the focus plane
+//             are attenuated (saturate shaping with a 1 + w*w curve), the
+//             tap luminance modulates the contribution against the center,
+//             and the accumulator normalizes by the summed weights.
+//   output  : weighted color with alpha 1.
+//
+// The .vcs is authoritative; do not recompile this file over it.
+
+float4 g_bokehblur_vs30( float3 vPos : POSITION, float2 vTex : TEXCOORD0 )
+	: POSITION
+{
+	return mul( float4( vPos, 1.0 ), cModelViewProj );
+}

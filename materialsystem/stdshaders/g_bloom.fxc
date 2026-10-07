@@ -1,0 +1,36 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private bloom composite.
+//          Compiled programs shipped verbatim: shaders/fxc/g_bloom_vs20.vcs
+//          and shaders/fxc/g_bloom_ps20.vcs.  waf does not run fxc on this
+//          file; it documents the bytecode that ships (register use matches
+//          g_bloom.cpp).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_bloom_ps20 (ps_2_0) ----
+// c0..c3 = $levelr $levelg $levelb $colormul, s0 = $basetexture.
+// Channel gains mixed with a 1/3 luminance crossfade:
+//   out = tex * level * colormul + (1 - colormul) * ( dot(tex, level) / 3 )
+// Reference behavior with default $colormul 1.0: plain per-channel gain.
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	float3 tex = tex2D( BaseTextureSampler, uv ).xyz;
+	float raw = tex.x * c0.x + tex.y * c1.x + tex.z * c2.x;
+	float avg = raw * ( 1.0 / 3.0 );
+	float mixv = avg * ( 1.0 - c3.x );
+	return float4( tex.x * c0.x * c3.x + mixv,
+	               tex.y * c1.x * c3.x + mixv,
+	               tex.z * c2.x * c3.x + mixv,
+	               1.0 );
+}
+
+// ---- program g_bloom_vs20 (vs_2_0) ----
+// Fullscreen quad transform; c0 carries the (offset, scale) pair and the
+// material system writes cModelViewProj (c4..c7).  Texcoord passes through.
+float4 mainVS( float3 vPos : POSITION, float2 vTex : TEXCOORD0 )
+	: POSITION
+{
+	return mul( float4( vPos, 1.0 ), cModelViewProj );
+}

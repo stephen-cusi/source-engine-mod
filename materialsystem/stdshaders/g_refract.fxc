@@ -1,0 +1,33 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private refract pass.
+//          Compiled programs shipped verbatim:
+//          shaders/fxc/g_refract_vs20.vcs and
+//          shaders/fxc/g_refract_ps20.vcs.  waf does not run fxc on this
+//          file; it documents the bytecode that ships (register use matches
+//          g_refract.cpp).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_refract_ps20 (ps_2_0) ----
+// c0 = $refractamount, s0 = $normalmap, s1 = $fbtexture.
+// Five-tap normal fetch at +/- 0.001 UV (center weighted double), remapped
+// around 128/255, then the framebuffer resampled with the offset scaled by
+// $refractamount * 0.001.
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	const float e = 0.001;
+	float2 t = uv;
+	float3 n0 = tex2D( NormalSampler, t + float2(  e,  e ) ).xyz;
+	float3 n1 = tex2D( NormalSampler, t + float2( -e, -e ) ).xyz;
+	float3 n2 = tex2D( NormalSampler, t + float2(  e, -e ) ).xyz;
+	float3 n3 = tex2D( NormalSampler, t + float2( -e,  e ) ).xyz;
+	float3 ctr = tex2D( NormalSampler, t ).xyz;
+
+	float2 nsum = ctr.xy * 2.0 + n0.xy + n1.xy + n2.xy + n3.xy;
+	float2 n = nsum * ( 1.0 / 6.0 ) - 0.501960814;
+
+	float amt = c0.x * 0.001;
+	return tex2D( BaseTextureSampler, t + n * amt );
+}

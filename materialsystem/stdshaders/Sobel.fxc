@@ -1,0 +1,59 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private sobel edge detect.
+//          Compiled programs shipped verbatim: shaders/fxc/g_sobel_vs20.vcs,
+//          shaders/fxc/g_sobel_ps20.vcs and
+//          shaders/fxc/g_sobel_ps20b.vcs.  waf does not run fxc on this
+//          file; it documents the bytecode that ships (register use matches
+//          Sobel.cpp; the ps20 and ps20b programs carry the same math).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_sobel_ps20 (ps_2_0) ----
+// c2 = $threshold, s0 = $fbtexture.  Fixed stencil q = 1/640 UV units,
+// luminance weights (0.3, 0.59, 0.11).  Sample layout (relative to uv):
+//   r1 (-q, 0)   r2 (+q, +0.0014)   r3 (+q, +q)
+//   r4 ( 0, +q)  r5 (-q, +q)        r6 (+q, -q)
+//   r7 (-q, -q)  r8 ( 0, -q)        r0 = center
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	const float q = 0.0015625;
+	float3 W = float3( 0.3, 0.589999974, 0.109999999 );
+
+	float3 s0c = tex2D( BaseTextureSampler, uv ).xyz;
+	float3 s1 = tex2D( BaseTextureSampler, uv + float2( -q, 0 ) ).xyz;
+	float3 s2 = tex2D( BaseTextureSampler, uv + float2( q, 0.00139999995 ) ).xyz;
+	float3 s3 = tex2D( BaseTextureSampler, uv + float2( q, q ) ).xyz;
+	float3 s4 = tex2D( BaseTextureSampler, uv + float2( 0, q ) ).xyz;
+	float3 s5 = tex2D( BaseTextureSampler, uv + float2( -q, q ) ).xyz;
+	float3 s6 = tex2D( BaseTextureSampler, uv + float2( q, -q ) ).xyz;
+	float3 s7 = tex2D( BaseTextureSampler, uv + float2( -q, -q ) ).xyz;
+	float3 s8 = tex2D( BaseTextureSampler, uv + float2( 0, -q ) ).xyz;
+
+	float L0 = dot( s0c, W );
+	float L1 = dot( s1, W );
+	float L2 = dot( s2, W );
+	float L3 = dot( s3, W );
+	float L4 = dot( s4, W );
+	float L5 = dot( s5, W );
+	float L6 = dot( s6, W );
+	float L7 = dot( s7, W );
+	float L8 = dot( s8, W );
+
+	// Exact accumulation order of the shipped program.
+	float a = 2 * L8 + L7;
+	a += L6;
+	a -= L5;
+	a -= 2 * L4;
+	float b = a - L3;                 // first squared term
+	float c = L6 + L3;
+	c += 2 * L2;
+	c -= L5;
+	c -= 2 * L1;
+	c -= L7;
+	float mag2 = c * c + b * b;
+
+	float mask = ( mag2 - c2.x >= 0 ) ? 0.0 : 1.0;
+	return tex2D( BaseTextureSampler, uv ) * mask;
+}

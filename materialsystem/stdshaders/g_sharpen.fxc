@@ -1,0 +1,23 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private screenspace sharpen.
+//          Compiled programs shipped verbatim:
+//          shaders/fxc/g_sharpen_vs20.vcs and
+//          shaders/fxc/g_sharpen_ps20.vcs.  waf does not run fxc on this
+//          file; it documents the bytecode that ships (register use matches
+//          g_sharpen.cpp).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_sharpen_ps20 (ps_2_0) ----
+// c0 = $contrast, c1 = $distance.  Two diagonal taps: the output is the
+// center plus the contrast-scaled difference of the two taps.
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	float d = c1.x;
+	float4 center = tex2D( BaseTextureSampler, uv );
+	float4 tapP = tex2D( BaseTextureSampler, uv + float2( d, d ) );
+	float4 tapM = tex2D( BaseTextureSampler, uv - float2( d, d ) );
+	return center + tapP * c0.x - tapM * c0.x;
+}

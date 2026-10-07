@@ -1,0 +1,66 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private painted-skybox
+//          shader.  Compiled programs shipped verbatim:
+//          shaders/fxc/g_sky_{vs20,vs11,ps20,ps20b,ps11}.vcs.  waf does not
+//          run fxc on this file; it documents the bytecode that ships
+//          (register use matches g_sky.cpp).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// Programs:
+//   g_sky_vs20 / g_sky_vs11 - pass vertex position through (world-space sky
+//     sphere position is carried in the position stream), transform by the
+//     material system matrices (vs20 writes TEXCOORD0, vs11 writes DIFFUSE).
+//   g_sky_ps20 (ps_2_0) - gradient + dusk + sun disc (below).
+//   g_sky_ps11 (ps_1_1) - constant half/half blend of top and bottom color.
+//   g_sky_ps20b (ps_2_x, STARLAYERS static combos 0..3) - ps20 math plus the
+//     star layer pass sampling $startexture with $starscale reciprocal in
+//     c12 and $starpos in c13; see g_sky_ps20b.c0*.asm.txt in the evidence
+//     archive for the exact per-combo star blocks.
+
+// Uniforms driven by g_sky.cpp:
+//   c0 = eye position, c1 = $topcolor, c2 = $bottomcolor, c3 = $fadebias,
+//   c4 = $hdrscale (1 when HDR off), c5 = $sunnormal, c6 = $duskcolor,
+//   c7 = $duskscale, c8 = $duskintensity, c9 = $suncolor, c10 = $sunsize,
+//   c11 = $starfade, c12 = 1/$starscale, c13 = $starpos, c30 = cLightScale.
+//   Program-local defs: c11 = (1, -0.001, 0, 8), c12 = (1/9, 5, 10, 0.5),
+//   c13 = (0.05, 0, 0, 0) until overwritten by the runtime constants above.
+
+float4 g_sky_ps20( float3 worldPos : TEXCOORD0 ) : COLOR0
+{
+	// Sun direction validity guard (length must exceed 0.001).
+	float sunLen = length( c5.xyz );
+	float3 sunN = sunLen > 0 ? c5.xyz / sunLen : float3( 0, 0, 0 );
+	float3 view = normalize( worldPos - c0.xyz );
+	float cs = ( sunLen - 0.001 >= 0 ) ? dot( sunN, view ) : 0.0;
+
+	// Vertical gradient factor: n.z ^ $fadebias.
+	float p = pow( view.z, c3.x );
+
+	// Horizon fade combined with the sun cosine, normalized by /9.
+	float fade = ( ( 1.0 - abs( view.z ) ) * 8.0 + cs ) * ( 1.0 / 9.0 );
+
+	// Dusk band: exponent = 10 - 5 * $duskscale, scaled by $duskintensity.
+	float duskMask = c8.x * pow( fade, 10.0 - 5.0 * c7.x );
+
+	float3 grad = c2.xyz + p * ( c1.xyz - c2.xyz );
+	float3 dusk = grad * ( 1.0 - 0.5 * duskMask ) + c6.xyz * duskMask;
+
+	// Sun disc: pow(cos, 1 / (0.05 * $sunsize)), only on the facing side.
+	float sunDisc = pow( max( cs, 0.0 ), 1.0 / max( c10.x * 0.05, 1e-6 ) );
+	float faceMask = ( -cs >= 0 ) ? 0.0 : 1.0;        // cs > 0
+	float base = ( -fade >= 0 ) ? 0.0 : 1.0;          // fade > 0 selects dusk
+	float3 col = ( base != 0 ) ? dusk : grad;
+	float sunOn = ( -c10.x >= 0 ) ? 0.0 : 1.0;        // $sunsize > 0
+	float withSun = ( faceMask * sunOn > 0 ) ? 1.0 : 0.0;
+	float3 outc = ( withSun != 0 ) ? ( c9.xyz * sunDisc + col ) : col;
+
+	return float4( outc * c4.x * c30.x, 1.0 );
+}
+
+float4 g_sky_ps11( float3 worldPos : TEXCOORD0 ) : COLOR
+{
+	return float4( 0.5 * c1.xyz + 0.5 * c2.xyz, 1.0 );
+}

@@ -1,0 +1,38 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private sunbeams effect.
+//          Compiled programs shipped verbatim:
+//          shaders/fxc/g_sunbeams_vs20.vcs and
+//          shaders/fxc/g_sunbeams_ps20.vcs.  waf does not run fxc on this
+//          file; it documents the bytecode that ships (register use matches
+//          g_sunbeams.cpp).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_sunbeams_ps20 (ps_2_0) ----
+// c0 = $darken, c1 = $multiply, c2 = $sunsize, c3 = $sunx, c4 = $suny.
+// Eight samples march from the sun position toward the pixel, every sample
+// contributes clamp(sample - darken, 0, 10) weighted by (1 - distance),
+// accumulated onto the base framebuffer sample scaled by $multiply.
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	float2 sunPos = float2( c3.x, c4.y * 0 + c4.x );
+	float2 toPix = uv - sunPos;
+	float dist = length( toPix );
+	float2 march = ( dist > 0 ? toPix / dist : float2( 0, 0 ) ) * min( c2.x, dist );
+	float weight = 1.0 - dist;
+
+	float4 base = tex2D( BaseTextureSampler, uv );
+	float4 acc = base;
+	// Sample positions: at the sun itself, then seven points along march.
+	static const float kFrac[8] = { 0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875 };
+	[unroll]
+	for ( int i = 0; i < 8; ++i )
+	{
+		float4 s = tex2D( BaseTextureSampler, sunPos + march * kFrac[i] );
+		float lum = min( max( s - c0.x, 0.0 ), 10.0 );
+		acc += lum * weight * c1.x;
+	}
+	return acc;
+}

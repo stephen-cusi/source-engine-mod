@@ -1,0 +1,36 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private horizontal blur.
+//          Compiled programs shipped verbatim: shaders/fxc/g_blurx_vs20.vcs
+//          and shaders/fxc/g_blurx_ps20.vcs.  waf does not run fxc on this
+//          file; it documents the bytecode that ships (semantic-level
+//          reconstruction, register use matches g_blurx.cpp).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_blurx_ps20 (ps_2_0) ----
+// 13-tap separable gaussian along X.  c0.x = $size / backbuffer width.
+// Weight table read from the program's own def constants:
+//   w0 = 0.199470997, w1 = 0.176033005, w2 = 0.120985001,
+//   w3 = 0.0647590011, w4 = 0.0269949995, w5 = 0.00876399968,
+//   w6 = 0.00221600011   (sums to 1.0)
+static const float gWeights[7] =
+{
+	0.199470997, 0.176033005, 0.120985001, 0.0647590011,
+	0.0269949995, 0.00876399968, 0.00221600011
+};
+
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	float pitch = c0.x;
+	float4 acc = tex2D( BaseTextureSampler, uv ) * gWeights[0];
+	[unroll]
+	for ( int i = 1; i <= 6; ++i )
+	{
+		float o = pitch * i;
+		acc += tex2D( BaseTextureSampler, uv + float2( o, 0 ) ) * gWeights[i];
+		acc += tex2D( BaseTextureSampler, uv - float2( o, 0 ) ) * gWeights[i];
+	}
+	return acc;
+}

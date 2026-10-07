@@ -1,0 +1,19 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private premultiplied blit.
+//          Compiled programs shipped verbatim:
+//          shaders/fxc/g_premultiplied_vs20.vcs and
+//          shaders/fxc/g_premultiplied_ps20.vcs.  waf does not run fxc on
+//          this file; it documents the bytecode that ships.
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_premultiplied_ps20 (ps_2_0) ----
+// Pure passthrough; the premultiplied semantics live in the blend state set
+// by g_premultiplied.cpp (ONE / ONE_MINUS_SRC_ALPHA plus separate alpha
+// SRC_ALPHA / ONE_MINUS_SRC_ALPHA).
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	return tex2D( BaseTextureSampler, uv );
+}

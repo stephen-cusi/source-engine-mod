@@ -1,0 +1,32 @@
+//========= Copyright Valve Corporation, All rights reserved. ============//
+//
+// Purpose: HL2SB reference source for the GMod private downsample pass.
+//          Compiled programs shipped verbatim:
+//          shaders/fxc/g_downsample_vs20.vcs and
+//          shaders/fxc/g_downsample_ps20.vcs.  waf does not run fxc on this
+//          file; it documents the bytecode that ships (semantic-level
+//          reconstruction, register use matches g_downsample.cpp).
+//
+// $NoKeywords: $
+//===========================================================================//
+
+// ---- program g_downsample_ps20 (ps_2_0) ----
+// c0 = $darken, c1 = $multiply, c2 = $scale / texWidth, c3 = $scale / texHeight.
+// Nine taps: center weighted double, four edges, four corners; the sum is
+// scaled by 0.1 (weight total = 10), darkened, clamped, multiplied.
+float4 mainPS( float2 uv : TEXCOORD0 ) : COLOR0
+{
+	float2 off = float2( c2.x, c3.x );
+	float4 s = tex2D( BaseTextureSampler, uv ) * 2.0;
+	s += tex2D( BaseTextureSampler, uv + float2(  off.x,  off.y ) );
+	s += tex2D( BaseTextureSampler, uv + float2( -off.x,  off.y ) );
+	s += tex2D( BaseTextureSampler, uv + float2(  off.x, -off.y ) );
+	s += tex2D( BaseTextureSampler, uv + float2( -off.x, -off.y ) );
+	s += tex2D( BaseTextureSampler, uv + float2( 0,  off.y ) );
+	s += tex2D( BaseTextureSampler, uv + float2( 0, -off.y ) );
+	s += tex2D( BaseTextureSampler, uv + float2(  off.x, 0 ) );
+	s += tex2D( BaseTextureSampler, uv + float2( -off.x, 0 ) );
+
+	float3 col = max( s.rgb * 0.1 - c0.x, 0.0 );
+	return float4( col * c1.x, 1.0 );
+}
