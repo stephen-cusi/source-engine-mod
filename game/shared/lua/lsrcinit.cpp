@@ -859,6 +859,18 @@ static int lua_game_GetAmmoName (lua_State *L) {
   return 1;
 }
 
+// HL2SB (2026-10-07): GMod's game.GetAmmoID( string ammoName ) -> number,
+// the inverse of GetAmmoName; hl1sweps' Equip() asks for
+// game.GetAmmoID( "hornet" ) to clamp the hornet gun's ammo pool.
+// Unknown names answer -1 (CAmmoDef::Index's own miss value).
+static int lua_game_GetAmmoID (lua_State *L) {
+  const char *pszName = luaL_checkstring( L, 1 );
+  CAmmoDef *pAmmoDef = GetAmmoDef();
+  lua_pushinteger( L, ( pAmmoDef != NULL && pszName != NULL && pszName[ 0 ] != '\0' )
+    ? pAmmoDef->Index( pszName ) : -1 );
+  return 1;
+}
+
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: GMod's type().
 //
@@ -1258,7 +1270,17 @@ static void HL2SB_NWPushValue (lua_State *L, const char *pszType) {
     return;
   }
 
-  // Float / Int / anything unrecognised: GMod's numeric default.
+  if ( V_stricmp( pszType, "Entity" ) == 0 ) {
+    // HL2SB (2026-10-07): GMod's Entity-declared network var answers a NULL
+    // entity until something is set.  This used to fall through to the numeric
+    // default below, so Get<name>() handed scripts the number 0 and the first
+    // IsValid() on it died with "attempt to index a number value" (the hl1sweps
+    // RPG laser spot errored on every think and never spawned).
+    CBaseEntity::PushLuaInstanceSafe( L, NULL );
+    return;
+  }
+
+  // Float / Int: GMod's numeric default.
   lua_pushnumber( L, 0 );
 }
 
@@ -1900,6 +1922,16 @@ static int HL2SB_Lua_EntityNetworkVarSet (lua_State *L) {
   char tag = HL2SB_NWTagForType( pszValueType );
   if ( tag != 0 && iTable != 0 ) {
     CBaseEntity *pSelf = lua_toentity( L, 1 );
+    if ( pSelf == NULL && lua_istable( L, 1 ) ) {
+      // HL2SB (2026-10-08): SetupDataTables runs with the entity's SCRIPT
+      // TABLE as self (basescripted.cpp seeding), so the GMod-verbatim
+      // defaults it sets -- env_skypaint's palette -- carried no entity and
+      // this broadcast silently skipped, leaving the client on the type
+      // default.  Resolve the owner through the table's .Entity field.
+      lua_getfield( L, 1, "Entity" );
+      pSelf = lua_toentity( L, -1 );
+      lua_pop( L, 1 );
+    }
     if ( pSelf != NULL && pSelf->entindex() > 0 ) {
       unsigned char payload[ 512 ];
       int len = HL2SB_NWSerialize( L, 2, tag, payload, sizeof( payload ) );
@@ -2435,6 +2467,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pushcfunction( L, lua_game_SinglePlayer ); lua_setfield( L, -2, "SinglePlayer" );
     lua_pushcfunction( L, lua_game_IsDedicated );  lua_setfield( L, -2, "IsDedicated" );
     lua_pushcfunction( L, lua_game_GetAmmoName );  lua_setfield( L, -2, "GetAmmoName" );
+    lua_pushcfunction( L, lua_game_GetAmmoID );    lua_setfield( L, -2, "GetAmmoID" );
   }
   lua_pop( L, 1 );
 
@@ -2477,6 +2510,14 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_pushinteger( L, STUDIO_DRAWTRANSLUCENTSUBMODELS ); lua_setglobal( L, "STUDIO_DRAWTRANSLUCENTSUBMODELS" );
   lua_pushinteger( L, STUDIO_SSAODEPTHTEXTURE );         lua_setglobal( L, "STUDIO_SSAODEPTHTEXTURE" );
   lua_pushinteger( L, STUDIO_SHADOWDEPTHTEXTURE );       lua_setglobal( L, "STUDIO_SHADOWDEPTHTEXTURE" );
+
+  // HL2SB (2026-10-08): GMod's Enums/TRANSMIT family, answered by
+  // ENTITY:UpdateTransmitState (basescripted.cpp maps the script's return
+  // through SetTransmitState).  Wiki values: TRANSMIT_ALWAYS = 0,
+  // TRANSMIT_NEVER = 1, TRANSMIT_PVS = 2.
+  lua_pushinteger( L, 0 );  lua_setglobal( L, "TRANSMIT_ALWAYS" );
+  lua_pushinteger( L, 1 );  lua_setglobal( L, "TRANSMIT_NEVER" );
+  lua_pushinteger( L, 2 );  lua_setglobal( L, "TRANSMIT_PVS" );
 
   // HL2SB (2026-10-05): footstep-timing enum family (game/shared/
   // baseplayer_shared.h stepsoundtimes_t) that GM:PlayerStepSoundTime

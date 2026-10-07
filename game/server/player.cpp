@@ -917,7 +917,15 @@ void CBasePlayer::TraceAttack( const CTakeDamageInfo &inputInfo, const Vector &v
 		lua_pushtrace( L, *ptr );
 	END_LUA_CALL_HOOK( 4, 1 );
 
-	RETURN_LUA_NONE();
+	/* HL2SB GMod parity (2026-10-07): the hook runs even before the
+	** m_takedamage gate and a truthy return vetoes the whole hit -- the
+	** engine skips AddMultiDamage and the blood pass entirely. */
+	if ( lua_toboolean( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return;
+	}
+	lua_pop( L, 1 );
 #endif
 	if ( m_takedamage )
 	{
@@ -945,31 +953,72 @@ void CBasePlayer::TraceAttack( const CTakeDamageInfo &inputInfo, const Vector &v
 
 		SetLastHitGroup( ptr->hitgroup );
 
-		
-		switch ( ptr->hitgroup )
+		/* HL2SB GMod parity (2026-10-07, reference-behavior revision): the running
+		** player class carries NO hitgroup convar switch in its TraceAttack
+		** at all -- the CGMOD player's override goes straight from
+		** SetLastHitGroup to the GM:ScalePlayerDamage hook and then
+		** AddMultiDamage.  The convar-switched body only exists on the base
+		** classes the live player never dispatches through, so headshot
+		** scaling is entirely a Lua gamemode concern (base gamemode: head x2,
+		** arms/legs/gear x0.25).  The old switch here (x sk_player_head etc.)
+		** multiplied every headshot on top of the gamemode scale and made
+		** this fork hit 1.5x harder than GMod. */
+
+#if defined( LUA_SDK )
+		/* GM:ScalePlayerDamage( ply, hitgroup, dmginfo ).  GMod hands the hook
+		** the LIVE damage info -- a scaling inside the hook must reach the
+		** engine.  lua_pushdamageinfo copies, so the copy is anchored in the
+		** registry around the call and the hook's damage info is read back
+		** into the engine-side info afterwards.  A truthy return means "this
+		** hook dealt with the hit" -- the engine then skips AddMultiDamage and
+		** the blood pass, exactly like GMod ("Return true to not take
+		** damage", base gamemode comment). */
+		bool bScaleVeto = false;
+		if ( L != NULL )
 		{
-		case HITGROUP_GENERIC:
-			break;
-		case HITGROUP_HEAD:
-			info.ScaleDamage( sk_player_head.GetFloat() );
-			break;
-		case HITGROUP_CHEST:
-			info.ScaleDamage( sk_player_chest.GetFloat() );
-			break;
-		case HITGROUP_STOMACH:
-			info.ScaleDamage( sk_player_stomach.GetFloat() );
-			break;
-		case HITGROUP_LEFTARM:
-		case HITGROUP_RIGHTARM:
-			info.ScaleDamage( sk_player_arm.GetFloat() );
-			break;
-		case HITGROUP_LEFTLEG:
-		case HITGROUP_RIGHTLEG:
-			info.ScaleDamage( sk_player_leg.GetFloat() );
-			break;
-		default:
-			break;
+			static const char s_szScaleAnchor[] = "HL2SB_ScalePlayerDamageAnchor";
+
+			// anchor: registry[s_szScaleAnchor] = fresh copy of info
+			lua_pushlightuserdata( L, (void *)s_szScaleAnchor );
+			lua_pushdamageinfo( L, info );
+			lua_rawset( L, LUA_REGISTRYINDEX );
+
+			// arg 3: a reference to the SAME anchored userdata (the pcall
+			// below pops this one, the registry keeps the object alive)
+			BEGIN_LUA_CALL_HOOK( "ScalePlayerDamage" );
+				lua_pushplayer( L, this );
+				lua_pushinteger( L, ptr->hitgroup );
+				lua_pushlightuserdata( L, (void *)s_szScaleAnchor );
+				lua_rawget( L, LUA_REGISTRYINDEX );
+			END_LUA_CALL_HOOK( 3, 1 );
+
+			// "return true" = the hook took over; no damage is applied
+			bScaleVeto = ( lua_toboolean( L, -1 ) != 0 );
+			lua_pop( L, 1 );
+
+			if ( !bScaleVeto )
+			{
+				// read the hook's scalings back into the engine info (the
+				// whole struct: hooks may touch damage, position, force, type)
+				lua_pushlightuserdata( L, (void *)s_szScaleAnchor );
+				lua_rawget( L, LUA_REGISTRYINDEX );
+				if ( lua_isuserdata( L, -1 ) )
+				{
+					CTakeDamageInfo &hookInfo = luaL_checkdamageinfo( L, -1 );
+					info = hookInfo;
+				}
+				lua_pop( L, 1 );
+			}
+
+			// drop the anchor
+			lua_pushlightuserdata( L, (void *)s_szScaleAnchor );
+			lua_pushnil( L );
+			lua_rawset( L, LUA_REGISTRYINDEX );
+
+			if ( bScaleVeto )
+				return;
 		}
+#endif
 
 #ifdef HL2_EPISODIC
 		// If this damage type makes us bleed, then do so

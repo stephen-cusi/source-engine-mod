@@ -2040,6 +2040,25 @@ static int CBaseAnimating___index (lua_State *L) {
     HL2SB_PushNullEntityIndex( L, lua_tostring( L, 2 ) );
     return 1;
   }
+  /* HL2SB (2026-10-07): self.Owner for ENT methods.  Mirrors the server copy
+  ** in lbaseanimating.cpp -- keep the two in sync.  GMod answers self.Owner
+  ** with the holder entity; a script-table Owner field wins first. */
+  if ( lua_tostring( L, 2 ) != NULL && Q_stricmp( lua_tostring( L, 2 ), "Owner" ) == 0 )
+  {
+    if ( lua_isrefvalid( L, pEntity->m_nTableReference ) )
+    {
+      lua_getref( L, pEntity->m_nTableReference );
+      lua_getfield( L, -1, "Owner" );
+      if ( !lua_isnil( L, -1 ) )
+      {
+        lua_remove( L, -2 );   /* instance table out, the value stays on top */
+        return 1;
+      }
+      lua_pop( L, 2 );         /* no script Owner -- fall through to the C entity */
+    }
+    CBaseEntity::PushLuaInstanceSafe( L, pEntity->GetOwnerEntity() );
+    return 1;
+  }
   if (lua_isrefvalid(L, pEntity->m_nTableReference)) {
     // HL2SB (2026-09-20): SCRIPT-TABLE FUNCTIONS are overrides and win over
     // C++ methods; a script-table DATA (non-function) field never shadows a

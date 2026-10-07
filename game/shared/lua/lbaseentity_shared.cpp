@@ -95,6 +95,11 @@ static int s_iEntityCacheKey = 0;
 LUA_API bool lua_pushnpcentity (lua_State *L, CBaseEntity *pEntity);
 LUA_API bool lua_pushnextbotentity (lua_State *L, CBaseEntity *pEntity);
 
+/* Defined further down in this file; forward-declared so the weapon branch of
+** lua_pushentity can guard on the metatable actually existing (the game Lua
+** state may not have opened the weapon library). */
+static bool lua_hasmetatable (lua_State *L, const char *pszMetatableName);
+
 LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
   /* HL2SB: GMod hands each entity class family its own metatable, and that
   ** has to happen for EVERY entity push -- ents.FindByClass, trace results,
@@ -110,6 +115,16 @@ LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
     return;
   if (lua_pushvehicleentity(L, pEntity))
     return;
+  /* HL2SB (2026-10-07): same contract for weapons -- GMod pushes a
+  ** CBaseCombatWeapon with the Weapon metatable from every generic path
+  ** (hl1sweps' muzzle-flash EFFECT reads data:GetEntity() and calls
+  ** Weapon:IsCarriedByLocalPlayer() on it).  The Weapon __index chains down
+  ** to the CBaseAnimating / CBaseEntity metatables, so entity methods stay
+  ** reachable. */
+  if (pEntity != NULL && pEntity->IsWeapon() && lua_hasmetatable(L, "CBaseCombatWeapon")) {
+    lua_pushweapon(L, static_cast<CBaseCombatWeapon *>(pEntity));
+    return;
+  }
 
   if (pEntity != NULL) {
     CBaseHandle hEntity;
@@ -248,7 +263,7 @@ static int CBaseEntity_AddEffects (lua_State *L) {
 ** Both are effect flags in Source - EF_NODRAW (public/const.h:288) and EF_NOSHADOW
 ** (public/const.h:287) - which is how GMod itself implements them.
 **
-** ⚠️ cod_c4 calls them in ENT:Initialize (addons/cod_c4/lua/entities/cod-c4/init.lua:29)
+** cod_c4 calls them in ENT:Initialize (addons/cod_c4/lua/entities/cod-c4/init.lua:29)
 ** and in ENT:Draw (cl_init.lua:6).  As nil methods they did not merely print an error:
 ** Initialize aborted half way, so self.Hit / self.ExplodedViaWorld / the two SetDTFloat
 ** light timings and SetNWBool("CanUse") were never set, and every Draw stopped before
@@ -433,6 +448,38 @@ static int CBaseEntity_DispatchTraceAttack (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   // luaL_checkdamageinfo returns a reference, not a pointer.
   CTakeDamageInfo &info = luaL_checkdamageinfo(L, 2);
+  // HL2SB (2026-10-07): GMod's 2-arg overload is (dmginfo, trace) -- the
+  // trace alone.  This engine's util traces arrive as CGameTrace userdata at
+  // slot 3, but the old binding only recognised a trace at slot 4, so the
+  // 2-arg call fell into the two-vector branch and raised
+  // "bad argument #3 to 'DispatchTraceAttack' (Vector expected, got
+  // CGameTrace)" -- hl1sweps' crowbar Swing connected every hit and the
+  // damage never landed.
+  if (luaL_testudata(L, 3, "CGameTrace") != NULL) {
+    CGameTrace &tr = luaL_checktrace(L, 3);
+    /* HL2SB (2026-10-07): GMod's full signature is
+    ** (dmginfo, trace[, dir]) -- the optional dir overrides the trace-derived
+    ** direction (hl1sweps' egon and grenade pass the shot direction here for
+    ** the blood/force path).  Without the slot-4 read the override was
+    ** silently ignored. */
+    Vector vecDir;
+    if (luaL_testudata(L, 4, "Vector") != NULL) {
+      vecDir = luaL_checkvector(L, 4);
+      VectorNormalize(vecDir);
+    } else {
+      vecDir = tr.endpos - tr.startpos;
+      if (VectorNormalize(vecDir) < 0.001f) {
+        // Degenerate (hull trace that started inside the hit): GMod trace
+        // tables answer Normal with -plane.normal in this exact case, so the
+        // force/blood direction matches that fallback.
+        vecDir = -tr.plane.normal;
+      }
+    }
+    ClearMultiDamage();
+    pEntity->DispatchTraceAttack(info, vecDir, &tr);
+    ApplyMultiDamage();
+    return 0;
+  }
   // HL2SB (2026-09-22): GMod's signature takes a CGameTrace, but cf_beast's
   // melee passes two VECTORS -- the trace start and end (DispatchTraceAttack(
   // dmg, sp, ran )).  Tolerate that shape by running the trace here instead
@@ -1856,6 +1903,118 @@ static int CBaseEntity_IsNPC (lua_State *L) {
   return 1;
 }
 
+/* HL2SB GMod compat: Entity:IsNextBot -- shared, returns whether the entity
+** belongs to the NextBot family (GMod wiki).  SNPCs are not NextBots and
+** answer false, same as GMod. */
+static int CBaseEntity_IsNextBot (lua_State *L) {
+#ifdef CLIENT_DLL
+  /* Client realm answers through the IsNextBot() virtual: C_BaseEntity
+  ** returns false, C_NextBotCombatCharacter overrides true (Lua nextbots
+  ** network as C_NextBotCombatCharacter). */
+  lua_pushboolean(L, luaL_checkentity(L, 1)->IsNextBot());
+#else
+  /* Server realm has no IsNextBot() virtual on CBaseEntity; every bot class
+  ** answers through MyNextBotPointer() -- the same test the NextBot entity
+  ** push uses in lnpc_shared.cpp. */
+  lua_pushboolean(L, luaL_checkentity(L, 1)->MyNextBotPointer() != NULL);
+#endif
+  return 1;
+}
+
+/* HL2SB GMod compat: Entity:UseTriggerBounds( bool enable, number bloat = 0 )
+** (GMod wiki).  GMod forwards to the same CollisionProperty helper Valve's
+** world pickup items use (SetSolid(SOLID_BSP) + SetTrigger(true) +
+** UseTriggerBounds(true, 24) in item_world.cpp).  The trigger box extends
+** the entity's world-aligned bounding box by bloat in x/y and bloat * 0.5
+** upward, regardless of the entity's solidity. */
+static int CBaseEntity_UseTriggerBounds (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  bool bEnable = lua_toboolean(L, 2) ? true : false;
+  float flBloat = 0.0f;
+  if ( lua_isnumber(L, 3) )
+    flBloat = (float)lua_tonumber(L, 3);
+  pEntity->CollisionProp()->UseTriggerBounds( bEnable, flBloat );
+  return 0;
+}
+
+/* HL2SB GMod compat: Entity:CreatedByMap() -- "whether the entity was created
+** by map or not" (GMod wiki).  Server realm answers through the map-spawn
+** marker list kept in mapentities.cpp; the client carries no such marker in
+** this engine and answers false (every hl1sweps consumer is server-side). */
+LUA_API bool HL2SB_IsEntityCreatedByMap (CBaseEntity *pEntity);
+static int CBaseEntity_CreatedByMap (lua_State *L) {
+#ifndef CLIENT_DLL
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  lua_pushboolean(L, HL2SB_IsEntityCreatedByMap(pEntity));
+#else
+  luaL_checkentity(L, 1);
+  lua_pushboolean(L, false);
+#endif
+  return 1;
+}
+
+/* HL2SB GMod compat: Entity:GetModelBounds() (GMod wiki: returns the model's
+** min/max bounding box, animation bboxes included, NOT scaled by
+** SetModelScale).  The studio path is the engine's own sequence bbox helper,
+** which is exactly "bounds that account for the animations compiled into the
+** model"; non-studio models answer the collision OBB. */
+#include "animation.h"					// HL2SB: Entity:GetModelBounds (ExtractBbox)
+
+static int CBaseEntity_GetModelBounds (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  Vector mins, maxs;
+  CBaseAnimating *pAnim = pEntity->GetBaseAnimating();
+  if ( pAnim != NULL && pAnim->GetModelPtr() != NULL )
+  {
+    ExtractBbox( pAnim->GetModelPtr(), pAnim->GetSequence(), mins, maxs );
+  }
+  else
+  {
+    mins = pEntity->CollisionProp()->OBBMins();
+    maxs = pEntity->CollisionProp()->OBBMaxs();
+  }
+  lua_pushvector(L, mins);
+  lua_pushvector(L, maxs);
+  return 2;
+}
+
+/* HL2SB GMod compat: Entity:SetRenderFX( renderfx ) / GetRenderFX() -- the
+** networked render-fx byte (kRenderFx* family; GMod addons pulse weapons and
+** glow sprites through it).  The getter is shared (the value networks); the
+** setter only has a server-side target in this engine. */
+static int CBaseEntity_SetRenderFX (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+#ifndef CLIENT_DLL
+  int iRenderFX = luaL_checkint(L, 2);
+  pEntity->m_nRenderFX = (unsigned char)iRenderFX;
+#else
+  (void)pEntity;  // client realm: the value networks down, nothing to set here
+#endif
+  return 0;
+}
+
+static int CBaseEntity_GetRenderFX (lua_State *L) {
+  lua_pushinteger(L, luaL_checkentity(L, 1)->m_nRenderFX);
+  return 1;
+}
+
+/* HL2SB GMod compat: Entity:SetWeaponModel( model, weapon ) (GMod wiki: sets
+** a viewmodel's model and binds the weapon, used for c_model viewmodels).
+** The engine method is CBaseViewModel::SetWeaponModel, shared across both
+** realms; a non-viewmodel entity answers nothing, like GMod's. */
+static int CBaseEntity_SetWeaponModel (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pszModel = luaL_checkstring(L, 2);
+  CBaseEntity *pWeaponEnt = lua_toentity(L, 3);
+  CBaseViewModel *pViewModel = dynamic_cast<CBaseViewModel *>( pEntity );
+  CBaseCombatWeapon *pWeapon = dynamic_cast<CBaseCombatWeapon *>( pWeaponEnt );
+  if ( pViewModel != NULL )
+  {
+    pViewModel->SetWeaponModel( pszModel, pWeapon );
+  }
+  return 0;
+}
+
 static int CBaseEntity_IsPlayer (lua_State *L) {
   lua_pushboolean(L, luaL_checkentity(L, 1)->IsPlayer());
   return 1;
@@ -1867,6 +2026,7 @@ static int CBaseEntity_IsPlayer (lua_State *L) {
 //     vm:SendViewModelMatchingSequence( vm:LookupSequence( anim ) )
 // and threw "attempt to call a nil value (method 'SendViewModelMatchingSequence')"
 // without it.  The engine owns the real method (CBaseViewModel).
+// Also needed by Entity:SetWeaponModel below, so the include moved up here.
 #include "baseviewmodel_shared.h"
 
 static int CBaseEntity_SendViewModelMatchingSequence (lua_State *L) {
@@ -3331,6 +3491,27 @@ void HL2SB_PushNullEntityIndex (lua_State *L, const char *pszField) {
     lua_pushcfunction(L, HL2SB_NullEntityMethod);
 }
 
+// HL2SB (2026-10-07): one class-metatable lookup for the dynamic-type fallback
+// at the bottom of CBaseEntity___index.  Answers false and leaves the stack
+// untouched when the class has no metatable in this Lua state or the key is
+// absent from it; on true the value sits alone on top of the stack.
+static bool HL2SB_PushClassField (lua_State *L, const char *pszMetatable, const char *pszField)
+{
+  if (!lua_hasmetatable(L, pszMetatable))
+    return false;
+
+  luaL_getmetatable(L, pszMetatable);
+  lua_pushstring(L, pszField);
+  lua_rawget(L, -2);                       /* [meta, value|nil] */
+  if (lua_isnil(L, -1))
+  {
+    lua_pop(L, 2);
+    return false;
+  }
+  lua_remove(L, -2);                       /* [value] */
+  return true;
+}
+
 static int CBaseEntity___index (lua_State *L) {
   CBaseEntity *pEntity = lua_toentity(L, 1);
   if (pEntity == NULL) {
@@ -3476,6 +3657,34 @@ static int CBaseEntity___index (lua_State *L) {
   else {
     lua_getmetatable(L, 1);
     lua_getfield(L, -1, field);
+  }
+
+  /* HL2SB (2026-10-07): dynamic-type class fallback.  An entity that reached
+  ** Lua through this plain metatable -- a trace result, EffectData:GetEntity,
+  ** SWEP:Equip's new owner, any binding that pushes with lua_pushentity --
+  ** used to answer only the CBaseEntity method set: Player:GetAmmoCount,
+  ** Player:GetShootPos, Weapon:IsCarriedByLocalPlayer-style class methods and
+  ** the CBaseAnimating sequence set were all nil here, because this fork
+  ** splits one method set per class where GMod keeps a single entity class
+  ** table.  When nothing above answered, look the key up in the metatable of
+  ** the entity's REAL class (most specific first, then the animating base).
+  ** Only reached on the nil path, so the common per-field read cost is
+  ** unchanged. */
+  if ( lua_isnil( L, -1 ) )
+  {
+    lua_pop( L, 1 );                       /* drop the nil; scratch below */
+
+    bool bAnswered = false;
+    if ( pEntity->IsPlayer() )
+      bAnswered = HL2SB_PushClassField( L, "CBasePlayer", field );
+    else if ( pEntity->IsWeapon() )
+      bAnswered = HL2SB_PushClassField( L, "CBaseCombatWeapon", field );
+
+    if ( !bAnswered && pEntity->GetBaseAnimating() != NULL )
+      bAnswered = HL2SB_PushClassField( L, "CBaseAnimating", field );
+
+    if ( !bAnswered )
+      lua_pushnil( L );
   }
 
   /* HL2SB GMod compat: GMod's deprecated entity self-reference fields.
@@ -4904,6 +5113,11 @@ static const luaL_Reg CBaseEntitymeta[] = {
   // Same function; both names stay.
   {"EyePos", CBaseEntity_EyePosition},
   {"FireBullets", CBaseEntity_FireBullets},
+  {"CreatedByMap", CBaseEntity_CreatedByMap},
+  {"GetModelBounds", CBaseEntity_GetModelBounds},
+  {"GetRenderFX", CBaseEntity_GetRenderFX},
+  {"SetRenderFX", CBaseEntity_SetRenderFX},
+  {"SetWeaponModel", CBaseEntity_SetWeaponModel},
   {"FirstMoveChild", CBaseEntity_FirstMoveChild},
   {"FollowEntity", CBaseEntity_FollowEntity},
   {"GenderExpandString", CBaseEntity_GenderExpandString},
@@ -5077,6 +5291,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"IsInWorld", CBaseEntity_IsInWorld},
   {"IsMarkedForDeletion", CBaseEntity_IsMarkedForDeletion},
   {"IsNPC", CBaseEntity_IsNPC},
+  {"IsNextBot", CBaseEntity_IsNextBot},
+  {"UseTriggerBounds", CBaseEntity_UseTriggerBounds},
   {"IsPlayer", CBaseEntity_IsPlayer},
   {"IsPlayerSimulated", CBaseEntity_IsPlayerSimulated},
   {"IsPointSized", CBaseEntity_IsPointSized},
@@ -5289,6 +5505,18 @@ static int luasrc_ents_Create (lua_State *L) {
   const char *pszClassName = luaL_checkstring(L, 1);
   CBaseEntity *pEntity = CreateEntityByName(pszClassName);
 
+  /* HL2SB (2026-10-07): the push below is a plain lua_pushentity -- see the
+  ** comment before it for why this must NOT become PushLuaInstanceSafe.
+  ** The class methods that used to be lost with the plain metatable are
+  ** answered by the dynamic-type fallback in CBaseEntity___index instead:
+  ** the hl1sweps grenade's ShootTimed called self:SetSequence(0) (a
+  ** CBaseAnimating method) through a plain-metatable userdata and raised
+  ** "attempt to call a nil value" right in the middle of the setup --
+  ** self.dmg / self.m_flNextAttack were never written, Think walked into
+  ** Explode on every tick, and the self:Remove() tail never ran: the
+  ** grenade was immortal and the thrower piled up a new one every 0.5s
+  ** while held. */
+
   // HL2SB: diagnostics + GMod create-time class binding.  This is the binding
   // actually registered as ents.Create (the Entities.CreateByName one is a
   // second, older path) -- and it used to be a bare CreateEntityByName: no
@@ -5319,6 +5547,16 @@ static int luasrc_ents_Create (lua_State *L) {
     }
   }
 
+  /* HL2SB (2026-10-07): deliberately the PLAIN push (CBaseEntity metatable),
+  ** not PushLuaInstanceSafe.  A scripted entity that answers through
+  ** CBaseEntity___index keeps the full special-case set (script instance
+  ** fields first, self.Owner, the deprecated Entity/Weapon fields) that the
+  ** CBaseAnimating___index copy does not have -- cod_c4/minecraft self.Owner
+  ** reads depend on it.  The class methods the plain metatable lacks
+  ** (CBaseAnimating's sequence set, the Player/Weapon sets) are answered by
+  ** the dynamic-type fallback at the bottom of CBaseEntity___index, so
+  ** hl1sweps' ents.Create("ent_hl1_grenade") -> self:SetSequence(0) chain
+  ** now completes without switching metatables. */
   lua_pushentity(L, pEntity);
   return 1;
 }

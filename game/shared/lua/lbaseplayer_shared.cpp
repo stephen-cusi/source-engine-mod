@@ -10,6 +10,9 @@
 #include "cbase.h"
 #include "convar.h"
 #include "in_buttons.h"
+// HL2SB: Player:SetAmmo resolves GMod's ammo-name string through the shared
+// ammo definition (same lookup lua_tofirebulletsinfo uses for bullet.AmmoType).
+#include "ammodef.h"
 #ifdef CLIENT_DLL
 #include "iinput.h"	// HL2SB: input->GetButtonBits (live-command fallback)
 // HL2SB: raw per-frame mouse deltas from CInput::MouseMove (in_mouse.cpp)
@@ -423,6 +426,26 @@ static int CBasePlayer_FindUseEntity (lua_State *L) {
 static int CBasePlayer_GetActiveWeapon (lua_State *L) {
   CBaseCombatWeapon *pWeapon = luaL_checkplayer(L, 1)->GetActiveWeapon();
   lua_pushweapon(L, pWeapon);
+  return 1;
+}
+
+// HL2SB GMod compat (2026-10-08): Player:GetWeapons() -> table (wiki, both
+// realms).  GMod answers with the carried weapons as a 1..n sequence -- the
+// m_hMyWeapons inventory array in slot order, NULL slots skipped.  hl1sweps'
+// GetNextBestWeapon chain walks it with ipairs; the missing binding raised
+// "attempt to call a nil value (method 'GetWeapons')" on every switch attempt.
+static int CBasePlayer_GetWeapons (lua_State *L) {
+  lua_CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  lua_newtable(L);
+  int iOut = 0;
+  for ( int i = 0; i < MAX_WEAPONS; i++ ) {
+    CBaseCombatWeapon *pWeapon = pPlayer->GetWeapon( i );
+    if ( pWeapon == NULL )
+      continue;
+    lua_pushinteger( L, ++iOut );
+    lua_pushweapon( L, pWeapon );
+    lua_settable( L, -3 );
+  }
   return 1;
 }
 
@@ -922,6 +945,74 @@ static int CBasePlayer_SelectLastItem (lua_State *L) {
 static int CBasePlayer_SetAmmoCount (lua_State *L) {
   luaL_checkplayer(L, 1)->SetAmmoCount(luaL_checkint(L, 2), luaL_checkint(L, 3));
   return 0;
+}
+
+/* HL2SB GMod compat: Player:SetAmmo( count, ammoType ) (GMod wiki: sets the
+** player's reserve ammo for the given type).  GMod's ammoType accepts the
+** ammo NAME string or a raw ammo index, exactly like RemoveAmmo above; the
+** string resolves through the shared ammo definition first. */
+static int CBasePlayer_SetAmmo (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  int iCount = luaL_checkint(L, 2);
+  if (lua_type(L, 3) == LUA_TSTRING)
+  {
+    int iAmmo = GetAmmoDef()->Index(luaL_checkstring(L, 3));
+    if ( iAmmo >= 0 )
+      pPlayer->SetAmmoCount(iCount, iAmmo);
+  }
+  else
+  {
+    pPlayer->SetAmmoCount(iCount, luaL_checkint(L, 3));
+  }
+  return 0;
+}
+
+// HL2SB GMod compat: Player:SetCanZoom / GetCanZoom -- the suit-zoom gate
+// (GMod wiki: "Sets whether the player can zoom").  hl1sweps' sniper weapons
+// toggle it on Deploy/Holster so the +zoom ironsight belongs to the weapon in
+// hand.  The engine's suit zoom path (CHL2_Player::CheckSuitZoom) consults
+// this flag through HL2SB_PlayerCanZoom below; the fork's historical behavior
+// ("anyone with a suit may zoom") is the default when a player never calls it.
+// Keyed by entindex in a plain static table; entries die with the level.
+#ifndef CLIENT_DLL
+static bool s_HL2SBPlayerCanZoom[MAX_PLAYERS];
+static bool s_HL2SBPlayerCanZoomSet[MAX_PLAYERS];
+
+bool HL2SB_PlayerCanZoom ( CBasePlayer *pPlayer )
+{
+  if ( pPlayer == NULL )
+    return false;
+  int i = pPlayer->entindex();
+  if ( i < 0 || i >= MAX_PLAYERS || !s_HL2SBPlayerCanZoomSet[i] )
+    return true;
+  return s_HL2SBPlayerCanZoom[i];
+}
+#endif
+
+static int CBasePlayer_SetCanZoom (lua_State *L) {
+#ifdef CLIENT_DLL
+  luaL_checkplayer(L, 1);
+  lua_toboolean(L, 2);
+#else
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  int i = pPlayer->entindex();
+  if ( i >= 0 && i < MAX_PLAYERS )
+  {
+    s_HL2SBPlayerCanZoom[i] = lua_toboolean(L, 2) ? true : false;
+    s_HL2SBPlayerCanZoomSet[i] = true;
+  }
+#endif
+  return 0;
+}
+
+static int CBasePlayer_GetCanZoom (lua_State *L) {
+#ifdef CLIENT_DLL
+  luaL_checkplayer(L, 1);
+  lua_pushboolean(L, true);
+#else
+  lua_pushboolean(L, HL2SB_PlayerCanZoom(luaL_checkplayer(L, 1)));
+#endif
+  return 1;
 }
 
 static int CBasePlayer_SetAnimation (lua_State *L) {
@@ -2302,6 +2393,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"EyeVectors", CBasePlayer_EyeVectors},
   {"FindUseEntity", CBasePlayer_FindUseEntity},
   {"GetActiveWeapon", CBasePlayer_GetActiveWeapon},
+  {"GetWeapons", CBasePlayer_GetWeapons},
   {"GetAmmoCount", CBasePlayer_GetAmmoCount},
 #ifndef CLIENT_DLL
   // HL2SB GMod compat (2026-09-22 physgun audit): the per-player frozen list.
@@ -2416,6 +2508,16 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SelectItem", CBasePlayer_SelectItem},
   {"SelectLastItem", CBasePlayer_SelectLastItem},
   {"SetAmmoCount", CBasePlayer_SetAmmoCount},
+  // HL2SB GMod compat: Player:SetAmmo / Nick / GetViewPunchAngles /
+  // SetViewPunchAngles / SetCanZoom / GetCanZoom -- GMod's spellings for what
+  // this fork already ships under engine names (SetAmmoCount, GetPlayerName,
+  // the punch angle pair).  hl1sweps uses all of them on the fire path.
+  {"SetAmmo", CBasePlayer_SetAmmo},
+  {"Nick", CBasePlayer_GetPlayerName},
+  {"GetViewPunchAngles", CBasePlayer_GetPunchAngle},
+  {"SetViewPunchAngles", CBasePlayer_SetPunchAngle},
+  {"SetCanZoom", CBasePlayer_SetCanZoom},
+  {"GetCanZoom", CBasePlayer_GetCanZoom},
   {"SetAnimation", CBasePlayer_SetAnimation},
   {"SetAnimationExtension", CBasePlayer_SetAnimationExtension},
   // HL2SB (2026-09-22): GMod names -- cf_beast's weapon base calls both.

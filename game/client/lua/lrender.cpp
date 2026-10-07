@@ -35,6 +35,9 @@ ConVar physgun_drawbeams( "physgun_drawbeams", "1", FCVAR_ARCHIVE, "Draw the phy
 #include <mathlib/lvmatrix.h>
 // HL2SB: g_pStudioRender, for render.SetLocalModelLights (declared in istudiorender.h:383).
 #include "istudiorender.h"
+// HL2SB: render.DynamicLight -- dlight_t layout and the IEFX allocator.
+#include "dlight.h"
+#include "iefx.h"
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -2192,6 +2195,307 @@ LUA_BINDING_BEGIN( Renders, ClearStencilBufferRectangle, "library", "Clear the s
     pRenderContext->ClearStencilBufferRectangle( startX, startY, endX, endY, value );
 
     return 0;
+}
+LUA_BINDING_END()
+
+// ---------------------------------------------------------------------------
+// HL2SB GMod compat: render.StartBeam( count ) / AddBeam( pos, width, t, color )
+// / EndBeam() -- GMod's multi-point beam ribbon.  hl1sweps draws the egon beam
+// and the tripmine laser through this triple; the engine's single-segment
+// DrawBeam cannot express a bending multi-point strip.
+//
+// The points accumulate in a static buffer and EndBeam submits one camera-facing
+// triangle strip, built exactly like DrawBeam above: position / texcoord0 /
+// colour / normal from the CURRENT VIEW ORIGIN, material taken from the last
+// render.SetMaterial.  Per-point width axis uses the neighbouring-point
+// direction so the ribbon bends smoothly.
+// ---------------------------------------------------------------------------
+struct HL2SB_BeamPoint_t
+{
+    Vector vecPos;
+    float flWidth;
+    float flTexCoord;
+    lua_Color color;
+};
+
+static CUtlVector<HL2SB_BeamPoint_t> s_HL2SBBeamPoints;
+
+LUA_BINDING_BEGIN( Renders, StartBeam, "library", "Begins a multi-point beam. The count reserves the following AddBeam calls.", "client" )
+{
+    int nCount = (int)LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "count" );
+    s_HL2SBBeamPoints.Purge();
+    if ( nCount > 0 )
+        s_HL2SBBeamPoints.EnsureCapacity( nCount );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, AddBeam, "library", "Adds a point to the beam started with StartBeam.", "client" )
+{
+    HL2SB_BeamPoint_t point;
+    point.vecPos = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
+    point.flWidth = (float)LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "width" );
+    point.flTexCoord = (float)LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "texcoord" );
+    point.color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 4, lua_Color( 255, 255, 255, 255 ), "color" );
+    s_HL2SBBeamPoints.AddToTail( point );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, EndBeam, "library", "Draws the beam accumulated since StartBeam.", "client" )
+{
+    CUtlVector<HL2SB_BeamPoint_t> &points = s_HL2SBBeamPoints;
+    if ( points.Count() < 2 )
+    {
+        points.Purge();
+        return 0;
+    }
+
+    const Vector vecCameraPos = MainViewOrigin();
+    IMaterial *pMaterial = const_cast< IMaterial * >( g_pHL2SBLastBoundMaterial );
+
+    CMatRenderContextPtr pRenderContext( materials );
+    IMesh *pMesh = pRenderContext->GetDynamicMesh( true, NULL, NULL, pMaterial );
+    CMeshBuilder meshBuilder;
+
+    meshBuilder.Begin( pMesh, MATERIAL_TRIANGLE_STRIP, points.Count() * 2 );
+
+    Vector vecPrevDir = points[1].vecPos - points[0].vecPos;
+    for ( int i = 0; i < points.Count(); ++i )
+    {
+        // Direction through this point: from the previous point to the next
+        // (one-sided at the ends), so the ribbon bends with the beam.
+        Vector vecDir;
+        if ( i == 0 )
+            vecDir = points[1].vecPos - points[0].vecPos;
+        else if ( i == points.Count() - 1 )
+            vecDir = points[i].vecPos - points[i - 1].vecPos;
+        else
+            vecDir = points[i + 1].vecPos - points[i - 1].vecPos;
+
+        Vector vecWidth;
+        CrossProduct( vecDir, points[i].vecPos - vecCameraPos, vecWidth );
+        if ( vecWidth.LengthSqr() < 1e-6f )
+        {
+            CrossProduct( vecPrevDir, points[i].vecPos - vecCameraPos, vecWidth );
+        }
+        if ( vecWidth.LengthSqr() < 1e-12f )
+        {
+            // Beam points at the camera (or zero length here): any stable
+            // world axis keeps the strip valid.
+            Vector vecReference( 0.0f, 0.0f, 1.0f );
+            if ( fabs( vecDir.z ) > 0.9f )
+                vecReference.Init( 1.0f, 0.0f, 0.0f );
+            CrossProduct( vecDir, vecReference, vecWidth );
+        }
+        VectorNormalize( vecWidth );
+        vecPrevDir = vecDir;
+
+        Vector vecHalf = vecWidth * ( points[i].flWidth * 0.5f );
+        Vector vecTmp;
+        const unsigned char ubRed = (unsigned char)points[i].color.r();
+        const unsigned char ubGreen = (unsigned char)points[i].color.g();
+        const unsigned char ubBlue = (unsigned char)points[i].color.b();
+        const unsigned char ubAlpha = (unsigned char)points[i].color.a();
+
+        // Strip order: left/right of each point, matching the DrawBeam quad
+        // edge orientation so the texture does not flip mid-strip.
+        VectorMA( points[i].vecPos, -1.0f, vecHalf, vecTmp );
+        meshBuilder.Position3fv( vecTmp.Base() );
+        meshBuilder.TexCoord2f( 0, 1.0f, points[i].flTexCoord );
+        meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
+        meshBuilder.Normal3fv( vecWidth.Base() );
+        meshBuilder.AdvanceVertex();
+
+        VectorMA( points[i].vecPos, 1.0f, vecHalf, vecTmp );
+        meshBuilder.Position3fv( vecTmp.Base() );
+        meshBuilder.TexCoord2f( 0, 0.0f, points[i].flTexCoord );
+        meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
+        meshBuilder.Normal3fv( vecWidth.Base() );
+        meshBuilder.AdvanceVertex();
+    }
+
+    meshBuilder.End();
+    pMesh->Draw();
+
+    points.Purge();
+    return 0;
+}
+LUA_BINDING_END()
+
+// HL2SB GMod compat (2026-10-07): render.GetLightColor( position ) -- the
+// reference shape is a VECTOR of 0..1 light values (not a 0..255 Color),
+// which is what engine->ComputeLighting produces before any scaling.  The
+// hl1sweps weapon-glow matproxies feed the result straight into arithmetic
+// and IMaterial:SetVector, so the old 0..255 Color answer was wrong on both
+// the type and the range.
+LUA_BINDING_BEGIN( Renders, GetLightColor, "library", "Returns the world lighting at the position as a normalized color vector.", "client" )
+{
+    Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
+    Vector defaultNormal = vec3_origin;
+    Vector normal = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optvector, 2, &defaultNormal, "normal" );
+
+    Vector color( 1, 1, 1 );
+    engine->ComputeLighting( position, ( normal == vec3_origin ) ? NULL : &normal, true, color, NULL );
+
+    lua_pushvector( L, color );
+    return 1;
+}
+LUA_BINDING_END()
+
+// HL2SB GMod compat (2026-10-07): render.GetToneMappingScaleLinear() -- the
+// reference shape is a three-component Vector (x = output scale, y = lightmap
+// scale, z = reflection scale); the hl1sweps matproxies index it component
+// wise, so the old scalar answer broke them.
+LUA_BINDING_BEGIN( Renders, GetToneMappingScaleLinear, "library", "Returns the linear tone mapping scale as a vector.", "client" )
+{
+    CMatRenderContextPtr pRenderContext( materials );
+    lua_pushvector( L, pRenderContext->GetToneMappingScaleLinear() );
+    return 1;
+}
+LUA_BINDING_END()
+
+// HL2SB GMod compat (2026-10-07): DynamicLight( index [, elight ] ) -- creates
+// (or reuses, keyed) an engine dynamic light and hands back a LIVE table view:
+// every recognised field write lands directly in the engine light struct, and
+// the light expires by itself once its DieTime passes.  GMod's key set is
+// mixed-case (Pos/Size/DieTime/Brightness/Decay/MinLight/Style/Key/InnerAngle/
+// OuterAngle/r/g/b/Dir/nomodel/noworld); the R/G/B spellings hl1sweps writes
+// are accepted too so nothing degrades into a silent no-op.  Field writes must
+// keep landing in the struct on EVERY write, so values are stashed under an
+// internal "__<key>" double and both metamethods translate -- a plain rawset
+// would make the second write to the same key bypass __newindex.
+static int HL2SB_DynamicLightIndex( lua_State *L )
+{
+    if ( !lua_istable( L, 1 ) || !lua_isstring( L, 2 ) )
+    {
+        lua_pushnil( L );
+        return 1;
+    }
+    lua_pushfstring( L, "__%s", lua_tostring( L, 2 ) );
+    lua_rawget( L, 1 );
+    return 1;
+}
+
+static byte HL2SB_DynamicLightSaturate( float v )
+{
+    int n = (int)v;
+    if ( n < 0 ) n = 0;
+    if ( n > 255 ) n = 255;
+    return (byte)n;
+}
+
+static void HL2SB_DynamicLightRecomputeColor( lua_State *L, int nTable, dlight_t *dl )
+{
+    if ( dl == NULL )
+        return;
+
+    // field floats (falling back to the GMod defaults when absent)
+    auto FieldFloat = []( lua_State *L, int nTable, const char *pszKey, float flDefault ) {
+        lua_pushfstring( L, "__%s", pszKey );
+        lua_rawget( L, nTable );
+        float v = lua_isnumber( L, -1 ) ? (float)lua_tonumber( L, -1 ) : flDefault;
+        lua_pop( L, 1 );
+        return v;
+    };
+
+    const float flR = FieldFloat( L, nTable, "r", 255.0f );
+    const float flG = FieldFloat( L, nTable, "g", 255.0f );
+    const float flB = FieldFloat( L, nTable, "b", 255.0f );
+    const float flBrightness = FieldFloat( L, nTable, "Brightness", 1.0f );
+
+    // one shared exponent for all three channels: raise it until the
+    // strongest channel fits a byte, then scale every channel the same way
+    const float flScaled[3] = { flR * flBrightness, flG * flBrightness, flB * flBrightness };
+    float flMax = MAX( MAX( flScaled[0], flScaled[1] ), flScaled[2] );
+    int nExp = 0;
+    while ( flMax > 255.0f && nExp < 15 )
+    {
+        flMax *= 0.5f;
+        ++nExp;
+    }
+    const float flNorm = (float)ldexp( 1.0, -nExp );
+    dl->color.r = HL2SB_DynamicLightSaturate( flScaled[0] * flNorm );
+    dl->color.g = HL2SB_DynamicLightSaturate( flScaled[1] * flNorm );
+    dl->color.b = HL2SB_DynamicLightSaturate( flScaled[2] * flNorm );
+    dl->color.exponent = nExp;
+}
+
+static int HL2SB_DynamicLightNewIndex( lua_State *L )
+{
+    // [1]=table [2]=key [3]=value
+    if ( !lua_istable( L, 1 ) || !lua_isstring( L, 2 ) )
+        return 0;
+
+    lua_getfield( L, 1, "__dlight" );
+    dlight_t *dl = (dlight_t *)lua_touserdata( L, -1 );
+    lua_pop( L, 1 );
+    if ( dl == NULL )
+        return 0;
+
+    const char *pszKey = lua_tostring( L, 2 );
+
+    // stash under the internal double first (rawset here never collides with
+    // the metamethod, because the internal keys are never written from Lua)
+    lua_pushfstring( L, "__%s", pszKey );
+    lua_pushvalue( L, 3 );
+    lua_rawset( L, 1 );
+
+    if ( Q_stricmp( pszKey, "Pos" ) == 0 && luaL_testudata( L, 3, "Vector" ) != NULL )
+        dl->origin = luaL_checkvector( L, 3 );
+    else if ( Q_stricmp( pszKey, "Dir" ) == 0 && luaL_testudata( L, 3, "Vector" ) != NULL )
+        dl->m_Direction = luaL_checkvector( L, 3 );
+    else if ( Q_stricmp( pszKey, "Size" ) == 0 && lua_isnumber( L, 3 ) )
+        dl->radius = (float)lua_tonumber( L, 3 );
+    else if ( Q_stricmp( pszKey, "DieTime" ) == 0 && lua_isnumber( L, 3 ) )
+        dl->die = (float)lua_tonumber( L, 3 );
+    else if ( Q_stricmp( pszKey, "Decay" ) == 0 && lua_isnumber( L, 3 ) )
+        dl->decay = (float)lua_tonumber( L, 3 );
+    else if ( Q_stricmp( pszKey, "MinLight" ) == 0 && lua_isnumber( L, 3 ) )
+        dl->minlight = (float)lua_tonumber( L, 3 );
+    else if ( Q_stricmp( pszKey, "Style" ) == 0 && lua_isnumber( L, 3 ) )
+        dl->style = (int)lua_tonumber( L, 3 );
+    else if ( Q_stricmp( pszKey, "Key" ) == 0 && lua_isnumber( L, 3 ) )
+        dl->key = (int)lua_tonumber( L, 3 );
+    else if ( Q_stricmp( pszKey, "InnerAngle" ) == 0 && lua_isnumber( L, 3 ) )
+        dl->m_InnerAngle = (float)lua_tonumber( L, 3 );
+    else if ( Q_stricmp( pszKey, "OuterAngle" ) == 0 && lua_isnumber( L, 3 ) )
+        dl->m_OuterAngle = (float)lua_tonumber( L, 3 );
+    else if ( Q_stricmp( pszKey, "r" ) == 0 || Q_stricmp( pszKey, "g" ) == 0 || Q_stricmp( pszKey, "b" ) == 0 || Q_stricmp( pszKey, "Brightness" ) == 0 )
+        HL2SB_DynamicLightRecomputeColor( L, 1, dl );
+    // unrecognised keys (nomodel/noworld and everything else) are kept on the
+    // table only -- the same "write accepted, engine side may ignore" answer
+    return 0;
+}
+
+LUA_BINDING_BEGIN( Renders, DynamicLight, "library", "Creates or reuses a dynamic light with the given id and returns a live table view of it.", "client" )
+{
+    const int nKey = LUA_BINDING_ARGUMENT( luaL_checkint, 1, "index" );
+    const bool bElight = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optboolean, 2, 0, "elight" );
+
+    dlight_t *dl = bElight ? effects->CL_AllocElight( nKey ) : effects->CL_AllocDlight( nKey );
+
+    lua_newtable( L );
+    if ( dl != NULL )
+    {
+        lua_pushlightuserdata( L, dl );
+        lua_setfield( L, -2, "__dlight" );
+
+        if ( luaL_newmetatable( L, "HL2SB_DynamicLightView" ) )
+        {
+            // keep the metatable away from Lua's rawset semantics: hide it
+            lua_pushboolean( L, 0 );
+            lua_setfield( L, -2, "__metatable" );
+            lua_pushcfunction( L, HL2SB_DynamicLightIndex );
+            lua_setfield( L, -2, "__index" );
+            lua_pushcfunction( L, HL2SB_DynamicLightNewIndex );
+            lua_setfield( L, -2, "__newindex" );
+        }
+        lua_pop( L, 1 );
+        luaL_getmetatable( L, "HL2SB_DynamicLightView" );
+        lua_setmetatable( L, -2 );
+    }
+    return 1;
 }
 LUA_BINDING_END()
 

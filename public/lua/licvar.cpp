@@ -39,7 +39,17 @@ static int cvar_ConsolePrintf (lua_State *L) {
 
 static int cvar_FindVar (lua_State *L) {
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_CONVAR_LOOKUP );
-  lua_pushconvar(L, cvar->FindVar(luaL_checkstring(L, 1)));
+  // HL2SB (2026-10-08): an unknown name must answer nil, the same contract the
+  // one-argument read form of ConVar(name) and GetConVar_Internal already keep.
+  // Pushing the NULL pointer wrapped as a ConVar userdata instead made every
+  // `local v = cvar.FindVar(name); if ( v == nil )` style guard dead code
+  // (cvars.Number's default fell into that class) and the first :GetFloat() on
+  // such a value dereferenced the NULL object.
+  ConVar *pFound = cvar->FindVar(luaL_checkstring(L, 1));
+  if ( pFound == NULL )
+    lua_pushnil(L);
+  else
+    lua_pushconvar(L, pFound);
   return 1;
 }
 

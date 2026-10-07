@@ -2441,36 +2441,28 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 									 ( bSecondaryAutomatic || ( nPressed & IN_ATTACK2 ) != 0 );
 
 		// Secondary first, the way the GMod base orders it.
+		//
+		// HL2SB (2026-10-07): the old auto-gate that applied SWEP.Primary.Delay /
+		// SWEP.Secondary.Delay when the script did not call SetNext*Fire itself
+		// is GONE.  GMod's engine drives the fire buttons every tick and the
+		// RATE is the script's own job (its lua base weapons apply
+		// SWEP.Primary.Delay through SetNextPrimaryFire); an engine-side Delay
+		// fallback never existed there.  This fork's fallback silently
+		// throttled the continuous-beam SWEPs: hl1sweps' egon fires
+		// PrimaryAttack every tick and paces its damage with its own
+		// SetDmgTime( GetPulseInterval() ) cadence -- the auto-gate stretched
+		// that to SWEP.Primary.Delay (0.75s), i.e. the reported "egon shoots
+		// slowly and barely damages".  A script that wants a fire rate arms
+		// the gate itself; one that does not gets GMod's every-tick behaviour.
 		if ( bSecondaryWants && flTime >= m_flNextSecondaryAttack )
 		{
 			BEGIN_LUA_CALL_WEAPON_METHOD( "SecondaryAttack" );
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
-
-			if ( m_flNextSecondaryAttack <= flTime )
-			{
-				// HL2SB GMod compat: SWEP.Secondary.Delay is the GMod engine's
-				// fire-rate contract -- a SWEP that only declares the Delay
-				// field (and never calls SetNextSecondaryFire) still fires at
-				// that rate.  Only applies when the SWEP did not set the time
-				// itself; a manual SetNextSecondaryFire inside the hook wins.
-				m_flNextSecondaryAttack = flTime + MAX( 0.0f,
-					lua_getweaponfloat( L, m_nTableReference, "Secondary", "Delay", "Secondary.Delay", 0.05f ) );
-			}
 		}
 		else if ( bPrimaryWants && flTime >= m_flNextPrimaryAttack )
 		{
 			BEGIN_LUA_CALL_WEAPON_METHOD( "PrimaryAttack" );
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
-
-			// The SWEP is expected to call SetNextPrimaryFire(); this stops a
-			// script that forgets from firing once per frame.  Same Delay
-			// contract as the secondary above: SWEP.Primary.Delay applies
-			// unless the hook set the time itself.
-			if ( m_flNextPrimaryAttack <= flTime )
-			{
-				m_flNextPrimaryAttack = flTime + MAX( 0.0f,
-					lua_getweaponfloat( L, m_nTableReference, "Primary", "Delay", "Primary.Delay", 0.05f ) );
-			}
 		}
 		else if ( ( nPressed & IN_RELOAD ) != 0 )
 		{
@@ -2913,3 +2905,27 @@ int CHL2MPScriptedWeapon::DrawModel( int flags )
 #endif
 
 
+
+//-----------------------------------------------------------------------------
+// HL2SB (2026-10-07): GMod's viewmodel FOV contract -- SWEP.ViewModelFOV
+// overrides viewmodel_fov while the weapon is equipped (hl1sweps runs its
+// GoldSrc-style bob pipeline through SWEP:CalcViewModelView and pins
+// ViewModelFOV to 90; without this the client kept the viewmodel_fov default
+// and every HL1 weapon drew at the wrong projection).
+// Client-only read helper for ClientModeShared::GetViewModelFOV.  Returns the
+// weapon's ViewModelFOV script field, or flDefault when it is absent/not a
+// number/<= 0.  Never raises: a broken Lua state just answers flDefault.
+//-----------------------------------------------------------------------------
+#ifdef CLIENT_DLL
+float HL2SB_ScriptedViewModelFOV( CBaseCombatWeapon *pWeapon, float flDefault )
+{
+	if ( L == NULL || pWeapon == NULL || !pWeapon->IsScripted() )
+		return flDefault;
+
+	CHL2MPScriptedWeapon *pScripted = static_cast< CHL2MPScriptedWeapon * >( pWeapon );
+	lua_pushweaponfield( L, pScripted->m_nTableReference, "ViewModelFOV" );
+	const float flFov = lua_isnumber( L, -1 ) ? (float)lua_tonumber( L, -1 ) : 0.0f;
+	lua_pop( L, 1 );
+	return ( flFov > 0.0f ) ? flFov : flDefault;
+}
+#endif

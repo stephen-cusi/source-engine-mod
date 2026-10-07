@@ -244,6 +244,38 @@ void RememberInitialEntityPositions( int nEntities, HierarchicalSpawn_t *pSpawnL
 }
 
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the Entity:CreatedByMap() marker list (see the comment in
+// SpawnAllEntities).  The list lives here because the BSP entity spawn loop is
+// the one place that sees every map-spawned entity.  Cleared at the top of
+// MapEntity_ParseAllEntities, i.e. once per level load.  Defined before its
+// first use and shared with the Lua binding in lbaseentity_shared.cpp through
+// mapentities.h-free local externs (touching a widely included header would
+// force a whole-tree rebuild).
+//-----------------------------------------------------------------------------
+static CUtlVector<CBaseHandle> s_HL2SBMapSpawnedHandles;
+
+CUtlVector<CBaseHandle> &HL2SB_MapSpawnedHandles( void )
+{
+	return s_HL2SBMapSpawnedHandles;
+}
+
+bool HL2SB_IsEntityCreatedByMap( CBaseEntity *pEntity )
+{
+	if ( pEntity == NULL )
+		return false;
+
+	const CBaseHandle &handle = pEntity->GetRefEHandle();
+	CUtlVector<CBaseHandle> &list = s_HL2SBMapSpawnedHandles;
+	for ( int i = 0; i < list.Count(); ++i )
+	{
+		if ( list[i] == handle )
+			return true;
+	}
+	return false;
+}
+
+
 void SpawnAllEntities( int nEntities, HierarchicalSpawn_t *pSpawnList, bool bActivateEntities )
 {
 	int nEntity;
@@ -282,6 +314,18 @@ void SpawnAllEntities( int nEntities, HierarchicalSpawn_t *pSpawnList, bool bAct
 				// Remove the entity from the spawn list
 				pSpawnList[nEntity].m_pEntity = NULL;
 			}
+			else
+			{
+				// HL2SB GMod compat: Entity:CreatedByMap().  GMod marks every
+				// entity spawned out of the BSP's entity lump so scripts can tell
+				// map-placed items from runtime spawns (hl1sweps' respawn logic
+				// only respawns map-placed pickups).  This engine has no such
+				// marker, so record the handle of every successfully spawned map
+				// entity here; the Lua binding queries it.  Keyed by the full
+				// handle (index + serial), so a recycled edict slot can never
+				// answer "yes" for an entity spawned later through ents.Create.
+				HL2SB_MapSpawnedHandles().AddToTail( pEntity->GetRefEHandle() );
+			}
 		}
 	}
 
@@ -310,6 +354,9 @@ void SpawnAllEntities( int nEntities, HierarchicalSpawn_t *pSpawnList, bool bAct
 void MapEntity_ParseAllEntities(const char *pMapData, IMapEntityFilter *pFilter, bool bActivateEntities)
 {
 	VPROF("MapEntity_ParseAllEntities");
+
+	// HL2SB GMod compat: a fresh level means a fresh Entity:CreatedByMap set.
+	s_HL2SBMapSpawnedHandles.RemoveAll();
 
 	HierarchicalSpawnMapData_t *pSpawnMapData = new HierarchicalSpawnMapData_t[NUM_ENT_ENTRIES];
 	HierarchicalSpawn_t *pSpawnList = new HierarchicalSpawn_t[NUM_ENT_ENTRIES];

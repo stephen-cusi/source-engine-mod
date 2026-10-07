@@ -1014,6 +1014,12 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	luasrc_dofolder_sorted( L, LUA_PATH_AUTORUN, false );
 	luasrc_dofolder_sorted( L, LUA_PATH_AUTORUN_SERVER, true );
 
+	// HL2SB (2026-10-08) GMod compat: lua/matproxy/*.lua on the server realm
+	// too (see the client call site) -- GMod loads the folder on both realms
+	// and the registration is a plain table entry here, keeping the realms in
+	// step for lua_reloadents.
+	luasrc_dofolder( L, LUA_ROOT "/matproxy" );
+
 	luasrc_LoadWeapons();
 	luasrc_LoadEntities();
 	//luasrc_LoadEffects();

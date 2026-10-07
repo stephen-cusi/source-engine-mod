@@ -686,18 +686,6 @@ int CBaseScripted::DrawModel( int flags )
 
 	if ( pszFunc != NULL )
 	{
-		// HL2SB diagnostic: InfoMsg, not WarnOnce -- the one-shot budget was
-		// already spent whenever this first fired, so "no line" was unreadable.
-		// Bounded by count instead: 40 lines across all classes is plenty to
-		// tell a "has no model" bomb from an "ENT:Draw never ran" one.
-		static int s_nDrawReports = 0;
-		if ( s_nDrawReports < 40 )
-		{
-			++s_nDrawReports;
-			luasrc_LuaInfoMsgF( "[HL2SB] script DrawModel '%s': hook=%s group=%d modelIndex=%d\n",
-				GetClassname(), pszFunc, (int)GetRenderGroup(), GetModelIndex() );
-		}
-
 		BEGIN_LUA_CALL_ENTITY_METHOD( pszFunc );
 		END_LUA_CALL_ENTITY_METHOD( 0, 1 );
 
@@ -897,22 +885,32 @@ void CBaseScripted::ClientThink()
 void CBaseScripted::Think()
 {
 #ifdef LUA_SDK
+	// HL2SB GMod parity (2026-10-07): the Think RETURN value decides how the
+	// next think is scheduled.  GMod's contract (wiki ENTITY:Think): return
+	// true = "I used Entity:NextThink to override the next execution time"
+	// (the script's own NextThink is honoured, and if it did not set one the
+	// entity thinks again as soon as possible); return false/nil = the engine
+	// resets the think to CurTime() + 0.2 (the stock 5-6 Hz cadence).  This
+	// dispatch used to swallow the result and re-arm every tick regardless,
+	// so a GMod grenade's NextThink(CurTime() + 0.1) was ignored and its
+	// 0.1s-cadence logic (damage timer, AI sound respawn) ran at tick rate.
 	BEGIN_LUA_CALL_ENTITY_METHOD( "Think" );
-	END_LUA_CALL_ENTITY_METHOD( 0, 0 );
+	END_LUA_CALL_ENTITY_METHOD( 0, 1 );
+
+	bool bHonourScriptThink = lua_isboolean( L, -1 ) ? lua_toboolean( L, -1 ) != 0
+													: false;
+	lua_pop( L, 1 );
 
 #ifndef CLIENT_DLL
-	// HL2SB GMod parity (2026-09-23, the missing nuke aftermath): GMod runs a
-	// scripted entity's ENT:Think EVERY tick when the script does not
-	// reschedule itself.  The engine's think here is one-shot - Spawn arms it
-	// once, and after the dispatch m_flNextThink is <= curtime unless the
-	// script called SetNextThink/NextThink.  Nukepack's radiation field and
-	// the sent_nuke expansion wave never do, so their first Think ran (and the
-	// radiation's returned immediately: FTime < 0.3) and all post-blast damage
-	// and the burn wave died silently.  scp173 had the same shape - it only
-	// worked because its script tail-calls NextThink.  Re-arm for the next
-	// tick unless the script itself scheduled something later.
-	if ( GetNextThink() <= gpGlobals->curtime )
+	if ( !bHonourScriptThink )
+	{
+		SetNextThink( gpGlobals->curtime + 0.2f );
+	}
+	else if ( GetNextThink() <= gpGlobals->curtime )
+	{
+		// script returned true without a NextThink: think again ASAP
 		SetNextThink( gpGlobals->curtime );
+	}
 #endif
 #endif
 }

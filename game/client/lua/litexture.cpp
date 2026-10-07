@@ -13,6 +13,7 @@
 #include "rendertexture.h"
 #include "view_scene.h"
 #include <materialsystem/imaterialsystem.h>
+#include "texture_group_names.h"
 #include <vgui/ISurface.h>
 #include <vgui_controls/Controls.h>
 #include "mathlib/lvector.h"
@@ -601,16 +602,71 @@ static int HL2SB_IMaterial_SetFloat( lua_State *L )
     return 0;
 }
 
+// HL2SB GMod compat: IMaterial:SetVector( varName, Vector ) / GetVector --
+// the matproxy result write hl1sweps' proxies use
+// (hl1_matproxy.lua: mat:SetVector( self.ResultTo, col )).  GMod creates the
+// variable when the .vmt does not declare it; the material system's
+// IMaterialVar::Create factory is not reachable from the client link in this
+// engine, so a missing variable is skipped instead.  Every proxy result the
+// hl1sweps vmts actually write ($envmaptint, $color2) is a shader-registered
+// variable and resolves through FindVar.
+static int HL2SB_IMaterial_SetVector( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pszVar = luaL_checkstring( L, 2 );
+    const Vector &vec = luaL_checkvector( L, 3 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    if ( pVar != NULL && bFound )
+        pVar->SetVecValue( vec.x, vec.y, vec.z );
+    return 0;
+}
+
+static int HL2SB_IMaterial_GetVector( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pszVar = luaL_checkstring( L, 2 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
+    if ( pVar != NULL && bFound )
+    {
+        Vector vec( 0, 0, 0 );
+        pVar->GetVecValue( &vec.x, 3 );
+        lua_pushvector( L, vec );
+    }
+    else
+    {
+        lua_pushvector( L, Vector( 0, 0, 0 ) );
+    }
+    return 1;
+}
+
 // HL2SB GMod compat (2026-09-22): IMaterial:SetTexture( varName, ITexture ).
 // modules/halo.lua:106 does mat_Copy:SetTexture( "$basetexture", rt_Store ) --
 // without this the call raised "attempt to call nil (method 'SetTexture')",
 // aborted halo.lua's Render mid-frame (after render.Clear, before the scene
 // restore) and left the SCREEN BLACK for as long as the beam was held.
+//
+// HL2SB (2026-10-08): GMod's IMaterial:SetTexture also accepts a texture NAME
+// string as the second argument (wiki: "string or ITexture texture"; GMod's
+// own matproxy/sky_paint.lua passes GetDTString( 0 ) straight through) --
+// resolve it through materials->FindTexture instead of erroring.
 static int HL2SB_IMaterial_SetTexture( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-    ITexture *pTexture = luaL_checkitexture( L, 3 );
+
+    ITexture *pTexture = NULL;
+    if ( lua_isstring( L, 3 ) )
+    {
+        pTexture = materials->FindTexture( lua_tostring( L, 3 ), TEXTURE_GROUP_SKYBOX );
+    }
+    else
+    {
+        pTexture = luaL_checkitexture( L, 3 );
+    }
 
     bool bFound = false;
     IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
@@ -885,6 +941,12 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
         lua_setfield( L, -2, "SetFloat" );
         lua_pushcfunction( L, HL2SB_IMaterial_GetFloat );
         lua_setfield( L, -2, "GetFloat" );
+        // HL2SB: IMaterial:SetVector / GetVector -- the matproxy result write
+        // (hl1sweps' weapon-colour proxy).
+        lua_pushcfunction( L, HL2SB_IMaterial_SetVector );
+        lua_setfield( L, -2, "SetVector" );
+        lua_pushcfunction( L, HL2SB_IMaterial_GetVector );
+        lua_setfield( L, -2, "GetVector" );
         lua_pushcfunction( L, HL2SB_IMaterial_SetTexture );
         lua_setfield( L, -2, "SetTexture" );
         lua_pushcfunction( L, HL2SB_IMaterial_SetString );

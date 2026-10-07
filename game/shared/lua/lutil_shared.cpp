@@ -2978,6 +2978,33 @@ static int luasrc_Channel_Play (lua_State *L) {
   return 1;
 }
 
+/*
+** HL2SB GMod compat: CSoundPatch:PlayEx( volume, pitch ) -- GMod's one-shot
+** "play at this volume and pitch" (wiki).  hl1sweps' tau cannon charges its
+** loop with PlayEx( 0.7, 110 ).  The channel keeps the volume for later
+** ChangeVolume ramps; the pitch goes straight at the envelope controller so
+** the first frame already sounds charged instead of snapping afterwards.
+*/
+static int luasrc_Channel_PlayEx (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  const float flVolume = (float)luaL_optnumber( L, 2, 1.0f );
+  const float flPitch = (float)luaL_optnumber( L, 3, (double)PITCH_NORM );
+
+  CSoundPatch *pPatch = HL2SB_ChannelEnsurePatch( L, 1 );
+  if ( pPatch == NULL ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  HL2SB_ChannelSetVolume( L, 1, flVolume );
+  CSoundEnvelopeController::GetController().Play( pPatch, flVolume, flPitch );
+  HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PLAYING, true );
+  HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED, false );
+
+  lua_pushboolean( L, true );
+  return 1;
+}
+
 static int luasrc_Channel_Stop (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   HL2SB_ChannelShutdown( L, 1 );
@@ -3130,14 +3157,18 @@ static int luasrc_Channel_False (lua_State *L) {
 }
 
 static int luasrc_CreateSound (lua_State *L) {
-  CBaseEntity *pEntity = lua_toentity( L, 1 );
   const char *pszSound = luaL_checkstring( L, 2 );
 
-  if ( pEntity == NULL || pszSound[0] == '\0' ) {
-    lua_pushnil( L );
-    return 1;
-  }
-
+  /* HL2SB (2026-10-07): GMod's CreateSound NEVER answers nil -- a channel it
+  ** cannot back (owner gone, file missing) comes back as an invalid channel
+  ** whose methods fail softly, and scripts only ever guard with
+  ** "if not self.ChargeSound then ... end".  The old nil return made every
+  ** copy that could not create the voice yet store nil, and the first
+  ** ChargeSound:Stop()/ChangePitch() on that copy died with "attempt to index
+  ** a nil value (field 'ChargeSound')" on every think (hl1sweps tau cannon).
+  ** The entity/sound are stored anyway: the patch is still created lazily by
+  ** Play/PlayEx once the owner answers, and until then every method takes the
+  ** same no-patch soft-fail path. */
   lua_newtable( L );
 
   lua_pushvalue( L, 1 );
@@ -3163,6 +3194,7 @@ static int luasrc_CreateSound (lua_State *L) {
 
   struct { const char *pszName; lua_CFunction pfn; } methods[] = {
     { "Play",         luasrc_Channel_Play },
+    { "PlayEx",       luasrc_Channel_PlayEx },  /* HL2SB: GMod's PlayEx( volume, pitch ) */
     { "Stop",         luasrc_Channel_Stop },
     { "Pause",        luasrc_Channel_Pause },
     { "SetVolume",    luasrc_Channel_SetVolume },

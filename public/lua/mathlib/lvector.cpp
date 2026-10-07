@@ -17,6 +17,9 @@
 // HL2SB: Angle:RotateAroundAxis needs MatrixBuildRotationAboutAxis( VMatrix&, ... ),
 // which is an inline in vmatrix.h (mathlib.h does not pull it in).
 #include "vmatrix.h"
+// HL2SB: Vector:ToScreen projects through the debug overlay's world->screen
+// call (client realm).
+#include "engine/ivdebugoverlay.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -108,7 +111,7 @@ static int Vector_Angle (lua_State *L) {
 // call raised once per think and the statue never rotated.  VectorAngles has
 // the exact forward+up overload.
 //
-// ⚠️ The forward+up VectorAngles degenerates when forward is (anti)parallel to
+// The forward+up VectorAngles degenerates when forward is (anti)parallel to
 // up: CrossProduct(up, forward) == 0 and VectorNormalizeFast hands NaN down the
 // line, so the angles come back NaN -- and SetAngles(NaN) on a vphysics-solid
 // entity drove the physics solver into an infinite loop (whole process frozen
@@ -411,8 +414,22 @@ static int Vector_FieldToComponent (const char *field) {
 
 static int Vector___index (lua_State *L) {
   Vector v = luaL_checkvector(L, 1);
-  const char *field = luaL_checkstring(L, 2);
-  const int iComponent = Vector_FieldToComponent(field);
+  int iComponent = -1;
+  if (lua_type(L, 2) == LUA_TNUMBER) {
+    // HL2SB GMod compat: v[1] / v[2] / v[3] read x / y / z (GLua standard
+    // indexing; hl1sweps' CalcBob does velocity[1]*velocity[1] +
+    // velocity[2]*velocity[2] every frame).  Out-of-range integer keys keep
+    // falling through to the metatable below (nil for non-methods).
+    // GMod truncates the number key through (int)GetNumber -- v[1.9] also
+    // answers x -- and the out-of-range test is unsigned, so negatives miss.
+    const int iKey = (int)lua_tonumber(L, 2);
+    if (iKey >= 1 && iKey <= 3)
+      iComponent = iKey - 1;
+  }
+  else {
+    const char *field = luaL_checkstring(L, 2);
+    iComponent = Vector_FieldToComponent(field);
+  }
   if (iComponent == 0)
     lua_pushnumber(L, v.x);
   else if (iComponent == 1)
@@ -428,8 +445,18 @@ static int Vector___index (lua_State *L) {
 }
 
 static int Vector___newindex (lua_State *L) {
-  const char *field = luaL_checkstring(L, 2);
-  const int iComponent = Vector_FieldToComponent(field);
+  int iComponent = -1;
+  if (lua_type(L, 2) == LUA_TNUMBER) {
+    // GMod truncates the number key through (int)GetNumber -- v[1.9] also
+    // answers x -- and the out-of-range test is unsigned, so negatives miss.
+    const int iKey = (int)lua_tonumber(L, 2);
+    if (iKey >= 1 && iKey <= 3)
+      iComponent = iKey - 1;
+  }
+  else {
+    const char *field = luaL_checkstring(L, 2);
+    iComponent = Vector_FieldToComponent(field);
+  }
   if (iComponent == 0)
     luaL_checkvector(L, 1).x = (vec_t)luaL_checknumber(L, 3);
   else if (iComponent == 1)
@@ -494,12 +521,47 @@ static int Vector___unm (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Vector:ToScreen() (GMod wiki: projects the world point
+// onto the screen; returns a table with visible / x / y).  hl1sweps' custom
+// crosshair draws through it every HUD paint.  The projection is the engine
+// debug overlay's own world->screen call -- the same one the engine's 3D text
+// and beam debug draw paths use -- with x/y in pixels, visible meaning "in
+// front of the view and on screen".  Server realm has no screen and answers
+// the invisible form, which is what every shared caller needs.
+static int Vector_ToScreen (lua_State *L) {
+  Vector v = luaL_checkvector(L, 1);
+  bool bVisible = false;
+  float x = 0.0f, y = 0.0f;
+#ifdef CLIENT_DLL
+  extern IVDebugOverlay *debugoverlay;
+  if ( debugoverlay != NULL )
+  {
+    Vector screen;
+    if ( debugoverlay->ScreenPosition( v, screen ) == 0 )
+    {
+      bVisible = true;
+      x = screen.x;
+      y = screen.y;
+    }
+  }
+#endif
+  lua_newtable(L);
+  lua_pushboolean(L, bVisible);
+  lua_setfield(L, -2, "visible");
+  lua_pushnumber(L, x);
+  lua_setfield(L, -2, "x");
+  lua_pushnumber(L, y);
+  lua_setfield(L, -2, "y");
+  return 1;
+}
+
 
 static const luaL_Reg Vectormeta[] = {
   {"Cross", Vector_Cross},
   {"Angle", Vector_Angle},
   {"AngleEx", Vector_AngleEx},
   {"ToTable", Vector_ToTable},
+  {"ToScreen", Vector_ToScreen},  // HL2SB: hl1sweps crosshair projection
   {"GetNormalized", Vector_GetNormalized},
 // HL2SB GMod compat: GMod's documented Vector surface (see the definitions above).
 {"GetNormal", Vector_GetNormal},
@@ -676,9 +738,24 @@ static int QAngle_Up (lua_State *L) {
 
 static int QAngle___index (lua_State *L) {
   QAngle v = luaL_checkangle(L, 1);
-  const char *field = luaL_checkstring(L, 2);
   int component = 0;
-  if (QAngle_FieldToComponent(field, &component))
+  bool bKnown = false;
+  if (lua_type(L, 2) == LUA_TNUMBER) {
+    // HL2SB GMod compat: a[1] / a[2] / a[3] read pitch / yaw / roll
+    // (hl1sweps' punch-angle helpers do c[1] = a[1] + b[1] on Angle objects
+    // every frame through HL1_VectorAdd / HL1_VectorScale).
+    // GMod truncates through (int)GetNumber -- a[1.9] also answers pitch.
+    const int iKey = (int)lua_tonumber(L, 2);
+    if (iKey >= 1 && iKey <= 3) {
+      component = iKey - 1;
+      bKnown = true;
+    }
+  }
+  else {
+    const char *field = luaL_checkstring(L, 2);
+    bKnown = QAngle_FieldToComponent(field, &component);
+  }
+  if (bKnown)
     lua_pushnumber(L, v[component]);
   else {
     lua_getmetatable(L, 1);
@@ -689,9 +766,21 @@ static int QAngle___index (lua_State *L) {
 }
 
 static int QAngle___newindex (lua_State *L) {
-  const char *field = luaL_checkstring(L, 2);
   int component = 0;
-  if (QAngle_FieldToComponent(field, &component))
+  bool bKnown = false;
+  if (lua_type(L, 2) == LUA_TNUMBER) {
+    // GMod truncates through (int)GetNumber -- a[1.9] also answers pitch.
+    const int iKey = (int)lua_tonumber(L, 2);
+    if (iKey >= 1 && iKey <= 3) {
+      component = iKey - 1;
+      bKnown = true;
+    }
+  }
+  else {
+    const char *field = luaL_checkstring(L, 2);
+    bKnown = QAngle_FieldToComponent(field, &component);
+  }
+  if (bKnown)
     luaL_checkangle(L, 1)[component] = (vec_t)luaL_checknumber(L, 3);
   return 0;
 }

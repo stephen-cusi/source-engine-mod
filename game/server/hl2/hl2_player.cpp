@@ -464,10 +464,18 @@ void CHL2_Player::CheckSuitZoom( void )
 	//Adrian - No zooming without a suit!
 	if ( IsSuitEquipped() )
 	{
+		// HL2SB GMod compat: honor Player:SetCanZoom( false ) -- hl1sweps'
+		// sniper weapons gate the +zoom ironsight on the weapon in hand.
+		// Defined in lbaseplayer_shared.cpp; players that never called
+		// SetCanZoom keep the historical always-allowed behavior.
+		extern bool HL2SB_PlayerCanZoom( CBasePlayer *pPlayer );
+		if ( !HL2SB_PlayerCanZoom( this ) )
+			return;
+
 		if ( m_afButtonReleased & IN_ZOOM )
 		{
 			StopZooming();
-		}	
+		}
 		else if ( m_afButtonPressed & IN_ZOOM )
 		{
 			StartZooming();
