@@ -17,6 +17,7 @@
 #include "materialsystem/imaterialproxyfactory.h"
 #include "IHardwareConfigInternal.h"
 #include "utlsymbol.h"
+#include "utlstringmap.h"	// HL2SB (2026-10-08): once-per-name proxy warning
 #ifdef OSX
 #include <malloc/malloc.h>
 #else
@@ -803,7 +804,20 @@ void CMaterial::InitializeMaterialProxy( KeyValues* pFallbackKeyValues )
 			IMaterialProxy* pProxy = pMaterialProxyFactory->CreateProxy( pProxyKey->GetName() );
 			if (!pProxy)
 			{
-				Warning( "Error: Material \"%s\" : proxy \"%s\" not found!\n", GetName(), pProxyKey->GetName() );
+				// HL2SB (2026-10-08): warn once per proxy NAME, not once per
+				// material occurrence.  Startup precache parses model materials
+				// before the game Lua state has run its autorun pass, so every
+				// Lua-registered proxy (hl1sweps' HL1Chrome family, the painted
+				// skybox) starts its life as "not found" here - thirty red
+				// lines for one add-on in one session, all for names the
+				// deferred retry below resolves or will resolve at first bind.
+				// A genuinely missing proxy still prints its line once.
+				static CUtlStringMap<bool> s_WarnedProxyNames;
+				if ( !s_WarnedProxyNames.Defined( pProxyKey->GetName() ) )
+				{
+					s_WarnedProxyNames[ pProxyKey->GetName() ] = true;
+					Warning( "Error: Material \"%s\" : proxy \"%s\" not found! (recorded; a Lua-registered proxy binds once the game Lua registers it)\n", GetName(), pProxyKey->GetName() );
+				}
 				// HL2SB (2026-10-08): remember it -- the factory may gain the
 				// answer later (the Lua matproxy registry boots after world
 				// materials in this fork); CallBindProxy retries.  The section
