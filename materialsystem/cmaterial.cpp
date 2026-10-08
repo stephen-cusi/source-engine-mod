@@ -17,7 +17,7 @@
 #include "materialsystem/imaterialproxyfactory.h"
 #include "IHardwareConfigInternal.h"
 #include "utlsymbol.h"
-#include "tier1/utlstringmap.h"	// HL2SB (2026-10-08): once-per-name proxy warning (tier1/ form: bare name only resolves on the MSVC include paths)
+#include "tier1/UtlStringMap.h"	// HL2SB (2026-10-08): once-per-name proxy warning (tracked spelling - a lowercase local-only copy of this header is NOT in git, and case-sensitive checkouts then failed the include)
 #ifdef OSX
 #include <malloc/malloc.h>
 #else
