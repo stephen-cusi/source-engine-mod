@@ -657,25 +657,20 @@ LUA_API int AdvancedLuaErrorReporter( lua_State *L )
     return 1;
 }
 
-/* HL2SB: GMod's own lua_shared answers this reporter under its C++ DECORATED
- * name as well as the plain one (GMod defines it in a .cpp; the decoration
- * differs per architecture).  Our game DLLs link the plain C name above; the
- * aliases below make the export table match GMod name-for-name, so a module
- * built against GMod's import library resolves too.  This was the only name
- * in GMod's 151-entry export table this DLL did not answer (full-table diff
- * of the win64 and win32 lua_shared.dll export directories, 2026-10-06).
+/* HL2SB: the C++-DECORATED twin of the name above (GMod defined this
+ * reporter in a .cpp, so binary modules import it under the mangled
+ * spelling - ?AdvancedLuaErrorReporter@@YAH...lua_State...@@@Z, decoration
+ * differs per architecture; full-table diff of GMod's win64/win32 export
+ * directories, 2026-10-06).  The twin now lives in
+ * src/hl2sb_lua51_mangle.c as a NATURAL C++-linkage definition - the
+ * compiler mangles it per arch, no linker option parsing involved.
  *
- * MSVC-only by construction: the pragma is inert on every other toolchain,
- * and the /export alias form renames nothing -- it publishes a second name
- * for the same function.  The internal spellings are MSVC's own: win64 uses
- * undecorated C internals, win32 prefixes one underscore. */
-#if defined( _MSC_VER ) && defined( LUA_BUILD_AS_DLL )
-#if defined( _WIN64 )
-#pragma comment( linker, "/export:?AdvancedLuaErrorReporter@@YAHPEAUlua_State@@@Z=AdvancedLuaErrorReporter" )
-#else
-#pragma comment( linker, "/export:?AdvancedLuaErrorReporter@@YAHPAUlua_State@@@Z=_AdvancedLuaErrorReporter" )
-#endif
-#endif
+ * The previous #pragma comment(linker, "/export:...") alias route is gone:
+ * the win32 link truncated the entry at the first '@@' (raw export table
+ * read "?AdvancedLuaErrorReporter\0" instead of the decorated name GMod
+ * modules import), and with the underscored internal spelling the win32 CI
+ * leg failed outright with LNK2001 on a symbol that sat in the very object
+ * under link. */
 
 #ifdef __cplusplus
 } /* extern "C" */

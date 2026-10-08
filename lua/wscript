@@ -78,6 +78,13 @@ def build(bld):
 		# 逐个对照自 GMod win64 lua_shared.dll。第三方 gm{sv,cl}_* 模块
 		# 链接的就是这份导出集，缺一个名字 Windows 加载器就拒载整个 DLL。
 		"src/hl2sb_lua51.c",
+		# 装饰名孪生：GMod 原版这个函数定义在 .cpp 里，二进制模块按 C++
+		# 修饰名（?AdvancedLuaErrorReporter@@YAH...lua_State...@@@Z）导入。
+		# 链接器 /export 别名在 win32 上会把条目名截断在首个 '@@'（裸读导出
+		# 表只有 "?AdvancedLuaErrorReporter"），win32 CI 另因别名目标解析
+		# LNK2001。本文件以 C++ 链接自然产出正确修饰名；仅 MSVC+Windows
+		# 生效，其它平台是空单元。
+		"src/hl2sb_lua51_mangle.c",
 	]
 
 	includes = [
