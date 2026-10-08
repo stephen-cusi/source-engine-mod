@@ -17,7 +17,7 @@
 #include "materialsystem/imaterialproxyfactory.h"
 #include "IHardwareConfigInternal.h"
 #include "utlsymbol.h"
-#include "utlstringmap.h"	// HL2SB (2026-10-08): once-per-name proxy warning
+#include "tier1/utlstringmap.h"	// HL2SB (2026-10-08): once-per-name proxy warning (tier1/ form: bare name only resolves on the MSVC include paths)
 #ifdef OSX
 #include <malloc/malloc.h>
 #else
