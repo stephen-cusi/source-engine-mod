@@ -680,6 +680,30 @@ static int CBaseAnimating___index (lua_State *L) {
     lua_getref(L, pEntity->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_rawget(L, -2);
+
+    // HL2SB (2026-10-08): Entity:SetVar( name, value ) stores under the
+    // instance table's vars subtable ("__hl2sb_vars") while GMod stores on
+    // the script table itself - so the standard addon idiom
+    //     bomb:SetVar( "DetTime", 20 ) ... later self.DetTime
+    // read nil here and nukepack's timed detonation pack never armed its
+    // fuse (timer.Simple(nil, ...) raised on sent_nuke_detpack/init.lua:32,
+    // the planted C4 sat forever).  Same precedence slot as script-table
+    // data: answered before the legacy self-reference tail.
+    if (lua_isnil(L, -1)) {
+      lua_pop(L, 1);   /* the nil; instance table stays */
+      if (HL2SB_EntityPushVarsTable(L, pEntity, false)) {
+        lua_pushvalue(L, 2);
+        lua_rawget(L, -2);
+        if (lua_isnil(L, -1)) {
+          lua_pop(L, 3);               /* vars has nothing -> tail gets nil */
+          lua_pushnil(L);
+        }
+        /* else: the stored value answers (slots below the top are discarded
+        ** by the VM for a C __index return, no cleanup needed) */
+      } else {
+        lua_pushnil(L);                /* keep the tail contract */
+      }
+    }
     // falls through to the legacy self-reference tail below (value or nil)
   }
   else {

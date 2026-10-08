@@ -35,6 +35,15 @@ LUA_API void  (lua_pushentity) (lua_State *L, lua_CBaseEntity *pEntity);
 ** on every read (which killed IsValid() callers like the pickup HUD hook). */
 void HL2SB_PushNullEntityIndex (lua_State *L, const char *pszField);
 
+/* HL2SB (2026-10-08): pushes the per-entity SetVar/GetVar storage table
+** ("__hl2sb_vars" subtable of the instance table).  Shared with the
+** per-class __index copies so Entity:SetVar( name, v ) reads back through
+** self.name on every metatable ENT methods run under (GMod stores SetVar
+** values on the script table itself; the nukepack timed detonation pack
+** reads self.DetTime that way).  Returns false when the entity has no
+** instance table yet (bCreate=false) or is not a Lua-backed entity. */
+bool HL2SB_EntityPushVarsTable (lua_State *L, CBaseEntity *pEntity, bool bCreate);
+
 /*
 ** HL2SB: GMod gives a drivable vehicle its own "Vehicle" metatable on top of the
 ** per-class push functions above (game/shared/lua/lvehicle_shared.cpp).  These

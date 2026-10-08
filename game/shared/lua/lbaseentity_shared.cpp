@@ -3332,7 +3332,11 @@ static int CBaseEntity_GetNWEntity (lua_State *L) {
 //-----------------------------------------------------------------------------
 static const char *HL2SB_VARS_SUBTABLE = "__hl2sb_vars";
 
-static bool HL2SB_EntityPushVarsTable( lua_State *L, CBaseEntity *pEntity, bool bCreate )
+// HL2SB (2026-10-08): shared with the per-class __index copies - the ENT
+// method dispatchers push self with the CBaseAnimating metatable, whose
+// __index lives in lbaseanimating.cpp / lc_baseanimating.cpp, and those need
+// the same SetVar read-back bridge CBaseEntity___index has.
+bool HL2SB_EntityPushVarsTable( lua_State *L, CBaseEntity *pEntity, bool bCreate )
 {
   if ( pEntity == NULL || pEntity->m_nTableReference < 0 ||
        !lua_isrefvalid( L, pEntity->m_nTableReference ) )
@@ -3640,9 +3644,38 @@ static int CBaseEntity___index (lua_State *L) {
     lua_getref(L, pEntity->m_nTableReference);
     lua_getfield(L, -1, field);
     if (lua_isnil(L, -1)) {
-      lua_pop(L, 2);
-      lua_getmetatable(L, 1);
-      lua_getfield(L, -1, field);
+      /* HL2SB GMod compat (2026-10-08): Entity:SetVar( name, value ) stores
+      ** under the instance table's vars subtable ("__hl2sb_vars") while GMod
+      ** stores on the script table itself - so the standard addon idiom
+      **     bomb:SetVar( "DetTime", 20 ) ... later self.DetTime
+      ** read nil here, timer.Simple(nil, ...) raised "number expected, got
+      ** nil", and nukepack's timed detonation pack never armed its fuse (the
+      ** planted C4 sat forever).  Same precedence as top-level instance
+      ** data: a C method beats a non-function data field, a script function
+      ** beats everything.  Slots below the returned answer are discarded by
+      ** the VM, so the early returns need no cleanup. */
+      lua_pop(L, 1);   /* the nil; instance table stays */
+      if (HL2SB_EntityPushVarsTable(L, pEntity, false)) {
+        lua_getfield(L, -1, field);                /* [inst, vartab, val] */
+        if (lua_isnil(L, -1)) {
+          lua_pop(L, 3);                           /* nothing in vars -> meta */
+          lua_getmetatable(L, 1);
+          lua_getfield(L, -1, field);
+        } else if (!lua_isfunction(L, -1)) {
+          lua_getmetatable(L, 1);                  /* [inst, vartab, val, meta] */
+          lua_getfield(L, -1, field);              /* [inst, vartab, val, meta, cval] */
+          if (lua_isfunction(L, -1))
+            return 1;                              /* C method wins */
+          lua_pop(L, 2);                           /* meta + cval */
+          return 1;                                /* the stored value answers */
+        } else {
+          return 1;                                /* script function wins */
+        }
+      } else {
+        lua_pop(L, 1);                             /* no instance vartab -> meta */
+        lua_getmetatable(L, 1);
+        lua_getfield(L, -1, field);
+      }
     } else if (!lua_isfunction(L, -1)) {
       /* data field in the table -- but does a C method own the name?  If it
       ** does, the method is already on top and is the answer; otherwise drop

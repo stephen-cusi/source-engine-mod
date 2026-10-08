@@ -2098,6 +2098,28 @@ static int CBaseAnimating___index (lua_State *L) {
     lua_getref(L, pEntity->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_rawget(L, -2);
+
+    // HL2SB (2026-10-08): Entity:SetVar( name, value ) stores under the
+    // instance table's vars subtable ("__hl2sb_vars") while GMod stores on
+    // the script table itself, so SetVar-then-self.name reads answered nil
+    // on this metatable (every ENT method runs under it).  Same precedence
+    // slot as script-table data, mirroring the server copy in
+    // lbaseanimating.cpp.  Slots below the returned answer are discarded by
+    // the VM for a C __index return, no cleanup needed.
+    if (lua_isnil(L, -1)) {
+      lua_pop(L, 1);   /* the nil; instance table stays */
+      if (HL2SB_EntityPushVarsTable(L, pEntity, false)) {
+        lua_pushvalue(L, 2);
+        lua_rawget(L, -2);
+        if (lua_isnil(L, -1)) {
+          lua_pop(L, 3);               /* vars has nothing -> tail gets nil */
+          lua_pushnil(L);
+        }
+        /* else: the stored value answers */
+      } else {
+        lua_pushnil(L);                /* keep the tail contract */
+      }
+    }
     // falls through to the legacy self-reference / scripted-field tail below
   }
   else {
@@ -2182,8 +2204,12 @@ static int CBaseAnimating___newindex (lua_State *L) {
         if ( s_nPreBindWrites < 40 )
         {
           ++s_nPreBindWrites;
-          Warning( "[HL2SB] pre-bind field write '%s' on scripted entity ent=%d (class '%s') -- auto-table allocated before OnDataChanged\n",
-                   field, pEntity->entindex(), pScripted->GetScriptedClassname() );
+          // Benign by design: the auto-table keeps the write, and OnDataChanged's
+          // heal merges the class table over it (SCP173_Coroutine on every
+          // entity is its render-group loop running before the hands bind).
+          // Info line, not an error - GMod has no pre-bind window at all.
+          Msg( "[HL2SB] pre-bind field write '%s' on scripted entity ent=%d (class '%s') - kept in an auto-table, healed at OnDataChanged\n",
+               field, pEntity->entindex(), pScripted->GetScriptedClassname() );
         }
       }
       lua_newtable(L);

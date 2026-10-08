@@ -320,6 +320,13 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 				lua_getref( L, m_nTableReference );
 				LoadScriptedEntity();
 				luasrc_pcall( L, 2, 0, 0 );
+				/* NOTE: no pop here.  The pcall was requested with ZERO results,
+				** so table.merge's return never lands on the stack - success and
+				** the error path (no nil placeholder at nresults=0) both leave
+				** exactly [].  Popping "the merge result" here underflowed the
+				** shared Lua stack and aborted at map load (2026-10-08).  The
+				** only extra slot this branch pushes is the getref below, and
+				** the bFreshBind else-branch pops that one. */
 			}
 			else
 			{
@@ -460,6 +467,18 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 		// and that value is not LUA_NOREF (-2) -- the ref is taken only here, in
 		// the fresh branch, AFTER the shared seeding above has run.
 		m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
+	}
+	else
+	{
+		// HL2SB (2026-10-08): the merge/healed branch above pushed the instance
+		// table (lua_getref) and nothing popped it - one leaked ENT-instance
+		// table per InitScriptedEntity re-run, i.e. per Spawn of an
+		// already-bound entity.  The HUD stack probe fingerprinted it exactly:
+		// a table whose first keys are ENT method names (VPhysicsUpdate,
+		// StartTouch, OnRemove, NetworkVarNotify) sitting under the first
+		// ShouldDraw of a session.  The fresh branch's luaL_ref pops its table;
+		// this branch has to as well.
+		lua_pop( L, 1 );
 	}
 
 	// HL2SB GMod SENT compat: the engine defaults for an "anim" scripted entity.
