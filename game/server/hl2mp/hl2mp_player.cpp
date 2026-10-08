@@ -2103,6 +2103,27 @@ extern ConVar flashlight;
 //-----------------------------------------------------------------------------
 void CHL2MP_Player::FlashlightTurnOn( void )
 {
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:PlayerSwitchFlashlight( ply, true ) -
+	// an explicit false refuses the toggle (GMod asks this from both switch
+	// paths, including the Player:Flashlight() method).
+	{
+		bool bAllowed = true;
+
+		BEGIN_LUA_CALL_HOOK( "PlayerSwitchFlashlight" );
+			lua_pushplayer( L, this );
+			lua_pushboolean( L, 1 );
+			END_LUA_CALL_HOOK( 2, 1 );
+		if ( L != NULL && lua_isboolean( L, -1 ) )
+			bAllowed = ( lua_toboolean( L, -1 ) != 0 );
+		if ( L != NULL )
+			lua_pop( L, 1 );
+
+		if ( !bAllowed )
+			return;
+	}
+#endif
+
 	if( flashlight.GetInt() > 0 && IsAlive() )
 	{
 		AddEffects( EF_DIMLIGHT );
@@ -2115,6 +2136,24 @@ void CHL2MP_Player::FlashlightTurnOn( void )
 //-----------------------------------------------------------------------------
 void CHL2MP_Player::FlashlightTurnOff( void )
 {
+#if defined ( LUA_SDK )
+	{
+		bool bAllowed = true;
+
+		BEGIN_LUA_CALL_HOOK( "PlayerSwitchFlashlight" );
+			lua_pushplayer( L, this );
+			lua_pushboolean( L, 0 );
+			END_LUA_CALL_HOOK( 2, 1 );
+		if ( L != NULL && lua_isboolean( L, -1 ) )
+			bAllowed = ( lua_toboolean( L, -1 ) != 0 );
+		if ( L != NULL )
+			lua_pop( L, 1 );
+
+		if ( !bAllowed )
+			return;
+	}
+#endif
+
 	RemoveEffects( EF_DIMLIGHT );
 	
 	if( IsAlive() )
@@ -2294,6 +2333,29 @@ CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )
 	CBaseEntity *pLastSpawnPoint = g_pLastSpawn;
 	edict_t		*player = edict();
 	const char *pSpawnpointName = "info_player_deathmatch";
+
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:PlayerSelectSpawn( ply, transition ).
+	// GMod's C++ asks the gamemode before its own spawn-point logic and takes
+	// a returned entity as the whole answer (nil keeps the engine path).  This
+	// engine's C++ spawn selection stays authoritative for nil answers, so the
+	// base gamemode's Lua implementation and this block can coexist.
+	{
+		CBaseEntity *pLuaSpot = NULL;
+
+		BEGIN_LUA_CALL_HOOK( "PlayerSelectSpawn" );
+			lua_pushplayer( L, this );
+			lua_pushboolean( L, 0 );	// transition: this path has none
+			END_LUA_CALL_HOOK( 2, 1 );
+		if ( L != NULL && lua_isnil( L, -1 ) == 0 && lua_isuserdata( L, -1 ) )
+			pLuaSpot = lua_toentity( L, -1 );
+		if ( L != NULL )
+			lua_pop( L, 1 );
+
+		if ( pLuaSpot != NULL )
+			return pLuaSpot;
+	}
+#endif
 
 	if ( HL2MPRules()->IsTeamplay() == true )
 	{

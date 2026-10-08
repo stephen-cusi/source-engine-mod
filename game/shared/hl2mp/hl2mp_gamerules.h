@@ -180,7 +180,10 @@ public:
 	bool	IsTeamplay( void ) { return m_bTeamPlayEnabled;	}
 #ifdef LUA_SDK
 #ifndef CLIENT_DLL
-	bool	FPlayerCanTakeDamage( CBasePlayer *pPlayer, CBaseEntity *pAttacker );
+	// HL2SB (2026-10-08): signature now matches the CGameRules virtual it was
+	// always meant to override (the old two-argument declaration shadowed
+	// nothing and the whole body had been commented out for it).
+	bool	FPlayerCanTakeDamage( CBasePlayer *pPlayer, CBaseEntity *pAttacker, const CTakeDamageInfo &info );
 	bool	AllowDamage( CBaseEntity *pVictim, const CTakeDamageInfo &info );
 
 	void	PlayerSpawn( CBasePlayer *pPlayer );

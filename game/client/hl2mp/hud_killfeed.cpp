@@ -981,7 +981,13 @@ void CHudKillFeed::PushPickupHook( int iUserID, const char *pszItem, int iAmount
 	if ( !cl_killfeed_lua.GetBool() )
 		return;
 
-	const char *pszHookName = HL2SB_GetHookName( HL2SB_HOOK_HUDITEMPICKEDUP );
+	// HL2SB (2026-10-08): the raw event moved off the GMod name.  It used to
+	// dispatch as "HUDItemPickedUp" with these five raw values, which collided
+	// with the wiki contract of that name (one string) - addons hooking it saw
+	// a userid as the first argument.  The Lua adapter now receives this
+	// fork-private event and re-dispatches HUDItemPickedUp /
+	// HUDAmmoPickedUp / HUDWeaponPickedUp with their GMod signatures.
+	const char *pszHookName = "HL2SB_ItemPickup";
 	if ( pszHookName == NULL )
 		return;
 

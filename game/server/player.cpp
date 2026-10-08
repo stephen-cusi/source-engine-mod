@@ -1229,7 +1229,24 @@ int CBasePlayer::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 	// keep track of amount of damage last sustained
 	m_lastDamageAmount = info.GetDamage();
 
-	// Armor. 
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:HandlePlayerArmorReduction( ply,
+	// dmginfo ), raised just before the armor math below reads the damage.
+	// GMod's own C++ no longer reduces armor itself - the base gamemode body
+	// does the whole 80/20 job with SetArmor/SetDamage - while this fork keeps
+	// the engine block authoritative, so the base Lua body stays a no-op and
+	// addons use the hook to scale or veto through dmginfo first.
+	{
+		CTakeDamageInfo mutableInfo = info;
+
+		BEGIN_LUA_CALL_HOOK( "HandlePlayerArmorReduction" );
+			lua_pushplayer( L, this );
+			lua_pushdamageinfo( L, mutableInfo );
+			END_LUA_CALL_HOOK( 2, 0 );
+	}
+#endif
+
+	// Armor.
 	if (m_ArmorValue && !(info.GetDamageType() & (DMG_FALL | DMG_DROWN | DMG_POISON | DMG_RADIATION)) )// armor doesn't protect against fall or drown damage!
 	{
 		float flNew = info.GetDamage() * flRatio;
@@ -1845,6 +1862,15 @@ void CBasePlayer::Event_Killed( const CTakeDamageInfo &info )
 	ClearLastKnownArea();
 
 	BaseClass::Event_Killed( info );
+
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:PostPlayerDeath( ply ), raised once
+	// the whole death event has settled (GMod fires it after
+	// DoPlayerDeath/PlayerDeath/PlayerSilentDeath have all run).
+	BEGIN_LUA_CALL_HOOK( "PostPlayerDeath" );
+		lua_pushplayer( L, this );
+		END_LUA_CALL_HOOK( 1, 0 );
+#endif
 }
 
 void CBasePlayer::Event_Dying( const CTakeDamageInfo& info )
@@ -3954,9 +3980,28 @@ void CBasePlayer::HandleFuncTrain(void)
 
 
 void CBasePlayer::PreThink(void)
-{						
+{
 	if ( g_fGameOver || m_iPlayerLocked )
 		return;         // intermission or finale
+
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:StartCommand( ply, cmd ).  GMod fires
+	// it right before the player's input is processed each tick so scripts can
+	// rewrite buttons/viewangles (bot control, forced moves).  m_pCurrentCommand
+	// is only meaningful inside RunCommand - outside that window the hook is
+	// skipped rather than handed a stale command.
+	if ( m_pCurrentCommand != NULL )
+	{
+		// Local extern on purpose: waf has no header dependency propagation
+		// (same pattern as the move hooks in gamemovement.cpp).
+		extern void HL2SB_PushUserCmdTable( lua_State *L, const CUserCmd *pCmd );
+
+		BEGIN_LUA_CALL_HOOK( "StartCommand" );
+			lua_pushplayer( L, this );
+			HL2SB_PushUserCmdTable( L, m_pCurrentCommand );
+			END_LUA_CALL_HOOK( 2, 0 );
+	}
+#endif
 
 	if ( Hints() )
 	{
@@ -4754,6 +4799,16 @@ void CBasePlayer::PostThink()
 #if !defined( NO_ENTITY_PREDICTION )
 	// Even if dead simulate entities
 	SimulatePlayerSimulatedEntities();
+#endif
+
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:PlayerPostThink( ply ), raised after
+	// the per-tick player simulation is done (GMod fires it from the same
+	// post-movement point; the wiki-recommended client-side add-ons should
+	// hook GM:Think instead - this dispatch is server-side here).
+	BEGIN_LUA_CALL_HOOK( "PlayerPostThink" );
+		lua_pushplayer( L, this );
+		END_LUA_CALL_HOOK( 1, 0 );
 #endif
 
 }
@@ -7855,6 +7910,8 @@ void CBasePlayer::ChangeTeam( int iTeamNum, bool bAutoTeam, bool bSilent)
 		gameeventmanager->FireEvent( event );
 	}
 
+	int iOldTeamNumber = GetTeamNumber();
+
 	// Remove him from his current team
 	if ( GetTeam() )
 	{
@@ -7868,6 +7925,17 @@ void CBasePlayer::ChangeTeam( int iTeamNum, bool bAutoTeam, bool bSilent)
 	}
 
 	BaseClass::ChangeTeam( iTeamNum );
+
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:PlayerChangedTeam( ply, old, new )
+	// once the move is complete.  GMod raises it from this same spot and
+	// warns that calling SetTeam/ChangeTeam inside the hook recurses.
+	BEGIN_LUA_CALL_HOOK( "PlayerChangedTeam" );
+		lua_pushplayer( L, this );
+		lua_pushinteger( L, iOldTeamNumber );
+		lua_pushinteger( L, iTeamNum );
+		END_LUA_CALL_HOOK( 3, 0 );
+#endif
 }
 
 

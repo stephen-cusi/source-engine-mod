@@ -2712,6 +2712,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_pushinteger( L, 0 );  lua_setglobal( L, "STEPSOUNDTIME_NORMAL" );
   lua_pushinteger( L, 1 );  lua_setglobal( L, "STEPSOUNDTIME_ON_LADDER" );
   lua_pushinteger( L, 2 );  lua_setglobal( L, "STEPSOUNDTIME_WATER_KNEE" );
+  lua_pushinteger( L, 3 );  lua_setglobal( L, "STEPSOUNDTIME_WATER_FOOT" );
 
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);

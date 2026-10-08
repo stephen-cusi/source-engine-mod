@@ -57,6 +57,7 @@
 
 #ifdef LUA_SDK
 #include "luamanager.h"
+#include "ltakedamageinfo.h"	// HL2SB (2026-10-08): lua_pushdamageinfo (OnDamagedByExplosion)
 #include "lbasecombatweapon_shared.h"
 #include "lbaseplayer_shared.h"
 #endif
@@ -2448,6 +2449,22 @@ int CHL2_Player::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 //-----------------------------------------------------------------------------
 void CHL2_Player::OnDamagedByExplosion( const CTakeDamageInfo &info )
 {
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:OnDamagedByExplosion( ply, dmginfo )
+	// before the ear-ringing DSP.  GMod's base body owns the DSP there while
+	// this engine keeps its own, so the fork's base body stays empty and the
+	// hook is advisory (dmginfo copies never flow back, matching every other
+	// damage hook on this fork).
+	{
+		CTakeDamageInfo lInfo = info;
+
+		BEGIN_LUA_CALL_HOOK( "OnDamagedByExplosion" );
+			lua_pushplayer( L, this );
+			lua_pushdamageinfo( L, lInfo );
+			END_LUA_CALL_HOOK( 2, 0 );
+	}
+#endif
+
 	if ( info.GetInflictor() && info.GetInflictor()->ClassMatches( "mortarshell" ) )
 	{
 		// No ear ringing for mortar

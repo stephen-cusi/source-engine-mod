@@ -173,6 +173,32 @@ void Host_Say( edict_t *pEdict, const CCommand &args, bool teamonly )
 		{
 			lua_pop( L, 1 );
 		}
+
+		// HL2SB (2026-10-08): the GMod-name spelling of the same gate.
+		// GM:PlayerSay( sender, text, teamChat ) - false swallows the message,
+		// a string replaces it, anything else says the text as typed.
+		BEGIN_LUA_CALL_HOOK( "PlayerSay" );
+			lua_pushplayer( L, pPlayer );
+			lua_pushstring( L, p );
+			lua_pushboolean( L, teamonly );
+			END_LUA_CALL_HOOK( 3, 1 );
+
+		if ( lua_isboolean( L, -1 ) )
+		{
+			bool res = (bool)luaL_checkboolean( L, -1 );
+			lua_pop( L, 1 );
+			if ( !res )
+				return;
+		}
+		else if ( lua_isstring( L, -1 ) )
+		{
+			p = (char *)luaL_checkstring( L, -1 );
+			lua_pop( L, 1 );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
 #endif
 
 		// make sure the text has valid content
@@ -691,6 +717,26 @@ void kill_helper( const CCommand &args, bool bExplode )
 		CBasePlayer *pPlayer = UTIL_GetCommandClient();
 		if ( pPlayer )
 		{
+#if defined ( LUA_SDK )
+			// HL2SB GMod compat (2026-10-08): GM:CanPlayerSuicide( ply ) gates
+			// the kill command; an explicit false stops the suicide (GMod's
+			// own engine kill path asks the same hook).
+			{
+				bool bAllowed = true;
+
+				BEGIN_LUA_CALL_HOOK( "CanPlayerSuicide" );
+					lua_pushplayer( L, pPlayer );
+					END_LUA_CALL_HOOK( 1, 1 );
+				if ( L != NULL && lua_isboolean( L, -1 ) )
+					bAllowed = ( lua_toboolean( L, -1 ) != 0 );
+				if ( L != NULL )
+					lua_pop( L, 1 );
+
+				if ( !bAllowed )
+					return;
+			}
+#endif
+
 			pPlayer->CommitSuicide( bExplode );
 		}
 	}
@@ -709,6 +755,59 @@ CON_COMMAND( explode, "Kills the player with explosive damage" )
 {
 	kill_helper( args, true );
 }
+
+#if defined ( LUA_SDK )
+//------------------------------------------------------------------------------
+// HL2SB GMod compat (2026-10-08): the F1-F4 gamemode commands.  GMod's engine
+// registers gm_showhelp / gm_showteam / gm_showspare1 / gm_showspare2 and each
+// one just hands the invoking player to the matching GM:Show* hook - the
+// sandbox gamemode draws its help/team screens from there.  Binding the keys
+// is the user's business (GMod ships them bound to F1-F4 in its defaults).
+//------------------------------------------------------------------------------
+CON_COMMAND( gm_showhelp, "Show the help screen (F1)" )
+{
+	CBasePlayer *pPlayer = UTIL_GetCommandClient();
+	if ( pPlayer )
+	{
+		BEGIN_LUA_CALL_HOOK( "ShowHelp" );
+			lua_pushplayer( L, pPlayer );
+			END_LUA_CALL_HOOK( 1, 0 );
+	}
+}
+
+CON_COMMAND( gm_showteam, "Show the team selection screen (F2)" )
+{
+	CBasePlayer *pPlayer = UTIL_GetCommandClient();
+	if ( pPlayer )
+	{
+		BEGIN_LUA_CALL_HOOK( "ShowTeam" );
+			lua_pushplayer( L, pPlayer );
+			END_LUA_CALL_HOOK( 1, 0 );
+	}
+}
+
+CON_COMMAND( gm_showspare1, "Spare keybind (F3)" )
+{
+	CBasePlayer *pPlayer = UTIL_GetCommandClient();
+	if ( pPlayer )
+	{
+		BEGIN_LUA_CALL_HOOK( "ShowSpare1" );
+			lua_pushplayer( L, pPlayer );
+			END_LUA_CALL_HOOK( 1, 0 );
+	}
+}
+
+CON_COMMAND( gm_showspare2, "Spare keybind (F4)" )
+{
+	CBasePlayer *pPlayer = UTIL_GetCommandClient();
+	if ( pPlayer )
+	{
+		BEGIN_LUA_CALL_HOOK( "ShowSpare2" );
+			lua_pushplayer( L, pPlayer );
+			END_LUA_CALL_HOOK( 1, 0 );
+	}
+}
+#endif
 
 //------------------------------------------------------------------------------
 // helper function for killvector and explodevector

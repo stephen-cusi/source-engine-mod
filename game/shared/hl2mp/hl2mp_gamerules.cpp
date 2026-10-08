@@ -353,18 +353,23 @@ void CHL2MPRules::PlayerKilled( CBasePlayer *pVictim, const CTakeDamageInfo &inf
 
 #ifndef CLIENT_DLL
 #if defined ( LUA_SDK )
-/*bool CHL2MPRules::FPlayerCanTakeDamage( CBasePlayer *pPlayer, CBaseEntity *pAttacker )
+// HL2SB (2026-10-08): the damage gate now rides on GMod's hook name.  The old
+// two-argument override never reached the vtable (signature drift against the
+// CGameRules virtual) and had been commented out wholesale; the corrected
+// virtual asks Lua the GMod question GM:PlayerShouldTakeDamage( ply, attacker )
+// - false refuses the damage, anything else falls through to the C++
+// friendly-fire rules.
+bool CHL2MPRules::FPlayerCanTakeDamage( CBasePlayer *pPlayer, CBaseEntity *pAttacker, const CTakeDamageInfo &info )
 {
-	BEGIN_LUA_CALL_HOOK( "FPlayerCanTakeDamage" );
+	BEGIN_LUA_CALL_HOOK( "PlayerShouldTakeDamage" );
 		lua_pushplayer( L, pPlayer );
 		lua_pushentity( L, pAttacker );
 	END_LUA_CALL_HOOK( 2, 1 );
 
 	RETURN_LUA_BOOLEAN();
 
-	return BaseClass::FPlayerCanTakeDamage( pPlayer, pAttacker );
+	return BaseClass::FPlayerCanTakeDamage( pPlayer, pAttacker, info );
 }
-*/
 bool CHL2MPRules::AllowDamage( CBaseEntity *pVictim, const CTakeDamageInfo &info )
 {
 	CTakeDamageInfo lInfo = info;
@@ -916,6 +921,26 @@ bool CHL2MPRules::CanHavePlayerItem( CBasePlayer *pPlayer, CBaseCombatWeapon *pI
 			 return false;
 	}
 #else
+	// HL2SB (2026-10-08): GMod's GM:PlayerCanPickupWeapon( ply, weapon ) rides
+	// the same gate - a false answer refuses the pickup, and because this
+	// virtual answers the Give path too, a veto there as well (GMod
+	// behaviour).
+	{
+		bool bPickupAllowed = true;
+
+		BEGIN_LUA_CALL_HOOK( "PlayerCanPickupWeapon" );
+			lua_pushplayer( L, pPlayer );
+			lua_pushweapon( L, pItem );
+			END_LUA_CALL_HOOK( 2, 1 );
+		if ( L != NULL && lua_isboolean( L, -1 ) )
+			bPickupAllowed = ( lua_toboolean( L, -1 ) != 0 );
+		if ( L != NULL )
+			lua_pop( L, 1 );
+
+		if ( !bPickupAllowed )
+			return false;
+	}
+
 	BEGIN_LUA_CALL_HOOK( "CanHavePlayerItem" );
 		lua_pushplayer( L, pPlayer );
 		lua_pushweapon( L, pItem );
@@ -964,6 +989,12 @@ void CHL2MPRules::ClientDisconnected( edict_t *pClient )
 	BEGIN_LUA_CALL_HOOK( "ClientDisconnected" );
 		lua_pushplayer( L, (CBasePlayer *)CBaseEntity::Instance( pClient ) );
 	END_LUA_CALL_HOOK( 1, 0 );
+
+	// HL2SB (2026-10-08): the GMod-name spelling, same moment, entity argument
+	// only (GMod's GM:PlayerDisconnected( ply )).
+	BEGIN_LUA_CALL_HOOK( "PlayerDisconnected" );
+		lua_pushplayer( L, (CBasePlayer *)CBaseEntity::Instance( pClient ) );
+	END_LUA_CALL_HOOK( 1, 0 );
 #endif
 	CBasePlayer *pPlayer = (CBasePlayer *)CBaseEntity::Instance( pClient );
 	if ( pPlayer )
@@ -988,6 +1019,29 @@ float CHL2MPRules::FlPlayerFallDamage( CBasePlayer *pPlayer )
 	END_LUA_CALL_HOOK( 1, 1 );
 
 	RETURN_LUA_NUMBER();
+
+	// HL2SB (2026-10-08): the GMod-name spelling of the same question.  GMod
+	// asks GM:GetFallDamage( ply, speed ) and takes the returned number as the
+	// whole fall damage (their C++ falls back to a flat 10 when nothing
+	// answers); here a numeric answer wins, otherwise the GMod-style formula
+	// below runs as before.
+	{
+		float flFallSpeed = pPlayer->m_Local.m_flFallVelocity;
+
+		BEGIN_LUA_CALL_HOOK( "GetFallDamage" );
+			lua_pushplayer( L, pPlayer );
+			lua_pushnumber( L, flFallSpeed );
+			END_LUA_CALL_HOOK( 2, 1 );
+
+		if ( L != NULL && lua_isnumber( L, -1 ) )
+		{
+			float flDamage = (float)lua_tonumber( L, -1 );
+			lua_pop( L, 1 );
+			return flDamage;
+		}
+		if ( L != NULL )
+			lua_pop( L, 1 );
+	}
 
 	// HL2SB: GMod-style fall damage.
 	// Mirrors Garry's Mod base gamemode (gamemodes/base/gamemode/player.lua GM:GetFallDamage):
@@ -1397,6 +1451,14 @@ bool CHL2MPRules::PlayerCanHearChat( CBasePlayer *pListener, CBasePlayer *pSpeak
 
 bool CHL2MPRules::ClientConnected( edict_t *pEntity, const char *pszName, const char *pszAddress, char *reject, int maxrejectlen )
 {
+	// HL2SB (2026-10-08): the GMod-name spelling.  GM:PlayerConnect( name, ip )
+	// is informational in GMod too (refusals go through the password gate), so
+	// this is a plain announcement next to the fork's richer 5-argument form.
+	BEGIN_LUA_CALL_HOOK( "PlayerConnect" );
+		lua_pushstring( L, pszName );
+		lua_pushstring( L, pszAddress );
+	END_LUA_CALL_HOOK( 2, 0 );
+
 	BEGIN_LUA_CALL_HOOK( "ClientConnected" );
 		lua_pushplayer( L, (CBasePlayer *)CBaseEntity::Instance( pEntity ) );
 		lua_pushstring( L, pszName );

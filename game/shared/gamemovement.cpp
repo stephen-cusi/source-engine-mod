@@ -1187,6 +1187,14 @@ void CGameMovement::ProcessMovement( CBasePlayer *pPlayer, CMoveData *pMove )
 		extern void HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *pszHook );
 		HL2SB_LuaMoveHooks( pPlayer, pMove, "SetupMove" );
 	}
+
+	// HL2SB GMod compat (2026-10-08): GM:PlayerTick( ply, mv ) - GMod raises
+	// it from the top of ProcessMovement, after SetupMove and before the
+	// movement itself runs.  Same helper, same realms.
+	{
+		extern void HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *pszHook );
+		HL2SB_LuaMoveHooks( pPlayer, pMove, "PlayerTick" );
+	}
 #endif
 
 	// Run the command.
@@ -2546,6 +2554,17 @@ bool CGameMovement::CheckJumpButton( void )
 	mv->m_outStepHeight += 0.15f;
 
 	OnJump(mv->m_outJumpVel.z);
+
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:OnPlayerJump( ply, speed ) - GMod
+	// raises it from this same post-impulse point, speed being the vertical
+	// jump velocity that was just applied.  Helper lives with the other move
+	// hooks; this file stays free of the Lua headers.
+	{
+		extern void HL2SB_LuaPlayerJump( CBasePlayer *pPlayer, float flJumpSpeed );
+		HL2SB_LuaPlayerJump( player, mv->m_outJumpVel.z );
+	}
+#endif
 
 	// Set jump time.
 	if ( gpGlobals->maxClients == 1 )
@@ -3945,7 +3964,21 @@ void CGameMovement::CheckFalling( void )
 	if ( player->GetGroundEntity() == NULL || player->m_Local.m_flFallVelocity <= 0 )
 		return;
 
-	if ( !IsDead() && player->m_Local.m_flFallVelocity >= PLAYER_FALL_PUNCH_THRESHOLD )
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:OnPlayerHitGround( ply, inWater,
+	// onFloater, speed ).  GMod asks the gamemode at the landing point before
+	// the default damage/effects answer; true suppresses that default block
+	// (the landing itself still registers and the fall velocity still clears).
+	// Helper lives with the other move hooks (this file keeps no Lua headers).
+	bool bSkipLandingDefault = false;
+	{
+		extern bool HL2SB_LuaPlayerHitGround( CBasePlayer *pPlayer, bool bInWater, bool bOnFloater, float flFallSpeed );
+		bSkipLandingDefault = HL2SB_LuaPlayerHitGround( player, player->GetWaterLevel() > 0,
+			player->GetGroundEntity()->IsFloating(), player->m_Local.m_flFallVelocity );
+	}
+#endif
+
+	if ( !bSkipLandingDefault && !IsDead() && player->m_Local.m_flFallVelocity >= PLAYER_FALL_PUNCH_THRESHOLD )
 	{
 		bool bAlive = true;
 		float fvol = 0.5;

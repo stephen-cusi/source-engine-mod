@@ -383,6 +383,48 @@ static int CBasePlayer_Name (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Player:Kill().
+//
+// The ordinary suicide entry point: a lethal generic hit that runs the full
+// death chain (scoreboard, GM:PlayerDeath, kill feed) - unlike KillSilent
+// above, which is the quiet variant.  Server only, like every path that can
+// actually end a life.
+static int CBasePlayer_Kill (lua_State *L) {
+#ifndef CLIENT_DLL
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+
+  if (pPlayer->IsAlive()) {
+    CTakeDamageInfo info;
+
+    info.SetDamage(100000.0f);
+    info.SetDamageType(DMG_GENERIC);
+    pPlayer->TakeDamage(info);
+  }
+#else
+  (void)L;
+#endif
+
+  return 0;
+}
+
+// HL2SB GMod compat: Player:SetTeam( team ).
+//
+// Straight ChangeTeam wrapper.  The base gamemode's PlayerInitialSpawn and
+// team-selection chain both start from it; without the binding every GMod
+// team gamemode errors on its first join.
+static int CBasePlayer_SetTeam (lua_State *L) {
+#ifndef CLIENT_DLL
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  int iTeam = (int)luaL_checkinteger(L, 2);
+
+  pPlayer->ChangeTeam(iTeam);
+#else
+  (void)L;
+#endif
+
+  return 0;
+}
+
 static int CBasePlayer_GetVehicle (lua_State *L) {
   // GetVehicleEntity() exists on both realms (server player.h:1318, client
   // c_baseplayer.h:316) and answers the vehicle ENTITY GMod hands back.
@@ -2440,6 +2482,8 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"Name", CBasePlayer_Name},
   {"GetVehicle", CBasePlayer_GetVehicle},
   {"KillSilent", CBasePlayer_KillSilent},
+  {"Kill", CBasePlayer_Kill},
+  {"SetTeam", CBasePlayer_SetTeam},
   {"GetEyeTrace", CBasePlayer_GetEyeTrace},
   {"GetEyeTraceNoCursor", CBasePlayer_GetEyeTraceNoCursor},
   {"GetBonusChallenge", CBasePlayer_GetBonusChallenge},
@@ -2810,6 +2854,44 @@ void HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *psz
 		lua_pushnil( L );  // cmd slot: GMod passes CUserCmd; no binding here
 	END_LUA_CALL_HOOK( 3, 1 );
 	lua_pop( L, 1 );
+}
+
+// HL2SB (2026-10-08): the two landing/jump gamemode hooks.  gamemovement.cpp
+// reaches them through these helpers because that file deliberately stays
+// free of the Lua headers (local-extern pattern, see its move-hook blocks).
+// OnPlayerHitGround answers GMod's contract: true means the caller skips the
+// default landing damage/effects block.
+
+bool HL2SB_LuaPlayerHitGround( CBasePlayer *pPlayer, bool bInWater, bool bOnFloater, float flFallSpeed )
+{
+	if ( L == NULL || pPlayer == NULL )
+		return false;
+
+	bool bSkipDefault = false;
+
+	BEGIN_LUA_CALL_HOOK( "OnPlayerHitGround" );
+		lua_pushplayer( L, pPlayer );
+		lua_pushboolean( L, bInWater ? 1 : 0 );
+		lua_pushboolean( L, bOnFloater ? 1 : 0 );
+		lua_pushnumber( L, flFallSpeed );
+		END_LUA_CALL_HOOK( 4, 1 );
+	if ( L != NULL && lua_isboolean( L, -1 ) )
+		bSkipDefault = ( lua_toboolean( L, -1 ) != 0 );
+	if ( L != NULL )
+		lua_pop( L, 1 );
+
+	return bSkipDefault;
+}
+
+void HL2SB_LuaPlayerJump( CBasePlayer *pPlayer, float flJumpSpeed )
+{
+	if ( L == NULL || pPlayer == NULL )
+		return;
+
+	BEGIN_LUA_CALL_HOOK( "OnPlayerJump" );
+		lua_pushplayer( L, pPlayer );
+		lua_pushnumber( L, flJumpSpeed );
+		END_LUA_CALL_HOOK( 2, 0 );
 }
 
 // GM:Move( ply, mv ) - the replace-the-movement hook, fired as

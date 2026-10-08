@@ -822,11 +822,41 @@ void CBasePlayer::UpdateButtonState( int nUserCmdButtonMask )
 	// Get button states
 	m_nButtons = nUserCmdButtonMask;
  	int buttonsChanged = m_afButtonLast ^ m_nButtons;
-	
+
 	// Debounced button codes for pressed/released
 	// UNDONE: Do we need auto-repeat?
 	m_afButtonPressed =  buttonsChanged & m_nButtons;		// The changed ones still down are "pressed"
 	m_afButtonReleased = buttonsChanged & (~m_nButtons);	// The ones not down are "released"
+
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:KeyPress / GM:KeyRelease( ply, key ).
+	// GMod raises both from the predicted button-edge point shared by both
+	// realms, one dispatch per changed IN_ bit - this function is exactly
+	// that point in this engine (it runs on server players and on client
+	// prediction alike).
+	{
+		int iPressed = m_afButtonPressed;
+		int iReleased = m_afButtonReleased;
+		for ( int i = 0; i < 32; i++ )
+		{
+			int iBit = ( 1 << i );
+			if ( iPressed & iBit )
+			{
+				BEGIN_LUA_CALL_HOOK( "KeyPress" );
+					lua_pushplayer( L, this );
+					lua_pushinteger( L, iBit );
+				END_LUA_CALL_HOOK( 2, 0 );
+			}
+			if ( iReleased & iBit )
+			{
+				BEGIN_LUA_CALL_HOOK( "KeyRelease" );
+					lua_pushplayer( L, this );
+					lua_pushinteger( L, iBit );
+				END_LUA_CALL_HOOK( 2, 0 );
+			}
+		}
+	}
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -1383,11 +1413,6 @@ CBaseEntity *CBasePlayer::FindUseEntity()
 //-----------------------------------------------------------------------------
 void CBasePlayer::PlayerUse ( void )
 {
-#if defined ( LUA_SDK )
-	BEGIN_LUA_CALL_HOOK( "PlayerUse" );
-		lua_pushplayer( L, this );
-	END_LUA_CALL_HOOK( 1, 0 );
-#endif
 #ifdef GAME_DLL
 	// Was use pressed or released?
 	if ( ! ((m_nButtons | m_afButtonPressed | m_afButtonReleased) & IN_USE) )
@@ -1474,6 +1499,32 @@ void CBasePlayer::PlayerUse ( void )
 	}
 
 	CBaseEntity *pUseEntity = FindUseEntity();
+
+#if defined ( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:PlayerUse( ply, entity ) now carries
+	// the entity under the crosshair (GMod contract: the hook used to fire
+	// player-only on every tick, before the use system had even picked a
+	// target).  Returning false vetoes the use, anything else lets the
+	// engine's FCAP_* handling run.
+	{
+		bool bVetoUse = false;
+
+		BEGIN_LUA_CALL_HOOK( "PlayerUse" );
+			lua_pushplayer( L, this );
+			if ( pUseEntity )
+				lua_pushentity( L, pUseEntity );
+			else
+				lua_pushnil( L );
+			END_LUA_CALL_HOOK( 2, 1 );
+		if ( L != NULL && lua_isnil( L, -1 ) == 0 && lua_type( L, -1 ) == LUA_TBOOLEAN )
+			bVetoUse = ( lua_toboolean( L, -1 ) == 0 );
+		if ( L != NULL )
+			lua_pop( L, 1 );
+
+		if ( bVetoUse )
+			return;
+	}
+#endif
 
 	// Found an object
 	if ( pUseEntity )

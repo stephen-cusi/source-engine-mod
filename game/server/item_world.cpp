@@ -22,6 +22,14 @@
 #include "igameevents.h"
 #endif
 
+#if defined( LUA_SDK )
+// HL2SB (2026-10-08): GM:PlayerCanPickupItem dispatch below (GMod hook).
+// This file carried none of the Lua include set - same block player.cpp uses.
+#include "luamanager.h"
+#include "lbaseentity_shared.h"
+#include "lbaseplayer_shared.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -432,6 +440,29 @@ void CItem::ItemTouch( CBaseEntity *pOther )
 	// Can I even pick stuff up?
 	if ( !pPlayer->IsAllowedToPickupWeapons() )
 		return;
+
+#if defined ( LUA_SDK )
+	// HL2SB (2026-10-08): GM:PlayerCanPickupItem( ply, item ).  GMod raises it
+	// from its item-touch gate; an explicit false refuses the pickup (health
+	// kits, batteries, ammo - everything that flows through here).  Same
+	// copy-into-userdata damage-free convention as the rest of the hooks:
+	// the answer is read from the return value only.
+	{
+		bool bPickupAllowed = true;
+
+		BEGIN_LUA_CALL_HOOK( "PlayerCanPickupItem" );
+			lua_pushplayer( L, pPlayer );
+			lua_pushentity( L, this );
+			END_LUA_CALL_HOOK( 2, 1 );
+		if ( L != NULL && lua_isboolean( L, -1 ) )
+			bPickupAllowed = ( lua_toboolean( L, -1 ) != 0 );
+		if ( L != NULL )
+			lua_pop( L, 1 );
+
+		if ( !bPickupAllowed )
+			return;
+	}
+#endif
 
 	// ok, a player is touching this item, but can he have it?
 	if ( !g_pGameRules->CanHaveItem( pPlayer, this ) )

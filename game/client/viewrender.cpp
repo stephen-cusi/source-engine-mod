@@ -1045,6 +1045,21 @@ void CViewRender::DrawViewModels( const CViewSetup &view, bool drawViewmodel )
 	bool bShouldDrawPlayerViewModel = ShouldDrawViewModel( drawViewmodel );
 	bool bShouldDrawToolViewModels = ToolsEnabled();
 
+#if defined( LUA_SDK )
+	// HL2SB (2026-10-08): GM:PreDrawViewModels() - GMod fires this once before
+	// any viewmodel work starts (their render loop raises it ahead of the
+	// per-viewmodel PreDrawViewModel pair).  No arguments, no return contract
+	// worth acting on (the per-VM hook below owns suppression).
+	{
+		extern bool g_bRenderingReflection;
+		if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+		{
+			BEGIN_LUA_CALL_HOOK( "PreDrawViewModels" );
+			END_LUA_CALL_HOOK( 0, 0 );
+		}
+	}
+#endif
+
 	// HL2SB (2026-09-27): GMod contract -- the engine dispatches the GAMEMODE
 	// hook "PreDrawViewModel"( vm, ply, wep, flags ); GM:PreDrawViewModel
 	// (deathmatch cl_init) forwards to the SWEP method.  Literal true
@@ -1098,6 +1113,13 @@ void CViewRender::DrawViewModels( const CViewSetup &view, bool drawViewmodel )
 	viewModelSetup.zFar = view.zFarViewmodel;
 	viewModelSetup.fov = view.fovViewmodel;
 	viewModelSetup.m_flAspectRatio = engine->GetScreenAspectRatio();
+
+	// HL2SB: the GM:CalcViewModelView dispatch lives in CBaseViewModel::
+	// CalcViewModelView (baseviewmodel_shared.cpp) -- that is GMod's own call
+	// site (their C_BaseViewModel::CalcViewModelView, vtable +0x840, runs the
+	// weapon bob FIRST and then dispatches with pre-bob eye as args 3/4 and
+	// post-bob as args 5/6).  Dispatching here as well would run every SWEP's
+	// viewmodel pipeline twice per frame.
 
 	ITexture *pRTColor = NULL;
 	ITexture *pRTDepth = NULL;
@@ -2244,6 +2266,20 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 
 		CleanupMain3DView( view );
 
+		// HL2SB GMod compat (2026-10-08): fire GM:PreDrawEffects once per
+		// frame - GMod raises it right after the viewmodels and before the
+		// screen-space stage, with the 3D context still valid (their render
+		// loop order: PreDrawViewModels, effects, PreDrawEffects, screen
+		// space).  Same in-game guard as the two pumps below.
+		{
+			extern bool g_bRenderingReflection;
+			if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+			{
+				BEGIN_LUA_CALL_HOOK( "PreDrawEffects" );
+				END_LUA_CALL_HOOK( 0, 0 );
+			}
+		}
+
 		// HL2SB GMod compat: fire GM:RenderScreenspaceEffects once per frame,
 		// after the 3D scene and its screen-space effects and before the HUD --
 		// GMod's postprocessing stage.  This is where GMod's own
@@ -2491,10 +2527,24 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 			HL2SB_FrameStats_FramePulse();
 			flHookStart = Plat_FloatTime();
 		}
+
+		// HL2SB (2026-10-08): GMod's HUD prelude, fired here for the same
+		// "2D context is up" reason as HUDPaint below.  GMod order is
+		// PreDrawHUD, HUDPaintBackground, HUDPaint, PostDrawHUD; the first two
+		// had no dispatch point on this fork.
+		BEGIN_LUA_CALL_HOOK( "PreDrawHUD" );
+		END_LUA_CALL_HOOK( 0, 0 );
+		BEGIN_LUA_CALL_HOOK( "HUDPaintBackground" );
+		END_LUA_CALL_HOOK( 0, 0 );
+
 		BEGIN_LUA_CALL_HOOK( "HUDPaint" );
 		END_LUA_CALL_HOOK( 0, 0 );
 		if ( bFrameStats )
 			HL2SB_FrameStats_NoteLuaHook( "HUDPaint", Plat_FloatTime() - flHookStart );
+
+		// HL2SB (2026-10-08): closing half of the GMod HUD sequence.
+		BEGIN_LUA_CALL_HOOK( "PostDrawHUD" );
+		END_LUA_CALL_HOOK( 0, 0 );
 #endif
 
 		// maybe paint the main menu and cursor too if we're in stereo hud mode
@@ -4126,6 +4176,34 @@ void CRendering3dView::DrawOpaqueRenderables( ERenderDepthMode DepthMode )
 	if( !m_pMainView->ShouldDrawEntities() )
 		return;
 
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:PreDrawOpaqueRenderables(
+	// isDrawingDepth, isDrawSkybox, isDraw3DSkybox ) - GMod raises it right
+	// before the opaque pass and a true answer skips that pass entirely.  The
+	// Post* sibling below (between the passes) carries the same guards; the
+	// third argument reports the 3D skybox pass, which this fork's shadow
+	// depth maps never are.
+	{
+		extern bool g_bRenderingReflection;
+		if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+		{
+			bool bSkipOpaques = false;
+
+			BEGIN_LUA_CALL_HOOK( "PreDrawOpaqueRenderables" );
+			lua_pushboolean( L, ( DepthMode != DEPTH_MODE_NORMAL ) ? true : false );
+			lua_pushboolean( L, ( m_DrawFlags & DF_DRAWSKYBOX ) ? true : false );
+			lua_pushboolean( L, 0 );
+			END_LUA_CALL_HOOK( 3, 1 );
+			if ( lua_isboolean( L, -1 ) )
+				bSkipOpaques = ( lua_toboolean( L, -1 ) != 0 );
+			lua_pop( L, 1 );
+
+			if ( bSkipOpaques )
+				return;
+		}
+	}
+#endif
+
 	render->SetBlend( 1 );
 
 	//
@@ -4627,6 +4705,32 @@ void CRendering3dView::DrawTranslucentRenderables( bool bInSkybox, bool bShadowD
 		DrawTranslucentRenderablesNoWorld( bInSkybox );
 		return;
 	}
+
+#if defined( LUA_SDK )
+	// HL2SB GMod compat (2026-10-08): GM:PreDrawTranslucentRenderables(
+	// isDrawingDepth, isDrawSkybox, isDraw3DSkybox ) - raised right before the
+	// translucent pass; true skips it.  Same guards as the Post* sibling
+	// below.
+	{
+		extern bool g_bRenderingReflection;
+		if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+		{
+			bool bSkipTranslucent = false;
+
+			BEGIN_LUA_CALL_HOOK( "PreDrawTranslucentRenderables" );
+			lua_pushboolean( L, bShadowDepth ? true : false );
+			lua_pushboolean( L, bInSkybox ? true : false );
+			lua_pushboolean( L, 0 );
+			END_LUA_CALL_HOOK( 3, 1 );
+			if ( lua_isboolean( L, -1 ) )
+				bSkipTranslucent = ( lua_toboolean( L, -1 ) != 0 );
+			lua_pop( L, 1 );
+
+			if ( bSkipTranslucent )
+				return;
+		}
+	}
+#endif
 
 	VPROF_BUDGET( "CViewRender::DrawTranslucentRenderables", "DrawTranslucentRenderables" );
 	int iPrevLeaf = info.m_LeafCount - 1;
