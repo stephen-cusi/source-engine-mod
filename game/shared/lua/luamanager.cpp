@@ -332,6 +332,32 @@ static int luasrc_include (lua_State *L) {
   lua_getinfo(L, "f", &ar1);
   lua_Debug ar2;
   lua_getinfo(L, ">S", &ar2);
+
+  // HL2SB (2026-10-08): skip C frames between include() and the script that
+  // actually asked.  The protected form pcall( include, "file.lua" ) resolves
+  // level 1 as pcall itself - a C frame, whose source is "[C]"; Q_StripFilename
+  // turns a separator-less string into "" and the relative candidate collapses
+  // to "/file.lua", which never exists.  gamemodes/base/gamemode/shared.lua
+  // wraps its player_shd include exactly that way, so player_shd had NEVER
+  // loaded (ds_debug.log: "[Lua] FAILED /player_shd.lua ...").  GMod's
+  // contract is "relative to the file that called include", and the file that
+  // called is the nearest LUA frame however many C frames sit between - so
+  // walk up until a Lua frame answers.  No Lua frame found keeps the original
+  // level-1 result (engine-internal calls have nothing better to offer).
+  if ( ar2.what != NULL && Q_strcmp( ar2.what, "C" ) == 0 ) {
+    lua_Debug arWalk;
+    for ( int iLevel = 2; iLevel < 64; ++iLevel ) {
+      if ( lua_getstack( L, iLevel, &arWalk ) == 0 )
+        break;
+      lua_getinfo( L, "f", &arWalk );
+      lua_getinfo( L, ">S", &arWalk );
+      if ( arWalk.what != NULL && Q_strcmp( arWalk.what, "C" ) != 0 ) {
+        ar2 = arWalk;
+        break;
+      }
+    }
+  }
+
   int iLength = Q_strlen( ar2.source );
   char source[MAX_PATH];
   Q_StrRight( ar2.source, iLength-1, source, sizeof( source ) );
@@ -1261,6 +1287,13 @@ void luasrc_shutdown (void) {
 	  return;
 
   g_bLuaInitialized = false;
+
+  // HL2SB (2026-10-08): GM:ShutDown() - GMod raises it when the Lua state is
+  // about to go away (map change, quit), before anything is torn down, so
+  // gamemode code can persist state.  Fired first here: every database the
+  // hooks touch is still live.
+  BEGIN_LUA_CALL_HOOK( "ShutDown" );
+  END_LUA_CALL_HOOK( 0, 0 );
 
   filesystem->RemoveSearchPath( contentSearchPath, "MOD" );
   filesystem->RemoveSearchPath( baseContentSearchPath, "MOD" );

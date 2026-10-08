@@ -367,8 +367,16 @@
      called Lua does -- vgui.Create pushing a C closure, say -- need headroom	\
      in ci->top or api_incr_top fires the apicheck black-box and aborts		\
      (2026-10-01: addons dialog filter spam). */								\
-  if ( m_lua_State != NULL ) lua_checkstack( m_lua_State, 32 ); \
-  if ( m_lua_State != NULL && ( m_lua_State == L || m_lua_State == LGameUI ) && lua_isrefvalid(m_lua_State, m_nTableReference) ) { \
+  /* HL2SB (2026-10-08): the liveness test must gate lua_checkstack too.		\
+     m_lua_State is the panel's CACHED state pointer and outlives lua_close()	\
+     on the quit path (client state closed in CHLClient::LevelShutdown,		\
+     GameUI state at the top of CHLClient::Shutdown, panel tree deleted only	\
+     later in VGui_Shutdown) -- the old unconditional checkstack dereferenced	\
+     the freed state before the equality test on the next line could reject	\
+     it (quit-from-map crash on every platform). */							\
+  if ( m_lua_State != NULL && ( m_lua_State == L || m_lua_State == LGameUI ) ) { \
+    lua_checkstack( m_lua_State, 32 ); \
+    if ( lua_isrefvalid(m_lua_State, m_nTableReference) ) { \
     lua_getref(m_lua_State, m_nTableReference); \
     lua_getfield(m_lua_State, -1, functionName); \
     lua_remove(m_lua_State, -2); \
@@ -382,6 +390,7 @@
 	  luasrc_pcall(m_lua_State, args, nresults, 0); \
     } \
     else { lua_pop(m_lua_State, 1); if ((nresults) > 0) lua_pushnil(m_lua_State); } \
+    } \
   }
 
 /*
@@ -393,16 +402,45 @@
 ** engine-realm spelling only when Think is absent.  Same lookup the dispatch
 ** macro uses (lua_getfield over the panel's ref table), so the answer always
 ** agrees with what the macro would dispatch.
+**
+** HL2SB (2026-10-08): the state argument is the panel's CACHED pointer, which
+** outlives lua_close() on every shutdown path (quit-from-map closes the
+** client state in CHLClient::LevelShutdown and the GameUI state at the top of
+** CHLClient::Shutdown, while the vgui panel tree is only deleted later in
+** VGui_Shutdown).  Checking "!= NULL" alone answered true for a freed state
+** and lua_isrefvalid then read freed heap.  Only a pointer that is still one
+** of the live global states may be touched; the shutdown paths NULL the
+** globals right after lua_close().  The externs are declared here so this
+** inline can see them.
 */
-inline bool HL2SB_LuaPanelHasMethod( lua_State *L, int iTableReference, const char *pszName )
-{
-	if ( L == NULL || !lua_isrefvalid( L, iTableReference ) )
-		return false;
+#ifdef CLIENT_DLL
+extern lua_State *LGameUI; // gameui state
+#endif
 
-	lua_getref( L, iTableReference );
-	lua_getfield( L, -1, pszName );
-	bool bHas = lua_isfunction( L, -1 ) != 0;
-	lua_pop( L, 2 );
+extern lua_State *L;
+
+inline bool HL2SB_LuaPanelHasMethod( lua_State *pState, int iTableReference, const char *pszName )
+{
+	// HL2SB (2026-10-08, second pass): LGameUI only EXISTS in client builds
+	// (luamanager.cpp defines the symbol under CLIENT_DLL), so the live-state
+	// test has to ask a different question per realm or every server TU that
+	// includes this header dies at parse ("undeclared identifier" in this
+	// very inline).  Semantics are unchanged: client panels may be backed by
+	// either live global, server-side there is only L.
+	if ( pState == NULL || !lua_isrefvalid( pState, iTableReference ) )
+		return false;
+#ifdef CLIENT_DLL
+	if ( pState != L && pState != LGameUI )
+		return false;
+#else
+	if ( pState != L )
+		return false;
+#endif
+
+	lua_getref( pState, iTableReference );
+	lua_getfield( pState, -1, pszName );
+	bool bHas = lua_isfunction( pState, -1 ) != 0;
+	lua_pop( pState, 2 );
 	return bHas;
 }
 
@@ -536,6 +574,7 @@ inline bool HL2SB_LuaPanelHasMethod( lua_State *L, int iTableReference, const ch
   }
 
 #define RETURN_LUA_PANEL_NONE() \
+  if ( m_lua_State != NULL && ( m_lua_State == L || m_lua_State == LGameUI ) ) { \
   if (lua_gettop(m_lua_State) > 0) { \
     if (lua_isboolean(m_lua_State, -1)) { \
 	  bool res = (bool)luaL_checkboolean(m_lua_State, -1); \
@@ -545,6 +584,7 @@ inline bool HL2SB_LuaPanelHasMethod( lua_State *L, int iTableReference, const ch
 	} \
     else \
 	  lua_pop(m_lua_State, 1); \
+  } \
   }
 
 #define RETURN_LUA_BOOLEAN() \
@@ -579,6 +619,7 @@ inline bool HL2SB_LuaPanelHasMethod( lua_State *L, int iTableReference, const ch
   }
 
 #define RETURN_LUA_PANEL_BOOLEAN() \
+  if ( m_lua_State != NULL && ( m_lua_State == L || m_lua_State == LGameUI ) ) { \
   if (lua_gettop(m_lua_State) > 0) { \
     if (lua_isboolean(m_lua_State, -1)) { \
 	  bool res = (bool)luaL_checkboolean(m_lua_State, -1); \
@@ -587,6 +628,7 @@ inline bool HL2SB_LuaPanelHasMethod( lua_State *L, int iTableReference, const ch
 	} \
     else \
 	  lua_pop(m_lua_State, 1); \
+  } \
   }
 
 #define RETURN_LUA_NUMBER() \
@@ -693,12 +735,6 @@ extern ConVar gamemode;
 LUALIB_API int luaL_checkboolean (lua_State *L, int narg);
 LUALIB_API int luaL_optboolean (lua_State *L, int narg,
                                               int def);
-
-#ifdef CLIENT_DLL
-extern lua_State *LGameUI; // gameui state
-#endif
-
-extern lua_State *L;
 
 #ifdef CLIENT_DLL
 /*
