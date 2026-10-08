@@ -37,7 +37,11 @@
 #define LUA_BASE_ENTITY_CLASS		"prop_scripted"
 #define LUA_BASE_ENTITY_FACTORY	"CBaseAnimating"
 #define LUA_BASE_WEAPON					"weapon_hl2mpbase_scriptedweapon"
-#define LUA_BASE_GAMEMODE				"deathmatch"
+// HL2SB (2026-10-08): GMod structure - the base gamemode is "base"
+// (gamemodes/base/); deathmatch is now a regular derived gamemode and
+// inherits from it like sandbox/campaign do.  Must match the Lua side's
+// _BASE_GAMEMODE in lua/includes/modules/gamemode.lua.
+#define LUA_BASE_GAMEMODE				"base"
 
 
 #define LUA_MAX_WEAPON_ACTIVITIES	32
