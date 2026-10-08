@@ -2081,13 +2081,16 @@ ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const 
 			return pExisting;
 
 		int nImageWidth = 0, nImageHeight = 0;
-		ITextureRegenerator *pImageRegenerator = HL2SB_CreateImageTextureRegenerator( szImageName, &nImageWidth, &nImageHeight );
+		char szImageDigits[ HL2SB_IMAGE_PARAMS_DIGITS + 1 ];
+		HL2SB_SplitImageTextureName( pTextureName, szImageDigits, sizeof( szImageDigits ), NULL, 0 );
+		ITextureRegenerator *pImageRegenerator = HL2SB_CreateImageTextureRegenerator( szImageName, szImageDigits, &nImageWidth, &nImageHeight );
 		if ( pImageRegenerator )
 		{
 			// The regenerator supplies every mip level, so the texture is created
 			// exactly like the built-in procedural ones (error / white / black).
+			// Flags follow GMod's pngParameters digits ("mips"/"noclamp"/"smooth").
 			ITextureInternal *pImageTexture = ITextureInternal::CreateProceduralTexture( pTextureName, pTextureGroupName,
-				nImageWidth, nImageHeight, 1, IMAGE_FORMAT_RGBA8888, 0, pImageRegenerator );
+				nImageWidth, nImageHeight, 1, IMAGE_FORMAT_RGBA8888, HL2SB_ImageTextureFlags( szImageDigits ), pImageRegenerator );
 
 			if ( pImageTexture )
 			{

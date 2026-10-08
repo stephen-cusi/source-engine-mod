@@ -396,7 +396,7 @@ static CUtlVector< HL2SB_ImageColorCache_t * > s_ImageColorCache;
 // two decodes would scribble over each other (issue #41, 7.4).
 static CThreadFastMutex s_ImageColorCacheMutex;
 
-static const char *s_pImageTextureExtensions[] = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
+static const char *s_pImageTextureExtensions[] = { ".png", ".jpg", ".jpeg", ".tga", ".cache", ".bmp" };
 
 // HL2SB: case-insensitive "does pName end with pExt".
 static bool HL2SB_NameEndsWith( const char *pName, const char *pExt )
@@ -407,6 +407,35 @@ static bool HL2SB_NameEndsWith( const char *pName, const char *pExt )
     const int nNameLen = Q_strlen( pName );
     const int nExtLen = Q_strlen( pExt );
     return ( nNameLen > nExtLen ) && ( !Q_stricmp( pName + nNameLen - nExtLen, pExt ) );
+}
+
+// HL2SB (2026-10-09): GMod's Material path validation (client Material.PathValidate):
+// reject drive separators and relative escapes; everything else passes.
+static bool HL2SB_ImagePathValid( const char *pName )
+{
+    if ( !pName || !pName[0] )
+        return false;
+    if ( Q_strstr( pName, ":" ) || Q_strstr( pName, "../" ) || Q_strstr( pName, "..\\" ) )
+        return false;
+    return true;
+}
+
+// Strips GMod's "!<7 digits>" image-parameter prefix so GetColor's cache can
+// find the file behind a parameterised image texture.
+static void HL2SB_StripImageParamPrefix( const char *pIn, char *pOut, int nOutLen )
+{
+    if ( pIn && pIn[0] == '!' )
+    {
+        int i = 1;
+        while ( pIn[i] >= '0' && pIn[i] <= '9' && i < 8 )
+            ++i;
+        if ( i > 1 )
+        {
+            Q_strncpy( pOut, pIn + i, nOutLen );
+            return;
+        }
+    }
+    Q_strncpy( pOut, pIn ? pIn : "", nOutLen );
 }
 
 static HL2SB_ImageColorCache_t *HL2SB_FindCachedImage( const char *pTextureName )
@@ -425,6 +454,12 @@ static HL2SB_ImageColorCache_t *HL2SB_GetImageColorCache( const char *pTextureNa
 {
     if ( !pTextureName || !pTextureName[0] )
         return NULL;
+
+    // Parameterised image textures name their texture "!<digits><path>"; the
+    // file on disk is named by the path alone.
+    char szBareName[MAX_PATH];
+    HL2SB_StripImageParamPrefix( pTextureName, szBareName, sizeof( szBareName ) );
+    pTextureName = szBareName;
 
     AUTO_LOCK( s_ImageColorCacheMutex );
 
@@ -515,31 +550,61 @@ static CThreadFastMutex s_ImageMaterialsMutex;
 
 // Returns NULL when pMaterialName is not a loadable image file.  pMaterialName
 // must carry the extension ("nyan/cat.png"), which is GMod's documented form.
-static IMaterial *HL2SB_FindOrCreateImageMaterial( const char *pMaterialName )
+// pDigits is GMod's pngParameters digit string ("0000000" for the default);
+// the material is created under GMod's "!"-prefixed combined name so two
+// parameter sets never share a texture.
+//
+// 2026-10-09 GMod alignment: shader / flags / translucency now follow the
+// digits exactly like CResources::CreateMaterialFromTextureFile
+//   [0] '1' -> VertexLitGeneric, else UnlitGeneric
+//   [1] '1' -> $nocull 1
+//   [2] '1' -> $alphatest 1; '0' -> $vertexalpha 1 (Unlit only); >=2 -> neither
+//   [6] '1' -> $ignorez 1
+// and the unconditional $translucent/$nocull the old synthesis applied are
+// gone (GMod has neither by default).  A path with no image file is no longer
+// cached either -- GMod re-probes every call and hands out the error material.
+static IMaterial *HL2SB_FindOrCreateImageMaterial( const char *pMaterialName, const char *pDigits )
 {
+    char szKey[MAX_PATH];
+    Q_snprintf( szKey, sizeof( szKey ), "!%s%s", pDigits, pMaterialName );
+
     AUTO_LOCK( s_ImageMaterialsMutex );
 
-    int iFound = s_ImageMaterials.Find( pMaterialName );
+    int iFound = s_ImageMaterials.Find( szKey );
     if ( iFound != s_ImageMaterials.InvalidIndex() )
-        return s_ImageMaterials[iFound];
+    {
+        // GMod reuses a cached FreeImage material only while it (and its
+        // basetexture) is not the error material.
+        IMaterial *pCached = s_ImageMaterials[iFound];
+        if ( pCached && !pCached->IsErrorMaterial() )
+            return pCached;
+        return NULL;
+    }
 
     IMaterial *pMaterial = NULL;
 
     char szImageFile[MAX_PATH];
     Q_snprintf( szImageFile, sizeof( szImageFile ), "materials/%s", pMaterialName );
 
-    if ( g_pFullFileSystem->FileExists( szImageFile, "GAME" ) )
+    if ( g_pFullFileSystem->FileExists( szImageFile, "GAME" ) ||
+         g_pFullFileSystem->FileExists( pMaterialName, "GAME" ) )
     {
-        KeyValues *pKV = new KeyValues( "UnlitGeneric" );
-        pKV->SetString( "$basetexture", pMaterialName );
-        pKV->SetInt( "$translucent", 1 );
+        KeyValues *pKV = new KeyValues( ( pDigits[0] == '1' ) ? "VertexLitGeneric" : "UnlitGeneric" );
+        pKV->SetString( "$basetexture", szKey );
         pKV->SetInt( "$vertexcolor", 1 );
-        pKV->SetInt( "$vertexalpha", 1 );
-        // HL2SB: GMod sprite quads (render.DrawQuadEasy) face wherever the
-        // script points them; draw both faces so a back-facing quad is a
-        // mirrored sprite, not a vanish.
-        pKV->SetInt( "$nocull", 1 );
-        pMaterial = materials->CreateMaterial( pMaterialName, pKV );
+        if ( pDigits[1] == '1' )
+            pKV->SetInt( "$nocull", 1 );
+        if ( pDigits[2] == '1' )
+        {
+            pKV->SetInt( "$alphatest", 1 );
+        }
+        else if ( pDigits[2] == '0' && pDigits[0] != '1' )
+        {
+            pKV->SetInt( "$vertexalpha", 1 );
+        }
+        if ( pDigits[6] == '1' )
+            pKV->SetInt( "$ignorez", 1 );
+        pMaterial = materials->CreateMaterial( szKey, pKV );
         // CreateMaterial takes ownership of pKV; do not deleteThis().
 
         if ( pMaterial && pMaterial->IsErrorMaterial() )
@@ -551,11 +616,12 @@ static IMaterial *HL2SB_FindOrCreateImageMaterial( const char *pMaterialName )
             // the reference the material system may cull it (same as
             // HL2SB_CreateMaterial below).
             pMaterial->IncrementReferenceCount();
-            luasrc_LuaInfoMsgF( "[HL2SB] Material('%s') -> image material\n", pMaterialName );
+            luasrc_LuaInfoMsgF( "[HL2SB] Material('%s') -> image material\n", szKey );
         }
     }
 
-    s_ImageMaterials.Insert( strdup( pMaterialName ), pMaterial );
+    if ( pMaterial )
+        s_ImageMaterials.Insert( strdup( szKey ), pMaterial );
 
     return pMaterial;
 }
@@ -750,15 +816,27 @@ static int HL2SB_IMaterial_GetColor( lua_State *L )
 }
 
 /*
-** GMod's global Material( path ).  It has to be installed before
-** lua/includes/extensions/gmod_surface.lua runs, because that file only
-** installs its Lua material proxy "if ( Material == nil )".  Missing materials
+** GMod's global Material( path [, pngParameters] ).  It has to be installed
+** before lua/includes/extensions/gmod_surface.lua runs, because that file
+** defines the words->digits Lua wrapper over C_Material.  Missing materials
 ** come back as the error material (mat:IsError() == true), which is what GMod
 ** hands out too.
+**
+** 2026-10-09 GMod alignment: the second argument is GMod's 7-digit
+** pngParameters string (the Lua wrapper in gmod_surface.lua converts the
+** words table exactly like GMod's util.lua).  The C binding is registered as
+** both "C_Material" (GMod's name) and "Material" (fallback if the extension
+** never loads); the image path returns ( IMaterial, creationSeconds ) like
+** GMod's C_Material.
 */
 static int HL2SB_Material( lua_State *L )
 {
     const char *pMaterialName = luaL_checkstring( L, 1 );
+    const char *pDigits = luaL_optstring( L, 2, "0000000" );
+    if ( Q_strlen( pDigits ) < 7 )
+        pDigits = "0000000";
+
+    const float flStart = Plat_FloatTime();
 
     // HL2SB GMod compat: image paths.  GMod hands out a decoded runtime
     // material for "x.png"/"x.jpg"/..., which the Nyan Gun's bomb sprite and
@@ -775,14 +853,15 @@ static int HL2SB_Material( lua_State *L )
         }
     }
 
-    if ( bImageName )
+    if ( bImageName && HL2SB_ImagePathValid( pMaterialName ) )
     {
         HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_MATERIAL_IMG );
-        IMaterial *pImageMaterial = HL2SB_FindOrCreateImageMaterial( pMaterialName );
+        IMaterial *pImageMaterial = HL2SB_FindOrCreateImageMaterial( pMaterialName, pDigits );
         if ( pImageMaterial )
         {
             lua_pushmaterial( L, pImageMaterial );
-            return 1;
+            lua_pushnumber( L, (lua_Number)( Plat_FloatTime() - flStart ) );
+            return 2;
         }
         // Not a loadable image: fall through, FindMaterial returns the error
         // material -- which is what GMod hands out for a missing image too.
@@ -794,7 +873,8 @@ static int HL2SB_Material( lua_State *L )
     if ( !pMaterial )
     {
         lua_pushnil( L );
-        return 1;
+        lua_pushnumber( L, (lua_Number)( Plat_FloatTime() - flStart ) );
+        return 2;
     }
 
     /*
@@ -818,7 +898,8 @@ static int HL2SB_Material( lua_State *L )
     }
 
     lua_pushmaterial( L, pMaterial );
-    return 1;
+    lua_pushnumber( L, (lua_Number)( Plat_FloatTime() - flStart ) );
+    return 2;
 }
 
 /*
@@ -961,7 +1042,12 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
     }
     lua_pop( L, 1 );
 
-    /* HL2SB: GMod's Material( path ) constructor. */
+    /* HL2SB: GMod's Material( path ) constructor.  Registered under GMod's
+    ** real C name "C_Material" (gmod_surface.lua's Lua Material wrapper calls
+    ** it) AND as "Material" so a broken extension load can never leave the
+    ** global missing -- the Lua wrapper overwrites "Material" when it loads. */
+    lua_pushcfunction( L, HL2SB_Material );
+    lua_setglobal( L, "C_Material" );
     lua_pushcfunction( L, HL2SB_Material );
     lua_setglobal( L, "Material" );
 

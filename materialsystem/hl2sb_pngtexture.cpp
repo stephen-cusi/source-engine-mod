@@ -24,6 +24,8 @@
 #include "pixelwriter.h"
 #include "materialsystem/itexture.h"
 #include "materialsystem/imaterialsystem.h"
+#include "vtf/vtf.h"
+#include "tier1/checksum_crc.h"
 #include "hl2sb_pngtexture.h"
 
 // stb_image is a single-header decoder.  Disable what we do not need; PNG/JPG/
@@ -41,7 +43,9 @@
 #include "tier0/memdbgon.h"
 
 //-----------------------------------------------------------------------------
-// Extensions we are willing to load straight from disk.
+// Extensions we are willing to load straight from disk.  GMod's resources.dll
+// whitelist is png/jpg/jpeg/tga/cache (content sniffing decides the real
+// decoder); .bmp stays as a harmless superset for local content.
 //-----------------------------------------------------------------------------
 static const char *s_pImageExtensions[] =
 {
@@ -49,6 +53,7 @@ static const char *s_pImageExtensions[] =
 	".jpg",
 	".jpeg",
 	".tga",
+	".cache",
 	".bmp",
 };
 
@@ -88,12 +93,94 @@ static bool HL2SB_ImageFileExists( const char *pLogicalName )
 {
 	char szPath[MAX_PATH];
 
-	Q_snprintf( szPath, sizeof( szPath ), "materials/%s", pLogicalName );
-	if ( g_pFullFileSystem->FileExists( szPath, "GAME" ) )
-		return true;
+	// GMod's CImage::LoadImageFromFile probes "spawnicons" paths MOD-first
+	// (their client writes generated spawn icons into garrysmod/materials);
+	// everything else is GAME first.
+	const char *pPathIDs[2] = { "GAME", "MOD" };
+	const bool bSpawnIcons = !Q_strnicmp( pLogicalName, "spawnicons", 10 );
+	const int nFirst = bSpawnIcons ? 1 : 0;
 
-	Q_strncpy( szPath, pLogicalName, sizeof( szPath ) );
-	return g_pFullFileSystem->FileExists( szPath, "GAME" );
+	for ( int i = 0; i < 2; ++i )
+	{
+		const char *pPathID = pPathIDs[ ( nFirst + i ) % 2 ];
+
+		Q_snprintf( szPath, sizeof( szPath ), "materials/%s", pLogicalName );
+		if ( g_pFullFileSystem->FileExists( szPath, pPathID ) )
+			return true;
+
+		Q_strncpy( szPath, pLogicalName, sizeof( szPath ) );
+		if ( g_pFullFileSystem->FileExists( szPath, pPathID ) )
+			return true;
+	}
+
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// "!<digits><path>" parameterised image texture names (GMod's FreeImage
+// material naming).  The digit string is exactly HL2SB_IMAGE_PARAMS_DIGITS
+// chars of '0'..'9'; everything after it is the plain path.
+//-----------------------------------------------------------------------------
+bool HL2SB_SplitImageTextureName( const char *pTextureName,
+	char *pOutDigits, int nOutDigitsSize,
+	char *pOutPath, int nOutPathSize )
+{
+	if ( pOutDigits && nOutDigitsSize > 0 )
+		pOutDigits[0] = '\0';
+	if ( pOutPath && nOutPathSize > 0 )
+		pOutPath[0] = '\0';
+
+	if ( !pTextureName || pTextureName[0] != '!' )
+	{
+		if ( pOutPath )
+			Q_strncpy( pOutPath, pTextureName ? pTextureName : "", nOutPathSize );
+		return false;
+	}
+
+	const char *pDigits = pTextureName + 1;
+	for ( int i = 0; i < HL2SB_IMAGE_PARAMS_DIGITS; ++i )
+	{
+		if ( pDigits[i] < '0' || pDigits[i] > '9' )
+		{
+			// Not our shape - hand the whole name back untouched.
+			if ( pOutPath )
+				Q_strncpy( pOutPath, pTextureName, nOutPathSize );
+			return false;
+		}
+	}
+
+	if ( pOutDigits && nOutDigitsSize > HL2SB_IMAGE_PARAMS_DIGITS )
+	{
+		Q_memcpy( pOutDigits, pDigits, HL2SB_IMAGE_PARAMS_DIGITS );
+		pOutDigits[ HL2SB_IMAGE_PARAMS_DIGITS ] = '\0';
+	}
+	if ( pOutPath )
+		Q_strncpy( pOutPath, pDigits + HL2SB_IMAGE_PARAMS_DIGITS, nOutPathSize );
+	return true;
+}
+
+unsigned int HL2SB_ImageTextureFlags( const char *pDigits )
+{
+	// Default mirrors GMod's CResources::CreateMaterialFromTextureFile.
+	unsigned int nFlags = TEXTUREFLAGS_SINGLECOPY | TEXTUREFLAGS_PROCEDURAL |
+		TEXTUREFLAGS_NOLOD | TEXTUREFLAGS_NOMIP |
+		TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_POINTSAMPLE;
+
+	char szDigits[ HL2SB_IMAGE_PARAMS_DIGITS + 1 ] = { 0 };
+	if ( pDigits )
+		Q_strncpy( szDigits, pDigits, sizeof( szDigits ) );
+
+	// digits[3] "mips": clear NOMIP | NOLOD so the engine builds a mip chain.
+	if ( szDigits[3] != '0' && szDigits[3] != '\0' )
+		nFlags &= ~(unsigned)( TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD );
+	// digits[4] "noclamp": no CLAMPS | CLAMPT.
+	if ( szDigits[4] != '0' && szDigits[4] != '\0' )
+		nFlags &= ~(unsigned)( TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT );
+	// digits[5] "smooth": linear filtering instead of point sampling.
+	if ( szDigits[5] != '0' && szDigits[5] != '\0' )
+		nFlags &= ~(unsigned)( TEXTUREFLAGS_POINTSAMPLE | TEXTUREFLAGS_NOLOD );
+
+	return nFlags;
 }
 
 bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName, int nOutLogicalNameSize )
@@ -101,9 +188,15 @@ bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName,
 	if ( !pTextureName || !pTextureName[0] || !pOutLogicalName )
 		return false;
 
+	// Strip a "!<digits>" parameter prefix first; the path under it is what
+	// names the actual file.
+	char szDigits[ HL2SB_IMAGE_PARAMS_DIGITS + 1 ];
+	char szBare[MAX_PATH];
+	HL2SB_SplitImageTextureName( pTextureName, szDigits, sizeof( szDigits ), szBare, sizeof( szBare ) );
+
 	// Texture names are addressed relative to materials/, but accept a name
 	// that already carries the prefix (vgui passes some through verbatim).
-	const char *pName = pTextureName;
+	const char *pName = szBare;
 	if ( !Q_strnicmp( pName, "materials/", 10 ) )
 		pName += 10;
 	if ( !Q_strnicmp( pName, "materials\\", 10 ) )
@@ -391,6 +484,9 @@ CThreadFastMutex &HL2SB_ImageDecodeMutex()
 //-----------------------------------------------------------------------------
 
 // FNV-1a 64 over a NUL-terminated string, then mixed with two integers.
+// The file time is mixed at full 64-bit width now (v1 truncated it to 32
+// bits, so two mtime values sharing a low-32 collided and served stale
+// pixels).
 static unsigned long long HL2SB_ImageCacheKey( const char *pLogicalName, int nFileSize, long nFileTime )
 {
 	unsigned long long h = 0xcbf29ce484222325ULL;
@@ -402,7 +498,7 @@ static unsigned long long HL2SB_ImageCacheKey( const char *pLogicalName, int nFi
 	unsigned long long mix[2] =
 	{
 		( unsigned long long )( unsigned int )nFileSize,
-		( unsigned long long )( unsigned int )nFileTime
+		( unsigned long long )( unsigned long long )nFileTime
 	};
 	for ( int i = 0; i < 2; ++i )
 	{
@@ -452,10 +548,91 @@ static void HL2SB_ImageCachePath( unsigned long long nKey, char *pOut, int nOutL
 	Q_snprintf( pOut, nOutLen, "cache/images/%016I64x.h2i", nKey );
 }
 
-// Header layout (little endian): magic 'H','2','I','C', version 1, width,
-// height, payload bytes, logical-name length, logical name bytes, RGBA.
+// Header layout v2 (little endian): magic 'H','2','I','C', version 2, width,
+// height, payload bytes, logical-name length, CRC32 of the payload, logical
+// name bytes, RGBA.  v1 had no CRC and a 32-bit-truncated key; v1 files get
+// orphaned by the new key and are pruned on startup.
 static const unsigned int HL2SB_IMAGECACHE_MAGIC = 0x43493248u;	// "H2IC" LE
-static const unsigned int HL2SB_IMAGECACHE_VERSION = 1u;
+static const unsigned int HL2SB_IMAGECACHE_VERSION = 2u;
+
+// Total size the cache directory is pruned back to (one scan per session, at
+// the first cache write).  A 4096x4096 image persists as 64MB of raw RGBA, so
+// without a cap a handful of large originals would happily eat gigabytes.
+static const unsigned int HL2SB_IMAGECACHE_CAP_BYTES = 256u * 1024u * 1024u;
+
+// One pass over cache/images: delete foreign/stale-version files outright,
+// then delete oldest-first until the directory fits the cap.  Runs once per
+// process, right before the first cache write.
+static void HL2SB_PruneImageCache()
+{
+	FileFindHandle_t find;
+	const char *pName = g_pFullFileSystem->FindFirstEx( "cache/images/*.h2i", "GAME", &find );
+	if ( !pName )
+		return;
+
+	struct CacheEntry_t { char szName[MAX_PATH]; unsigned int nSize; long nTime; unsigned int nVersion; bool bDeleted; };
+	CUtlVector< CacheEntry_t > entries;
+	unsigned int nTotal = 0;
+
+	char szPath[MAX_PATH];
+	do
+	{
+		Q_snprintf( szPath, sizeof( szPath ), "cache/images/%s", pName );
+
+		CacheEntry_t &e = entries[ entries.AddToTail() ];
+		Q_strncpy( e.szName, szPath, sizeof( e.szName ) );
+		e.nSize = ( unsigned int )g_pFullFileSystem->Size( szPath, "GAME" );
+		e.nTime = g_pFullFileSystem->GetFileTime( szPath, "GAME" );
+		e.bDeleted = false;
+		nTotal += e.nSize;
+
+		// Peek the version so stale v1 files are dropped even under the cap.
+		e.nVersion = 0;
+		if ( FileHandle_t h = g_pFullFileSystem->Open( szPath, "rb", "GAME" ) )
+		{
+			unsigned int hdr[2] = { 0, 0 };
+			g_pFullFileSystem->Read( hdr, sizeof( hdr ), h );
+			g_pFullFileSystem->Close( h );
+			if ( hdr[0] == HL2SB_IMAGECACHE_MAGIC )
+				e.nVersion = hdr[1];
+		}
+	}
+	while ( ( pName = g_pFullFileSystem->FindNext( find ) ) != NULL );
+	g_pFullFileSystem->FindClose( find );
+
+	// Pass 1: stale versions (v1 or foreign) go unconditionally - their keys
+	// no longer match anything this build computes.
+	for ( int i = 0; i < entries.Count(); ++i )
+	{
+		if ( entries[i].nVersion != HL2SB_IMAGECACHE_VERSION )
+		{
+			g_pFullFileSystem->RemoveFile( entries[i].szName, "GAME" );
+			entries[i].bDeleted = true;
+			if ( nTotal >= entries[i].nSize )
+				nTotal -= entries[i].nSize;
+		}
+	}
+
+	// Pass 2: over the cap, evict oldest first.
+	while ( nTotal > HL2SB_IMAGECACHE_CAP_BYTES )
+	{
+		int iOldest = -1;
+		for ( int i = 0; i < entries.Count(); ++i )
+		{
+			if ( entries[i].bDeleted )
+				continue;
+			if ( iOldest < 0 || entries[i].nTime < entries[iOldest].nTime )
+				iOldest = i;
+		}
+		if ( iOldest < 0 )
+			break;
+
+		g_pFullFileSystem->RemoveFile( entries[iOldest].szName, "GAME" );
+		entries[iOldest].bDeleted = true;
+		if ( nTotal >= entries[iOldest].nSize )
+			nTotal -= entries[iOldest].nSize;
+	}
+}
 
 static bool HL2SB_TryReadCachedImage( const char *pLogicalName, const char *pCachePath,
 	CUtlVector< unsigned char > &outBits, int &nOutWidth, int &nOutHeight )
@@ -478,6 +655,7 @@ static bool HL2SB_TryReadCachedImage( const char *pLogicalName, const char *pCac
 	const int nHeight = ( int )bufFile.GetUnsignedInt();
 	const unsigned int nPayload = bufFile.GetUnsignedInt();
 	const unsigned int nNameBytes = bufFile.GetUnsignedInt();
+	const unsigned int nCRC = bufFile.GetUnsignedInt();
 
 	if ( nWidth <= 0 || nHeight <= 0 )
 		return false;
@@ -500,6 +678,14 @@ static bool HL2SB_TryReadCachedImage( const char *pLogicalName, const char *pCac
 		return false;
 	}
 
+	// v2 carries a payload CRC: a torn write or bit-rot inside the RGBA is
+	// detected here instead of rendering as garbage.
+	if ( CRC32_ProcessSingleBuffer( outBits.Base(), nBytes ) != nCRC )
+	{
+		outBits.Purge();
+		return false;
+	}
+
 	nOutWidth = nWidth;
 	nOutHeight = nHeight;
 	return true;
@@ -517,28 +703,32 @@ static bool HL2SB_TryWriteCachedImage( const char *pLogicalName, const char *pCa
 	{
 		s_bDirTried = true;
 		g_pFullFileSystem->CreateDirHierarchy( "cache/images", NULL );
+		HL2SB_PruneImageCache();
 	}
 
 	const unsigned int nNameBytes = ( unsigned int )Q_strlen( pLogicalName ) + 1;
 
 	CUtlBuffer bufOut;
-	bufOut.EnsureCapacity( 4 * 6 + nNameBytes + nBytes );
+	bufOut.EnsureCapacity( 4 * 7 + nNameBytes + nBytes );
 	bufOut.PutUnsignedInt( HL2SB_IMAGECACHE_MAGIC );
 	bufOut.PutUnsignedInt( HL2SB_IMAGECACHE_VERSION );
 	bufOut.PutUnsignedInt( ( unsigned int )nWidth );
 	bufOut.PutUnsignedInt( ( unsigned int )nHeight );
 	bufOut.PutUnsignedInt( ( unsigned int )nBytes );
 	bufOut.PutUnsignedInt( nNameBytes );
+	bufOut.PutUnsignedInt( CRC32_ProcessSingleBuffer( pBits, nBytes ) );
 	bufOut.Put( pLogicalName, nNameBytes );
 	bufOut.Put( pBits, nBytes );
 
 	return g_pFullFileSystem->WriteFile( pCachePath, NULL, bufOut );
 }
 
-ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalName, int *pOutWidth, int *pOutHeight )
+ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalName, const char *pDigits,
+	int *pOutWidth, int *pOutHeight )
 {
 	if ( !pLogicalName || !pLogicalName[0] )
 		return NULL;
+	( void )pDigits;	// decoded flags live on the texture; kept for CImage symmetry
 
 	// Locate the source first: its concrete path feeds the cache key (size +
 	// mtime), so an updated PNG invalidates its own cache entry.
