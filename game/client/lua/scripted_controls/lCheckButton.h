@@ -56,8 +56,13 @@ public:
 
 } // namespace vgui
 
+/* HL2SB (2026-10-08): three levels to match END_LUA_CALL_PANEL_METHOD -
+** see the full note in lPropertyPage.h; the old two-level form failed CI on
+** every platform with a stray '}'. */
 #define BEGIN_LUA_CALL_CHECKBUTTON_METHOD(functionName) \
-  if (m_nTableReference >= 0) { \
+  if ( m_lua_State != NULL && ( m_lua_State == L || m_lua_State == LGameUI ) ) { \
+    lua_checkstack( m_lua_State, 32 ); \
+    if ( lua_isrefvalid( m_lua_State, m_nTableReference ) ) { \
     lua_getref(m_lua_State, m_nTableReference); \
     lua_getfield(m_lua_State, -1, functionName); \
     lua_remove(m_lua_State, -2); \

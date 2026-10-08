@@ -59,8 +59,16 @@ public:
 
 } // namespace vgui
 
+/* HL2SB (2026-10-08): three levels to match END_LUA_CALL_PANEL_METHOD,
+** which closes state-guard / ref / isfunction.  The old two-level form made
+** every use file fail with a stray '}' (CI, all four platforms) after the
+** quit-from-map hardening added the third level to the shared END.  The
+** state liveness gate belongs here too: m_lua_State is cached and can
+** outlive lua_close on the quit path - same contract as the shared pair. */
 #define BEGIN_LUA_CALL_PROPERTYPAGE_METHOD(functionName) \
-  if (m_nTableReference >= 0) { \
+  if ( m_lua_State != NULL && ( m_lua_State == L || m_lua_State == LGameUI ) ) { \
+    lua_checkstack( m_lua_State, 32 ); \
+    if ( lua_isrefvalid( m_lua_State, m_nTableReference ) ) { \
     lua_getref(m_lua_State, m_nTableReference); \
     lua_getfield(m_lua_State, -1, functionName); \
     lua_remove(m_lua_State, -2); \
