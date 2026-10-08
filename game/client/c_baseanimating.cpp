@@ -5680,6 +5680,15 @@ void C_BaseAnimating::ResetSequenceInfo( void )
 	}
 
 	CStudioHdr *pStudioHdr = GetModelPtr();
+	// HL2SB (2026-10-07): the server twin of this function guards the NULL
+	// model; the client version did not, and a SWEP whose Lua table failed to
+	// load (weapon.get error -> no SetModel) reached this through Holster ->
+	// SendWeaponAnim -> SendViewModelAnim during prediction and crashed on
+	// pSeqdesc (crash_20261007_073817, AV READ of 0x8 in CStudioHdr::pSeqdesc
+	// with rcx=0).  A model-less entity has nothing to reset: bail.
+	if ( pStudioHdr == NULL )
+		return;
+
 	m_flGroundSpeed = GetSequenceGroundSpeed( pStudioHdr, GetSequence() ) * GetModelScale();
 	m_bSequenceLoops = ((GetSequenceFlags( pStudioHdr, GetSequence() ) & STUDIO_LOOPING) != 0);
 	// m_flAnimTime = gpGlobals->time;

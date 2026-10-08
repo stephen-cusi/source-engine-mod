@@ -646,6 +646,12 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
 		lua_setfield( L, -2, s_LuaEffectParams[ i ] );
 	}
 
+	// HL2SB (2026-10-07): EntIndex / SetRenderMode / SetRenderFX are covered by
+	// the content-side effects.Register shim (per-instance weak-key store in
+	// lua/includes/init.lua).  Do NOT also stamp them here: a stamped method on
+	// the per-spawn copy would shadow the shim and leave two code paths
+	// answering the same call.
+
 	const int nRef = luaL_ref( L, LUA_REGISTRYINDEX );   // pops the copy
 	lua_pop( L, 1 );                                     // the template
 

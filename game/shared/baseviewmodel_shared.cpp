@@ -424,42 +424,30 @@ void CBaseViewModel::CalcViewModelView( CBasePlayer *owner, const Vector& eyePos
 		g_ClientVirtualReality.OverrideViewModelTransform( vmorigin, vmangles, pWeapon && pWeapon->ShouldUseLargeViewModelVROverride() );
 	}
 
-	// HL2SB GMod compat (2026-09-23): SWEP:GetViewModelPosition( eyePos, eyeAng )
-	// then SWEP:CalcViewModelView( vm, oldEyePos, oldEyeAng, eyePos, eyeAng ),
-	// in exactly the base gamemode's GM:CalcViewModelView order
-	// (garrysmod/gamemodes/base/gamemode/cl_init.lua:555-576: GetViewModelPosition
-	// runs first, CalcViewModelView second, later results win).  Only Lua returns
-	// that are actually present AND of the expected type overwrite, so a weapon
-	// returning fewer values (or nil) cannot corrupt the transform.
+	// HL2SB GMod compat (2026-10-07): dispatch the GAMEMODE hook
+	// "CalcViewModelView"( wep, vm, oldEyePos, oldEyeAng, eyePos, eyeAng ),
+	// GMod's own call site and shape (their C_BaseViewModel::CalcViewModelView
+	// applies the weapon bob FIRST, then dispatches with the pre-bob eye
+	// transform as args 3/4 and the post-bob transform as args 5/6, and writes
+	// each correctly-typed return onto the viewmodel -- wrong-typed or missing
+	// returns are ignored per value).  The gamemode method (deathmatch cl_init,
+	// GMod base cl_init.lua:555 verbatim) forwards to SWEP:GetViewModelPosition
+	// and then SWEP:CalcViewModelView.  The old direct-SWEP double hook here
+	// bypassed GM:CalcViewModelView, so a gamemode could never interpose (GMod
+	// addons hook the GM form, not the SWEP methods).
 #if defined( LUA_SDK )
-	if ( pWeapon != NULL && pWeapon->IsScripted() && L != NULL &&
-		lua_isrefvalid( L, pWeapon->m_nTableReference ) && !prediction->InPrediction() )
+	if ( pWeapon != NULL && L != NULL && !prediction->InPrediction() )
 	{
-		BEGIN_LUA_CALL_WEAPON_HOOK( "GetViewModelPosition", pWeapon );
-			lua_pushvector( L, vmorigin );
-			lua_pushangle( L, vmangles );
-		END_LUA_CALL_WEAPON_HOOK( 2, 2 );
-
-		int nRet = lua_gettop( L );
-		if ( nRet >= 2 )
-		{
-			if ( lua_isuserdata( L, -2 ) && luaL_checkudata( L, -2, "Vector" ) )
-				vmorigin = luaL_checkvector( L, -2 );
-			if ( lua_isuserdata( L, -1 ) && luaL_checkudata( L, -1, "QAngle" ) )
-				vmangles = luaL_checkangle( L, -1 );
-		}
-		if ( nRet > 0 )
-			lua_pop( L, nRet );
-
-		BEGIN_LUA_CALL_WEAPON_HOOK( "CalcViewModelView", pWeapon );
+		BEGIN_LUA_CALL_HOOK( "CalcViewModelView" );
+			lua_pushweapon( L, pWeapon );
 			lua_pushentity( L, this );
 			lua_pushvector( L, eyePosition );
 			lua_pushangle( L, eyeAngles );
 			lua_pushvector( L, vmorigin );
 			lua_pushangle( L, vmangles );
-		END_LUA_CALL_WEAPON_HOOK( 5, 2 );
+		END_LUA_CALL_HOOK( 6, 2 );
 
-		nRet = lua_gettop( L );
+		int nRet = lua_gettop( L );
 		if ( nRet >= 2 )
 		{
 			if ( lua_isuserdata( L, -2 ) && luaL_checkudata( L, -2, "Vector" ) )

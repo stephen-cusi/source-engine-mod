@@ -13,6 +13,11 @@
 #include "lcmodel.h"
 #include "lbaseentity_shared.h"
 #include "mathlib/lvector.h"
+// HL2SB: tr.MatType / SurfaceProps read the engine's surface-property database
+// (surfacedata_t::game.material); bspflags.h carries the sky / no-draw flags
+// for HitSky / HitNoDraw.
+#include "vphysics_interface.h"
+#include "bspflags.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -195,6 +200,44 @@ static int CGameTrace___index (lua_State *L) {
     }
     lua_pushvector(L, vecDir);
   }
+  // HL2SB GMod compat: the remaining GMod TraceResult fields hl1sweps reads
+  // (tr.MatType drives the crowbar's per-material impact sounds, tr.HitSky
+  // reflects the gauss beam off the sky, tr.SurfaceProps feeds its decal and
+  // physics-force paths).  MatType is the material character the engine's
+  // surface-property database carries for the hit surface (the same CHAR_TEX
+  // value every impact effect branches on); HitSky is the sky surface flag.
+  else if (Q_strcmp(field, "MatType") == 0)
+  {
+    extern IPhysicsSurfaceProps *physprops;
+    if ( physprops != NULL )
+    {
+      surfacedata_t *pSurface = physprops->GetSurfaceData( tr.surface.surfaceProps );
+      if ( pSurface != NULL )
+        lua_pushinteger(L, pSurface->game.material);
+      else
+        lua_pushnil(L);
+    }
+    else
+    {
+      lua_pushnil(L);
+    }
+  }
+  else if (Q_strcmp(field, "SurfaceProps") == 0)
+    lua_pushinteger(L, tr.surface.surfaceProps);
+  else if (Q_strcmp(field, "HitSky") == 0)
+    lua_pushboolean(L, (tr.surface.flags & (SURF_SKY | SURF_SKY2D)) != 0);
+  else if (Q_strcmp(field, "HitTexture") == 0)
+    lua_pushstring(L, (tr.surface.name != NULL) ? tr.surface.name : "");
+  else if (Q_strcmp(field, "SurfaceFlags") == 0)
+    lua_pushinteger(L, tr.surface.flags);
+  else if (Q_strcmp(field, "DispFlags") == 0)
+    lua_pushinteger(L, tr.dispFlags);
+  else if (Q_strcmp(field, "Contents") == 0)
+    lua_pushinteger(L, tr.contents);
+  else if (Q_strcmp(field, "HitNoDraw") == 0)
+    lua_pushboolean(L, (tr.surface.flags & SURF_NODRAW) != 0);
+  else if (Q_strcmp(field, "HitNonWorld") == 0)
+    lua_pushboolean(L, tr.DidHitNonWorldEntity());
   else {
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);

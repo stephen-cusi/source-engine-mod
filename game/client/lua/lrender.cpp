@@ -124,18 +124,27 @@ LUA_BINDING_BEGIN( Renders, GetRenderTarget, "library", "Get the currently activ
 LUA_BINDING_END( "Texture", "The currently active render target texture." )
 
 // render.CreateNamedRenderTarget( name, wide, tall ) -- HL2SB (2026-09-27):
-// spawnicon snapshot support.  Creates (or finds -- CreateNamedRenderTargetTextureEx2
-// is name-keyed, so repeat calls return the same texture) a 32bpp RGBA render
+// spawnicon snapshot support.  Creates (or finds -- the create call is
+// name-keyed, so repeat calls return the same texture) a 32bpp RGBA render
 // target with its own depth surface, so a model can be rendered into it once
 // and blitted as a texture forever after, instead of every thumbnail rendering
 // its model live every frame.
+//
+// HL2SB (2026-10-07): call the LEGACY create entry, not the Ex2 variant.  Ex2
+// refuses everything outside the material system's batch-allocation window
+// ("Tried to create render target outside of ... block", NULL back) -- the
+// window is only open while the texture manager bulk-loads, so thumbnails
+// silently depended on when the menu first opened.  The legacy entry is the
+// documented runtime path for mod code called outside that window (it closes
+// the allocation batch itself), which is exactly what a menu opening mid-game
+// is.
 LUA_BINDING_BEGIN( Renders, CreateNamedRenderTarget, "library", "Creates or finds a named render target texture.", "client" )
 {
     const char *pszName = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "name" );
     int nWide = LUA_BINDING_ARGUMENT( luaL_checkint, 2, "wide" );
     int nTall = LUA_BINDING_ARGUMENT( luaL_checkint, 3, "tall" );
 
-    ITexture *pTexture = materials->CreateNamedRenderTargetTextureEx2(
+    ITexture *pTexture = materials->CreateNamedRenderTargetTextureEx(
         pszName, nWide, nTall, RT_SIZE_LITERAL, IMAGE_FORMAT_RGBA8888,
         MATERIAL_RT_DEPTH_SEPARATE,
         TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD,
