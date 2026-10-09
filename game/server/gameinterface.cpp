@@ -17,6 +17,8 @@
 #include "gamerules.h"
 #include "soundent.h"
 #include "player.h"
+// HL2SB: the player resource entity LevelInit creates (per-player scoreboard data)
+#include "player_resource.h"
 #include "server_class.h"
 #include "ai_node.h"
 #include "ai_link.h"
@@ -960,6 +962,20 @@ bool CServerGameDLL::IsRestoring()
 bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, char const *pOldLevel, char const *pLandmarkName, bool loadGame, bool background )
 {
 	VPROF("CServerGameDLL::LevelInit");
+
+	// HL2SB: this fork's gamemodes never instantiate the player resource, so
+	// the per-player scoreboard data it networks to every client (ping, score,
+	// deaths, team) never existed; Player:Ping on the client reads that copy,
+	// the same way GMod's player resource feeds its scoreboard.  Recreated
+	// every level: the entity is FCAP_DONT_SAVE, so a save/restore cycle drops
+	// it and a stale pointer must not survive LevelInit.
+	g_pPlayerResource = NULL;
+	CPlayerResource *pPlayerResource = static_cast< CPlayerResource * >( CreateEntityByName( "player_manager" ) );
+	if ( pPlayerResource )
+	{
+		g_pPlayerResource = pPlayerResource;
+		pPlayerResource->Spawn();
+	}
 
 #ifdef USES_ECON_ITEMS
 	GameItemSchema_t *pItemSchema = ItemSystem()->GetItemSchema();

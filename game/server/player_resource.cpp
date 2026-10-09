@@ -18,6 +18,8 @@ IMPLEMENT_SERVERCLASS_ST_NOBASE(CPlayerResource, DT_PlayerResource)
 	SendPropArray3( SENDINFO_ARRAY3(m_iPing), SendPropInt( SENDINFO_ARRAY(m_iPing), 10, SPROP_UNSIGNED ) ),
 //	SendPropArray( SendPropInt( SENDINFO_ARRAY(m_iPacketloss), 7, SPROP_UNSIGNED ), m_iPacketloss ),
 	SendPropArray3( SENDINFO_ARRAY3(m_iScore), SendPropInt( SENDINFO_ARRAY(m_iScore), 12 ) ),
+	// HL2SB: matches the client's C_PlayerResource recv table order.
+	SendPropArray3( SENDINFO_ARRAY3(m_iFrags), SendPropInt( SENDINFO_ARRAY(m_iFrags), 12 ) ),
 	SendPropArray3( SENDINFO_ARRAY3(m_iDeaths), SendPropInt( SENDINFO_ARRAY(m_iDeaths), 12 ) ),
 	SendPropArray3( SENDINFO_ARRAY3(m_bConnected), SendPropInt( SENDINFO_ARRAY(m_bConnected), 1, SPROP_UNSIGNED ) ),
 	SendPropArray3( SENDINFO_ARRAY3(m_iTeam), SendPropInt( SENDINFO_ARRAY(m_iTeam), 4 ) ),
@@ -48,6 +50,15 @@ LINK_ENTITY_TO_CLASS( player_manager, CPlayerResource );
 CPlayerResource *g_pPlayerResource;
 
 //-----------------------------------------------------------------------------
+// HL2SB: Player:Ping on the server realm; the smoothed ping the scoreboard
+// networks, exactly what the client's IGameResources::GetPing answers.
+//-----------------------------------------------------------------------------
+int CPlayerResource::GetPing( int iPlayerIndex )
+{
+	return m_iPing.Get( iPlayerIndex );
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
 void CPlayerResource::Spawn( void )
@@ -56,6 +67,7 @@ void CPlayerResource::Spawn( void )
 	{
 		m_iPing.Set( i, 0 );
 		m_iScore.Set( i, 0 );
+		m_iFrags.Set( i, 0 );
 		m_iDeaths.Set( i, 0 );
 		m_bConnected.Set( i, 0 );
 		m_iTeam.Set( i, 0 );
@@ -100,6 +112,7 @@ void CPlayerResource::UpdatePlayerData( void )
 		if ( pPlayer && pPlayer->IsConnected() )
 		{
 			m_iScore.Set( i, pPlayer->FragCount() );
+			m_iFrags.Set( i, pPlayer->FragCount() );
 			m_iDeaths.Set( i, pPlayer->DeathCount() );
 			m_bConnected.Set( i, 1 );
 			m_iTeam.Set( i, pPlayer->GetTeamNumber() );

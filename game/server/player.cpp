@@ -584,6 +584,13 @@ CBasePlayer::CBasePlayer( )
 	pl.replay = false;
 	pl.frags = 0;
 	pl.deaths = 0;
+	// HL2SB (2026-10-10): the kill/death counters were only ever written by
+	// Increment*Count, so a freshly connected player read back whatever the
+	// recycled entity memory held (scoreboard showed deaths before the first
+	// death).  Zero them alongside the CPlayerState copies; respawns keep the
+	// session totals, only a fresh player object starts clean.
+	m_iFrags = 0;
+	m_iDeaths = 0;
 
 	m_szNetname[0] = '\0';
 

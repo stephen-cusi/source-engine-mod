@@ -24,13 +24,20 @@ public:
 	virtual	int	 ObjectCaps( void ) { return BaseClass::ObjectCaps() | FCAP_DONT_SAVE; }
 	virtual void ResourceThink( void );
 	virtual void UpdatePlayerData( void );
-	virtual int  UpdateTransmitState(void);
+	virtual int  UpdateTransmitState( void );
+
+	// HL2SB: the client's C_PlayerResource exposes the same getter through
+	// IGameResources; Player:Ping reads this on the server realm.
+	int  GetPing( int iPlayerIndex );
 
 protected:
 	// Data for each player that's propagated to all clients
 	// Stored in individual arrays so they can be sent down via datatables
 	CNetworkArray( int, m_iPing, MAX_PLAYERS+1 );
 	CNetworkArray( int, m_iScore, MAX_PLAYERS+1 );
+	// HL2SB: Player:Frags on the client realm reads this copy; m_iScore keeps
+	// the stock meaning it already has (frag count in this gamemode).
+	CNetworkArray( int, m_iFrags, MAX_PLAYERS+1 );
 	CNetworkArray( int, m_iDeaths, MAX_PLAYERS+1 );
 	CNetworkArray( int, m_bConnected, MAX_PLAYERS+1 );
 	CNetworkArray( int, m_iTeam, MAX_PLAYERS+1 );

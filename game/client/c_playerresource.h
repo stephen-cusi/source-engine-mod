@@ -64,6 +64,9 @@ protected:
 	string_t	m_szName[MAX_PLAYERS+1];
 	int		m_iPing[MAX_PLAYERS+1];
 	int		m_iScore[MAX_PLAYERS+1];
+	// HL2SB: networked from CPlayerResource::m_iFrags; GetFrags used to be a
+	// stub because the stock server never sent a frag array.
+	int		m_iFrags[MAX_PLAYERS+1];
 	int		m_iDeaths[MAX_PLAYERS+1];
 	bool	m_bConnected[MAX_PLAYERS+1];
 	int		m_iTeam[MAX_PLAYERS+1];
