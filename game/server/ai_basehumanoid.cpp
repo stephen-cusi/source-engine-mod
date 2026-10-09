@@ -197,6 +197,16 @@ void CAI_BaseHumanoid::TraceAttack( const CTakeDamageInfo &info, const Vector &v
 			{
 				bSneakAttacked = false;
 			}
+
+			// HL2SB GMod compat: the sneak instakill only applies to targets
+			// that HATE the attacker (Disposition == D_HT).  Without this gate
+			// a single unaware close-range headshot also instakilled friendly
+			// NPCs (D_LI), which reference behavior never does - friendlies
+			// take the normal scaled damage.
+			if ( IRelationType( info.GetAttacker() ) != D_HT )
+			{
+				bSneakAttacked = false;
+			}
 		}
 	}
 

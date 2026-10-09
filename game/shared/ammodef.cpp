@@ -76,6 +76,14 @@ int	CAmmoDef::PlrDamage(int nAmmoIndex)
 
 	if ( m_AmmoType[nAmmoIndex].pPlrDmg == USE_CVAR )
 	{
+		// HL2SB: the ammo table can be built before the engine has ingested
+		// the game DLL's convars, in which case the init-time FindVar failed
+		// silently and this pointer stayed NULL.  Retry by stored name.
+		if ( cvar != NULL && m_AmmoType[nAmmoIndex].pPlrDmgCVar == NULL && m_AmmoType[nAmmoIndex].pPlrDmgCVarName != NULL )
+		{
+			m_AmmoType[nAmmoIndex].pPlrDmgCVar = cvar->FindVar( m_AmmoType[nAmmoIndex].pPlrDmgCVarName );
+		}
+
 		if ( m_AmmoType[nAmmoIndex].pPlrDmgCVar )
 		{
 			return m_AmmoType[nAmmoIndex].pPlrDmgCVar->GetFloat();
@@ -101,6 +109,12 @@ int	CAmmoDef::NPCDamage(int nAmmoIndex)
 
 	if ( m_AmmoType[nAmmoIndex].pNPCDmg == USE_CVAR )
 	{
+		// HL2SB: lazy re-resolve, see PlrDamage.
+		if ( cvar != NULL && m_AmmoType[nAmmoIndex].pNPCDmgCVar == NULL && m_AmmoType[nAmmoIndex].pNPCDmgCVarName != NULL )
+		{
+			m_AmmoType[nAmmoIndex].pNPCDmgCVar = cvar->FindVar( m_AmmoType[nAmmoIndex].pNPCDmgCVarName );
+		}
+
 		if ( m_AmmoType[nAmmoIndex].pNPCDmgCVar )
 		{
 			return m_AmmoType[nAmmoIndex].pNPCDmgCVar->GetFloat();
@@ -130,6 +144,12 @@ int	CAmmoDef::MaxCarry(int nAmmoIndex)
 
 	if ( m_AmmoType[nAmmoIndex].pMaxCarry == USE_CVAR )
 	{
+		// HL2SB: lazy re-resolve, see PlrDamage.
+		if ( cvar != NULL && m_AmmoType[nAmmoIndex].pMaxCarryCVar == NULL && m_AmmoType[nAmmoIndex].pMaxCarryCVarName != NULL )
+		{
+			m_AmmoType[nAmmoIndex].pMaxCarryCVar = cvar->FindVar( m_AmmoType[nAmmoIndex].pMaxCarryCVarName );
+		}
+
 		if ( m_AmmoType[nAmmoIndex].pMaxCarryCVar )
 			return m_AmmoType[nAmmoIndex].pMaxCarryCVar->GetFloat();
 
@@ -246,45 +266,32 @@ void CAmmoDef::AddAmmoType(char const* name, int damageType, int tracerType,
 	if ( AddAmmoType( name, damageType, tracerType, nFlags, minSplashSize, maxSplashSize ) == false )
 		return;
 
+	// HL2SB: the cvar interface may not be functional yet when the ammo table
+	// is first built (it can happen during gamemode load, before the engine
+	// has finished wiring the cvar system), so looking names up here both
+	// crashes and silently degrades.  Store the names and defer the lookup:
+	// PlrDamage/NPCDamage/MaxCarry resolve on first use, when convars are
+	// guaranteed to be live.
 	if (plr_cvar)
 	{
-		m_AmmoType[m_nAmmoIndex].pPlrDmgCVar	= cvar->FindVar(plr_cvar);
-		if (!m_AmmoType[m_nAmmoIndex].pPlrDmgCVar)
-		{
-			// HL2SB: HL1 weapons reference sk_ cvars this mod does not ship.
-			// Non-fatal -- fall through to the integer default instead of
-			// USE_CVAR (which would dereference the NULL cvar pointer).
-			DevMsg("Ammo (%s) found no CVar named (%s), using integer default\n",name,plr_cvar);
-		}
-		else
-		{
-			m_AmmoType[m_nAmmoIndex].pPlrDmg = USE_CVAR;
-		}
+		m_AmmoType[m_nAmmoIndex].pPlrDmg = USE_CVAR;
+		m_AmmoType[m_nAmmoIndex].pPlrDmgCVarName = plr_cvar;
 	}
 	if (npc_cvar)
 	{
-		m_AmmoType[m_nAmmoIndex].pNPCDmgCVar	= cvar->FindVar(npc_cvar);
-		if (!m_AmmoType[m_nAmmoIndex].pNPCDmgCVar)
-		{
-			DevMsg("Ammo (%s) found no CVar named (%s), using integer default\n",name,npc_cvar);
-		}
-		else
-		{
-			m_AmmoType[m_nAmmoIndex].pNPCDmg = USE_CVAR;
-		}
+		m_AmmoType[m_nAmmoIndex].pNPCDmg = USE_CVAR;
+		m_AmmoType[m_nAmmoIndex].pNPCDmgCVarName = npc_cvar;
 	}
 	if (carry_cvar)
 	{
-		m_AmmoType[m_nAmmoIndex].pMaxCarryCVar= cvar->FindVar(carry_cvar);
-		if (!m_AmmoType[m_nAmmoIndex].pMaxCarryCVar)
-		{
-			DevMsg("Ammo (%s) found no CVar named (%s), using integer default\n",name,carry_cvar);
-		}
-		else
-		{
-			m_AmmoType[m_nAmmoIndex].pMaxCarry = USE_CVAR;
-		}
+		m_AmmoType[m_nAmmoIndex].pMaxCarry = USE_CVAR;
+		m_AmmoType[m_nAmmoIndex].pMaxCarryCVarName = carry_cvar;
 	}
+	// HL2SB: keep the names for the getters' lazy re-resolve (the init-time
+	// FindVar above can run before the engine ingests these convars).
+	m_AmmoType[m_nAmmoIndex].pPlrDmgCVarName = plr_cvar;
+	m_AmmoType[m_nAmmoIndex].pNPCDmgCVarName = npc_cvar;
+	m_AmmoType[m_nAmmoIndex].pMaxCarryCVarName = carry_cvar;
 	m_AmmoType[m_nAmmoIndex].physicsForceImpulse = physicsForceImpulse;
 	m_nAmmoIndex++;
 }

@@ -35,6 +35,13 @@ struct Ammo_t
 	const ConVar*		pPlrDmgCVar;	// CVar for player damage amount
 	const ConVar*		pNPCDmgCVar;	// CVar for NPC damage amount
 	const ConVar*		pMaxCarryCVar;	// CVar for maximum number can carry
+	// HL2SB: the cvar names are kept so the getters can retry FindVar.  The
+	// ammo table can be built before the engine has ingested the game DLL's
+	// convars, in which case the init-time lookup fails silently and the
+	// pointers above stay NULL; without the name there is no recovery.
+	const char*			pPlrDmgCVarName;
+	const char*			pNPCDmgCVarName;
+	const char*			pMaxCarryCVarName;
 };
 
 // Used to tell AmmoDef to use the cvars, not the integers
