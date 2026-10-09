@@ -1410,6 +1410,15 @@ void CHLClient::Shutdown( void )
 	// NVNT Disconnect haptics system
 	DisconnectHaptics();
 #endif
+
+	// The engine unloads this DLL right after the shutdown completes, but the
+	// crash handlers installed in Init() are process-global: a vectored entry
+	// (or a signal action, or the watchdog thread) left pointing into freed
+	// code re-faults inside the exception dispatcher itself on the next
+	// exception - even the benign thread-exit notification on the final
+	// ExitThread - and nests until the stack is gone.  That is the "exit game
+	// after visiting a map" crash.  Take the hooks down while we are alive.
+	HL2SB_UninstallCrashHandler();
 }
 
 

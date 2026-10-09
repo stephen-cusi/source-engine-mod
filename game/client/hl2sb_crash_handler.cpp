@@ -618,6 +618,7 @@ static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS lpExceptionInfo )
 //-----------------------------------------------------------------------------
 static volatile LONG64 g_llHL2SBAliveTick = 0;
 static volatile LONG	 g_bHL2SBHangDumped = 0;
+static volatile LONG	 g_bHL2SBWatchdogExit = 0;
 
 #define HL2SB_HANG_TIMEOUT_MS ( 30 * 1000 )	// longer than any legitimate level load
 
@@ -633,6 +634,9 @@ static DWORD WINAPI HL2SB_HangWatchdogThread( LPVOID pArg )
 	for (;;)
 	{
 		Sleep( 2000 );
+
+		if ( g_bHL2SBWatchdogExit )
+			return 0;							// DLL is shutting down; never touch freed code
 
 		LONG64 llAlive = InterlockedCompareExchange64( &g_llHL2SBAliveTick, 0, 0 );
 		if ( llAlive == 0 )
@@ -676,34 +680,99 @@ static DWORD WINAPI HL2SB_HangWatchdogThread( LPVOID pArg )
 	}
 }
 
+// Everything registered below is process-global but lives in this DLL's image.
+// The engine unloads client.dll during shutdown while these hooks stay
+// registered: the next exception - even the benign first-chance thread-exit
+// notification raised on the final ExitThread - then dispatches straight into
+// freed memory.  Under the ARM64 x64 emulator that fault happens inside the
+// call-dispatch stub itself, which re-faults on every nested dispatch and
+// nests hundreds of exception records until the 1 MB stack is gone: the
+// "exit game after visiting a map" crash.  Save everything needed to take the
+// hooks back down before the unload.
+static void *g_pHL2SBVehHandle = NULL;
+static LPTOP_LEVEL_EXCEPTION_FILTER g_pHL2SBPrevFilter = NULL;
+static terminate_handler g_pHL2SBPrevTerminate = NULL;
+static _invalid_parameter_handler g_pHL2SBPrevInvalidParameter = NULL;
+static _purecall_handler g_pHL2SBPrevPurecall = NULL;
+static void ( __cdecl *g_pHL2SBPrevSigabrt )( int ) = NULL;
+static HANDLE g_hHL2SBWatchdogThread = NULL;
+static bool g_bHL2SBCrashHandlerInstalled = false;
+
 void HL2SB_InstallCrashHandler( void )
 {
-	SetUnhandledExceptionFilter( HL2SB_ExceptionFilter );
+	if ( g_bHL2SBCrashHandlerInstalled )
+		return;
+
+	g_pHL2SBPrevFilter = SetUnhandledExceptionFilter( HL2SB_ExceptionFilter );
 
 	// First-chance net: __fastfail / heap corruption / stack overflow never reach the
 	// filter above, and without this the process just vanishes with engine.log
 	// stopping mid-sentence and no dump anywhere.
-	AddVectoredExceptionHandler( 1, HL2SB_VectoredHandler );
+	g_pHL2SBVehHandle = AddVectoredExceptionHandler( 1, HL2SB_VectoredHandler );
 
 	// Hang net: a deadlock or an infinite loop raises no exception, so nothing above
 	// would ever fire - watch the main thread's ticks instead.
-	HANDLE hWatchdog = CreateThread( NULL, 0, HL2SB_HangWatchdogThread, NULL, 0, NULL );
-	if ( hWatchdog )
-		CloseHandle( hWatchdog );
+	g_bHL2SBWatchdogExit = 0;
+	g_hHL2SBWatchdogThread = CreateThread( NULL, 0, HL2SB_HangWatchdogThread, NULL, 0, NULL );
 
 	// The abort paths that never reach the filter above.
-	std::set_terminate( HL2SB_TerminateHandler );
-	_set_invalid_parameter_handler( HL2SB_InvalidParameterHandler );
-	_set_purecall_handler( HL2SB_PurecallHandler );
+	g_pHL2SBPrevTerminate = std::set_terminate( HL2SB_TerminateHandler );
+	g_pHL2SBPrevInvalidParameter = _set_invalid_parameter_handler( HL2SB_InvalidParameterHandler );
+	g_pHL2SBPrevPurecall = _set_purecall_handler( HL2SB_PurecallHandler );
 
 	// Bare abort(): only SIGABRT fires before the int 29h fast-fail.
-	signal( SIGABRT, HL2SB_SigabrtHandler );
+	g_pHL2SBPrevSigabrt = signal( SIGABRT, HL2SB_SigabrtHandler );
 
 	// Crashes the engine catches itself (CatchAndWriteMiniDump) never reach the
 	// unhandled-exception filter; chain its dump writer so engine.log gets them.
 	g_pHL2SBInnerMiniDumpFunction = SetMiniDumpFunction( HL2SB_MiniDumpChain );
 
+	g_bHL2SBCrashHandlerInstalled = true;
+
 	Msg( "[HL2SB] Crash handler installed (SEH + SIGABRT + terminate/invalid-parameter/purecall + minidump chain; logs: engine.log + hl2sb_crash.log)\n" );
+}
+
+void HL2SB_UninstallCrashHandler( void )
+{
+	if ( !g_bHL2SBCrashHandlerInstalled )
+		return;
+	g_bHL2SBCrashHandlerInstalled = false;
+
+	// The vectored entry is the storm source: the fault happens inside the
+	// dispatcher's call into the (now freed) handler address, before any of our
+	// code could run - the entry itself has to be gone before the unload.
+	if ( g_pHL2SBVehHandle )
+	{
+		RemoveVectoredExceptionHandler( g_pHL2SBVehHandle );
+		g_pHL2SBVehHandle = NULL;
+	}
+
+	SetUnhandledExceptionFilter( g_pHL2SBPrevFilter );
+	g_pHL2SBPrevFilter = NULL;
+
+	// Stop the watchdog before the unload: it never exits on its own and would
+	// wake up inside freed code on its next two-second tick.
+	if ( g_hHL2SBWatchdogThread )
+	{
+		InterlockedExchange( &g_bHL2SBWatchdogExit, 1 );
+		WaitForSingleObject( g_hHL2SBWatchdogThread, 5000 );
+		CloseHandle( g_hHL2SBWatchdogThread );
+		g_hHL2SBWatchdogThread = NULL;
+	}
+
+	std::set_terminate( g_pHL2SBPrevTerminate );
+	g_pHL2SBPrevTerminate = NULL;
+	_set_invalid_parameter_handler( g_pHL2SBPrevInvalidParameter );
+	g_pHL2SBPrevInvalidParameter = NULL;
+	_set_purecall_handler( g_pHL2SBPrevPurecall );
+	g_pHL2SBPrevPurecall = NULL;
+	signal( SIGABRT, g_pHL2SBPrevSigabrt ? g_pHL2SBPrevSigabrt : SIG_DFL );
+	g_pHL2SBPrevSigabrt = NULL;
+
+	SetMiniDumpFunction( g_pHL2SBInnerMiniDumpFunction );
+	g_pHL2SBInnerMiniDumpFunction = NULL;
+
+	Msg( "[HL2SB] Crash handler removed (client.dll unload pending)\n" );
 }
 
 #elif defined( LINUX ) && !defined( ANDROID )
@@ -719,6 +788,15 @@ void HL2SB_InstallCrashHandler( void )
 
 static volatile sig_atomic_t g_bHL2SBInCrashHandler = 0;
 static char g_szHL2SBAltStack[ HL2SB_ALTSTACK_SIZE ];
+
+// Same contract as the Windows branch: the signal actions live in this DLL's
+// image but are process-global and survive dlclose.  Save what was there
+// before so the shutdown path can put the originals back.
+static const int g_nHL2SBSignals[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT };
+static struct sigaction g_prevHL2SBSigaction[ 5 ];
+static bool g_bHL2SBSignalActionsSaved = false;
+static bool g_bHL2SBAltStackInstalled = false;
+static terminate_handler g_pHL2SBPrevTerminate = NULL;
 
 static const char *HL2SB_SignalName( int nSignal )
 {
@@ -767,12 +845,16 @@ static void HL2SB_PosixTerminateHandler( void )
 
 void HL2SB_InstallCrashHandler( void )
 {
+	if ( g_bHL2SBSignalActionsSaved )
+		return;
+
 	// A stack overflow cannot run a handler on the stack it just exhausted.
 	stack_t altStack;
 	altStack.ss_sp = g_szHL2SBAltStack;
 	altStack.ss_size = sizeof( g_szHL2SBAltStack );
 	altStack.ss_flags = 0;
-	sigaltstack( &altStack, NULL );
+	if ( sigaltstack( &altStack, NULL ) == 0 )
+		g_bHL2SBAltStackInstalled = true;
 
 	struct sigaction act;
 	memset( &act, 0, sizeof( act ) );
@@ -780,16 +862,41 @@ void HL2SB_InstallCrashHandler( void )
 	act.sa_flags = SA_SIGINFO | SA_ONSTACK;
 	sigemptyset( &act.sa_mask );
 
-	sigaction( SIGSEGV, &act, NULL );
-	sigaction( SIGBUS,  &act, NULL );
-	sigaction( SIGFPE,  &act, NULL );
-	sigaction( SIGILL,  &act, NULL );
-	sigaction( SIGABRT, &act, NULL );
+	for ( int i = 0; i < 5; i++ )
+		sigaction( g_nHL2SBSignals[ i ], &act, &g_prevHL2SBSigaction[ i ] );
+	g_bHL2SBSignalActionsSaved = true;
 
-	std::set_terminate( HL2SB_PosixTerminateHandler );
+	g_pHL2SBPrevTerminate = std::set_terminate( HL2SB_PosixTerminateHandler );
 
 	Msg( "[HL2SB] Crash handler installed (SIGSEGV/SIGBUS/SIGFPE/SIGILL/SIGABRT -> %s)\n",
 		HL2SB_ENGINE_LOG_NAME );
+}
+
+void HL2SB_UninstallCrashHandler( void )
+{
+	if ( !g_bHL2SBSignalActionsSaved )
+		return;
+	g_bHL2SBSignalActionsSaved = false;
+
+	// Put the original actions back before this DLL is unloaded, or the next
+	// signal jumps into freed code.
+	for ( int i = 0; i < 5; i++ )
+		sigaction( g_nHL2SBSignals[ i ], &g_prevHL2SBSigaction[ i ], NULL );
+
+	if ( g_bHL2SBAltStackInstalled )
+	{
+		stack_t dis;
+		dis.ss_sp = NULL;
+		dis.ss_size = 0;
+		dis.ss_flags = SS_DISABLE;
+		sigaltstack( &dis, NULL );
+		g_bHL2SBAltStackInstalled = false;
+	}
+
+	std::set_terminate( g_pHL2SBPrevTerminate );
+	g_pHL2SBPrevTerminate = NULL;
+
+	Msg( "[HL2SB] Crash handler removed (client.so unload pending)\n" );
 }
 
 #else
@@ -799,6 +906,10 @@ void HL2SB_InstallCrashHandler( void )
 	// Not our platform to change here: Android's launcher already funnels crashes
 	// into engine.log (launcher/android/crashhandler.cpp -> DebugLogger()->Write),
 	// and the other POSIX targets (macOS/BSD) are out of scope for this pass.
+}
+
+void HL2SB_UninstallCrashHandler( void )
+{
 }
 
 #endif

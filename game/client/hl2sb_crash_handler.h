@@ -10,6 +10,14 @@
 
 void HL2SB_InstallCrashHandler( void );
 
+// HL2SB: the handlers above are process-global but live in this DLL's image.
+// The engine unloads client.dll during shutdown; anything still registered at
+// that point (vectored entry, filter, signal actions, watchdog thread) becomes
+// a pointer into freed memory and re-faults inside the exception dispatcher on
+// the next exception.  Call this from CHLClient::Shutdown, while the DLL is
+// still loaded.
+void HL2SB_UninstallCrashHandler( void );
+
 // HL2SB: hang watchdog.  Exceptions are covered by the handler above, but a deadlock
 // or an infinite loop raises none - the process simply stops, engine.log ends mid
 // sentence, and no dump is written anywhere.  The main thread calls this every
