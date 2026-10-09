@@ -98,6 +98,17 @@
 #include "env_debughistory.h"
 #include "collisionutils.h"
 
+#ifdef LUA_SDK
+// HL2SB (2026-10-08): GM:OnNPCKilled (Event_Killed) and GM:ScaleNPCDamage
+// (TraceAttack) dispatch below - the hook macros and lua_State come from
+// luamanager.h, lua_pushentity from lbaseentity_shared.h, the damage info
+// push/readback from ltakedamageinfo.h (same set player.cpp pulls for the
+// player's dispatches).
+#include "luamanager.h"
+#include "lbaseentity_shared.h"
+#include "ltakedamageinfo.h"
+#endif
+
 extern ConVar sk_healthkit;
 
 // dvs: for opening doors -- these should probably not be here
@@ -581,6 +592,24 @@ void CAI_BaseNPC::Event_Killed( const CTakeDamageInfo &info )
 		// We're frozen; don't die.
 		return;
 	}
+
+#if defined ( LUA_SDK )
+	// HL2SB (2026-10-08): GM:OnNPCKilled( npc, attacker, inflictor ) - asked
+	// right after the freeze gate, before the death bookkeeping, which is
+	// where reference behavior asks it.  lua_pushentity answers an invalid
+	// attacker/inflictor with the NULL entity (same as reference).  No result
+	// is read: the hook is notification-only.  The fork's kill feed keeps
+	// painting deaths from the entity_killed game event (hud_killfeed.cpp);
+	// this hook is for the gamemode method and hook.Add consumers.
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "OnNPCKilled" );
+			lua_pushentity( L, this );
+			lua_pushentity( L, info.GetAttacker() );
+			lua_pushentity( L, info.GetInflictor() );
+		END_LUA_CALL_HOOK( 3, 0 );
+	}
+#endif
 
 	Wake( false );
 	
@@ -1146,52 +1175,47 @@ void CAI_BaseNPC::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir
 
 	Assert( m_nForceBone > -255 && m_nForceBone < 256 );
 
-	bool bDebug = showhitlocation.GetBool();
-
-	switch ( ptr->hitgroup )
+#if defined ( LUA_SDK )
+	// HL2SB (2026-10-08): GM:ScaleNPCDamage( npc, hitgroup, dmginfo ).  The
+	// hitgroup scaling is a Lua gamemode concern now, exactly like the
+	// player's ScalePlayerDamage in CBasePlayer::TraceAttack (which dropped
+	// its convar switch the same way): the C++ GetHitgroupDamageMultiplier
+	// switch that used to sit here multiplied every headshot on top of the
+	// gamemode scale (base gamemode: head x2, arms/legs/gear x0.25) and ran
+	// NPC damage away from reference numbers.  lua_pushdamageinfo copies, so
+	// the hook's damage info is anchored in the registry for the call and
+	// read back into subInfo afterwards - the same idiom as the player path.
+	// The hook results are discarded: reference behavior reads none here (the
+	// base body only scales; unlike ScalePlayerDamage there is no veto).
+	if ( L != NULL )
 	{
-	case HITGROUP_GENERIC:
-		if( bDebug ) DevMsg("Hit Location: Generic\n");
-		break;
+		static const char s_szScaleAnchor[] = "HL2SB_ScaleNPCDamageAnchor";
 
-	// hit gear, react but don't bleed
-	case HITGROUP_GEAR:
-		subInfo.SetDamage( 0.01 );
-		ptr->hitgroup = HITGROUP_GENERIC;
-		if( bDebug ) DevMsg("Hit Location: Gear\n");
-		break;
+		lua_pushlightuserdata( L, (void *)s_szScaleAnchor );
+		lua_pushdamageinfo( L, subInfo );
+		lua_rawset( L, LUA_REGISTRYINDEX );
 
-	case HITGROUP_HEAD:
-		subInfo.ScaleDamage( GetHitgroupDamageMultiplier(ptr->hitgroup, info) );
-		if( bDebug ) DevMsg("Hit Location: Head\n");
-		break;
+		BEGIN_LUA_CALL_HOOK( "ScaleNPCDamage" );
+			lua_pushentity( L, this );
+			lua_pushinteger( L, ptr->hitgroup );
+			lua_pushlightuserdata( L, (void *)s_szScaleAnchor );
+			lua_rawget( L, LUA_REGISTRYINDEX );
+		END_LUA_CALL_HOOK( 3, 0 );
 
-	case HITGROUP_CHEST:
-		subInfo.ScaleDamage( GetHitgroupDamageMultiplier(ptr->hitgroup, info) );
-		if( bDebug ) DevMsg("Hit Location: Chest\n");
-		break;
+		lua_pushlightuserdata( L, (void *)s_szScaleAnchor );
+		lua_rawget( L, LUA_REGISTRYINDEX );
+		if ( lua_isuserdata( L, -1 ) )
+		{
+			CTakeDamageInfo &hookInfo = luaL_checkdamageinfo( L, -1 );
+			subInfo = hookInfo;
+		}
+		lua_pop( L, 1 );
 
-	case HITGROUP_STOMACH:
-		subInfo.ScaleDamage( GetHitgroupDamageMultiplier(ptr->hitgroup, info) );
-		if( bDebug ) DevMsg("Hit Location: Stomach\n");
-		break;
-
-	case HITGROUP_LEFTARM:
-	case HITGROUP_RIGHTARM:
-		subInfo.ScaleDamage( GetHitgroupDamageMultiplier(ptr->hitgroup, info) );
-		if( bDebug ) DevMsg("Hit Location: Left/Right Arm\n");
-		break
-			;
-	case HITGROUP_LEFTLEG:
-	case HITGROUP_RIGHTLEG:
-		subInfo.ScaleDamage( GetHitgroupDamageMultiplier(ptr->hitgroup, info) );
-		if( bDebug ) DevMsg("Hit Location: Left/Right Leg\n");
-		break;
-
-	default:
-		if( bDebug ) DevMsg("Hit Location: UNKNOWN\n");
-		break;
+		lua_pushlightuserdata( L, (void *)s_szScaleAnchor );
+		lua_pushnil( L );
+		lua_rawset( L, LUA_REGISTRYINDEX );
 	}
+#endif
 
 	if ( subInfo.GetDamage() >= 1.0 && !(subInfo.GetDamageType() & DMG_SHOCK ) )
 	{
