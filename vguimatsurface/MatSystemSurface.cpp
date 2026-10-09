@@ -4051,7 +4051,11 @@ bool CMatSystemSurface::BHTMLWindowNeedsPaint(IHTML *htmlwin)
 
 void CMatSystemSurface::DrawSetTextureRGBA(int id, const unsigned char* rgba, int wide, int tall, int hardwareFilter, bool forceUpload)
 {
-	TextureDictionary()->SetTextureRGBAEx( id, (const char *)rgba, wide, tall, IMAGE_FORMAT_RGBA8888, false );
+	// The dictionary pads procedural uploads to the next power of two, so the
+	// texture coordinates have to track the real sub-rect or a non-padded
+	// image draws padded garbage (the fixup is a no-op for padded-to-exact
+	// sizes, which is what most engine callers upload).
+	TextureDictionary()->SetTextureRGBAEx( id, (const char *)rgba, wide, tall, IMAGE_FORMAT_RGBA8888, true );
 }
 
 void CMatSystemSurface::DrawSetTextureRGBAEx( int id, const unsigned char* rgba, int wide, int tall, ImageFormat format )

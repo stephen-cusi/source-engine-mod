@@ -408,31 +408,39 @@ void CMatSystemTexture::SetTextureRGBA( const char *rgba, int wide, int tall, Im
 	if ( !IsProcedural() )
 		return;
 
+	// find the minimum power-of-two to fit this in
+	int width = wide;
+	int height = tall;
+	int i;
+	for ( i = 0; i < 32 ; i++ )
+	{
+		width = (1<<i);
+		if (width >= wide)
+		{
+			break;
+		}
+	}
+
+	for (i = 0; i < 32; i++ )
+	{
+		height= (1<<i);
+		if (height >= tall)
+		{
+			break;
+		}
+	}
+
+	// The allocation and its texture-coordinate padding are computed for one
+	// input size.  An upload of a different size would sample the never
+	// uploaded padding ring (garbage pixels on screen) or write past the
+	// backing bits, so reallocate when the new image no longer fits.
+	if ( m_pMaterial && ( wide > m_iWide || tall > m_iTall ) )
+	{
+		CleanUpMaterial();
+	}
+
 	if ( !m_pMaterial )
 	{
-		int width = wide;
-		int height = tall;
-
-		// find the minimum power-of-two to fit this in
-		int i;
-		for ( i = 0; i < 32 ; i++ )
-		{
-			width = (1<<i);
-			if (width >= wide)
-			{
-				break;
-			}
-		}
-
-		for (i = 0; i < 32; i++ )
-		{
-			height= (1<<i);
-			if (height >= tall)
-			{
-				break;
-			}
-		}
-
 		// create a procedural material to fit this texture into
 		static int nTextureId = 0;
 		char pTextureName[64];
@@ -466,11 +474,6 @@ void CMatSystemTexture::SetTextureRGBA( const char *rgba, int wide, int tall, Im
 		SetMaterial( pMaterial );
 		m_iInputTall = tall;
 		m_iInputWide = wide;
-		if ( bFixupTextCoords && ( wide != width || tall != height ) )
-		{
-			m_s1 = (double)wide / width;
-			m_t1 = (double)tall / height;
-		}
 
 		// undo the extra +1 refCount
 		pMaterial->DecrementReferenceCount();
@@ -478,6 +481,21 @@ void CMatSystemTexture::SetTextureRGBA( const char *rgba, int wide, int tall, Im
 
 	Assert( wide <= m_iWide );
 	Assert( tall <= m_iTall );
+
+	// Padded allocation: map the draw quad onto the uploaded sub-rect.  Inset
+	// by half a texel so linear filtering does not blend the last real row or
+	// column with the never-uploaded padding (which reads back as noise).
+	if ( bFixupTextCoords && ( wide != width || tall != height ) )
+	{
+		m_s1 = ( (double)wide - 0.5 ) / width;
+		m_t1 = ( (double)tall - 0.5 ) / height;
+	}
+	else if ( bFixupTextCoords )
+	{
+		// exact fit - restore the full-range coordinates SetMaterial computed
+		m_s1 = 1.0f - 0.5f / width;
+		m_t1 = 1.0f - 0.5f / height;
+	}
 
 	// Just replace the whole thing
 	SetSubTextureRGBAEx( 0, 0, (const unsigned char *)rgba, wide, tall, format );
