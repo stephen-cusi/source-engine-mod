@@ -77,6 +77,13 @@ float RemapValClamped_01( float val, float A, float B )
 VS_OUTPUT main( const VS_INPUT v )
 {
 	VS_OUTPUT o = ( VS_OUTPUT )0;
+	if(length(v.vPos.xy) > 10)
+	{
+		float4 FinalProj = mul( float4(0.0, 0.0, 0.0, 1.0), cViewProj );
+		o.projPos = FinalProj;
+	}
+	else
+	{
 
 	float4 vPosition = v.vPos;
 	float3 vNormal;
@@ -143,6 +150,7 @@ VS_OUTPUT main( const VS_INPUT v )
 
 	o.baseTexCoord = v.vTexCoord0;
 
+	}
 	return o;
 }
 

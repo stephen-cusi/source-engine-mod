@@ -868,10 +868,36 @@ void R_MouthLighting( int count, const Vector *psrcverts, const Vector *psrcnorm
 }
 */
 
+// HL2SB: the mouth block is read straight out of the studio header and then used to
+// index the flex weight and bone transform arrays.  A header whose mouth block names a
+// flex descriptor or a bone past the end of either array used to hand out-of-range
+// memory to the teeth material as its lighting; the mouth lighting is skipped instead
+// (a skipped mouth reads as an unlit mouth, which is what a closed mouth looks like).
+static bool HL2SB_MouthBlockIsUsable( const studiohdr_t *pHdr, const mstudiomouth_t *pMouth,
+	const float *pFlexWeights, const matrix3x4_t *pBoneToWorld )
+{
+	if ( !pHdr || !pMouth || !pFlexWeights || !pBoneToWorld )
+		return false;
+	if ( pHdr->nummouths < 1 )
+		return false;
+	if ( pMouth->bone < 0 || pMouth->bone >= pHdr->numbones )
+		return false;
+	if ( pMouth->flexdesc < 0 || pMouth->flexdesc >= pHdr->numflexdesc )
+		return false;
+	return true;
+}
+
 void CStudioRender::R_MouthComputeLightingValues( float& fIllum, Vector& forward )
 {
 	// FIXME: this needs to get the mouth index from the shader
-	mstudiomouth_t *pMouth = m_pStudioHdr->pMouth( 0 ); 
+	mstudiomouth_t *pMouth = m_pStudioHdr->pMouth( 0 );
+
+	if ( !HL2SB_MouthBlockIsUsable( m_pStudioHdr, pMouth, m_pFlexWeights, m_pBoneToWorld ) )
+	{
+		fIllum = 0.0f;
+		forward.Init();
+		return;
+	}
 
 	fIllum = m_pFlexWeights[pMouth->flexdesc];
 	if (fIllum < 0) fIllum = 0;
@@ -902,17 +928,23 @@ void CStudioRender::R_MouthSetupVertexShader( IMaterial* pMaterial )
 		return;
 
 	// FIXME: this needs to get the mouth index from the shader
-	mstudiomouth_t *pMouth = m_pStudioHdr->pMouth( 0 ); 
+	mstudiomouth_t *pMouth = m_pStudioHdr->pMouth( 0 );
 
 	// Don't deal with illum gamma, we apply it at a different point
 	// for vertex shaders
-	float fIllum = m_pFlexWeights[pMouth->flexdesc];
-	if (fIllum < 0) fIllum = 0;
-	if (fIllum > 1) fIllum = 1;
-
+	float fIllum = 0.0f;
 	Vector forward;
-	VectorRotate( pMouth->forward, m_pBoneToWorld[ pMouth->bone ], forward );
-	forward *= -1;
+	forward.Init();
+
+	if ( HL2SB_MouthBlockIsUsable( m_pStudioHdr, pMouth, m_pFlexWeights, m_pBoneToWorld ) )
+	{
+		fIllum = m_pFlexWeights[pMouth->flexdesc];
+		if (fIllum < 0) fIllum = 0;
+		if (fIllum > 1) fIllum = 1;
+
+		VectorRotate( pMouth->forward, m_pBoneToWorld[ pMouth->bone ], forward );
+		forward *= -1;
+	}
 
 	IMaterialVar* pIllumVar = pMaterial->FindVarFast( "$illumfactor", &illumVarCache );
 	if (pIllumVar)

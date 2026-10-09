@@ -71,6 +71,13 @@ struct VS_OUTPUT
 VS_OUTPUT main( const VS_INPUT v )
 {
 	VS_OUTPUT o = ( VS_OUTPUT )0;
+	if(length(v.vPos.xy) > 10)
+	{
+		float4 FinalProj = mul( float4(0.0, 0.0, 0.0, 1.0), cViewProj );
+		o.projPos = FinalProj;
+	}
+	else
+	{
 
 	float4 vPosition = v.vPos;
 	float3 vNormal;
@@ -146,6 +153,7 @@ VS_OUTPUT main( const VS_INPUT v )
 	o.tangentSpaceTranspose[1] = float3( worldTangentS.y, worldTangentT.y, worldNormal.y );
 	o.tangentSpaceTranspose[2] = float3( worldTangentS.z, worldTangentT.z, worldNormal.z );
 
+	}
 	return o;
 }
 
