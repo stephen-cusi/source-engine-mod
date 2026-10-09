@@ -128,8 +128,17 @@ bool VoiceRecord_DSound::RecordStart()
 
 	DWORD dwStatus;
 	HRESULT hr = m_pCaptureBuffer->GetStatus(&dwStatus);
-	if (FAILED(hr) || !(dwStatus & DSCBSTATUS_CAPTURING))
+	if (FAILED(hr))
 		return false;
+
+	// Resume capture when a previous RecordStop paused the buffer. The
+	// capture device stays initialized across pushes so RecordStart does
+	// not reopen it.
+	if ( !( dwStatus & DSCBSTATUS_CAPTURING ) )
+	{
+		if ( FAILED( m_pCaptureBuffer->Start( DSCBSTART_LOOPING ) ) )
+			return false;
+	}
 
 	DWORD dwReadPos;
 	hr = m_pCaptureBuffer->GetCurrentPosition(NULL, &dwReadPos);
@@ -144,6 +153,15 @@ bool VoiceRecord_DSound::RecordStart()
 
 void VoiceRecord_DSound::RecordStop()
 {
+	// Stop capturing. The capture buffer stays initialized so RecordStart
+	// can resume without reopening the device. Without this the mic keeps
+	// feeding Voice_GetCompressedData after key release and the client
+	// keeps sending CLC_VoiceData forever (reference behavior: stock stops
+	// the capture buffer on push-to-talk release).
+	if ( m_pCaptureBuffer )
+	{
+		m_pCaptureBuffer->Stop();
+	}
 }
 
 static bool IsRunningWindows7()
