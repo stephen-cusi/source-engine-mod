@@ -2227,15 +2227,18 @@ void CHL2MP_Player::Event_Killed( const CTakeDamageInfo &info )
 	DetonateTripmines();
 
 #if defined( LUA_SDK )
-	// HL2SB GMod compat (2026-10-03): hook.Run( "DoPlayerDeath", victim, inflictor, attacker )
+	// HL2SB GMod compat (2026-10-10): hook.Run( "DoPlayerDeath", victim, attacker, dmginfo )
 	// - fired at the same point in GMod's death pipeline (before the death
 	// hooks like PlayerDeath run their UI); the portalgun fizzles the dead
 	// player's portals here.
+	// - argument order is GMod's: base gamemode's GM:DoPlayerDeath scores off
+	// the SECOND argument as the killer (inflictor never gets frags), and the
+	// third argument is the damage info object.
 	{
 		BEGIN_LUA_CALL_HOOK( "DoPlayerDeath" );
 			lua_pushplayer( L, this );
-			lua_pushentity( L, info.GetInflictor() );
 			lua_pushentity( L, info.GetAttacker() );
+			lua_pushdamageinfo( L, subinfo );
 		END_LUA_CALL_HOOK( 3, 0 );
 	}
 #endif
@@ -2264,6 +2267,9 @@ void CHL2MP_Player::Event_Killed( const CTakeDamageInfo &info )
 		GetGlobalTeam( pAttacker->GetTeamNumber() )->AddScore( iScoreToAdd );
 	}
 
+	// Reference behavior: scoring lives in the gamemode's GM:DoPlayerDeath Lua
+	// hook (dispatched above), never in the engine death pipeline - ported
+	// gamemodes carry their own copy of that hook and must not double count.
 	FlashlightTurnOff();
 
 	m_lifeState = LIFE_DEAD;

@@ -38,11 +38,21 @@ void HL2SB_GetLastMouseDeltas( int &dx, int &dy );
 // HL2SB (2026-10-03): Player:ShouldDrawLocalPlayer reads the view entity
 // through the engine's render interface.
 #include "ivrenderview.h"
+// HL2SB: Player:Ping reads the client copy of the player resource
+// (the per-player scoreboard data the server networks).
+#include "c_playerresource.h"
+// HL2SB: Player:IsMuted / SetMuted answer the client's persistent voice ban
+// list (voice_status / voice_banmgr), the same state GameUI's mute toggle
+// drives through IGameClientExports.
+#include "voice_status.h"
 #else
 #include "lbaseanimating.h"
 // HL2SB: Player:IsSprinting reads the live CHL2_Player::m_fIsSprinting state
 // (CHL2MP_Player derives from CHL2_Player).
 #include "hl2_player.h"
+// HL2SB: Player:Ping reads the server-side player resource
+// (LevelInit creates the player_manager entity, see gameinterface.cpp).
+#include "player_resource.h"
 #endif
 #include "lbasecombatweapon_shared.h"
 #include "lbaseentity_shared.h"
@@ -2088,6 +2098,99 @@ static int CBasePlayer_SteamID64 (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Player:Ping().  GMod reads the ping its client player
+// resource keeps per user id; the same answer comes from this fork's player
+// resource on both realms (the server entity networks the smoothed ping, the
+// client copy receives it through DT_PlayerResource).  Whole milliseconds,
+// pushed as an integer so it formats as "17" instead of "17.0".
+static int CBasePlayer_Ping (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  int nPing = g_PR ? g_PR->GetPing( pPlayer->entindex() ) : 0;
+#else
+  int nPing = g_pPlayerResource ? g_pPlayerResource->GetPing( pPlayer->entindex() ) : 0;
+#endif
+  lua_pushinteger( L, nPing );
+  return 1;
+}
+
+// HL2SB GMod compat: Player:Frags() / Player:Deaths() -- the scoreboard's
+// kill/death columns.  GMod's bindings read the engine's per-player counters;
+// here those live on the server player entity, and reach the client through
+// the networked player resource the same way the ping does.
+static int CBasePlayer_Frags (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  lua_pushinteger( L, g_PR ? g_PR->GetFrags( pPlayer->entindex() ) : 0 );
+#else
+  lua_pushinteger( L, pPlayer->FragCount() );
+#endif
+  return 1;
+}
+
+static int CBasePlayer_Deaths (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  lua_pushinteger( L, g_PR ? g_PR->GetDeaths( pPlayer->entindex() ) : 0 );
+#else
+  lua_pushinteger( L, pPlayer->DeathCount() );
+#endif
+  return 1;
+}
+
+// HL2SB GMod compat: Player:AddFrags( count ) / Player:AddDeaths( count ).
+// GMod's base gamemode scores every death through these: the victim always
+// adds one death, a player attacker collects a frag and a suicide subtracts
+// one.  The counters live on the server entity and network out through the
+// player resource, so the client realm accepts the call and drops it.
+#ifndef CLIENT_DLL
+static int CBasePlayer_AddFrags (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  pPlayer->IncrementFragCount( luaL_checkint(L, 2) );
+  return 0;
+}
+
+static int CBasePlayer_AddDeaths (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  pPlayer->IncrementDeathCount( luaL_checkint(L, 2) );
+  return 0;
+}
+#endif
+
+// HL2SB GMod compat: Player:Team().  GMod reads its player resource's team
+// number per user id; the networked team number on the player entity is the
+// same value here (server-side member, client-side netvar).
+static int CBasePlayer_Team (lua_State *L) {
+  lua_pushnumber( L, luaL_checkplayer(L, 1)->GetTeamNumber() );
+  return 1;
+}
+
+#ifdef CLIENT_DLL
+// HL2SB GMod compat: Player:IsMuted() / SetMuted( mute ).  GMod keeps a local
+// per-user mute list and pushes it to the engine as a voice ban mask; here the
+// same local mute lives in the client's persistent voice ban list (the state
+// GameUI's mute toggle drives).  SetPlayerBlockedState flips the stored ban
+// and sends the refreshed voice mask, so the squelch also holds server side.
+static int CBasePlayer_IsMuted (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+
+  lua_pushboolean( L, GetClientVoiceMgr()->IsPlayerBlocked( pPlayer->entindex() ) ? 1 : 0 );
+  return 1;
+}
+
+static int CBasePlayer_SetMuted (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  bool bMute = lua_toboolean( L, 2 ) ? true : false;
+
+  if ( GetClientVoiceMgr()->IsPlayerBlocked( pPlayer->entindex() ) != bMute )
+  {
+    GetClientVoiceMgr()->SetPlayerBlockedState( pPlayer->entindex(), bMute );
+  }
+  return 0;
+}
+#endif
+
+
 //-----------------------------------------------------------------------------
 // Purpose: HL2SB - Player:IsValid()
 //
@@ -2589,6 +2692,17 @@ static const luaL_Reg CBasePlayermeta[] = {
   // the punch angle pair).  hl1sweps uses all of them on the fire path.
   {"SetAmmo", CBasePlayer_SetAmmo},
   {"Nick", CBasePlayer_GetPlayerName},
+  // HL2SB GMod compat: Player:Ping / Team / Frags / Deaths -- the scoreboard's
+  // K/D/ping row (cl_scoreboard.lua) reads them; AddFrags/AddDeaths are what
+  // GMod's base gamemode scores deaths with.
+  {"Ping", CBasePlayer_Ping},
+  {"Team", CBasePlayer_Team},
+  {"Frags", CBasePlayer_Frags},
+  {"Deaths", CBasePlayer_Deaths},
+#ifndef CLIENT_DLL
+  {"AddFrags", CBasePlayer_AddFrags},
+  {"AddDeaths", CBasePlayer_AddDeaths},
+#endif
   {"GetViewPunchAngles", CBasePlayer_GetPunchAngle},
   {"SetViewPunchAngles", CBasePlayer_SetPunchAngle},
   {"SetCanZoom", CBasePlayer_SetCanZoom},
@@ -2643,6 +2757,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetCurrentViewOffset", CBasePlayer_GetCurrentViewOffset},
   {"GetViewOffset", CBasePlayer_GetViewOffset},
   {"ShouldDrawLocalPlayer", CBasePlayer_ShouldDrawLocalPlayer},
+  // HL2SB GMod compat: the scoreboard's mute button reads and toggles these.
+  {"IsMuted", CBasePlayer_IsMuted},
+  {"SetMuted", CBasePlayer_SetMuted},
 #endif
   {"__index", CBasePlayer___index},
   {"__newindex", CBasePlayer___newindex},

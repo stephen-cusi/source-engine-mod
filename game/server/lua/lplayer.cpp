@@ -639,13 +639,8 @@ static int CBasePlayer_SetEyeAngles (lua_State *L) {
   return 0;
 }
 
-// Player:AddFrags( count ) -- negative counts subtract (wiki);
-// IncrementFragCount() is a plain += and takes negatives fine.
-static int CBasePlayer_AddFrags (lua_State *L) {
-  CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
-  pPlayer->IncrementFragCount( luaL_checkint( L, 2 ) );
-  return 0;
-}
+// Player:AddFrags / AddDeaths live in the shared player binding
+// (lbaseplayer_shared.cpp) so both realms see the same GMod names.
 
 static const luaL_Reg CBasePlayermeta[] = {
   {"GiveAmmo", CBasePlayer_GiveAmmo},
@@ -747,7 +742,6 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"ChatPrint", CBasePlayer_ChatPrint},
   {"SetViewEntity", CBasePlayer_SetViewEntity},
   {"SetEyeAngles", CBasePlayer_SetEyeAngles},
-  {"AddFrags", CBasePlayer_AddFrags},
   {"GetViewEntity", CBasePlayer_GetViewEntity},
   {NULL, NULL}
 };

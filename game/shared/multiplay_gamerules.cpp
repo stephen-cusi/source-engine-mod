@@ -757,7 +757,17 @@ ConVarRef suitcharger( "sk_suitcharger" );
 		CBaseEntity *pInflictor = info.GetInflictor();
 		CBaseEntity *pKiller = info.GetAttacker();
 		CBasePlayer *pScorer = GetDeathScorer( pKiller, pInflictor, pVictim );
-		
+
+#if defined( LUA_SDK )
+		// HL2SB GMod compat (2026-10-10): reference behavior - GMod's death
+		// pipeline leaves the frag/death counters alone and the gamemode Lua
+		// owns all scoring (base gamemode's GM:DoPlayerDeath calls
+		// Player:AddDeaths / Player:AddFrags).  The stock deathmatch scoring
+		// below double counts on top of the Lua hook and charged the victim a
+		// frag for every NPC/world death, so it stays out under the Lua SDK
+		// build.  DeathNotice (kill feed) and the game_playerdie/kill
+		// FireTargets above keep their stock behavior.
+#else
 		pVictim->IncrementDeathCount( 1 );
 
 		// dvsents2: uncomment when removing all FireTargets
@@ -766,19 +776,19 @@ ConVarRef suitcharger( "sk_suitcharger" );
 		FireTargets( "game_playerdie", pVictim, pVictim, USE_TOGGLE, 0 );
 
 		// Did the player kill himself?
-		if ( pVictim == pScorer )  
-		{			
+		if ( pVictim == pScorer )
+		{
 			if ( UseSuicidePenalty() )
 			{
 				// Players lose a frag for killing themselves
 				pVictim->IncrementFragCount( -1 );
-			}			
+			}
 		}
 		else if ( pScorer )
 		{
 			// if a player dies in a deathmatch game and the killer is a client, award the killer some points
 			pScorer->IncrementFragCount( IPointsForKill( pScorer, pVictim ) );
-			
+
 			// Allow the scorer to immediately paint a decal
 			pScorer->AllowImmediateDecalPainting();
 
@@ -788,13 +798,14 @@ ConVarRef suitcharger( "sk_suitcharger" );
 			FireTargets( "game_playerkill", pScorer, pScorer, USE_TOGGLE, 0 );
 		}
 		else
-		{  
+		{
 			if ( UseSuicidePenalty() )
 			{
-				// Players lose a frag for letting the world kill them			
+				// Players lose a frag for letting the world kill them
 				pVictim->IncrementFragCount( -1 );
-			}					
+			}
 		}
+#endif
 	}
 
 	//=========================================================
