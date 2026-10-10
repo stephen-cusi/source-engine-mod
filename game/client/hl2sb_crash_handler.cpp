@@ -796,7 +796,7 @@ static const int g_nHL2SBSignals[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT 
 static struct sigaction g_prevHL2SBSigaction[ 5 ];
 static bool g_bHL2SBSignalActionsSaved = false;
 static bool g_bHL2SBAltStackInstalled = false;
-static terminate_handler g_pHL2SBPrevTerminate = NULL;
+static std::terminate_handler g_pHL2SBPrevTerminate = NULL;
 
 static const char *HL2SB_SignalName( int nSignal )
 {
