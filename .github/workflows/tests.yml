@@ -71,15 +71,6 @@ jobs:
       - name: Run tests macos-arm64
         run: scripts/tests-macos-arm64.sh
 
-  tests-macos-amd64:
-    runs-on: macos-latest
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Run tests macos-amd64
-      run: |
-        scripts/tests-macos-amd64.sh
-
   tests-windows-i386:
     name: Windows (x86) tests
     runs-on: windows-2022
