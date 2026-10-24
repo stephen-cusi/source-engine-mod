@@ -2306,6 +2306,26 @@ LUA_BINDING_BEGIN( Renders, ComputeLighting, "library", "Returns the lighting at
 }
 LUA_BINDING_END( "Vector", "The lighting colour at the position." )
 
+// HL2SB GMod compat: render.ComputeDynamicLighting( position, normal ) -> Vector.
+// 与 render.ComputeLighting 平行；唯一区别是引擎 clamp 标志 (GMod 不 clamp)。
+LUA_BINDING_BEGIN( Renders, ComputeDynamicLighting, "library",
+                   "Returns the dynamic lighting at the given position (unclamped).", "client" )
+{
+    Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
+    Vector defaultNormal = vec3_origin;
+    Vector normal = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optvector, 2, &defaultNormal, "normal" );
+
+    Vector color( 1, 1, 1 );
+    engine->ComputeLighting( position,
+                             ( normal == vec3_origin ) ? NULL : &normal,
+                             false, color, NULL );
+
+    lua_pushvector( L, color );
+    return 1;
+}
+LUA_BINDING_END( "Vector", "The dynamic lighting colour at the position." )
+
+
 LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
 {
     Vector &start = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "start" );
@@ -2853,6 +2873,140 @@ LUA_BINDING_END()
 /*
 ** Open render library
 */
+
+// ============================================================================
+// HL2SB GMod compat: 全局 mesh 库（动态几何体绘制）
+// 用于 evil_crawler/cl_flesh.lua 的 Flesh.Tube 画管状腿/腹部几何。
+// GMod 的 mesh 是状态机：Begin -> Position/TexCoord/Color/AdvanceVertex xN -> End
+// ============================================================================
+static IMesh             *s_pHL2SBMesh         = NULL;
+static CMeshBuilder       s_HL2SBMeshBuilder;
+static bool               s_bHL2SBMeshBuilding = false;
+static IMatRenderContext *s_pHL2SBMeshContext = NULL;  // HL2SB (fix): Begin->End 全程保持的 context（裸指针，配对 EndRender）
+
+static int mesh_Begin( lua_State *L ) {
+    // HL2SB (fix, v6): 上次 Begin 未 End（Lua 错误导致 mesh.End 被跳过）时，
+    // 用 MarkAsDrawn() 清空 queued mesh 内部 m_pVertexData/m_pIndexData，
+    // 再 EndRender() 配对 BeginRender。queued context 的 CMatQueuedMesh 是
+    // 单例，m_pVertexData 残留就会在下次 GetDynamicMesh 抛
+    // "Getting a dynamic mesh without resolving the previous one" 崩游戏。
+    //
+    // ⚠️ 不要用 Release()：
+    //   * GetDynamicMesh 返回裸 m_pQueuedMesh（无 AddRef），Release 会 0 计数崩溃
+    //   * GetRenderContext 内部是 BeginRender 不是 AddRef，配对用 EndRender
+    if ( s_bHL2SBMeshBuilding ) {
+        Warning( "[HL2SB] mesh.Begin called while previous Begin not End'd "
+                 "(Lua error in addon?) - cleaning up stale session\n" );
+        if ( s_pHL2SBMesh != NULL ) {
+            s_pHL2SBMesh->MarkAsDrawn();   // FreeBuffers + queue mark
+            s_pHL2SBMesh = NULL;
+        }
+        if ( s_pHL2SBMeshContext != NULL ) {
+            s_pHL2SBMeshContext->EndRender();   // 配 pair BeginRender
+            s_pHL2SBMeshContext = NULL;
+        }
+        s_bHL2SBMeshBuilding = false;
+    }
+
+    int nPrimType = luaL_checkint( L, 1 );
+    int nCount    = luaL_checkint( L, 2 );
+
+    s_pHL2SBMeshContext = materials->GetRenderContext();   // 内部 BeginRender()
+    if ( s_pHL2SBMeshContext == NULL ) return 0;
+
+    s_pHL2SBMesh = s_pHL2SBMeshContext->GetDynamicMesh( false, NULL, NULL, s_pRendersLastSetMaterial );
+    if ( s_pHL2SBMesh == NULL ) {
+        s_pHL2SBMeshContext->EndRender();      // 失败也要配对
+        s_pHL2SBMeshContext = NULL;
+        return 0;
+    }
+
+    s_HL2SBMeshBuilder.Begin( s_pHL2SBMesh, (MaterialPrimitiveType_t)nPrimType, nCount );
+    s_bHL2SBMeshBuilding = true;
+    return 0;
+}
+
+static int mesh_Position( lua_State *L ) {
+    if ( !s_bHL2SBMeshBuilding ) return 0;
+    if ( luaL_testudata( L, 1, "Vector" ) != NULL ) {
+        Vector v = luaL_checkvector( L, 1 );
+        s_HL2SBMeshBuilder.Position3fv( v.Base() );
+    } else {
+        s_HL2SBMeshBuilder.Position3f(
+            (float)luaL_checknumber( L, 1 ),
+            (float)luaL_checknumber( L, 2 ),
+            (float)luaL_checknumber( L, 3 ) );
+    }
+    return 0;
+}
+
+static int mesh_TexCoord( lua_State *L ) {
+    if ( !s_bHL2SBMeshBuilding ) return 0;
+    s_HL2SBMeshBuilder.TexCoord2f(
+        luaL_checkint( L, 1 ),
+        (float)luaL_checknumber( L, 2 ),
+        (float)luaL_checknumber( L, 3 ) );
+    return 0;
+}
+
+static int mesh_Color( lua_State *L ) {
+    if ( !s_bHL2SBMeshBuilding ) return 0;
+    s_HL2SBMeshBuilder.Color4f(
+        (float)luaL_checknumber( L, 1 ) / 255.0f,
+        (float)luaL_checknumber( L, 2 ) / 255.0f,
+        (float)luaL_checknumber( L, 3 ) / 255.0f,
+        (float)luaL_optnumber( L, 4, 255.0f ) / 255.0f );
+    return 0;
+}
+
+static int mesh_Color32( lua_State *L ) {
+    if ( !s_bHL2SBMeshBuilding ) return 0;
+    lua_Color clr = luaL_checkcolor( L, 1 );
+    s_HL2SBMeshBuilder.Color4ub(
+        (unsigned char)clr.r(), (unsigned char)clr.g(),
+        (unsigned char)clr.b(), (unsigned char)clr.a() );
+    return 0;
+}
+
+static int mesh_AdvanceVertex( lua_State *L ) {
+    if ( !s_bHL2SBMeshBuilding ) return 0;
+    s_HL2SBMeshBuilder.AdvanceVertex();
+    return 0;
+}
+
+static int mesh_End( lua_State *L ) {
+    if ( !s_bHL2SBMeshBuilding ) return 0;
+
+    s_HL2SBMeshBuilder.End();
+    if ( s_pHL2SBMesh != NULL ) {
+        s_pHL2SBMesh->Draw();
+        // HL2SB (fix, v6): Draw 之后显式 MarkAsDrawn()。Draw 内部会
+        // QueueBuild(bDetachBuffers=true) 自动 detach，但显式 mark 保证
+        // 下一帧的 GetDynamicMesh 不会撞上残留的 m_pVertexData。
+        s_pHL2SBMesh->MarkAsDrawn();
+        s_pHL2SBMesh = NULL;
+    }
+    // HL2SB (fix, v6): GetRenderContext 的 BeginRender 配对用 EndRender，
+    // 不是 Release（IMatRenderContext 不是 IRefCounted）。
+    if ( s_pHL2SBMeshContext != NULL ) {
+        s_pHL2SBMeshContext->EndRender();
+        s_pHL2SBMeshContext = NULL;
+    }
+    s_bHL2SBMeshBuilding = false;
+    return 0;
+}
+
+static const luaL_Reg mesh_funcs[] = {
+    { "Begin",         mesh_Begin },
+    { "Position",      mesh_Position },
+    { "TexCoord",      mesh_TexCoord },
+    { "Color",         mesh_Color },
+    { "Color32",       mesh_Color32 },
+    { "AdvanceVertex", mesh_AdvanceVertex },
+    { "End",           mesh_End },
+    { NULL, NULL }
+};
+
 LUALIB_API int luaopen_render( lua_State *L )
 {
     LUA_REGISTRATION_COMMIT_LIBRARY( Renders );
@@ -2866,6 +3020,20 @@ LUALIB_API int luaopen_render( lua_State *L )
     // top of these.
     luaL_register( L, "cam", cam_funcs );
     lua_pop( L, 1 );
+    // HL2SB GMod compat: 全局 mesh 库
+    luaL_register( L, "mesh", mesh_funcs );
+    lua_pop( L, 1 );
+
+    // MATERIAL_* 常量（GMod mesh.Begin 的第一个参数）
+    lua_pushinteger( L, MATERIAL_POINTS );          lua_setglobal( L, "MATERIAL_POINTS" );
+    lua_pushinteger( L, MATERIAL_LINES );           lua_setglobal( L, "MATERIAL_LINES" );
+    lua_pushinteger( L, MATERIAL_TRIANGLES );       lua_setglobal( L, "MATERIAL_TRIANGLES" );
+    lua_pushinteger( L, MATERIAL_TRIANGLE_STRIP );  lua_setglobal( L, "MATERIAL_TRIANGLE_STRIP" );
+    lua_pushinteger( L, MATERIAL_QUADS );           lua_setglobal( L, "MATERIAL_QUADS" );
+    lua_pushinteger( L, MATERIAL_INSTANCED_QUADS ); lua_setglobal( L, "MATERIAL_INSTANCED_QUADS" );
+    lua_pushinteger( L, MATERIAL_LINE_STRIP );      lua_setglobal( L, "MATERIAL_LINE_STRIP" );
+    lua_pushinteger( L, MATERIAL_LINE_LOOP );       lua_setglobal( L, "MATERIAL_LINE_LOOP" );
+
 
     LUA_SET_ENUM_LIB_BEGIN( L, "CULL_MODE" );
     lua_pushenum( L, MaterialCullMode_t::MATERIAL_CULLMODE_CCW, "COUNTER_CLOCKWISE" );

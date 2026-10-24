@@ -558,6 +558,27 @@ static int Vector_ToScreen (lua_State *L) {
 }
 
 
+
+// HL2SB GMod compat: Vector:SetUnpacked( x, y, z )
+// GMod 官方 API，原地覆盖三分量。Wiki: Global.Vector.SetUnpacked
+static int HL2SB_Vector_SetUnpacked (lua_State *L) {
+  Vector *v = (Vector *)luaL_checkudata(L, 1, "Vector");
+  v->x = (float)luaL_checknumber(L, 2);
+  v->y = (float)luaL_checknumber(L, 3);
+  v->z = (float)luaL_checknumber(L, 4);
+  return 0;
+}
+
+// HL2SB GMod compat: Vector:Unpack() -> x, y, z
+// GMod 官方 API，只读取三分量。Wiki: Global.Vector.Unpack
+static int HL2SB_Vector_Unpack (lua_State *L) {
+  Vector *v = (Vector *)luaL_checkudata(L, 1, "Vector");
+  lua_pushnumber(L, v->x);
+  lua_pushnumber(L, v->y);
+  lua_pushnumber(L, v->z);
+  return 3;
+}
+
 static const luaL_Reg Vectormeta[] = {
   {"Cross", Vector_Cross},
   {"Angle", Vector_Angle},
@@ -608,7 +629,9 @@ static const luaL_Reg Vectormeta[] = {
   {"__mul", Vector___mul},
   {"__div", Vector___div},
   {"__unm", Vector___unm},
-  {NULL, NULL}
+    {"SetUnpacked", HL2SB_Vector_SetUnpacked},
+  {"Unpack",      HL2SB_Vector_Unpack},
+{NULL, NULL}
 };
 
 

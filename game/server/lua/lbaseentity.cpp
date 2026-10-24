@@ -145,6 +145,39 @@ static int CBaseEntity_HasSpawnFlags (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: 普通 entity 标志 (FL_*)。
+static int CBaseEntity_GetFlags (lua_State *L) {
+  lua_pushinteger(L, luaL_checkentity(L, 1)->GetFlags());
+  return 1;
+}
+
+static int CBaseEntity_SetFlags (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  pEntity->ClearFlags();
+  pEntity->AddFlag(luaL_checkinteger(L, 2));
+  return 0;
+}
+
+static int CBaseEntity_AddFlags (lua_State *L) {
+  luaL_checkentity(L, 1)->AddFlag(luaL_checkinteger(L, 2));
+  return 0;
+}
+
+static int CBaseEntity_RemoveFlags (lua_State *L) {
+  luaL_checkentity(L, 1)->RemoveFlag(luaL_checkinteger(L, 2));
+  return 0;
+}
+
+static int CBaseEntity_ToggleFlag (lua_State *L) {
+  luaL_checkentity(L, 1)->ToggleFlag(luaL_checkinteger(L, 2));
+  return 0;
+}
+
+static int CBaseEntity_ClearFlags (lua_State *L) {
+  luaL_checkentity(L, 1)->ClearFlags();
+  return 0;
+}
+
 static int CBaseEntity_MakeDormant (lua_State *L) {
   luaL_checkentity(L, 1)->MakeDormant();
   return 0;
@@ -990,6 +1023,12 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"RemoveSpawnFlags", CBaseEntity_RemoveSpawnFlags},
   {"ClearSpawnFlags", CBaseEntity_ClearSpawnFlags},
   {"HasSpawnFlags", CBaseEntity_HasSpawnFlags},
+  {"GetFlags",    CBaseEntity_GetFlags},
+  {"SetFlags",    CBaseEntity_SetFlags},
+  {"AddFlags",    CBaseEntity_AddFlags},
+  {"RemoveFlags", CBaseEntity_RemoveFlags},
+  {"ToggleFlag",  CBaseEntity_ToggleFlag},
+  {"ClearFlags",  CBaseEntity_ClearFlags},
   {"MakeDormant", CBaseEntity_MakeDormant},
   {"RemoveDeferred", CBaseEntity_RemoveDeferred},
   {"Input", CBaseEntity_Input},

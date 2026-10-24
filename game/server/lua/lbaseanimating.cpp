@@ -130,6 +130,143 @@ static int CBaseAnimating_GetBaseAnimating (lua_State *L) {
   return 1;
 }
 
+// ============================================================================
+// HL2SB GMod compat (服务器端骨骼操作)
+// 服务器端只做状态记录（GMod 相同语义），实际隐藏由客户端 SetBoneMatrix 完成。
+// ============================================================================
+struct HL2SB_ServerBoneManip_t
+{
+    EHANDLE hEntity;
+    int     nBone;
+    Vector  vecPos;
+    Vector  vecScale;
+    QAngle  angAngles;
+    bool    bHasPos;
+    bool    bHasScale;
+    bool    bHasAngles;
+};
+
+static CUtlVector<HL2SB_ServerBoneManip_t> s_ServerBoneManips;
+
+static HL2SB_ServerBoneManip_t *HL2SB_FindServerBoneManip(CBaseAnimating *pEntity, int nBone, bool bCreate)
+{
+    for ( int i = 0; i < s_ServerBoneManips.Count(); ++i )
+    {
+        if ( s_ServerBoneManips[i].hEntity.Get() == pEntity && s_ServerBoneManips[i].nBone == nBone )
+            return &s_ServerBoneManips[i];
+    }
+    if ( !bCreate )
+        return NULL;
+    HL2SB_ServerBoneManip_t &manip = s_ServerBoneManips[s_ServerBoneManips.AddToTail()];
+    manip.hEntity   = pEntity;
+    manip.nBone     = nBone;
+    manip.vecPos    = vec3_origin;
+    manip.vecScale  = Vector(1.0f, 1.0f, 1.0f);
+    manip.angAngles = vec3_angle;
+    manip.bHasPos   = false;
+    manip.bHasScale = false;
+    manip.bHasAngles = false;
+    return &manip;
+}
+
+static int CBaseAnimating_ManipulateBoneScale (lua_State *L) {
+    CBaseAnimating *pEntity = lua_toanimating(L, 1);
+    if ( pEntity == NULL ) return 0;
+    int nBone = luaL_checkint(L, 2);
+    Vector vecScale = luaL_checkvector(L, 3);
+    HL2SB_ServerBoneManip_t *pManip = HL2SB_FindServerBoneManip(pEntity, nBone, true);
+    pManip->vecScale = vecScale;
+    pManip->bHasScale = true;
+    return 0;
+}
+
+static int CBaseAnimating_ManipulateBoneAngles (lua_State *L) {
+    CBaseAnimating *pEntity = lua_toanimating(L, 1);
+    if ( pEntity == NULL ) return 0;
+    int nBone = luaL_checkint(L, 2);
+    QAngle angAngles = luaL_checkangle(L, 3);
+    HL2SB_ServerBoneManip_t *pManip = HL2SB_FindServerBoneManip(pEntity, nBone, true);
+    pManip->angAngles = angAngles;
+    pManip->bHasAngles = true;
+    return 0;
+}
+
+static int CBaseAnimating_ManipulateBonePosition (lua_State *L) {
+    CBaseAnimating *pEntity = lua_toanimating(L, 1);
+    if ( pEntity == NULL ) return 0;
+    int nBone = luaL_checkint(L, 2);
+    Vector vecPos = luaL_checkvector(L, 3);
+    HL2SB_ServerBoneManip_t *pManip = HL2SB_FindServerBoneManip(pEntity, nBone, true);
+    pManip->vecPos = vecPos;
+    pManip->bHasPos = true;
+    return 0;
+}
+
+static int CBaseAnimating_GetManipulateBoneScale (lua_State *L) {
+    CBaseAnimating *pEntity = lua_toanimating(L, 1);
+    HL2SB_ServerBoneManip_t *pManip = ( pEntity != NULL )
+        ? HL2SB_FindServerBoneManip(pEntity, luaL_checkint(L, 2), false) : NULL;
+    lua_pushvector(L, ( pManip && pManip->bHasScale ) ? pManip->vecScale : Vector(1.0f, 1.0f, 1.0f));
+    return 1;
+}
+
+static int CBaseAnimating_GetManipulateBoneAngles (lua_State *L) {
+    CBaseAnimating *pEntity = lua_toanimating(L, 1);
+    HL2SB_ServerBoneManip_t *pManip = ( pEntity != NULL )
+        ? HL2SB_FindServerBoneManip(pEntity, luaL_checkint(L, 2), false) : NULL;
+    lua_pushangle(L, ( pManip && pManip->bHasAngles ) ? pManip->angAngles : vec3_angle);
+    return 1;
+}
+
+static int CBaseAnimating_GetManipulateBonePosition (lua_State *L) {
+    CBaseAnimating *pEntity = lua_toanimating(L, 1);
+    HL2SB_ServerBoneManip_t *pManip = ( pEntity != NULL )
+        ? HL2SB_FindServerBoneManip(pEntity, luaL_checkint(L, 2), false) : NULL;
+    lua_pushvector(L, ( pManip && pManip->bHasPos ) ? pManip->vecPos : vec3_origin);
+    return 1;
+}
+
+static int CBaseAnimating_HasBoneManipulations (lua_State *L) {
+    CBaseAnimating *pEntity = lua_toanimating(L, 1);
+    bool bHas = false;
+    if ( pEntity != NULL )
+    {
+        for ( int i = s_ServerBoneManips.Count() - 1; i >= 0; --i )
+        {
+            if ( s_ServerBoneManips[i].hEntity.Get() == NULL )
+            {
+                s_ServerBoneManips.FastRemove(i);
+                continue;
+            }
+            if ( s_ServerBoneManips[i].hEntity.Get() == pEntity )
+                bHas = true;
+        }
+    }
+    lua_pushboolean(L, bHas);
+    return 1;
+}
+
+static int CBaseAnimating_GetChildBones (lua_State *L) {
+    CBaseAnimating *pEntity = lua_toanimating(L, 1);
+    lua_newtable(L);
+    if ( pEntity == NULL )
+        return 1;
+    int nBone = luaL_checkint(L, 2);
+    CStudioHdr *pHdr = pEntity->GetModelPtr();
+    if ( pHdr == NULL )
+        return 1;
+    int nCount = 0;
+    for ( int i = 0; i < pHdr->numbones(); ++i )
+    {
+        if ( pHdr->pBone(i)->parent == nBone )
+        {
+            lua_pushinteger(L, i);
+            lua_rawseti(L, -2, ++nCount);
+        }
+    }
+    return 1;
+}
+
 static int CBaseAnimating_GetBodygroup (lua_State *L) {
   lua_pushinteger(L, luaL_checkanimating(L, 1)->GetBodygroup(luaL_checkinteger(L, 2)));
   return 1;
@@ -982,6 +1119,15 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"GetAttachment", CBaseAnimating_GetAttachment},
   {"GetAttachmentLocal", CBaseAnimating_GetAttachmentLocal},
   {"GetBaseAnimating", CBaseAnimating_GetBaseAnimating},
+  // HL2SB GMod compat: 骨骼操作 + 子骨骼遍历
+  {"ManipulateBoneScale",       CBaseAnimating_ManipulateBoneScale},
+  {"ManipulateBoneAngles",      CBaseAnimating_ManipulateBoneAngles},
+  {"ManipulateBonePosition",    CBaseAnimating_ManipulateBonePosition},
+  {"GetManipulateBoneScale",    CBaseAnimating_GetManipulateBoneScale},
+  {"GetManipulateBoneAngles",   CBaseAnimating_GetManipulateBoneAngles},
+  {"GetManipulateBonePosition", CBaseAnimating_GetManipulateBonePosition},
+  {"HasBoneManipulations",      CBaseAnimating_HasBoneManipulations},
+  {"GetChildBones",             CBaseAnimating_GetChildBones},
   {"GetBodygroup", CBaseAnimating_GetBodygroup},
   {"GetBodygroupCount", CBaseAnimating_GetBodygroupCount},
   {"GetBodygroupName", CBaseAnimating_GetBodygroupName},

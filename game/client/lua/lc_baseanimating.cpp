@@ -1273,6 +1273,27 @@ static int CBaseAnimating_GetManipulateBonePosition (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: Entity:HasBoneManipulations() -- 客户端（查询本地 s_BoneManips）。
+static int CBaseAnimating_HasBoneManipulations (lua_State *L) {
+  C_BaseAnimating *pEntity = lua_toanimating(L, 1);
+  bool bHas = false;
+  if ( pEntity != NULL )
+  {
+    for ( int i = s_BoneManips.Count() - 1; i >= 0; --i )
+    {
+      if ( s_BoneManips[i].hEntity.Get() == NULL )
+      {
+        s_BoneManips.FastRemove(i);
+        continue;
+      }
+      if ( s_BoneManips[i].hEntity.Get() == pEntity )
+        bHas = true;
+    }
+  }
+  lua_pushboolean(L, bHas);
+  return 1;
+}
+
 // Entity:GetBoneParent( bone ) moved to lua_bindings/lbaseanimating_shared.cpp
 // (2026-10-16): the bone-manipulation widget calls it from BOTH realms, so a
 // single shared registration now feeds both metatables (GMod client.dll
@@ -2204,6 +2225,7 @@ static const luaL_Reg CBaseAnimatingmeta[] = {
   {"GetManipulateBoneScale", CBaseAnimating_GetManipulateBoneScale},
   {"GetManipulateBoneAngles", CBaseAnimating_GetManipulateBoneAngles},
   {"GetManipulateBonePosition", CBaseAnimating_GetManipulateBonePosition},
+  {"HasBoneManipulations", CBaseAnimating_HasBoneManipulations},
   {"GetCallbacks", CBaseAnimating_GetCallbacks},
   {"GetChildBones", CBaseAnimating_GetChildBones},
   {"GetFlexNum", CBaseAnimating_GetFlexNum},
