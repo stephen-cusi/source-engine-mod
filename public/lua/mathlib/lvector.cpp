@@ -225,7 +225,9 @@ static int Vector_Normalize (lua_State *L) {
 **     vel.z = 0
 **
 ** (weapon_nyangun's ENT:Draw).  The angle is applied as a change of basis built
-** from AngleVectors(), which is what GMod's own implementation does.
+** from AngleVectors(); the rotation matrix that GMod multiplies with carries
+** the NEGATED right vector in its y column (AngleMatrix + VectorRotate), so
+** the y term subtracts, and the rotation is in place with no return value.
 */
 static int Vector_Rotate (lua_State *L) {
   Vector &v = luaL_checkvector(L, 1);
@@ -234,11 +236,8 @@ static int Vector_Rotate (lua_State *L) {
   Vector fwd, right, up;
   AngleVectors(ang, &fwd, &right, &up);
 
-  Vector rotated = fwd * v.x + right * v.y + up * v.z;
-  v = rotated;
-
-  lua_pushvector(L, v);
-  return 1;
+  v = fwd * v.x - right * v.y + up * v.z;
+  return 0;
 }
 
 static int Vector_Distance (lua_State *L) {
@@ -995,7 +994,10 @@ static int luasrc_QAngle (lua_State *L) {
     }
   }
 
-  if (!parsedString && (firstType == LUA_TNUMBER || firstType == LUA_TSTRING)) {
+  if (!parsedString
+      && (firstType == LUA_TNUMBER || firstType == LUA_TSTRING
+          || lua_type(L, 2) == LUA_TNUMBER || lua_type(L, 2) == LUA_TSTRING
+          || lua_type(L, 3) == LUA_TNUMBER || lua_type(L, 3) == LUA_TSTRING)) {
     value.x = (vec_t)lua_tonumber(L, 1);
     value.y = (vec_t)lua_tonumber(L, 2);
     value.z = (vec_t)lua_tonumber(L, 3);
