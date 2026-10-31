@@ -9,6 +9,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <map>
 
 #include <vgui/IInput.h>
 #include <vgui/ILocalize.h>
@@ -26,6 +27,20 @@
 #include <tier0/memdbgon.h>
 
 using namespace vgui;
+
+struct LuaLabelShadow
+{
+	int offset;
+	Color color;
+};
+
+static std::map<Label *, LuaLabelShadow> s_LuaLabelShadows;
+
+void HL2SB_SetLuaLabelShadow( Label *label, int offset, Color color )
+{
+	LuaLabelShadow shadow = { offset, color };
+	s_LuaLabelShadows[label] = shadow;
+}
 
 #ifndef max
 #define max(a,b)            (((a) > (b)) ? (a) : (b))
@@ -68,6 +83,7 @@ Label::Label(Panel *parent, const char *panelName, const wchar_t *wszText) : Bas
 //-----------------------------------------------------------------------------
 Label::~Label()
 {
+	s_LuaLabelShadows.erase( this );
 	delete _textImage;
 	delete [] _associateName;
 	delete [] _fontOverrideName;
@@ -581,6 +597,14 @@ void Label::Paint()
 		// if it's the basic text image then draw specially
 		if (image == _textImage)
 		{
+			std::map<Label *, LuaLabelShadow>::const_iterator shadow = s_LuaLabelShadows.find( this );
+			if ( shadow != s_LuaLabelShadows.end() && shadow->second.offset )
+			{
+				_textImage->SetPos( x + shadow->second.offset, imageYPos + shadow->second.offset );
+				_textImage->SetColor( shadow->second.color );
+				_textImage->Paint();
+				_textImage->SetPos( x, imageYPos );
+			}
 			if (IsEnabled())
 			{
 				if (_associate.Get() && ipanel()->HasParent(input()->GetFocus(), _associate->GetVPanel()))

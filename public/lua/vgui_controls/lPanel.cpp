@@ -54,6 +54,7 @@ extern ConVar hl2sb_dev_msgs;
 using namespace vgui;
 
 extern FocusNavGroup *HL2SB_LuaPanelFocusGroup(Panel *panel);
+extern void HL2SB_SetLuaLabelShadow( Label *label, int offset, Color color );
 
 /*
 ** access functions (stack -> C)
@@ -1889,6 +1890,26 @@ static int Panel_HasChildren (lua_State *L) {
   return 1;
 }
 
+static int Panel_SetExpensiveShadow (lua_State *L) {
+  Panel *panel = luaL_checkpanel(L, 1);
+  Label *label = dynamic_cast<Label *>(panel);
+  if (!label) return 0;
+  int offset = (int)luaL_checknumber(L, 2);
+  Color color(0, 0, 0, 180);
+  if (lua_istable(L, 3)) {
+    int values[] = {0, 0, 0, 255};
+    const char *fields[] = {"r", "g", "b", "a"};
+    for (int i = 0; i < 4; ++i) {
+      lua_getfield(L, 3, fields[i]);
+      if (lua_isnumber(L, -1)) values[i] = (int)lua_tonumber(L, -1);
+      lua_pop(L, 1);
+    }
+    color = Color(values[0], values[1], values[2], values[3]);
+  }
+  HL2SB_SetLuaLabelShadow(label, offset, color);
+  return 0;
+}
+
 // GMod's SetFGColor/SetBGColor accept a Color OR four components; the engine
 // spellings above only take a Color.  Same receiver, dual form.
 static int Panel_SetFGColor (lua_State *L) {
@@ -2542,6 +2563,7 @@ static const luaL_Reg Panelmeta[] = {
   {"Add", Panel_Add},
   {"ParentToHUD", Panel_ParentToHUD},
   {"SetPaintBackground", Panel_SetPaintBackground},
+  {"SetExpensiveShadow", Panel_SetExpensiveShadow},
   {"SetBGColor", Panel_SetBGColor},
   {"SetDrawOnTop", Panel_SetDrawOnTop},
   {"SetFGColor", Panel_SetFGColor},

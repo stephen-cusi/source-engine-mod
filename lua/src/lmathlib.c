@@ -675,6 +675,7 @@ static int gmod_math_random (lua_State *L) {
   GModRandomState *state = (GModRandomState *)lua_touserdata(L, lua_upvalueindex(1));
   int n = lua_gettop(L);
   GModRandomValue value;
+  lua_Integer integer;
   double result;
   if (!state->valid) gmod_random_init(state, 0.0);
   value.bits = gmod_random_step(state);
@@ -687,7 +688,10 @@ static int gmod_math_random (lua_State *L) {
       result = floor(result * (high - low + 1.0)) + low;
     }
   }
-  lua_pushnumber(L, (lua_Number)result);
+  if (floor(result) == result && lua_numbertointeger((lua_Number)result, &integer))
+    lua_pushinteger(L, integer);
+  else
+    lua_pushnumber(L, (lua_Number)result);
   return 1;
 }
 

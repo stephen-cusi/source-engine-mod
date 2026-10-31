@@ -27,6 +27,7 @@
 
 using namespace vgui;
 
+
 extern int HL2SB_LuaPanelSetText(lua_State *L);
 extern int HL2SB_LuaLabelAlignment(int alignment, bool toNative);
 
@@ -108,32 +109,6 @@ void LLabel::PostChildPaint()
 
 void LLabel::PaintTextShadow()
 {
-    if (!m_lua_State || (m_lua_State != ::L && m_lua_State != LGameUI) ||
-        !lua_isrefvalid(m_lua_State, m_nTableReference)) return;
-    lua_checkstack(m_lua_State, 8);
-    lua_getref(m_lua_State, m_nTableReference);
-    lua_getfield(m_lua_State, -1, "m_iExpensiveShadowOffset");
-    int offset = lua_tointeger(m_lua_State, -1);
-    lua_pop(m_lua_State, 1);
-    lua_getfield(m_lua_State, -1, "m_colExpensiveShadow");
-    if (offset && lua_istable(m_lua_State, -1)) {
-        int components[] = { 0, 0, 0, 200 };
-        const char *fields[] = { "r", "g", "b", "a" };
-        for (int i = 0; i < 4; ++i) {
-            lua_pushstring(m_lua_State, fields[i]); lua_rawget(m_lua_State, -2);
-            double value = lua_tonumber(m_lua_State, -1);
-            if (lua_isnumber(m_lua_State, -1) && IsFinite(value)) components[i] = (int)clamp(value, 0.0, 255.0);
-            lua_pop(m_lua_State, 1);
-        }
-        Color shadow(components[0], components[1], components[2], components[3]);
-        if (TextImage *image = GetTextImage()) {
-            int x, y; image->GetPos(x, y);
-            Color color = image->GetColor();
-            image->SetPos(x + offset, y + offset); image->SetColor(shadow); image->Paint();
-            image->SetPos(x, y); image->SetColor(color);
-        }
-    }
-    lua_pop(m_lua_State, 2);
 }
 
 /*
