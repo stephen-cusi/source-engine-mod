@@ -174,10 +174,22 @@ static int lua_vgui_CursorVisible (lua_State *L) {
   return 1;
 }
 
+static int lua_vgui_GetKeyboardFocus (lua_State *L) {
+  VPANEL focused = vgui::input()->GetFocus();
+  if (!focused) return 0;
+  lua_pushpanel(L, focused);
+  if (!lua_topanel(L, -1)) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  return 1;
+}
+
 static const luaL_Reg vgui_funcs[] = {
   {"Create", lua_vgui_Create},
   {"GetAll", lua_vgui_GetAll},
   {"FocusedHasParent", lua_vgui_FocusedHasParent},
+  {"GetKeyboardFocus", lua_vgui_GetKeyboardFocus},
   {"CursorVisible", lua_vgui_CursorVisible},
   {NULL, NULL}
 };

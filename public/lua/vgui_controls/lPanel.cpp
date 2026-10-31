@@ -1910,23 +1910,17 @@ static int Panel_SetExpensiveShadow (lua_State *L) {
   return 0;
 }
 
-// GMod's SetFGColor/SetBGColor accept a Color OR four components; the engine
-// spellings above only take a Color.  Same receiver, dual form.
 static int Panel_SetFGColor (lua_State *L) {
   vgui::Panel *pPanel = luaL_checkpanel(L, 1);
-  if ( lua_gettop( L ) >= 5 )
-    pPanel->SetFgColor( ::Color( luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5) ) );
-  else
-    pPanel->SetFgColor( luaL_checkcolor(L, 2) );
+  pPanel->SetFgColor( ::Color( (int)lua_tonumber(L, 2), (int)lua_tonumber(L, 3),
+                              (int)lua_tonumber(L, 4), (int)lua_tonumber(L, 5) ) );
   return 0;
 }
 
 static int Panel_SetBGColor (lua_State *L) {
   vgui::Panel *pPanel = luaL_checkpanel(L, 1);
-  if ( lua_gettop( L ) >= 5 )
-    pPanel->SetBgColor( ::Color( luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5) ) );
-  else
-    pPanel->SetBgColor( luaL_checkcolor(L, 2) );
+  pPanel->SetBgColor( ::Color( (int)lua_tonumber(L, 2), (int)lua_tonumber(L, 3),
+                              (int)lua_tonumber(L, 4), (int)lua_tonumber(L, 5) ) );
   return 0;
 }
 

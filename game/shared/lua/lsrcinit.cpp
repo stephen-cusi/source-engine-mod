@@ -4017,28 +4017,6 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     }
   }
 
-  /* HL2SB GMod compat: the Entity( index ) global (wiki: Global.Entity --
- * "returns the entity with the given entity index").  The Nuke Pack's missile
- * Initialize does GetVar("owner", Entity(1)); ents.Find/GetByIndex already do
- * the lookup, so the global is just that same function re-published under
- * GMod's name.  Registered here so both realms get it after every lib is open.
- */
-  lua_getglobal( L, "ents" );
-  if ( lua_istable( L, -1 ) )
-  {
-    lua_getfield( L, -1, "GetByIndex" );
-    if ( !lua_isfunction( L, -1 ) )
-    {
-      lua_pop( L, 1 );
-      lua_getfield( L, -1, "Find" );
-    }
-    if ( lua_isfunction( L, -1 ) )
-      lua_setglobal( L, "Entity" );
-    else
-      lua_pop( L, 1 );
-  }
-  lua_pop( L, 1 );
-
 /* HL2SB GMod compat: the DEFINE_BASECLASS( name ) global (wiki: it is a
  * PREPROCESSOR keyword in GMod -- the loader's own GLua rewrite pass expands
  * call sites into `local BaseClass = baseclass.Get( name )`).  But addons
