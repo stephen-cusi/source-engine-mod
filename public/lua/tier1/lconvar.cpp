@@ -1006,8 +1006,22 @@ static int luasrc_CreateConVar (lua_State *L) {
   return 1;
 }
 
+static int luasrc_ConVarExists (lua_State *L) {
+  const char *name = luaL_checkstring(L, 1);
+  if ( !Q_stricmp(name, "maxplayers") ) {
+    lua_pushboolean(L, true);
+    return 1;
+  }
+  ConVar *var = cvar->FindVar(name);
+  const int luaFlags = (1 << 26) | (1 << 27);
+  const bool visible = var && (!(var->IsFlagSet(FCVAR_DEVELOPMENTONLY | FCVAR_HIDDEN | FCVAR_UNREGISTERED)) || var->IsFlagSet(luaFlags));
+  lua_pushboolean(L, visible);
+  return 1;
+}
+
 static const luaL_Reg ConVar_funcs[] = {
   {"ConVar", luasrc_ConVar},
+  {"ConVarExists", luasrc_ConVarExists},
   {"CreateConVar", luasrc_CreateConVar},
   {"GetConVar_Internal", luasrc_GetConVar_Internal},
   {NULL, NULL}

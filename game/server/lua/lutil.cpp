@@ -556,6 +556,15 @@ static int luasrc_GameCleanUpMap (lua_State *L) {
 static ConVar ai_ignoreplayers( "ai_ignoreplayers", "0", 0, "AI ignores players." );
 static ConVar ai_disabled( "ai_disabled", "0", 0, "Disables all AI." );
 
+static int luasrc_ServerLog (lua_State *L) {
+  const char *message = luaL_checkstring(L, 1);
+  ConVarRef logEcho("sv_logecho");
+  if ( logEcho.IsValid() && logEcho.GetBool() )
+    Msg("ServerLog: %s", message);
+  engine->LogPrint(message);
+  return 0;
+}
+
 LUALIB_API int luaopen_UTIL (lua_State *L) {
   // luaL_register(L, "_G", util_funcs);
   luaL_register(L, "util", util_funcs);
@@ -563,6 +572,9 @@ LUALIB_API int luaopen_UTIL (lua_State *L) {
 
   lua_pushcfunction(L, luasrc_GameCleanUpMap);
   lua_setglobal(L, "HL2SB_GameCleanUpMap");
+
+  lua_pushcfunction(L, luasrc_ServerLog);
+  lua_setglobal(L, "ServerLog");
 
   return 1;
 }
