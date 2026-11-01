@@ -739,6 +739,26 @@ void luasrc_setmodulepaths(lua_State *L) {
 static int HL2SB_LuaPanic( lua_State *pL );
 extern void HL2SB_RegisterConsoleGlobals( lua_State *state );
 
+static int HL2SB_GlobalSetClipboardText( lua_State *state )
+{
+  const char *text = luaL_checkstring( state, 1 );
+  const size_t length = strlen( text );
+  if ( length + 1 >= 0x100000 || !vgui::system() )
+    return 0;
+
+  CUtlVector<wchar_t> converted;
+  converted.SetCount( static_cast<int>( length + 1 ) );
+  V_UTF8ToUnicode( text, converted.Base(), converted.Count() * sizeof( wchar_t ) );
+  vgui::system()->SetClipboardText( converted.Base(), static_cast<int>( wcslen( converted.Base() ) + 1 ) );
+  return 0;
+}
+
+static void HL2SB_RegisterClipboardGlobal( lua_State *state )
+{
+  lua_pushcfunction( state, HL2SB_GlobalSetClipboardText );
+  lua_setglobal( state, "SetClipboardText" );
+}
+
 void luasrc_init_gameui (void) {
   LGameUI = luaL_newstate();
   lua_atpanic( LGameUI, HL2SB_LuaPanic );
@@ -746,6 +766,7 @@ void luasrc_init_gameui (void) {
   luaL_openlibs(LGameUI);
   base_open(LGameUI);
   HL2SB_RegisterConsoleGlobals( LGameUI );
+  HL2SB_RegisterClipboardGlobal( LGameUI );
   lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "_GAMEUI");  /* set global _GAMEUI */
 
@@ -1606,6 +1627,7 @@ void luasrc_init (void) {
     luasrc_LuaWarnMsgF( "HL2SB: shared Lua prerequisites failed to load\n" );
 
 #ifdef CLIENT_DLL
+  HL2SB_RegisterClipboardGlobal( L );
   HL2SB_OpenWorkshopLibrary( L );
 #endif
 
@@ -1689,6 +1711,8 @@ void luasrc_shutdown (void) {
   // unref is live-state gated and skips.  Must stay above lua_close(L).
   HL2SB_LuaPanelsDeleteForState( L );
 #endif
+  extern void HL2SB_CleanupShutdown( lua_State *state );
+  HL2SB_CleanupShutdown( L );
   lua_close(L);
 
   // HL2SB: ported from Experiment: Source.  luaopen_ACTIVITY owns the activity

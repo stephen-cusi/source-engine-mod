@@ -38,6 +38,9 @@
 #ifdef CLIENT_DLL
 #include "c_te_effect_dispatch.h"
 #include "c_pixel_visibility.h"
+#include "physpropclientside.h"
+#include "c_soundscape.h"
+#include "c_user_message_register.h"
 // HL2SB: GMod's lua/effects/*.lua spawner (game/client/lua/lua_effects.cpp).
 // Declared here for the same reason c_te_effect_dispatch.cpp declares it: this
 // file is not compiled with game/client/lua on its include path.
@@ -46,12 +49,164 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data );
 #include "te_effect_dispatch.h"
 #include "SpriteTrail.h"
 #include "util.h"
+#include "hl2mp/hl2mp_gamerules.h"
+#include "recipientfilter.h"
+#include "enginecallback.h"
+#include "physics.h"
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 #include <stdarg.h>
 #include "utldict.h"
+
+static lua_State *s_cleanupState = NULL;
+static int s_cleanupFilter = LUA_NOREF;
+static int s_cleanupCallback = LUA_NOREF;
+static bool s_cleanupPending = false;
+static bool s_cleanupRunning = false;
+static bool s_cleanupDontSend = false;
+
+#ifndef CLIENT_DLL
+extern bool HL2SB_IsEntityDeleteCleanupActive();
+
+bool HL2SB_CleanupFilterMatches( const char *classname )
+{
+  if ( !s_cleanupRunning || !s_cleanupState || s_cleanupFilter == LUA_NOREF || !classname )
+    return false;
+  lua_State *state = s_cleanupState;
+  const int top = lua_gettop( state );
+  lua_rawgeti( state, LUA_REGISTRYINDEX, s_cleanupFilter );
+  if ( !lua_istable( state, -1 ) ) {
+    lua_settop( state, top );
+    return false;
+  }
+  bool match = false;
+  lua_pushnil( state );
+  while ( lua_next( state, -2 ) ) {
+    const char *value = lua_type( state, -1 ) == LUA_TSTRING ? lua_tostring( state, -1 ) : NULL;
+    if ( value && Q_strcmp( value, classname ) == 0 ) match = true;
+    lua_pop( state, 1 );
+    if ( match ) break;
+  }
+  lua_settop( state, top );
+  return match;
+}
+
+bool HL2SB_IsNativeCleanupInProgress() { return s_cleanupRunning; }
+#else
+extern void HL2SB_ClearHairballs();
+#endif
+
+static void HL2SB_CleanupHook( lua_State *state, const char *name )
+{
+  if ( !state ) return;
+  const int top = lua_gettop( state );
+  lua_checkstack( state, 32 );
+  LUA_CALL_HOOK_FOR_STATE_BEGIN( state, name );
+  LUA_CALL_HOOK_FOR_STATE_END( state, 0, 0 );
+  lua_settop( state, top );
+}
+
+static void HL2SB_RunNativeCleanup( lua_State *state, bool dontSend )
+{
+  s_cleanupRunning = true;
+  HL2SB_CleanupHook( state, "PreCleanupMap" );
+#ifdef CLIENT_DLL
+  (void)dontSend;
+  C_PhysPropClientside::RecreateAll();
+  engine->ClientCmd( "r_cleardecals\n" );
+  if ( enginesound ) enginesound->StopAllSounds( true );
+  Soundscape_OnStopAllSounds();
+  HL2SB_ClearHairballs();
+#else
+  CHL2MPRules *rules = dynamic_cast<CHL2MPRules *>( GameRules() );
+  if ( rules ) rules->CleanUpMap();
+  if ( !dontSend ) {
+    CBroadcastRecipientFilter filter;
+    filter.MakeReliable();
+    UserMessageBegin( filter, "game.CleanUpMap()" );
+    MessageEnd();
+  }
+#endif
+  HL2SB_CleanupHook( state, "PostCleanupMap" );
+  s_cleanupRunning = false;
+}
+
+void HL2SB_CleanupTick()
+{
+  if ( !s_cleanupPending || s_cleanupRunning || !s_cleanupState ) return;
+#ifndef CLIENT_DLL
+  if ( HL2SB_IsEntityDeleteCleanupActive() || PhysIsInCallback() ) return;
+#endif
+  lua_State *state = s_cleanupState;
+  const int callback = s_cleanupCallback;
+  const int filter = s_cleanupFilter;
+  const bool dontSend = s_cleanupDontSend;
+  s_cleanupPending = false;
+  HL2SB_RunNativeCleanup( state, dontSend );
+  s_cleanupCallback = LUA_NOREF;
+  s_cleanupFilter = LUA_NOREF;
+  s_cleanupState = NULL;
+  if ( callback != LUA_NOREF ) {
+    lua_rawgeti( state, LUA_REGISTRYINDEX, callback );
+    if ( lua_isfunction( state, -1 ) ) luasrc_pcall( state, 0, 0, 0 );
+    else lua_pop( state, 1 );
+    luaL_unref( state, LUA_REGISTRYINDEX, callback );
+  }
+  if ( filter != LUA_NOREF ) luaL_unref( state, LUA_REGISTRYINDEX, filter );
+}
+
+void HL2SB_CleanupShutdown( lua_State *state )
+{
+  if ( state != s_cleanupState ) return;
+  if ( s_cleanupCallback != LUA_NOREF ) luaL_unref( state, LUA_REGISTRYINDEX, s_cleanupCallback );
+  if ( s_cleanupFilter != LUA_NOREF ) luaL_unref( state, LUA_REGISTRYINDEX, s_cleanupFilter );
+  s_cleanupCallback = s_cleanupFilter = LUA_NOREF;
+  s_cleanupState = NULL;
+  s_cleanupPending = s_cleanupRunning = false;
+}
+
+int HL2SB_LuaGameCleanUpMap( lua_State *state )
+{
+  if ( s_cleanupRunning || s_cleanupPending )
+    return luaL_error( state, "Cannot run game.CleanUpMap while it is already running!" );
+#ifndef CLIENT_DLL
+  if ( HL2SB_IsEntityDeleteCleanupActive() || PhysIsInCallback() )
+    return luaL_error( state, "Cannot run game.CleanUpMap while deleting entities!" );
+  if ( !lua_isnoneornil( state, 2 ) ) luaL_checktype( state, 2, LUA_TTABLE );
+#endif
+  if ( !lua_isnoneornil( state, 3 ) ) luaL_checktype( state, 3, LUA_TFUNCTION );
+  s_cleanupState = state;
+  s_cleanupDontSend = lua_toboolean( state, 1 ) != 0;
+#ifndef CLIENT_DLL
+  if ( lua_istable( state, 2 ) ) {
+    lua_pushvalue( state, 2 );
+    s_cleanupFilter = luaL_ref( state, LUA_REGISTRYINDEX );
+  }
+#endif
+  if ( lua_isfunction( state, 3 ) ) {
+    lua_pushvalue( state, 3 );
+    s_cleanupCallback = luaL_ref( state, LUA_REGISTRYINDEX );
+    s_cleanupPending = true;
+    return 0;
+  }
+  const int filter = s_cleanupFilter;
+  HL2SB_RunNativeCleanup( state, s_cleanupDontSend );
+  s_cleanupFilter = LUA_NOREF;
+  s_cleanupState = NULL;
+  if ( filter != LUA_NOREF ) luaL_unref( state, LUA_REGISTRYINDEX, filter );
+  return 0;
+}
+
+#ifdef CLIENT_DLL
+static void HL2SB_CleanupMessage( bf_read &msg )
+{
+  (void)msg;
+  if ( !s_cleanupRunning && !s_cleanupPending ) HL2SB_RunNativeCleanup( L, false );
+}
+static CUserMessageRegister s_cleanupMessage( "game.CleanUpMap()", HL2SB_CleanupMessage );
+#endif
 
 /*
 ** HL2SB: "ask the engine for this resource once, then remember it" cache, plus a

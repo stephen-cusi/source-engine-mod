@@ -335,6 +335,11 @@ CGlobalEntityList::CGlobalEntityList()
 // only called from with the CBaseEntity destructor
 static bool g_fInCleanupDelete;
 
+bool HL2SB_IsEntityDeleteCleanupActive()
+{
+	return g_fInCleanupDelete;
+}
+
 
 // mark an entity as deleted
 void CGlobalEntityList::AddToDeleteList( IServerNetworkable *ent )

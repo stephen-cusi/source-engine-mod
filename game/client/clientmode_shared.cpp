@@ -950,6 +950,8 @@ void ClientModeShared::Update()
 	// rewrite sends each message to the engine immediately.)
 	if ( L != NULL )
 	{
+		extern void HL2SB_CleanupTick();
+		HL2SB_CleanupTick();
 		LUA_API void HL2SB_TimerTick( void );
 		HL2SB_TimerTick();
 	}

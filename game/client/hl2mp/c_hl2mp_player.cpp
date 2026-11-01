@@ -21,6 +21,7 @@
 #include "in_main.h"			// HL2SB: in_duck, for the in-vehicle camera toggle
 #include "iinput.h"				// HL2SB: input->CAM_ToThirdPerson() / KeyState()
 #include "activitylist.h"		// HL2SB: ActivityList_NameForIndex() for the act command
+#include "collisionutils.h"
 
 // HL2SB: the in_camera.cpp free wrappers. These are what the `thirdperson` /
 // `firstperson` console commands call; unlike CInput::CAM_ToThirdPerson() they also
@@ -117,6 +118,7 @@ IMPLEMENT_CLIENTCLASS_DT(C_HL2MP_Player, DT_HL2MP_Player, CHL2MP_Player)
 	RecvPropFloat( RECVINFO( m_flHL2SBUnDuckSpeed ) ),
 	RecvPropFloat( RECVINFO( m_flHL2SBTauntEnd ) ),
 	RecvPropInt( RECVINFO( m_iHL2SBPlayerClassID ) ),
+	RecvPropInt( RECVINFO( m_iHL2SBPlayerFlags ) ),
 	RecvPropEHandle( RECVINFO( m_hHands ) ),
 END_RECV_TABLE()
 
@@ -182,6 +184,7 @@ C_HL2MP_Player::C_HL2MP_Player() : m_PlayerAnimState( this ), m_iv_angEyeAngles(
 	m_flHL2SBRunSpeed = 400.0f;
 	m_flHL2SBSlowWalkSpeed = 100.0f;
 	m_flHL2SBJumpPower = 200.0f;
+	m_iHL2SBPlayerFlags = 0;
 
 	// HL2SB: stored-only GMod knobs (see the server header).
 	m_flHL2SBCrouchedWalkSpeed = 0.34f;
@@ -451,16 +454,91 @@ bool HL2SB_CustomThirdPersonActive( void )
 // toggle was one of the reasons CTRL double-fired against the ConCommand and
 // the Lua Think edge of the same era.
 
+static void HL2SB_AvoidTeammates( C_HL2MP_Player *player, CUserCmd *cmd )
+{
+	if ( !player->HL2SB_GetAvoidPlayers() || !player->IsAlive() || player->GetMoveType() == MOVETYPE_NOCLIP )
+		return;
+
+	Vector center = player->GetAbsOrigin();
+	Vector mins = player->GetPlayerMins();
+	Vector maxs = player->GetPlayerMaxs();
+	center.z += ( maxs.z - mins.z ) * 0.5f;
+	mins += center;
+	maxs += center;
+
+	for ( int i = 1; i <= gpGlobals->maxClients; ++i )
+	{
+		C_HL2MP_Player *other = ToHL2MPPlayer( UTIL_PlayerByIndex( i ) );
+		if ( !other || other == player || other->GetTeamNumber() != player->GetTeamNumber() ||
+			 other->IsDormant() || other->IsSolidFlagSet( FSOLID_NOT_SOLID ) || other->GetMoveType() == MOVETYPE_NOCLIP )
+			continue;
+
+		Vector otherCenter = other->GetAbsOrigin();
+		Vector otherMins = other->GetPlayerMins();
+		Vector otherMaxs = other->GetPlayerMaxs();
+		otherCenter.z += ( otherMaxs.z - otherMins.z ) * 0.5f;
+		otherMins += otherCenter;
+		otherMaxs += otherCenter;
+		if ( !IsBoxIntersectingBox( mins, maxs, otherMins, otherMaxs ) )
+			continue;
+
+		Vector delta = other->WorldSpaceCenter() - center;
+		Vector radius = other->WorldAlignMaxs() - other->WorldAlignMins();
+		radius.z = 0.0f;
+		const float radiusLength = radius.Length();
+		const float strength = radiusLength == 0.0f ? 256.0f :
+			clamp( ( radiusLength - delta.Length() ) / radiusLength, 0.0f, 1.0f ) * 256.0f;
+		if ( strength < 0.01f )
+			return;
+
+		Vector push;
+		if ( player->GetAbsVelocity().Length2DSqr() > 0.1f )
+		{
+			Vector velocity = player->GetAbsVelocity();
+			velocity.z = 0.0f;
+			CrossProduct( Vector( 0, 0, 1 ), velocity, push );
+			VectorNormalize( push );
+		}
+		else
+		{
+			QAngle view = cmd->viewangles;
+			view.x = 0.0f;
+			AngleVectors( view, NULL, &push, NULL );
+		}
+		Vector separation = push * ( delta.Dot( push ) < 0.0f ? strength : -strength );
+		float maxSpeed = player->MaxSpeed();
+		if ( ( player->GetFlags() & FL_DUCKING ) && player->GetGroundEntity() ) maxSpeed *= 1.33333333f;
+		if ( separation.LengthSqr() > maxSpeed * maxSpeed )
+		{
+			VectorNormalize( separation );
+			separation *= maxSpeed;
+		}
+		QAngle view = cmd->viewangles;
+		view.x = 0.0f;
+		Vector forward, right;
+		AngleVectors( view, &forward, &right, NULL );
+		VectorNormalize( separation );
+		float moveForward = cmd->forwardmove + forward.Dot( separation ) * strength;
+		float moveSide = cmd->sidemove + right.Dot( separation ) * strength;
+		float scaleForward = fabsf( moveForward ) > 400.0f ? 400.0f / fabsf( moveForward ) : 1.0f;
+		float scaleSide = fabsf( moveSide ) > 400.0f ? 400.0f / fabsf( moveSide ) : 1.0f;
+		float scale = MIN( scaleForward, scaleSide );
+		cmd->forwardmove = moveForward * scale;
+		cmd->sidemove = moveSide * scale;
+		return;
+	}
+}
+
 bool C_HL2MP_Player::CreateMove( float flInputSampleTime, CUserCmd *pCmd )
 {
-	if ( !BaseClass::CreateMove( flInputSampleTime, pCmd ) )
-		return false;
+	const bool result = BaseClass::CreateMove( flInputSampleTime, pCmd );
+	HL2SB_AvoidTeammates( this, pCmd );
 
 	// (The old C++ act-camera body lock lived here; the GMod-parity act now runs
 	// the lock through Lua -- GM:CreateMove in gamemodes/deathmatch/gamemode --
 	// exactly like taunt_camera.lua's CAM.CreateMove.)
 
-	return true;
+	return result;
 }
 
 // HL2SB: explicit first/third person toggle (bindable, e.g. bind F "hl2sb_vcam").

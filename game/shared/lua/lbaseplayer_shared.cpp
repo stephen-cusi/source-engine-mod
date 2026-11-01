@@ -3222,7 +3222,39 @@ static void UpdatePlayerWidgetState( CBasePlayer *player, CBaseEntity *hovered, 
 }
 #endif
 
+static int CBasePlayer_SetAvoidPlayers( lua_State *L ) {
+  CHL2MP_Player *player = dynamic_cast<CHL2MP_Player *>( luaL_checkplayer( L, 1 ) );
+  if ( !player ) return luaL_argerror( L, 1, "player expected" );
+  player->HL2SB_SetAvoidPlayers( lua_toboolean( L, 2 ) != 0 );
+  return 0;
+}
+
+static int CBasePlayer_GetAvoidPlayers( lua_State *L ) {
+  CHL2MP_Player *player = dynamic_cast<CHL2MP_Player *>( luaL_checkplayer( L, 1 ) );
+  if ( !player ) return luaL_argerror( L, 1, "player expected" );
+  lua_pushboolean( L, player->HL2SB_GetAvoidPlayers() );
+  return 1;
+}
+
+static int CBasePlayer_SetNoCollideWithTeammates( lua_State *L ) {
+  CHL2MP_Player *player = dynamic_cast<CHL2MP_Player *>( luaL_checkplayer( L, 1 ) );
+  if ( !player ) return luaL_argerror( L, 1, "player expected" );
+  player->HL2SB_SetNoCollideWithTeammates( lua_toboolean( L, 2 ) != 0 );
+  return 0;
+}
+
+static int CBasePlayer_GetNoCollideWithTeammates( lua_State *L ) {
+  CHL2MP_Player *player = dynamic_cast<CHL2MP_Player *>( luaL_checkplayer( L, 1 ) );
+  if ( !player ) return luaL_argerror( L, 1, "player expected" );
+  lua_pushboolean( L, player->HL2SB_GetNoCollideWithTeammates() );
+  return 1;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
+  {"SetAvoidPlayers", CBasePlayer_SetAvoidPlayers},
+  {"GetAvoidPlayers", CBasePlayer_GetAvoidPlayers},
+  {"SetNoCollideWithTeammates", CBasePlayer_SetNoCollideWithTeammates},
+  {"GetNoCollideWithTeammates", CBasePlayer_GetNoCollideWithTeammates},
   {"SetHoveredWidget", CBasePlayer_SetHoveredWidget},
   {"GetHoveredWidget", CBasePlayer_GetHoveredWidget},
   {"SetPressedWidget", CBasePlayer_SetPressedWidget},

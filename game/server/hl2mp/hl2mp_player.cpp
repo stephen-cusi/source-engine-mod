@@ -160,6 +160,7 @@ IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 	// command, so it has to replicate.
 	SendPropFloat( SENDINFO( m_flHL2SBTauntEnd ) ),
 	SendPropInt( SENDINFO( m_iHL2SBPlayerClassID ), 16, SPROP_UNSIGNED ),
+	SendPropInt( SENDINFO( m_iHL2SBPlayerFlags ), 4, SPROP_UNSIGNED ),
 	// HL2SB (2026-09-27): the hands entity handle.  GMod's datadesc prop is
 	// "m_Hands"; this fork's pair is self-consistently named m_hHands (nothing
 	// external parses the datatable, so only the pair matching matters).
@@ -337,6 +338,7 @@ CHL2MP_Player::CHL2MP_Player() : m_PlayerAnimState( this )
 	m_flHL2SBSlowWalkSpeed = 100.0f;
 	m_flHL2SBJumpPower = 200.0f;
 	m_iHL2SBPlayerClassID = 0;
+	m_iHL2SBPlayerFlags = 0;
 
 	// HL2SB: stored-only GMod knobs (GMod defaults).
 	m_flHL2SBCrouchedWalkSpeed = 0.34f;

@@ -8,6 +8,7 @@
 #include "simple_physics.h"
 #include "mathlib/vmatrix.h"
 #include "beamdraw.h"
+#include "cliententitylist.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -75,6 +76,20 @@ public:
 	
 	bool	m_bFirstThink;
 };
+
+void HL2SB_ClearHairballs()
+{
+	CUtlVector< CHandle<C_BaseEntity> > pending;
+	for ( C_BaseEntity *entity = ClientEntityList().FirstBaseEntity(); entity; entity = ClientEntityList().NextBaseEntity( entity ) )
+	{
+		if ( dynamic_cast<C_Hairball *>( entity ) ) pending.AddToTail( entity );
+	}
+	for ( int i = 0; i < pending.Count(); ++i )
+	{
+		C_BaseEntity *entity = pending[i].Get();
+		if ( entity ) entity->Release();
+	}
+}
 
 
 void C_Hairball::CHairballDelegate::GetNodeForces( CSimplePhysics::CNode *pNodes, int iNode, Vector *pAccel )

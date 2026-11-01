@@ -55,6 +55,10 @@ void PortalPhysFrame( float deltaTime ); //small wrapper for PhysFrame that simu
 
 void PrecachePhysicsSounds( void );
 
+#if defined( HL2SB ) && defined( LUA_SDK )
+extern bool HL2SB_NonCollidingTeammates( CBaseEntity *first, CBaseEntity *second );
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -621,6 +625,11 @@ int CCollisionEvent::ShouldCollide_2( IPhysicsObject *pObj0, IPhysicsObject *pOb
 
 	if ( g_EntityCollisionHash->IsObjectPairInHash( pObj0, pObj1 ) )
 		return 0;
+
+#if defined( HL2SB ) && defined( LUA_SDK )
+	if ( HL2SB_NonCollidingTeammates( pEntity0, pEntity1 ) )
+		return 0;
+#endif
 
 	return 1;
 }

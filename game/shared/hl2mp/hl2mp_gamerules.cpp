@@ -129,31 +129,21 @@ static const char *s_PreserveEnts[] =
 	"ai_hint",
 	"hl2mp_gamerules",
 	"team_manager",
-	"player_manager",
-	"env_soundscape",
-	"env_soundscape_proxy",
-	"env_soundscape_triggerable",
 	"env_sun",
 	"env_wind",
 	"env_fog_controller",
-	"func_brush",
-	"func_wall",
-	"func_buyzone",
-	"func_illusionary",
 	"infodecal",
 	"info_projecteddecal",
 	"info_node",
-	"info_target",
 	"info_node_hint",
-	"info_player_deathmatch",
-	"info_player_combine",
-	"info_player_rebel",
+	"info_hint",
+	"info_node_air",
+	"info_node_air_hint",
+	"info_node_climb",
 	"info_map_parameters",
-	"keyframe_rope",
-	"move_rope",
 	"info_ladder",
 	"player",
-	"point_viewcontrol",
+	"path_corner",
 	"scene_manager",
 	"shadow_control",
 	"sky_camera",
@@ -163,9 +153,23 @@ static const char *s_PreserveEnts[] =
 	"predicted_viewmodel",
 	"worldspawn",
 	"point_devshot_camera",
+	"physgun_beam",
+	"player_manager",
+	"gmod_gamerules",
+	"env_soundscape",
+	"env_soundscape_proxy",
+	"env_soundscape_triggerable",
+	"env_sound",
+	"env_skypaint",
+	"gmod_hands",
 	"", // END Marker
 };
 
+#if defined( LUA_SDK ) && !defined( CLIENT_DLL )
+extern bool HL2SB_CleanupFilterMatches( const char *classname );
+extern bool HL2SB_IsNativeCleanupInProgress();
+extern void HL2SB_CleanupTick();
+#endif
 
 
 #ifdef CLIENT_DLL
@@ -549,6 +553,7 @@ void CHL2MPRules::Think( void )
 	END_LUA_CALL_HOOK( 0, 0 );
 
 #ifndef CLIENT_DLL
+	if ( L != NULL ) HL2SB_CleanupTick();
 	// HL2SB (2026-09-21): the engine timer library (game/shared/lua/ltimer.cpp)
 	// is pumped here, one frame per call -- the same deal GMod makes with its
 	// engine-internal DoSimpleTimers.  Local prototype on purpose: putting it
@@ -1906,17 +1911,27 @@ void CHL2MPRules::CleanUpMap()
 	CBaseEntity *pCur = gEntList.FirstEnt();
 	while ( pCur )
 	{
-		CBaseHL2MPCombatWeapon *pWeapon = dynamic_cast< CBaseHL2MPCombatWeapon* >( pCur );
+		if ( pCur->IsEFlagSet( EFL_KEEP_ON_RECREATE_ENTITIES ) )
+		{
+			pCur = gEntList.NextEnt( pCur );
+			continue;
+		}
+
+		CBaseCombatWeapon *pWeapon = dynamic_cast< CBaseCombatWeapon* >( pCur );
 		// Weapons with owners don't want to be removed..
 		if ( pWeapon )
 		{
-			if ( !pWeapon->GetPlayerOwner() )
+			if ( !pWeapon->GetOwner() || !pWeapon->GetOwner()->IsPlayer() )
 			{
 				UTIL_Remove( pCur );
 			}
 		}
 		// remove entities that has to be restored on roundrestart (breakables etc)
-		else if ( !FindInList( s_PreserveEnts, pCur->GetClassname() ) )
+		else if ( !FindInList( s_PreserveEnts, pCur->GetClassname() )
+#if defined( LUA_SDK )
+			&& !HL2SB_CleanupFilterMatches( pCur->GetClassname() )
+#endif
+			)
 		{
 			UTIL_Remove( pCur );
 		}
@@ -1938,7 +1953,11 @@ void CHL2MPRules::CleanUpMap()
 		virtual bool ShouldCreateEntity( const char *pClassname )
 		{
 			// Don't recreate the preserved entities.
-			if ( !FindInList( s_PreserveEnts, pClassname ) )
+			if ( !FindInList( s_PreserveEnts, pClassname )
+#if defined( LUA_SDK )
+				&& !HL2SB_CleanupFilterMatches( pClassname )
+#endif
+				)
 			{
 				return true;
 			}
@@ -1994,8 +2013,11 @@ void CHL2MPRules::CleanUpMap()
 	MapEntity_ParseAllEntities( engine->GetMapEntitiesString(), &filter, true );
 
 #if defined ( LUA_SDK )
-	BEGIN_LUA_CALL_HOOK( "CleanUpMap" );
-	END_LUA_CALL_HOOK( 0, 0 );
+	if ( !HL2SB_IsNativeCleanupInProgress() )
+	{
+		BEGIN_LUA_CALL_HOOK( "CleanUpMap" );
+		END_LUA_CALL_HOOK( 0, 0 );
+	}
 #endif
 }
 

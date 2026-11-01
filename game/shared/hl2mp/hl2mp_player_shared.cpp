@@ -55,6 +55,36 @@ const char *g_ppszPlayerSoundPrefixNames[PLAYER_SOUNDS_MAX] =
 	"NPC_MetroPolice",
 };
 
+bool CHL2MP_Player::ShouldCollide( int collisionGroup, int contentsMask ) const
+{
+	if ( HL2SB_GetNoCollideWithTeammates() &&
+		( collisionGroup == COLLISION_GROUP_PLAYER || collisionGroup == COLLISION_GROUP_PLAYER_MOVEMENT ||
+		  ( collisionGroup == COLLISION_GROUP_PROJECTILE && !( contentsMask & CONTENTS_MONSTER ) ) ) )
+	{
+		int teamMask = 0;
+		switch ( GetTeamNumber() )
+		{
+		case 1: teamMask = 0x800; break;
+		case 2: teamMask = 0x1000; break;
+		case 3: teamMask = 0x400; break;
+		case 4: teamMask = 0x200; break;
+		}
+		if ( teamMask && !( contentsMask & teamMask ) )
+			return false;
+	}
+	return BaseClass::ShouldCollide( collisionGroup, contentsMask );
+}
+
+#ifndef CLIENT_DLL
+bool HL2SB_NonCollidingTeammates( CBaseEntity *first, CBaseEntity *second )
+{
+	CHL2MP_Player *a = ToHL2MPPlayer( first );
+	CHL2MP_Player *b = ToHL2MPPlayer( second );
+	return a && b && a->HL2SB_GetNoCollideWithTeammates() && b->HL2SB_GetNoCollideWithTeammates() &&
+		a->GetTeamNumber() == b->GetTeamNumber();
+}
+#endif
+
 const char *CHL2MP_Player::GetPlayerModelSoundPrefix( void )
 {
 	// HL2SB: m_iPlayerSoundType is not range checked anywhere, and for a custom

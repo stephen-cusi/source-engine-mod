@@ -645,7 +645,20 @@ CGameMovement::~CGameMovement( void )
 //-----------------------------------------------------------------------------
 unsigned int CGameMovement::PlayerSolidMask( bool brushOnly )
 {
-	return ( brushOnly ) ? MASK_PLAYERSOLID_BRUSHONLY : MASK_PLAYERSOLID;
+	unsigned int mask = ( brushOnly ) ? MASK_PLAYERSOLID_BRUSHONLY : MASK_PLAYERSOLID;
+#if defined( HL2SB )
+	if ( player )
+	{
+		switch ( player->GetTeamNumber() )
+		{
+		case 1: mask |= 0x1600; break;
+		case 2: mask |= 0x0e00; break;
+		case 3: mask |= 0x1a00; break;
+		case 4: mask |= 0x1c00; break;
+		}
+	}
+#endif
+	return mask;
 }
 
 //-----------------------------------------------------------------------------

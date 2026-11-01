@@ -1361,17 +1361,32 @@ static void LuaConcatArgs (lua_State *L, char *pOut, int nOutSize) {
   }
 }
 
+static void LuaPushMessageArgs( lua_State *L, const char *fallback ) {
+  const int nArgs = lua_gettop( L );
+  luaL_Buffer buffer;
+  luaL_buffinit( L, &buffer );
+  for ( int i = 1; i <= nArgs; ++i ) {
+    lua_getglobal( L, "tostring" );
+    lua_pushvalue( L, i );
+    const int status = lua_pcall( L, 1, 1, 0 );
+    if ( status != LUA_OK || lua_tostring( L, -1 ) == NULL ) {
+      lua_pop( L, 1 );
+      lua_pushstring( L, fallback );
+    }
+    luaL_addvalue( &buffer );
+  }
+  luaL_pushresult( &buffer );
+}
+
 static int lua_Msg (lua_State *L) {
-  char szText[2048];
-  LuaConcatArgs( L, szText, sizeof( szText ) );
-  luasrc_LuaConsoleMsg( szText, 'I', false );
+  LuaPushMessageArgs( L, "Msg tostring ERROR" );
+  luasrc_LuaConsoleMsg( lua_tostring( L, -1 ), 'I', false );
   return 0;
 }
 
 static int lua_MsgN (lua_State *L) {
-  char szText[2048];
-  LuaConcatArgs( L, szText, sizeof( szText ) );
-  luasrc_LuaConsoleMsg( szText, 'I', true );
+  LuaPushMessageArgs( L, "MsgN tostring ERROR" );
+  luasrc_LuaConsoleMsg( lua_tostring( L, -1 ), 'I', true );
   return 0;
 }
 
@@ -1464,8 +1479,10 @@ void HL2SB_CollectLuaError( const char *pszError, const char *pszTraceback );
 // Lua traceback, which is the reason GMod scripts reach for it.
 //-----------------------------------------------------------------------------
 static int lua_ErrorNoHalt (lua_State *L) {
-  char szText[2048];
-  LuaConcatArgs( L, szText, sizeof( szText ) );
+  char szText[4096];
+  LuaPushMessageArgs( L, "ErrorNoHalt tostring ERROR" );
+  Q_strncpy( szText, lua_tostring( L, -1 ), sizeof( szText ) );
+  lua_pop( L, 1 );
   luasrc_LuaConsoleMsg( szText, 'E', true );
 
   // HL2SB (2026-09-21): ErrorNoHalt is how GMod addons report soft failures;
@@ -3280,6 +3297,14 @@ static int HL2SB_Lua_RunConsoleCommand( lua_State *L )
 
 void HL2SB_RegisterConsoleGlobals( lua_State *state )
 {
+  lua_pushcfunction( state, lua_Msg );
+  lua_setglobal( state, "Msg" );
+  lua_pushcfunction( state, lua_MsgN );
+  lua_setglobal( state, "MsgN" );
+  lua_pushcfunction( state, lua_ErrorNoHalt );
+  lua_setglobal( state, "ErrorNoHalt" );
+  lua_pushcfunction( state, lua_ErrorNoHaltWithStack );
+  lua_setglobal( state, "ErrorNoHaltWithStack" );
   lua_pushcfunction( state, lua_IsConCommandBlocked );
   lua_setglobal( state, "IsConCommandBlocked" );
   lua_pushcfunction( state, HL2SB_Lua_EngineCommand );
@@ -4584,6 +4609,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pop( L, 1 );
   }
 
+  extern int HL2SB_LuaGameCleanUpMap( lua_State *state );
   // The engine-backed members (lua_game_* above).  GMod's extensions/game.lua
   // only ADDS to this table, and the Lua shims in extensions/gmod_compat.lua
   // redefine GetMap/SinglePlayer later with the same behaviour, so anything
@@ -4600,6 +4626,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pushcfunction( L, lua_game_IsDedicated );  lua_setfield( L, -2, "IsDedicated" );
     lua_pushcfunction( L, lua_game_GetAmmoName );  lua_setfield( L, -2, "GetAmmoName" );
     lua_pushcfunction( L, lua_game_GetAmmoID );    lua_setfield( L, -2, "GetAmmoID" );
+    lua_pushcfunction( L, HL2SB_LuaGameCleanUpMap ); lua_setfield( L, -2, "CleanUpMap" );
   }
   lua_pop( L, 1 );
 

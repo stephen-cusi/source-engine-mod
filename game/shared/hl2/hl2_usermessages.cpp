@@ -48,6 +48,9 @@ void RegisterUserMessages( void )
 
 	// HL2SB: generic Lua net transport (game/shared/lua/lnet.cpp).
 	usermessages->Register( "LuaNet", -1 );
+#if defined( HL2SB ) && defined( LUA_SDK )
+	usermessages->Register( "game.CleanUpMap()", 0 );
+#endif
 
 #ifndef _X360
 	// NVNT register haptic user messages
