@@ -1,322 +1,23 @@
-//=============================================================================//
-//
-// HL2SB: GMod's lua/effects/*.lua runtime (client half).
-//
-// A GMod effect script is a global EFFECT table with Init/Think/Render methods.
-// luasrc_LoadEffects() (game/shared/lua/luamanager.cpp) runs every
-// lua/effects/<name>.lua with a fresh EFFECT global, calls GMod's
-// effects.Register(EFFECT, name) with it and files the template away under
-// __hl2sb_lua_effects[name].
-//
-// Here that template becomes a live effect:
-//
-//   * util.Effect( name, data ) / DispatchEffect( name, data ) land in
-//     HL2SB_CreateLuaEffect() (hooked from DispatchEffectToCallback in
-//     c_te_effect_dispatch.cpp, which is where every effect name ends up --
-//     server-sent ones through TE_DispatchEffect, client-side ones directly);
-//   * one shallow copy of the template per spawn (which is exactly what GMod's
-//     effects.Create does, and what keeps two live tracers from sharing state);
-//   * the copy is pushed onto the engine's client-side effect list
-//     (clienteffects, game/client/clientsideeffects.cpp) so
-//     CEffectsList::DrawEffects() drives EFFECT:Think() and EFFECT:Render()
-//     once per frame from CViewRender::ViewDrawScene -- inside the world render,
-//     with the 3D fog disabled, which is where render.DrawBeam needs to run.
-//
-//=============================================================================//
-
 #include "cbase.h"
-
-#include "clientsideeffects.h"
+#include "c_baseanimating.h"
+#include "client_thinklist.h"
+#include "clientleafsystem.h"
 #include "effect_dispatch_data.h"
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "leffect_dispatch_data.h"
 #include "lbaseentity_shared.h"
-#include "mathlib/lvector.h"
-#include "lua_effects.h"
-
-#include "c_baseanimating.h"
-#include "c_baseplayer.h"
-#include "c_baseviewmodel.h"
-#include "c_basecombatweapon.h"
-#include "clientleafsystem.h"
 #include "vphysics_interface.h"
+#include "view.h"
+#include "lua_effects.h"
+#include <map>
 
-// memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
-#define HL2SB_LUA_EFFECT_TEMPLATES "__hl2sb_lua_effects"
-
-static void LuaEffect_ParentTransform(lua_State *state, matrix3x4_t &transform) {
-	lua_getfield(state, 1, "__hl2sb_parent");
-	CBaseEntity *parent = lua_toentity(state, -1);
-	lua_pop(state, 1);
-	SetIdentityMatrix(transform);
-	// World geometry already uses world coordinates.
-	if (!parent || parent->IsWorld()) return;
-	lua_getfield(state, 1, "__hl2sb_parentphys");
-	int bone = (int)lua_tointeger(state, -1);
-	lua_pop(state, 1);
-	IPhysicsObject *objects[128];
-	int count = parent->VPhysicsGetObjectList(objects, ARRAYSIZE(objects));
-	if (bone >= 0 && bone < count && objects[bone]) {
-		Vector position; QAngle angles;
-		objects[bone]->GetPosition(&position, &angles);
-		AngleMatrix(angles, position, transform);
-	} else transform = parent->EntityToWorldTransform();
-}
-
-static void LuaEffect_WorldTransform(lua_State *state, matrix3x4_t &transform) {
-	lua_getfield(state, 1, "__hl2sb_position");
-	Vector position = luaL_testudata(state, -1, LUA_VECTORLIBNAME) ? luaL_checkvector(state, -1) : vec3_origin;
-	lua_pop(state, 1);
-	lua_getfield(state, 1, "__hl2sb_angles");
-	QAngle angles = luaL_testudata(state, -1, "Angle") ? luaL_checkangle(state, -1) : vec3_angle;
-	lua_pop(state, 1);
-	matrix3x4_t local, parent;
-	AngleMatrix(angles, position, local);
-	LuaEffect_ParentTransform(state, parent);
-	ConcatTransforms(parent, local, transform);
-}
-
-static void LuaEffect_StoreWorldTransform(lua_State *state, const matrix3x4_t &world) {
-	matrix3x4_t parent, inverse, local;
-	LuaEffect_ParentTransform(state, parent);
-	MatrixInvert(parent, inverse);
-	ConcatTransforms(inverse, world, local);
-	Vector position; QAngle angles;
-	MatrixAngles(local, angles, position);
-	lua_pushvector(state, position); lua_setfield(state, 1, "__hl2sb_position");
-	lua_pushangle(state, angles); lua_setfield(state, 1, "__hl2sb_angles");
-}
-
-static int LuaEffect_SetPos(lua_State *state) {
-	Vector position = luaL_checkvector(state, 2);
-	matrix3x4_t world;
-	LuaEffect_WorldTransform(state, world);
-	MatrixSetColumn(position, 3, world);
-	LuaEffect_StoreWorldTransform(state, world);
-	return 0;
-}
-
-static int LuaEffect_GetPos(lua_State *state) {
-	matrix3x4_t world; Vector position;
-	LuaEffect_WorldTransform(state, world);
-	MatrixGetColumn(world, 3, position);
-	lua_pushvector(state, position);
-	return 1;
-}
-
-static int LuaEffect_SetAngles(lua_State *state) {
-	QAngle angles = luaL_checkangle(state, 2);
-	matrix3x4_t world; Vector position;
-	LuaEffect_WorldTransform(state, world);
-	MatrixGetColumn(world, 3, position);
-	AngleMatrix(angles, position, world);
-	LuaEffect_StoreWorldTransform(state, world);
-	return 0;
-}
-
-static int LuaEffect_GetAngles(lua_State *state) {
-	matrix3x4_t world; QAngle angles;
-	LuaEffect_WorldTransform(state, world);
-	MatrixAngles(world, angles);
-	lua_pushangle(state, angles);
-	return 1;
-}
-
-static int LuaEffect_SetParent(lua_State *state) {
-	matrix3x4_t world;
-	LuaEffect_WorldTransform(state, world);
-	lua_pushentity(state, lua_toentity(state, 2));
-	lua_setfield(state, 1, "__hl2sb_parent");
-	LuaEffect_StoreWorldTransform(state, world);
-	return 0;
-}
-
-static int LuaEffect_SetParentPhysNum(lua_State *state) {
-	matrix3x4_t world;
-	LuaEffect_WorldTransform(state, world);
-	lua_pushinteger(state, luaL_checkint(state, 2));
-	lua_setfield(state, 1, "__hl2sb_parentphys");
-	LuaEffect_StoreWorldTransform(state, world);
-	return 0;
-}
-
-static int LuaEffect_SetModel(lua_State *state) {
-	lua_pushstring(state, luaL_checkstring(state, 2));
-	lua_setfield(state, 1, "__hl2sb_model");
-	return 0;
-}
-
-static int LuaEffect_GetModel(lua_State *state) {
-	lua_getfield(state, 1, "__hl2sb_model");
-	return 1;
-}
-
-static int LuaEffect_IsValid(lua_State *state) {
-	lua_getfield(state, 1, "__hl2sb_retired");
-	bool retired = lua_toboolean(state, -1) != 0;
-	lua_pop(state, 1);
-	lua_pushboolean(state, !retired);
-	return 1;
-}
-
-static int LuaEffect_Remove(lua_State *state) {
-	lua_pushboolean(state, true);
-	lua_setfield(state, 1, "__hl2sb_retired");
-	return 0;
-}
-
-//=============================================================================
-// Engine-provided methods on the effect table.
-//
-// GMod hands every effect a handful of C++ methods (SetRenderBoundsWS,
-// GetTracerShootPos, ...).  They are stamped onto each spawned copy here.
-//=============================================================================
-
-// EFFECT:SetRenderBoundsWS( mins, maxs )
-//
-// GMod uses these bounds to cull the effect; the engine's client FX list does
-// not cull, so the values are only remembered (a future cull can read them).
-static int LuaEffect_SetRenderBoundsWS( lua_State *L )
-{
-	Vector mins = luaL_checkvector( L, 2 );
-	Vector maxs = luaL_checkvector( L, 3 );
-
-	lua_pushvector( L, mins );
-	lua_setfield( L, 1, "__hl2sb_renderbounds_min" );
-	lua_pushvector( L, maxs );
-	lua_setfield( L, 1, "__hl2sb_renderbounds_max" );
-
-	return 0;
-}
-
-// EFFECT:GetTracerShootPos( position, entity, attachment )
-//
-// GMod's tracer effects start at the muzzle, not at the shooter's eyes:
-// rb655_nyan_tracer.lua does
-//     self.StartPos = self:GetTracerShootPos( self.Position, self.WeaponEnt, self.Attachment )
-//
-// HL2SB: the entity GMod hands these effects is whatever the caller put in the
-// effect data, and the two callers differ:
-//   * util.Effect() from a SWEP's DoImpactEffect / a script: whatever the script set;
-//   * the engine's own tracer path -- HL2MP's C_TEHL2MPFireBullets::CreateEffects()
-//     sets m_hEntity = pWpn->GetRefEHandle(), i.e. THE WEAPON (not the player).
-//
-// The first cut only special-cased "the entity IS the local player", so the
-// shooter's own shots fell into the generic branch and took the WORLD MODEL
-// weapon's attachment.  A weapon the local client never simulates has no
-// meaningful world position there, so the Nyan Gun's rainbow tracer was drawn
-// from the wrong place: invisible against near walls, and visibly offset
-// ("misplaced") when it hit something at range.
-//
-// So resolve the owner too: a weapon held by the local player draws from the
-// VIEWMODEL's muzzle, which is where GMod's own tracers start.
-static int LuaEffect_GetTracerShootPos( lua_State *L )
-{
-	Vector vecPosition = luaL_checkvector( L, 2 );
-	CBaseEntity *pEntity = lua_toentity( L, 3 );
-	int iAttachment = luaL_optinteger( L, 4, 0 );
-
-	Vector vecResult = vecPosition;
-	const char *pszSource = "position (no entity)";
-	const char *pszEntity = "none";
-
-	if ( pEntity != NULL )
-	{
-		pszEntity = pEntity->GetClassname();
-
-		C_BasePlayer *pPlayer = ToBasePlayer( pEntity );
-		CBaseCombatWeapon *pWeapon = NULL;
-
-		if ( pPlayer == NULL )
-		{
-			pWeapon = dynamic_cast<CBaseCombatWeapon *>( pEntity );
-
-			if ( pWeapon != NULL )
-			{
-				// The engine's tracer path hands us the weapon: the interesting
-				// entity for "where does this shot come from" is its owner.
-				CBaseCombatCharacter *pOwner = pWeapon->GetOwner();
-
-				if ( pOwner != NULL )
-				{
-					pPlayer = ToBasePlayer( pOwner );
-				}
-			}
-		}
-
-		if ( pPlayer != NULL && pPlayer->IsLocalPlayer() && !C_BasePlayer::ShouldDrawLocalPlayer() )
-		{
-			// First person: the muzzle lives on the viewmodel.
-			C_BaseViewModel *pViewModel = pPlayer->GetViewModel();
-
-			if ( pViewModel != NULL && iAttachment > 0 )
-			{
-				Vector vecOrigin;
-
-				if ( pViewModel->GetAttachment( iAttachment, vecOrigin ) )
-				{
-					vecResult = vecOrigin;
-					pszSource = "local player viewmodel attachment";
-				}
-				else
-				{
-					pszSource = "position (viewmodel attachment missing)";
-				}
-			}
-			else
-			{
-				pszSource = "position (local player, no viewmodel/attachment)";
-			}
-		}
-		else
-		{
-			// Third person (another player's or an NPC's weapon): the model that
-			// is actually on screen is the right place to start from.
-			C_BaseAnimating *pAnimating = ( pWeapon != NULL ) ? pWeapon->GetBaseAnimating() : pEntity->GetBaseAnimating();
-
-			if ( pAnimating != NULL && iAttachment > 0 )
-			{
-				Vector vecOrigin;
-
-				if ( pAnimating->GetAttachment( iAttachment, vecOrigin ) )
-				{
-					vecResult = vecOrigin;
-					pszSource = ( pWeapon != NULL ) ? "weapon model attachment" : "entity model attachment";
-				}
-				else
-				{
-					pszSource = "position (attachment missing)";
-				}
-			}
-			else
-			{
-				pszSource = "position (no animating model/attachment)";
-			}
-		}
-	}
-
-	// HL2SB diagnostic: says which branch supplied the tracer's start point,
-	// once per branch per DLL load (see AGENTS.md 9.7).
-	{
-		char szKey[ 128 ];
-		Q_snprintf( szKey, sizeof( szKey ), "tracer-start:%s", pszSource );
-		HL2SB_WarnOnce( szKey, "GetTracerShootPos: '%s' (attachment %d) -> %s in=(%.0f %.0f %.0f) out=(%.0f %.0f %.0f)\n",
-			pszEntity, iAttachment, pszSource,
-			vecPosition.x, vecPosition.y, vecPosition.z,
-			vecResult.x, vecResult.y, vecResult.z );
-	}
-
-	lua_pushvector( L, vecResult );
-	return 1;
-}
-
-//=============================================================================
-// One live effect: a Lua table plus the engine's draw slot.
-//=============================================================================
 static bool s_bLuaDOFMode = false;
+static int s_nLuaEffects = 0;
+static int s_nLuaEffectDepth = 0;
+static std::map<unsigned int, int> s_ParentPhysicsNumbers;
 
 bool HL2SB_LuaDOFMode()
 {
@@ -341,631 +42,274 @@ int HL2SB_LuaSetDOFMode( lua_State *state )
 	return 0;
 }
 
-class CLuaSortedEffect : public C_BaseEntity
+void HL2SB_SetClientParentPhysicsNumber( C_BaseEntity *entity, int number )
 {
-public:
-	CLuaSortedEffect( int ref ) : m_nEffectRef( ref ), m_bReady( false ) {}
-	void SetReady( bool ready ) { m_bReady = ready; }
-	virtual bool ShouldDraw() { return true; }
-	virtual bool IsTransparent() { return true; }
-	virtual RenderGroup_t GetRenderGroup() { return RENDER_GROUP_TRANSLUCENT_ENTITY; }
-	virtual void GetRenderBounds( Vector &mins, Vector &maxs ) { mins.Init( -32, -32, -32 ); maxs.Init( 32, 32, 32 ); }
-	virtual int DrawModel( int flags )
-	{
-		if ( L == NULL || m_nEffectRef < 0 || !m_bReady ) return 0;
-		const int top = lua_gettop( L );
-		lua_getref( L, m_nEffectRef );
-		if ( lua_istable( L, -1 ) )
-		{
-			lua_getfield( L, -1, "__hl2sb_retired" );
-			const bool retired = lua_toboolean( L, -1 ) != 0;
-			lua_pop( L, 1 );
-			if ( !retired )
-			{
-				lua_getfield( L, -1, "Render" );
-				if ( lua_isfunction( L, -1 ) )
-				{
-					lua_pushvalue( L, -2 );
-					luasrc_pcall( L, 1, 0, 0 );
-				}
-			}
-		}
-		lua_settop( L, top );
-		return 1;
-	}
-private:
-	int m_nEffectRef;
-	bool m_bReady;
-};
-
-class CLuaEffect;
-static CUtlVector<CLuaEffect *> s_SortedLuaEffects;
-
-class CLuaEffect : public CClientSideEffect
-{
-public:
-	CLuaEffect( const char *pszName, int nRef, const CEffectData &data );
-	virtual ~CLuaEffect( void );
-
-	virtual void Draw( double frametime );
-	void UpdateSorted( double frametime );
-
-private:
-	// HL2SB: the base class keeps the POINTER we hand it, so it has to point at
-	// storage that outlives the call.  Taking the address of our own member in
-	// the mem-initialiser list is safe here -- it is a plain char array, so
-	// nothing has to have run before it is usable.
-	char m_szName[128];
-	int m_nRef;
-	CHandle<CLuaSortedEffect> m_hSortedEffect;
-	bool m_bUpdatingSorted;
-	// HL2SB diagnostic: how many times this effect was drawn (see the retirement
-	// warning in Draw()).
-	int m_nDraws;
-};
-
-CLuaEffect::~CLuaEffect( void )
-{
-	s_SortedLuaEffects.FindAndRemove( this );
-	if ( m_hSortedEffect.Get() != NULL )
-		m_hSortedEffect->Release();
-	// CEffectsList deletes the effect when Think() says it is done, and
-	// clienteffects->Flush() deletes the rest on level change, so this is the
-	// single place the Lua registry reference is released.
-	if ( L != NULL && m_nRef >= 0 ) {
-		lua_getref(L, m_nRef);
-		if (lua_istable(L, -1)) {
-			lua_pushboolean(L, true);
-			lua_setfield(L, -2, "__hl2sb_retired");
-		}
-		lua_pop(L, 1);
-		lua_unref( L, m_nRef );
-	}
-
-	m_nRef = LUA_NOREF;
+	if ( !entity || entity->IsMarkedForDeletion() ) return;
+	const unsigned int handle = entity->GetRefEHandle().ToInt();
+	if ( number < 0 ) s_ParentPhysicsNumbers.erase( handle );
+	else s_ParentPhysicsNumbers[handle] = number;
+	entity->InvalidatePhysicsRecursive( POSITION_CHANGED | ANGLES_CHANGED );
 }
 
-CLuaEffect::CLuaEffect( const char *pszName, int nRef, const CEffectData &data )
-	: CClientSideEffect( m_szName )
-	, m_nRef( nRef )
-	, m_bUpdatingSorted( false )
-	, m_nDraws( 0 )
+void HL2SB_ClearClientParentPhysicsNumber( C_BaseEntity *entity )
 {
-	Q_strncpy( m_szName, ( pszName != NULL ) ? pszName : "lua_effect", sizeof( m_szName ) );
-
-	if ( L == NULL )
-		return;
-
-	lua_getref( L, m_nRef );
-	if ( !lua_istable( L, -1 ) )
-	{
-		lua_pop( L, 1 );
-		return;
-	}
-
-	// HL2SB GMod compat (2026-09-23, the console-flooding nuke effects):
-	// the GMod-era engine put EffectData's entity onto the effect table as
-	// .Entity BEFORE Init - 2012 addons rely on it (nukepack's vaporize calls
-	// self.Entity:BoundingRadius() in Init; air's Render reads
-	// self.Entity:GetPos()), while GMod's OWN effects read data:GetEntity()
-	// themselves and never touch .Entity.  Without this the field was plain
-	// nil: "attempt to index a nil value (field 'Entity')" every frame.
-	{
-		CEffectData dataCopy = data;			// GetEntity is a const accessor
-		CBaseEntity *pEnt = dataCopy.GetEntity();
-		if ( pEnt != NULL )
-		{
-			lua_pushstring( L, "Entity" );
-			lua_pushentity( L, pEnt );
-			lua_settable( L, -3 );				// table["Entity"] = ent
-		}
-	}
-
-
-	lua_getfield( L, -1, "Init" );
-	if ( lua_isfunction( L, -1 ) )
-	{
-		lua_pushvalue( L, -2 );                 // self
-		CEffectData dataCopy = data;            // lua_pusheffect takes a reference
-		lua_pusheffect( L, dataCopy );          // data
-		luasrc_pcall( L, 2, 0, 0 );
-	}
-	else
-	{
-		lua_pop( L, 1 );
-	}
-
-	lua_pop( L, 1 );
-	if ( !Q_stricmp( m_szName, "dof_node" ) )
-	{
-		CLuaSortedEffect *effect = new CLuaSortedEffect( m_nRef );
-		if ( effect->InitializeAsClientEntity( NULL, RENDER_GROUP_TRANSLUCENT_ENTITY ) )
-		{
-			m_hSortedEffect = effect;
-			s_SortedLuaEffects.AddToTail( this );
-		}
-		else
-			delete effect;
-	}
+	if ( entity ) s_ParentPhysicsNumbers.erase( entity->GetRefEHandle().ToInt() );
 }
 
-void CLuaEffect::UpdateSorted( double frametime )
+bool HL2SB_GetClientParentPhysicsTransform( C_BaseEntity *entity, matrix3x4_t &transform )
 {
-	if ( !IsActive() || m_hSortedEffect.Get() == NULL ) return;
-	m_bUpdatingSorted = true;
-	Draw( frametime );
-	m_bUpdatingSorted = false;
-}
-
-void HL2SB_UpdateSortedLuaEffects()
-{
-	for ( int i = 0; i < s_SortedLuaEffects.Count(); ++i )
-		s_SortedLuaEffects[i]->UpdateSorted( gpGlobals->frametime );
-}
-
-void CLuaEffect::Draw( double frametime )
-{
-	if ( L == NULL )
-	{
-		Destroy();
-		return;
-	}
-
-	++m_nDraws;
-
-	lua_getref( L, m_nRef );
-	if ( !lua_istable( L, -1 ) )
-	{
-		lua_pop( L, 1 );
-		Destroy();
-		return;
-	}
-
-	lua_getfield( L, -1, "__hl2sb_retired" );
-	const bool bRetired = lua_toboolean( L, -1 ) != 0;
-	lua_pop( L, 1 );
-	if ( bRetired )
-	{
-		lua_pop( L, 1 );
-		Destroy();
-		return;
-	}
-	if ( m_hSortedEffect.Get() != NULL && !m_bUpdatingSorted )
-	{
-		lua_pop( L, 1 );
-		return;
-	}
-
-	// EFFECT:Think() -- returning false retires the effect (GMod contract).
-	bool bThinkSucceeded = true;
-	const int nTopBeforeThink = lua_gettop( L );
-	lua_getfield( L, -1, "Think" );
-	if ( lua_isfunction( L, -1 ) )
-	{
-		lua_pushvalue( L, -2 );
-		bThinkSucceeded = luasrc_pcall( L, 1, 1, 0 ) == 0;
-
-		// HL2SB crash fix (2026-09-21, the nuke SIGABRT): on error
-		// luasrc_pcall logs the message and POPS it, so a failed Think leaves
-		// NO result where the success path leaves exactly one.  The
-		// lua_pop(L, 1) below then ate the effect table itself and every
-		// later lua_getfield indexed below the stack base -- the geometry
-		// probe's luaL_checkvector then threw with no pcall anywhere in this
-		// C frame, the panic handler fired and the process aborted
-		// ("attempt to index a nil value" with an EMPTY traceback, right
-		// after three normally-logged nuke effect errors).  Normalize to
-		// exactly one result before anything else touches the stack; a broken
-		// Think counts as alive so the per-frame error stays in the log where
-		// it can be read instead of killing the game.
-		if ( lua_gettop( L ) < nTopBeforeThink + 1 )
-			lua_pushboolean( L, true );
-		else if ( lua_gettop( L ) > nTopBeforeThink + 1 )
-			lua_settop( L, nTopBeforeThink + 1 );
-
-		const bool bAlive = lua_toboolean( L, -1 ) != 0;
-		if ( !bAlive )
-		{
-			// HL2SB diagnostic: an effect that dies on its first or second draw
-			// is invisible in practice, which is the last way a correctly created
-			// and correctly rendered effect can still never be seen.
-			char szKey[ 160 ];
-			Q_snprintf( szKey, sizeof( szKey ), "lua-effect-retired:%s", GetName() );
-			HL2SB_WarnOnce( szKey, "CLuaEffect '%s': Think -> FALSE, retired after %d draw(s)\n", GetName(), m_nDraws );
-
-			Destroy();
-		}
-		lua_pop( L, 1 );
-
-		// HL2SB diagnostic: does the draw path actually reach the script?
-		if ( bAlive )
-		{
-			char szKey[ 160 ];
-			Q_snprintf( szKey, sizeof( szKey ), "lua-effect-draw:%s", GetName() );
-			HL2SB_WarnOnce( szKey, "CLuaEffect '%s': Think -> true, drawing\n", GetName() );
-		}
-
-		// HL2SB diagnostic: the geometry the script itself believes in.  A beam
-		// that is drawn from somewhere unexpected looks exactly like one that is
-		// not drawn at all, so print the effect's own numbers once.
-		// PERF (2026-09-23): once the 32-slot seen-list is saturated the format +
-		// linear scan below can never find anything new; skip the whole block.
-		if ( bAlive )
-		{
-			static bool s_bGeometrySaturated = false;
-			if ( !s_bGeometrySaturated )
-			{
-			char szKey[ 160 ];
-			Q_snprintf( szKey, sizeof( szKey ), "lua-effect-geometry:%s", GetName() );
-
-			static char s_szGeometrySeen[ 32 ][ 160 ];
-			static int s_nGeometrySeen = 0;
-			bool bNew = true;
-
-			for ( int i = 0; i < s_nGeometrySeen; ++i )
-			{
-				if ( !Q_stricmp( s_szGeometrySeen[ i ], szKey ) )
-				{
-					bNew = false;
-					break;
-				}
-			}
-
-			if ( bNew && s_nGeometrySeen < 32 )
-			{
-				Q_strncpy( s_szGeometrySeen[ s_nGeometrySeen ], szKey, sizeof( s_szGeometrySeen[ 0 ] ) );
-				++s_nGeometrySeen;
-				if ( s_nGeometrySeen >= 32 )
-					s_bGeometrySaturated = true;
-
-				char szStart[ 48 ], szEnd[ 48 ], szDist[ 48 ];
-
-				lua_getfield( L, -1, "StartPos" );
-				if ( luaL_testudata( L, -1, LUA_VECTORLIBNAME ) != NULL )
-				{
-					Vector vecStart = luaL_checkvector( L, -1 );
-					Q_snprintf( szStart, sizeof( szStart ), "(%.0f %.0f %.0f)", vecStart.x, vecStart.y, vecStart.z );
-				}
-				else
-				{
-					Q_strncpy( szStart, "?", sizeof( szStart ) );
-				}
-				lua_pop( L, 1 );
-
-				lua_getfield( L, -1, "EndPos" );
-				if ( luaL_testudata( L, -1, LUA_VECTORLIBNAME ) != NULL )
-				{
-					Vector vecEnd = luaL_checkvector( L, -1 );
-					Q_snprintf( szEnd, sizeof( szEnd ), "(%.0f %.0f %.0f)", vecEnd.x, vecEnd.y, vecEnd.z );
-				}
-				else
-				{
-					Q_strncpy( szEnd, "?", sizeof( szEnd ) );
-				}
-				lua_pop( L, 1 );
-
-				lua_getfield( L, -1, "Dist" );
-				if ( lua_isnumber( L, -1 ) )
-				{
-					Q_snprintf( szDist, sizeof( szDist ), "%.0f", lua_tonumber( L, -1 ) );
-				}
-				else
-				{
-					Q_strncpy( szDist, "?", sizeof( szDist ) );
-				}
-				lua_pop( L, 1 );
-
-				luasrc_LuaWarnMsgF( "[HL2SB] CLuaEffect '%s': StartPos=%s EndPos=%s Dist=%s\n", GetName(), szStart, szEnd, szDist );
-			}
-			}
-		}
-	}
-	else
-	{
-		// HL2SB diagnostic: a template with no Think() is legal (GMod's contract
-		// says an effect retires when Think is missing? no - it lives), but a
-		// missing one on a scripted effect is worth naming.
-		char szKey[ 160 ];
-		Q_snprintf( szKey, sizeof( szKey ), "lua-effect-nothink:%s", GetName() );
-		HL2SB_WarnOnce( szKey, "CLuaEffect '%s': no Think() function\n", GetName() );
-		lua_pop( L, 1 );
-	}
-
-	if ( !IsActive() )
-	{
-		lua_pop( L, 1 );
-		return;
-	}
-	if ( m_hSortedEffect.Get() != NULL )
-	{
-		m_hSortedEffect->SetReady( false );
-		const int nTableTop = lua_gettop( L );
-		lua_getfield( L, -1, "GetPos" );
-		if ( lua_isfunction( L, -1 ) )
-		{
-			lua_pushvalue( L, -2 );
-			if ( luasrc_pcall( L, 1, 1, 0 ) == 0 && luaL_testudata( L, -1, LUA_VECTORLIBNAME ) )
-			{
-				m_hSortedEffect->SetAbsOrigin( luaL_checkvector( L, -1 ) );
-				m_hSortedEffect->SetReady( bThinkSucceeded );
-			}
-		}
-		lua_settop( L, nTableTop );
-		lua_pop( L, 1 );
-		return;
-	}
-
-	lua_getfield( L, -1, "Render" );
-	if ( lua_isfunction( L, -1 ) )
-	{
-		// HL2SB diagnostic: the script's Render() is being submitted.
-		char szKey[ 160 ];
-		Q_snprintf( szKey, sizeof( szKey ), "lua-effect-render:%s", GetName() );
-		HL2SB_WarnOnce( szKey, "CLuaEffect '%s': Render submitted\n", GetName() );
-
-		lua_pushvalue( L, -2 );
-		luasrc_pcall( L, 1, 0, 0 );
-	}
-	else
-	{
-		// HL2SB diagnostic: an effect whose table has no Render() can never be
-		// seen; name it rather than drawing nothing in silence.
-		char szKey[ 160 ];
-		Q_snprintf( szKey, sizeof( szKey ), "lua-effect-norender:%s", GetName() );
-		HL2SB_WarnOnce( szKey, "CLuaEffect '%s': no Render() function\n", GetName() );
-		lua_pop( L, 1 );
-	}
-
-	lua_pop( L, 1 );
-}
-
-//=============================================================================
-// Spawning
-//=============================================================================
-
-static bool HL2SB_FindLuaEffectTemplate( lua_State *L, const char *pszName )
-{
-	char szLookup[ 128 ];
-
-	// HL2SB: the name comes from the network (an effect string-table entry), so
-	// refuse anything that would be truncated -- two names sharing their first
-	// 127 characters would otherwise resolve to each other's template.
-	if ( pszName == NULL || pszName[0] == '\0' || Q_strlen( pszName ) >= (int)sizeof( szLookup ) )
-	{
-		return false;
-	}
-
-	Q_strncpy( szLookup, pszName, sizeof( szLookup ) );
-	Q_strlower( szLookup );
-
-	lua_getglobal( L, HL2SB_LUA_EFFECT_TEMPLATES );
-	if ( lua_istable( L, -1 ) )
-	{
-		lua_getfield( L, -1, szLookup );
-		lua_remove( L, -2 );                // drop the registry, leave the template
-
-		if ( lua_istable( L, -1 ) )
-			return true;
-
-		lua_pop( L, 1 );
-	}
-	else
-	{
-		lua_pop( L, 1 );
-	}
-
-	// HL2SB (2026-09-21): GMod's own effects module keeps its templates in a
-	// MODULE-LOCAL table -- lua/includes/modules/effects.lua opens with
-	//     local EffectList = {}
-	// and effects.Register( EFFECT, name ) -- which is exactly what our loader
-	// calls after dofile -- stores THERE.  The __hl2sb_lua_effects global above
-	// has therefore always been empty for Lua-registered effects: every
-	// util.Effect of a registered Lua effect fell through to the engine
-	// callbacks, and the Nuke Pack's nuke_blastwave / nuke_disintegrate et al
-	// exploded invisibly ("effect 'nuke_blastwave': no Lua template" in the
-	// 2026-09-21 01:0x log, minutes after the registration lines printed).
-	//
-	// effects.Create( name ) is the module's own accessor: it returns a fresh
-	// instance table (EffectList[name] merged over EffectList["base"]).  That
-	// is exactly what HL2SB_CreateLuaEffect wants -- it shallow-copies per
-	// spawn anyway -- and mirrors GMod, whose EFFECT instances ARE created
-	// through effects.Create.  Guarded with lua_pcall: a module error must not
-	// escape into the render path.
-	lua_getglobal( L, "effects" );
-	if ( !lua_istable( L, -1 ) )
-	{
-		lua_pop( L, 1 );
-		return false;
-	}
-
-	lua_getfield( L, -1, "Create" );
-	if ( !lua_isfunction( L, -1 ) )
-	{
-		lua_pop( L, 2 );
-		return false;
-	}
-
-	lua_pushstring( L, szLookup );
-	if ( lua_pcall( L, 1, 1, 0 ) != 0 )
-	{
-		luasrc_LuaInfoMsgF( "[HL2SB] effect '%s': effects.Create failed: %s\n",
-			pszName, lua_tostring( L, -1 ) );
-		lua_pop( L, 2 );                    // error object, the effects table
-		return false;
-	}
-
-	lua_remove( L, -2 );                    // drop the effects table
-
-	if ( !lua_istable( L, -1 ) )
-	{
-		lua_pop( L, 1 );
-		return false;
-	}
-
+	if ( !entity ) return false;
+	std::map<unsigned int, int>::const_iterator entry = s_ParentPhysicsNumbers.find( entity->GetRefEHandle().ToInt() );
+	if ( entry == s_ParentPhysicsNumbers.end() ) return false;
+	C_BaseEntity *parent = entity->GetMoveParent();
+	if ( !parent ) return false;
+	IPhysicsObject *objects[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+	const int count = parent->VPhysicsGetObjectList( objects, ARRAYSIZE( objects ) );
+	IPhysicsObject *physics = entry->second < count ? objects[entry->second] : NULL;
+	if ( !physics ) return false;
+	Vector position;
+	QAngle angles;
+	physics->GetPosition( &position, &angles );
+	AngleMatrix( angles, position, transform );
 	return true;
 }
 
-bool HL2SB_HasLuaEffect( const char *pszName )
+class CLuaNativeEffect : public C_BaseAnimating
 {
-	if ( L == NULL || pszName == NULL || pszName[0] == '\0' )
-		return false;
+public:
+	CLuaNativeEffect() : m_nRenderRef( LUA_NOREF ), m_nThinkRef( LUA_NOREF ), m_nInitialModelIndex( -1 ), m_bReady( false ), m_bRendering( false ) { ++s_nLuaEffects; }
+	virtual ~CLuaNativeEffect()
+	{
+		if ( L && m_nRenderRef >= 0 ) lua_unref( L, m_nRenderRef );
+		if ( L && m_nThinkRef >= 0 ) lua_unref( L, m_nThinkRef );
+		--s_nLuaEffects;
+	}
 
-	const bool bFound = HL2SB_FindLuaEffectTemplate( L, pszName );
-	if ( bFound )
+	virtual bool ShouldDraw()
+	{
+		return m_bReady && !IsMarkedForDeletion() &&
+			!IsEffectActive( EF_NODRAW ) && GetRenderMode() != kRenderNone;
+	}
+
+	virtual bool IsTransparent() { return true; }
+	virtual RenderGroup_t GetRenderGroup() { return RENDER_GROUP_TRANSLUCENT_ENTITY; }
+	virtual void GetRenderBounds( Vector &mins, Vector &maxs )
+	{
+		if ( HasScriptedRenderBounds() || GetModelIndex() != m_nInitialModelIndex )
+		{
+			BaseClass::GetRenderBounds( mins, maxs );
+			return;
+		}
+		mins = CollisionProp()->OBBMins();
+		maxs = CollisionProp()->OBBMaxs();
+		if ( mins == maxs )
+		{
+			mins.Init( -32, -32, -32 );
+			maxs.Init( 32, 32, 32 );
+		}
+	}
+
+	void SetInitialModelIndex() { m_nInitialModelIndex = GetModelIndex(); }
+
+	virtual int DrawModel( int flags )
+	{
+		if ( m_bRendering ) return BaseClass::DrawModel( flags );
+		if ( !m_bReady || IsMarkedForDeletion() || !L ) return 0;
+		const int top = lua_gettop( L );
+		if ( !PushStoredCallback( m_nRenderRef ) )
+		{
+			lua_settop( L, top );
+			return BaseClass::DrawModel( flags );
+		}
+		lua_pushentity( L, this );
+		m_bRendering = true;
+		const int result = luasrc_pcall( L, 1, 0, 0 );
+		m_bRendering = false;
+		lua_settop( L, top );
+		return result == 0 ? 1 : 0;
+	}
+
+	virtual void ClientThink()
+	{
+		if ( IsMarkedForDeletion() ) return;
+		if ( !L ) { QueueRemoval(); return; }
+		if ( s_ParentPhysicsNumbers.find( GetRefEHandle().ToInt() ) != s_ParentPhysicsNumbers.end() )
+			InvalidatePhysicsRecursive( POSITION_CHANGED | ANGLES_CHANGED );
+		const int top = lua_gettop( L );
+		if ( !PushStoredCallback( m_nThinkRef ) )
+		{
+			lua_settop( L, top );
+			QueueRemoval();
+			return;
+		}
+		lua_pushentity( L, this );
+		const bool ok = luasrc_pcall( L, 1, 1, 0 ) == 0;
+		const bool alive = ok && lua_toboolean( L, -1 ) != 0;
+		lua_settop( L, top );
+		if ( !alive ) QueueRemoval();
+		else if ( !IsMarkedForDeletion() && !m_bReady )
+		{
+			m_bReady = true;
+			if ( GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE )
+				ClientLeafSystem()->RenderableChanged( GetRenderHandle() );
+		}
+	}
+
+	bool PushCallback( const char *name )
+	{
+		if ( !L || !lua_isrefvalid( L, m_nTableReference ) ) return false;
+		lua_getref( L, m_nTableReference );
+		if ( !lua_istable( L, -1 ) ) { lua_pop( L, 1 ); return false; }
+		lua_pushstring( L, name );
+		lua_rawget( L, -2 );
+		lua_remove( L, -2 );
+		if ( lua_isfunction( L, -1 ) ) return true;
 		lua_pop( L, 1 );
+		return false;
+	}
 
-	return bFound;
-}
+	bool PushStoredCallback( int reference )
+	{
+		if ( !L || reference < 0 ) return false;
+		lua_getref( L, reference );
+		if ( lua_isfunction( L, -1 ) ) return true;
+		lua_pop( L, 1 );
+		return false;
+	}
 
-// HL2SB GMod compat: the EFFECT:Set* property setters (see the call site in
-// HL2SB_CreateLuaEffect).  One C closure per name, with the property name as its
-// upvalue, so the value lands on the effect's own table under that name.
-static int LuaEffect_SetParam( lua_State *L )
-{
-	const char *pszName = lua_tostring( L, lua_upvalueindex( 1 ) );
+	void CacheCallbacks()
+	{
+		if ( PushCallback( "Render" ) ) m_nRenderRef = luaL_ref( L, LUA_REGISTRYINDEX );
+		if ( PushCallback( "Think" ) ) m_nThinkRef = luaL_ref( L, LUA_REGISTRYINDEX );
+	}
 
-	lua_setfield( L, 1, ( pszName != NULL ) ? pszName : "value" );
-	return 0;
-}
+	void QueueRemoval()
+	{
+		if ( !IsMarkedForDeletion() )
+			ClientThinkList()->AddToDeleteList( GetClientHandle() );
+	}
 
-static const char *s_LuaEffectParams[] = {
-	"SetDieTime", "SetLifeTime", "SetStartAlpha", "SetEndAlpha",
-	"SetStartSize", "SetEndSize", "SetRoll", "SetRollDelta",
-	"SetVelocityScale", "SetCollide",
+private:
+	int m_nRenderRef;
+	int m_nThinkRef;
+	int m_nInitialModelIndex;
+	bool m_bReady;
+	bool m_bRendering;
 };
 
-bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data )
+bool HL2SB_RequestLuaEffectRemoval( C_BaseEntity *entity )
 {
-	if ( L == NULL || pszName == NULL || pszName[0] == '\0' )
-		return false;
+	CLuaNativeEffect *effect = dynamic_cast<CLuaNativeEffect *>( entity );
+	if ( !effect ) return false;
+	if ( IsCurrentViewAccessAllowed() )
+		luasrc_LuaWarnMsgF( "Entity:Remove cannot be called while rendering\n" );
+	else
+		effect->QueueRemoval();
+	return true;
+}
 
-	if ( !HL2SB_FindLuaEffectTemplate( L, pszName ) )
+// The original effects module keeps its registered definitions in an upvalue.
+// Unknown or replaced implementations fall back to calling effects.Create.
+static int HL2SB_LuaEffectRegistered( lua_State *state, const char *name )
+{
+	const int top = lua_gettop( state );
+	lua_getglobal( state, "effects" );
+	if ( !lua_istable( state, -1 ) ) { lua_settop( state, top ); return 0; }
+	lua_getfield( state, -1, "Create" );
+	if ( !lua_isfunction( state, -1 ) ) { lua_settop( state, top ); return 0; }
+	for ( int i = 1; ; ++i )
 	{
-		// HL2SB: this is NOT fatal and must not read like one -- both dispatch
-		// paths fall through to the engine's DECLARE_CLIENT_EFFECT callbacks
-		// right after, and the lookup there is Q_stricmp, so 'bloodimpact'
-		// runs the engine's "BloodImpact" and 'cball_bounce' its own callback.
-		// The old wording ("no Lua effect template for ...") read as a failure
-		// and sent every debugging session down a wrong trail (2026-09-21).
-		// HL2SB (2026-09-22): once PER NAME -- every dispatch of an engine
-		// effect printed this twice (two call sites), flooding the console.
-		static char s_szNoTemplateSeen[ 64 ][ 96 ];
-		static int s_nNoTemplateSeen = 0;
-		bool bNoTemplateNew = true;
-		for ( int i = 0; i < s_nNoTemplateSeen; ++i )
+		const char *upvalue = lua_getupvalue( state, -1, i );
+		if ( !upvalue ) break;
+		if ( !Q_strcmp( upvalue, "EffectList" ) && lua_istable( state, -1 ) )
 		{
-			if ( !Q_stricmp( s_szNoTemplateSeen[ i ], pszName ) )
-			{
-				bNoTemplateNew = false;
-				break;
-			}
+			lua_pushstring( state, name );
+			lua_rawget( state, -2 );
+			const bool found = !lua_isnil( state, -1 );
+			lua_settop( state, top );
+			return found ? 1 : 0;
 		}
-		if ( bNoTemplateNew && s_nNoTemplateSeen < 8 )
-		{
-			Q_strncpy( s_szNoTemplateSeen[ s_nNoTemplateSeen ], pszName, sizeof( s_szNoTemplateSeen[ 0 ] ) );
-			++s_nNoTemplateSeen;
-			luasrc_LuaInfoMsgF( "[HL2SB] effect '%s': no Lua template -> engine callback\n", pszName );
-		}
+		lua_pop( state, 1 );
+	}
+	lua_settop( state, top );
+	return -1;
+}
+
+bool HL2SB_HasLuaEffect( const char *name )
+{
+	if ( !L || !name || !name[0] ) return false;
+	char lower[128];
+	if ( Q_strlen( name ) >= sizeof( lower ) ) return false;
+	Q_strncpy( lower, name, sizeof( lower ) );
+	Q_strlower( lower );
+	const int registered = HL2SB_LuaEffectRegistered( L, lower );
+	if ( registered >= 0 ) return registered != 0;
+	const int top = lua_gettop( L );
+	lua_getglobal( L, "effects" );
+	lua_getfield( L, -1, "Create" );
+	lua_pushstring( L, lower );
+	const bool found = luasrc_pcall( L, 1, 1, 0 ) == 0 && !lua_isnil( L, -1 );
+	lua_settop( L, top );
+	return found;
+}
+
+bool HL2SB_CreateLuaEffect( const char *name, const CEffectData &data )
+{
+	if ( !L || !name || !name[0] || Q_strlen( name ) >= 128 ) return false;
+	char lower[128];
+	Q_strncpy( lower, name, sizeof( lower ) );
+	Q_strlower( lower );
+	if ( HL2SB_LuaEffectRegistered( L, lower ) == 0 ) return false;
+	if ( s_nLuaEffectDepth >= 20 || s_nLuaEffects >= 2048 )
+	{
+		luasrc_LuaWarnMsgF( "Cannot create Lua effect '%s': effect limit reached\n", lower );
+		return true;
+	}
+
+	++s_nLuaEffectDepth;
+	const int top = lua_gettop( L );
+	CLuaNativeEffect *effect = new CLuaNativeEffect();
+	if ( modelinfo->GetModelIndex( "models/error.mdl" ) == -1 )
+	{
+		engine->LoadModel( "models/error.mdl", true );
+		modelinfo->RegisterDynamicModel( "models/error.mdl", true );
+	}
+	if ( !effect->InitializeAsClientEntity( "models/error.mdl", RENDER_GROUP_TRANSLUCENT_ENTITY ) )
+	{
+		delete effect;
+		--s_nLuaEffectDepth;
+		return true;
+	}
+	effect->SetClassname( lower );
+	effect->SetInitialModelIndex();
+	effect->SetAbsOrigin( data.m_vOrigin );
+	effect->SetNextClientThink( CLIENT_THINK_ALWAYS );
+
+	lua_getglobal( L, "effects" );
+	lua_getfield( L, -1, "Create" );
+	lua_remove( L, -2 );
+	lua_pushstring( L, lower );
+	lua_pushentity( L, effect );
+	const bool created = luasrc_pcall( L, 2, 1, 0 ) == 0 && !lua_isnil( L, -1 );
+	lua_settop( L, top );
+	if ( !created )
+	{
+		effect->QueueRemoval();
+		--s_nLuaEffectDepth;
 		return false;
 	}
 
-	// stack: template
-	lua_newtable( L );                          // template, copy
-
-	// Shallow copy of the template -- one table per live effect, so two tracers
-	// in flight do not overwrite each other's state.
-	lua_pushnil( L );
-	while ( lua_next( L, -3 ) != 0 )
+	if ( effect->PushCallback( "Init" ) )
 	{
-		lua_pushvalue( L, -2 );                 // key
-		lua_insert( L, -2 );                    // key, value -> key, key, value
-		lua_settable( L, -4 );                  // copy[ key ] = value
+		lua_pushentity( L, effect );
+		CEffectData copy = data;
+		lua_pusheffect( L, copy );
+		luasrc_pcall( L, 2, 0, 0 );
 	}
-
-	// GMod's engine methods.
-	lua_pushcfunction( L, LuaEffect_SetRenderBoundsWS );
-	lua_setfield( L, -2, "SetRenderBoundsWS" );
-
-	lua_pushcfunction( L, LuaEffect_GetTracerShootPos );
-	lua_setfield( L, -2, "GetTracerShootPos" );
-
-	const luaL_Reg entityMethods[] = {
-		{"SetRenderBounds", LuaEffect_SetRenderBoundsWS},
-		{"SetCollisionBounds", LuaEffect_SetRenderBoundsWS},
-		{"SetPos", LuaEffect_SetPos}, {"GetPos", LuaEffect_GetPos},
-		{"SetAngles", LuaEffect_SetAngles}, {"GetAngles", LuaEffect_GetAngles},
-		{"SetParent", LuaEffect_SetParent}, {"SetParentPhysNum", LuaEffect_SetParentPhysNum},
-		{"SetModel", LuaEffect_SetModel}, {"GetModel", LuaEffect_GetModel},
-		{"IsValid", LuaEffect_IsValid}, {"Remove", LuaEffect_Remove}, {NULL, NULL}
-	};
-	for (int i = 0; entityMethods[i].name; ++i) {
-		lua_getfield(L, -1, entityMethods[i].name);
-		bool absent = lua_isnil(L, -1);
-		lua_pop(L, 1);
-		if (absent) {
-			lua_pushcfunction(L, entityMethods[i].func);
-			lua_setfield(L, -2, entityMethods[i].name);
-		}
-	}
-
-	// HL2SB GMod compat: the numeric setters a stock GMod effect script opens
-	// with -- every one of them is a CLuaParticle/effect property in GMod, and
-	// this host is HL2SB's own (a Lua table driven by Init/Think/Render), so
-	// there is no engine object behind them.
-	//
-	//     effects/nuke_effect_air/init.lua
-	//         self:SetDieTime( 4 ); self:SetStartAlpha( 255 ) ...
-	//
-	// Without them that script died on its first line.  The value is stored on the
-	// effect's own table (so a script that reads it back gets it) and otherwise
-	// ignored: the effect's lifetime stays ours.
-	for ( int i = 0; i < (int)( sizeof( s_LuaEffectParams ) / sizeof( s_LuaEffectParams[0] ) ); ++i )
-	{
-		lua_pushstring( L, s_LuaEffectParams[ i ] );
-		lua_pushcclosure( L, LuaEffect_SetParam, 1 );
-		lua_setfield( L, -2, s_LuaEffectParams[ i ] );
-	}
-
-	// HL2SB (2026-10-07): EntIndex / SetRenderMode / SetRenderFX are covered by
-	// the content-side effects.Register shim (per-instance weak-key store in
-	// lua/includes/init.lua).  Do NOT also stamp them here: a stamped method on
-	// the per-spawn copy would shadow the shim and leave two code paths
-	// answering the same call.
-
-	const int nRef = luaL_ref( L, LUA_REGISTRYINDEX );   // pops the copy
-	lua_pop( L, 1 );                                     // the template
-
-	if ( nRef < 0 )
-	{
-		// HL2SB: was a silent exit -- exactly the "vanished without a word" class.
-		luasrc_LuaInfoMsgF( "[HL2SB] Lua effect '%s': luaL_ref failed\n", pszName );
-		return false;
-	}
-
-	// CEffectsList::AddEffect() silently drops the effect once its 256 slot list
-	// is full: the registry reference taken above would leak for the lifetime of
-	// the process, and reporting success would also suppress the engine's own
-	// fallback for this effect name.  Ask before taking the slot.
-	if ( !HL2SB_ClientEffectsHaveRoom() )
-	{
-		lua_unref( L, nRef );
-		luasrc_LuaInfoMsgF( "[HL2SB] Lua effect '%s': clienteffects list full\n", pszName );
-		return false;
-	}
-
-	clienteffects->AddEffect( new CLuaEffect( pszName, nRef, data ) );
-
-	// HL2SB diagnostic: one line per effect name per DLL load, so ds_debug.log
-	// says whether an effect really reached this client and with what geometry.
-	{
-		char szKey[ 128 ];
-		Q_snprintf( szKey, sizeof( szKey ), "lua-effect-created:%s", pszName );
-		HL2SB_WarnOnce( szKey,
-			"Lua effect '%s' created: start=(%.0f %.0f %.0f) origin=(%.0f %.0f %.0f) entindex=%d flags=0x%X attach=%d\n",
-			pszName,
-			data.m_vStart.x, data.m_vStart.y, data.m_vStart.z,
-			data.m_vOrigin.x, data.m_vOrigin.y, data.m_vOrigin.z,
-			data.entindex(), (unsigned int)data.m_fFlags, data.m_nAttachmentIndex );
-	}
-
+	effect->CacheCallbacks();
+	if ( effect->GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE )
+		ClientLeafSystem()->RenderableChanged( effect->GetRenderHandle() );
+	lua_settop( L, top );
+	--s_nLuaEffectDepth;
 	return true;
 }

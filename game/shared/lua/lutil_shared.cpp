@@ -769,13 +769,13 @@ static int luasrc_util_PrecacheSound (lua_State *L) {
 // client the argument is validated and dropped, matching GMod's behaviour.
 static int luasrc_util_PrecacheModel (lua_State *L) {
   const char *pszName = luaL_checkstring(L, 1);
-
-  // HL2SB: an SWEP is recreated on every pickup and every map reload, and each
-  // recreation used to re-run the whole precache of its model/sound list.
-  if ( !HL2SB_PrecacheOnce( pszName ) )
-    return 0;
-
-#ifndef CLIENT_DLL
+#ifdef CLIENT_DLL
+  const int length = Q_strlen( pszName );
+  if ( pszName[0] > ' ' && length > 3 && !strchr( pszName, '*' ) &&
+       Q_stricmp( pszName + length - 4, ".bsp" ) )
+    (void)modelinfo->GetModelIndex( pszName );
+#else
+  if ( !HL2SB_PrecacheOnce( pszName ) ) return 0;
   CBaseEntity::PrecacheModel( pszName );
 #endif
   return 0;

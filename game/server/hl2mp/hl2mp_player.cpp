@@ -266,7 +266,7 @@ CON_COMMAND_F( act, "Plays a 'taunt' animation, if the server allows it. Valid o
 	Activity activity = ACT_INVALID;
 	for ( int i = 0; i < ARRAYSIZE( s_HL2SBGModActList ); ++i )
 	{
-		if ( !Q_stricmp( pszAct, s_HL2SBGModActList[ i ].pszName ) )
+		if ( !Q_strcmp( pszAct, s_HL2SBGModActList[ i ].pszName ) )
 		{
 			activity = s_HL2SBGModActList[ i ].activity;
 			break;

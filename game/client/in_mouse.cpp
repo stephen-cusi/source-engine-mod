@@ -50,25 +50,21 @@ static int s_iHL2SBLastMouseDx = 0;
 // frame, freeze the view and report the raw deltas in the command".
 bool HL2SB_PhysgunMouseRotate( void );
 static int s_iHL2SBLastMouseDy = 0;
+static int s_iHL2SBCmdMouseDx = 0;
+static int s_iHL2SBCmdMouseDy = 0;
+
+void HL2SB_TakeCommandMouseDeltas( int &dx, int &dy )
+{
+	dx = s_iHL2SBCmdMouseDx;
+	dy = s_iHL2SBCmdMouseDy;
+	s_iHL2SBCmdMouseDx = 0;
+	s_iHL2SBCmdMouseDy = 0;
+}
 
 void HL2SB_GetLastMouseDeltas( int &dx, int &dy )
 {
 	dx = s_iHL2SBLastMouseDx;
 	dy = s_iHL2SBLastMouseDy;
-}
-
-// HL2SB (2026-09-25): consume-once variant for the SEND path.  This fork's
-// frame order is ExtraMouseSample (fresh deltas) THEN CreateMove (drained
-// accumulators -> zeros), so the plain getter saw zeros half the time and
-// the sent usercmd carried mousedx=0 -- the physgun's E-rotate never moved.
-// MouseMove only latches NONZERO deltas; this clears them after stamping so
-// a stopped mouse does not keep re-sending the last delta.
-void HL2SB_TakeLastMouseDeltas( int &dx, int &dy )
-{
-	dx = s_iHL2SBLastMouseDx;
-	dy = s_iHL2SBLastMouseDy;
-	s_iHL2SBLastMouseDx = 0;
-	s_iHL2SBLastMouseDy = 0;
 }
 
 // up / down
@@ -744,11 +740,13 @@ void CInput::MouseMove( CUserCmd *cmd )
 		// HL2SB (2026-09-25): latch ONLY real movement -- this runs twice per
 		// frame (ExtraMouseSample first with fresh deltas, then CreateMove with
 		// already-drained accumulators) and the zero pass must not clobber the
-		// live deltas the send path (HL2SB_TakeLastMouseDeltas) consumes.
+		// live deltas consumed when the next command is created.
 		if ( mx != 0.0f || my != 0.0f )
 		{
 			s_iHL2SBLastMouseDx = mx;
 			s_iHL2SBLastMouseDy = my;
+			s_iHL2SBCmdMouseDx = clamp( s_iHL2SBCmdMouseDx + (int)mx, -32767, 32767 );
+			s_iHL2SBCmdMouseDy = clamp( s_iHL2SBCmdMouseDy + (int)my, -32767, 32767 );
 		}
 
 		if ( bFreezeView )

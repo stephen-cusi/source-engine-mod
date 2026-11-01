@@ -1158,6 +1158,7 @@ void C_BaseEntity::Clear( void )
 	m_pOriginalData = NULL;
 	m_vecAbsOrigin.Init();
 	m_angAbsRotation.Init();
+	AngleMatrix( m_angAbsRotation, m_vecAbsOrigin, m_rgflCoordinateFrame );
 	m_vecVelocity.Init();
 	ClearFlags();
 	m_vecViewOffset.Init();
@@ -1306,6 +1307,8 @@ bool C_BaseEntity::InitializeAsClientEntityByIndex( int iIndex, RenderGroup_t re
 
 #if defined( LUA_SDK )
 extern void HL2SB_EntityMaterialReleased( C_BaseEntity *pEntity );
+extern void HL2SB_ClearClientParentPhysicsNumber( C_BaseEntity *pEntity );
+extern bool HL2SB_GetClientParentPhysicsTransform( C_BaseEntity *pEntity, matrix3x4_t &transform );
 #endif
 
 void C_BaseEntity::Term()
@@ -1338,6 +1341,7 @@ void C_BaseEntity::Term()
 		// Remove from the client entity list.
 #if defined( LUA_SDK )
 		HL2SB_EntityMaterialReleased( this );
+		HL2SB_ClearClientParentPhysicsNumber( this );
 #endif
 		ClientEntityList().RemoveEntity( GetClientHandle() );
 
@@ -2641,7 +2645,6 @@ void C_BaseEntity::SetParent( C_BaseEntity *pParentEntity, int iParentAttachment
 	SetAbsOrigin(vecAbsOrigin);
 	SetAbsAngles(angAbsRotation);
 	SetAbsVelocity(vecAbsVelocity);
-
 }
 
 
@@ -4308,7 +4311,13 @@ void C_BaseEntity::SetAbsOrigin( const Vector& absOrigin )
 	}
 
 	// Moveparent case: transform the abs position into local space
-	VectorITransform( absOrigin, pMoveParent->EntityToWorldTransform(), (Vector&)m_vecOrigin );
+	matrix3x4_t parentPhysicsTransform;
+#if defined( LUA_SDK )
+	if ( HL2SB_GetClientParentPhysicsTransform( this, parentPhysicsTransform ) )
+		VectorITransform( absOrigin, parentPhysicsTransform, (Vector&)m_vecOrigin );
+	else
+#endif
+		VectorITransform( absOrigin, pMoveParent->EntityToWorldTransform(), (Vector&)m_vecOrigin );
 }
 
 void C_BaseEntity::SetAbsAngles( const QAngle& absAngles )
@@ -4338,8 +4347,13 @@ void C_BaseEntity::SetAbsAngles( const QAngle& absAngles )
 		return;
 	}
 
+	matrix3x4_t parentPhysicsTransform;
+	bool useParentPhysics = false;
+#if defined( LUA_SDK )
+	useParentPhysics = HL2SB_GetClientParentPhysicsTransform( this, parentPhysicsTransform );
+#endif
 	// Moveparent case: we're aligned with the move parent
-	if ( m_angAbsRotation == pMoveParent->GetAbsAngles() )
+	if ( !useParentPhysics && m_angAbsRotation == pMoveParent->GetAbsAngles() )
 	{
 		m_angRotation.Init( );
 	}
@@ -4347,7 +4361,7 @@ void C_BaseEntity::SetAbsAngles( const QAngle& absAngles )
 	{
 		// Moveparent case: transform the abs transform into local space
 		matrix3x4_t worldToParent, localMatrix;
-		MatrixInvert( pMoveParent->EntityToWorldTransform(), worldToParent );
+		MatrixInvert( useParentPhysics ? parentPhysicsTransform : pMoveParent->EntityToWorldTransform(), worldToParent );
 		ConcatTransforms( worldToParent, m_rgflCoordinateFrame, localMatrix );
 		MatrixAngles( localMatrix, (QAngle &)m_angRotation );
 	}
@@ -4594,6 +4608,10 @@ matrix3x4_t& C_BaseEntity::GetParentToWorldTransform( matrix3x4_t &tempMatrix )
 		}
 	}
 
+#if defined( LUA_SDK )
+	if ( HL2SB_GetClientParentPhysicsTransform( this, tempMatrix ) )
+		return tempMatrix;
+#endif
 	// If we fall through to here, then just use the move parent's abs origin and angles.
 	return pMoveParent->EntityToWorldTransform();
 }

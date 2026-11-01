@@ -807,13 +807,6 @@ void ClientModeShared::AdjustEngineViewport( int& x, int& y, int& width, int& he
 //-----------------------------------------------------------------------------
 void ClientModeShared::PreRender( CViewSetup *pSetup )
 {
-#ifdef LUA_SDK
-	if ( L != NULL && engine->IsInGame() )
-	{
-		extern void HL2SB_UpdateSortedLuaEffects();
-		HL2SB_UpdateSortedLuaEffects();
-	}
-#endif
 	// HL2SB: GM:PreRender is deliberately NOT dispatched yet - its GMod
 	// contract (return true cancels the whole frame render) needs a check in
 	// the frame owner, not in this void method.  Deferred to the render-cancel

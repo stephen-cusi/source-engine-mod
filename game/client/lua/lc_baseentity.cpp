@@ -14,6 +14,7 @@
 #include "mathlib/lvector.h"
 #include "model_types.h"	// HL2SB: STUDIO_RENDER, the default of Entity:DrawModel()
 #include "c_baseanimating.h"
+#include "clientleafsystem.h"
 #include "basescripted.h"
 #include "c_fire_smoke.h"	// HL2SB: Entity:IsOnFire (C_EntityFlame = the networked flame)
 #include "view.h"			// HL2SB: MainViewOrigin/MainViewAngles (GUIMousePressed ray)
@@ -162,6 +163,14 @@ static int CBaseEntity_DrawModel (lua_State *L) {
 // entity code, so a scripted entity that draws itself (npc_verity draws a 128x128
 // sprite 64 units above its origin, with no model at all) could not widen the box
 // the renderer culls against.
+extern void HL2SB_SetClientParentPhysicsNumber( C_BaseEntity *entity, int number );
+
+static int CBaseEntity_SetParentPhysNum (lua_State *L) {
+  C_BaseEntity *entity = luaL_checkentity(L, 1);
+  HL2SB_SetClientParentPhysicsNumber(entity, (int)luaL_checknumber(L, 2));
+  return 0;
+}
+
 static int CBaseEntity_SetRenderBounds (lua_State *L) {
   C_BaseEntity *pEntity = luaL_checkentity(L, 1);
   Vector mins = luaL_checkvector(L, 2);
@@ -170,6 +179,8 @@ static int CBaseEntity_SetRenderBounds (lua_State *L) {
   Vector add  = luaL_optvector(L, 4, &vecZero);
 
   pEntity->SetScriptedRenderBounds( mins - add, maxs + add );
+  if ( pEntity->GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE )
+    ClientLeafSystem()->RenderableChanged( pEntity->GetRenderHandle() );
   return 0;
 }
 
@@ -186,6 +197,8 @@ static int CBaseEntity_SetRenderBoundsWS (lua_State *L) {
 
   const Vector origin = pEntity->GetAbsOrigin();
   pEntity->SetScriptedRenderBounds( ( mins - add ) - origin, ( maxs + add ) - origin );
+  if ( pEntity->GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE )
+    ClientLeafSystem()->RenderableChanged( pEntity->GetRenderHandle() );
   return 0;
 }
 
@@ -393,6 +406,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"UsesFullFrameBufferTexture", CBaseEntity_UsesFullFrameBufferTexture},
   {"DrawModel", CBaseEntity_DrawModel},
   {"SetRenderBounds", CBaseEntity_SetRenderBounds},
+  {"SetParentPhysNum", CBaseEntity_SetParentPhysNum},
   {"SetRenderBoundsWS", CBaseEntity_SetRenderBoundsWS},
   // HL2SB GMod compat: the render matrix pair (client only, like the reference).
   {"EnableMatrix", CBaseEntity_EnableMatrix},

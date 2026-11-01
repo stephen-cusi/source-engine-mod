@@ -2332,18 +2332,11 @@ static int CBaseEntity_GetModelBounds (lua_State *L) {
   return 2;
 }
 
-/* HL2SB GMod compat: Entity:SetRenderFX( renderfx ) / GetRenderFX() -- the
-** networked render-fx byte (kRenderFx* family; GMod addons pulse weapons and
-** glow sprites through it).  The getter is shared (the value networks); the
-** setter only has a server-side target in this engine. */
+/* Entity:SetRenderFX and GetRenderFX use the render-fx byte in both realms. */
 static int CBaseEntity_SetRenderFX (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
-#ifndef CLIENT_DLL
-  int iRenderFX = luaL_checkint(L, 2);
+  int iRenderFX = (int)luaL_checknumber(L, 2);
   pEntity->m_nRenderFX = (unsigned char)iRenderFX;
-#else
-  (void)pEntity;  // client realm: the value networks down, nothing to set here
-#endif
   return 0;
 }
 
@@ -2629,6 +2622,8 @@ static int CBaseEntity_RegisterThinkContext (lua_State *L) {
 static int CBaseEntity_Remove (lua_State *L) {
   CBaseEntity *entity = luaL_checkentity(L, 1);
 #ifdef CLIENT_DLL
+  extern bool HL2SB_RequestLuaEffectRemoval( C_BaseEntity *entity );
+  if ( HL2SB_RequestLuaEffectRemoval( entity ) ) return 0;
   if (entity->entindex() == 0 || entity->IsPlayer())
 #else
   if (entity == GetWorldEntity() || entity->IsPlayer())
@@ -3082,13 +3077,16 @@ static int CBaseEntity_SetParent (lua_State *L) {
   if (pParent == NULL)
     pParent = lua_toentity(L, 2);
 
-  // HL2SB GMod parity (2026-09-29): GMod's Entity:SetParent passes the number
-  // arg3 as the attachment index and -1 for everything else (nil/string).
-  // -1 means "keep the child's current attachment" (CBaseEntity::SetParent reads the stored byte).
-  // The old default 0 silently RESET the attachment on a bare re-parent.
+  // The client and server use different defaults for an omitted attachment.
+#ifdef CLIENT_DLL
+  int iAttachment = 0;
+  if ( lua_type( L, 3 ) == LUA_TNUMBER )
+    iAttachment = (int)lua_tonumber( L, 3 );
+#else
   int iAttachment = -1;
   if ( lua_isnumber( L, 3 ) )
-    iAttachment = (int)lua_tointeger( L, 3 );
+    iAttachment = (int)lua_tonumber( L, 3 );
+#endif
 
   luaL_checkentity(L, 1)->SetParent(pParent, iAttachment);
   return 0;

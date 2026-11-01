@@ -269,7 +269,10 @@ void CClientThinkList::PerformThinkFunctions()
 
 	int nMaxList = m_ThinkEntries.Count();
 	if ( nMaxList == 0 )
+	{
+		CleanUpDeleteList();
 		return;
+	}
 
 	++m_nIterEnum;
 
@@ -342,9 +345,8 @@ void CClientThinkList::AddToDeleteList( ClientEntityHandle_t hEnt )
 		if ( pEntity->IsMarkedForDeletion() )
 			return;
 
-		// Don't add networkable entities to delete list -- the server should
-		// take care of this.  The delete list is for client-side only entities.
-		if ( !pEntity->GetClientNetworkable() )
+		// Server entities have an edict index; client-only entities do not.
+		if ( pEntity->entindex() == -1 )
 		{
 			m_aDeleteList.AddToTail( hEnt );
 			pEntity->SetRemovalFlag( true );

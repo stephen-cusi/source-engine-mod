@@ -1314,6 +1314,18 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 	}
 
 #if defined( LUA_SDK )
+	// Extra mouse samples can consume input before the command is created.
+	// Make those deltas available to CreateMove as well as the send path.
+	{
+		extern void HL2SB_TakeCommandMouseDeltas( int &dx, int &dy );
+		int dx, dy;
+		HL2SB_TakeCommandMouseDeltas( dx, dy );
+		if ( active )
+		{
+			cmd->mousedx = (short)dx;
+			cmd->mousedy = (short)dy;
+		}
+	}
 	// HL2SB (2026-09-27): GMod's GM:CreateMove( cmd ).  The taunt camera
 	// (gamemodes/deathmatch/gamemode/taunt_camera.lua) reads the mouse deltas
 	// off the command, orbits a separate camera angle set, and locks the body
@@ -1528,21 +1540,6 @@ bool CInput::WriteUsercmdDeltaToBuffer( bf_write *buf, int from, int to, bool is
 	else
 	{
 		ValidateUserCmd( t, to );
-	}
-
-	// HL2SB GMod compat (2026-09-25): the sent cmd always carried
-	// mousedx=mousedy=0 -- ExtraMouseSample samples the mouse BEFORE
-	// CreateMove each frame and drains the shared accumulators, so
-	// CreateMove's MouseMove saw zeros (the view still turned through
-	// ExtraMouseSample's own apply).  Consume the LIVE raw deltas latched by
-	// the last real MouseMove (in_mouse.cpp) into the cmd being serialized --
-	// the physgun's E-rotate consumes exactly these on the server.
-	{
-		extern void HL2SB_TakeLastMouseDeltas( int &dx, int &dy );
-		int iHl2sbDx = 0, iHl2sbDy = 0;
-		HL2SB_TakeLastMouseDeltas( iHl2sbDx, iHl2sbDy );
-		t->mousedx = (short)iHl2sbDx;
-		t->mousedy = (short)iHl2sbDy;
 	}
 
 	// Write it into the buffer
