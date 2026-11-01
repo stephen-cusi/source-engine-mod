@@ -69,6 +69,7 @@ public: // IServer implementation
 	virtual IClient	*GetClient( int index ) { return m_Clients[index]; } // returns interface to client 
 	virtual int		GetClientCount() const { return m_Clients.Count(); } // for iteration;
 	virtual float	GetTime( void ) const;
+	double GetPreciseTime( void ) const { return (double)m_nTickCount * m_flTickInterval; }
 	virtual int		GetTick( void ) const { return m_nTickCount; }
 	virtual float	GetTickInterval( void ) const { return m_flTickInterval; }
 	virtual const char *GetName( void ) const;
@@ -236,7 +237,7 @@ protected:
 	int			m_nSpawnCount;			// Number of servers spawned since start,
 									// used to check late spawns (e.g., when d/l'ing lots of
 									// data)
-	float		m_flTickInterval;		// time for 1 tick in seconds
+	double		m_flTickInterval;		// time for 1 tick in seconds
 
 
 	CUtlVector<CBaseClient*>	m_Clients;		// array of up to [maxclients] client slots.

@@ -2856,7 +2856,7 @@ static int HL2SB_Lua_EntityNetworkVarGet (lua_State *L) {
 ** which is the realm "jpeg" needs.
 */
 // Parse the entire command stream, including commands after separators.
-static int lua_IsConCommandBlocked (lua_State *L) {
+int lua_IsConCommandBlocked (lua_State *L) {
   const char *pszText = luaL_checkstring(L, 1);
   static const char *const blocked[] = {
     "crosshair_setup",
@@ -3193,7 +3193,7 @@ static int lua_IsConCommandBlocked (lua_State *L) {
     const CCommand &args = buffer.GetCommand();
     if ( args.ArgC() == 0 )
       continue;
-    if ( gpGlobals->maxClients < 2 && !Q_stricmp(args[0], "retry") )
+    if ( (!gpGlobals || gpGlobals->maxClients < 2) && !Q_stricmp(args[0], "retry") )
       bBlocked = true;
     for ( int i = 0; i < ARRAYSIZE(blocked) && !bBlocked; ++i )
       if ( !Q_stricmp(args[0], blocked[i]) )

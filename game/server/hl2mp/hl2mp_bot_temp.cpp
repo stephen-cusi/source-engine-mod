@@ -171,7 +171,7 @@ static void RunPlayerMove( CHL2MP_Player *fakeclient, const QAngle& viewangles, 
 
 	// Store off the globals.. they're gonna get whacked
 	float flOldFrametime = gpGlobals->frametime;
-	float flOldCurtime = gpGlobals->curtime;
+	double flOldCurtime = gpGlobals->curtime;
 
 	float flTimeBase = gpGlobals->curtime + gpGlobals->frametime - frametime;
 	fakeclient->SetTimeBase( flTimeBase );

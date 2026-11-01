@@ -3353,7 +3353,8 @@ void _Host_RunFrame (float time)
 		else
 		{
 			static int numticks_last_frame = 0;
-			static float host_remainder_last_frame = 0, prev_remainder_last_frame = 0, last_frame_time = 0;
+			static double host_remainder_last_frame = 0;
+			static float prev_remainder_last_frame = 0, last_frame_time = 0;
 
 			int clientticks;
 			int serverticks;
@@ -4593,7 +4594,7 @@ bool Host_Changelevel( bool loadfromsavedgame, const char *mapname, const char *
 			saverestore->Finish( pSaveData );
 		}
 
-		g_ServerGlobalVariables.curtime = sv.GetTime();
+		g_ServerGlobalVariables.curtime = sv.GetPreciseTime();
 
 		audiosourcecache->LevelInit( szMapName );
 		g_pServerPluginHandler->LevelInit( szMapName, CM_EntityString(), oldlevel, startspot, true, false );
@@ -4604,7 +4605,7 @@ bool Host_Changelevel( bool loadfromsavedgame, const char *mapname, const char *
 	else
 #endif
 	{
-		g_ServerGlobalVariables.curtime = sv.GetTime();
+		g_ServerGlobalVariables.curtime = sv.GetPreciseTime();
 #if !defined(SWDS)
 		audiosourcecache->LevelInit( szMapName );
 #endif
@@ -4718,7 +4719,7 @@ bool Host_NewGame( char *mapName, bool loadGame, bool bBackgroundLevel, const ch
 	VPROF_SCOPE_END();
 
 	// make sure the time is set
-	g_ServerGlobalVariables.curtime = sv.GetTime();
+	g_ServerGlobalVariables.curtime = sv.GetPreciseTime();
 
 	COM_TimestampedLog( "serverGameDLL->LevelInit" );
 
@@ -4734,7 +4735,7 @@ bool Host_NewGame( char *mapName, bool loadGame, bool bBackgroundLevel, const ch
 	{
 		sv.SetPaused( true );		// pause until all clients connect
 		sv.m_bLoadgame = true;
-		g_ServerGlobalVariables.curtime = sv.GetTime();
+		g_ServerGlobalVariables.curtime = sv.GetPreciseTime();
 	}
 
 	if( !SV_ActivateServer() )

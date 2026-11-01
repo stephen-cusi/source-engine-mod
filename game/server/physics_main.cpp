@@ -2022,7 +2022,7 @@ void Physics_RunThinkFunctions( bool simulating )
 
 	g_bTestMoveTypeStepSimulation = sv_teststepsimulation.GetBool();
 
-	float starttime = gpGlobals->curtime;
+	double starttime = gpGlobals->curtime;
 	// clear all entites freed outside of this loop
 	gEntList.CleanupDeleteList();
 

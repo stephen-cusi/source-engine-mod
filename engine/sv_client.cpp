@@ -176,7 +176,7 @@ bool CGameClient::ProcessMove(CLC_Move *msg)
 #endif
 
 	// Make sure player knows of correct server time
-	g_ServerGlobalVariables.curtime = sv.GetTime();
+	g_ServerGlobalVariables.curtime = sv.GetPreciseTime();
 	g_ServerGlobalVariables.frametime = host_state.interval_per_tick;
 
 //	COM_Log( "sv.log", "  executing %i move commands from client starting with command %i(%i)\n",
@@ -910,7 +910,7 @@ void CGameClient::ActivatePlayer( void )
 	// call the spawn function
 	if ( !sv.m_bLoadgame )
 	{
-		g_ServerGlobalVariables.curtime = sv.GetTime();
+	g_ServerGlobalVariables.curtime = sv.GetPreciseTime();
 
 		COM_TimestampedLog( "g_pServerPluginHandler->ClientPutInServer" );
 

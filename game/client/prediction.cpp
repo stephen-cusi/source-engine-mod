@@ -1182,7 +1182,7 @@ void CPrediction::RestoreOriginalEntityState( void )
 //			*tcmd - 
 //			*localPlayer - 
 //-----------------------------------------------------------------------------
-void CPrediction::RunSimulation( int current_command, float curtime, CUserCmd *cmd, C_BasePlayer *localPlayer )
+void CPrediction::RunSimulation( int current_command, double curtime, CUserCmd *cmd, C_BasePlayer *localPlayer )
 {
 #if !defined( NO_ENTITY_PREDICTION )
 	VPROF( "CPrediction::RunSimulation" );
@@ -1490,8 +1490,8 @@ int CPrediction::ComputeFirstCommandToExecute( bool received_new_world_update, i
 				// if we don't, we'll have 3 interpolation entries with the same timestamp as this predicted
 				// frame, so we won't be able to interpolate (which leads to jerky movement in the player when
 				// ANY entity like your gun gets a prediction error).
-				float flPrev = gpGlobals->curtime;
-				gpGlobals->curtime = pLocalPlayer->GetTimeBase() - TICK_INTERVAL;
+				double flPrev = gpGlobals->curtime;
+				gpGlobals->curtime = ( pLocalPlayer->m_nTickBase - 1 ) * TICK_INTERVAL;
 				
 				for ( int i = 0; i < predictables->GetPredictableCount(); i++ )
 				{
@@ -1585,7 +1585,7 @@ bool CPrediction::PerformPrediction( bool received_new_world_update, C_BasePlaye
 		m_bFirstTimePredicted = !cmd->hasbeenpredicted;
 
 		// Set globals appropriately
-		float curtime		= ( localPlayer->m_nTickBase ) * TICK_INTERVAL;
+		double curtime		= ( localPlayer->m_nTickBase ) * TICK_INTERVAL;
 
 		RunSimulation( current_command, curtime, cmd, localPlayer );
 

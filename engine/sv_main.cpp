@@ -2575,7 +2575,7 @@ bool CGameServer::SpawnServer( const char *szMapName, const char *szMapFile, con
 	m_nTickCount = (int)( 1.0 / host_state.interval_per_tick ) + 1; // Start at appropriate 1
 
 	g_ServerGlobalVariables.tickcount = m_nTickCount;
-	g_ServerGlobalVariables.curtime = GetTime();
+	g_ServerGlobalVariables.curtime = GetPreciseTime();
 
 	// Load the world model.
 	g_pFileSystem->AddSearchPath( szMapFile, "GAME", PATH_ADD_TO_HEAD );
@@ -2846,7 +2846,7 @@ void SV_Think( bool bIsSimulating )
 //	}
 
 	g_ServerGlobalVariables.tickcount   = sv.m_nTickCount;
-	g_ServerGlobalVariables.curtime		= sv.GetTime();
+	g_ServerGlobalVariables.curtime		= sv.GetPreciseTime();
 	g_ServerGlobalVariables.frametime	= bIsSimulating ? host_state.interval_per_tick : 0;
 
 	// in singleplayer only run think/simulation if localplayer is connected

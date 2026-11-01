@@ -360,7 +360,7 @@ void CommentarySystem_PePlayerRunCommand( CBasePlayer *player, CUserCmd *ucmd );
 //-----------------------------------------------------------------------------
 void CPlayerMove::RunCommand ( CBasePlayer *player, CUserCmd *ucmd, IMoveHelper *moveHelper )
 {
-	const float playerCurTime = player->m_nTickBase * TICK_INTERVAL; 
+	const double playerCurTime = player->m_nTickBase * TICK_INTERVAL;
 	const float playerFrameTime = player->m_bGamePaused ? 0 : TICK_INTERVAL;
 	const float flTimeAllowedForProcessing = player->ConsumeMovementTimeForUserCmdProcessing( playerFrameTime );
 	if ( !player->IsBot() && ( flTimeAllowedForProcessing < playerFrameTime ) )

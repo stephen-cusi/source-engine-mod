@@ -18,6 +18,9 @@
 #include "lbaseplayer_shared.h"
 #include "datacache/imdlcache.h"
 #include "hl2sb_framestats_cat.h"
+#ifdef CLIENT_DLL
+#include "ienginevgui.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -902,6 +905,13 @@ void ResetGameUIConVarDatabase( void )
 }
 #endif
 
+extern int lua_IsConCommandBlocked (lua_State *L);
+
+static int HL2SB_ConVarFlagValue (lua_State *L, int index) {
+  const float value = (float)lua_tonumber(L, index);
+  return value >= -2147483648.0 && value < 2147483648.0 ? (int)value : (-2147483647 - 1);
+}
+
 static int luasrc_CreateConVar (lua_State *L) {
   const char *name = luaL_checkstring(L, 1);
   static const char *const blocked[] = {
@@ -912,6 +922,31 @@ static int luasrc_CreateConVar (lua_State *L) {
     if ( !Q_stricmp(name, blocked[i]) )
       return luaL_error(L, "CreateConVar: ConVar name is blocked! (%s)", name);
   }
+
+#ifdef CLIENT_DLL
+  if ( enginevgui && enginevgui->IsGameUIVisible() &&
+       (!Q_stricmp(name, "screenshot") || !Q_stricmp(name, "jpeg")) )
+    return luaL_error(L, "CreateConVar: ConVar name is blocked! (%s)", name);
+#endif
+
+  static const char *const additionalBlocked[] = {
+    "envmap"
+#ifdef CLIENT_DLL
+    , "_restart", "map", "map_background", "map_edit", "maxplayers", "tv_record"
+#endif
+  };
+  for ( int i = 0; i < ARRAYSIZE(additionalBlocked); ++i ) {
+    if ( !Q_stricmp(name, additionalBlocked[i]) )
+      return luaL_error(L, "CreateConVar: ConVar name is blocked! (%s)", name);
+  }
+
+  lua_pushcfunction(L, lua_IsConCommandBlocked);
+  lua_pushvalue(L, 1);
+  lua_call(L, 1, 1);
+  const bool commandBlocked = lua_toboolean(L, -1) != 0;
+  lua_pop(L, 1);
+  if ( commandBlocked )
+    return luaL_error(L, "CreateConVar: ConVar name is blocked! (%s)", name);
 
   if ( cvar->FindCommand(name) )
     return luaL_error(L, "CreateConVar: Cannot override an existing console command! (%s)", name);
@@ -943,15 +978,17 @@ static int luasrc_CreateConVar (lua_State *L) {
 
   int flags = 0;
   if ( lua_istable(L, 3) ) {
-    const size_t count = lua_rawlen(L, 3);
-    for ( size_t i = 1; i <= count; ++i ) {
-      lua_rawgeti(L, 3, (lua_Integer)i);
-      flags |= (int)luaL_checkinteger(L, -1);
+    for ( lua_Integer i = 1; ; ++i ) {
+      lua_geti(L, 3, i);
+      if ( lua_isnil(L, -1) ) {
+        lua_pop(L, 1);
+        break;
+      }
+      flags |= HL2SB_ConVarFlagValue(L, -1);
       lua_pop(L, 1);
     }
-  } else if ( !lua_isnoneornil(L, 3) ) {
-    flags = (int)luaL_checkinteger(L, 3);
-  }
+  } else if ( !lua_isnoneornil(L, 3) )
+    flags = HL2SB_ConVarFlagValue(L, 3);
 
   lua_settop(L, 6);
   lua_pushcfunction(L, luasrc_ConVar);

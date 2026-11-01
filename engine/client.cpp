@@ -588,10 +588,10 @@ bool CClientState::IsPaused() const
 		EngineVGui()->ShouldPause();
 }
 
-float CClientState::GetTime() const
+double CClientState::GetTime() const
 {
 	int nTickCount = GetClientTickCount();
-	float flTickTime = nTickCount * host_state.interval_per_tick;
+	double flTickTime = nTickCount * host_state.interval_per_tick;
 	
 	// Timestamps are rounded to exact tick during simulation
 	if ( insimulation )

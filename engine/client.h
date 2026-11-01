@@ -137,7 +137,7 @@ public:
 	bool		insimulation;
 
 	int			oldtickcount;		// previous tick
-	float		m_tickRemainder;	// client copy of tick remainder
+	double		m_tickRemainder;	// client copy of tick remainder
 	float		m_frameTime;		// dt of the current frame
 
 	int			lastoutgoingcommand;// Sequence number of last outgoing command
@@ -183,7 +183,7 @@ public:
 
 	// If 'insimulation', returns the time (in seconds) at the client's current tick.
 	// Otherwise, returns the exact client clock.
-	float				GetTime() const;
+	double				GetTime() const;
 	
 	
 	bool				IsPaused() const;

@@ -2236,7 +2236,7 @@ void CL_Move(float accumulated_extra_samples, bool bFinalTick )
 	{
 		// use full update rate when active
 		float commandInterval = 1.0f / cl_cmdrate->GetFloat();
-		float maxDelta = min ( host_state.interval_per_tick, commandInterval );
+		float maxDelta = min ( (float)host_state.interval_per_tick, commandInterval );
 		float delta = clamp( (float)(net_time - cl.m_flNextCmdTime), 0.0f, maxDelta );
 		cl.m_flNextCmdTime = net_time + commandInterval - delta;
 	}

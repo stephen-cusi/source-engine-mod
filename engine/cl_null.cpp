@@ -182,7 +182,7 @@ bool CClientState::ProcessTempEntities( SVC_TempEntities *msg ) { return true; }
 bool CClientState::ProcessPacketEntities( SVC_PacketEntities *msg ) { return true; }
 bool CClientState::ProcessSounds( SVC_Sounds *msg )	 { return true; }
 bool CClientState::ProcessPrefetch( SVC_Prefetch *msg ) {return true;}
-float CClientState::GetTime() const { return 0.0f;}
+double CClientState::GetTime() const { return 0.0;}
 void CClientState::RunFrame() {}
 bool CClientState::HookClientStringTable( char const *tableName ) { return false; }
 
