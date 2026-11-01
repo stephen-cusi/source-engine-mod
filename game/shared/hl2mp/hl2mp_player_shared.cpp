@@ -747,6 +747,18 @@ static bool HL2SB_PushPlayerAnimationHook( const char *pszName, CHL2MP_Player *p
     return true;
 }
 
+void CPlayerAnimState::RestartGesture( int iGestureSlot, Activity iGestureActivity, bool bAutoKill )
+{
+	if ( !m_pOuter )
+		return;
+
+#ifdef CLIENT_DLL
+	m_pOuter->HL2SB_ClientRestartGesture( iGestureSlot, iGestureActivity, bAutoKill );
+#else
+	m_pOuter->HL2SB_AnimRestartGestureLocal( iGestureSlot, iGestureActivity, bAutoKill );
+#endif
+}
+
 void CPlayerAnimState::Update()
 {
     CHL2MP_Player *pPlayer = GetOuter();

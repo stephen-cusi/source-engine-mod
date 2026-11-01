@@ -58,6 +58,7 @@ public:
 	virtual void CreateLightEffects( void ) {}
 	virtual bool ShouldReceiveProjectedTextures( int flags );
 	virtual void PostDataUpdate( DataUpdateType_t updateType );
+	virtual void ReceiveMessage( int classID, bf_read &msg );
 	virtual void PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force );
 	virtual void PreThink( void );
 	virtual void DoImpactEffect( trace_t &tr, int nDamageType );
@@ -122,6 +123,7 @@ public:
 	CNetworkHandle( C_BaseEntity, m_hHands );
 
 	bool			HL2SB_IsPlayingTaunt( void );
+	void			HL2SB_RestartActGesture( Activity activity );
 	C_BaseEntity	*HL2SB_GetHandsEntity( void ) { return m_hHands; }
 	void			HL2SB_SetHandsEntity( C_BaseEntity *pEnt ) { m_hHands = pEnt; }
 

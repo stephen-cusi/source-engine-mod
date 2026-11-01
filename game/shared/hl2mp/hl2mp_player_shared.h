@@ -169,6 +169,7 @@ public:
 	Activity			BodyYawTranslateActivity( Activity activity );
 
 	void				Update();
+	void				RestartGesture( int iGestureSlot, Activity iGestureActivity, bool bAutoKill = true );
 
 	const QAngle&		GetRenderAngles();
 				

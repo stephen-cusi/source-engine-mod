@@ -221,13 +221,10 @@ END_DATADESC()
 //   * duration = SequenceDuration( SelectWeightedSequence( activity ) )
 //   * TauntEnd = curtime + duration (replicated float; drives IsPlayingTaunt
 //     and the taunt camera on every realm -- GMod keeps no other flag)
-//   * GMod plays the gesture as animstate DoAnimationEvent( CUSTOM_GESTURE,
-//     act, restart ), which lands in GESTURE_SLOT_CUSTOM -- this fork's
-//     equivalent is HL2SB_AnimRestartGesture( GESTURE_SLOT_CUSTOM, act, true ).
-//     The gesture has to be started HERE, not on the client: the client's
-//     overlay layers are overwritten by the networked DT_BaseAnimatingOverlay
-//     data on every update, so a client-only layer never rendered.  The layer
-//     is networked, so everyone sees it.
+//   * Restart the local animation state's VCD gesture slot, then send the
+//     dedicated player entity message that makes each client restart its own
+//     VCD slot. This preserves the reference's separate animation and message
+//     paths.
 //   * GM:PlayerStartTaunt( ply, actid, length )
 //-----------------------------------------------------------------------------
 struct HL2SB_ActEntry_t
@@ -293,13 +290,18 @@ CON_COMMAND_F( act, "Plays a 'taunt' animation, if the server allows it. Valid o
 		return;
 
 	const int iSequence = pPlayer->SelectWeightedSequence( activity );
-	const float flDuration = ( iSequence >= 0 ) ? pPlayer->SequenceDuration( iSequence ) : 0.0f;
+	const float flDuration = pPlayer->SequenceDuration( iSequence );
 
 	const float flEnd = gpGlobals->curtime + flDuration;
 	if ( pPlayer->HL2SB_TauntEnd() != flEnd )
 		pPlayer->HL2SB_SetTauntEnd( flEnd );
 
-	pPlayer->HL2SB_AnimRestartGesture( GESTURE_SLOT_CUSTOM, activity, true );
+	pPlayer->HL2SB_RestartActGesture( activity );
+
+	EntityMessageBegin( pPlayer, false );
+		MessageWriteByte( 8 );
+		MessageWriteLong( (int)activity );
+	MessageEnd();
 
 	BEGIN_LUA_CALL_HOOK( "PlayerStartTaunt" );
 		lua_pushplayer( L, pPlayer );
@@ -1069,7 +1071,22 @@ Activity CHL2MP_Player::HL2SB_TranslateActivityLua( Activity act, Activity fallb
 	return translated;
 }
 
+void CHL2MP_Player::HL2SB_RestartActGesture( Activity activity )
+{
+	m_PlayerAnimState.RestartGesture( GESTURE_SLOT_VCD, activity, true );
+}
+
 void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool bRestart )
+{
+	HL2SB_AnimRestartGestureInternal( iSlot, activity, bRestart, true );
+}
+
+void CHL2MP_Player::HL2SB_AnimRestartGestureLocal( int iSlot, Activity activity, bool bRestart )
+{
+	HL2SB_AnimRestartGestureInternal( iSlot, activity, bRestart, false );
+}
+
+void CHL2MP_Player::HL2SB_AnimRestartGestureInternal( int iSlot, Activity activity, bool bRestart, bool bBroadcast )
 {
 	if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT || activity <= ACT_INVALID )
 		return;
@@ -1092,26 +1109,10 @@ void CHL2MP_Player::HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool
 	if ( iSequence <= 0 )
 		iSequence = SelectWeightedSequence( activity );
 
-	// HL2SB (2026-10-02): GMod gesture broadcast - overlay_vars is excluded
-	// from the player send table, so THIS is the only way other clients ever
-	// see the gesture.  One broadcast per server-side gesture creation (Lua
-	// GM:DoAnimationEvent attacks/reloads, animations.lua land/chat, the act
-	// command, the C++ SetAnimation fallbacks - every path funnels through
-	// here).  The client receives CUSTOM_GESTURE + this activity and builds
-	// the layer locally in GESTURE_SLOT_CUSTOM.  The server layer created
-	// below still exists for IsPlayingTaunt/slot bookkeeping but is invisible
-	// (excluded from the send table).
-	//
-	// Broadcast the RESOLVED activity, not the caller's ideal: the client has
-	// no Weapon_TranslateActivity (server-only), so an ideal
-	// ACT_MP_ATTACK_STAND_PRIMARYFIRE that the model only carries as
-	// ACT_HL2MP_GESTURE_RANGE_ATTACK_<holdtype> dead-ends in the client's
-	// SelectWeightedSequence and the remote player never animates (two-player
-	// log: sv OK translated=... vs cl NO SEQUENCE ideal=...).  Activities the
-	// acttable leaves alone translate to themselves, so act/land/wave traffic
-	// is unchanged.  Above the replay/NO SEQUENCE returns so every funnel
-	// call broadcasts exactly once, including rapid-fire replays.
-	TE_PlayerAnimEvent( this, PLAYERANIMEVENT_CUSTOM_GESTURE, (int)broadcastAct );
+	// This helper's temporary-entity transport remains for the other fork
+	// gesture paths. The standard act command uses its dedicated player message.
+	if ( bBroadcast )
+		TE_PlayerAnimEvent( this, PLAYERANIMEVENT_CUSTOM_GESTURE, (int)broadcastAct );
 
 	// GMod's authoritative semantics (CMultiPlayerAnimState::RestartGesture,
 	// game/shared/Multiplayer/multiplayer_animstate.cpp:545): asking for the

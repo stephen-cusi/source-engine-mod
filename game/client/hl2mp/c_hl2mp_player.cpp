@@ -13,6 +13,7 @@
 #include "takedamageinfo.h"
 #include "hl2mp_gamerules.h"
 #include "in_buttons.h"
+#include "Multiplayer/multiplayer_animstate.h"
 #include "iviewrender_beams.h"			// flashlight beam
 #include "r_efx.h"
 #include "dlight.h"
@@ -58,11 +59,11 @@ class CBasePlayer;
 LUA_API void lua_pushplayer( lua_State *L, CBasePlayer *pPlayer );
 
 // ============================================================================
-// HL2SB (2026-10-02): GMod gesture broadcast receiver - C_TEPlayerAnimEvent.
+// HL2SB (2026-10-02): player animation event transport used by non-act paths.
 //
 // The server excludes DT_BaseAnimatingOverlay::overlay_vars from
-// DT_HL2MP_Player, so this temp entity is the ONLY thing that makes other
-// players' gestures (attacks/reloads/act/land/chat) appear: it carries
+// DT_HL2MP_Player, so this temp entity carries other fork gesture events
+// (attacks/reloads/land/chat): it carries
 // (player handle, event, data) - zero layer data - and the client rebuilds
 // the layer locally via HL2SB_ClientDoAnimationEvent.  Structure mirrors the
 // in-tree CS/DOD C_TEPlayerAnimEvent; the body mirrors GMod's reference
@@ -193,6 +194,33 @@ C_HL2MP_Player::C_HL2MP_Player() : m_PlayerAnimState( this ), m_iv_angEyeAngles(
 	m_flHL2SBLadderClimbSpeed = 100.0f;
 	m_flHL2SBStepSize = 18.0f;
 	m_bHL2SBAllowWeaponsInVehicle = false;
+}
+
+void C_HL2MP_Player::HL2SB_RestartActGesture( Activity activity )
+{
+	m_PlayerAnimState.RestartGesture( GESTURE_SLOT_VCD, activity, true );
+}
+
+void C_HL2MP_Player::ReceiveMessage( int classID, bf_read &msg )
+{
+	if ( classID != GetClientClass()->m_ClassID )
+	{
+		BaseClass::ReceiveMessage( classID, msg );
+		return;
+	}
+
+	const int nStartBit = msg.GetNumBitsRead();
+	const int nMessageType = msg.ReadByte();
+	if ( nMessageType == 8 )
+	{
+		const Activity activity = (Activity)msg.ReadLong();
+		if ( !msg.IsOverflowed() )
+			HL2SB_RestartActGesture( activity );
+		return;
+	}
+
+	msg.Seek( nStartBit );
+	BaseClass::ReceiveMessage( classID, msg );
 }
 
 // HL2SB (2026-09-27): GMod movement - the client-side prediction twin of

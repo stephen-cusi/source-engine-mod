@@ -159,6 +159,9 @@ public:
 	bool			HL2SB_DoAnimationEventLua( PlayerAnimEvent_t event, int nData );
 	Activity		HL2SB_TranslateActivityLua( Activity act, Activity fallback );
 	void			HL2SB_AnimRestartGesture( int iSlot, Activity activity, bool bRestart );
+	void			HL2SB_AnimRestartGestureLocal( int iSlot, Activity activity, bool bRestart );
+	void			HL2SB_AnimRestartGestureInternal( int iSlot, Activity activity, bool bRestart, bool bBroadcast );
+	void			HL2SB_RestartActGesture( Activity activity );
 	void			HL2SB_AnimResetGestureSlot( int iSlot );
 	void			HL2SB_AnimSetGestureWeight( int iSlot, float flWeight );
 	void			HL2SB_AnimSetGestureSequence( int iSlot, int iSequence );
