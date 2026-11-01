@@ -694,6 +694,24 @@ public:
 	bf_write	m_DataOut;
 };
 
+class SVC_LuaFileData : public CNetMessage
+{
+public:
+	typedef bool (*Handler)( bf_read & );
+	SVC_LuaFileData() : m_nLength( 0 ), m_pHandler( NULL ) {}
+	bool ReadFromBuffer( bf_read &buffer );
+	bool WriteToBuffer( bf_write &buffer );
+	const char *ToString() const;
+	int GetType() const { return svc_LuaFileData; }
+	const char *GetName() const { return "svc_LuaFileData"; }
+	bool Process() { return m_pHandler ? m_pHandler( m_DataIn ) : false; }
+	int GetGroup() const { return INetChannelInfo::GENERIC; }
+	int m_nLength;
+	bf_read m_DataIn;
+	bf_write m_DataOut;
+	Handler m_pHandler;
+};
+
 class SVC_UserMessage: public CNetMessage
 {
 	DECLARE_SVC_MESSAGE( UserMessage );

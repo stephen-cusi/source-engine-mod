@@ -47,12 +47,196 @@
 #include "matchmaking.h"
 #include "server.h"
 #include "eiface.h"
+#include "lua_filesync_hash.h"
+#include "../utils/lzma/C/LzmaDec.h"
+#include <limits.h>
+#include <stdlib.h>
 
 #include "tier0/platform.h"
 #include "tier0/systeminformation.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+static char s_LuaSyncRoot[MAX_PATH];
+static char s_LuaSyncSearchPath[MAX_PATH];
+static int s_LuaSyncNext = 0;
+static int s_LuaSyncPending = 0;
+static double s_LuaSyncRequestTime = 0.0;
+static bool s_LuaSyncStarted = false;
+static bool s_LuaSyncComplete = false;
+static bool s_LuaSyncMounted = false;
+
+static void LuaSyncReset()
+{
+	if ( s_LuaSyncMounted && s_LuaSyncSearchPath[0] && g_pFileSystem )
+	{
+		g_pFileSystem->RemoveSearchPath( s_LuaSyncSearchPath, "MOD" );
+		g_pFileSystem->RemoveSearchPath( s_LuaSyncSearchPath, "GAME" );
+	}
+	s_LuaSyncRoot[0] = s_LuaSyncSearchPath[0] = 0;
+	s_LuaSyncNext = s_LuaSyncPending = 0;
+	s_LuaSyncRequestTime = 0.0;
+	s_LuaSyncStarted = s_LuaSyncComplete = s_LuaSyncMounted = false;
+}
+
+static bool LuaSyncValidName( const char *name )
+{
+	if ( !name || !name[0] || name[0] == '/' || name[0] == '\\' || name[0] == '.' || name[0] == '~' || name[0] == '@' ) return false;
+	const int length = Q_strlen( name );
+	const int overhead = (sizeof("cache/hl2sb_lua/") - 1) + 64 + (sizeof("/lua/") - 1) + sizeof(".tmp");
+	if ( length < 5 || length > MAX_PATH - overhead || Q_stricmp( name + length - 4, ".lua" ) ) return false;
+	for ( const char *p = name; *p; ++p )
+		if ( *p == ':' || *p == '\\' || static_cast<unsigned char>(*p) <= ' ' || (p[0] == '.' && p[1] == '.') ) return false;
+	return true;
+}
+
+static void LuaSyncPath( const char *name, char *path, int capacity )
+{
+	Q_snprintf( path, capacity, "%s/%s%s", s_LuaSyncRoot,
+		!Q_strnicmp( name, "gamemodes/", 10 ) ? "" : "lua/", name );
+}
+
+static bool LuaSyncFileMatches( const char *path, const char *pathID, const unsigned char expected[32] )
+{
+	FileHandle_t file = g_pFileSystem->Open( path, "rb", pathID );
+	if ( !file ) return false;
+	const unsigned int size = g_pFileSystem->Size( file );
+	if ( !size || size >= INT_MAX ) { g_pFileSystem->Close( file ); return false; }
+	CUtlVector<unsigned char> contents;
+	contents.SetCount( static_cast<int>(size) + 1 );
+	const int read = g_pFileSystem->Read( contents.Base(), size, file );
+	g_pFileSystem->Close( file );
+	if ( read != static_cast<int>(size) ) return false;
+	contents[size] = 0;
+	unsigned char digest[32];
+	LuaFileHash( contents.Base(), size + 1, digest );
+	return memcmp( digest, expected, sizeof(digest) ) == 0;
+}
+
+static bool LuaSyncCached( const char *name, const unsigned char expected[32] )
+{
+	char path[MAX_PATH];
+	LuaSyncPath( name, path, sizeof(path) );
+	if ( LuaSyncFileMatches( path, "DEFAULT_WRITE_PATH", expected ) ) return true;
+	if ( g_pFileSystem->FileExists( path, "DEFAULT_WRITE_PATH" ) )
+		g_pFileSystem->RemoveFile( path, "DEFAULT_WRITE_PATH" );
+	if ( !Q_strnicmp( name, "gamemodes/", 10 ) ) Q_strncpy( path, name, sizeof(path) );
+	else Q_snprintf( path, sizeof(path), "lua/%s", name );
+	return LuaSyncFileMatches( path, "MOD", expected );
+}
+
+static bool LuaSyncRequestNext()
+{
+	INetworkStringTable *table = cl.GetStringTable( "client_lua_files" );
+	if ( !table ) return false;
+	while ( s_LuaSyncNext < table->GetNumStrings() )
+	{
+		const int index = s_LuaSyncNext++;
+		const char *name = table->GetString( index );
+		int hashLength = 0;
+		const unsigned char *hash = static_cast<const unsigned char *>(table->GetStringUserData( index, &hashLength ));
+		if ( !LuaSyncValidName( name ) || !hash || hashLength != 32 ) return false;
+		if ( LuaSyncCached( name, hash ) ) continue;
+		uint32 request[2] = { 0, 0 };
+		bf_write writer( request, sizeof(request) );
+		writer.WriteByte( 4 );
+		writer.WriteWord( index );
+		writer.WriteWord( 0 );
+		CLC_LuaNetMessage message;
+		message.m_DataOut.StartWriting( request, sizeof(request) );
+		message.m_DataOut.SeekToBit( writer.GetNumBitsWritten() );
+		message.m_nLength = writer.GetNumBitsWritten();
+		s_LuaSyncPending = index;
+		s_LuaSyncRequestTime = Plat_FloatTime();
+		if ( !cl.m_NetChannel || !cl.m_NetChannel->SendNetMsg( message, true ) ) return false;
+		cl.m_NetChannel->Transmit();
+		return true;
+	}
+	s_LuaSyncPending = 0;
+	g_pFileSystem->AddSearchPath( s_LuaSyncSearchPath, "MOD", PATH_ADD_TO_HEAD );
+	g_pFileSystem->AddSearchPath( s_LuaSyncSearchPath, "GAME", PATH_ADD_TO_HEAD );
+	s_LuaSyncMounted = true;
+	s_LuaSyncComplete = true;
+	return true;
+}
+
+static bool LuaSyncBegin()
+{
+	INetworkStringTable *table = cl.GetStringTable( "client_lua_files" );
+	if ( !table || table->GetNumStrings() < 1 ) return false;
+	CUtlBuffer manifest( 0, 0, 0 );
+	for ( int i = 1; i < table->GetNumStrings(); ++i )
+	{
+		const char *name = table->GetString( i );
+		int length = 0;
+		const void *hash = table->GetStringUserData( i, &length );
+		if ( !LuaSyncValidName( name ) || !hash || length != 32 ) return false;
+		manifest.Put( name, Q_strlen( name ) + 1 );
+		manifest.Put( hash, length );
+	}
+	unsigned char digest[32];
+	LuaFileHash( manifest.Base(), manifest.TellPut(), digest );
+	char name[65];
+	for ( int i = 0; i < 32; ++i ) Q_snprintf( name + i*2, 3, "%02x", digest[i] );
+	Q_snprintf( s_LuaSyncRoot, sizeof(s_LuaSyncRoot), "cache/hl2sb_lua/%s", name );
+	g_pFileSystem->CreateDirHierarchy( s_LuaSyncRoot, "DEFAULT_WRITE_PATH" );
+	if ( !g_pFileSystem->RelativePathToFullPath( s_LuaSyncRoot, "DEFAULT_WRITE_PATH", s_LuaSyncSearchPath, sizeof(s_LuaSyncSearchPath) ) ) return false;
+	s_LuaSyncStarted = true;
+	s_LuaSyncNext = 1;
+	return LuaSyncRequestNext();
+}
+
+static void *LuaSyncAlloc( void *, size_t size ) { return malloc( size ); }
+static void LuaSyncFree( void *, void *ptr ) { free( ptr ); }
+
+bool CL_ProcessLuaFileData( bf_read &message )
+{
+	if ( cl.m_nSignonState != SIGNONSTATE_NEW || !s_LuaSyncStarted || !s_LuaSyncPending || message.GetNumBitsLeft() < 24 ) return false;
+	if ( message.ReadByte() != 4 || message.ReadWord() != s_LuaSyncPending ) return false;
+	const int length = message.GetNumBitsLeft() / 8;
+	if ( length <= 45 || length > 65536 || (message.GetNumBitsLeft() % 8) != 0 ) return false;
+	CUtlVector<unsigned char> data;
+	data.SetCount( length );
+	if ( !message.ReadBytes( data.Base(), length ) ) return false;
+	INetworkStringTable *table = cl.GetStringTable( "client_lua_files" );
+	if ( !table || s_LuaSyncPending >= table->GetNumStrings() ) return false;
+	int hashLength = 0;
+	const unsigned char *expected = static_cast<const unsigned char *>(table->GetStringUserData( s_LuaSyncPending, &hashLength ));
+	const char *name = table->GetString( s_LuaSyncPending );
+	if ( !expected || hashLength != 32 || !LuaSyncValidName( name ) || memcmp( data.Base(), expected, 32 ) ) return false;
+	uint64_t unpacked = 0;
+	for ( int i = 7; i >= 0; --i ) unpacked = (unpacked << 8) | data[37+i];
+	if ( unpacked < 2 || unpacked > 64u * 1024u * 1024u ) return false;
+	CUtlVector<unsigned char> decoded;
+	decoded.SetCount( static_cast<int>(unpacked) );
+	SizeT outSize = static_cast<SizeT>(unpacked);
+	SizeT inSize = static_cast<SizeT>(length - 45);
+	ELzmaStatus status = LZMA_STATUS_NOT_SPECIFIED;
+	ISzAlloc allocator = { LuaSyncAlloc, LuaSyncFree };
+	if ( LzmaDecode( decoded.Base(), &outSize, data.Base() + 45, &inSize, data.Base() + 32, 5,
+		LZMA_FINISH_END, &status, &allocator ) != SZ_OK || outSize != unpacked || decoded[outSize-1] != 0 ) return false;
+	unsigned char digest[32];
+	LuaFileHash( decoded.Base(), outSize, digest );
+	if ( memcmp( digest, expected, sizeof(digest) ) ) return false;
+	char path[MAX_PATH], temporary[MAX_PATH], directory[MAX_PATH];
+	LuaSyncPath( name, path, sizeof(path) );
+	Q_snprintf( temporary, sizeof(temporary), "%s.tmp", path );
+	Q_strncpy( directory, path, sizeof(directory) );
+	Q_StripFilename( directory );
+	g_pFileSystem->CreateDirHierarchy( directory, "DEFAULT_WRITE_PATH" );
+	FileHandle_t file = g_pFileSystem->Open( temporary, "wb", "DEFAULT_WRITE_PATH" );
+	if ( !file ) return false;
+	const int written = g_pFileSystem->Write( decoded.Base(), static_cast<int>(outSize - 1), file );
+	g_pFileSystem->Close( file );
+	if ( written != static_cast<int>(outSize - 1) ) { g_pFileSystem->RemoveFile( temporary, "DEFAULT_WRITE_PATH" ); return false; }
+	if ( g_pFileSystem->FileExists( path, "DEFAULT_WRITE_PATH" ) ) g_pFileSystem->RemoveFile( path, "DEFAULT_WRITE_PATH" );
+	if ( !g_pFileSystem->RenameFile( temporary, path, "DEFAULT_WRITE_PATH" ) ) { g_pFileSystem->RemoveFile( temporary, "DEFAULT_WRITE_PATH" ); return false; }
+	s_LuaSyncPending = 0;
+	if ( !LuaSyncRequestNext() ) return false;
+	if ( s_LuaSyncComplete ) cl.FinishSignonState_New();
+	return true;
+}
 
 static ConVar cl_timeout( "cl_timeout", "30", FCVAR_ARCHIVE, "After this many seconds without receiving a packet from the server, the client will disconnect itself" );
 	   ConVar cl_logofile( "cl_logofile", "materials/decals/spraylogo.vtf", FCVAR_ARCHIVE, "Spraypoint logo decal." ); // TODO must be more generic
@@ -655,6 +839,7 @@ float CClientState::GetClientInterpAmount()
 //-----------------------------------------------------------------------------
 void CClientState::Clear( void )
 {
+	LuaSyncReset();
 	CBaseClientState::Clear();
 
 	m_pModelPrecacheTable = NULL;
@@ -1777,6 +1962,16 @@ void CClientState::FinishSignonState_New()
 	if (m_nSignonState != SIGNONSTATE_NEW)
 		return;
 
+	if ( m_NetChannel && !m_NetChannel->IsLoopback() && !(demoplayer && demoplayer->IsPlayingBack()) )
+	{
+		if ( !s_LuaSyncStarted && !LuaSyncBegin() )
+		{
+			Disconnect( "Unable to initialize client Lua file sync", true );
+			return;
+		}
+		if ( !s_LuaSyncComplete ) return;
+	}
+
 	if ( !m_bMarkedCRCsUnverified )
 	{
 		// Mark all file CRCs unverified once per server. We may have verified CRCs for certain files on
@@ -2029,6 +2224,12 @@ unsigned char** CClientState::GetAreaBits_BackwardCompatibility()
 void CClientState::RunFrame()
 {
 	CBaseClientState::RunFrame();
+	if ( m_nSignonState == SIGNONSTATE_NEW && s_LuaSyncPending &&
+		 Plat_FloatTime() - s_LuaSyncRequestTime > 120.0 )
+	{
+		Disconnect( "Timed out receiving client Lua file", true );
+		return;
+	}
 
 	tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s", __FUNCTION__ );
 

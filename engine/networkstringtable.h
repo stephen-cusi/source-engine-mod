@@ -75,7 +75,8 @@ public:
 public:
 	
 #ifndef SHARED_NET_STRING_TABLES
-	int				WriteUpdate( CBaseClient *client, bf_write &buf, int tick_ack );
+	int				WriteUpdate( CBaseClient *client, bf_write &buf, int tick_ack, bool omitUserData = false );
+	int				WriteUserDataRange( bf_write &buf, int first, int last );
 	void			ParseUpdate( bf_read &buf, int entries );
 
 	// HLTV change history & rollback
@@ -90,7 +91,7 @@ public:
 	void			WriteStringTable( bf_write& buf );
 	bool			ReadStringTable( bf_read& buf );
 
-	bool			WriteBaselines( SVC_CreateStringTable &msg, char *msg_buffer, int msg_buffer_size );
+	bool			WriteBaselines( SVC_CreateStringTable &msg, char *msg_buffer, int msg_buffer_size, bool omitUserData = false );
 #endif
 
 	void			TriggerCallbacks( int tick_ack  );
@@ -180,7 +181,7 @@ public:
 	bool		ReadStringTables( bf_read& buf );
 
 	void		WriteUpdateMessage( CBaseClient *client, int tick_ack, bf_write &buf );
-	void		WriteBaselines( bf_write &buf );
+	bool		WriteBaselines( bf_write &buf, CBaseClient *client = NULL );
 	void		DirectUpdate( int tick_ack );	// fill mirror table directly with updates
 #endif
 

@@ -1780,7 +1780,7 @@ static const unsigned int s_Sh256K[ 64 ] = {
 #define SH256_SIG0( x ) ( SH256_ROTR( x, 7 ) ^ SH256_ROTR( x, 18 ) ^ ( ( x ) >> 3 ) )
 #define SH256_SIG1( x ) ( SH256_ROTR( x, 17 ) ^ SH256_ROTR( x, 19 ) ^ ( ( x ) >> 10 ) )
 
-static int luasrc_util_SHA256 (lua_State *L) {
+int HL2SB_LuaSHA256 (lua_State *L) {
   size_t nLen = 0;
   const char *pIn = luaL_checklstring( L, 1, &nLen );
 
@@ -2865,7 +2865,7 @@ static const luaL_Reg util_funcs[] = {
   {"CRC",                    luasrc_util_CRC},
   {"MD5",                    luasrc_util_MD5},
   {"SHA1",                   luasrc_util_SHA1},
-  {"SHA256",                 luasrc_util_SHA256},
+  {"SHA256",                 HL2SB_LuaSHA256},
   {"Compress",               luasrc_util_Compress},
   {"Decompress",             luasrc_util_Decompress},
   {"SteamIDTo64",            luasrc_util_SteamIDTo64},

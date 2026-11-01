@@ -331,6 +331,45 @@ bool C_PhysPropClientside::Initialize()
 	return true;
 }
 
+C_PhysPropClientside *HL2SB_CreateClientPhysicsProp( const char *modelName )
+{
+	C_PhysPropClientside *prop = C_PhysPropClientside::CreateNew( true );
+	if ( !prop ) return NULL;
+	prop->SetPhysicsMode( PHYSICS_MULTIPLAYER_CLIENTSIDE );
+	prop->SetModelName( AllocPooledString( modelName ) );
+	engine->LoadModel( modelName, true );
+	modelinfo->RegisterDynamicModel( modelName, true );
+	if ( !prop->InitializeAsClientEntity( modelName, RENDER_GROUP_OPAQUE_ENTITY ) )
+	{
+		delete prop;
+		return NULL;
+	}
+
+	const model_t *model = prop->GetModel();
+	if ( model )
+	{
+		Vector mins, maxs;
+		modelinfo->GetModelBounds( model, mins, maxs );
+		prop->SetCollisionBounds( mins, maxs );
+	}
+	solid_t solid;
+	if ( PhysModelParseSolid( solid, prop, prop->GetModelIndex() ) )
+	{
+		IPhysicsObject *physics = prop->VPhysicsInitNormal( SOLID_VPHYSICS, 0, false, &solid );
+		if ( physics )
+			physics->SetCallbackFlags( physics->GetCallbackFlags() | CALLBACK_GLOBAL_TOUCH_STATIC );
+	}
+	prop->Spawn();
+	prop->SetCollisionGroup( COLLISION_GROUP_PUSHAWAY );
+	prop->UpdatePartitionListEntry();
+	prop->CollisionProp()->UpdatePartition();
+	prop->SetBlocksLOS( false );
+	prop->CreateShadow();
+	prop->UpdateVisibility();
+	prop->SetNextClientThink( CLIENT_THINK_NEVER );
+	return prop;
+}
+
 void C_PhysPropClientside::Spawn()
 {
 	// Initialize damage modifiers. Must be done before baseclass spawn.

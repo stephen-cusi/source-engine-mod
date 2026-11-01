@@ -484,6 +484,7 @@ static int net_Start( lua_State *L )
 
 	g_cnetName = pszName;
 	g_cnetWrite.StartWriting( g_cnetBuf, sizeof( g_cnetBuf ) );
+	g_cnetWrite.WriteByte( 0 );
 	g_cnetWrite.WriteUBitLong( nID, HL2SB_NET_HEADER_BITS );
 	g_cnetActive = true;
 

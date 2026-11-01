@@ -30,6 +30,11 @@
 #include "replay_internal.h"
 #endif
 #include "tier2/tier2.h"
+#include "filesystem_engine.h"
+#include "lua_filesync_hash.h"
+#include "../utils/lzma/C/LzmaEnc.h"
+#include <limits.h>
+#include <stdlib.h>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -321,9 +326,88 @@ bool CGameClient::ProcessFileMD5Check( CLC_FileMD5Check *msg )
 	return true;
 }
 
+static void *LuaFileAlloc( void *, size_t size ) { return malloc( size ); }
+static void LuaFileFree( void *, void *ptr ) { free( ptr ); }
+
+static bool SendClientLuaFile( CGameClient *client, INetworkStringTable *table, int index )
+{
+	if ( !table || index <= 0 || index >= table->GetNumStrings() ) return false;
+	const char *name = table->GetString( index );
+	int hashLength = 0;
+	const unsigned char *expected = static_cast<const unsigned char *>( table->GetStringUserData( index, &hashLength ) );
+	if ( !name || !expected || hashLength != 32 ) return false;
+	char path[MAX_PATH];
+	if ( !Q_strnicmp( name, "gamemodes/", 10 ) ) Q_strncpy( path, name, sizeof(path) );
+	else Q_snprintf( path, sizeof(path), "lua/%s", name );
+	FileHandle_t file = g_pFileSystem->Open( path, "rb", "MOD" );
+	if ( !file ) file = g_pFileSystem->Open( name, "rb", "MOD" );
+	if ( !file ) return false;
+	const int size = g_pFileSystem->Size( file );
+	if ( size <= 0 || size >= 64 * 1024 * 1024 ) { g_pFileSystem->Close( file ); return false; }
+	CUtlVector<unsigned char> contents;
+	contents.SetCount( size + 1 );
+	const int read = g_pFileSystem->Read( contents.Base(), size, file );
+	g_pFileSystem->Close( file );
+	if ( read != size ) return false;
+	contents[size] = 0;
+	unsigned char digest[32];
+	LuaFileHash( contents.Base(), size + 1, digest );
+	if ( memcmp( digest, expected, sizeof(digest) ) != 0 ) return false;
+
+	unsigned char output[65536];
+	memcpy( output, digest, sizeof(digest) );
+	CLzmaEncProps props;
+	LzmaEncProps_Init( &props );
+	props.level = 5;
+	props.numThreads = 1;
+	SizeT propertySize = LZMA_PROPS_SIZE;
+	SizeT compressedSize = sizeof(output) - 32 - 13;
+	ISzAlloc allocator = { LuaFileAlloc, LuaFileFree };
+	const SRes result = LzmaEncode( output + 45, &compressedSize, contents.Base(), size + 1,
+		&props, output + 32, &propertySize, 0, NULL, &allocator, &allocator );
+	if ( result != SZ_OK || propertySize != LZMA_PROPS_SIZE ) return false;
+	const uint64_t uncompressed = static_cast<uint64_t>( size ) + 1;
+	for ( int i = 0; i < 8; ++i ) output[37+i] = static_cast<unsigned char>( uncompressed >> (i*8) );
+
+	CUtlVector<unsigned char> payload;
+	payload.SetCount( (3 + 45 + static_cast<int>(compressedSize) + 3) & ~3 );
+	bf_write writer( payload.Base(), payload.Count() );
+	writer.WriteByte( 4 );
+	writer.WriteWord( index );
+	writer.WriteBytes( output, 45 + static_cast<int>(compressedSize) );
+	SVC_LuaFileData message;
+	message.m_DataOut.StartWriting( payload.Base(), payload.Count() );
+	message.m_DataOut.SeekToBit( writer.GetNumBitsWritten() );
+	if ( writer.IsOverflowed() || !client->SendNetMsg( message, true ) ) return false;
+	client->GetNetChannel()->Transmit();
+	return true;
+}
+
 bool CGameClient::ProcessLuaNetMessage( CLC_LuaNetMessage *msg )
 {
-	if ( msg->m_nLength <= 0 || msg->m_DataIn.IsOverflowed() )
+	if ( msg->m_nLength < 8 || msg->m_DataIn.IsOverflowed() )
+		return true;
+
+	const int messageType = msg->m_DataIn.ReadByte();
+	if ( messageType == 4 && m_nSignonState == SIGNONSTATE_NEW )
+	{
+		INetworkStringTable *table = networkStringTableContainerServer->FindTable( "client_lua_files" );
+		bool terminated = false;
+		while ( msg->m_DataIn.GetNumBitsLeft() >= 16 )
+		{
+			const int index = msg->m_DataIn.ReadWord();
+			if ( index == 0 ) { terminated = true; break; }
+			if ( !SendClientLuaFile( this, table, index ) )
+			{
+				Disconnect( "Unable to transfer Lua file %d", index );
+				return true;
+			}
+		}
+		if ( !terminated || msg->m_DataIn.GetNumBitsLeft() != 0 )
+			Disconnect( "Malformed Lua file request" );
+		return true;
+	}
+	if ( messageType != 0 )
 		return true;
 
 	// Hand the payload to the game DLL; the Lua state resolves the pooled

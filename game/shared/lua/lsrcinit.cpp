@@ -22,6 +22,7 @@
 #include "tier1/CommandBuffer.h"
 #include "tier0/fasttimer.h"
 #include "tier1/utlstring.h"
+#include <limits.h>
 // HL2SB: luaL_checkentity (SuppressHostEvents), the GMod global helpers
 // registered at the end, the NetworkVar shim (which hands a 0..1 Vector back for
 // a Vector-declared variable, a 0..255 Color otherwise) and the vector/color
@@ -3987,6 +3988,131 @@ static void HL2SB_RegisterGlobalValues(lua_State *L) {
   }
 }
 
+#ifndef CLIENT_DLL
+extern int HL2SB_LuaSHA256( lua_State *L );
+
+static bool HL2SB_RegisterClientLuaFile( lua_State *state, const char *resolved )
+{
+  if ( !networkstringtable || !g_pFullFileSystem ) return false;
+  INetworkStringTable *table = networkstringtable->FindTable( "client_lua_files" );
+  if ( !table ) return false;
+
+  FileHandle_t file = g_pFullFileSystem->Open( resolved, "rb", "MOD" );
+  if ( !file ) return false;
+  const int size = g_pFullFileSystem->Size( file );
+  if ( size <= 0 || size >= 64 * 1024 * 1024 ) {
+    g_pFullFileSystem->Close( file );
+    return false;
+  }
+  CUtlVector<char> contents;
+  contents.SetCount( size + 1 );
+  const int bytesRead = g_pFullFileSystem->Read( contents.Base(), size, file );
+  g_pFullFileSystem->Close( file );
+  if ( bytesRead != size ) return false;
+  contents[size] = '\0';
+
+  const int top = lua_gettop( state );
+  lua_pushcfunction( state, HL2SB_LuaSHA256 );
+  lua_pushlstring( state, contents.Base(), size + 1 );
+  if ( luasrc_pcall( state, 1, 1, 0 ) != 0 ) {
+    lua_settop( state, top );
+    return false;
+  }
+  size_t digestLength = 0;
+  const char *hex = lua_tolstring( state, -1, &digestLength );
+  unsigned char digest[32];
+  if ( !hex || digestLength != 64 ) {
+    lua_settop( state, top );
+    return false;
+  }
+  for ( int i = 0; i < 32; ++i ) {
+    const char a = hex[i * 2];
+    const char b = hex[i * 2 + 1];
+    const int hi = (a >= '0' && a <= '9') ? a - '0' : ((a >= 'a' && a <= 'f') ? a - 'a' + 10 : -1);
+    const int lo = (b >= '0' && b <= '9') ? b - '0' : ((b >= 'a' && b <= 'f') ? b - 'a' + 10 : -1);
+    if ( hi < 0 || lo < 0 ) {
+      lua_settop( state, top );
+      return false;
+    }
+    digest[i] = (unsigned char)((hi << 4) | lo);
+  }
+  lua_settop( state, top );
+
+  const char *name = resolved;
+  if ( !Q_strnicmp( name, "lua/", 4 ) ) name += 4;
+  else {
+    const char *luaRoot = Q_stristr( name, "/lua/" );
+    if ( luaRoot ) name = luaRoot + 5;
+  }
+  if ( !name[0] ) return false;
+  return table->AddString( true, name, sizeof(digest), digest ) != INVALID_STRING_INDEX;
+}
+
+static void HL2SB_RegisterClientLuaDirectory( lua_State *state, const char *directory, bool recursive )
+{
+  char pattern[MAX_PATH];
+  Q_snprintf( pattern, sizeof(pattern), "%s/*", directory );
+  FileFindHandle_t handle;
+  const char *entry = g_pFullFileSystem->FindFirstEx( pattern, "MOD", &handle );
+  while ( entry ) {
+    if ( entry[0] != '.' ) {
+      char path[MAX_PATH];
+      Q_snprintf( path, sizeof(path), "%s/%s", directory, entry );
+      if ( g_pFullFileSystem->FindIsDirectory( handle ) ) {
+        if ( recursive ) HL2SB_RegisterClientLuaDirectory( state, path, true );
+      } else {
+        const int length = Q_strlen( path );
+        if ( length > 4 && !Q_stricmp( path + length - 4, ".lua" ) && !HL2SB_RegisterClientLuaFile( state, path ) )
+          Warning( "Unable to register client Lua file '%s'\n", path );
+      }
+    }
+    entry = g_pFullFileSystem->FindNext( handle );
+  }
+  g_pFullFileSystem->FindClose( handle );
+}
+
+void HL2SB_RegisterAutomaticClientLuaFiles( lua_State *state )
+{
+  if ( !state || !g_pFullFileSystem ) return;
+  HL2SB_RegisterClientLuaDirectory( state, "lua/autorun", false );
+  HL2SB_RegisterClientLuaDirectory( state, "lua/autorun/client", true );
+  HL2SB_RegisterClientLuaDirectory( state, "lua/matproxy", true );
+  HL2SB_RegisterClientLuaDirectory( state, "lua/postprocess", true );
+  HL2SB_RegisterClientLuaDirectory( state, "lua/vgui", true );
+  HL2SB_RegisterClientLuaDirectory( state, "lua/skins", true );
+}
+#else
+static bool HL2SB_RegisterClientLuaFile( lua_State *, const char * ) { return false; }
+#endif
+
+static int luasrc_MsgAll (lua_State *L) {
+  const int count = lua_gettop(L);
+  char text[4096] = { 0 };
+  lua_getglobal(L, "tostring");
+  if ( !lua_isfunction(L, -1) ) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  const int tostringIndex = lua_gettop(L);
+  for ( int i = 1; i <= count; ++i ) {
+    lua_pushvalue(L, tostringIndex);
+    lua_pushvalue(L, i);
+    lua_call(L, 1, 1);
+    const char *part = lua_tostring(L, -1);
+    Q_strncat(text, part ? part : "ERROR", sizeof(text));
+    lua_pop(L, 1);
+  }
+  lua_pop(L, 1);
+  if ( !text[0] ) return 0;
+#ifdef CLIENT_DLL
+  Msg("%s", text);
+#else
+  UTIL_ClientPrintAll(HUD_PRINTCONSOLE, "%s1", text);
+  if ( engine->IsDedicatedServer() ) Msg("%s", text);
+#endif
+  return 0;
+}
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   HL2SB_RefreshGameContentPaths();
   lua_pushcfunction( L, lua_global_RealTime ); lua_setglobal( L, "RealTime" );
@@ -4210,6 +4336,9 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   **   LoadPresets()         lua/includes/modules/presets.lua:6 calls it at load.
   **   SENSORBONE            lua/includes/modules/motionsensor.lua:16 indexes it.
   */
+  lua_pushcfunction(L, luasrc_MsgAll);
+  lua_setglobal(L, "MsgAll");
+
   /* AddCSLuaFile( file = "current file" ) -- wiki Global.AddCSLuaFile.
   **
   ** Reference behaviour (GMod's engine-side binding; the four message strings
@@ -4227,9 +4356,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   **     of returning quietly -- that is what a probe such as
   **         print( AddCSLuaFile( "autorun/client/probe.lua" ) )
   **     shows, and it is why the call never returns a value.
-  ** The delivery half (shipping the recorded file to joining clients) is still
-  ** not implemented in this tree; the server keeps its registration list so the
-  ** call contract and its error paths match. */
+  ** The delivery half is still being implemented; the server registers the file
+  ** name and content hash in the client Lua file table. */
   lua_pushcfunction( L, []( lua_State *pL ) -> int {
     // The download list is server state.  The realm is read from the SERVER
     // global instead of a preprocessor branch: this tree's compiler rejects
@@ -4346,21 +4474,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
       }
     }
 
-    static char s_rgchCSFiles[ 8192 ][ 128 ];
-    static int s_nCSFileCount = 0;
-    int i = 0;
-    for ( ; i < s_nCSFileCount; ++i )
-    {
-      if ( !Q_stricmp( s_rgchCSFiles[i], szResolved ) )
-        break;
-    }
-    if ( i == s_nCSFileCount && s_nCSFileCount < (int)V_ARRAYSIZE( s_rgchCSFiles ) &&
-         Q_strlen( szResolved ) < (int)sizeof( s_rgchCSFiles[0] ) )
-    {
-      Q_strncpy( s_rgchCSFiles[ s_nCSFileCount ], szResolved, sizeof( s_rgchCSFiles[0] ) );
-      ++s_nCSFileCount;
-      Msg( "[lua] AddCSLuaFile: %s (client delivery pending)\n", szResolved );
-    }
+    if ( !HL2SB_RegisterClientLuaFile( pL, szResolved ) )
+      Warning( "AddCSLuaFile: unable to register '%s'\n", szResolved );
     return 0;
   } );
   lua_setglobal( L, "AddCSLuaFile" );

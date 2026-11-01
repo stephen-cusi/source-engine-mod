@@ -71,9 +71,11 @@ const char *CLC_LuaNetMessage::ToString(void) const
 
 bool CLC_LuaNetMessage::WriteToBuffer( bf_write &buffer )
 {
+	if ( m_nLength < 0 || m_nLength >= (1 << 20) )
+		return false;
 	buffer.WriteUBitLong( GetType(), NETMSG_TYPE_BITS );
 
-	buffer.WriteLong( m_nLength );	// length in bits
+	buffer.WriteUBitLong( m_nLength, 20 );
 
 	return buffer.WriteBits( m_DataOut.GetBasePointer(), m_nLength );
 }
@@ -82,9 +84,10 @@ bool CLC_LuaNetMessage::ReadFromBuffer( bf_read &buffer )
 {
 	VPROF( "CLC_LuaNetMessage::ReadFromBuffer" );
 
-	m_nLength = buffer.ReadLong();	// length in bits
-
-	m_DataIn = buffer;
+	m_nLength = buffer.ReadUBitLong( 20 );
+	if ( m_nLength > buffer.GetNumBitsLeft() ) return false;
+	const int start = buffer.GetNumBitsRead();
+	m_DataIn.StartReading( buffer.GetBasePointer(), buffer.TotalBytesAvailable(), start, start + m_nLength );
 
 	return buffer.SeekRelative( m_nLength );
 }
@@ -1083,6 +1086,30 @@ const char *NET_Tick::ToString(void) const
 {
 	Q_snprintf(s_text, sizeof(s_text), "%s: tick %i", GetName(), m_nTick );
 	return s_text;
+}
+
+const char *SVC_LuaFileData::ToString() const
+{
+	Q_snprintf( s_text, sizeof(s_text), "%s: %i bytes", GetName(), Bits2Bytes(m_nLength) );
+	return s_text;
+}
+
+bool SVC_LuaFileData::WriteToBuffer( bf_write &buffer )
+{
+	m_nLength = m_DataOut.GetNumBitsWritten();
+	if ( m_nLength < 0 || m_nLength >= (1 << 20) ) return false;
+	buffer.WriteUBitLong( GetType(), NETMSG_TYPE_BITS );
+	buffer.WriteUBitLong( m_nLength, 20 );
+	return buffer.WriteBits( m_DataOut.GetData(), m_nLength );
+}
+
+bool SVC_LuaFileData::ReadFromBuffer( bf_read &buffer )
+{
+	m_nLength = buffer.ReadUBitLong( 20 );
+	if ( m_nLength > buffer.GetNumBitsLeft() ) return false;
+	const int start = buffer.GetNumBitsRead();
+	m_DataIn.StartReading( buffer.GetBasePointer(), buffer.TotalBytesAvailable(), start, start + m_nLength );
+	return buffer.SeekRelative( m_nLength );
 }
 
 bool SVC_UserMessage::WriteToBuffer( bf_write &buffer )

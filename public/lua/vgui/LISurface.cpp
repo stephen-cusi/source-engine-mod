@@ -560,9 +560,18 @@ static int surface_GetScissorRect(lua_State *L) {
 static void HL2SB_GetCursorPos (int &x, int &y) {
   x = y = 0;
 
-  if ( vgui::input() != NULL ) {
+  if ( (!engine || engine->IsActiveApp()) && surface() && surface()->IsCursorVisible() && vgui::input() ) {
     vgui::input()->GetCursorPos(x, y);
   }
+}
+
+static int HL2SB_gui_SetMousePos (lua_State *L) {
+  if ( (engine && !engine->IsActiveApp()) || (enginevgui && enginevgui->IsGameUIVisible()) )
+    return 0;
+  const int x = (int)luaL_checknumber(L, 1);
+  const int y = (int)luaL_checknumber(L, 2);
+  if ( vgui::input() ) vgui::input()->SetCursorPos(x, y);
+  return 0;
 }
 
 static int HL2SB_gui_MouseX (lua_State *L) {
@@ -645,8 +654,8 @@ static int HL2SB_gui_OpenURL (lua_State *L) {
 // normalize.  The nvg addon traces with it every HUD frame; without the
 // binding the trace line died on a nil call.
 static int HL2SB_gui_ScreenToVector (lua_State *L) {
-  const float x = (float)luaL_checknumber(L, 1);
-  const float y = (float)luaL_checknumber(L, 2);
+  const float x = (float)(int)luaL_checknumber(L, 1);
+  const float y = (float)(int)luaL_checknumber(L, 2);
 
   int w = 0, h = 0;
   if ( surface() != NULL ) {
@@ -1343,6 +1352,8 @@ LUALIB_API int luaopen_surface (lua_State *L) {
   lua_setfield(L, -2, "MouseX");
   lua_pushcfunction(L, HL2SB_gui_MouseY);
   lua_setfield(L, -2, "MouseY");
+  lua_pushcfunction(L, HL2SB_gui_SetMousePos);
+  lua_setfield(L, -2, "SetMousePos");
   lua_pushcfunction(L, HL2SB_gui_MousePos);
   lua_setfield(L, -2, "MousePos");
   lua_pushcfunction(L, HL2SB_gui_ScreenWidth);

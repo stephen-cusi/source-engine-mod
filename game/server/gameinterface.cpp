@@ -1079,6 +1079,8 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	luasrc_LoadWeapons();
 	luasrc_LoadEntities();
 	luasrc_LoadEffects();
+	extern void HL2SB_RegisterAutomaticClientLuaFiles( lua_State *state );
+	HL2SB_RegisterAutomaticClientLuaFiles( L );
 
 	// HL2SB: the reference's scripted_ents.OnLoaded() runs once all of the
 	// above have loaded ("load order could cause some entities to load before
@@ -1677,6 +1679,9 @@ void CServerGameDLL::CreateNetworkStringTables( void )
 	// the numeric id of every pooled name (reference behavior: GMod pools net
 	// message names in a network string table too).
 	networkstringtable->CreateStringTable( "LuaNetStrings", 1024 );
+	INetworkStringTable *pClientLuaFiles = networkstringtable->CreateStringTable( "client_lua_files", 8192 );
+	if ( pClientLuaFiles )
+		pClientLuaFiles->AddString( true, "paths" );
 
 #ifdef TF_DLL
 	g_pStringTableServerPopFiles = networkstringtable->CreateStringTable( "ServerPopFiles", 128 );

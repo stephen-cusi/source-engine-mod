@@ -25,6 +25,14 @@
 #include "vgui_baseui_interface.h"
 #include "cl_pluginhelpers.h"
 #include "vgui_askconnectpanel.h"
+#include "demo.h"
+extern bool CL_ProcessLuaFileData( bf_read &message );
+
+class SVC_LegacyTimedPause : public SVC_SetPauseTimed
+{
+public:
+	int GetType() const { return 33; }
+};
 #endif
 #include "sv_steamauth.h"
 #include "tier0/icommandline.h"
@@ -427,7 +435,23 @@ void CBaseClientState::ConnectionStart(INetChannel *chan)
 	REGISTER_SVC_MSG( GameEventList );
 	REGISTER_SVC_MSG( GetCvarValue );
 	REGISTER_SVC_MSG( CmdKeyValues );
+#ifndef SWDS
+	if ( demoplayer && demoplayer->IsPlayingBack() && demoplayer->GetProtocolVersion() < PROTOCOL_VERSION_LUA_DATAPACK )
+	{
+		SVC_LegacyTimedPause *legacyPause = new SVC_LegacyTimedPause();
+		legacyPause->m_pMessageHandler = this;
+		chan->RegisterMessage( legacyPause );
+	}
+	else
+	{
+		REGISTER_SVC_MSG( SetPauseTimed );
+		SVC_LuaFileData *luaFileData = new SVC_LuaFileData();
+		luaFileData->m_pHandler = CL_ProcessLuaFileData;
+		chan->RegisterMessage( luaFileData );
+	}
+#else
 	REGISTER_SVC_MSG( SetPauseTimed );
+#endif
 }
 
 void CBaseClientState::ConnectionClosing( const char *reason )

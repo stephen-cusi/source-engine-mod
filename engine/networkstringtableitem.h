@@ -27,7 +27,7 @@ class CNetworkStringTableItem
 public:
 	enum
 	{
-		MAX_USERDATA_BITS = 14,
+		MAX_USERDATA_BITS = 19,
 		MAX_USERDATA_SIZE = (1 << MAX_USERDATA_BITS)
 	};
 

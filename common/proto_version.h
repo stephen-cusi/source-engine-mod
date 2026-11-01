@@ -12,7 +12,8 @@
 #endif
 
 // The current network protocol version.  Changing this makes clients and servers incompatible
-#define PROTOCOL_VERSION    25
+#define PROTOCOL_VERSION    26
+#define PROTOCOL_VERSION_LUA_DATAPACK 26
 
 #define DEMO_BACKWARDCOMPATABILITY
 

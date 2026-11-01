@@ -722,7 +722,12 @@ bool CBaseClient::SendServerInfo( void )
 
 	// write stringtable baselines
 #ifndef SHARED_NET_STRING_TABLES
-	m_Server->m_StringTables->WriteBaselines( msg );
+	if ( !m_Server->m_StringTables->WriteBaselines( msg, this ) )
+	{
+		MemFreeScratch();
+		Disconnect( "Unable to send string table baselines" );
+		return false;
+	}
 #endif
 	
 	// Write replicated ConVars to non-listen server clients only

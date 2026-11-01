@@ -4,11 +4,28 @@
 #include "lbaseentity_shared.h"
 #include "basescripted.h"
 #include "mathlib/lvector.h"
+#ifdef CLIENT_DLL
+#include "physpropclientside.h"
+extern C_PhysPropClientside *HL2SB_CreateClientPhysicsProp( const char *modelName );
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
 LUA_REGISTRATION_INIT( Entities );
+
+#ifdef CLIENT_DLL
+LUA_BINDING_BEGIN( Entities, CreateClientProp, "library", "Creates a clientside physics prop.", "client" )
+{
+    const char *model = luaL_optstring( L, 1, "models/error.mdl" );
+    if ( !model[0] ) model = "models/error.mdl";
+    C_PhysPropClientside *prop = HL2SB_CreateClientPhysicsProp( model );
+    if ( !prop ) return 0;
+    lua_pushentity( L, prop );
+    return 1;
+}
+LUA_BINDING_END( "Entity", "The created clientside prop." )
+#endif
 
 #define MAX_ENTITYARRAY 1024
 

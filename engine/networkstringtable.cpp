@@ -17,6 +17,9 @@
 #include <tier1/utlstring.h>
 #include <tier1/utlhashtable.h>
 #include <tier0/etwprof.h>
+#ifndef SWDS
+#include "demo.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -499,7 +502,7 @@ void CNetworkStringTable::UpdateMirrorTable( int tick_ack  )
 	}
 }
 
-int CNetworkStringTable::WriteUpdate( CBaseClient *client, bf_write &buf, int tick_ack )
+int CNetworkStringTable::WriteUpdate( CBaseClient *client, bf_write &buf, int tick_ack, bool omitUserData )
 {
 	CUtlVector< StringHistoryEntry > history;
 
@@ -561,7 +564,7 @@ int CNetworkStringTable::WriteUpdate( CBaseClient *client, bf_write &buf, int ti
 		// Write the item's user data.
 		int len;
 		const void *pUserData = GetStringUserData( i, &len );
-		if ( pUserData && len > 0 )
+		if ( !omitUserData && pUserData && len > 0 )
 		{
 			buf.WriteOneBit( 1 );
 
@@ -607,6 +610,30 @@ int CNetworkStringTable::WriteUpdate( CBaseClient *client, bf_write &buf, int ti
 	return entriesUpdated;
 }
 
+int CNetworkStringTable::WriteUserDataRange( bf_write &buf, int first, int last )
+{
+	for ( int i = first; i <= last; ++i )
+	{
+		buf.WriteOneBit( 0 );
+		buf.WriteUBitLong( i, m_nEntryBits );
+		buf.WriteOneBit( 0 );
+		int length = 0;
+		const void *data = GetStringUserData( i, &length );
+		buf.WriteOneBit( data && length > 0 );
+		if ( data && length > 0 )
+		{
+			if ( IsUserDataFixedSize() )
+				buf.WriteBits( data, GetUserDataSizeBits() );
+			else
+			{
+				buf.WriteUBitLong( length, CNetworkStringTableItem::MAX_USERDATA_BITS );
+				buf.WriteBits( data, length * 8 );
+			}
+		}
+	}
+	return last - first + 1;
+}
+
 
 //-----------------------------------------------------------------------------
 // Purpose: Parse string update
@@ -616,6 +643,7 @@ void CNetworkStringTable::ParseUpdate( bf_read &buf, int entries )
 	int lastEntry = -1;
 
 	CUtlVector< StringHistoryEntry > history;
+	CUtlVector< unsigned char > userDataBuffer;
 
 	for (int i=0; i<entries; i++)
 	{
@@ -663,25 +691,32 @@ void CNetworkStringTable::ParseUpdate( bf_read &buf, int entries )
 		}
 		
 		// Read in the user data.
-		unsigned char tempbuf[ CNetworkStringTableItem::MAX_USERDATA_SIZE ];
-		memset( tempbuf, 0, sizeof( tempbuf ) );
 		const void *pUserData = NULL;
 		int nBytes = 0;
 
 		if ( buf.ReadOneBit() )
 		{
+			if ( userDataBuffer.Count() == 0 )
+				userDataBuffer.SetCount( CNetworkStringTableItem::MAX_USERDATA_SIZE );
+			unsigned char *tempbuf = userDataBuffer.Base();
 			if ( IsUserDataFixedSize() )
 			{
 				// Don't need to read length, it's fixed length and the length was networked down already.
 				nBytes = GetUserDataSize();
-				Assert( nBytes > 0 );
+				ErrorIfNot( nBytes > 0 && nBytes <= userDataBuffer.Count(),
+					("CNetworkStringTableClient::ParseUpdate: invalid fixed size (%d bytes).", nBytes) );
 				tempbuf[nBytes-1] = 0; // be safe, clear last byte
 				buf.ReadBits( tempbuf, GetUserDataSizeBits() );
 			}
 			else
 			{
-				nBytes = buf.ReadUBitLong( CNetworkStringTableItem::MAX_USERDATA_BITS );
-				ErrorIfNot( nBytes <= sizeof( tempbuf ),
+				int lengthBits = CNetworkStringTableItem::MAX_USERDATA_BITS;
+#ifndef SWDS
+				if ( demoplayer && demoplayer->IsPlayingBack() && demoplayer->GetProtocolVersion() < PROTOCOL_VERSION_LUA_DATAPACK )
+					lengthBits = 14;
+#endif
+				nBytes = buf.ReadUBitLong( lengthBits );
+				ErrorIfNot( nBytes <= userDataBuffer.Count(),
 					("CNetworkStringTableClient::ParseUpdate: message too large (%d bytes).", nBytes)
 				);
 
@@ -1228,7 +1263,7 @@ void CNetworkStringTable::Dump( void )
 
 #ifndef SHARED_NET_STRING_TABLES
 
-bool CNetworkStringTable::WriteBaselines( SVC_CreateStringTable &msg, char *msg_buffer, int msg_buffer_size )
+bool CNetworkStringTable::WriteBaselines( SVC_CreateStringTable &msg, char *msg_buffer, int msg_buffer_size, bool omitUserData )
 {
 	VPROF_BUDGET( "CNetworkStringTable::WriteBaselines", VPROF_BUDGETGROUP_OTHER_NETWORKING );
 	msg.m_DataOut.StartWriting( msg_buffer, msg_buffer_size );
@@ -1242,7 +1277,7 @@ bool CNetworkStringTable::WriteBaselines( SVC_CreateStringTable &msg, char *msg_
 	msg.m_nUserDataSizeBits		= GetUserDataSizeBits();
 
 	// tick = -1 ensures that all entries are updated = baseline
-	int entries = WriteUpdate( NULL, msg.m_DataOut, -1 );
+	int entries = WriteUpdate( NULL, msg.m_DataOut, -1, omitUserData );
 
 	return entries == msg.m_nNumEntries;
 }
@@ -1393,11 +1428,12 @@ int CNetworkStringTableContainer::GetNumTables( void ) const
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CNetworkStringTableContainer::WriteBaselines( bf_write &buf )
+bool CNetworkStringTableContainer::WriteBaselines( bf_write &buf, CBaseClient *client )
 {
 	VPROF_BUDGET( "CNetworkStringTableContainer::WriteBaselines", VPROF_BUDGETGROUP_OTHER_NETWORKING );
 
 	SVC_CreateStringTable msg;
+	CUtlVector<CNetworkStringTable *> deferredTables;
 
 	size_t msg_buffer_size = 2 * NET_MAX_PAYLOAD;
 	char *msg_buffer = new char[ msg_buffer_size ];
@@ -1411,7 +1447,20 @@ void CNetworkStringTableContainer::WriteBaselines( bf_write &buf )
 		CNetworkStringTable *table = (CNetworkStringTable*) GetTable( i );
 
 		int before = buf.GetNumBytesWritten();
-		if ( !table->WriteBaselines( msg, msg_buffer, msg_buffer_size ) )
+		int totalUserData = 0;
+		if ( client )
+		{
+			for ( int j = 0; j < table->GetNumStrings(); ++j )
+			{
+				int length = 0;
+				table->GetStringUserData( j, &length );
+				if ( length > 0 ) totalUserData += length;
+				if ( totalUserData > 16384 ) break;
+			}
+		}
+		const bool defer = client && totalUserData > 16384;
+		if ( defer ) deferredTables.AddToTail( table );
+		if ( !table->WriteBaselines( msg, msg_buffer, msg_buffer_size, defer ) )
 		{
 			Host_Error( "Index error writing string table baseline %s\n", table->GetTableName() );
 		}
@@ -1456,6 +1505,15 @@ void CNetworkStringTableContainer::WriteBaselines( bf_write &buf )
 		{
 			Host_Error( "Overflow error writing string table baseline %s\n", table->GetTableName() );
 		}
+		if ( client && buf.GetNumBytesWritten() > NET_MAX_PAYLOAD / 2 )
+		{
+			if ( !client->GetNetChannel()->SendData( buf ) || !client->GetNetChannel()->Transmit() )
+			{
+				delete[] msg_buffer;
+				return false;
+			}
+			buf.Reset();
+		}
 
 		int after = buf.GetNumBytesWritten();
 		if ( sv_dumpstringtables.GetBool() )
@@ -1464,7 +1522,49 @@ void CNetworkStringTableContainer::WriteBaselines( bf_write &buf )
 		}
 	}
 
+	if ( client && deferredTables.Count() )
+	{
+		if ( !client->GetNetChannel()->SendData( buf ) || !client->GetNetChannel()->Transmit() )
+		{
+			delete[] msg_buffer;
+			return false;
+		}
+		buf.Reset();
+		CUtlVector<unsigned char> updateBuffer;
+		updateBuffer.SetCount( NET_MAX_PAYLOAD );
+		for ( int t = 0; t < deferredTables.Count(); ++t )
+		{
+			CNetworkStringTable *table = deferredTables[t];
+			for ( int first = 0; first < table->GetNumStrings(); )
+			{
+				int last = first;
+				int bytes = 0;
+				while ( last < table->GetNumStrings() )
+				{
+					int length = 0;
+					table->GetStringUserData( last, &length );
+					if ( last > first && bytes + length > 1260 ) break;
+					bytes += length;
+					++last;
+				}
+				--last;
+				SVC_UpdateStringTable update;
+				update.m_nTableID = table->GetTableId();
+				update.m_DataOut.StartWriting( updateBuffer.Base(), updateBuffer.Count() );
+				update.m_nChangedEntries = table->WriteUserDataRange( update.m_DataOut, first, last );
+				if ( update.m_DataOut.IsOverflowed() || !update.WriteToBuffer( buf ) ||
+					 !client->GetNetChannel()->SendData( buf ) || !client->GetNetChannel()->Transmit() )
+				{
+					delete[] msg_buffer;
+					return false;
+				}
+				buf.Reset();
+				first = last + 1;
+			}
+		}
+	}
 	delete[] msg_buffer;
+	return true;
 }
 
 void CNetworkStringTableContainer::WriteStringTables( bf_write& buf )
