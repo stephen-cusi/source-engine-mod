@@ -2072,7 +2072,7 @@ static HL2SBSpawnEffectState *HL2SB_SpawnEffectState(CBaseEntity *entity, bool c
   unsigned short index = s_SpawnEffects.Find(key);
   if (index == s_SpawnEffects.InvalidIndex()) {
     if (!create) return NULL;
-    HL2SBSpawnEffectState initial = {false, gpGlobals->curtime};
+    HL2SBSpawnEffectState initial = {false, static_cast<float>(gpGlobals->curtime)};
     index = s_SpawnEffects.Insert(key, initial);
   }
   return &s_SpawnEffects[index];
