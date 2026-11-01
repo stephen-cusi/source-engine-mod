@@ -303,7 +303,7 @@ static void HL2SB_FireVoiceHook( bool bStarted, C_BasePlayer *pPlayer, int entin
 		return;
 
 	BEGIN_LUA_CALL_HOOK( bStarted ? "PlayerStartVoice" : "PlayerEndVoice" );
-	lua_pushentity( L, pPlayer );
+	C_BaseEntity::PushLuaInstanceSafe( L, pPlayer );
 	lua_pushinteger( L, entindex );
 	END_LUA_CALL_HOOK( 2, 0 );
 }
