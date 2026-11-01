@@ -302,7 +302,7 @@ void CHLTVClientState::SendPacket()
 	{
 		// use full update rate when active
 		float commandInterval = (2.0f/3.0f) / tv_snapshotrate.GetInt();
-		float maxDelta = min ( host_state.interval_per_tick, commandInterval );
+		float maxDelta = MIN( host_state.interval_per_tick, commandInterval );
 		float delta = clamp( (float)(net_time - m_flNextCmdTime), 0.0f, maxDelta );
 		m_flNextCmdTime = net_time + commandInterval - delta;
 	}
