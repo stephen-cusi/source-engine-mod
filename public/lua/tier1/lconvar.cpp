@@ -785,7 +785,8 @@ static int luasrc_ConVar (lua_State *L) {
 #else
   flags |= FCVAR_GAMEDLL | luaServerFlag;
 #endif
-  ConVar *pConVar = new ConVar(strdup(pName), pDefault, flags, strdup(luaL_optstring(L, 4, 0)), luaL_optboolean(L, 5, 0), luaL_optnumber(L, 6, 0.0), luaL_optboolean(L, 7, 0), luaL_optnumber(L, 8, 0));
+  const char *pHelp = luaL_optstring(L, 4, NULL);
+  ConVar *pConVar = new ConVar(strdup(pName), pDefault, flags, pHelp ? strdup(pHelp) : NULL, luaL_optboolean(L, 5, 0), luaL_optnumber(L, 6, 0.0), luaL_optboolean(L, 7, 0), luaL_optnumber(L, 8, 0));
 
   // HL2SB (2026-09-24): register with the engine cvar system.  GMod's
   // Lua-created convars ARE console-visible/queryable ("halo_draw" etc.);
@@ -901,8 +902,76 @@ void ResetGameUIConVarDatabase( void )
 }
 #endif
 
+static int luasrc_CreateConVar (lua_State *L) {
+  const char *name = luaL_checkstring(L, 1);
+  static const char *const blocked[] = {
+    "rcon_password", "sv_password", "password", "tv_password",
+    "tv_relaypassword", "rcon_address", "lua_error_url"
+  };
+  for ( int i = 0; i < ARRAYSIZE(blocked); ++i ) {
+    if ( !Q_stricmp(name, blocked[i]) )
+      return luaL_error(L, "CreateConVar: ConVar name is blocked! (%s)", name);
+  }
+
+  if ( cvar->FindCommand(name) )
+    return luaL_error(L, "CreateConVar: Cannot override an existing console command! (%s)", name);
+  if ( Q_strlen(name) < 2 )
+    return luaL_error(L, "CreateConVar: ConVar name is too short! (%s)", name);
+  for ( const unsigned char *p = (const unsigned char *)name; *p; ++p ) {
+    const unsigned int c = *p;
+    if ( !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || strchr("!+-.^_~", c)) )
+      return luaL_error(L, "CreateConVar: Invalid ConVar name! (%s)", name);
+  }
+
+  ConVar *existing = cvar->FindVar(name);
+  if ( existing ) {
+    const int luaOwned = (1 << 26) | (1 << 27);
+    if ( existing->IsFlagSet(FCVAR_HIDDEN | FCVAR_DEVELOPMENTONLY | FCVAR_UNREGISTERED) &&
+         !existing->IsFlagSet(luaOwned) )
+      return 0;
+    lua_pushconvar(L, existing);
+    return 1;
+  }
+
+  if ( !lua_isnoneornil(L, 4) && lua_type(L, 4) != LUA_TSTRING )
+    return luaL_argerror(L, 4, "string expected");
+  if ( !lua_isnoneornil(L, 5) && lua_type(L, 5) != LUA_TNUMBER )
+    return luaL_argerror(L, 5, "number expected");
+  if ( !lua_isnoneornil(L, 6) && lua_type(L, 6) != LUA_TNUMBER )
+    return luaL_argerror(L, 6, "number expected");
+
+  int flags = 0;
+  if ( lua_istable(L, 3) ) {
+    const size_t count = lua_rawlen(L, 3);
+    for ( size_t i = 1; i <= count; ++i ) {
+      lua_rawgeti(L, 3, (lua_Integer)i);
+      flags |= (int)luaL_checkinteger(L, -1);
+      lua_pop(L, 1);
+    }
+  } else if ( !lua_isnoneornil(L, 3) ) {
+    flags = (int)luaL_checkinteger(L, 3);
+  }
+
+  lua_settop(L, 6);
+  lua_pushcfunction(L, luasrc_ConVar);
+  lua_pushvalue(L, 1);
+  lua_pushvalue(L, 2);
+  lua_pushinteger(L, flags);
+  lua_pushvalue(L, 4);
+  lua_pushboolean(L, !lua_isnil(L, 5));
+  if ( lua_isnil(L, 5) ) lua_pushnumber(L, 0);
+  else lua_pushnumber(L, luaL_checknumber(L, 5));
+  lua_pushboolean(L, !lua_isnil(L, 6));
+  if ( lua_isnil(L, 6) ) lua_pushnumber(L, 0);
+  else lua_pushnumber(L, luaL_checknumber(L, 6));
+  lua_call(L, 8, 1);
+  return 1;
+}
+
 static const luaL_Reg ConVar_funcs[] = {
   {"ConVar", luasrc_ConVar},
+  {"CreateConVar", luasrc_CreateConVar},
   {"GetConVar_Internal", luasrc_GetConVar_Internal},
   {NULL, NULL}
 };

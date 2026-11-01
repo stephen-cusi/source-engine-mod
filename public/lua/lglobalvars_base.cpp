@@ -10,6 +10,10 @@
 #include "lua.hpp"
 #include "luasrclib.h"
 #include "hl2sb_framestats_cat.h"
+#ifdef CLIENT_DLL
+#include "vgui/ISurface.h"
+#include "vgui_controls/Controls.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -100,9 +104,53 @@ static int luasrc_FrameTime (lua_State *L) {
   return 1;
 }
 
+static int luasrc_CurTime (lua_State *L) {
+  lua_pushnumber(L, gpGlobals ? gpGlobals->curtime : 0.0);
+  return 1;
+}
+
+static int luasrc_RealTime (lua_State *L) {
+  lua_pushnumber(L, gpGlobals ? gpGlobals->realtime : 0.0);
+  return 1;
+}
+
+static int luasrc_FrameNumber (lua_State *L) {
+  lua_pushinteger(L, gpGlobals ? gpGlobals->framecount : 0);
+  return 1;
+}
+
+static int luasrc_SysTime (lua_State *L) {
+  lua_pushnumber(L, Plat_FloatTime());
+  return 1;
+}
+
+#ifdef CLIENT_DLL
+static int luasrc_ScrW (lua_State *L) {
+  int width, height;
+  vgui::surface()->GetScreenSize(width, height);
+  lua_pushnumber(L, width);
+  return 1;
+}
+
+static int luasrc_ScrH (lua_State *L) {
+  int width, height;
+  vgui::surface()->GetScreenSize(width, height);
+  lua_pushnumber(L, height);
+  return 1;
+}
+#endif
+
 
 static const luaL_Reg gpGlobals_funcs[] = {
+  {"CurTime", luasrc_CurTime},
+  {"RealTime", luasrc_RealTime},
   {"FrameTime", luasrc_FrameTime},
+  {"FrameNumber", luasrc_FrameNumber},
+  {"SysTime", luasrc_SysTime},
+#ifdef CLIENT_DLL
+  {"ScrW", luasrc_ScrW},
+  {"ScrH", luasrc_ScrH},
+#endif
   {NULL, NULL}
 };
 
