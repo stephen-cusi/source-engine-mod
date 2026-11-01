@@ -55,7 +55,7 @@ public:
 	CNetworkVar( bool, m_bDoImpacts );
 	CNetworkVar( bool, m_bDoTracers );
 	// HL2SB: index into the "EffectDispatch" network string table holding the
-	// tracer effect name the shooter wanted ("rb655_nyan_tracer"), 0 for none.
+	// tracer effect name the shooter wanted, stored as index + 1; 0 means none.
 	CNetworkVar( int, m_iTracerName );
 };
 
@@ -86,7 +86,7 @@ IMPLEMENT_SERVERCLASS_ST_NOBASE(CTEHL2MPFireBullets, DT_TEHL2MPFireBullets)
 	SendPropFloat( SENDINFO( m_flSpread ), 10, 0, 0, 1 ),	
 	SendPropBool( SENDINFO( m_bDoImpacts ) ),
 	SendPropBool( SENDINFO( m_bDoTracers ) ),
-	SendPropInt( SENDINFO( m_iTracerName ), MAX_EFFECT_DISPATCH_STRING_BITS, SPROP_UNSIGNED ),
+	SendPropInt( SENDINFO( m_iTracerName ), MAX_EFFECT_DISPATCH_STRING_BITS + 1, SPROP_UNSIGNED ),
 END_SEND_TABLE()
 
 
@@ -144,14 +144,14 @@ void TE_HL2MPFireBullets(
 	g_TEHL2MPFireBullets.m_bDoTracers = bDoTracers;
 	g_TEHL2MPFireBullets.m_bDoImpacts = bDoImpacts;
 
-	// Index 0 is the string table's empty string, i.e. "no name here".
+	// Zero means no name; actual string table indices are sent one-based.
 	g_TEHL2MPFireBullets.m_iTracerName = 0;
 	if ( pszTracerName != NULL && pszTracerName[0] != '\0' && g_pStringTableEffectDispatch != NULL )
 	{
 		int iIndex = g_pStringTableEffectDispatch->AddString( CBaseEntity::IsServer(), pszTracerName );
-		if ( iIndex > 0 )
+		if ( iIndex >= 0 && iIndex < MAX_EFFECT_DISPATCH_STRINGS )
 		{
-			g_TEHL2MPFireBullets.m_iTracerName = iIndex;
+			g_TEHL2MPFireBullets.m_iTracerName = iIndex + 1;
 		}
 	}
 	

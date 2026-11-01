@@ -40,8 +40,7 @@ public:
 	bool	m_bDoImpacts;
 	bool	m_bDoTracers;
 	// HL2SB: index into the "EffectDispatch" string table holding the tracer
-	// effect name the shooter's weapon asked for (0 = the table's empty string,
-	// i.e. the server did not send one).
+	// effect name the shooter's weapon asked for (index + 1; 0 means none).
 	int		m_iTracerName;
 };
 
@@ -171,11 +170,11 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 						// the engine's GetString() asserts on an out-of-range one
 						// (its own DT_TEEffectDispatch relies on the string table
 						// update landing first; don't make this path depend on it).
-						if ( m_iTracerName > 0 && m_iTracerName < MAX_EFFECT_DISPATCH_STRINGS &&
+						if ( m_iTracerName > 0 && m_iTracerName <= MAX_EFFECT_DISPATCH_STRINGS &&
 							 g_StringTableEffectDispatch != NULL &&
-							 m_iTracerName < g_StringTableEffectDispatch->GetNumStrings() )
+							 m_iTracerName - 1 < g_StringTableEffectDispatch->GetNumStrings() )
 						{
-							pTracerName = g_StringTableEffectDispatch->GetString( m_iTracerName );
+							pTracerName = g_StringTableEffectDispatch->GetString( m_iTracerName - 1 );
 						}
 
 						if ( ( pTracerName == NULL || pTracerName[0] == '\0' ) && pWpn != NULL )

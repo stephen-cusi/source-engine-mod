@@ -175,28 +175,36 @@ static int CBaseEntity_SetRenderBounds (lua_State *L) {
   C_BaseEntity *pEntity = luaL_checkentity(L, 1);
   Vector mins = luaL_checkvector(L, 2);
   Vector maxs = luaL_checkvector(L, 3);
-  Vector vecZero( 0.0f, 0.0f, 0.0f );
-  Vector add  = luaL_optvector(L, 4, &vecZero);
+  Vector add( 0.0f, 0.0f, 0.0f );
+  if ( luaL_testudata( L, 4, LUA_VECTORLIBNAME ) )
+    add = lua_tovector( L, 4 );
 
-  pEntity->SetScriptedRenderBounds( mins - add, maxs + add );
+  Vector lower, upper;
+  VectorMin( mins, maxs, lower );
+  VectorMax( mins, maxs, upper );
+  pEntity->SetScriptedRenderBounds( lower - add, upper + add );
   if ( pEntity->GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE )
     ClientLeafSystem()->RenderableChanged( pEntity->GetRenderHandle() );
   return 0;
 }
 
 // HL2SB GMod compat: Entity:SetRenderBoundsWS( mins, maxs, add ) -- world-space
-// variant (wiki).  Converts to local relative to the entity origin, then reuses
-// the local setter.  EFFECT:SetRenderBoundsWS already exists on effect tables;
-// this is the entity method.
+// variant (wiki). Converts both world-space points to entity-local space.
 static int CBaseEntity_SetRenderBoundsWS (lua_State *L) {
   C_BaseEntity *pEntity = luaL_checkentity(L, 1);
   Vector mins = luaL_checkvector(L, 2);
   Vector maxs = luaL_checkvector(L, 3);
-  Vector vecZero( 0.0f, 0.0f, 0.0f );
-  Vector add  = luaL_optvector(L, 4, &vecZero);
+  Vector add( 0.0f, 0.0f, 0.0f );
+  if ( luaL_testudata( L, 4, LUA_VECTORLIBNAME ) )
+    add = lua_tovector( L, 4 );
 
-  const Vector origin = pEntity->GetAbsOrigin();
-  pEntity->SetScriptedRenderBounds( ( mins - add ) - origin, ( maxs + add ) - origin );
+  Vector localMins, localMaxs, lower, upper;
+  const matrix3x4_t &transform = pEntity->EntityToWorldTransform();
+  VectorITransform( mins, transform, localMins );
+  VectorITransform( maxs, transform, localMaxs );
+  VectorMin( localMins, localMaxs, lower );
+  VectorMax( localMins, localMaxs, upper );
+  pEntity->SetScriptedRenderBounds( lower - add, upper + add );
   if ( pEntity->GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE )
     ClientLeafSystem()->RenderableChanged( pEntity->GetRenderHandle() );
   return 0;
