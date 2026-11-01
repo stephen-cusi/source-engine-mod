@@ -2120,6 +2120,16 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 		// Now actually draw the viewmodel
 		DrawViewModels( view, whatToDraw & RENDERVIEW_DRAWVIEWMODEL );
 
+		// PreDrawEffects runs while the main 3D view is still active.
+		{
+			extern bool g_bRenderingReflection;
+			if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+			{
+				BEGIN_LUA_CALL_HOOK( "PreDrawEffects" );
+				END_LUA_CALL_HOOK( 0, 0 );
+			}
+		}
+
 		DrawUnderwaterOverlay();
 
 		PixelVisibility_EndScene();
@@ -2177,20 +2187,6 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 		}
 
 		CleanupMain3DView( view );
-
-		// HL2SB GMod compat (2026-10-08): fire GM:PreDrawEffects once per
-		// frame - GMod raises it right after the viewmodels and before the
-		// screen-space stage, with the 3D context still valid (their render
-		// loop order: PreDrawViewModels, effects, PreDrawEffects, screen
-		// space).  Same in-game guard as the two pumps below.
-			{
-				extern bool g_bRenderingReflection;
-				if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
-				{
-					BEGIN_LUA_CALL_HOOK( "PreDrawEffects" );
-					END_LUA_CALL_HOOK( 0, 0 );
-				}
-			}
 
 		// HL2SB GMod compat: fire GM:RenderScreenspaceEffects once per frame,
 		// after the 3D scene and its screen-space effects and before the HUD --
