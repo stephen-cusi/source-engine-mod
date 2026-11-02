@@ -14,6 +14,12 @@
 #include <string>
 #include <vector>
 
+static int engine_ActiveGamemode (lua_State *L) {
+  ConVarRef mode( "gamemode" );
+  lua_pushstring( L, mode.IsValid() ? mode.GetString() : "sandbox" );
+  return 1;
+}
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -553,6 +559,7 @@ static const luaL_Reg enginelib[] = {
   {"GetGames", HL2SB_EngineGetGames},
   {"GetEngineBuildNumber",   engine_GetEngineBuildNumber},
   {"GetGameDirectory", engine_GetGameDirectory},
+  {"ActiveGamemode", engine_ActiveGamemode},
   {"GetLastTimeStamp", engine_GetLastTimeStamp},
   {"TickInterval",     engine_TickInterval},
   {"GetLevelName",   engine_GetLevelName},

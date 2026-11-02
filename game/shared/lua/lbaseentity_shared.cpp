@@ -4852,7 +4852,8 @@ static int CBaseEntity___index (lua_State *L) {
     else if ( pEntity->IsWeapon() )
       bAnswered = HL2SB_PushClassField( L, "CBaseCombatWeapon", field );
 
-    if ( !bAnswered && pEntity->GetBaseAnimating() != NULL )
+    if ( !bAnswered && ( pEntity->GetBaseAnimating() != NULL ||
+         !Q_strcmp( field, "GetBoneCount" ) || !Q_strcmp( field, "GetBoneName" ) ) )
       bAnswered = HL2SB_PushClassField( L, "CBaseAnimating", field );
 
     if ( !bAnswered )
@@ -6519,6 +6520,29 @@ static int CBaseEntity_GetActiveWeapon( lua_State *L ) {
   return 1;
 }
 
+static int CBaseEntity_BoneMethod( lua_State *L, const char *name, bool isName ) {
+  CBaseEntity *entity = luaL_checkentity( L, 1 );
+  if ( !entity->GetBaseAnimating() ) {
+    if ( isName ) lua_pushstring( L, "__INVALIDBONE__" );
+    else lua_pushinteger( L, 0 );
+    return 1;
+  }
+  const int args = lua_gettop( L );
+  if ( !HL2SB_PushClassField( L, "CBaseAnimating", name ) )
+    return luaL_error( L, "missing animation method %s", name );
+  lua_insert( L, 1 );
+  lua_call( L, args, 1 );
+  return 1;
+}
+
+static int CBaseEntity_GetBoneCount( lua_State *L ) {
+  return CBaseEntity_BoneMethod( L, "GetBoneCount", false );
+}
+
+static int CBaseEntity_GetBoneName( lua_State *L ) {
+  return CBaseEntity_BoneMethod( L, "GetBoneName", true );
+}
+
 static int CBaseEntity_SetBodyGroups( lua_State *L ) {
   CBaseAnimating *anim = luaL_checkentity( L, 1 )->GetBaseAnimating();
   if ( !anim ) return 0;
@@ -6780,6 +6804,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetColor", CBaseEntity_GetColor},
   {"GetPersistent", CBaseEntity_GetPersistent},
   {"GetActiveWeapon", CBaseEntity_GetActiveWeapon},
+  {"GetBoneCount", CBaseEntity_GetBoneCount},
+  {"GetBoneName", CBaseEntity_GetBoneName},
   {"GetColor4Part", CBaseEntity_GetColor4Part},
   {"GetMaterial", CBaseEntity_GetMaterial},
   {"GetSimulatingPlayer", CBaseEntity_GetSimulatingPlayer},

@@ -889,6 +889,8 @@ void luasrc_init_gameui (void) {
   luasrc_register_metatable_globals( LGameUI );
   if ( luasrc_dofile( LGameUI, LUA_ROOT "/includes/util.lua" ) != 0 )
     luasrc_LuaWarnMsgF( "HL2SB: menu type helpers failed to load\n" );
+  if ( luasrc_dofile( LGameUI, LUA_PATH_EXTENSIONS "/client/globals.lua" ) != 0 )
+    luasrc_LuaWarnMsgF( "HL2SB: menu client globals failed to load\n" );
 
   static const char *const menuFiles[] = {
     LUA_PATH_EXTENSIONS "/table.lua",     // table.merge, used by vgui.register

@@ -350,9 +350,12 @@ static int CBaseAnimating_GetBoneCount (lua_State *L) {
 }
 
 static int CBaseAnimating_GetBoneName (lua_State *L) {
-  CBaseAnimating *pEntity = lua_toanimating(L, 1);
-  if ( pEntity == NULL )
-    return 0;
+  CBaseEntity *entity = luaL_checkentity(L, 1);
+  CBaseAnimating *pEntity = entity->GetBaseAnimating();
+  if ( pEntity == NULL ) {
+    lua_pushstring( L, "__INVALIDBONE__" );
+    return 1;
+  }
   int nBone = luaL_checkint(L, 2);
   CStudioHdr *pHdr = pEntity->GetModelPtr();
   if ( !pHdr || nBone < 0 || nBone >= pHdr->numbones() )

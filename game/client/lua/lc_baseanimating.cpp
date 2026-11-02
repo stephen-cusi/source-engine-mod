@@ -616,7 +616,12 @@ static int CBaseAnimating_SetBonePosition (lua_State *L) {
 // Person Body addon classifies bones by name ("ValveBiped.*") to decide which
 // to hide while mirroring.
 static int CBaseAnimating_GetBoneName (lua_State *L) {
-  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  C_BaseEntity *entity = luaL_checkentity(L, 1);
+  C_BaseAnimating *pEntity = entity->GetBaseAnimating();
+  if ( !pEntity ) {
+    lua_pushstring( L, "__INVALIDBONE__" );
+    return 1;
+  }
   int nBone = luaL_checkint(L, 2);
   studiohdr_t *pHdr = HL2SB_GetStudioHdrSafe( pEntity );
   if ( !pHdr || nBone < 0 || nBone >= pHdr->numbones )

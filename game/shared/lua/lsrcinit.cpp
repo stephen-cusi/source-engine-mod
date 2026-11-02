@@ -1332,6 +1332,23 @@ static int lua_game_GetAmmoID (lua_State *L) {
   return 1;
 }
 
+static int lua_game_GetTimeScale( lua_State *L ) {
+  ConVarRef scale( "hl2sb_game_timescale" );
+  lua_pushnumber( L, scale.IsValid() ? scale.GetFloat() : 1.0f );
+  return 1;
+}
+
+static int lua_game_SetTimeScale( lua_State *L ) {
+#ifndef CLIENT_DLL
+  ConVarRef scale( "hl2sb_game_timescale" );
+  if ( scale.IsValid() )
+    scale.SetValue( (float)luaL_checknumber( L, 1 ) );
+#else
+  (void)L;
+#endif
+  return 0;
+}
+
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: the console print globals.
 //
@@ -3225,6 +3242,23 @@ int lua_IsConCommandBlocked (lua_State *L) {
   return 1;
 }
 
+#ifndef CLIENT_DLL
+static int HL2SB_Lua_GameConsoleCommand( lua_State *L ) {
+  const char *command = luaL_checkstring( L, 1 );
+  lua_pushcfunction( L, lua_IsConCommandBlocked );
+  lua_pushvalue( L, 1 );
+  lua_call( L, 1, 1 );
+  const bool blocked = lua_toboolean( L, -1 ) != 0;
+  lua_pop( L, 1 );
+  if ( blocked ) {
+    Warning( "game.ConsoleCommand blocked! (%s)\n", command );
+    return 0;
+  }
+  engine->ServerCommand( command );
+  return 0;
+}
+#endif
+
 static int HL2SB_Lua_EngineCommand (lua_State *L) {
   const char *pszCommand = luaL_checkstring( L, 1 );
   if ( pszCommand == NULL || pszCommand[ 0 ] == '\0' )
@@ -4646,7 +4680,14 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pushcfunction( L, lua_game_IsDedicated );  lua_setfield( L, -2, "IsDedicated" );
     lua_pushcfunction( L, lua_game_GetAmmoName );  lua_setfield( L, -2, "GetAmmoName" );
     lua_pushcfunction( L, lua_game_GetAmmoID );    lua_setfield( L, -2, "GetAmmoID" );
+    lua_pushcfunction( L, lua_game_GetTimeScale ); lua_setfield( L, -2, "GetTimeScale" );
+#ifndef CLIENT_DLL
+    lua_pushcfunction( L, lua_game_SetTimeScale ); lua_setfield( L, -2, "SetTimeScale" );
+#endif
     lua_pushcfunction( L, HL2SB_LuaGameCleanUpMap ); lua_setfield( L, -2, "CleanUpMap" );
+#ifndef CLIENT_DLL
+    lua_pushcfunction( L, HL2SB_Lua_GameConsoleCommand ); lua_setfield( L, -2, "ConsoleCommand" );
+#endif
   }
   lua_pop( L, 1 );
 
