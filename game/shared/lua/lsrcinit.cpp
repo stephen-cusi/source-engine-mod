@@ -22,6 +22,14 @@
 #include "tier1/CommandBuffer.h"
 #include "tier0/fasttimer.h"
 #include "tier1/utlstring.h"
+#include "inetchannelinfo.h"
+#ifndef CLIENT_DLL
+#include "iserver.h"
+#if !defined(NO_STEAM) && !defined(DISABLE_STEAM)
+#include "steam/steam_gameserver.h"
+extern CSteamGameServerAPIContext *steamgameserverapicontext;
+#endif
+#endif
 #include <limits.h>
 // HL2SB: luaL_checkentity (SuppressHostEvents), the GMod global helpers
 // registered at the end, the NetworkVar shim (which hands a 0..1 Vector back for
@@ -267,6 +275,27 @@ int HL2SB_EngineGetGames( lua_State *L ) {
     lua_pushboolean(L, owned); lua_setfield(L, -2, "owned");
     lua_rawseti(L, -2, i + 1);
   }
+  return 1;
+}
+
+static int lua_game_GetIPAddress( lua_State *L )
+{
+#ifdef CLIENT_DLL
+  INetChannelInfo *channel = engine ? engine->GetNetChannelInfo() : NULL;
+  lua_pushstring( L, channel ? channel->GetAddress() : "0.0.0.0:0" );
+#else
+  unsigned int ip = 0;
+#if !defined(NO_STEAM) && !defined(DISABLE_STEAM)
+  if ( steamgameserverapicontext && steamgameserverapicontext->SteamGameServer() )
+    ip = steamgameserverapicontext->SteamGameServer()->GetPublicIP();
+#endif
+  IServer *server = engine ? engine->GetIServer() : NULL;
+  unsigned int port = server ? (unsigned int)server->GetUDPPort() : 0;
+  char address[64];
+  Q_snprintf( address, sizeof(address), "%u.%u.%u.%u:%u", (ip >> 24) & 255,
+              (ip >> 16) & 255, (ip >> 8) & 255, ip & 255, port );
+  lua_pushstring( L, address );
+#endif
   return 1;
 }
 
@@ -4681,6 +4710,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pushcfunction( L, lua_game_AddDecal );     lua_setfield( L, -2, "AddDecal" );
     lua_pushcfunction( L, lua_game_GetMap );       lua_setfield( L, -2, "GetMap" );
     lua_pushcfunction( L, lua_game_GetWorld );     lua_setfield( L, -2, "GetWorld" );
+    lua_pushcfunction( L, lua_game_GetIPAddress ); lua_setfield( L, -2, "GetIPAddress" );
     lua_pushcfunction( L, lua_game_SinglePlayer ); lua_setfield( L, -2, "SinglePlayer" );
     lua_pushcfunction( L, lua_game_MaxPlayers );   lua_setfield( L, -2, "MaxPlayers" );
     lua_pushcfunction( L, lua_game_IsDedicated );  lua_setfield( L, -2, "IsDedicated" );

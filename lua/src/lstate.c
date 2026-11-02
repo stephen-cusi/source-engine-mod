@@ -27,6 +27,8 @@
 #include "ltable.h"
 #include "ltm.h"
 
+extern void hl2sb_inheritthreadenv (lua_State *L);
+
 
 
 /*
@@ -306,6 +308,7 @@ LUA_API lua_State *lua_newthread (lua_State *L) {
   luai_userstatethread(L, L1);
   stack_init(L1, L);  /* init stack */
   lua_unlock(L);
+  hl2sb_inheritthreadenv(L);
   return L1;
 }
 

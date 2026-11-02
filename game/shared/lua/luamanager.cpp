@@ -644,8 +644,6 @@ static void base_open (lua_State *L) {
   ** loadlib.c itself.
   */
   luasrc_dostring( L,
-    "unpack = unpack or table.unpack\n"
-    "loadstring = loadstring or load\n"
     "table.getn = table.getn or function( t ) return #t end\n"
     "table.setn = table.setn or function( t, n ) return t end\n"
     "table.foreach = table.foreach or function( t, f ) for k, v in pairs( t ) do local r = f( k, v ) if r ~= nil then return r end end end\n"

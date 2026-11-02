@@ -50,6 +50,9 @@
 #include <stddef.h>
 #include <string.h>
 
+extern int hl2sb_getthreadenv( lua_State *L, int threadindex );
+extern void hl2sb_setthreadenv( lua_State *L, int threadindex, int envindex );
+
 /* Data-export spelling per toolchain: MSVC uses __declspec(dllexport), the
  * gcc/clang side must carry an explicit default-visibility attribute --
  * compiler_optimizations.py compiles everything with -fvisibility=hidden,
@@ -296,6 +299,15 @@ LUA_API void lua_getfenv( lua_State *L, int idx )
     idx = lua_absindex( L, idx );
     nType = lua_type( L, idx );
 
+    if ( nType == LUA_TTHREAD )
+    {
+        if ( hl2sb_getthreadenv( L, idx ) )
+            return;
+        lua_pop( L, 1 );
+        lua_pushglobaltable( L );
+        return;
+    }
+
     if ( nType == LUA_TFUNCTION )
     {
         nEnvUp = hl2sb_envupindex( L, idx );
@@ -330,16 +342,26 @@ LUA_API int lua_setfenv( lua_State *L, int idx )
     nType = lua_type( L, idx );
     /* stack: [ ... newenv ] -- top */
 
+    if ( nType == LUA_TTHREAD )
+    {
+        hl2sb_setthreadenv( L, idx, -1 );
+        lua_pop( L, 1 );
+        return 1;
+    }
+
     if ( nType == LUA_TFUNCTION )
     {
         int nEnvUp = hl2sb_envupindex( L, idx );
         if ( nEnvUp != 0 )
         {
-            lua_getupvalue( L, idx, nEnvUp ); /* [newenv oldenv] */
-            lua_pushvalue( L, -2 );           /* [newenv oldenv newenv] */
-            if ( lua_setupvalue( L, idx, nEnvUp ) == NULL )
-                lua_pop( L, 1 );              /* could not install: drop dup */
-            lua_pop( L, 2 );                  /* oldenv + the caller's table */
+            static const char source[] = "return function() return _ENV end";
+            if ( luaL_loadbufferx( L, source, sizeof(source) - 1, "=setfenv", NULL ) != LUA_OK )
+                return lua_error( L );
+            lua_pushvalue( L, -2 );
+            lua_setupvalue( L, -2, 1 );
+            lua_call( L, 0, 1 );
+            lua_upvaluejoin( L, idx, nEnvUp, -1, 1 );
+            lua_pop( L, 2 );
             return 1;
         }
     }
@@ -348,7 +370,7 @@ LUA_API int lua_setfenv( lua_State *L, int idx )
     {
         hl2sb_pushfenvreg( L );         /* [newenv reg] */
         lua_pushvalue( L, idx );        /* [newenv reg obj] */
-        lua_pushvalue( L, -2 );         /* [newenv reg obj newenv] */
+        lua_pushvalue( L, -3 );         /* [newenv reg obj newenv] */
         lua_rawset( L, -3 );            /* reg[obj] = newenv */
         lua_pop( L, 2 );                /* reg + the caller's table */
         return 1;

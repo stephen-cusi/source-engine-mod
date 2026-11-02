@@ -224,6 +224,32 @@ LUA_BINDING_END( "boolean", "True if the entity has flex manipulator." )
 LUA_REGISTRATION_INIT( Entities )
 
 #ifdef CLIENT_DLL
+static int HL2SB_ClientsideModel( lua_State *L )
+{
+    const char *model = luaL_checkstring( L, 1 );
+    if ( !model[0] || !model[1] )
+        return 0;
+
+    int group = RENDER_GROUP_OTHER;
+    if ( lua_type( L, 2 ) == LUA_TNUMBER )
+    {
+        double value = lua_tonumber( L, 2 );
+        int requested = value >= -2147483648.0 && value < 2147483648.0 ? (int)value : -1;
+        if ( requested <= 0 )
+            group = 1;
+        else if ( requested == 6 )
+            group = 7;
+        else if ( requested <= 13 )
+            group = requested;
+    }
+
+    lua_CBaseFlex *entity = g_pClientSideEntityManager->CreateClientSideEntity( model, (RenderGroup_t)group );
+    if ( !entity )
+        return 0;
+    lua_pushbaseflex( L, entity );
+    return 1;
+}
+
 LUA_BINDING_BEGIN( Entities, CreateClientEntity, "library", "Create a clientside entity with the specified model.", "client" )
 {
     const char *pszModelName = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "model" );
@@ -350,6 +376,11 @@ LUALIB_API int luaopen_CBaseFlex_shared( lua_State *L )
     lua_pop( L, 1 );  /* drop the metatable; the entity table is the return value */
 
     luaL_register_entity_library( L, Entities_luaRegistry );
+
+#ifdef CLIENT_DLL
+    lua_pushcfunction( L, HL2SB_ClientsideModel );
+    lua_setglobal( L, "ClientsideModel" );
+#endif
 
     return 1;
 }

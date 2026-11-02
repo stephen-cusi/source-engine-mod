@@ -11,6 +11,7 @@
 
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,17 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
+
+extern void hl2sb_setthreadenv (lua_State *L, int threadindex, int envindex);
+extern int hl2sb_getthreadenv (lua_State *L, int threadindex);
+#ifdef __cplusplus
+extern "C" {
+#endif
+LUA_API int lua_setfenv (lua_State *L, int idx);
+LUA_API void lua_getfenv (lua_State *L, int idx);
+#ifdef __cplusplus
+}
+#endif
 
 
 static int luaB_print (lua_State *L) {
@@ -502,6 +514,95 @@ static int luaB_tostring (lua_State *L) {
   return 1;
 }
 
+static int hl2sb_envlevel (lua_State *L, int optional) {
+  lua_Number value = optional ? luaL_optnumber(L, 1, 1) : luaL_checknumber(L, 1);
+  if (!(value >= (lua_Number)INT_MIN && value < (lua_Number)INT_MAX + 1.0))
+    return INT_MIN;
+  return (int)value;
+}
+
+static int luaB_setfenv (lua_State *L) {
+  int function_index;
+  luaL_checktype(L, 2, LUA_TTABLE);
+  if (lua_isfunction(L, 1))
+    lua_pushvalue(L, 1);
+  else {
+    lua_Debug ar;
+    int level = hl2sb_envlevel(L, 0);
+    if (level == 0) {
+      lua_pushthread(L);
+      hl2sb_setthreadenv(L, -1, 2);
+      lua_pop(L, 1);
+      return 0;
+    }
+    if (level < 0 || !lua_getstack(L, level, &ar) || !lua_getinfo(L, "f", &ar))
+      return luaL_argerror(L, 1, "invalid level");
+  }
+  function_index = lua_gettop(L);
+  if (lua_iscfunction(L, function_index))
+    return luaL_error(L, "setfenv cannot change environment of given object");
+  lua_pushvalue(L, 2);
+  if (!lua_setfenv(L, function_index))
+    return luaL_error(L, "setfenv cannot change environment of given object");
+  lua_pushvalue(L, function_index);
+  return 1;
+}
+
+static int luaB_getfenv (lua_State *L) {
+  if (lua_isfunction(L, 1))
+    lua_pushvalue(L, 1);
+  else {
+    lua_Debug ar;
+    int level = hl2sb_envlevel(L, 1);
+    if (level == 0) {
+      lua_pushthread(L);
+      if (!hl2sb_getthreadenv(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushglobaltable(L);
+      }
+      return 1;
+    }
+    if (level < 0 || !lua_getstack(L, level, &ar) || !lua_getinfo(L, "f", &ar))
+      return luaL_argerror(L, 1, "invalid level");
+  }
+  if (lua_iscfunction(L, -1)) {
+    lua_pushthread(L);
+    if (!hl2sb_getthreadenv(L, -1)) {
+      lua_pop(L, 1);
+      lua_pushglobaltable(L);
+    }
+  }
+  else
+    lua_getfenv(L, -1);
+  return 1;
+}
+
+static int luaB_unpack51 (lua_State *L) {
+  lua_Integer first, last, n, i;
+  lua_Number number;
+  luaL_checktype(L, 1, LUA_TTABLE);
+  first = 1;
+  if (!lua_isnoneornil(L, 2)) {
+    number = luaL_checknumber(L, 2);
+    if (!(number >= INT_MIN && number <= INT_MAX)) return luaL_argerror(L, 2, "number out of range");
+    first = (lua_Integer)number;
+  }
+  last = (lua_Integer)lua_rawlen(L, 1);
+  if (!lua_isnoneornil(L, 3)) {
+    number = luaL_checknumber(L, 3);
+    if (!(number >= INT_MIN && number <= INT_MAX)) return luaL_argerror(L, 3, "number out of range");
+    last = (lua_Integer)number;
+  }
+  if (first > last) return 0;
+  if (first < INT_MIN || last > INT_MAX || (lua_Unsigned)last - (lua_Unsigned)first >= INT_MAX)
+    return luaL_error(L, "too many results to unpack");
+  n = last - first + 1;
+  if (!lua_checkstack(L, (int)n))
+    return luaL_error(L, "too many results to unpack");
+  for (i = first; i <= last; ++i) lua_rawgeti(L, 1, i);
+  return (int)n;
+}
+
 
 static const luaL_Reg base_funcs[] = {
   {"assert", luaB_assert},
@@ -509,9 +610,11 @@ static const luaL_Reg base_funcs[] = {
   {"dofile", luaB_dofile},
   {"error", luaB_error},
   {"getmetatable", luaB_getmetatable},
+  {"getfenv", luaB_getfenv},
   {"ipairs", luaB_ipairs},
   {"loadfile", luaB_loadfile},
   {"load", luaB_load},
+  {"loadstring", luaB_load},
   {"next", luaB_next},
   {"pairs", luaB_pairs},
   {"pcall", luaB_pcall},
@@ -523,9 +626,11 @@ static const luaL_Reg base_funcs[] = {
   {"rawset", luaB_rawset},
   {"select", luaB_select},
   {"setmetatable", luaB_setmetatable},
+  {"setfenv", luaB_setfenv},
   {"tonumber", luaB_tonumber},
   {"tostring", luaB_tostring},
   {"type", luaB_type},
+  {"unpack", luaB_unpack51},
   {"xpcall", luaB_xpcall},
   /* placeholders */
   {LUA_GNAME, NULL},

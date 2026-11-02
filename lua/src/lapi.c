@@ -716,15 +716,80 @@ l_sinline int auxgetstr (lua_State *L, const TValue *t, const char *k) {
 ** was created and never removed, they must always be in the array
 ** part of the registry.
 */
-#define getGtable(L)  \
-    (&hvalue(&G(L)->l_registry)->array[LUA_RIDX_GLOBALS - 1])
+char hl2sb_threadenv_key;
+
+static const TValue *getGtable (lua_State *L) {
+  Table *registry = hvalue(&G(L)->l_registry);
+  TValue key;
+  const TValue *map, *env;
+  setpvalue(&key, &hl2sb_threadenv_key);
+  map = luaH_get(registry, &key);
+  if (ttistable(map)) {
+    setthvalue(L, &key, L);
+    env = luaH_get(hvalue(map), &key);
+    if (ttistable(env)) return env;
+  }
+  return &registry->array[LUA_RIDX_GLOBALS - 1];
+}
+
+int hl2sb_getthreadenv (lua_State *L, int threadindex) {
+  int found;
+  threadindex = lua_absindex(L, threadindex);
+  if (!lua_checkstack(L, 2)) luaD_throw(L, LUA_ERRMEM);
+  lua_rawgetp(L, LUA_REGISTRYINDEX, &hl2sb_threadenv_key);
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    lua_pushnil(L);
+    return 0;
+  }
+  lua_pushvalue(L, threadindex);
+  lua_rawget(L, -2);
+  lua_remove(L, -2);
+  found = lua_istable(L, -1);
+  return found;
+}
+
+void hl2sb_setthreadenv (lua_State *L, int threadindex, int envindex) {
+  threadindex = lua_absindex(L, threadindex);
+  envindex = lua_absindex(L, envindex);
+  if (!lua_checkstack(L, 4)) luaD_throw(L, LUA_ERRMEM);
+  lua_rawgetp(L, LUA_REGISTRYINDEX, &hl2sb_threadenv_key);
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    lua_newtable(L);
+    lua_newtable(L);
+    lua_pushliteral(L, "k");
+    lua_setfield(L, -2, "__mode");
+    lua_setmetatable(L, -2);
+    lua_pushvalue(L, -1);
+    lua_rawsetp(L, LUA_REGISTRYINDEX, &hl2sb_threadenv_key);
+  }
+  lua_pushvalue(L, threadindex);
+  lua_pushvalue(L, envindex);
+  lua_rawset(L, -3);
+  lua_pop(L, 1);
+}
+
+void hl2sb_inheritthreadenv (lua_State *L) {
+  int child = lua_absindex(L, -1);
+  if (!lua_checkstack(L, 2)) luaD_throw(L, LUA_ERRMEM);
+  lua_pushthread(L);
+  if (hl2sb_getthreadenv(L, -1))
+    hl2sb_setthreadenv(L, child, -1);
+  lua_pop(L, 2);
+}
 
 
 LUA_API int lua_getglobal (lua_State *L, const char *name) {
-  const TValue *G;
+  int result;
+  if (!lua_checkstack(L, 2)) luaD_throw(L, LUA_ERRMEM);
   lua_lock(L);
-  G = getGtable(L);
-  return auxgetstr(L, G, name);
+  setobj2s(L, L->top.p, getGtable(L));
+  api_incr_top(L);
+  lua_unlock(L);
+  result = lua_getfield(L, -1, name);
+  lua_remove(L, -2);
+  return result;
 }
 
 
@@ -902,10 +967,15 @@ static void auxsetstr (lua_State *L, const TValue *t, const char *k) {
 
 
 LUA_API void lua_setglobal (lua_State *L, const char *name) {
-  const TValue *G;
-  lua_lock(L);  /* unlock done in 'auxsetstr' */
-  G = getGtable(L);
-  auxsetstr(L, G, name);
+  if (!lua_checkstack(L, 1)) luaD_throw(L, LUA_ERRMEM);
+  lua_lock(L);
+  api_checknelems(L, 1);
+  setobj2s(L, L->top.p, getGtable(L));
+  api_incr_top(L);
+  lua_unlock(L);
+  lua_insert(L, -2);
+  lua_setfield(L, -2, name);
+  lua_pop(L, 1);
 }
 
 
