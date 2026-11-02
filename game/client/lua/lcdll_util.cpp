@@ -75,7 +75,8 @@ static int luasrc_ScreenWidth (lua_State *L) {
 }
 
 static int luasrc_UTIL_ComputeStringWidth (lua_State *L) {
-  lua_pushinteger(L, UTIL_ComputeStringWidth(*(vgui::HFont *)luaL_checkfont(L, 1), luaL_checkstring(L, 2)));
+  vgui::HFont font = luaL_checkfont(L, 1);
+  lua_pushinteger(L, UTIL_ComputeStringWidth(font, luaL_checkstring(L, 2)));
   return 1;
 }
 

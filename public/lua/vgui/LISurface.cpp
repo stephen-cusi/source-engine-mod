@@ -883,9 +883,9 @@ static int surface_GetEmbeddedPanel (lua_State *L) {
 }
 
 static int surface_GetFontAscent (lua_State *L) {
-  wchar_t wch[1];
+  wchar_t wch[3] = { 0, 0, 0 };
   g_pVGuiLocalize->ConvertANSIToUnicode(luaL_checkstring(L, 2), wch, sizeof(wch));
-  lua_pushinteger(L, surface()->GetFontAscent(luaL_checkfont(L, 1), wch[1]));
+  lua_pushinteger(L, surface()->GetFontAscent(luaL_checkfont(L, 1), wch[0]));
   return 1;
 }
 
@@ -963,7 +963,7 @@ static int surface_GetTextSize (lua_State *L) {
   //      tables; we use the engine's ILocalize, same result).
   // Two arguments keep the legacy Experiment:Source spelling
   // GetTextSize( font, text ).
-  if ( lua_gettop( L ) <= 1 )
+  if ( lua_gettop( L ) <= 1 || !luaL_testudata( L, 1, "HFont" ) )
   {
     if ( s_hLastSetTextFont == 0 )
       return 0;
