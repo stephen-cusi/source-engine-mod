@@ -108,3 +108,22 @@ def build(bld):
 		idx      = bld.get_taskgen_count()
 	)
 
+	if game and bld.env.GAMES == 'hl2sb':
+		module_env = bld.env.derive()
+		if bld.env.DEST_OS == 'linux':
+			module_env.cxxshlib_PATTERN = '%s.so'
+		elif bld.env.DEST_OS == 'darwin':
+			module_env.cxxshlib_PATTERN = '%s.dylib'
+		bld.shlib(
+			source = ['../../audio/audio_decoder_module.cpp', '../../vendor/miniaudio/audio_decoders.c'],
+			target = 'miniaudio',
+			name = 'miniaudio',
+			features = 'c cxx',
+			env = module_env,
+			includes = ['../../public', '../../public/tier0', '../../public/tier1'],
+			use = ['tier0', 'tier1', 'vstdlib'],
+			install_path = bld.env.LIBDIR,
+			subsystem = bld.env.MSVC_SUBSYSTEM,
+			idx = bld.get_taskgen_count()
+		)
+

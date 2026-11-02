@@ -361,6 +361,10 @@ LUALIB_API int (luaopen_CNewParticleEffect) (lua_State *L);
 // Bubbles / BubbleTrail / BeamRingPoint.  Same local-prototype rule as
 // luaopen_CSEmitter above: a luasrclib.h touch would force a full-tree rebuild.
 LUALIB_API int (luaopen_HL2SBClientEffects) (lua_State *L);
+// HL2SB: GMod's sound.PlayFile runtime and IGModAudioChannel metatable
+// (game/client/lua/lgmodaudio.cpp).  Local prototype for the same reason as
+// the two above.
+LUALIB_API int luaopen_AudioChannel (lua_State *L);
 #else
 // HL2SB: server AI enum globals (bottom of this file).
 LUALIB_API int luaopen_ServerAIEnums( lua_State *L );
@@ -640,6 +644,12 @@ static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.  AudioChannel and the URL/file
   // streaming bindings were dropped -- they depend on their BASS manager.
   {LUA_SOUNDSLIBNAME, luaopen_Sounds},
+#ifdef CLIENT_DLL
+  // HL2SB: GMod's sound.PlayFile runtime (game/client/lua/lgmodaudio.cpp).
+  // The IGModAudioChannel metatable and the GMOD_CHANNEL / FFT globals live
+  // here; sound.PlayFile itself is a Sounds-library entry in lsounds.cpp.
+  { "IGModAudioChannel", luaopen_AudioChannel },
+#endif
   // TODO(port): Files / FileHandle still need a decision on how they coexist with
   // the Team Sandbox era `filesystem` library (LUA_FILESYSTEMLIBNAME) before they
   // can be registered.

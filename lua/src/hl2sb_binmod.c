@@ -50,14 +50,18 @@ static const char *HL2SB_BinModSuffix( void )
 	return "win64";
 #elif defined( _WIN32 )
 	return "win32";
-#elif defined( __ANDROID__ )
+#elif defined( __ANDROID__ ) && ( defined( __aarch64__ ) || defined( __x86_64__ ) )
 	return "android64";
+#elif defined( __ANDROID__ )
+	return "android32";
+#elif defined( __APPLE__ ) && ( defined( __aarch64__ ) || defined( __x86_64__ ) )
+	return "osx64";
+#elif defined( __APPLE__ )
+	return "osx";
 #elif defined( __aarch64__ ) || defined( __x86_64__ )
 	return "linux64";
-#elif defined( __APPLE__ )
-	return "osx64";
 #else
-	return "linux"; /* 32-bit POSIX (android armv7 / linux x86) */
+	return "linux";
 #endif
 }
 
@@ -92,15 +96,12 @@ static const char *HL2SB_BinModPrefix( lua_State *L )
 	return "sv";
 }
 
-/*---------------------------------------------------------------------------
- * Module loader: require calls this (module name sits on the stack as an
- * argument; gmod13_open ignores it per contract).  gmod13_open's return
- * value is the number of results it pushed -- pass straight through so
- * require caches whatever the module returned.
- *---------------------------------------------------------------------------*/
+/* Pass the module path as the sole Lua argument to gmod13_open. */
 static int HL2SB_BinModLoader( lua_State *L )
 {
 	lua_CFunction pfnOpen = ( lua_CFunction )lua_touserdata( L, lua_upvalueindex( 1 ) );
+	lua_settop( L, 0 );
+	lua_pushvalue( L, lua_upvalueindex( 2 ) );
 	return pfnOpen( L );
 }
 
@@ -190,7 +191,8 @@ static int HL2SB_BinaryModuleSearcher( lua_State *L )
 			}
 			HL2SB_BinModRegisterClose( L, szPath, pfnClose );
 			lua_pushlightuserdata( L, (void *)pfnOpen );
-			lua_pushcclosure( L, HL2SB_BinModLoader, 1 );
+			lua_pushstring( L, szPath );
+			lua_pushcclosure( L, HL2SB_BinModLoader, 2 );
 		}
 	}
 #else
@@ -214,7 +216,8 @@ static int HL2SB_BinaryModuleSearcher( lua_State *L )
 			}
 			HL2SB_BinModRegisterClose( L, szPath, pfnClose );
 			lua_pushlightuserdata( L, (void *)pfnOpen );
-			lua_pushcclosure( L, HL2SB_BinModLoader, 1 );
+			lua_pushstring( L, szPath );
+			lua_pushcclosure( L, HL2SB_BinModLoader, 2 );
 		}
 	}
 #endif

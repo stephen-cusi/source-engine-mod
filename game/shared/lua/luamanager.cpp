@@ -887,6 +887,23 @@ void luasrc_init_gameui (void) {
   luasrc_register_metatable_globals( LGameUI );
   if ( luasrc_dofile( LGameUI, LUA_ROOT "/includes/util.lua" ) != 0 )
     luasrc_LuaWarnMsgF( "HL2SB: menu type helpers failed to load\n" );
+
+  lua_getglobal( LGameUI, "util" );
+  if ( !lua_istable( LGameUI, -1 ) )
+  {
+    lua_pop( LGameUI, 1 );
+    lua_newtable( LGameUI );
+    lua_setglobal( LGameUI, "util" );
+  }
+  else
+    lua_pop( LGameUI, 1 );
+  if ( luasrc_dofile( LGameUI, LUA_PATH_EXTENSIONS "/util.lua" ) != 0 )
+    luasrc_LuaWarnMsgF( "HL2SB: menu util extension failed to load\n" );
+#ifndef _WIN32
+  if ( luasrc_dofile( LGameUI, LUA_ROOT "/hl2sb/compat/binary_modules.lua" ) != 0 )
+    luasrc_LuaWarnMsgF( "HL2SB: menu binary module paths failed to load\n" );
+#endif
+
   if ( luasrc_dofile( LGameUI, LUA_PATH_EXTENSIONS "/client/globals.lua" ) != 0 )
     luasrc_LuaWarnMsgF( "HL2SB: menu client globals failed to load\n" );
 

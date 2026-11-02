@@ -7327,6 +7327,14 @@ static int luasrc_EyeAngles( lua_State *L )
 	return 1;
 }
 
+static int luasrc_EyeVector( lua_State *L )
+{
+	static Vector cached = vec3_origin;
+	if ( IsCurrentViewAccessAllowed() ) cached = CurrentViewForward();
+	lua_pushvector( L, cached );
+	return 1;
+}
+
 static int luasrc_MainEyePos( lua_State *L )
 {
 	lua_pushvector( L, MainViewOrigin() );
@@ -7354,6 +7362,7 @@ static const luaL_Reg CBaseEntity_funcs[] = {
 #ifdef CLIENT_DLL
   {"EyePos", luasrc_EyePos},
   {"EyeAngles", luasrc_EyeAngles},
+  {"EyeVector", luasrc_EyeVector},
   {"MainEyePos", luasrc_MainEyePos},
   {"MainEyeAngles", luasrc_MainEyeAngles},
 #endif

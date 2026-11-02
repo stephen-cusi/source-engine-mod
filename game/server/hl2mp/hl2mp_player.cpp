@@ -159,7 +159,7 @@ IMPLEMENT_SERVERCLASS_ST(CHL2MP_Player, DT_HL2MP_Player)
 	// float through IsPlayingTaunt() to run the taunt camera and gate the act
 	// command, so it has to replicate.
 	SendPropFloat( SENDINFO( m_flHL2SBTauntEnd ) ),
-	SendPropInt( SENDINFO( m_iHL2SBPlayerClassID ), 16, SPROP_UNSIGNED ),
+	SendPropInt( SENDINFO( m_iHL2SBPlayerClassID ), 15, 0 ),
 	SendPropInt( SENDINFO( m_iHL2SBPlayerFlags ), 4, SPROP_UNSIGNED ),
 	// HL2SB (2026-09-27): the hands entity handle.  GMod's datadesc prop is
 	// "m_Hands"; this fork's pair is self-consistently named m_hHands (nothing
@@ -487,7 +487,11 @@ void CHL2MP_Player::PickDefaultSpawnTeam( void )
 				const char *szModelName = NULL;
 				szModelName = engine->GetClientConVarValue( engine->IndexOfEdict( edict() ), "cl_playermodel" );
 
+#if defined( LUA_SDK )
+				if ( !HL2SB_HasPlayerGamemodeMethod( "PlayerSpawn" ) && ValidatePlayerModel( szModelName ) == false )
+#else
 				if ( ValidatePlayerModel( szModelName ) == false )
+#endif
 				{
 					char szReturnString[512];
 					Q_snprintf( szReturnString, sizeof (szReturnString ), "cl_playermodel %s\n", HL2SB_DEFAULT_PLAYERMODEL );
@@ -598,20 +602,15 @@ void CHL2MP_Player::Spawn(void)
 	m_bReady = false;
 
 #ifdef HL2SB
-	// GMod-style: a requested player model change is applied when we (re)spawn.
-	// This runs on every spawn/respawn, so hl2sb_setmodel/cl_playermodel changes
-	// made while alive take effect on the next death/respawn. SetPlayerModel
-	// reads cl_playermodel and applies it (precaching as needed).
-	if ( hl2sb_model_respawn_only.GetBool() )
+	// Lua gamemodes apply their own model and appearance during PlayerSpawn.
+#if defined( LUA_SDK )
+	if ( !HL2SB_HasPlayerGamemodeMethod( "PlayerSpawn" ) )
+#endif
 	{
-		SetPlayerModel();
-	}
-	else
-	{
-		// HL2SB: with respawn-only OFF the model is applied when the convar changes, so
-		// the appearance (bodygroups / skin / colours) has to be applied here instead -
-		// otherwise nothing ever calls it and the sliders do nothing at all.
-		HL2SB_ModelManager_ApplyAppearance( this );
+		if ( hl2sb_model_respawn_only.GetBool() )
+			SetPlayerModel();
+		else
+			HL2SB_ModelManager_ApplyAppearance( this );
 	}
 #endif
 }
@@ -650,6 +649,8 @@ void CHL2MP_Player::PickupObject( CBaseEntity *pObject, bool bLimitMassAndSize )
 
 bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )
 {
+	if ( !pModel || !pModel[0] )
+		return false;
 #ifdef HL2SB
 	// Also accept models from HL2SB config
 	if ( HL2SB_FindModelConfigByPath( pModel ) )
@@ -676,6 +677,39 @@ bool CHL2MP_Player::ValidatePlayerModel( const char *pModel )
 	return false;
 }
 
+#if defined( LUA_SDK )
+bool HL2SB_ResolveLuaPlayerModel( const char *name, char *out, int outSize )
+{
+	if ( !L || !name || !out || outSize <= 0 )
+		return false;
+
+	const int top = lua_gettop( L );
+	bool resolved = false;
+	lua_getglobal( L, "player_manager" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "TranslatePlayerModel" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_pushstring( L, name );
+			const int status = lua_pcall( L, 1, 1, 0 );
+			if ( status == LUA_OK && lua_type( L, -1 ) == LUA_TSTRING )
+			{
+				Q_strncpy( out, lua_tostring( L, -1 ), outSize );
+				resolved = out[0] != '\0';
+			}
+			else if ( status != LUA_OK )
+			{
+				const char *error = lua_tostring( L, -1 );
+				luasrc_LuaErrorMsgF( "player_manager.TranslatePlayerModel: %s\n", error ? error : "unknown error" );
+			}
+		}
+	}
+	lua_settop( L, top );
+	return resolved;
+}
+#endif
+
 void CHL2MP_Player::SetPlayerTeamModel( void )
 {
 	// HL2SB (2026-09-27): the per-team random model lists are gone.  In teamplay
@@ -688,10 +722,15 @@ void CHL2MP_Player::SetPlayerModel( void )
 {
     // cl_playermodel stores the registered name; model paths are resolved locally.
     const char *requested = engine->GetClientConVarValue( entindex(), "cl_playermodel" );
-    const HL2SB_ModelConfig_t *config = requested && requested[0]
+    char luaModel[MAX_PATH];
+    bool luaResolved = false;
+#if defined( LUA_SDK )
+    luaResolved = HL2SB_ResolveLuaPlayerModel( requested, luaModel, (int)sizeof( luaModel ) );
+#endif
+    const HL2SB_ModelConfig_t *config = !luaResolved && requested && requested[0]
         ? HL2SB_GetModelConfigByName( requested ) : NULL;
-    const char *model = config ? config->szPlayerModel : requested;
-    if ( model == NULL || model[0] == '\0' || !ValidatePlayerModel( model ) )
+    const char *model = luaResolved ? luaModel : ( config ? config->szPlayerModel : requested );
+    if ( model == NULL || model[0] == '\0' || ( !luaResolved && !ValidatePlayerModel( model ) ) )
         model = HL2SB_DEFAULT_PLAYERMODEL;
 
     if ( CBaseEntity::PrecacheModel( model ) <= 0 )
@@ -1361,13 +1400,14 @@ void CHL2MP_Player::ChangeTeam( int iTeam )
 
 	m_flNextTeamChangeTime = gpGlobals->curtime + TEAM_CHANGE_INTERVAL;
 
-	if ( HL2MPRules()->IsTeamplay() == true )
+#if defined( LUA_SDK )
+	if ( !HL2SB_HasPlayerGamemodeMethod( "PlayerSpawn" ) )
+#endif
 	{
-		SetPlayerTeamModel();
-	}
-	else
-	{
-		SetPlayerModel();
+		if ( HL2MPRules()->IsTeamplay() == true )
+			SetPlayerTeamModel();
+		else
+			SetPlayerModel();
 	}
 
 	if ( bWasSpectator )

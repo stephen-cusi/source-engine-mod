@@ -13,6 +13,7 @@
 #include "sys_dll.h"
 #include "video/ivideoservices.h"
 #include "engine/IEngineSound.h"
+#include "engine/iluastreammix.h"
 // HL2SB (2026-10-04): ThreadInterlockedExchangePointer for the S_FreeChannel
 // mixer ownership claim, and the fast mutex that guards the deferred-delete
 // list.
@@ -78,6 +79,58 @@ extern float DSP_ROOM_MIX;
 extern float DSP_NOROOM_MIX;
 
 portable_samplepair_t *g_paintbuffer;
+
+class CLuaStreamMix : public ILuaStreamMix
+{
+public:
+	CLuaStreamMix() : m_callback( NULL ), m_user( NULL ) {}
+
+	bool RegisterCallback( HL2SBLuaStreamMixCallback callback, void *user )
+	{
+		if ( !callback )
+			return false;
+		AUTO_LOCK( m_mutex );
+		if ( m_callback && ( m_callback != callback || m_user != user ) )
+			return false;
+		m_callback = callback;
+		m_user = user;
+		return true;
+	}
+
+	void UnregisterCallback( HL2SBLuaStreamMixCallback callback, void *user )
+	{
+		AUTO_LOCK( m_mutex );
+		if ( m_callback == callback && m_user == user )
+		{
+			m_callback = NULL;
+			m_user = NULL;
+		}
+	}
+
+	void Mix( portable_samplepair_t *output, int count )
+	{
+		AUTO_LOCK( m_mutex );
+		if ( !m_callback || !output || count <= 0 || count > PAINTBUFFER_SIZE )
+			return;
+		float samples[PAINTBUFFER_SIZE * 2] = {};
+		m_callback( samples, count, SOUND_DMA_SPEED, m_user );
+		for ( int i = 0; i < count; ++i )
+		{
+			const float left = samples[i * 2];
+			const float right = samples[i * 2 + 1];
+			if ( left == left ) output[i].left += (int)( clamp( left, -64.0f, 64.0f ) * 32767.0f );
+			if ( right == right ) output[i].right += (int)( clamp( right, -64.0f, 64.0f ) * 32767.0f );
+		}
+	}
+
+private:
+	CThreadFastMutex m_mutex;
+	HL2SBLuaStreamMixCallback m_callback;
+	void *m_user;
+};
+
+static CLuaStreamMix s_LuaStreamMix;
+EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CLuaStreamMix, ILuaStreamMix, HL2SB_LUA_STREAM_MIX_INTERFACE_VERSION, s_LuaStreamMix );
 
 // temp paintbuffer - not included in main list of paintbuffers
 // NOTE: this paintbuffer is also used as a copy buffer by interpolating pitch
@@ -2753,6 +2806,7 @@ void MIX_PaintChannels( int endtime, bool bIsUnderwater )
 		// Add dry buffer, set output gain to water * player dsp gain (both 1.0 if not active)
 
 		MIX_MixPaintbuffers( SOUND_BUFFER_PAINT, SOUND_BUFFER_DRY, SOUND_BUFFER_PAINT, count, 1.0);
+		s_LuaStreamMix.Mix( MIX_GetPFrontFromIPaint( SOUND_BUFFER_PAINT ), count );
 
 		// clip all values > 16 bit down to 16 bit
 		// NOTE: This is required - the hardware buffer transfer routines no longer perform clipping.

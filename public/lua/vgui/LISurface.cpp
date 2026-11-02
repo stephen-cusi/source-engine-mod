@@ -115,7 +115,7 @@ static void LuaFont_Store (lua_State *L, const char *szName, HFont hFont) {
 //   3. the scheme's "Default", so an unknown name degrades to a visible font
 //      instead of failing.
 // ---------------------------------------------------------------------------
-LUA_API lua_HFont LuaFont_ResolveByName (lua_State *L, const char *szName) {
+static lua_HFont LuaFont_ResolveByNameInternal (lua_State *L, const char *szName, bool fallback) {
   if ( szName == NULL )
     return 0;
 
@@ -142,10 +142,14 @@ LUA_API lua_HFont LuaFont_ResolveByName (lua_State *L, const char *szName) {
     return 0;
 
   hFont = pScheme->GetFont( szName, false );
-  if ( hFont == 0 )
+  if ( hFont == 0 && fallback )
     hFont = pScheme->GetFont( "Default", false );
 
   return hFont;
+}
+
+LUA_API lua_HFont LuaFont_ResolveByName (lua_State *L, const char *szName) {
+  return LuaFont_ResolveByNameInternal( L, szName, true );
 }
 
 
@@ -1149,29 +1153,26 @@ static int surface_SetBitmapFontName (lua_State *L) {
 // HL2SB: GMod-style SetFont by string name.  GMod scripts (and the ported
 // draw.lua) call surface.SetFont("DermaDefault") / surface.SetFont("Default")
 // where the argument is a face NAME, not an HFont handle.  The stock binding
-// only has SetFontGlyphSet(hfont,...).  We resolve the name through the default
-// scheme to an HFont, then select it for text drawing.  Falls back to the
-// scheme's "Default" font when the name is unknown (HL2SB's clientscheme only
-// defines Default / DefaultSmall / DefaultVerySmall).
+// only has SetFontGlyphSet(hfont,...). Resolve the name to an HFont and select
+// it for text drawing. An unknown name reports an error.
 static int surface_SetFont (lua_State *L) {
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_SETFONT );
   const char *szName = luaL_checkstring(L, 1);
 
   // HL2SB: the shared resolver (LuaFont_ResolveByName above) -- registry first
   // (fonts made at runtime with the GMod form of surface.CreateFont must win
-  // over the scheme, which cannot know about them), then the scheme, then the
-  // scheme's "Default".
-  HFont hFont = LuaFont_ResolveByName( L, szName );
+  // over the scheme, which cannot know about them), then the scheme.
+  HFont hFont = LuaFont_ResolveByNameInternal( L, szName, false );
+  s_hLastSetTextFont = hFont;
 
-  if ( hFont != 0 )
+  if ( hFont == 0 )
   {
-    surface()->DrawSetTextFont( hFont );
-    s_hLastSetTextFont = hFont;
+    luasrc_LuaErrorMsgF( "'%s' isn't a valid font\n", szName );
+    return 0;
   }
 
-  // Push the resolved HFont back so a Lua caller can cache it.
-  lua_pushfont( L, hFont );
-  return 1;
+  surface()->DrawSetTextFont( hFont );
+  return 0;
 }
 
 static int surface_SetEmbeddedPanel (lua_State *L) {

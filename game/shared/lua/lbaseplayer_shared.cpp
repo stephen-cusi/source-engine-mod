@@ -1581,14 +1581,16 @@ static int CBasePlayer_GetClassID (lua_State *L) {
 }
 
 static int CBasePlayer_SetClassID (lua_State *L) {
-  int nClassID = clamp(luaL_checkint(L, 2), 0, 0xffff);
 #ifdef CLIENT_DLL
   C_HL2MP_Player *pPlayer = dynamic_cast<C_HL2MP_Player *>(luaL_checkplayer(L, 1));
 #else
   CHL2MP_Player *pPlayer = dynamic_cast<CHL2MP_Player *>(luaL_checkplayer(L, 1));
 #endif
+  int nClassID = (int)luaL_checknumber(L, 2);
+  if (gpGlobals->maxClients > 1 && (nClassID < -16384 || nClassID > 16383))
+    luasrc_LuaErrorMsgF("Out of bounds value %i for networking in range %i to %i\n", nClassID, -16384, 16383);
   if (pPlayer) pPlayer->HL2SB_SetPlayerClassID(nClassID);
-  return 0;
+  return 1;
 }
 
 // Spawn hooks receive the base Player metatable as well as the HL2MP one.

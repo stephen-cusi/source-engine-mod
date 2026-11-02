@@ -1220,7 +1220,7 @@ static int Panel_SetDropEnabled (lua_State *L) {
 }
 
 static int Panel_SetEnabled (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetEnabled(luaL_checkboolean(L, 2));
+  luaL_checkpanel(L, 1)->SetEnabled(lua_toboolean(L, 2) != 0);
   return 0;
 }
 

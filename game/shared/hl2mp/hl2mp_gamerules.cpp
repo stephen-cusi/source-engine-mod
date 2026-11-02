@@ -19,6 +19,9 @@
 #ifndef CLIENT_DLL
 	#include "engine/igametimescale.h"
 	#include "init_factory.h"
+#if defined( LUA_SDK )
+	extern bool HL2SB_ResolveLuaPlayerModel( const char *name, char *out, int outSize );
+#endif
 #endif
 #endif
 
@@ -1384,12 +1387,18 @@ void CHL2MPRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 		pPlayer->SetDefaultFOV( iFov );
 	}
 
-	const char *pCurrentModel = modelinfo->GetModelName( pPlayer->GetModel() );
+	const char *pCurrentModel = pPlayer->GetModel() ? modelinfo->GetModelName( pPlayer->GetModel() ) : "";
 	const char *szModelName = engine->GetClientConVarValue( engine->IndexOfEdict( pPlayer->edict() ), "cl_playermodel" );
+	if ( !pCurrentModel ) pCurrentModel = "";
+	if ( !szModelName ) szModelName = "";
+#if defined( HL2SB ) && defined( LUA_SDK )
+	const char *pszRequestedModel = szModelName;
+#endif
 
 #ifdef HL2SB
 	//Andrew; Map our requested player model to the new model/player path.
 	char file[_MAX_PATH];
+	char destpath[_MAX_PATH];
 	Q_strncpy( file, szModelName, sizeof(file) );
 	if ( Q_strnicmp( file, "models/player/", 14 ) )
 	{
@@ -1399,7 +1408,6 @@ void CHL2MPRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 			// replace with new directory
 			const char *dirname = substring + strlen("models/");
 			*substring = 0;
-			char destpath[_MAX_PATH];
 			// player
 			Q_snprintf( destpath, sizeof(destpath), "models/player/%s", dirname);
 			szModelName = destpath;
@@ -1409,22 +1417,20 @@ void CHL2MPRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 
 	//If we're different.
 #ifdef HL2SB
-	// HL2SB (2026-09-29): cl_playermodel holds a model KEY ("alyx", "miku"),
-	// pCurrentModel is the full path ("models/player/alyx.mdl") - stricmp of the
-	// two NEVER matches, so every client settings change (any replicated
-	// CreateClientConVar write - the Minecraft SWEP pings mc_viewmodel_doanim per
-	// attack) dropped into the mismatch branch and, with respawn-only switching,
-	// printed "Player model change queued..." into chat every time.  Resolve the
-	// current path through the model-config table and compare in KEY space:
-	// desired key == applied key means nothing changed, nothing to apply or
-	// announce.  (GMod's gamerules do not touch cl_playermodel at all; within
-	// this fork's design the silent equal-check is the GMod-observable result.)
-	const HL2SB_ModelConfig_t *pCurrentCfg = ( pPlayer->GetModel() != NULL )
-		? HL2SB_FindModelConfigByPath( pCurrentModel ) : NULL;
-	if ( ( pCurrentCfg != NULL && !stricmp( szModelName, pCurrentCfg->szName ) )
-		 || ( pCurrentCfg == NULL && !stricmp( szModelName, pCurrentModel ) ) )
-	{
+	bool luaResolved = false;
+#if defined( LUA_SDK )
+	char resolvedModel[MAX_PATH];
+	luaResolved = HL2SB_ResolveLuaPlayerModel( pszRequestedModel, resolvedModel, (int)sizeof( resolvedModel ) );
+	if ( luaResolved && !Q_stricmp( resolvedModel, pCurrentModel ) )
 		return;
+#endif
+	if ( !luaResolved )
+	{
+		const HL2SB_ModelConfig_t *pCurrentCfg = ( pPlayer->GetModel() != NULL )
+			? HL2SB_FindModelConfigByPath( pCurrentModel ) : NULL;
+		if ( ( pCurrentCfg != NULL && !stricmp( szModelName, pCurrentCfg->szName ) )
+			 || ( pCurrentCfg == NULL && !stricmp( szModelName, pCurrentModel ) ) )
+			return;
 	}
 #endif
 	if ( stricmp( szModelName, pCurrentModel ) )

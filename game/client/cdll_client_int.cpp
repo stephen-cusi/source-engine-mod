@@ -6,6 +6,8 @@
 //===========================================================================//
 #include "cbase.h"
 #include <crtmemdebug.h>
+// HL2SB: GMod's sound.PlayFile runtime (hooked into Init/HudUpdate/Shutdown).
+#include "lua/lgmodaudio.h"
 #include "vgui_int.h"
 #include "clientmode.h"
 #include "iinput.h"
@@ -1092,6 +1094,10 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 		return false;
 	if ( (filesystem = (IFileSystem *)appSystemFactory(FILESYSTEM_INTERFACE_VERSION, NULL)) == NULL )
 		return false;
+
+	// HL2SB: sound.PlayFile runtime. Registers the paint-buffer stream mix
+	// callback with the engine and starts the decode worker thread.
+	HL2SB_AudioConnect( appSystemFactory );
 	if ( (random = (IUniformRandomStream *)appSystemFactory(VENGINE_CLIENT_RANDOM_INTERFACE_VERSION, NULL)) == NULL )
 		return false;
 	if ( (gameuifuncs = (IGameUIFuncs * )appSystemFactory( VENGINE_GAMEUIFUNCS_VERSION, NULL )) == NULL )
@@ -1361,6 +1367,12 @@ void CHLClient::PostInit()
 //-----------------------------------------------------------------------------
 void CHLClient::Shutdown( void )
 {
+	// HL2SB: sound.PlayFile runtime. Runs before the Lua state closes so the
+	// pending callback registry refs are still valid, and before the engine
+	// tears down the audio device. Must not hold the channel list lock here
+	// (the engine mix callback unregister waits for an in-flight callback).
+	HL2SB_AudioShutdown();
+
     if (g_pAchievementsAndStatsInterface)
     {
         g_pAchievementsAndStatsInterface->ReleasePanel();
@@ -1479,6 +1491,9 @@ void CHLClient::HudProcessInput( bool bActive )
 //-----------------------------------------------------------------------------
 void CHLClient::HudUpdate( bool bActive )
 {
+	// HL2SB: sound.PlayFile load callbacks dispatch here on the main thread.
+	HL2SB_AudioFramePump();
+
 	// GMod keeps auto refresh on the server; the client only has the manual
 	// lua_autorefresh_file / lua_refresh_file commands.
 
@@ -2093,6 +2108,9 @@ void CHLClient::LevelShutdown( void )
 		return;
 
 	g_bLevelInitialized = false;
+
+	// HL2SB: sound.PlayFile channels do not survive a map change.
+	HL2SB_AudioLevelShutdown();
 
 #if defined( LUA_SDK )
 	extern void HL2SB_ResetLuaDOFMode();

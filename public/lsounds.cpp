@@ -282,6 +282,20 @@ LUA_BINDING_BEGIN( Sounds, Play, "library", "Plays a sound emitting from a place
 LUA_BINDING_END()
 
 
+#ifdef CLIENT_DLL
+// HL2SB: GMod's sound.PlayFile (CLIENT only per the reference contract).  The
+// implementation lives in game/client/lua/lgmodaudio.cpp; this entry only
+// registers it on the Sounds library so the Lua-facing table is `sound`.
+// Same local-include rule as lsrcinit's local prototypes: nothing else needs
+// this header, so luasrclib.h stays untouched.
+#include "../../game/client/lua/lgmodaudio.h"
+LUA_BINDING_BEGIN( Sounds, PlayFile, "library", "GMod contract: streams a game file into an IGModAudioChannel (CLIENT only)." )
+{
+    return HL2SB_AudioPlayFile( L );
+}
+LUA_BINDING_END()
+#endif
+
 /*
 ** Open Sounds library
 */
