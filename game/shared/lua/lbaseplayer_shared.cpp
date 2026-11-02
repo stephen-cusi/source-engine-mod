@@ -982,7 +982,13 @@ static int CBasePlayer_HintMessage (lua_State *L) {
 */
 
 static int CBasePlayer_IsBot (lua_State *L) {
-  lua_pushboolean(L, luaL_checkplayer(L, 1)->IsBot());
+  CBasePlayer *player = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  player_info_t info;
+  lua_pushboolean(L, engine && engine->GetPlayerInfo(player->entindex(), &info) && info.fakeplayer);
+#else
+  lua_pushboolean(L, player->IsBot());
+#endif
   return 1;
 }
 

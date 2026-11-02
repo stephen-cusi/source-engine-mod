@@ -296,7 +296,7 @@ LUA_API bool lua_pushnpcentity (lua_State *L, CBaseEntity *pEntity) {
 }
 
 LUA_API bool lua_pushnextbotentity (lua_State *L, CBaseEntity *pEntity) {
-  if (pEntity == NULL)
+  if (pEntity == NULL || pEntity->IsPlayer())
     return false;
 
 #ifdef CLIENT_DLL

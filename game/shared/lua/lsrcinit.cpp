@@ -4110,6 +4110,24 @@ void HL2SB_RegisterAutomaticClientLuaFiles( lua_State *state )
 static bool HL2SB_RegisterClientLuaFile( lua_State *, const char * ) { return false; }
 #endif
 
+static int luasrc_LocalToWorld (lua_State *L) {
+  const Vector localPosition = luaL_checkvector(L, 1);
+  const QAngle localAngles = luaL_checkangle(L, 2);
+  const Vector origin = luaL_checkvector(L, 3);
+  const QAngle angles = luaL_checkangle(L, 4);
+  matrix3x4_t parent, local, world;
+  AngleMatrix(angles, origin, parent);
+  AngleMatrix(localAngles, local);
+  ConcatTransforms(parent, local, world);
+  Vector position;
+  QAngle result;
+  VectorTransform(localPosition, parent, position);
+  MatrixAngles(world, result);
+  lua_pushvector(L, position);
+  lua_pushangle(L, result);
+  return 2;
+}
+
 static int luasrc_MsgAll (lua_State *L) {
   const int count = lua_gettop(L);
   char text[4096] = { 0 };
@@ -4363,6 +4381,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   */
   lua_pushcfunction(L, luasrc_MsgAll);
   lua_setglobal(L, "MsgAll");
+  lua_pushcfunction(L, luasrc_LocalToWorld);
+  lua_setglobal(L, "LocalToWorld");
 
   /* AddCSLuaFile( file = "current file" ) -- wiki Global.AddCSLuaFile.
   **

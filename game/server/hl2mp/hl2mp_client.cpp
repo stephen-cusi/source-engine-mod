@@ -202,10 +202,8 @@ void GameStartFrame( void )
 
 	gpGlobals->teamplay = (teamplay.GetInt() != 0);
 
-#if defined( DEBUG ) || defined( LUA_SDK )
 	extern void Bot_RunAll();
 	Bot_RunAll();
-#endif
 }
 
 //=========================================================

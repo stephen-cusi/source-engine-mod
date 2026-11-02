@@ -28,7 +28,7 @@ static CClientEntityList s_EntityList;
 CBaseEntityList *g_pEntityList = &s_EntityList;
 
 #if defined ( LUA_SDK )
-static void HL2SB_InvalidateLuaEntityCache( C_BaseEntity *pEntity )
+static void HL2SB_InvalidateLuaEntityCache( C_BaseEntity *pEntity, int entnum )
 {
 	if ( L == NULL )
 		return;
@@ -41,7 +41,10 @@ static void HL2SB_InvalidateLuaEntityCache( C_BaseEntity *pEntity )
 		return;
 	}
 
-	lua_pushboolean( L, pEntity != NULL && pEntity->IsPlayer() );
+	// Player slots remain identifiable after the derived destructor has run.
+	const bool isPlayer = ( entnum > 0 && entnum <= gpGlobals->maxClients ) ||
+		( pEntity != NULL && pEntity->IsPlayer() );
+	lua_pushboolean( L, isPlayer );
 	luasrc_pcall( L, 1, 0, 0 );
 }
 #endif
@@ -357,7 +360,7 @@ void CClientEntityList::OnAddEntity( IHandleEntity *pEnt, CBaseHandle handle )
 	if ( pBaseEntity )
 	{
 		#if defined ( LUA_SDK )
-		HL2SB_InvalidateLuaEntityCache( pBaseEntity );
+		HL2SB_InvalidateLuaEntityCache( pBaseEntity, entnum );
 		#endif
 		pCache->m_BaseEntitiesIndex = m_BaseEntities.AddToTail( pBaseEntity );
 
@@ -420,7 +423,7 @@ void CClientEntityList::OnRemoveEntity( IHandleEntity *pEnt, CBaseHandle handle 
 		}
 
 		#if defined ( LUA_SDK )
-		HL2SB_InvalidateLuaEntityCache( pBaseEntity );
+		HL2SB_InvalidateLuaEntityCache( pBaseEntity, entnum );
 		#endif
 	}
 

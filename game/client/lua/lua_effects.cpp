@@ -299,6 +299,12 @@ bool HL2SB_CreateLuaEffect( const char *name, const CEffectData &data )
 		return false;
 	}
 
+	// Effects publish their legacy entity reference before Init runs.
+	lua_pushentity( L, effect );
+	lua_pushvalue( L, -1 );
+	lua_setfield( L, -2, "Entity" );
+	lua_pop( L, 1 );
+
 	if ( effect->PushCallback( "Init" ) )
 	{
 		lua_pushentity( L, effect );

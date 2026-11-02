@@ -1511,6 +1511,9 @@ void Panel::SetParent(Panel *newParent)
 //-----------------------------------------------------------------------------
 void Panel::SetParent(VPANEL newParent)
 {
+	Panel *oldParent = GetParent();
+	const bool wasDocked = IsDockedInParent();
+	const bool parentChanged = GetVParent() != newParent;
 
 	if (newParent)
 	{
@@ -1539,6 +1542,11 @@ void Panel::SetParent(VPANEL newParent)
 	}
 
 	UpdateSiblingPin();
+	if ( parentChanged && wasDocked )
+	{
+		if ( oldParent ) oldParent->InvalidateLayout( false );
+		InvalidateParentLayout( false );
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -1581,7 +1589,11 @@ void Panel::OnSizeChanged(int newWide, int newTall)
 //-----------------------------------------------------------------------------
 void Panel::SetZPos(int z)
 {
+	if ( GetZPos() == z )
+		return;
 	ipanel()->SetZPos(GetVPanel(), z);
+	if ( IsDockedInParent() )
+		InvalidateParentLayout( false );
 }
 
 //-----------------------------------------------------------------------------

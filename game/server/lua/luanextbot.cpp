@@ -26,11 +26,11 @@
 // the Path Compute/Update reports in lnavmesh.cpp and the AdjustSpeed traces
 // in NextBotPathFollow.cpp) were added to chase down "the bot does not move".
 // They served that purpose and are off by default now -- set
-// hl2sb_nextbot_debug 1 to bring them back.  The "is NOT moving" warning
-// stays unconditional: it only fires when a bot wants to move but cannot,
-// which is always worth seeing.
+// hl2sb_nextbot_debug 1 to bring them back. The movement warning is gated by
+// hl2sb_dev_msgs.
 ConVar hl2sb_nextbot_debug( "hl2sb_nextbot_debug", "0", 0,
 	"Dump per-tick NextBot movement diagnostics (speeds, path reports)." );
+extern ConVar hl2sb_dev_msgs;
 
 //-----------------------------------------------------------------------------
 // HL2SB: the entity factories for Lua nextbots.  Same shape as
@@ -475,7 +475,7 @@ void CLuaNextBot::Think( void )
 	// the whole chain to ds_debug.log -- locomotion Update()s, path Approach()s,
 	// desired vs actual speed, stuck flag and the nav mesh state.
 	//-----------------------------------------------------------------------------
-	if ( m_locomotor != NULL && ( m_nMoveCheckTicks % 64 ) == 0 )
+	if ( hl2sb_dev_msgs.GetBool() && m_locomotor != NULL && ( m_nMoveCheckTicks % 64 ) == 0 )
 	{
 		// HL2SB (2026-10-13): measure REAL displacement across the report window.
 		//

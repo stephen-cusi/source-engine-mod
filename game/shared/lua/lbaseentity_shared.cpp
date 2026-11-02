@@ -114,6 +114,10 @@ LUA_API bool lua_pushnextbotentity (lua_State *L, CBaseEntity *pEntity);
 static bool lua_hasmetatable (lua_State *L, const char *pszMetatableName);
 
 LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
+  if (pEntity != NULL && pEntity->IsPlayer() && lua_hasmetatable(L, "CBasePlayer")) {
+    lua_pushplayer(L, ToBasePlayer(pEntity));
+    return;
+  }
   /* HL2SB: GMod hands each entity class family its own metatable, and that
   ** has to happen for EVERY entity push -- ents.FindByClass, trace results,
   ** Player:GetVehicle(), any binding that returns an entity -- not only for

@@ -168,7 +168,22 @@ static int CBasePlayer_GetHumans (lua_State *L) {
   int n = 0;
   for ( int index = 1; index <= gpGlobals->maxClients; ++index ) {
     CBasePlayer *player = UTIL_PlayerByIndex( index );
-    if ( !player || player->IsMarkedForDeletion() || player->IsBot() ) continue;
+    player_info_t info;
+    if ( !player || player->IsMarkedForDeletion() || !engine->GetPlayerInfo(index, &info) || info.fakeplayer ) continue;
+    lua_pushinteger( L, ++n );
+    lua_pushplayer( L, player );
+    lua_rawset( L, -3 );
+  }
+  return 1;
+}
+
+static int CBasePlayer_GetBots (lua_State *L) {
+  lua_newtable( L );
+  int n = 0;
+  for ( int index = 1; index <= gpGlobals->maxClients; ++index ) {
+    CBasePlayer *player = UTIL_PlayerByIndex( index );
+    player_info_t info;
+    if ( !player || player->IsDormant() || !engine->GetPlayerInfo(index, &info) || !info.fakeplayer ) continue;
     lua_pushinteger( L, ++n );
     lua_pushplayer( L, player );
     lua_rawset( L, -3 );
@@ -206,6 +221,8 @@ LUALIB_API int luaopen_CBasePlayer (lua_State *L) {
   lua_setfield( L, -2, "GetAll" );
   lua_pushcfunction( L, CBasePlayer_GetHumans );
   lua_setfield( L, -2, "GetHumans" );
+  lua_pushcfunction( L, CBasePlayer_GetBots );
+  lua_setfield( L, -2, "GetBots" );
   lua_setglobal( L, "player" );
 
   return 1;

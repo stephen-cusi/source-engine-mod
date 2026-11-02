@@ -83,7 +83,7 @@ CBasePlayer *BotPutInServer( bool bFrozen, int iTeam )
 	g_iNextBotTeam = iTeam;
 
 	char botname[ 64 ];
-	Q_snprintf( botname, sizeof( botname ), "[Bot] %s", BotName[RandomInt(0, 5)] );
+	Q_snprintf( botname, sizeof( botname ), "Bot%02i", BotNumber );
 
 	// This is an evil hack, but we use it to prevent sv_autojointeam from kicking in.
 
@@ -97,7 +97,9 @@ CBasePlayer *BotPutInServer( bool bFrozen, int iTeam )
 
 	// Allocate a CBasePlayer for the bot, and call spawn
 	//ClientPutInServer( pEdict, botname );
-	CHL2MP_Player *pPlayer = ((CHL2MP_Player *)CBaseEntity::Instance( pEdict ));
+	CHL2MP_Player *pPlayer = ToHL2MPPlayer( CBaseEntity::Instance( pEdict ) );
+	if ( !pPlayer )
+		return NULL;
 	pPlayer->ClearFlags();
 	pPlayer->AddFlag( FL_CLIENT | FL_FAKECLIENT );
 
@@ -112,6 +114,24 @@ CBasePlayer *BotPutInServer( bool bFrozen, int iTeam )
 	return pPlayer;
 }
 
+CON_COMMAND_F( bot, "Add a player bot.", FCVAR_GAMEDLL )
+{
+	if ( !UTIL_IsCommandIssuedByServerAdmin() )
+		return;
+	if ( !gpGlobals || !g_pGameRules )
+	{
+		Warning( "Trying to create a bot too early!\n" );
+		return;
+	}
+	if ( gpGlobals->maxClients <= 1 )
+	{
+		Msg( "Cannot create a player bot in singleplayer!\n" );
+		return;
+	}
+
+	BotPutInServer( false, 2 );
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: Run through all the Bots in the game and let them think.
 //-----------------------------------------------------------------------------
@@ -121,7 +141,7 @@ void Bot_RunAll( void )
 	{
 		CHL2MP_Player *pPlayer = ToHL2MPPlayer( UTIL_PlayerByIndex( i ) );
 
-		if ( pPlayer && (pPlayer->GetFlags() & FL_FAKECLIENT) )
+		if ( pPlayer && (pPlayer->GetFlags() & FL_FAKECLIENT) && !pPlayer->MyNextBotPointer() )
 		{
 			Bot_Think( pPlayer );
 		}
@@ -207,6 +227,7 @@ static void RunPlayerMove( CHL2MP_Player *fakeclient, const QAngle& viewangles, 
 	// Restore the globals..
 	gpGlobals->frametime = flOldFrametime;
 	gpGlobals->curtime = flOldCurtime;
+	MoveHelperServer()->SetHost( NULL );
 }
 
 //-----------------------------------------------------------------------------
