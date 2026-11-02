@@ -229,6 +229,10 @@ private:
 #ifndef CLIENT_DLL
 	bool m_bChangelevelDone;
 #endif
+#ifdef HL2SB
+public:
+	CNetworkVar( float, m_fTimeScale );
+#endif
 };
 
 inline CHL2MPRules* HL2MPRules()

@@ -1332,17 +1332,23 @@ static int lua_game_GetAmmoID (lua_State *L) {
   return 1;
 }
 
+extern bool HL2SB_GetGameTimeScale( float &scale );
+#ifndef CLIENT_DLL
+extern void HL2SB_SetGameTimeScale( float scale );
+#endif
+
 static int lua_game_GetTimeScale( lua_State *L ) {
-  ConVarRef scale( "hl2sb_game_timescale" );
-  lua_pushnumber( L, scale.IsValid() ? scale.GetFloat() : 1.0f );
+  float scale;
+  if ( !HL2SB_GetGameTimeScale( scale ) ) return 0;
+  lua_pushnumber( L, scale );
   return 1;
 }
 
 static int lua_game_SetTimeScale( lua_State *L ) {
 #ifndef CLIENT_DLL
-  ConVarRef scale( "hl2sb_game_timescale" );
-  if ( scale.IsValid() )
-    scale.SetValue( (float)luaL_checknumber( L, 1 ) );
+  float current;
+  if ( HL2SB_GetGameTimeScale( current ) )
+    HL2SB_SetGameTimeScale( (float)luaL_checknumber( L, 1 ) );
 #else
   (void)L;
 #endif

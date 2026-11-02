@@ -48,6 +48,7 @@
 #endif
 
 #include "icvar.h"
+#include "engine/igametimescale.h"
 
 #include "sys.h"
 #include "client.h"
@@ -590,7 +591,15 @@ static ConVar	host_profile( "host_profile","0" );
 ConVar	host_limitlocal( "host_limitlocal", "0", 0, "Apply cl_cmdrate and cl_updaterate to loopback connection" );
 ConVar	host_framerate( "host_framerate","0", 0, "Set to lock per-frame time elapse." );
 ConVar	host_timescale( "host_timescale","1.0", FCVAR_REPLICATED, "Prescale the clock by this amount." );
-ConVar	hl2sb_game_timescale( "hl2sb_game_timescale", "1.0", FCVAR_REPLICATED, "Scale game logic time independently of host_timescale." );
+static float s_flGameTimeScale = 1.0f;
+
+class CEngineGameTimeScale : public IEngineGameTimeScale
+{
+public:
+	void SetGameTimeScale( float scale ) OVERRIDE { s_flGameTimeScale = scale; }
+};
+
+EXPOSE_SINGLE_INTERFACE( CEngineGameTimeScale, IEngineGameTimeScale, ENGINE_GAMETIMESCALE_INTERFACE_VERSION );
 ConVar	host_speeds( "host_speeds","0", 0, "Show general system running times." );		// set for running times
 
 ConVar	host_flush_threshold( "host_flush_threshold", "20", 0, "Memory threshold below which the host should flush caches between server instances" );
@@ -1942,9 +1951,9 @@ void Host_AccumulateTime( float dt )
 		host_frametime = max( (double)host_frametime, MIN_FRAMETIME );
 	}
 #endif
-	const float gameTimeScale = hl2sb_game_timescale.GetFloat();
-	host_frametime *= gameTimeScale;
-	host_frametime_unbounded *= gameTimeScale;
+	const float gameTimeScale = clamp( s_flGameTimeScale, 0.001f, 5.0f );
+	host_frametime_unbounded = host_frametime * gameTimeScale;
+	host_frametime = clamp( (double)host_frametime_unbounded, 0.0001, 0.5 );
 
 	// Adjust the client clock very slightly to keep it in line with the server clock.
 	float adj = cl.GetClockDriftMgr().AdjustFrameTime( host_frametime ) - host_frametime;
