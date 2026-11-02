@@ -406,7 +406,7 @@ void CBaseScripted::InitScriptedEntity( bool bCallInitialize )
 		lua_getglobal( L, "table" );
 		if ( lua_istable( L, -1 ) )
 		{
-			lua_getfield( L, -1, "merge" );
+			lua_getfield( L, -1, "Merge" );
 			if ( lua_isfunction( L, -1 ) )
 			{
 				lua_remove( L, -2 );

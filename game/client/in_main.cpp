@@ -1785,6 +1785,8 @@ static ConCommand startscore("+score", IN_ScoreDown);
 static ConCommand endscore("-score", IN_ScoreUp);
 static ConCommand startshowscores("+showscores", IN_ScoreDown);
 static ConCommand endshowscores("-showscores", IN_ScoreUp);
+static ConCommand startshowscoreboard("+showscoreboard", IN_ScoreDown);
+static ConCommand endshowscoreboard("-showscoreboard", IN_ScoreUp);
 static ConCommand startgraph("+graph", IN_GraphDown);
 static ConCommand endgraph("-graph", IN_GraphUp);
 static ConCommand startbreak("+break",IN_BreakDown);
