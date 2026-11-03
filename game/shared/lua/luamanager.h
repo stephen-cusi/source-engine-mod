@@ -207,12 +207,12 @@
 ** Experiment: Source spellings of the hook call, parameterised by lua_State so a
 ** binding can drive a state that is not the global `L` (their game event listener
 ** does).  They call hook.Call and pass GAMEMODE; HL2SB's hook module spells them
-** hook.call and _GAMEMODE, which is what these use.
+** hook.Call and _GAMEMODE, which is what these use.
 */
 #define LUA_CALL_HOOK_FOR_STATE_BEGIN(L, functionName) \
   lua_getglobal(L, "hook"); \
   if (lua_istable(L, -1)) { \
-    lua_getfield(L, -1, "call"); \
+    lua_getfield(L, -1, "Call"); \
     if (lua_isfunction(L, -1)) { \
       lua_remove(L, -2); \
       int args = 0; \
@@ -239,7 +239,7 @@
   lua_checkstack( L, 32 ); \
   lua_getglobal(L, "hook"); \
   if (lua_istable(L, -1)) { \
-    lua_getfield(L, -1, "call"); \
+    lua_getfield(L, -1, "Call"); \
 	if (lua_isfunction(L, -1)) { \
 	  lua_remove(L, -2); \
 	  int args = 0; \

@@ -919,7 +919,6 @@ void luasrc_init_gameui (void) {
     LUA_PATH_MODULES "/hook.lua",         // hook.add("LuaError", ...)
     LUA_PATH_MODULES "/concommand.lua",   // concommand.Create
     LUA_PATH_MODULES "/gmod_vgui.lua",    // vgui.Create / vgui.Register
-    LUA_PATH_MODULES "/hl2sb_lua_errors.lua",
     NULL
   };
 
@@ -928,9 +927,6 @@ void luasrc_init_gameui (void) {
     // luasrc_dofile already reports what went wrong.
     if (luasrc_dofile(LGameUI, menuFiles[i]) != 0)
       luasrc_LuaWarnMsgF("HL2SB: main menu module failed to load: %s\n", menuFiles[i]);
-    if ( Q_stristr( menuFiles[i], "/hook.lua" ) || Q_stristr( menuFiles[i], "/concommand.lua" ) )
-      if ( luasrc_dofile( LGameUI, LUA_ROOT "/hl2sb/compat/dispatch.lua" ) != 0 )
-        luasrc_LuaWarnMsgF( "HL2SB: menu dispatch aliases failed to load\n" );
   }
 
   // Surface aliases such as SetDrawColor and DrawRect are shared by GMod's
@@ -1955,7 +1951,7 @@ static int HL2SB_LuaReportError( lua_State *L )
 	// HL2SB: this is the Lua-side report path -- hook.lua calls it with the
 	// message and traceback after a hook callback or gamemode method threw
 	// inside xpcall.  Route it through the same dispatcher the C path uses so
-	// those errors also fire the LuaError / OnLuaError hooks (and so the
+	// those errors also fire OnLuaError (and so the
 	// in-game notification shows hook crashes too, as GMod does).  The console
 	// text was already printed by hook.lua's Warning, so no print here.
 	HL2SB_DispatchLuaErrorHooks( L, pszMsg, pszTrace );
@@ -2002,6 +1998,8 @@ static void HL2SB_PushErrorStackLua( lua_State *L, const char *pszTraceback )
 		// "location: in function 'name'" -- the tail after ": in " is the
 		// function label; the part before it is "<chunk>:<line>".
 		const char *pIn = Q_stristr( pLine, ": in " );
+		if ( pIn && pIn >= pEnd )
+			pIn = NULL;
 		const char *pLocEnd = pIn ? pIn : pEnd;
 
 		char szLoc[300];
@@ -2075,7 +2073,7 @@ void HL2SB_LuaRegisterErrorCollector( lua_State *L )
 	lua_setglobal( L, "RunStringEx" );
 }
 
-// HL2SB: fire the two error hooks + feed the collector.  Shared by the C error
+// HL2SB: dispatch errors and feed the collector. Shared by the C error
 // path (luasrc_report_error: loaders, RunString, lua_pcall failures) and the
 // Lua-side report path (hl2sb_reportluaerror, which hook.lua calls when a hook
 // callback or gamemode method throws inside xpcall).  In the reference both of
@@ -2121,19 +2119,6 @@ static void HL2SB_DispatchLuaErrorHooks( lua_State *L, const char *pszError, con
 #else
 		"server";
 #endif
-
-	// The fork's own hook.  Historical (message, traceback); realm and addon
-	// are appended so collectors can label an error the way GMod's list does
-	// ("<addon> (client)").  Existing 2-argument consumers are unaffected.
-	LUA_CALL_HOOK_FOR_STATE_BEGIN(L, "LuaError");
-		lua_pushstring(L, pszError);
-		lua_pushstring(L, szTraceback);
-		lua_pushstring(L, pszRealm);
-		if (Q_stricmp(szErrAddon, "Other") == 0)
-			lua_pushnil(L);
-		else
-			lua_pushstring(L, szErrAddon);
-	LUA_CALL_HOOK_FOR_STATE_END(L, 4, 0);
 
 	// GMod's error hook:
 	//     hook.Run( "OnLuaError", error, realm, stack, name, id )
@@ -2613,12 +2598,6 @@ static int HL2SB_LoadBootstrapModule( lua_State *state, const char *filename, co
         lua_setfield( state, -2, moduleName );
     }
     lua_settop( state, top );
-    if ( status == 0 && ( !Q_strcmp( moduleName, "hook" ) || !Q_strcmp( moduleName, "concommand" ) ) )
-    {
-        const int aliasStatus = luasrc_dofile( state, LUA_ROOT "/hl2sb/compat/dispatch.lua" );
-        lua_settop( state, top );
-        if ( aliasStatus != 0 ) return aliasStatus;
-    }
     return status;
 }
 

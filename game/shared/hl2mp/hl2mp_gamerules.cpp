@@ -246,7 +246,7 @@ extern void HL2SB_CleanupTick();
 			lua_getglobal( L, "hook" );
 			if ( lua_istable( L, -1 ) )
 			{
-				lua_getfield( L, -1, "call" );
+				lua_getfield( L, -1, "Call" );
 				if ( lua_isfunction( L, -1 ) )
 				{
 					lua_pushstring( L, "PlayerCanHearPlayersVoice" );

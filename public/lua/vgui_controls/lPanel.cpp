@@ -1962,8 +1962,8 @@ static int Panel_KillFocus(lua_State *L) {
   Panel *p = luaL_checkpanel(L, 1);
   if (FocusNavGroup *focus = HL2SB_LuaPanelFocusGroup(p))
     focus->SetCurrentFocus(0, 0);
-  else if (Panel *parent = p->GetParent())
-    parent->RequestFocus();
+  else
+    p->OnKillFocus();
   return 0;
 }
 

@@ -584,6 +584,11 @@ void LPanel::OnSetFocus()
 #endif
 
 	BaseClass::OnSetFocus();
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnFocusChanged" );
+		lua_pushboolean( m_lua_State, true );
+	END_LUA_CALL_PANEL_METHOD( 1, 0 );
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -600,6 +605,11 @@ void LPanel::OnKillFocus()
 #endif
 
 	BaseClass::OnKillFocus();
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnFocusChanged" );
+		lua_pushboolean( m_lua_State, false );
+	END_LUA_CALL_PANEL_METHOD( 1, 0 );
+#endif
 }
 
 //-----------------------------------------------------------------------------

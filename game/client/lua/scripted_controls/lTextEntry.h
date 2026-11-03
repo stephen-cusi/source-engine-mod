@@ -156,6 +156,8 @@ class LTextEntry : public TextEntry
         HL2SB_CallLuaTextEntryMethod( "OnSetFocus" );
 
         HL2SB_CallLuaTextEntryMethod( "OnGetFocus" );
+
+        HL2SB_CallLuaTextEntryMethod( "OnFocusChanged", 1, 1, 0, true );
     }
 
     virtual void OnKillFocus()
@@ -165,6 +167,8 @@ class LTextEntry : public TextEntry
         HL2SB_CallLuaTextEntryMethod( "OnKillFocus" );
 
         HL2SB_CallLuaTextEntryMethod( "OnLoseFocus" );
+
+        HL2SB_CallLuaTextEntryMethod( "OnFocusChanged", 1, 0, 0, true );
     }
 
     virtual void OnMouseReleased( MouseCode code )
@@ -263,7 +267,7 @@ class LTextEntry : public TextEntry
         HL2SB_CallLuaTextEntryMethod( "OnKeyCodeTyped", 1, ( int )code );
     }
 
-    void HL2SB_CallLuaTextEntryMethod( const char *pszName, int nArgs = 0, int nArg1 = 0, int nArg2 = 0 )
+    void HL2SB_CallLuaTextEntryMethod( const char *pszName, int nArgs = 0, int nArg1 = 0, int nArg2 = 0, bool bFirstIsBoolean = false )
     {
 #if defined( LUA_SDK )
         /* HL2SB (2026-10-13): m_lua_State is the panel's CACHED state pointer,
@@ -286,7 +290,12 @@ class LTextEntry : public TextEntry
             lua_pushtextentry( m_lua_State, this );
 
             if ( nArgs > 0 )
-                lua_pushinteger( m_lua_State, nArg1 );
+            {
+                if ( bFirstIsBoolean )
+                    lua_pushboolean( m_lua_State, nArg1 != 0 );
+                else
+                    lua_pushinteger( m_lua_State, nArg1 );
+            }
             if ( nArgs > 1 )
                 lua_pushinteger( m_lua_State, nArg2 );
 

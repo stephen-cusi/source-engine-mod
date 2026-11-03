@@ -142,7 +142,7 @@ static void lua_pushcommandarguments (lua_State *L, const CCommand& args) {
 // Leaves exactly one value on the stack: the dispatcher function to call, or
 // nothing (returns false) when the Lua state has no usable concommand library.
 // bRunMode reports which calling convention that function expects.
-static bool lua_pushconcommanddispatcher (lua_State *L, bool &bRunMode) {
+static bool lua_pushconcommanddispatcher (lua_State *L) {
   lua_getglobal(L, "concommand");              // [concommand]
   if (!lua_istable(L, -1)) {
     lua_pop(L, 1);
@@ -150,22 +150,13 @@ static bool lua_pushconcommanddispatcher (lua_State *L, bool &bRunMode) {
   }
 
   lua_getfield(L, -1, "Run");                  // [concommand, Run]
-  if (lua_isfunction(L, -1)) {
-    lua_remove(L, -2);                         // [Run]
-    bRunMode = true;
-    return true;
-  }
-
-  lua_pop(L, 1);                               // [concommand]
-  lua_getfield(L, -1, "Dispatch");             // [concommand, Dispatch]
   bool bIsFunction = lua_isfunction(L, -1) != 0;
-  lua_remove(L, -2);                           // [Dispatch]
+  lua_remove(L, -2);                           // [Run]
   if (!bIsFunction) {
     lua_pop(L, 1);
     return false;
   }
 
-  bRunMode = false;
   return true;
 }
 
@@ -190,21 +181,13 @@ void CC_GameUIConCommand( const CCommand& args )
 	// as the C API contract requires.
 	lua_checkstack( LGameUI, 12 );
 
-	bool bRunMode = false;
-	if ( lua_pushconcommanddispatcher( LGameUI, bRunMode ) )
+	if ( lua_pushconcommanddispatcher( LGameUI ) )
 	{
 		lua_pushplayer( LGameUI, pPlayer );
 		lua_pushstring( LGameUI, pCmd );
-		if ( bRunMode )
-		{
-			lua_pushcommandarguments( LGameUI, args );
-			lua_pushstring( LGameUI, args.ArgS() );
-		}
-		else
-		{
-			lua_pushstring( LGameUI, args.ArgS() );
-		}
-		luasrc_pcall( LGameUI, bRunMode ? 4 : 3, 1, 0 );
+		lua_pushcommandarguments( LGameUI, args );
+		lua_pushstring( LGameUI, args.ArgS() );
+		luasrc_pcall( LGameUI, 4, 1, 0 );
 		if ( lua_isboolean( LGameUI, -1 ) )
 		{
 			bool res = (bool)luaL_checkboolean( LGameUI, -1 );
@@ -239,21 +222,13 @@ void CC_ConCommand( const CCommand& args )
 	// HL2SB (2026-09-24): same re-entrancy guard as CC_GameUIConCommand above.
 	lua_checkstack( L, 12 );
 
-	bool bRunMode = false;
-	if ( lua_pushconcommanddispatcher( L, bRunMode ) )
+	if ( lua_pushconcommanddispatcher( L ) )
 	{
 		lua_pushplayer( L, pPlayer );
 		lua_pushstring( L, pCmd );
-		if ( bRunMode )
-		{
-			lua_pushcommandarguments( L, args );
-			lua_pushstring( L, args.ArgS() );
-		}
-		else
-		{
-			lua_pushstring( L, args.ArgS() );
-		}
-		luasrc_pcall( L, bRunMode ? 4 : 3, 1, 0 );
+		lua_pushcommandarguments( L, args );
+		lua_pushstring( L, args.ArgS() );
+		luasrc_pcall( L, 4, 1, 0 );
 		if ( lua_isboolean( L, -1 ) )
 		{
 			bool res = (bool)luaL_checkboolean( L, -1 );

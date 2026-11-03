@@ -260,6 +260,10 @@ class LLabel : public Label
 
         LUA_CALL_PANEL_METHOD_BEGIN( "OnSetFocus" );
         LUA_CALL_PANEL_METHOD_END( 0, 0 );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnFocusChanged" );
+            lua_pushboolean( m_lua_State, true );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
     }
 
     virtual void OnKillFocus()
@@ -268,6 +272,10 @@ class LLabel : public Label
 
         LUA_CALL_PANEL_METHOD_BEGIN( "OnKillFocus" );
         LUA_CALL_PANEL_METHOD_END( 0, 0 );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnFocusChanged" );
+            lua_pushboolean( m_lua_State, false );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
     }
 
     virtual void OnMouseFocusTicked()
