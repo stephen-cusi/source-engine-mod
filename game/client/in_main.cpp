@@ -1055,6 +1055,11 @@ void CInput::MakeWeaponSelection( C_BaseCombatWeapon *weapon )
 	m_hSelectedWeapon = weapon;
 }
 
+void HL2SB_SelectWeapon( C_BaseCombatWeapon *weapon )
+{
+	input->MakeWeaponSelection( weapon );
+}
+
 /*
 ================
 CreateMove

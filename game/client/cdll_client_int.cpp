@@ -359,12 +359,12 @@ static void HL2SB_CallMenuHook( const char *pszEvent )
 
 static void HL2SB_SpawnMenuDown( const CCommand &args )
 {
-	HL2SB_CallMenuHook( "OnSpawnMenuOpen" );
+	engine->ClientCmd_Unrestricted( "+menu\n" );
 }
 
 static void HL2SB_SpawnMenuUp( const CCommand &args )
 {
-	HL2SB_CallMenuHook( "OnSpawnMenuClose" );
+	engine->ClientCmd_Unrestricted( "-menu\n" );
 }
 
 static void HL2SB_ContextMenuDown( const CCommand &args )

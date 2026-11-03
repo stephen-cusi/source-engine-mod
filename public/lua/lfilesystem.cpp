@@ -1216,7 +1216,13 @@ static int file_Exists (lua_State *L) {
   char szFull[ MAX_PATH ];
   HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, luaL_checkstring(L, 1), false );
 
-  lua_pushboolean(L, pFS->FileExists(szFull, pszPathID) || pFS->IsDirectory(szFull, pszPathID));
+  bool found = pFS->FileExists(szFull, pszPathID) || pFS->IsDirectory(szFull, pszPathID);
+  const char *pathArg = HL2SB_GetPathArg( L, 2, "" );
+  if ( !found && pathArg && !V_stricmp( pathArg, "LUA" ) ) {
+    HL2SB_MakeFilePath( szFull, sizeof( szFull ), "gamemodes/", luaL_checkstring( L, 1 ), false );
+    found = pFS->FileExists( szFull, "GAME" ) || pFS->IsDirectory( szFull, "GAME" );
+  }
+  lua_pushboolean(L, found);
   return 1;
 }
 
@@ -1651,6 +1657,23 @@ static int file_Find (lua_State *L) {
 
 	CUtlVector< HL2SBFindItem_t > items;
 
+	const char *requestedPath = lua_tostring( L, 2 );
+	const int nRoots = requestedPath && !V_stricmp( requestedPath, "LUA" ) ? 2 : 1;
+	for ( int iRoot = 0; iRoot < nRoots; ++iRoot )
+	{
+		if ( iRoot == 1 )
+		{
+			if ( nFolder > 0 )
+			{
+				Q_snprintf( szPattern, sizeof( szPattern ), "gamemodes/%s/%s", szFolder, szGlob );
+				Q_snprintf( szFolderFull, sizeof( szFolderFull ), "gamemodes/%s/", szFolder );
+			}
+			else
+			{
+				Q_snprintf( szPattern, sizeof( szPattern ), "gamemodes/%s", szGlob );
+				V_strncpy( szFolderFull, "gamemodes/", sizeof( szFolderFull ) );
+			}
+		}
 	for ( int iPathID = 0; iPathID < nPathIDs; iPathID++ )
 	{
 		FileFindHandle_t fh;
@@ -1684,6 +1707,7 @@ static int file_Find (lua_State *L) {
 		// FindFirstEx sets *pHandle = -1 when it finds nothing and FindClose
 		// rejects negative handles, so this is also the empty-result path.
 		pFS->FindClose( fh );
+	}
 	}
 
 	// De-duplicate BEFORE the requested sort.  The same relative name can come

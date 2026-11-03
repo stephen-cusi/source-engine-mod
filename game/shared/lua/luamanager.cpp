@@ -101,6 +101,7 @@ static void HL2SB_DispatchLuaErrorHooks( lua_State *L, const char *pszError, con
 #include <vgui/ISystem.h>
 #ifdef CLIENT_DLL
 #include <vgui_controls/Panel.h>
+#include <vgui/ISurface.h>
 #include "inputsystem/ButtonCode.h"
 #endif
 
@@ -1715,6 +1716,10 @@ void luasrc_shutdown (void) {
 
   filesystem->RemoveSearchPath( contentSearchPath, "MOD" );
   filesystem->RemoveSearchPath( baseContentSearchPath, "MOD" );
+  filesystem->RemoveSearchPath( contentSearchPath, "GAME" );
+  filesystem->RemoveSearchPath( baseContentSearchPath, "GAME" );
+  contentSearchPath[0] = '\0';
+  baseContentSearchPath[0] = '\0';
 
   ResetConCommandDatabase();
 
@@ -3803,6 +3808,33 @@ void luasrc_RunEntsOnLoaded ( void )
 			lua_pop( L, 1 );
 		}
 	}
+	const int top = lua_gettop( L );
+	lua_getglobal( L, "weapons" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "GetList" );
+		if ( lua_isfunction( L, -1 ) && luasrc_pcall( L, 0, 1, 0 ) == 0 && lua_istable( L, -1 ) )
+		{
+			const int list = lua_gettop( L );
+			lua_pushnil( L );
+			while ( lua_next( L, list ) != 0 )
+			{
+				if ( lua_istable( L, -1 ) )
+				{
+					lua_getfield( L, -1, "ClassName" );
+					if ( lua_type( L, -1 ) == LUA_TSTRING )
+					{
+						const char *name = lua_tostring( L, -1 );
+						if ( name[0] && Q_strlen( name ) < MAX_WEAPON_STRING )
+							RegisterScriptedWeapon( name );
+					}
+					lua_pop( L, 1 );
+				}
+				lua_pop( L, 1 );
+			}
+		}
+	}
+	lua_settop( L, top );
 }
 
 /*
@@ -4175,6 +4207,33 @@ void luasrc_LoadEffects (const char *path)
 }
 
 bool luasrc_LoadGamemode (const char *gamemode) {
+  char *contentPath = !Q_stricmp( gamemode, LUA_BASE_GAMEMODE ) ? baseContentSearchPath : contentSearchPath;
+  if ( !contentPath[0] ) {
+#ifdef CLIENT_DLL
+    const char *gamePath = engine->GetGameDirectory();
+#else
+    char gamePath[ MAX_PATH ];
+    engine->GetGameDir( gamePath, sizeof( gamePath ) );
+#endif
+    Q_snprintf( contentPath, MAX_PATH, "%s/gamemodes/%s/content", gamePath, gamemode );
+    filesystem->AddSearchPath( contentPath, "MOD" );
+    filesystem->AddSearchPath( contentPath, "GAME" );
+  }
+#ifdef CLIENT_DLL
+  if ( vgui::surface() && !Q_stricmp( gamemode, ::gamemode.GetString() ) ) {
+    FileFindHandle_t find;
+    const char *font = filesystem->FindFirstEx( "resource/fonts/*.ttf", "GAME", &find );
+    while ( font ) {
+      if ( font[0] != '.' && !filesystem->FindIsDirectory( find ) ) {
+        char name[ MAX_PATH ];
+        Q_snprintf( name, sizeof( name ), "resource/fonts/%s", font );
+        vgui::surface()->AddCustomFontFile( NULL, name );
+      }
+      font = filesystem->FindNext( find );
+    }
+    if ( find != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( find );
+  }
+#endif
   lua_newtable(L);
   lua_pushstring(L, "__folder");
   char gamemodepath[MAX_PATH];
@@ -4246,20 +4305,16 @@ bool luasrc_SetGamemode (const char *gamemode) {
 	  // HL2SB: the base gamemode's content directory is shared by every
 	  // gamemode (GMod keeps its base entities in gamemodes/base/entities), so
 	  // mount and scan it first - the active gamemode still wins on collisions.
-	  Q_snprintf( baseContentSearchPath, sizeof( baseContentSearchPath ), "gamemodes/%s/content", LUA_BASE_GAMEMODE );
-	  filesystem->AddSearchPath( baseContentSearchPath, "MOD" );
 	  {
 	    char baseLoadPath[MAX_PATH];
-	    Q_snprintf( baseLoadPath, sizeof( baseLoadPath ), "%s/", baseContentSearchPath );
+	    Q_snprintf( baseLoadPath, sizeof( baseLoadPath ), "gamemodes/%s/content/", LUA_BASE_GAMEMODE );
 	    luasrc_LoadWeapons( baseLoadPath );
 	    luasrc_LoadEntities( baseLoadPath );
 	    luasrc_LoadEffects( baseLoadPath );
 	  }
 
-	  Q_snprintf( contentSearchPath, sizeof( contentSearchPath ), "gamemodes/%s/content", gamemode );
-	  filesystem->AddSearchPath( contentSearchPath, "MOD" );
 	  char loadPath[MAX_PATH];
-	  Q_snprintf( loadPath, sizeof( loadPath ), "%s/", contentSearchPath );
+	  Q_snprintf( loadPath, sizeof( loadPath ), "gamemodes/%s/content/", gamemode );
 	  luasrc_LoadWeapons( loadPath );
 	  luasrc_LoadEntities( loadPath );
 	  luasrc_LoadEffects( loadPath );

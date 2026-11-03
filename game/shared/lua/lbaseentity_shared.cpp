@@ -1745,13 +1745,17 @@ static int CBaseEntity_IsOnGround (lua_State *L) {
 // HL2SB GMod compat (2026-09-24): Entity:OnGround() - the First Person Body
 // addon captures ENTITY.OnGround (this fork only had IsOnGround; GMod
 // community addons use both spellings).  Same predicate, second name.
-// HL2SB GMod compat (2026-09-25): Entity:PhysicsDestroy() - GMod destroys the
-// entity's physics object.  Clientside entities in this fork carry no physics
-// at all, and First Person Body calls it defensively on its fresh body clone,
-// so a no-op answers the only real use; the PhysObj bindings remain the
-// sandbox-facing API.
+extern bool PhysIsInCallback();
 static int CBaseEntity_PhysicsDestroy (lua_State *L) {
-  luaL_checkentity(L, 1);
+  CBaseEntity *entity = luaL_checkentity(L, 1);
+  CBaseAnimating *anim = entity->GetBaseAnimating();
+  if ( entity->IsWorld() || ( anim && anim->IsRagdoll() ) ) return 0;
+  if ( entity->VPhysicsGetObject() && PhysIsInCallback() ) {
+    Warning( "Cannot destroy physics in a physics callback!\n" );
+    lua_pushboolean( L, false );
+    return 1;
+  }
+  entity->VPhysicsDestroyObject();
   return 0;
 }
 

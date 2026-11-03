@@ -15,6 +15,8 @@
 #include "vgui_controls/lPanel.h"
 #include "inputsystem/iinputsystem.h"
 #include "tier2/tier2.h"
+#include "c_basecombatweapon.h"
+#include "lbasecombatweapon_shared.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -426,7 +428,17 @@ static int input_LookupBinding (lua_State *L) {
 }
 
 
+extern void HL2SB_SelectWeapon( C_BaseCombatWeapon *weapon );
+
+static int input_SelectWeapon( lua_State *L ) {
+  C_BaseCombatWeapon *weapon = lua_toweapon( L, 1 );
+  if ( !weapon ) return luaL_error( L, "Weapon is NULL/Not a Weapon" );
+  HL2SB_SelectWeapon( weapon );
+  return 0;
+}
+
 static const luaL_Reg inputlib[] = {
+  {"SelectWeapon", input_SelectWeapon},
   {"CandidateListStartsAtOne",   input_CandidateListStartsAtOne},
   {"CheckKeyTrapping",   input_CheckKeyTrapping},
   {"GetKeyName",   input_GetKeyName},

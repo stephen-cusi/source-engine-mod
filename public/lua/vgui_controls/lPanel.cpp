@@ -1335,7 +1335,9 @@ static int Panel_SetSilentMode (lua_State *L) {
 static int Panel_SetSize (lua_State *L) {
   Panel *pPanel = luaL_checkpanel(L, 1);
 
-  pPanel->SetSize((int)lua_tonumber(L, 2), (int)lua_tonumber(L, 3));
+  int wide = (int)lua_tonumber(L, 2);
+  int tall = (int)lua_tonumber(L, 3);
+  pPanel->SetSize(MIN(wide, 32767), MIN(tall, 32767));
   Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
@@ -1796,7 +1798,20 @@ static int Panel_GetDockMargin (lua_State *L) {
 // the day it gets switched on.
 //=============================================================================
 static int Panel_SizeToChildren (lua_State *L) {
-  luaL_checkpanel(L, 1)->SizeToChildren(lua_toboolean(L, 2) != 0, lua_toboolean(L, 3) != 0);
+  Panel *panel = luaL_checkpanel(L, 1);
+  int wide = 0, tall = 0;
+  for (int i = 0; i < panel->GetChildCount(); ++i) {
+    Panel *child = panel->GetChild(i);
+    if (!child || !child->IsVisible() || child->IsMarkedForDeletion()) continue;
+    int x, y, childWide, childTall;
+    child->GetBounds(x, y, childWide, childTall);
+    wide = MAX(wide, x + childWide);
+    tall = MAX(tall, y + childTall);
+  }
+  int left, top, right, bottom;
+  panel->GetDockPadding(left, top, right, bottom);
+  if (lua_toboolean(L, 2)) panel->SetWide(wide + right);
+  if (lua_toboolean(L, 3)) panel->SetTall(tall + bottom);
   return 0;
 }
 
