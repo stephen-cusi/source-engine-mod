@@ -4,7 +4,10 @@
 
 #include "cbase.h"
 #include "lua.hpp"
+#include <cmath>
+#include <limits>
 
+#if LUA_VERSION_NUM >= 502
 lua_State *lua_open()
 {
     return luaL_newstate();
@@ -41,6 +44,87 @@ int luaL_typerror( lua_State *L, int narg, const char *tname )
     const char *msg = lua_pushfstring( L, "%s expected, got %s", tname, luaL_typename( L, narg ) );
     return luaL_argerror( L, narg, msg );
 }
+#else
+int lua_absindex( lua_State *L, int idx )
+{
+    return idx > 0 || idx <= LUA_REGISTRYINDEX ? idx : lua_gettop( L ) + idx + 1;
+}
+
+int lua_geti( lua_State *L, int idx, lua_Integer n )
+{
+    idx = lua_absindex( L, idx );
+    lua_pushinteger( L, n );
+    lua_gettable( L, idx );
+    return lua_type( L, -1 );
+}
+
+int lua_compare( lua_State *L, int a, int b, int op )
+{
+    return op == LUA_OPEQ ? lua_equal( L, a, b ) : 0;
+}
+
+int lua_isinteger( lua_State *L, int idx )
+{
+    if ( lua_type( L, idx ) != LUA_TNUMBER ) return 0;
+    lua_Number n = lua_tonumber( L, idx );
+    const lua_Number lower = (lua_Number)std::numeric_limits<lua_Integer>::min();
+    return n >= lower && n < -lower && std::floor( n ) == n;
+}
+
+int luaL_getsubtable( lua_State *L, int idx, const char *name )
+{
+    idx = lua_absindex( L, idx );
+    lua_getfield( L, idx, name );
+    if ( lua_istable( L, -1 ) ) return 1;
+    lua_pop( L, 1 );
+    lua_newtable( L );
+    lua_pushvalue( L, -1 );
+    lua_setfield( L, idx, name );
+    return 0;
+}
+
+lua_Integer luaL_len( lua_State *L, int idx )
+{
+    return (lua_Integer)lua_objlen( L, idx );
+}
+
+const char *luaL_tolstring( lua_State *L, int idx, size_t *len )
+{
+    idx = lua_absindex( L, idx );
+    if ( luaL_callmeta( L, idx, "__tostring" ) )
+    {
+        if ( !lua_isstring( L, -1 ) )
+            luaL_error( L, "'__tostring' must return a string" );
+    }
+    else
+    {
+        switch ( lua_type( L, idx ) )
+        {
+        case LUA_TNUMBER:
+        case LUA_TSTRING:
+            lua_pushvalue( L, idx );
+            break;
+        case LUA_TBOOLEAN:
+            lua_pushstring( L, lua_toboolean( L, idx ) ? "true" : "false" );
+            break;
+        case LUA_TNIL:
+            lua_pushliteral( L, "nil" );
+            break;
+        default:
+            if ( luaL_getmetafield( L, idx, "__name" ) )
+            {
+                const char *name = lua_type( L, -1 ) == LUA_TSTRING ? lua_tostring( L, -1 ) : luaL_typename( L, idx );
+                lua_pushfstring( L, "%s: %p", name, lua_topointer( L, idx ) );
+                lua_remove( L, -2 );
+            }
+            else
+                lua_pushfstring( L, "%s: %p", luaL_typename( L, idx ), lua_topointer( L, idx ) );
+            break;
+        }
+    }
+    return lua_tolstring( L, -1, len );
+}
+#endif
 
 void lua_getref( lua_State *L, int ref )
 {

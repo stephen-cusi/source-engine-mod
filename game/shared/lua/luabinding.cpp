@@ -26,6 +26,10 @@ void luaL_register( lua_State *L, const char *libname, CUtlVector< LuaRegEntry >
 {
 	if ( libname )
 	{
+#if LUA_VERSION_NUM < 502
+		static const luaL_Reg empty[] = { { NULL, NULL } };
+		luaL_register( L, libname, empty );
+#else
 		lua_getglobal( L, "package" );
 		if ( lua_istable( L, -1 ) )
 		{
@@ -57,6 +61,7 @@ void luaL_register( lua_State *L, const char *libname, CUtlVector< LuaRegEntry >
 
 		lua_pushvalue( L, -1 );
 		lua_setglobal( L, libname );			// _G[libname] = table
+#endif
 	}
 
 	for ( int i = 0; i < luaRegistry.Count(); i++ )

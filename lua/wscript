@@ -1,147 +1,410 @@
 #! /usr/bin/env python
 # encoding: utf-8
 
-from waflib import Utils
+from waflib import Utils, Errors
+from waflib.TaskGen import feature, after_method
 import os
 
 top = '.'
 # HL2SB (sbrust): GMod's architecture -- one shared Lua host for every realm.
-# The Lua C API lives in lua_shared.dll / liblua_shared.so and third-party
-# binary modules (lua/bin/gm{sv,cl}_*_*.dll, gmod13_open entry, see
-# src/hl2sb_binmod.c) resolve lua_* at runtime from it, exactly like GMod
+# This branch runs the LuaJIT 2.1 core with the GLua dialect patches in-tree
+# (see luajit/README.md): the Lua C API lives in lua_shared.dll /
+# liblua_shared.so and third-party binary modules (lua/bin/gm{sv,cl}_*_*.dll,
+# gmod13_open entry) resolve lua_* at runtime from it, exactly like GMod
 # modules resolve them from lua_shared.dll.
+#
+# LuaJIT needs two build-time host tools before the core can compile:
+#   minilua  - small host interpreter used to run the DynASM preprocessor
+#   buildvm  - emits the per-target VM assembly object and the definition
+#              headers (lj_bcdef.h / lj_ffdef.h / lj_libdef.h / lj_recdef.h /
+#              lj_folddef.h / jit vmdef.lua)
+# The tools must run on the BUILD machine, so:
+#   - native targets (win32/linux) build them with the target toolchain
+#     through regular waf program taskgens;
+#   - the android cross build compiles them with a plain host compiler
+#     probed from PATH (HOST_CC).
+# Everything else (definition headers, lj_vm object, the shared library
+# itself) is produced by ordinary waf tasks, so content-hash incremental
+# rebuilds and cross-arch CI all go through the same graph.
 PROJECT_NAME = 'lua_shared'
+
+LJ_SRC = 'luajit/src'
+LJ_DASM = 'luajit/dynasm'
+LJ_GEN = 'luajit/gen'
+
+@feature('lj_dependencies')
+@after_method('process_rule', 'process_source')
+def lj_dependencies(tg):
+	for dependency in getattr(tg, 'lj_after', []):
+		dependency.post()
+		for task in tg.tasks:
+			for prerequisite in dependency.tasks:
+				task.set_run_after(prerequisite)
+	for task in getattr(tg, 'compiled_tasks', []):
+		task.dep_nodes.extend(getattr(tg, 'lj_headers', []))
+	if getattr(tg, 'lj_object', None) and getattr(tg, 'link_task', None):
+		tg.link_task.dep_nodes.append(tg.lj_object)
+
+# LuaJIT core translation units (target compiled). ljamalg.c, luajit.c and
+# probe_offsets.c are standalone-program units and stay out of the shlib.
+LJ_CORE = [
+    LJ_SRC + '/lj_alloc.c',
+    LJ_SRC + '/lj_api.c',
+    LJ_SRC + '/lj_asm.c',
+    LJ_SRC + '/lj_bc.c',
+    LJ_SRC + '/lj_bcread.c',
+    LJ_SRC + '/lj_bcwrite.c',
+    LJ_SRC + '/lj_buf.c',
+    LJ_SRC + '/lj_carith.c',
+    LJ_SRC + '/lj_ccall.c',
+    LJ_SRC + '/lj_ccallback.c',
+    LJ_SRC + '/lj_cconv.c',
+    LJ_SRC + '/lj_cdata.c',
+    LJ_SRC + '/lj_char.c',
+    LJ_SRC + '/lj_clib.c',
+    LJ_SRC + '/lj_cparse.c',
+    LJ_SRC + '/lj_crecord.c',
+    LJ_SRC + '/lj_ctype.c',
+    LJ_SRC + '/lj_debug.c',
+    LJ_SRC + '/lj_dispatch.c',
+    LJ_SRC + '/lj_err.c',
+    LJ_SRC + '/lj_ffrecord.c',
+    LJ_SRC + '/lj_func.c',
+    LJ_SRC + '/lj_gc.c',
+    LJ_SRC + '/lj_gdbjit.c',
+    LJ_SRC + '/lj_ir.c',
+    LJ_SRC + '/lj_lex.c',
+    LJ_SRC + '/lj_lib.c',
+    LJ_SRC + '/lj_load.c',
+    LJ_SRC + '/lj_mcode.c',
+    LJ_SRC + '/lj_meta.c',
+    LJ_SRC + '/lj_obj.c',
+    LJ_SRC + '/lj_opt_dce.c',
+    LJ_SRC + '/lj_opt_fold.c',
+    LJ_SRC + '/lj_opt_loop.c',
+    LJ_SRC + '/lj_opt_mem.c',
+    LJ_SRC + '/lj_opt_narrow.c',
+    LJ_SRC + '/lj_opt_sink.c',
+    LJ_SRC + '/lj_opt_split.c',
+    LJ_SRC + '/lj_parse.c',
+    LJ_SRC + '/lj_profile.c',
+    LJ_SRC + '/lj_record.c',
+    LJ_SRC + '/lj_snap.c',
+    LJ_SRC + '/lj_state.c',
+    LJ_SRC + '/lj_str.c',
+    LJ_SRC + '/lj_strfmt.c',
+    LJ_SRC + '/lj_strfmt_num.c',
+    LJ_SRC + '/lj_strscan.c',
+    LJ_SRC + '/lj_tab.c',
+    LJ_SRC + '/lj_trace.c',
+    LJ_SRC + '/lj_udata.c',
+    LJ_SRC + '/lj_vmevent.c',
+    LJ_SRC + '/lj_vmmath.c',
+]
+
+# LuaJIT library definitions scanned by buildvm.
+LJ_LIBS = [
+    'lib_base.c',
+    'lib_math.c',
+    'lib_bit.c',
+    'lib_string.c',
+    'lib_table.c',
+    'lib_io.c',
+    'lib_os.c',
+    'lib_package.c',
+    'lib_debug.c',
+    'lib_jit.c',
+    'lib_ffi.c',
+]
+
+# Library units compiled into the shlib (lib_ffi.c is LJ_HASFFI-gated and
+# harmless to always compile; lib_init.c carries luaL_openlibs).
+LJ_LIB_UNITS = [
+    LJ_SRC + '/lib_aux.c',
+    LJ_SRC + '/lib_base.c',
+    LJ_SRC + '/lib_bit.c',
+    LJ_SRC + '/lib_debug.c',
+    LJ_SRC + '/lib_ffi.c',
+    LJ_SRC + '/lib_init.c',
+    LJ_SRC + '/lib_io.c',
+    LJ_SRC + '/lib_jit.c',
+    LJ_SRC + '/lib_math.c',
+    LJ_SRC + '/lib_os.c',
+    LJ_SRC + '/lib_package.c',
+    LJ_SRC + '/lib_string.c',
+    LJ_SRC + '/lib_table.c',
+]
 
 def options(opt):
 	return
 
 def configure(conf):
-	if conf.env.DEST_OS in ["linux", "android", "freebsd", "osx"]:
-		conf.define( "LUA_USE_LINUX", 1 )
-	return
+	if conf.env.DEST_OS == 'android':
+		# Cross build: the target (NDK) compiler cannot run the build-time
+		# generators, so a plain host compiler must be available on PATH.
+		conf.find_program(['gcc', 'cc', 'clang'], var='HOST_CC', mandatory=True)
+
+def _strip_tp(tg):
+	# The top-level wscript puts /TP into global CFLAGS on win32 (every TU
+	# in the game targets compiles as C++). The LuaJIT core and its host
+	# tools are strict C (MSVC-specific: /TC wins over /TP in the same
+	# flag list), so compile them as C the way the reference build does.
+	if tg.env.DEST_OS == 'win32':
+		tg.env.CFLAGS = [f for f in tg.env.CFLAGS if f != '/TP'] + ['/TC']
+
+def _lj_arch(bld):
+	if bld.env.DEST_CPU in ('aarch64', 'arm64'):
+		return 'arm64'
+	if bld.env.DEST_CPU in ('amd64', 'x86_64', 'x64'):
+		return 'x64'
+	raise Errors.WafError('lua_shared: unsupported target arch %s/%s' % (bld.env.DEST_OS, bld.env.DEST_CPU))
 
 def build(bld):
-	# Lua 5.4.6, taken from Experiment: Source (src/lua), which additionally
-	# carries the GLua syntax extensions this fork used to patch into 5.1:
-	#   * `continue` keyword
-	#   * `!` / `!=` operators
-	#   * `&&` / `||` operators
-	#   * `//` line comments and `/* ... */` block comments
-	#   * package.seeall + module() backported from 5.1
-	# bit.c is HL2SB's LuaBitOp, retargeted from the 5.1 build so existing mod
-	# scripts that call bit.band/bit.bor keep working.
-	source = [
-		"src/lapi.c",
-		"src/lauxlib.c",
-		"src/lbaselib.c",
-		"src/lcode.c",
-		"src/lcorolib.c",
-		"src/lctype.c",
-		"src/ldblib.c",
-		"src/ldebug.c",
-		"src/ldo.c",
-		"src/ldump.c",
-		"src/lfunc.c",
-		"src/lgc.c",
-		"src/linit.c",
-		"src/liolib.c",
-		"src/llex.c",
-		"src/lmathlib.c",
-		"src/lmem.c",
-		"src/loadlib.c",
-		"src/lobject.c",
-		"src/lopcodes.c",
-		"src/loslib.c",
-		"src/lparser.c",
-		"src/lstate.c",
-		"src/lstring.c",
-		"src/lstrlib.c",
-		"src/ltable.c",
-		"src/ltablib.c",
-		"src/ltm.c",
-		"src/lundump.c",
-		"src/lutf8lib.c",
-		"src/lvm.c",
-		"src/lzio.c",
-		"src/bit.c",
-		# HL2SB (sbrust): GMod 式第三方二进制模块加载器（gmod13_open/close 契约），
-		# 随 lua_shared.dll 导出 HL2SB_InstallBinaryModuleSearcher/HL2SB_RunBinaryModuleCloses。
-		"src/hl2sb_binmod.c",
-		# GMod 式钩子名注册表：GMod 的 lua_shared 持有全部引擎派发钩子名，
-		# C++ 侧只传数字 ID（client.dll CallWithArgs(0x2e)）。本表逐槽抄自
-		# GMod lua_shared.dll .data，ID 与 GMod 逐位对齐；导出
-		# HL2SB_GetHookName/HL2SB_GetHookCount 供 game DLL 按 ID 派发。
-		"src/hl2sb_hooks.c",
-		# GMod (LuaJIT 5.1) C-API 导出兼容层：37 个 GMod 独有符号
-		# （lua_pcall/luaL_register/getfenv/JIT 桩/GMOD_LoadBinaryModule/
-		# AdvancedLuaErrorReporter/cvar/g_pFullFileSystem 等），签名与语义
-		# 逐个对照自 GMod win64 lua_shared.dll。第三方 gm{sv,cl}_* 模块
-		# 链接的就是这份导出集，缺一个名字 Windows 加载器就拒载整个 DLL。
-		"src/hl2sb_lua51.c",
-		# 装饰名孪生：GMod 原版这个函数定义在 .cpp 里，二进制模块按 C++
-		# 修饰名（?AdvancedLuaErrorReporter@@YAH...lua_State...@@@Z）导入。
-		# 链接器 /export 别名在 win32 上会把条目名截断在首个 '@@'（裸读导出
-		# 表只有 "?AdvancedLuaErrorReporter"），win32 CI 另因别名目标解析
-		# LNK2001。本文件以 C++ 链接自然产出正确修饰名；仅 MSVC+Windows
-		# 生效，其它平台是空单元。
-		"src/hl2sb_lua51_mangle.c",
+	lj_arch = _lj_arch(bld)
+	is_win = bld.env.DEST_OS == 'win32'
+	# x64 builds run in GC64 mode (the reference engine ships GC64 on x64;
+	# arm64 enables it through lj_arch.h unconditionally).
+	is_gc64 = lj_arch == 'x64'
+
+	ctx = bld.path.get_bld()
+	src_dir = bld.path.make_node(LJ_SRC)
+	dasm_dir = bld.path.make_node(LJ_DASM)
+
+	exe_ext = '.exe' if is_win else ''
+	ml_node = ctx.find_or_declare('minilua_host' + exe_ext)
+	bvm_node = ctx.find_or_declare('buildvm_host' + exe_ext)
+
+	# ------------------------------------------------------- host: minilua
+	if bld.env.DEST_OS == 'android':
+		ml_tg = bld(
+			rule='${HOST_CC} -O2 -o ${TGT} ${SRC} -lm',
+			source=[LJ_SRC + '/host/minilua.c'],
+			target=ml_node,
+			install_path=None,
+			idx=bld.get_taskgen_count(),
+		)
+	else:
+		ml_tg = bld(
+			features='c cprogram',
+			source=LJ_SRC + '/host/minilua.c',
+			target='minilua_host',
+			includes=LJ_SRC,
+			install_path=None,
+			idx=bld.get_taskgen_count(),
+		)
+		_strip_tp(ml_tg)
+
+	# --------------------------------------------- host: buildvm per arch
+	if lj_arch == 'x64':
+		# Mirror of the reference build script: vm_x64.dasc with JIT/P64 plus
+		# WIN when the target is Windows. GC64 is a compile-time define
+		# consumed by buildvm_arch.h's C-level guards and by the core itself.
+		dasc = src_dir.make_node('vm_x64.dasc')
+		dasm_flags = ['-LN', '-D', 'JIT', '-D', 'P64', '-D', 'FFI', '-D', 'FPU', '-D', 'ENDIAN_LE', '-D', 'HFABI']
+		if is_win:
+			dasm_flags += ['-D', 'WIN']
+	else:
+		# arm64: the same flag set the stock Makefile derives for LJARCH=arm64.
+		dasc = src_dir.make_node('vm_arm64.dasc')
+		dasm_flags = ['-LN', '-D', 'ENDIAN_LE', '-D', 'P64', '-D', 'JIT', '-D', 'FFI', '-D', 'FPU', '-D', 'DUALNUM', '-D', 'VER=80']
+
+	arch_hdr_node = ctx.find_or_declare(LJ_GEN + '/buildvm_arch.h')
+	dasm_cmd = ' '.join([
+		ml_node.abspath(),
+		dasm_dir.make_node('dynasm.lua').abspath(),
+	] + dasm_flags + [
+		'-o', arch_hdr_node.abspath(),
+		dasc.abspath(),
+	])
+	dasm_tg = bld(
+		rule=dasm_cmd,
+		source=[dasc, ml_node] + dasm_dir.ant_glob('*.lua'),
+		target=arch_hdr_node,
+		install_path=None,
+		idx=bld.get_taskgen_count(),
+	)
+	dasm_tg.features = Utils.to_list(dasm_tg.features) + ['lj_dependencies']
+	dasm_tg.lj_after = [ml_tg]
+
+	bvm_sources = [
+		LJ_SRC + '/host/buildvm.c',
+		LJ_SRC + '/host/buildvm_asm.c',
+		LJ_SRC + '/host/buildvm_peobj.c',
+		LJ_SRC + '/host/buildvm_lib.c',
+		LJ_SRC + '/host/buildvm_fold.c',
+	]
+	# buildvm_arch.h is generated, not compilable -- wire it as a dependency
+	# of every buildvm unit instead of listing it in source (waf rejects
+	# header extensions in source lists).
+	for unit in list(bvm_sources):
+		bld.add_manual_dependency(bld.path.make_node(unit), arch_hdr_node)
+	bvm_includes = [LJ_SRC, LJ_DASM, LJ_GEN]
+	if bld.env.DEST_OS == 'android':
+		bvm_defines = ['-DLUAJIT_TARGET=LUAJIT_ARCH_' + lj_arch.upper()]
+		if is_gc64:
+			bvm_defines += ['-DLUAJIT_ENABLE_GC64']
+		gen_abs = ctx.make_node(LJ_GEN).abspath()
+		bvm_tg = bld(
+			rule='${HOST_CC} -O2 ' + ' '.join(bvm_defines)
+				+ ' -I' + src_dir.abspath()
+				+ ' -I' + dasm_dir.abspath()
+				+ ' -I' + gen_abs
+				+ ' -o ${TGT} ${SRC}',
+			source=bvm_sources,
+			target=bvm_node,
+			install_path=None,
+			idx=bld.get_taskgen_count(),
+		)
+	else:
+		bvm_tg = bld(
+			features='c cprogram',
+			source=bvm_sources,
+			target='buildvm_host',
+			includes=bvm_includes,
+			defines=['LUAJIT_ENABLE_GC64'] if is_gc64 else [],
+			install_path=None,
+			idx=bld.get_taskgen_count(),
+		)
+		_strip_tp(bvm_tg)
+	bvm_tg.features = Utils.to_list(bvm_tg.features) + ['lj_dependencies']
+	bvm_tg.lj_after = [dasm_tg]
+
+	# -------------------------------------- generated VM object + headers
+	lib_nodes = [src_dir.make_node(name) for name in LJ_LIBS]
+
+	gen_tgs = []
+
+	def bvm_run(mode, target, source):
+		cmd = ' '.join([bvm_node.abspath(), '-m', mode, '-o', target.abspath()]
+			+ [n.abspath() for n in source])
+		tg = bld(
+			rule=cmd,
+			source=source + [bvm_node],
+			target=target,
+			install_path=None,
+			idx=bld.get_taskgen_count(),
+		)
+		tg.features = Utils.to_list(tg.features) + ['lj_dependencies']
+		tg.lj_after = [bvm_tg]
+		gen_tgs.append(tg)
+
+	if is_win:
+		lj_vm_node = ctx.find_or_declare(LJ_GEN + '/lj_vm.obj')
+		bvm_run('peobj', lj_vm_node, [])
+	else:
+		# GNU as source; assembled by the target compiler like any other TU.
+		lj_vm_node = ctx.find_or_declare(LJ_GEN + '/lj_vm.S')
+		bvm_run('elfasm', lj_vm_node, [])
+
+	gen_headers = []
+	for mode, name in [
+		('bcdef', 'lj_bcdef.h'),
+		('ffdef', 'lj_ffdef.h'),
+		('libdef', 'lj_libdef.h'),
+		('recdef', 'lj_recdef.h'),
+	]:
+		node = ctx.find_or_declare(LJ_GEN + '/' + name)
+		bvm_run(mode, node, lib_nodes)
+		gen_headers.append(node)
+	fold_node = ctx.find_or_declare(LJ_GEN + '/lj_folddef.h')
+	bvm_run('folddef', fold_node, [src_dir.make_node('lj_opt_fold.c')])
+	gen_headers.append(fold_node)
+	vmdef_node = ctx.find_or_declare(LJ_GEN + '/jit_vmdef.lua')
+	bvm_run('vmdef', vmdef_node, lib_nodes)
+
+	# -------------------------------------------- HL2SB glue (lua_shared)
+	# hl2sb_hooks.c    - engine hook name registry (HL2SB_GetHookName/Count)
+	# hl2sb_binmod.c   - binary-module searcher/loader/closes contract
+	# hl2sb_glue.c     - CreateInterface / cvar / engine interface pointers /
+	#                    AdvancedLuaErrorReporter (plain C twin)
+	# All plain C with extern "C" exports; they ride the shlib taskgen's /TC.
+	LJ_GLUE_C = [
+		LJ_SRC + '/hl2sb/hl2sb_hooks.c',
+		LJ_SRC + '/hl2sb/hl2sb_binmod.c',
+		LJ_SRC + '/hl2sb/hl2sb_glue.c',
 	]
 
-	includes = [
-		'.',
-		'./src',
-		'../public',
-		'../common'
-	]
+	# hl2sb_glue_cpp.cpp - the C++-decorated half: the mangled
+	# ?AdvancedLuaErrorReporter twin and the ?g_pFullFileSystem data export.
+	# It must stay under C++ linkage (the shlib taskgen compiles as C), so it
+	# is a separate objects taskgen linked in through use=.
+	glue_cpp_tg = bld.objects(
+		source   = [LJ_SRC + '/hl2sb/hl2sb_glue_cpp.cpp'],
+		target   = 'lua_shared_glue_cpp',
+		name     = 'lua_shared_glue_cpp',
+		features = 'cxx',
+		includes = [LJ_SRC],
+		# LUA_LIB before lua.h -> LUA_API dllexports the reporter twin;
+		# LUA_BUILD_AS_DLL gates the whole file (gcc builds fall back to the
+		# plain-name twin from hl2sb_glue.c).
+		defines  = (['LUA_BUILD_AS_DLL'] if is_win else []) + ['LUA_LIB'],
+		install_path = None,
+		idx      = bld.get_taskgen_count()
+	)
 
+	# --------------------------------------------------- lua_shared shlib
+	# The generated definition headers are not listed in `source` (waf only
+	# maps compilable extensions there); instead every core unit gets a
+	# manual dependency on each of them, which both orders the compile after
+	# the generators and re-runs the TU when a generated header changes
+	# (waf does no header-dependency scanning of its own).
+	source = LJ_CORE + LJ_LIB_UNITS + LJ_GLUE_C + ([] if is_win else [lj_vm_node])
 	defines = []
+	if is_win:
+		defines += ['LUA_BUILD_AS_DLL']
+	else:
+		# ELF: LUA_API must carry default visibility (see luaconf.h); without
+		# it the global -fvisibility=hidden buries the whole export surface.
+		defines += ['LUA_BUILD_AS_SHARED']
+	if is_gc64:
+		defines += ['LUAJIT_ENABLE_GC64']
 
 	libs = []
-
-	# HL2SB (sbrust): on Windows the luaconf LUA_API branch needs
-	# LUA_BUILD_AS_DLL so the sources compile with __declspec(dllexport)
-	# (the .c files already carry LUA_CORE/LUA_LIB).  On ELF (linux/android)
-	# LUA_BUILD_AS_DLL would emit MSVC-only __declspec and fail the compile --
-	# instead LUA_BUILD_AS_SHARED makes luaconf.h mark LUA_API with
-	# default visibility, because the global -fvisibility=hidden
-	# (compiler_optimizations.py CFLAGS) would otherwise hide every API
-	# symbol from liblua_shared.so's .dynsym and consumers could not link.
-	if bld.env.DEST_OS == 'win32':
-		defines += [ 'LUA_BUILD_AS_DLL' ]
-	else:
-		defines += [ 'LUA_BUILD_AS_SHARED' ]
-	# dlopen/dlsym for loadlib.c (LUA_USE_DLOPEN) and libm for the math builtins.
+	# dlopen/dlsym for loadlib (lj_clib) and libm for the math builtins.
 	# Uselib names must be UPPER case: they index env.LIB_DL / env.LIB_M, the
-	# stores check_deps (wscript:336/341) and xcompile.py:357 create via
-	# check_cc's default uselib_store. A lowercase 'm' matches no store and is
-	# silently dropped from the link line. Shlibs link with --no-undefined
+	# stores check_deps (top wscript) and xcompile.py create via check_cc's
+	# default uselib_store. A lowercase 'm' matches no store and is silently
+	# dropped from the link line. Shlibs link with --no-undefined
 	# (compiler_optimizations.py), so every symbol must resolve: bionic keeps
 	# acos/pow/fmod/frexp in a separate libm.so, desktop glibc needs -lm too.
-	if bld.env.DEST_OS in ( 'linux', 'android' ):
-		libs += [ 'DL', 'M' ]
+	if bld.env.DEST_OS in ('linux', 'android'):
+		libs += ['DL', 'M']
 
 	# Desktop: next to the exe (D:\srceng\bin, tier0's neighbourhood) so
 	# client.dll/server.dll resolve it from the application directory.
 	# Android: same root as the game libs; the APK packaging picks it up from
 	# there (scripts/build-android-arm64.sh copies it into jniLibs explicitly).
 	install_path = bld.env.PREFIX
-	if bld.env.DEST_OS == 'win32':
+	if is_win:
 		install_path += '/bin'
 
-	bld.shlib(
+	shlib_tg = bld.shlib(
 		source   = source,
 		target   = PROJECT_NAME,
 		name     = PROJECT_NAME,
-		# Lua is C: compiling it as C++ changes linkage for symbols that have no
-		# prior declaration (e.g. LuaBitOp's luaopen_bit) and is not what upstream
-		# supports.  Keep this target C-only.
+		# Lua is C: compiling it as C++ changes linkage for symbols that have
+		# no prior declaration and is not what upstream supports. Keep this
+		# target C-only.
 		features = 'c',
-		includes = includes,
+		includes = [LJ_SRC, LJ_GEN],
 		defines  = defines,
 		use      = libs,
 		install_path = install_path,
 		idx      = bld.get_taskgen_count()
 	)
+	_strip_tp(shlib_tg)
+	shlib_tg.features = Utils.to_list(shlib_tg.features) + ['lj_dependencies']
+	shlib_tg.lj_after = gen_tgs
+	shlib_tg.lj_headers = gen_headers
+	if is_win:
+		shlib_tg.linkflags = Utils.to_list(getattr(shlib_tg, 'linkflags', [])) + [lj_vm_node.abspath()]
+		shlib_tg.lj_object = lj_vm_node
+	shlib_tg.use = Utils.to_list(shlib_tg.use) + ['lua_shared_glue_cpp']
+	if not is_win:
+		# LuaJIT's generated VM assembly has no .note.GNU-stack marker; without
+		# this the ELF .so ships an executable-stack flag and Android 10+
+		# rejects loading it (W^X), desktop glibc warns on every link.
+		shlib_tg.env.append_unique('LINKFLAGS', ['-Wl,-z,noexecstack'])
 
 	# HL2SB: the vendored SQLite amalgamation (public domain, sqlite.org), as
 	# its own C static library linked into client and server -- the same

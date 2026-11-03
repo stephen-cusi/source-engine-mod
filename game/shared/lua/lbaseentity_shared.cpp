@@ -4550,35 +4550,6 @@ bool HL2SB_EntityPushVarsTable( lua_State *L, CBaseEntity *pEntity, bool bCreate
   return true;
 }
 
-//-----------------------------------------------------------------------------
-// HL2SB GMod compat: Entity:SetOverlayText( text ) / Entity:GetOverlayText().
-// GMod shows this text over the entity while a player aims at it (the
-// Nuke Pack's bombs live on it: " Unarmed " / " ARMED ").
-//
-// Server realm routes through the engine's own entity-text overlay
-// (CBaseEntity::EntityText -> NDebugOverlay), which is exactly what GMod's
-// implementation does; the overlay is re-issued every Think, so a 1s duration
-// keeps it up between ticks.  The NW dict copy stays for scripts that read
-// the text back and for the client realm (no world renderer there yet).
-//-----------------------------------------------------------------------------
-static int CBaseEntity_SetOverlayText (lua_State *L) {
-  CBaseEntity *pEntity = luaL_checkentity(L, 1);
-  const char *pszValue = luaL_optstring(L, 2, "");
-  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, "overlaytext", true );
-  if (p) p->s = pszValue;
-#ifndef CLIENT_DLL
-  pEntity->EntityText( 0, pszValue, 1.0f );
-#endif
-  return 0;
-}
-
-static int CBaseEntity_GetOverlayText (lua_State *L) {
-  CBaseEntity *pEntity = luaL_checkentity(L, 1);
-  HL2SB_NWValue *p = NWVarGetOrCreate( pEntity, "overlaytext", false );
-  lua_pushstring( L, ( p && p->s.Length() ) ? p->s.Get() : "" );
-  return 1;
-}
-
 static int CBaseEntity_WorldAlignMaxs (lua_State *L) {
   Vector v = luaL_checkentity(L, 1)->WorldAlignMaxs();
   lua_pushvector(L, v);
@@ -5744,7 +5715,8 @@ static int CBaseEntity_GetSaveTable (lua_State *L) {
       // lua_rawset(-3) then writes through a non-table index - that is what
       // crashed the client as soon as a name repeated in the base chain.
       lua_pushstring( L, pField->fieldName );				// [ t, key ]
-      bool bAlreadySet = ( lua_rawget( L, -2 ) != LUA_TNIL );	// [ t, val ]
+      lua_rawget( L, -2 );
+      bool bAlreadySet = !lua_isnil( L, -1 );	// [ t, val ]
       lua_pop( L, 1 );											// [ t ]
 
       if ( bAlreadySet )
@@ -5766,7 +5738,8 @@ static int CBaseEntity_GetSaveTable (lua_State *L) {
   // its value straight on top of the key we re-push, giving [t, key, val].
   for ( int i = 0; i < ARRAYSIZE( s_pHL2SB_ClientFields ); ++i ) {
     lua_pushstring( L, s_pHL2SB_ClientFields[ i ] );				// [ t, key ]
-    bool bPresent = ( lua_rawget( L, -2 ) != LUA_TNIL );			// [ t, val ]
+    lua_rawget( L, -2 );
+    bool bPresent = !lua_isnil( L, -1 );			// [ t, val ]
     lua_pop( L, 1 );												// [ t ]
 
     if ( bPresent )
@@ -7121,9 +7094,6 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetNW2Vector", CBaseEntity_GetNW2Vector},
   {"SetNW2Angle", CBaseEntity_SetNW2Angle},
   {"GetNW2Angle", CBaseEntity_GetNW2Angle},
-  // HL2SB GMod compat: per-entity Lua variables + overlay text.
-  {"SetOverlayText", CBaseEntity_SetOverlayText},
-  {"GetOverlayText", CBaseEntity_GetOverlayText},
   /* HL2SB: GMod's Entity:SetEyeTarget( pos ), accepted but inert - see the long note
   ** above CBaseEntity_SetEyeTarget().  It used to live in CBaseEntity_funcs (i.e. it was
   ** published as a GLOBAL, which is not what GMod has), so the method every GMod script

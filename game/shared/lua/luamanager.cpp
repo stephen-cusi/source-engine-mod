@@ -887,6 +887,8 @@ void luasrc_init_gameui (void) {
   luasrc_register_metatable_globals( LGameUI );
   if ( luasrc_dofile( LGameUI, LUA_ROOT "/includes/util.lua" ) != 0 )
     luasrc_LuaWarnMsgF( "HL2SB: menu type helpers failed to load\n" );
+  if ( luasrc_dofile( LGameUI, LUA_PATH_MODULES "/utf8.lua" ) != 0 )
+    luasrc_LuaWarnMsgF( "HL2SB: menu UTF-8 module failed to load\n" );
 
   lua_getglobal( LGameUI, "util" );
   if ( !lua_istable( LGameUI, -1 ) )
@@ -909,6 +911,7 @@ void luasrc_init_gameui (void) {
 
   static const char *const menuFiles[] = {
     LUA_PATH_EXTENSIONS "/table.lua",     // table.merge, used by vgui.register
+    LUA_PATH_EXTENSIONS "/string.lua",
     LUA_PATH_EXTENSIONS "/vgui.lua",      // vgui.register
     // HL2SB: the panel extension defines the GMod global ToPanel, which
     // lua/gameui/basepanel.lua calls (basepanel.lua:29) and the derma controls
@@ -2643,7 +2646,7 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 	// other dofolder call site.
 	//-----------------------------------------------------------------------------
 	static const char *s_pHL2SBFirst[] = {
-		"baseclass.lua", "hook.lua", "net.lua", "timer.lua", "concommand.lua",
+		"utf8.lua", "baseclass.lua", "hook.lua", "net.lua", "timer.lua", "concommand.lua",
 		"player_manager.lua", "player.lua", "entity_iter.lua",
 		"saverestore.lua", "scripted_ents.lua", "weapons.lua",
 		"duplicator.lua", "numpad.lua", "construct.lua", "constraint.lua",
@@ -4367,6 +4370,101 @@ static ConCommand lua_reloadents_cmd( "lua_reloadents", HL2SB_LuaReloadCmd,
 static ConCommand hl2sb_lua_reload_cmd( "hl2sb_lua_reload", HL2SB_LuaReloadCmd,
 	"Reload all scripted entities (and weapons/effects) on the live state." );
 
+// ---------------------------------------------------------------------------
+// HL2SB: GMod's gamemode_reload / gamemode_reload_cl.
+//
+// Reference semantics: re-run the gamemode files on the live state.  This is
+// exactly the boot sequence (gameinterface.cpp / cdll_client_int.cpp walk
+// base first, then the active gamemode, then re-publish GAMEMODE), so the
+// reload re-walks it on the calling realm's state.  Scripts that re-register
+// on reload (net receivers, concommands, hooks) are handled by the same
+// re-entry guards the reference relies on (hook.lua / module loaders keep a
+// loaded-table sentinel).
+static void HL2SB_GamemodeReloadCmd( const CCommand &args )
+{
+	const char *pszCurrent = gamemode.GetString();
+	if ( !pszCurrent || pszCurrent[ 0 ] == '\0' )
+	{
+		Warning( "gamemode_reload: no active gamemode\n" );
+		return;
+	}
+
+	luasrc_LuaInfoMsgF( "[HL2SB] gamemode_reload: reloading '%s'\n", pszCurrent );
+	luasrc_LoadGamemode( LUA_BASE_GAMEMODE );
+	luasrc_LoadGamemode( pszCurrent );
+	luasrc_SetGamemode( pszCurrent );
+	luasrc_LuaInfoMsgF( "[HL2SB] gamemode_reload: '%s' reloaded\n", pszCurrent );
+}
+
+// Both names exist in both realms of the reference build; each registration
+// lands in its own realm DLL and acts on that realm's state.
+static ConCommand gamemode_reload_cmd( "gamemode_reload", HL2SB_GamemodeReloadCmd,
+	"Reload the current gamemode (re-runs base and the active gamemode files)." );
+static ConCommand gamemode_reload_cl_cmd( "gamemode_reload_cl", HL2SB_GamemodeReloadCmd,
+	"Reload the current gamemode (re-runs base and the active gamemode files)." );
+
+#ifndef CLIENT_DLL
+// ---------------------------------------------------------------------------
+// HL2SB: GMod's lua_filestats (server realm).  Prints per-bucket counts of
+// the Lua files visible to the loader under the game root, mirroring the
+// reference command's purpose (statistics about the Lua file tree).
+static int HL2SB_FileStatsWalk( const char *pszDir, const char *pszBucket,
+                                CUtlDict<int, int> &buckets, int &total )
+{
+	char szWild[MAX_PATH];
+	Q_snprintf( szWild, sizeof( szWild ), "%s/*", pszDir );
+	FileFindHandle_t fh;
+	const char *fn = g_pFullFileSystem->FindFirstEx( szWild, "MOD", &fh );
+	int count = 0;
+	while ( fn )
+	{
+		if ( fn[0] != '.' )
+		{
+			char szPath[MAX_PATH];
+			Q_snprintf( szPath, sizeof( szPath ), "%s/%s", pszDir, fn );
+			if ( g_pFullFileSystem->FindIsDirectory( fh ) )
+			{
+				count += HL2SB_FileStatsWalk( szPath, pszBucket, buckets, total );
+			}
+			else if ( Q_stristr( fn, ".lua" ) != NULL )
+			{
+				int idx = buckets.Find( pszBucket );
+				if ( idx == buckets.InvalidIndex() )
+					idx = buckets.Insert( pszBucket, 0 );
+				buckets[idx]++;
+				count++;
+				total++;
+			}
+		}
+		fn = g_pFullFileSystem->FindNext( fh );
+	}
+	g_pFullFileSystem->FindClose( fh );
+	return count;
+}
+
+static void HL2SB_LuaFileStatsCmd( const CCommand &args )
+{
+	static const char *const kRoots[] = {
+		"lua/gameui", "lua/includes", "lua/game", "lua/gamemodes",
+		"lua/entities", "lua/weapons", "lua/effects", "lua/postprocess",
+		"lua/matproxy", "lua/autorun", "lua/vgui", "lua/derma",
+		"lua/skins", "lua/menu", "lua/drive", "lua/hl2sb",
+	};
+	CUtlDict<int, int> buckets;
+	int total = 0;
+	for ( int i = 0; i < ( int )NELEMS( kRoots ); i++ )
+		HL2SB_FileStatsWalk( kRoots[i], kRoots[i] + 4 /* skip "lua/" */, buckets, total );
+
+	Msg( "Lua file stats (MOD):\n" );
+	for ( int i = buckets.First(); i != buckets.InvalidIndex(); i = buckets.Next(i) )
+		Msg( "  %-14s %d\n", buckets.GetElementName(i), buckets[i] );
+	Msg( "  %-14s %d\n", "total", total );
+}
+
+static ConCommand lua_filestats_cmd( "lua_filestats", HL2SB_LuaFileStatsCmd,
+	"Print statistics about the Lua files under the game root." );
+#endif
+
 static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLETION_MAXITEMS ][ COMMAND_COMPLETION_ITEM_LENGTH ] )
 {
 	int current = 0;
@@ -5043,7 +5141,8 @@ void luasrc_ApplyAmmoTypes (CAmmoDef *pAmmoDef)
   // weapon logs "using undefined primary ammo type (rb655_nyan)" every load.
   // Same field names as the ammo module (name / dmgtype / tracer / ...).
   //--------------------------------------------------------------------------
-  if (lua_getglobal(L, "game") != LUA_TTABLE)
+  lua_getglobal(L, "game");
+  if (!lua_istable(L, -1))
   {
     lua_pop(L, 1);
     return;

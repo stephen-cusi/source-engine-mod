@@ -1926,6 +1926,7 @@ static int LuaGetTableKey (lua_State *L) {  /* [t][k] -> [t[k]] */
 
 static void LuaPushScriptedEntityField ( lua_State *L, const char *pszClassname, const char *pszKey )
 {
+  const int top = lua_gettop( L );
   if ( pszClassname == NULL || pszClassname[0] == '\0' || pszKey == NULL )
   {
     lua_pushnil( L );
@@ -1939,19 +1940,17 @@ static void LuaPushScriptedEntityField ( lua_State *L, const char *pszClassname,
   if ( !lua_isfunction( L, -1 ) ) { lua_pop( L, 2 ); lua_pushnil( L ); return; }
 
   lua_pushstring( L, pszClassname );
-  if ( luasrc_pcall( L, 1, 1, 0 ) != 0 || !lua_istable( L, -1 ) ) { lua_pop( L, 3 ); lua_pushnil( L ); return; }
+  if ( luasrc_pcall( L, 1, 1, 0 ) != 0 || !lua_istable( L, -1 ) ) { lua_settop( L, top ); lua_pushnil( L ); return; }
 
   lua_getfield( L, -1, "t" );                       // stored.t
-  if ( !lua_istable( L, -1 ) ) { lua_pop( L, 4 ); lua_pushnil( L ); return; }
+  if ( !lua_istable( L, -1 ) ) { lua_settop( L, top ); lua_pushnil( L ); return; }
   lua_remove( L, -2 );                              // stored
-  lua_remove( L, -2 );                              // GetStored
   lua_remove( L, -2 );                              // scripted_ents   -> [t]
 
   lua_pushcfunction( L, LuaGetTableKey );
   lua_pushvalue( L, -2 );                           // t
   lua_pushstring( L, pszKey );
-  if ( luasrc_pcall( L, 2, 1, 0 ) != 0 )
-    lua_pushnil( L );
+  luasrc_pcall( L, 2, 1, 0 );
   lua_remove( L, -2 );                              // leave only the value
 }
 

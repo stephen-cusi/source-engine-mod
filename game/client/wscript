@@ -48,7 +48,7 @@ def build(bld):
 		'../../vgui2/include',
 		'../../vgui2/controls',
 		'../shared',
-		'../../lua/src',
+		'../../lua/luajit/src',
 		'../../lua/etc',
 		'../shared/lua'
 	]

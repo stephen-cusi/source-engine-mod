@@ -39,7 +39,6 @@
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
 #include "lauxlib.h"
-#include "lobject.h"
 #include "luamanager.h"
 #include "mathlib/lvector.h"
 #include "mathlib/vmatrix.h"

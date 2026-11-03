@@ -4450,11 +4450,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   **                         client download; this engine has no download list, so
   **                         it records nothing and returns the path like GMod.
   **   IncludeCS( path )     the client-side twin of the above; same reasoning.
-  **   jit                   lua/includes/extensions/util.lua:397 indexes
-  **                         jit.version.  Our Lua is 5.4, not LuaJIT, so there is
-  **                         no jit table at all and the whole GMod util extension
-  **                         failed to load.  The stub carries a version string so
-  **                         the feature check runs instead of throwing.
+  **   jit                   LuaJIT provides this table through its own library;
+  **                         the older Lua 5.4 build needs a version fallback.
   **   LoadPresets()         lua/includes/modules/presets.lua:6 calls it at load.
   **   SENSORBONE            lua/includes/modules/motionsensor.lua:16 indexes it.
   */
@@ -4607,8 +4604,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   if ( luaL_loadstring( L,
     "AddCSLuaFile = AddCSLuaFile or function( path ) return path end\n"
     "IncludeCS = IncludeCS or function( path ) return path end\n"
-    // HL2SB (sbrust): arch field (GMod jit.arch values: x86/x64/arm/arm64) --
-    // util.IsBinaryModuleInstalled derives the suffix from it; 32/64-bit no longer share one slot.
+#if LUA_VERSION_NUM >= 502
 #if defined( __aarch64__ ) || defined( _M_ARM64 ) || defined( _M_ARM64EC )
     "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'arm64' }\n"
 #elif defined( _WIN64 ) || defined( __x86_64__ )
@@ -4617,6 +4613,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'arm' }\n"
 #else
     "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'x86' }\n"
+#endif
 #endif
     //---------------------------------------------------------------------
     // NPC_STATE_*: GMod exposes Source's own NPC_STATE enum as globals
@@ -4686,7 +4683,8 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   //
   // `or {}` style: if a game library ever appears, its table wins.
   //-----------------------------------------------------------------------------
-  if ( lua_getglobal( L, "game" ) == LUA_TNIL )
+  lua_getglobal( L, "game" );
+  if ( lua_isnil( L, -1 ) )
   {
     lua_pop( L, 1 );
     lua_newtable( L );

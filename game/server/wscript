@@ -55,7 +55,7 @@ def build(bld):
 		'../../public/lua',
 		'../../public/mathlib',
 		'../../public/vphysics',
-		'../../lua/src',
+		'../../lua/luajit/src',
 		'../../lua/etc',
 		'../shared/lua',
 	]

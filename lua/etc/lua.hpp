@@ -43,6 +43,7 @@ extern "C" {
  * exactly like 5.1 did.  luaL_checkinteger() itself is left strict for the
  * bindings that genuinely want an integer.
  */
+#if LUA_VERSION_NUM >= 502
 #define luaL_checkint(L, n) ((int)luaL_checknumber(L, (n)))
 #define luaL_optint(L, n, d) ((int)luaL_optnumber(L, (n), (d)))
 #define luaL_checklong(L, n) ((long)luaL_checknumber(L, (n)))
@@ -51,7 +52,23 @@ extern "C" {
 /* HL2SB: Lua 5.1 spelling of lua_rawlen (removed in 5.2). */
 #define lua_objlen(L,i) lua_rawlen(L,(i))
 #define lua_strlen(L,i) ((int)lua_rawlen(L,(i)))
+#else
+#define LUA_LOADED_TABLE "_LOADED"
+#define LUA_OPEQ 0
+#undef luaL_getmetatable
+#define luaL_getmetatable(L,n) (lua_getfield(L, LUA_REGISTRYINDEX, (n)), lua_type(L, -1))
+#define lua_rawlen(L,i) lua_objlen(L,(i))
+#define lua_pushglobaltable(L) lua_pushvalue(L,LUA_GLOBALSINDEX)
+int lua_absindex(lua_State *L, int idx);
+int lua_geti(lua_State *L, int idx, lua_Integer n);
+int lua_compare(lua_State *L, int a, int b, int op);
+int lua_isinteger(lua_State *L, int idx);
+int luaL_getsubtable(lua_State *L, int idx, const char *name);
+lua_Integer luaL_len(lua_State *L, int idx);
+const char *luaL_tolstring(lua_State *L, int idx, size_t *len);
+#endif
 
+#if LUA_VERSION_NUM >= 502
 lua_State *lua_open();
 
 void luaL_register( lua_State *L, const char *libname, const luaL_Reg *l );
@@ -61,6 +78,7 @@ int luaL_typerror(lua_State *L, int narg, const char *tname);
 void *luaL_checkudata(lua_State *L, int ud, const char *tname);
 
 const char *luaL_optlstring(lua_State *L, int numArg, const char *def, size_t *l);
+#endif
 
 void lua_getref(lua_State *L, int ref);
 
