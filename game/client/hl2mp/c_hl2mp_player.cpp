@@ -154,14 +154,17 @@ static ConVar cl_defaultweapon( "cl_defaultweapon", "weapon_physgun", FCVAR_USER
 ** FCVAR_USERINFO is what makes engine->GetClientConVarValue() (server,
 ** game/server/hl2sb_player_model_manager.cpp) able to read them.
 **
-** Defaults: "1 1 1" is no tint at all (see HL2SB_ApplyClientAppearance), so a player who
-** never opens the editor looks exactly like before, and an empty bodygroup string means
-** "leave the bodygroups alone" instead of resetting them to 0.
+** Defaults: the reference values (player_sandbox.lua's CreateConVar lines) --
+** "0.24 0.34 0.41" for the body tint and "0.30 1.80 2.10" for the weapon,
+** the latter deliberately above 1 because the PlayerWeaponColor proxy pulses
+** it up to double.  FCVAR_DONTRECORD matches the reference too: the colours
+** are editor state, not config state, and an unstyled player must wear the
+** reference defaults on a fresh install.
 */
 static ConVar cl_playerbodygroups( "cl_playerbodygroups", "", FCVAR_USERINFO | FCVAR_ARCHIVE, "Player model bodygroups (space separated)" );
 static ConVar cl_playerskin( "cl_playerskin", "0", FCVAR_USERINFO | FCVAR_ARCHIVE, "Player model skin" );
-static ConVar cl_playercolor( "cl_playercolor", "1 1 1", FCVAR_USERINFO | FCVAR_ARCHIVE, "Player model color (r g b, 0-1)" );
-static ConVar cl_weaponcolor( "cl_weaponcolor", "1 1 1", FCVAR_USERINFO | FCVAR_ARCHIVE, "Weapon color (r g b, 0-1)" );
+static ConVar cl_playercolor( "cl_playercolor", "0.24 0.34 0.41", FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_DONTRECORD, "Player model color (r g b, 0-1)" );
+static ConVar cl_weaponcolor( "cl_weaponcolor", "0.30 1.80 2.10", FCVAR_USERINFO | FCVAR_ARCHIVE | FCVAR_DONTRECORD, "Weapon color (r g b, may exceed 1 - the weapon proxy pulses it)" );
 
 void SpawnBlood (Vector vecSpot, const Vector &vecDir, int bloodColor, float flDamage);
 

@@ -1934,26 +1934,31 @@ static int CBasePlayer___tostring (lua_State *L) {
 
 //-----------------------------------------------------------------------------
 // Per-player sleeve colour - GMod player:GetPlayerColor / player:SetPlayerColor.
-// The c_arms "PlayerColor" material proxy (client) reads the LOCAL player's
-// colour via HL2SB_GetPlayerColor and tints the sleeves. Kept keyed by userid in
-// a map so we don't add a member to the shared networked player class.
+// Reference behavior for Player:SetPlayerColor:
+// the Vector argument is written straight into the player's networked colour
+// member with NO clamping, and the Lua-side only ever fills it from
+// player_sandbox.lua's PLAYER:Spawn (GetInfo of the userinfo convars).  The
+// map therefore stores the raw normalized Vector, HDR components (>1) included
+// -- GMod's default cl_weaponcolor "0.30 1.80 2.10" is above 1 by design.  The
+// c_arms "PlayerColor" material proxy (client) reads it; keyed by userid so we
+// don't add a member to the shared networked player class.
 //-----------------------------------------------------------------------------
-static CUtlMap<int, Color> s_PlayerColor;
+static CUtlMap<int, Vector> s_PlayerColor;
 static bool s_PlayerColorInit = false;
 
-Color HL2SB_GetPlayerColor( int iUserID )
+Vector HL2SB_GetPlayerColor( int iUserID )
 {
 	if ( !s_PlayerColorInit ) { s_PlayerColor.SetLessFunc( DefLessFunc( int ) ); s_PlayerColorInit = true; }
 	int idx = s_PlayerColor.Find( iUserID );
 	if ( idx == s_PlayerColor.InvalidIndex() )
-		return Color( 62, 88, 106, 255 );	// GMod teal fallback
+		return Vector( 62.0f / 255.0f, 88.0f / 255.0f, 106.0f / 255.0f );	// GMod teal fallback (matproxy player_color.lua)
 	return s_PlayerColor[ idx ];
 }
 
-void HL2SB_SetPlayerColor( int iUserID, const Color &clr )
+void HL2SB_SetPlayerColor( int iUserID, const Vector &v )
 {
 	if ( !s_PlayerColorInit ) { s_PlayerColor.SetLessFunc( DefLessFunc( int ) ); s_PlayerColorInit = true; }
-	s_PlayerColor.InsertOrReplace( iUserID, clr );
+	s_PlayerColor.InsertOrReplace( iUserID, v );
 }
 
 // GMod's weapon colour, the other half of the pair (Player:SetWeaponColor /
@@ -1961,57 +1966,29 @@ void HL2SB_SetPlayerColor( int iUserID, const Color &clr )
 // "PlayerWeaponColor" material proxy reads it; HL2SB's arms already follow the client's
 // cl_weaponcolor directly (c_viewmodel_attachment.cpp), so this is storage + API
 // compatibility - but GMod's player class calls it on every spawn, so it has to exist.
-static CUtlMap<int, Color> s_WeaponColor;
+static CUtlMap<int, Vector> s_WeaponColor;
 static bool s_WeaponColorInit = false;
 
-Color HL2SB_GetWeaponColor( int iUserID )
+Vector HL2SB_GetWeaponColor( int iUserID )
 {
 	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
-
-#ifdef CLIENT_DLL
-	// 2026-09-26: the LOCAL player's colour is the live cl_weaponcolor convar
-	// -- the map below only fills when Lua calls SetWeaponColor (at spawn), so
-	// a weapon colour picked in the menu mid-session left every map reader on
-	// the OLD colour while the convar readers showed the new one (the "beam
-	// colour never changes" report).  The convar IS the source of truth for
-	// the local player; the map keeps serving remote players.
-	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-	if ( pLocal != NULL && pLocal->GetUserID() == iUserID )
-	{
-		static ConVarRef s_cl_weaponcolor_live( "cl_weaponcolor" );
-		if ( s_cl_weaponcolor_live.IsValid() )
-		{
-			float r = 0.0f, g = 0.0f, b = 0.0f;
-			if ( sscanf( s_cl_weaponcolor_live.GetString(), "%f %f %f", &r, &g, &b ) == 3 )
-			{
-				return Color(
-					clamp( (int)( r * 255.0f ), 0, 255 ),
-					clamp( (int)( g * 255.0f ), 0, 255 ),
-					clamp( (int)( b * 255.0f ), 0, 255 ), 255 );
-			}
-		}
-	}
-#endif
 
 	int idx = s_WeaponColor.Find( iUserID );
 	if ( idx != s_WeaponColor.InvalidIndex() )
 		return s_WeaponColor[ idx ];
 
-	// 2026-09-24: this used to fall back to the cl_weaponcolor CONVAR for any
-	// unknown userid.  The convar is the LOCAL player's value, so on the client
-	// every remote player whose entry had not arrived yet was tinted with the
-	// local player's colour (cross-player colour bleed on beams, claw sprites
-	// and muzzle glows).  The server now broadcasts the whole colour table
-	// (hl2sb_setplayercolor) and replays it on ClientActive, so a miss here
-	// only happens before that snapshot lands.  GMod's cl_weaponcolor default
-	// "0.30 1.80 2.10" clamped.
-	return Color( 76, 255, 255, 255 );
+	// Reference behavior: the colour lives in the player's networked member and
+	// player_sandbox.lua's PLAYER:Spawn fills it from the userinfo convar on
+	// every spawn, so GMod's default ("0.30 1.80 2.10", deliberately above 1)
+	// is what an unstyled player wears.  A miss here only happens before the
+	// snapshot lands (ClientActive replays the table).
+	return Vector( 0.30f, 1.80f, 2.10f );
 }
 
-void HL2SB_SetWeaponColor( int iUserID, const Color &clr )
+void HL2SB_SetWeaponColor( int iUserID, const Vector &v )
 {
 	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
-	s_WeaponColor.InsertOrReplace( iUserID, clr );
+	s_WeaponColor.InsertOrReplace( iUserID, v );
 }
 
 #ifndef CLIENT_DLL
@@ -2034,35 +2011,35 @@ void HL2SB_SendPlayerColors( CBasePlayer *pOnlyTo )
 
 		for ( int idx = s_PlayerColor.FirstInorder(); idx != s_PlayerColor.InvalidIndex(); idx = s_PlayerColor.NextInorder( idx ) )
 		{
-			const Color &c = s_PlayerColor[ idx ];
-			char szCmd[ 64 ];
-			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 0 %d %d %d %d\n",
-				s_PlayerColor.Key( idx ), c.r(), c.g(), c.b(), c.a() );
+			const Vector &v = s_PlayerColor[ idx ];
+			char szCmd[ 96 ];
+			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 0 %.4f %.4f %.4f\n",
+				s_PlayerColor.Key( idx ), v.x, v.y, v.z );
 			engine->ClientCommand( pPlayer->edict(), szCmd );
 		}
 
 		for ( int idx = s_WeaponColor.FirstInorder(); idx != s_WeaponColor.InvalidIndex(); idx = s_WeaponColor.NextInorder( idx ) )
 		{
-			const Color &c = s_WeaponColor[ idx ];
-			char szCmd[ 64 ];
-			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 1 %d %d %d %d\n",
-				s_WeaponColor.Key( idx ), c.r(), c.g(), c.b(), c.a() );
+			const Vector &v = s_WeaponColor[ idx ];
+			char szCmd[ 96 ];
+			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 1 %.4f %.4f %.4f\n",
+				s_WeaponColor.Key( idx ), v.x, v.y, v.z );
 			engine->ClientCommand( pPlayer->edict(), szCmd );
 		}
 	}
 }
 #endif
 
-// GMod's Player:SetPlayerColor / SetWeaponColor take a NORMALIZED Vector:
+// GMod's Player:SetPlayerColor / SetWeaponColor take a NORMALIZED Vector and
+// store it in the networked member with NO clamping:
 //   sandbox/gamemode/player_class/player_sandbox.lua:108-115
 //       self.Player:SetPlayerColor( Vector( plyclr ) )      -- plyclr = cl_playercolor
 //   terrortown/gamemode/player.lua:270
 //       ply:SetPlayerColor( Vector( clr.r/255.0, clr.g/255.0, clr.b/255.0 ) )
-// while this fork's original binding took a 0-255 Color table.  Both are accepted now
-// (the "r g b" 0-1 string the convars carry works too), so GMod gamemode/addon code
-// that passes a Vector works unchanged.  Values are clamped: GMod's default
-// cl_weaponcolor is "0.30 1.80 2.10", i.e. deliberately above 1.
-static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
+// This fork's binding additionally accepts the "r g b" convar string and a
+// 0-255 Color table (converted /255) so older fork code keeps working; the
+// Vector path passes through untouched, HDR components included.
+static bool HL2SB_LuaColorVector( lua_State *L, int narg, Vector &out )
 {
   switch ( lua_type( L, narg ) )
   {
@@ -2072,9 +2049,7 @@ static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
       if ( sscanf( lua_tostring( L, narg ), "%f %f %f", &r, &g, &b ) < 3 )
         return false;
 
-      out = Color( (int)clamp( r * 255.0f, 0.0f, 255.0f ),
-                   (int)clamp( g * 255.0f, 0.0f, 255.0f ),
-                   (int)clamp( b * 255.0f, 0.0f, 255.0f ), 255 );
+      out = Vector( r, g, b );
       return true;
     }
 
@@ -2083,17 +2058,14 @@ static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
       if ( !lua_iscolor( L, narg ) )
         return false;
 
-      out = luaL_checkcolor( L, narg );
+      Color c = luaL_checkcolor( L, narg );
+      out = Vector( c.r() / 255.0f, c.g() / 255.0f, c.b() / 255.0f );
       return true;
     }
 
     case LUA_TUSERDATA:
     {
-      Vector v = luaL_checkvector( L, narg );
-
-      out = Color( (int)clamp( v.x * 255.0f, 0.0f, 255.0f ),
-                   (int)clamp( v.y * 255.0f, 0.0f, 255.0f ),
-                   (int)clamp( v.z * 255.0f, 0.0f, 255.0f ), 255 );
+      out = luaL_checkvector( L, narg );
       return true;
     }
 
@@ -2104,23 +2076,23 @@ static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
 
 static int CBasePlayer_GetPlayerColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr = HL2SB_GetPlayerColor( pPlayer->GetUserID() );
+  Vector v = HL2SB_GetPlayerColor( pPlayer->GetUserID() );
 
   // GMod answers a NORMALIZED Vector, not a Color: lua/matproxy/player_color.lua only
   // accepts a vector ("if ( isvector( col ) ) then mat:SetVector(...)"), and the sandbox
   // / TTT player classes feed the result straight back into SetPlayerColor.
-  lua_pushvector(L, Vector( clr.r() / 255.0f, clr.g() / 255.0f, clr.b() / 255.0f ));
+  lua_pushvector(L, v);
   return 1;
 }
 
 static int CBasePlayer_SetPlayerColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr;
+  Vector v;
 
-  if ( !HL2SB_LuaColorArg( L, 2, clr ) )
+  if ( !HL2SB_LuaColorVector( L, 2, v ) )
     return 0;
 
-  HL2SB_SetPlayerColor( pPlayer->GetUserID(), clr );
+  HL2SB_SetPlayerColor( pPlayer->GetUserID(), v );
 #ifndef CLIENT_DLL
   // GMod networks the colour to everyone; push the updated table to all
   // clients (this player's own client included) so the PlayerColor proxy
@@ -2135,19 +2107,17 @@ static int CBasePlayer_SetPlayerColor (lua_State *L) {
 // as SetPlayerColor, and likewise answered as a normalized Vector.
 static int CBasePlayer_GetWeaponColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr = HL2SB_GetWeaponColor( pPlayer->GetUserID() );
-
-  lua_pushvector(L, Vector( clr.r() / 255.0f, clr.g() / 255.0f, clr.b() / 255.0f ));
+  lua_pushvector(L, HL2SB_GetWeaponColor( pPlayer->GetUserID() ));
   return 1;
 }
 
 static int CBasePlayer_SetWeaponColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr;
+  Vector v;
 
-  if ( HL2SB_LuaColorArg( L, 2, clr ) )
+  if ( HL2SB_LuaColorVector( L, 2, v ) )
   {
-    HL2SB_SetWeaponColor( pPlayer->GetUserID(), clr );
+    HL2SB_SetWeaponColor( pPlayer->GetUserID(), v );
 #ifndef CLIENT_DLL
     // Broadcast like SetPlayerColor - GMod networks m_WeaponColor to everyone.
     HL2SB_SendPlayerColors( NULL );

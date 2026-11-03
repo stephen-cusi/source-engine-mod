@@ -65,7 +65,7 @@
 // HL2SB GMod compat (2026-09-24): local prototype -- the definition lives in
 // lbaseplayer_shared.cpp; cl_weaponcolor drives the physgun beam/sprites,
 // exactly like GMod13.
-Color HL2SB_GetWeaponColor( int iUserID );
+Vector HL2SB_GetWeaponColor( int iUserID );
 #else
 #include "physics_prop_ragdoll.h"
 #include "props.h"
@@ -1867,9 +1867,13 @@ void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 	if ( bSuppressed )
 		return;
 
-	// Every sprite and the ribbon carry the HOLDER's weapon colour.
-	Color clrW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
-	byte r = clrW.r(), g = clrW.g(), b = clrW.b();
+	// Every sprite and the ribbon carry the HOLDER's weapon colour.  The sprite
+	// path is a byte pipeline (as the reference engine's sprites are), so HDR
+	// components above 1 clamp here - only the material proxies keep the float.
+	Vector vW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
+	byte r = (byte)clamp( vW.x * 255.0f, 0.0f, 255.0f );
+	byte g = (byte)clamp( vW.y * 255.0f, 0.0f, 255.0f );
+	byte b = (byte)clamp( vW.z * 255.0f, 0.0f, 255.0f );
 
 	IMaterial *pGlowClaw = materials->FindMaterial( "sprites/physg_glow2", TEXTURE_GROUP_CLIENT_EFFECTS );
 	IMaterial *pGlowEnd = materials->FindMaterial( "sprites/physg_glow1", TEXTURE_GROUP_CLIENT_EFFECTS );

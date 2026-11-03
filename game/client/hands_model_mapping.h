@@ -15,9 +15,13 @@
 #endif
 
 #include "Color.h"
+#include "vector.h"
 
 // Per-player sleeve/weapon colour (GMod player:GetPlayerColor/SetPlayerColor).
-Color HL2SB_GetPlayerColor( int iUserID );
-void HL2SB_SetPlayerColor( int iUserID, const Color &clr );
+// Stored as the reference does: a normalized Vector, no clamping, HDR allowed.
+Vector HL2SB_GetPlayerColor( int iUserID );
+void HL2SB_SetPlayerColor( int iUserID, const Vector &v );
+Vector HL2SB_GetWeaponColor( int iUserID );
+void HL2SB_SetWeaponColor( int iUserID, const Vector &v );
 
 #endif // HANDS_MODEL_MAPPING_H

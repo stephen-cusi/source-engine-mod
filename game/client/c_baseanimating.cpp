@@ -3182,7 +3182,7 @@ IMaterial *HL2SB_PhysgunGlowMaterial( void );
 // master-off switch.
 extern ConVar physgun_halo_shell;
 extern bool HL2SB_PhysgunIsHolding( void );
-Color HL2SB_GetWeaponColor( int iUserID );
+Vector HL2SB_GetWeaponColor( int iUserID );
 
 int C_BaseAnimating::DrawModel( int flags )
 {
@@ -3317,8 +3317,8 @@ int C_BaseAnimating::DrawModel( int flags )
 			if ( pColorVar != NULL )
 			{
 				C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-				Color clrW = pLocal ? HL2SB_GetWeaponColor( pLocal->GetUserID() )
-									: Color( 255, 255, 255, 255 );
+				Vector vW = pLocal ? HL2SB_GetWeaponColor( pLocal->GetUserID() )
+								   : Vector( 1.0f, 1.0f, 1.0f );
 
 				float flGlow;
 				if ( HL2SB_PhysgunIsHolding() )
@@ -3327,9 +3327,9 @@ int C_BaseAnimating::DrawModel( int flags )
 					flGlow = 0.30f;
 
 				pColorVar->SetVecValue(
-					clrW.r() / 255.0f * flGlow,
-					clrW.g() / 255.0f * flGlow,
-					clrW.b() / 255.0f * flGlow );
+					vW.x * flGlow,
+					vW.y * flGlow,
+					vW.z * flGlow );
 
 				modelrender->ForcedMaterialOverride( pGlowMaterial );
 				InternalDrawModel( flags );
