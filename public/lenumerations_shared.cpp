@@ -29,9 +29,84 @@
 // HL2SB: IN_* for _E.INPUT.
 #include "in_buttons.h"
 
+void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
+{
+    static const struct { const char *name; int value; } globals[] = {
+        { "CHAN_VOICE", 2 }, { "HITGROUP_HEAD", 1 }, { "HITGROUP_CHEST", 2 },
+        { "HITGROUP_STOMACH", 3 }, { "HITGROUP_LEFTARM", 4 }, { "HITGROUP_RIGHTARM", 5 },
+        { "HITGROUP_LEFTLEG", 6 }, { "HITGROUP_RIGHTLEG", 7 }, { "HITGROUP_GEAR", 10 },
+        { "COLLISION_GROUP_IN_VEHICLE", 10 }, { "COLLISION_GROUP_DEBRIS", 1 },
+        { "COLLISION_GROUP_WEAPON", COLLISION_GROUP_WEAPON }, { "COLLISION_GROUP_WORLD", 20 },
+        { "PLAYER_IDLE", 0 }, { "PLAYER_WALK", 1 }, { "PLAYER_JUMP", 2 },
+        { "PLAYER_SUPERJUMP", 3 }, { "PLAYER_DIE", 4 }, { "PLAYER_ATTACK1", 5 },
+        { "PLAYER_IN_VEHICLE", 6 }, { "PLAYER_RELOAD", 7 },
+        { "PLAYER_START_AIMING", 8 }, { "PLAYER_LEAVE_AIMING", 9 },
+        { "CHAN_REPLACE", CHAN_REPLACE }, { "CHAN_AUTO", CHAN_AUTO },
+        { "CHAN_WEAPON", CHAN_WEAPON }, { "CHAN_ITEM", CHAN_ITEM },
+        { "CHAN_BODY", CHAN_BODY }, { "CHAN_STREAM", CHAN_STREAM },
+        { "CHAN_STATIC", CHAN_STATIC }, { "CHAN_VOICE2", CHAN_VOICE2 },
+        { "CHAN_VOICE_BASE", CHAN_VOICE_BASE }, { "CHAN_USER_BASE", CHAN_USER_BASE },
+        { "EFL_KILLME", EFL_KILLME },
+        { "EFL_DORMANT", EFL_DORMANT },
+        { "EFL_NOCLIP_ACTIVE", EFL_NOCLIP_ACTIVE },
+        { "EFL_SETTING_UP_BONES", EFL_SETTING_UP_BONES },
+        { "EFL_KEEP_ON_RECREATE_ENTITIES", EFL_KEEP_ON_RECREATE_ENTITIES },
+        { "EFL_DIRTY_SHADOWUPDATE", EFL_DIRTY_SHADOWUPDATE },
+        { "EFL_NOTIFY", EFL_NOTIFY },
+        { "EFL_FORCE_CHECK_TRANSMIT", EFL_FORCE_CHECK_TRANSMIT },
+        { "EFL_BOT_FROZEN", EFL_BOT_FROZEN },
+        { "EFL_SERVER_ONLY", EFL_SERVER_ONLY },
+        { "EFL_NO_AUTO_EDICT_ATTACH", EFL_NO_AUTO_EDICT_ATTACH },
+        { "EFL_DIRTY_ABSTRANSFORM", EFL_DIRTY_ABSTRANSFORM },
+        { "EFL_DIRTY_ABSVELOCITY", EFL_DIRTY_ABSVELOCITY },
+        { "EFL_DIRTY_ABSANGVELOCITY", EFL_DIRTY_ABSANGVELOCITY },
+        { "EFL_DIRTY_SURROUNDING_COLLISION_BOUNDS", EFL_DIRTY_SURROUNDING_COLLISION_BOUNDS },
+        { "EFL_DIRTY_SPATIAL_PARTITION", EFL_DIRTY_SPATIAL_PARTITION },
+        { "EFL_IN_SKYBOX", EFL_IN_SKYBOX },
+        { "EFL_USE_PARTITION_WHEN_NOT_SOLID", EFL_USE_PARTITION_WHEN_NOT_SOLID },
+        { "EFL_TOUCHING_FLUID", EFL_TOUCHING_FLUID },
+        { "EFL_IS_BEING_LIFTED_BY_BARNACLE", EFL_IS_BEING_LIFTED_BY_BARNACLE },
+    };
+    for ( unsigned int i = 0; i < sizeof( globals ) / sizeof( globals[0] ); ++i )
+    {
+        lua_pushinteger( L, globals[i].value );
+        lua_setglobal( L, globals[i].name );
+    }
+#ifndef CLIENT_DLL
+    static const struct { const char *name; int value; } dispositions[] = {
+        { "D_ER", 0 }, { "D_HT", 1 }, { "D_FR", 2 },
+        { "D_LI", 3 }, { "D_NU", 4 }
+    };
+    for ( unsigned int i = 0; i < sizeof( dispositions ) / sizeof( dispositions[0] ); ++i )
+    {
+        lua_pushinteger( L, dispositions[i].value );
+        lua_setglobal( L, dispositions[i].name );
+    }
+#endif
+}
+
 // Quick and easy place to register some enums
 LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
 {
+    HL2SB_RegisterLegacyGlobalEnums( L );
+    static const struct { const char *name; int value; } materialGlobals[] = {
+        { "MAT_ANTLION", 65 }, { "MAT_BLOODYFLESH", 66 },
+        { "MAT_CONCRETE", 67 }, { "MAT_DIRT", 68 },
+        { "MAT_EGGSHELL", 69 }, { "MAT_FLESH", 70 },
+        { "MAT_GRATE", 71 }, { "MAT_ALIENFLESH", 72 },
+        { "MAT_CLIP", 73 }, { "MAT_SNOW", 74 },
+        { "MAT_PLASTIC", 76 }, { "MAT_METAL", 77 }, { "MAT_SAND", 78 },
+        { "MAT_FOLIAGE", 79 }, { "MAT_COMPUTER", 80 }, { "MAT_SLOSH", 83 },
+        { "MAT_TILE", 84 }, { "MAT_GRASS", 85 }, { "MAT_VENT", 86 },
+        { "MAT_WOOD", 87 }, { "MAT_DEFAULT", 88 }, { "MAT_GLASS", 89 },
+        { "MAT_WARPSHIELD", 90 }
+    };
+    for ( unsigned int i = 0; i < sizeof( materialGlobals ) / sizeof( materialGlobals[0] ); ++i )
+    {
+        lua_pushinteger( L, materialGlobals[i].value );
+        lua_setglobal( L, materialGlobals[i].name );
+    }
+
     LUA_SET_ENUM_LIB_BEGIN( L, "SHAKE_COMMAND" );
     lua_pushenum( L, SHAKE_START, "START" );
     lua_pushenum( L, SHAKE_STOP, "STOP" );

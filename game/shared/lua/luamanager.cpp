@@ -742,6 +742,7 @@ void luasrc_setmodulepaths(lua_State *L) {
 // unprotected error in a GameUI script aborts the process the same way.
 static int HL2SB_LuaPanic( lua_State *pL );
 extern void HL2SB_RegisterConsoleGlobals( lua_State *state );
+extern void HL2SB_RegisterLegacyGlobalEnums( lua_State *state );
 
 static int HL2SB_GlobalSetClipboardText( lua_State *state )
 {
@@ -770,6 +771,7 @@ void luasrc_init_gameui (void) {
   luaL_openlibs(LGameUI);
   base_open(LGameUI);
   HL2SB_RegisterConsoleGlobals( LGameUI );
+  HL2SB_RegisterLegacyGlobalEnums( LGameUI );
   HL2SB_RegisterClipboardGlobal( LGameUI );
   lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "_GAMEUI");  /* set global _GAMEUI */
@@ -941,7 +943,6 @@ void luasrc_init_gameui (void) {
     // rely on.  Without it the Content dialog died on
     // "attempt to call a nil value (global 'ToPanel')".
     LUA_PATH_EXTENSIONS "/panel.lua",
-    LUA_PATH_EXTENSIONS "/gmod_globals.lua",  // CurTime, ScrW, ScrH, GetConVar, ...
     LUA_PATH_MODULES "/hook.lua",         // hook.add("LuaError", ...)
     LUA_PATH_MODULES "/concommand.lua",   // concommand.Create
     LUA_ROOT "/includes/util/sql.lua",
