@@ -901,6 +901,13 @@ static Vector HL2SB_PhysgunGateTarget( CBaseEntity *pObject, const Vector &vecDe
 	const Vector vecFrom = pObject->GetAbsOrigin();
 
 	trace_t tr;
+	UTIL_TraceEntity( pObject, vecFrom, vecFrom, uiGateMask, &tr );
+	if ( tr.fraction < 1.0f || tr.startsolid || tr.allsolid )
+	{
+		UTIL_TraceEntity( pObject, vecDest, vecDest, uiGateMask, &tr );
+		if ( tr.fraction >= 1.0f && !tr.startsolid && !tr.allsolid )
+			return vecDest;
+	}
 	UTIL_TraceEntity( pObject, vecFrom, vecDest, uiGateMask, &tr );
 	if ( tr.fraction >= 1.0f && !tr.startsolid && !tr.allsolid )
 		return vecDest;
