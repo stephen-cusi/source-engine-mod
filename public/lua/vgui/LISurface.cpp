@@ -142,6 +142,15 @@ static lua_HFont LuaFont_ResolveByNameInternal (lua_State *L, const char *szName
     return 0;
 
   hFont = pScheme->GetFont( szName, false );
+  if ( hFont == 0 && menu )
+  {
+    vgui::HScheme clientScheme = scheme()->GetScheme( "ClientScheme" );
+    if ( !clientScheme )
+      clientScheme = scheme()->LoadSchemeFromFile( "resource/ClientScheme.res", "ClientScheme" );
+    vgui::IScheme *pClientScheme = clientScheme ? scheme()->GetIScheme( clientScheme ) : NULL;
+    if ( pClientScheme )
+      hFont = pClientScheme->GetFont( szName, false );
+  }
   if ( hFont == 0 && fallback )
     hFont = pScheme->GetFont( "Default", false );
 

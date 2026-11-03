@@ -230,4 +230,52 @@ LUALIB_API int luaopen_gameui_menu (lua_State *L)
 	return 1;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: engine-console routing INTO the menu realm.
+//
+//   The GameUI options panel fires "crosshair_setup" as a plain engine console
+//   command (OptionsSubMultiplayer forwards it with ClientCmd_Unrestricted),
+//   which is exactly what the reference does.  The editor itself is a menu-realm
+//   Lua concommand (lua/menu/crosshair_setup.lua, loaded by luasrc_init_gameui)
+//   -- but the engine console only looks at native ConCommands, so all the
+//   forward ever produced was
+//       Unknown command "crosshair_setup"
+//   This static command receives that forward and hands it to the menu state's
+//   concommand.Run, the same dispatch the engine uses for unknown commands in
+//   the game realms.  Static registration means it exists as soon as the client
+//   dll is loaded, i.e. while the main menu is up.
+//-----------------------------------------------------------------------------
+static void HL2SB_MenuDispatchCommand( const char *pszCommand )
+{
+	if ( LGameUI == NULL )
+	{
+		Warning( "HL2SB: menu realm not started, cannot dispatch '%s'\n", pszCommand );
+		return;
+	}
+
+	const int iBase = lua_gettop( LGameUI );
+
+	lua_getglobal( LGameUI, "concommand" );
+	if ( lua_istable( LGameUI, -1 ) )
+	{
+		lua_getfield( LGameUI, -1, "Run" );
+		if ( lua_isfunction( LGameUI, -1 ) )
+		{
+			// concommand.Run( player, command, arguments, argumentsStr )
+			lua_pushnil( LGameUI );
+			lua_pushstring( LGameUI, pszCommand );
+			lua_newtable( LGameUI );
+			lua_pushstring( LGameUI, pszCommand );
+			luasrc_pcall( LGameUI, 4, 0, 0 );
+		}
+	}
+
+	lua_settop( LGameUI, iBase );
+}
+
+CON_COMMAND( crosshair_setup, "Open the crosshair editor (menu realm)" )
+{
+	HL2SB_MenuDispatchCommand( "crosshair_setup" );
+}
+
 #endif // LUA_SDK

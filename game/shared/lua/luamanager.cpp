@@ -76,6 +76,7 @@ static bool luasrc_PathInDisabledAddon (const char *fullpath);
 #include "licvar.h"
 #include "lgameevents.h"
 #include "activitylist.h"
+#include "lsql.h"
 // HL2SB: the scripted control factories (luaopen_vgui_Panel/Frame/Button) that
 // luasrc_init_gameui opens for the main menu state.
 #include "lua/vgui_controls/lControls.h"
@@ -98,6 +99,10 @@ static void HL2SB_DispatchLuaErrorHooks( lua_State *L, const char *pszError, con
 // so referencing it here is safe for the server twin too).
 #include <vgui_controls/Controls.h>
 #include <vgui/ISystem.h>
+#ifdef CLIENT_DLL
+#include <vgui_controls/Panel.h>
+#include "inputsystem/ButtonCode.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 ConVar hl2sb_dev_msgs( "hl2sb_dev_msgs", "0", FCVAR_ARCHIVE,
@@ -778,6 +783,23 @@ void luasrc_init_gameui (void) {
   lua_pushboolean(LGameUI, 0);
   lua_setglobal(LGameUI, "SERVER");
 
+  struct MenuEnumValue { const char *name; int value; };
+  static const MenuEnumValue menuEnums[] = {
+    { "NODOCK", vgui::Panel::DOCK_NONE },
+    { "FILL", vgui::Panel::DOCK_FILL },
+    { "LEFT", vgui::Panel::DOCK_LEFT },
+    { "RIGHT", vgui::Panel::DOCK_RIGHT },
+    { "TOP", vgui::Panel::DOCK_TOP },
+    { "BOTTOM", vgui::Panel::DOCK_BOTTOM },
+    { "MOUSE_LEFT", MOUSE_LEFT },
+    { "MOUSE_RIGHT", MOUSE_RIGHT },
+    { "MOUSE_MIDDLE", MOUSE_MIDDLE },
+  };
+  for ( unsigned int i = 0; i < sizeof(menuEnums) / sizeof(menuEnums[0]); ++i ) {
+    lua_pushinteger( LGameUI, menuEnums[i].value );
+    lua_setglobal( LGameUI, menuEnums[i].name );
+  }
+
   /* HL2SB: this function opens every library straight from its own C frame -
      no lua_CFunction LUA_MINSTACK guarantee backs it - and luaL_register
      leaves each library table sitting on the stack.  The base frame's
@@ -854,6 +876,7 @@ void luasrc_init_gameui (void) {
   // this one (path ID "BASE_PATH").  GMod opens file.* in its menu realm too;
   // that is what its "LuaMenu" path ID is for.
   luaopen_Files(LGameUI);
+  luaopen_Sql(LGameUI);
 
   // HL2SB: platform facts for the menu realm (system.IsAndroid() picks the
   // touch layout in the Addons dialog, the same switch the derma skin's
@@ -909,6 +932,8 @@ void luasrc_init_gameui (void) {
 
   static const char *const menuFiles[] = {
     LUA_PATH_EXTENSIONS "/table.lua",     // table.merge, used by vgui.register
+    LUA_PATH_EXTENSIONS "/string.lua",
+    LUA_PATH_EXTENSIONS "/math.lua",      // math.Round etc. -- the crosshair editor's preview draws with it
     LUA_PATH_EXTENSIONS "/vgui.lua",      // vgui.register
     // HL2SB: the panel extension defines the GMod global ToPanel, which
     // lua/gameui/basepanel.lua calls (basepanel.lua:29) and the derma controls
@@ -918,6 +943,11 @@ void luasrc_init_gameui (void) {
     LUA_PATH_EXTENSIONS "/gmod_globals.lua",  // CurTime, ScrW, ScrH, GetConVar, ...
     LUA_PATH_MODULES "/hook.lua",         // hook.add("LuaError", ...)
     LUA_PATH_MODULES "/concommand.lua",   // concommand.Create
+    LUA_ROOT "/includes/util/sql.lua",
+    LUA_PATH_MODULES "/language.lua",
+    // HL2SB: the reference menu init requires the draw module; DNumberScratch
+    // (inside every DNumSlider) paints itself with draw.RoundedBoxEx.
+    LUA_PATH_MODULES "/draw.lua",
     LUA_PATH_MODULES "/gmod_vgui.lua",    // vgui.Create / vgui.Register
     NULL
   };
@@ -928,6 +958,11 @@ void luasrc_init_gameui (void) {
     if (luasrc_dofile(LGameUI, menuFiles[i]) != 0)
       luasrc_LuaWarnMsgF("HL2SB: main menu module failed to load: %s\n", menuFiles[i]);
   }
+
+  if (luasrc_dofile(LGameUI, LUA_ROOT "/hl2sb/compat/menu_timer.lua") != 0)
+    luasrc_LuaWarnMsgF("HL2SB: menu timer initialization failed\n");
+  if (luasrc_dofile(LGameUI, LUA_PATH_MODULES "/cookie.lua") != 0)
+    luasrc_LuaWarnMsgF("HL2SB: menu cookie initialization failed\n");
 
   // Surface aliases such as SetDrawColor and DrawRect are shared by GMod's
   // menu Lua and client Lua. The menu realm has no CLIENT flag, so load the
@@ -970,28 +1005,30 @@ void luasrc_init_gameui (void) {
   if (luasrc_dofile(LGameUI, LUA_ROOT "/includes/modules/baseclass.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu realm: baseclass module failed to load\n");
 
-  // The GMod menu realm uses the same scripted panel registry as the client
-  // realm. Load it before Derma so menu-only controls such as DNumSlider and
-  // DColorMixer can inherit from the native Panel classes.
-  if (luasrc_dofile(LGameUI, LUA_PATH_EXTENSIONS "/client/panel/scriptedpanels.lua") != 0)
-    luasrc_LuaWarnMsgF("HL2SB: menu realm: scripted panel registry failed to load\n");
+  // The GMod menu realm pulls in the full panel extension, not just the
+  // scripted-panel registry: Panel:GetSkin lives in it (the crosshair editor
+  // died in DLabel's ApplySchemeSettings on the missing method), and it is the
+  // file that includes the registry itself.  Same order as the client realm's
+  // compat chain: panel extension, then Derma, then the default skin, then
+  // the control library.
+  if (luasrc_dofile(LGameUI, LUA_PATH_EXTENSIONS "/client/panel.lua") != 0)
+    luasrc_LuaWarnMsgF("HL2SB: menu realm: panel extension failed to load\n");
 
   if (luasrc_dofile(LGameUI, LUA_ROOT "/derma/init.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu realm: Derma initialization failed\n");
+  if (luasrc_dofile(LGameUI, LUA_ROOT "/skins/default.lua") != 0)
+    luasrc_LuaWarnMsgF("HL2SB: menu realm: default skin failed to load\n");
   if (luasrc_dofile(LGameUI, LUA_ROOT "/includes/vgui_base.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu realm: VGUI control library failed to load\n");
   if (luasrc_dofile(LGameUI, LUA_ROOT "/menu/crosshair_setup.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu realm: crosshair setup failed to load\n");
 
-  // NOTE: the full derma stack (lua/derma + lua/includes/vgui_base.lua) is NOT
-  // loaded here any more.  It registered nothing in this realm -- every control
-  // died in vgui.Register with
-  //     base class 'Panel' is not an engine class and not a registered control
-  // -- which produced a wall of load failures on every start, and the menu UI
-  // (the Addons dialog's default front end, the Content page) is built from the
-  // engine controls and never asks for a DFrame.  derma stays a client-realm
-  // feature; the addons dialog's derma front end is opt-in and simply falls
-  // back when the stack is absent.
+  // NOTE: the derma stack above is exactly the set the reference menu loader
+  // pulls (panel extension, derma core, default skin, control library).  An
+  // earlier attempt at loading MORE of lua/derma here registered nothing --
+  // every control died in vgui.Register with "base class 'Panel' is not an
+  // engine class and not a registered control" -- so the list stays at these
+  // four steps; anything beyond them still belongs to the client realm.
 
   // ---------------------------------------------------------------------------
   // HL2SB: menu-realm self check.  Every UI bug in this realm so far had the
@@ -1028,6 +1065,7 @@ void luasrc_init_gameui (void) {
 }
 
 void luasrc_shutdown_gameui (void) {
+  luasrc_dostring( LGameUI, "if hook and hook.Run then hook.Run('ShutDown') end" );
   ResetGameUIConCommandDatabase();
   extern void ResetGameUIConVarDatabase( void );
   ResetGameUIConVarDatabase();

@@ -8,6 +8,7 @@
 #define lpanel_cpp
 
 #include "cbase.h"
+#include "icvar.h"
 #include <vgui_controls/Panel.h>
 #include "c_vguiscreen.h"
 #include "iclientmode.h"
@@ -1397,6 +1398,55 @@ static int Panel_SetVisible (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB: GMod's Panel metatable carries SetConVar/ConVarChanged natively, and
+** menu dialogs reach them on panels that have no Lua-level override (the
+** crosshair editor's DComboBox path: SetConVar on the combo, ConVarChanged
+** from its OnSelect).  The name is stored on the panel's instance table under
+** the same field GMod's own Lua reads back (DCheckBoxLabel checks
+** pnl.Button.m_strConVar).  The new value is applied straight to the ConVar
+** object -- deliberately NOT through RunConsoleCommand, whose Lua binding
+** blocks exactly these names (GMod keeps them in its binding blocklist while
+** the native path keeps working).
+*/
+static int Panel_SetConVar (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  Panel_PushTable(L, pPanel);
+  if (lua_istable(L, -1)) {
+    lua_pushstring(L, pszName);
+    lua_setfield(L, -2, "m_strConVar");
+  }
+  lua_pop(L, 1);
+  return 0;
+}
+
+static int Panel_ConVarChanged (lua_State *L) {
+  if (!lua_isnoneornil(L, 2)) {
+    // Numbers convert in place; booleans become "1"/"0" like ConVar SetValue does.
+    if (lua_isboolean(L, 2)) {
+      lua_pushfstring(L, "%d", lua_toboolean(L, 2) != 0);
+      lua_replace(L, 2);
+    }
+    const char *pszValue = lua_tostring(L, 2);
+    if (pszValue != NULL && cvar != NULL) {
+      Panel *pPanel = luaL_checkpanel(L, 1);
+      Panel_PushTable(L, pPanel);
+      if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "m_strConVar");
+        const char *pszName = lua_tostring(L, -1);
+        if (pszName != NULL && pszName[0] != '\0') {
+          ConVar *pCVar = cvar->FindVar(pszName);
+          if (pCVar != NULL)
+            pCVar->SetValue(pszValue);
+        }
+      }
+    }
+  }
+  lua_settop(L, 0);
+  return 0;
+}
+
 static int Panel_SetWide (lua_State *L) {
   Panel *pPanel = luaL_checkpanel(L, 1);
   pPanel->SetWide(luaL_checkint(L, 2));
@@ -2776,6 +2826,9 @@ static const luaL_Reg Panelmeta[] = {
   {"SetTall", Panel_SetTall},
   {"SetTriplePressAllowed", Panel_SetTriplePressAllowed},
   {"SetVisible", Panel_SetVisible},
+  // HL2SB: GMod's Panel-level convar pair (see the comment at Panel_SetConVar).
+  {"SetConVar", Panel_SetConVar},
+  {"ConVarChanged", Panel_ConVarChanged},
   {"SetWide", Panel_SetWide},
   {"SetZPos", Panel_SetZPos},
   // HL2SB: GMod's names for the rest of what Derma controls call.

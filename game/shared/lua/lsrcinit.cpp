@@ -3292,13 +3292,23 @@ int lua_IsConCommandBlocked (lua_State *L) {
   buffer.AddText(pszText);
   buffer.BeginProcessingCommands(1);
   bool bBlocked = false;
+#ifdef CLIENT_DLL
+  const bool bMenuState = L == LGameUI;
+#else
+  const bool bMenuState = false;
+#endif
+  int firstBlocked = 0;
+  if ( bMenuState ) {
+    while ( firstBlocked < ARRAYSIZE(blocked) && Q_stricmp( blocked[firstBlocked], "exec" ) )
+      ++firstBlocked;
+  }
   while ( buffer.DequeueNextCommand() ) {
     const CCommand &args = buffer.GetCommand();
     if ( args.ArgC() == 0 )
       continue;
     if ( (!gpGlobals || gpGlobals->maxClients < 2) && !Q_stricmp(args[0], "retry") )
       bBlocked = true;
-    for ( int i = 0; i < ARRAYSIZE(blocked) && !bBlocked; ++i )
+    for ( int i = firstBlocked; i < ARRAYSIZE(blocked) && !bBlocked; ++i )
       if ( !Q_stricmp(args[0], blocked[i]) )
         bBlocked = true;
     for ( int i = 1; i < args.ArgC() && !bBlocked; ++i )
