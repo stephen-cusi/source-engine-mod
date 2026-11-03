@@ -961,6 +961,49 @@ bool CServerGameDLL::IsRestoring()
 	return g_InRestore;
 }
 
+#ifdef LUA_SDK
+static bool IsValidGamemodeSettingName( const char *name )
+{
+ if ( !name || Q_strlen( name ) < 2 ) return false;
+ for ( const unsigned char *p = reinterpret_cast<const unsigned char *>( name ); *p; ++p )
+ {
+  const unsigned char c = *p;
+  if ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
+       ( c >= '0' && c <= '9' ) || c == '!' || c == '+' || c == '-' ||
+       c == '.' || c == '^' || c == '_' || c == '~' ) continue;
+  return false;
+ }
+ return true;
+}
+
+static void RegisterGamemodeSettings()
+{
+ KeyValues *definition = new KeyValues( "Gamemode" );
+ char path[256];
+ Q_snprintf( path, sizeof( path ), "gamemodes/%s/%s.txt", gamemode.GetString(), gamemode.GetString() );
+ if ( definition->LoadFromFile( filesystem, path, "GAME" ) )
+ {
+  KeyValues *settings = definition->FindKey( "settings" );
+  if ( settings ) FOR_EACH_SUBKEY( settings, setting )
+  {
+   if ( setting->GetInt( "dontcreate", 0 ) ) continue;
+   const char *name = setting->GetString( "name", "" );
+   if ( !IsValidGamemodeSettingName( name ) )
+   {
+    Warning( "Invalid gamemode setting name: %s\n", name );
+    continue;
+   }
+   if ( g_pCVar->FindCommandBase( name ) ) continue;
+   int flags = FCVAR_ARCHIVE | FCVAR_NOTIFY | ( 1 << 27 );
+   if ( setting->GetInt( "replicate", 1 ) ) flags |= FCVAR_REPLICATED;
+   new ConVar( V_strdup( name ), V_strdup( setting->GetString( "default", "" ) ),
+               flags, V_strdup( setting->GetString( "help", "" ) ) );
+  }
+ }
+ definition->deleteThis();
+}
+#endif
+
 // Called any time a new level is started (after GameInit() also on level transitions within a game)
 // Apply launch values after the gamemode has registered its ConVars. Parse
 // KeyValues natively so empty strings and quoted persistence names survive.
@@ -1001,6 +1044,7 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 #endif // USES_ECON_ITEMS
 
 #ifdef LUA_SDK
+	RegisterGamemodeSettings();
 	//lcf_recursivedeletefile( LUA_PATH_CACHE );
 
 	// Add Lua environment

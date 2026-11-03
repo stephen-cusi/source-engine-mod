@@ -1371,6 +1371,27 @@ static int lua_game_GetAmmoID (lua_State *L) {
   return 1;
 }
 
+static int lua_game_GetAmmoMax (lua_State *L) {
+  const lua_Number value = lua_tonumber( L, 1 );
+  CAmmoDef *definition = GetAmmoDef();
+  int limit = 0;
+  if ( definition && value >= 1 && value < definition->m_nAmmoIndex ) {
+    Ammo_t *ammo = definition->GetAmmoOfIndex( (int)value );
+    if ( ammo ) {
+      if ( ammo->pMaxCarry != USE_CVAR ) {
+        limit = ammo->pMaxCarry;
+      } else if ( ammo->pMaxCarryCVar ) {
+        limit = (int)ammo->pMaxCarryCVar->GetFloat();
+      } else if ( ammo->pMaxCarryCVarName ) {
+        ConVarRef ref( ammo->pMaxCarryCVarName, true );
+        if ( ref.IsValid() ) limit = (int)ref.GetFloat();
+      }
+    }
+  }
+  lua_pushnumber( L, limit );
+  return 1;
+}
+
 extern bool HL2SB_GetGameTimeScale( float &scale );
 #ifndef CLIENT_DLL
 extern void HL2SB_SetGameTimeScale( float scale );
@@ -4777,6 +4798,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pushcfunction( L, lua_game_IsDedicated );  lua_setfield( L, -2, "IsDedicated" );
     lua_pushcfunction( L, lua_game_GetAmmoName );  lua_setfield( L, -2, "GetAmmoName" );
     lua_pushcfunction( L, lua_game_GetAmmoID );    lua_setfield( L, -2, "GetAmmoID" );
+    lua_pushcfunction( L, lua_game_GetAmmoMax );   lua_setfield( L, -2, "GetAmmoMax" );
     lua_pushcfunction( L, lua_game_GetTimeScale ); lua_setfield( L, -2, "GetTimeScale" );
 #ifndef CLIENT_DLL
     lua_pushcfunction( L, lua_game_SetTimeScale ); lua_setfield( L, -2, "SetTimeScale" );
