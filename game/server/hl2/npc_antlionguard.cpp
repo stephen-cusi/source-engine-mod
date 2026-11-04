@@ -84,7 +84,7 @@ ConVar	g_antlionguard_hemorrhage( "g_antlionguard_hemorrhage", "1", FCVAR_NONE, 
 #define	ANTLIONGUARD_FOV_NORMAL			-0.4f
 
 // cavern guard's poisoning behavior
-#if HL2_EPISODIC
+#if HL2_EPISODIC || defined( HL2SB )
 #define ANTLIONGUARD_POISON_TO			12 // we only poison Gordon down to twelve to give him a chance to regen up to 20 by the next charge
 #endif
 
@@ -1482,7 +1482,7 @@ void CNPC_AntlionGuard::Shove( void )
 			pHurt->ApplyAbsVelocityImpulse( forward * 400 + up * 150 );
 
 			// in the episodes, the cavern guard poisons the player
-#if HL2_EPISODIC
+#if HL2_EPISODIC || defined( HL2SB )
 			// If I am a cavern guard attacking the player, and he still lives, then poison him too.
 			if ( m_bInCavern && pHurt->IsPlayer() && pHurt->IsAlive() && pHurt->m_iHealth > ANTLIONGUARD_POISON_TO)
 			{
@@ -2568,7 +2568,7 @@ void ApplyChargeDamage( CBaseEntity *pAntlionGuard, CBaseEntity *pTarget, float 
 	CTakeDamageInfo	info( pAntlionGuard, pAntlionGuard, vecForce, offset, flDamage, DMG_CLUB );
 	pTarget->TakeDamage( info );
 
-#if HL2_EPISODIC
+#if HL2_EPISODIC || defined( HL2SB )
 	// If I am a cavern guard attacking the player, and he still lives, then poison him too.
 	Assert( dynamic_cast<CNPC_AntlionGuard *>(pAntlionGuard) );
 

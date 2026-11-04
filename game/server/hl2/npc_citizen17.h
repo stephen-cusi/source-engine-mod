@@ -68,7 +68,7 @@ class CNPC_Citizen : public CNPC_PlayerCompanion
 	DECLARE_CLASS( CNPC_Citizen, CNPC_PlayerCompanion );
 public:
 	CNPC_Citizen()
-	 :	m_iHead( -1 )
+	 :	m_iHead( -1 ), m_bHostile( false )
 	{
 	}
 
@@ -308,6 +308,7 @@ private:
 	Vector			m_vAutoSummonAnchor;
 
 	CitizenType_t	m_Type;
+	bool m_bHostile;
 	CitizenExpressionTypes_t	m_ExpressionType;
 
 	int				m_iHead;

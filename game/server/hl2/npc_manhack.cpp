@@ -2453,8 +2453,10 @@ void CNPC_Manhack::Spawn(void)
 	SetCollisionGroup( COLLISION_GROUP_NONE );
 
 	m_bHeld = false;
-	m_bHackedByAlyx = false;
+	m_bHackedByAlyx = HasSpawnFlags( 1 << 21 );
 	StopLoitering();
+	if ( m_bHackedByAlyx )
+		StartEye();
 }
 
 //-----------------------------------------------------------------------------

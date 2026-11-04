@@ -337,6 +337,7 @@ BEGIN_DATADESC( CNPC_Citizen )
 	DEFINE_EMBEDDED(	m_AutoSummonTimer ),
 	DEFINE_FIELD(		m_vAutoSummonAnchor, FIELD_POSITION_VECTOR ),
 	DEFINE_KEYFIELD(	m_Type, 					FIELD_INTEGER,	"citizentype" ),
+	DEFINE_KEYFIELD( m_bHostile, FIELD_BOOLEAN, "Hostile" ),
 	DEFINE_KEYFIELD(	m_ExpressionType,			FIELD_INTEGER,	"expressiontype" ),
 	DEFINE_FIELD(		m_iHead,					FIELD_INTEGER ),
 	DEFINE_FIELD(		m_flTimePlayerStare,		FIELD_TIME ),
@@ -835,6 +836,9 @@ string_t CNPC_Citizen::GetModelName() const
 //-----------------------------------------------------------------------------
 Class_T	CNPC_Citizen::Classify()
 {
+	if ( m_bHostile )
+		return CLASS_COMBINE;
+
 	if (GlobalEntity_GetState("gordon_precriminal") == GLOBAL_ON)
 		return CLASS_CITIZEN_PASSIVE;
 

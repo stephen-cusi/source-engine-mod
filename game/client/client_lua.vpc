@@ -45,6 +45,7 @@ $Project "Client (HL2SB)"
 
 	$Folder "Client Lua"
 	{
+		$File "episodic/c_prop_scalable.cpp"
 		$File "$SRCDIR/game/shared/lua/luamanager.cpp"
 		$File "$SRCDIR/game/shared/lua/lhl2sb.cpp"
 
