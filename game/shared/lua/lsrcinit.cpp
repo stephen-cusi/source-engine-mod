@@ -92,6 +92,7 @@ static ConVar cl_drawownshadow("cl_drawownshadow", "0", FCVAR_ARCHIVE, "Render t
 #include <string>
 #include <vector>
 #include <utility>
+#include <algorithm>
 #include "tier1/KeyValues.h"
 #if !defined(NO_STEAM) && !defined(DISABLE_STEAM)
 #include "steam/steam_api.h"
@@ -275,6 +276,224 @@ int HL2SB_EngineGetGames( lua_State *L ) {
     lua_pushboolean(L, owned); lua_setfield(L, -2, "owned");
     lua_rawseti(L, -2, i + 1);
   }
+  return 1;
+}
+
+struct HL2SB_ContentSource {
+  int appID;
+  std::string title, folder, path;
+};
+
+struct HL2SB_ManagedContentPath {
+  std::string folder, path;
+};
+static std::vector<HL2SB_ManagedContentPath> s_ManagedContentPaths;
+
+static bool HL2SB_ContentPathMounted( const std::string &path ) {
+  const std::vector<std::string> mounted = HL2SB_GameSearchPaths( "GAME" );
+  for ( size_t i = 0; i < mounted.size(); ++i )
+    if ( !Q_stricmp( mounted[i].c_str(), path.c_str() ) ) return true;
+  return false;
+}
+
+static bool HL2SB_ContentSourceMounted( const std::string &path ) {
+  const std::vector<std::string> mounted = HL2SB_GameSearchPaths( "GAME" );
+  for ( size_t i = 0; i < mounted.size(); ++i )
+    if ( !Q_stricmp( mounted[i].c_str(), path.c_str() ) ||
+         ( !Q_strnicmp( mounted[i].c_str(), path.c_str(), path.size() ) && mounted[i].size() > path.size() && mounted[i][path.size()] == '/' ) ) return true;
+  return false;
+}
+
+static void HL2SB_AddContentSource( std::vector<HL2SB_ContentSource> &sources,
+                                  int appID, const char *title, const char *folder,
+                                  const std::string &root ) {
+  std::string path = root + "/" + folder;
+  V_FixSlashes( &path[0], '/' );
+  if ( !filesystem->FileExists( (path + "/gameinfo.txt").c_str(), NULL ) ) return;
+  for ( size_t i = 0; i < sources.size(); ++i )
+    if ( !Q_stricmp( sources[i].path.c_str(), path.c_str() ) ) return;
+  HL2SB_ContentSource source = { appID, title, folder, path };
+  sources.push_back( source );
+}
+
+static std::vector<HL2SB_ContentSource> HL2SB_ContentSources() {
+  std::vector<HL2SB_ContentSource> sources;
+  const std::vector<std::string> bases = HL2SB_GameSearchPaths( "BASE_PATH" );
+  for ( int i = 0; i < ARRAYSIZE(s_GameDepots); ++i ) {
+    const HL2SB_GameDepot &game = s_GameDepots[i];
+    for ( size_t j = 0; j < bases.size(); ++j )
+      HL2SB_AddContentSource( sources, game.appID, game.title, game.folder, bases[j] );
+#if !defined(NO_STEAM) && !defined(DISABLE_STEAM)
+    if ( steamapicontext && steamapicontext->SteamApps() ) {
+      ISteamApps *apps = steamapicontext->SteamApps();
+      char root[MAX_PATH] = { 0 };
+      if ( apps->BIsAppInstalled( game.appID ) && apps->GetAppInstallDir( game.appID, root, sizeof(root) ) )
+        HL2SB_AddContentSource( sources, game.appID, game.title, game.folder, root );
+    }
+#endif
+  }
+  static const struct { int id; const char *title; const char *folder; } episodes[] = {
+    { 380, "Half-Life 2: Episode One", "episodic" },
+    { 420, "Half-Life 2: Episode Two", "ep2" },
+    { 340, "Half-Life 2: Lost Coast", "lostcoast" },
+    { 220, "Half-Life 2", "hl2base" },
+    { 280, "Half-Life: Source", "hls" },
+    { 440, "Team Fortress 2", "tf2" }
+  };
+  for ( int i = 0; i < ARRAYSIZE(episodes); ++i ) {
+    for ( size_t j = 0; j < bases.size(); ++j )
+      HL2SB_AddContentSource( sources, episodes[i].id, episodes[i].title, episodes[i].folder, bases[j] );
+#if !defined(NO_STEAM) && !defined(DISABLE_STEAM)
+    if ( episodes[i].id != 220 && episodes[i].id != 280 && episodes[i].id != 440 &&
+         steamapicontext && steamapicontext->SteamApps() ) {
+      char root[MAX_PATH] = { 0 };
+      ISteamApps *apps = steamapicontext->SteamApps();
+      if ( apps->GetAppInstallDir( 220, root, sizeof(root) ) )
+        HL2SB_AddContentSource( sources, episodes[i].id, episodes[i].title, episodes[i].folder, root );
+    }
+#endif
+  }
+  for ( size_t i = 0; i < bases.size(); ++i ) {
+    FileFindHandle_t handle;
+    const char *name = filesystem->FindFirstEx( (bases[i] + "/*").c_str(), NULL, &handle );
+    while ( name ) {
+      if ( name[0] != '.' && filesystem->FindIsDirectory( handle ) && Q_stricmp( name, "hl2sb" ) )
+        HL2SB_AddContentSource( sources, 0, name, name, bases[i] );
+      name = filesystem->FindNext( handle );
+    }
+    if ( handle != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( handle );
+  }
+  return sources;
+}
+
+int HL2SB_EngineGetContentSources( lua_State *L ) {
+  const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+  lua_newtable( L );
+  for ( size_t i = 0; i < sources.size(); ++i ) {
+    lua_newtable( L );
+    lua_pushinteger( L, sources[i].appID ); lua_setfield( L, -2, "appId" );
+    lua_pushstring( L, sources[i].title.c_str() ); lua_setfield( L, -2, "name" );
+    lua_pushstring( L, sources[i].folder.c_str() ); lua_setfield( L, -2, "folder" );
+    lua_pushstring( L, sources[i].path.c_str() ); lua_setfield( L, -2, "path" );
+    lua_pushboolean( L, HL2SB_ContentSourceMounted( sources[i].path ) ); lua_setfield( L, -2, "mounted" );
+    lua_rawseti( L, -2, (int)i + 1 );
+  }
+  return 1;
+}
+
+static void HL2SB_AddManagedContentPath( const HL2SB_ContentSource &source, const std::string &path ) {
+    if ( HL2SB_ContentPathMounted( path ) ) return;
+    filesystem->AddSearchPath( path.c_str(), "GAME", PATH_ADD_TO_TAIL );
+    if ( !HL2SB_ContentPathMounted( path ) ) {
+      Warning( "[HL2SB] Could not mount game content path: %s\n", path.c_str() );
+      return;
+    }
+    filesystem->AddSearchPath( path.c_str(), "HL2SB_CONTENT", PATH_ADD_TO_TAIL );
+    filesystem->MarkPathIDByRequestOnly( "HL2SB_CONTENT", true );
+    HL2SB_ManagedContentPath entry = { source.folder, path };
+    s_ManagedContentPaths.push_back( entry );
+}
+
+static void HL2SB_MountContentSource( const HL2SB_ContentSource &source ) {
+    const std::string pattern = source.path + "/*.vpk";
+    FileFindHandle_t handle;
+    const char *name = filesystem->FindFirstEx( pattern.c_str(), NULL, &handle );
+    std::vector<std::string> packs;
+    while ( name ) {
+      const std::string pack = name;
+      const size_t n = pack.size();
+      if ( !filesystem->FindIsDirectory( handle ) && n >= 4 &&
+           !( n >= 8 && pack[n-8] == '_' && V_isdigit(pack[n-7]) && V_isdigit(pack[n-6]) && V_isdigit(pack[n-5]) ) )
+        packs.push_back( pack );
+      name = filesystem->FindNext( handle );
+    }
+    if ( handle != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( handle );
+    std::sort( packs.begin(), packs.end() );
+    for ( size_t j = 0; j < packs.size(); ++j ) {
+      std::string pack = packs[j];
+      if ( pack.size() > 8 && !Q_stricmp( pack.c_str() + pack.size() - 8, "_dir.vpk" ) )
+        pack.erase( pack.size() - 8, 4 );
+      HL2SB_AddManagedContentPath( source, source.path + "/" + pack );
+    }
+    HL2SB_AddManagedContentPath( source, source.path );
+    HL2SB_RefreshGameContentPaths();
+}
+
+void HL2SB_MountSelectedGameContent() {
+  FileHandle_t file = filesystem->Open( "gamecontent.txt", "r", "MOD" );
+  if ( file == FILESYSTEM_INVALID_HANDLE ) return;
+  std::vector<std::string> selected;
+  char line[128];
+  while ( filesystem->ReadLine( line, sizeof(line), file ) ) {
+    char *end = NULL;
+    const long id = strtol( line, &end, 10 );
+    if ( end != line && id > 0 ) {
+      const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+      for ( size_t i = 0; i < sources.size(); ++i )
+        if ( sources[i].appID == id ) selected.push_back( sources[i].folder );
+    } else {
+      Q_StripPrecedingAndTrailingWhitespace( line );
+      if ( line[0] && line[0] != '#' ) selected.push_back( line );
+    }
+  }
+  filesystem->Close( file );
+  const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+  for ( size_t i = 0; i < sources.size(); ++i )
+    for ( size_t j = 0; j < selected.size(); ++j )
+      if ( !Q_stricmp( selected[j].c_str(), sources[i].folder.c_str() ) ) {
+        HL2SB_MountContentSource( sources[i] );
+        break;
+      }
+}
+
+int HL2SB_EngineSetContentMounted( lua_State *L ) {
+  const char *folder = luaL_checkstring( L, 1 );
+  const bool enabled = lua_toboolean( L, 2 ) != 0;
+  const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+  bool found = false;
+  if ( enabled ) {
+    for ( size_t i = 0; i < sources.size(); ++i )
+      if ( !Q_stricmp( folder, sources[i].folder.c_str() ) ) {
+        HL2SB_MountContentSource( sources[i] );
+        found = HL2SB_ContentSourceMounted( sources[i].path ) || found;
+      }
+  } else {
+    for ( size_t i = 0; i < sources.size(); ++i )
+      if ( !Q_stricmp( folder, sources[i].folder.c_str() ) ) found = true;
+    const std::vector<std::string> managed = HL2SB_GameSearchPaths( "HL2SB_CONTENT" );
+    for ( size_t i = 0; i < sources.size(); ++i ) {
+      if ( Q_stricmp( folder, sources[i].folder.c_str() ) ) continue;
+      const std::string &root = sources[i].path;
+      for ( size_t j = 0; j < managed.size(); ++j ) {
+        const std::string &path = managed[j];
+        if ( Q_stricmp( path.c_str(), root.c_str() ) &&
+             ( path.size() <= root.size() || Q_strnicmp( path.c_str(), root.c_str(), root.size() ) || path[root.size()] != '/' ) ) continue;
+        filesystem->RemoveSearchPath( path.c_str(), "GAME" );
+        filesystem->RemoveSearchPath( path.c_str(), "HL2SB_CONTENT" );
+      }
+    }
+    for ( size_t i = s_ManagedContentPaths.size(); i > 0; --i ) {
+      if ( Q_stricmp( folder, s_ManagedContentPaths[i-1].folder.c_str() ) ) continue;
+      s_ManagedContentPaths.erase( s_ManagedContentPaths.begin() + i - 1 );
+    }
+    HL2SB_RefreshGameContentPaths();
+    for ( size_t i = 0; i < sources.size(); ++i )
+      if ( !Q_stricmp( folder, sources[i].folder.c_str() ) && HL2SB_ContentSourceMounted( sources[i].path ) ) found = false;
+  }
+  lua_pushboolean( L, found );
+  return 1;
+}
+
+int HL2SB_EngineMountContentSource( lua_State *L ) {
+  const char *requested = luaL_checkstring( L, 1 );
+  const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+  for ( size_t i = 0; i < sources.size(); ++i ) {
+    if ( Q_stricmp( requested, sources[i].path.c_str() ) ) continue;
+    HL2SB_MountContentSource( sources[i] );
+    lua_pushboolean( L, true );
+    return 1;
+  }
+  lua_pushboolean( L, false );
   return 1;
 }
 
@@ -842,16 +1061,13 @@ static const char *LuaNativeMetatableName (const char *pszName) {
 ** GMod returns nil for a metatable that is not registered yet, which is what
 ** Derma relies on while it is still defining its controls.
 **
-** It has to be an explicit nil and not "no results": in Lua a call that returns
-** zero values vanishes when it is the last argument of another call, so
-** `print( FindMetaTable( "Label" ) )` collapsed to a bare `print()` and printed
-** an empty line instead of "nil".
+** A missing metatable returns no values.
 */
 static int lua_FindMetaTable (lua_State *L) {
   const char *pszName = luaL_checkstring(L, 1);
   luaL_getmetatable(L, LuaNativeMetatableName(pszName));
   if (lua_isnil(L, -1))
-    lua_pushnil(L);  /* leave exactly one value: nil */
+    return 0;
   return 1;
 }
 

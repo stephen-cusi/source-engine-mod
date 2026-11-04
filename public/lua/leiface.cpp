@@ -297,9 +297,15 @@ static int engine_TickCount( lua_State *L ) {
 }
 
 extern int HL2SB_EngineGetGames( lua_State *L );
+extern int HL2SB_EngineGetContentSources( lua_State *L );
+extern int HL2SB_EngineMountContentSource( lua_State *L );
+extern int HL2SB_EngineSetContentMounted( lua_State *L );
 
 static const luaL_Reg enginelib[] = {
   {"GetGames", HL2SB_EngineGetGames},
+  {"GetContentSources", HL2SB_EngineGetContentSources},
+  {"MountContentSource", HL2SB_EngineMountContentSource},
+  {"SetContentMounted", HL2SB_EngineSetContentMounted},
   {"TickCount", engine_TickCount},
   {"AllowImmediateEdictReuse",   engine_AllowImmediateEdictReuse},
   {"ChangeLevel",  engine_ChangeLevel},

@@ -181,6 +181,9 @@ static int engine_GetAddons (lua_State *L) {
 }
 
 extern int HL2SB_EngineGetGames( lua_State *L );
+extern int HL2SB_EngineGetContentSources( lua_State *L );
+extern int HL2SB_EngineMountContentSource( lua_State *L );
+extern int HL2SB_EngineSetContentMounted( lua_State *L );
 
 static int engine_GetEngineBuildNumber (lua_State *L) {
   lua_pushinteger(L, engine->GetEngineBuildNumber());
@@ -557,6 +560,9 @@ static const luaL_Reg enginelib[] = {
   {"GetDXSupportLevel", engine_GetDXSupportLevel},
   {"GetAddons", engine_GetAddons},
   {"GetGames", HL2SB_EngineGetGames},
+  {"GetContentSources", HL2SB_EngineGetContentSources},
+  {"MountContentSource", HL2SB_EngineMountContentSource},
+  {"SetContentMounted", HL2SB_EngineSetContentMounted},
   {"GetEngineBuildNumber",   engine_GetEngineBuildNumber},
   {"GetGameDirectory", engine_GetGameDirectory},
   {"ActiveGamemode", engine_ActiveGamemode},
