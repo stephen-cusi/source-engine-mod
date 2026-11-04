@@ -1675,6 +1675,10 @@ bool CHL2MPRules::ShouldCollide( int collisionGroup0, int collisionGroup1 )
 		V_swap(collisionGroup0,collisionGroup1);
 	}
 
+	if ( collisionGroup1 == HL2COLLISION_GROUP_SPIT &&
+		( collisionGroup0 == HL2COLLISION_GROUP_SPIT || collisionGroup0 == COLLISION_GROUP_PLAYER_MOVEMENT ) )
+		return false;
+
 	if ( (collisionGroup0 == COLLISION_GROUP_PLAYER || collisionGroup0 == COLLISION_GROUP_PLAYER_MOVEMENT) &&
 		collisionGroup1 == COLLISION_GROUP_WEAPON )
 	{
