@@ -3263,7 +3263,11 @@ int C_BaseAnimating::DrawModel( int flags )
 			BEGIN_LUA_CALL_HOOK( "PrePlayerDraw" );
 				lua_pushentity( L, this );
 				lua_pushinteger( L, flags );
-			END_LUA_CALL_HOOK( 2, 0 );
+			END_LUA_CALL_HOOK( 2, 1 );
+			const bool bSkipPlayerDraw = lua_isboolean( L, -1 ) && lua_toboolean( L, -1 );
+			lua_pop( L, 1 );
+			if ( bSkipPlayerDraw )
+				return 0;
 		}
 #endif
 
