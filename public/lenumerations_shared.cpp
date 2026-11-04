@@ -49,6 +49,84 @@ void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
         { "EF_FOLLOWBONE", EF_FOLLOWBONE },
         { "HUD_PRINTNOTIFY", HUD_PRINTNOTIFY }, { "HUD_PRINTCONSOLE", HUD_PRINTCONSOLE },
         { "HUD_PRINTTALK", HUD_PRINTTALK }, { "HUD_PRINTCENTER", HUD_PRINTCENTER },
+        { "FL_ONGROUND", FL_ONGROUND },
+        { "FL_DUCKING", FL_DUCKING },
+        { "FL_ANIMDUCKING", FL_ANIMDUCKING },
+        { "FL_WATERJUMP", FL_WATERJUMP },
+        { "FL_ONTRAIN", FL_ONTRAIN },
+        { "FL_INRAIN", FL_INRAIN },
+        { "FL_FROZEN", FL_FROZEN },
+        { "FL_ATCONTROLS", FL_ATCONTROLS },
+        { "FL_CLIENT", FL_CLIENT },
+        { "FL_FAKECLIENT", FL_FAKECLIENT },
+        { "FL_INWATER", FL_INWATER },
+        { "FL_FLY", FL_FLY },
+        { "FL_SWIM", FL_SWIM },
+        { "FL_CONVEYOR", FL_CONVEYOR },
+        { "FL_NPC", FL_NPC },
+        { "FL_GODMODE", FL_GODMODE },
+        { "FL_NOTARGET", FL_NOTARGET },
+        { "FL_AIMTARGET", FL_AIMTARGET },
+        { "FL_PARTIALGROUND", FL_PARTIALGROUND },
+        { "FL_STATICPROP", FL_STATICPROP },
+        { "FL_GRAPHED", FL_GRAPHED },
+        { "FL_GRENADE", FL_GRENADE },
+        { "FL_STEPMOVEMENT", FL_STEPMOVEMENT },
+        { "FL_DONTTOUCH", FL_DONTTOUCH },
+        { "FL_BASEVELOCITY", FL_BASEVELOCITY },
+        { "FL_WORLDBRUSH", FL_WORLDBRUSH },
+        { "FL_OBJECT", FL_OBJECT },
+        { "FL_KILLME", FL_KILLME },
+        { "FL_ONFIRE", FL_ONFIRE },
+        { "FL_DISSOLVING", FL_DISSOLVING },
+        { "FL_TRANSRAGDOLL", FL_TRANSRAGDOLL },
+        { "FL_UNBLOCKABLE_BY_PLAYER", FL_UNBLOCKABLE_BY_PLAYER },
+        { "TYPE_INVALID", -1 }, { "TYPE_NONE", -1 },
+        { "TYPE_NIL", 0 },
+        { "TYPE_BOOL", 1 },
+        { "TYPE_LIGHTUSERDATA", 2 },
+        { "TYPE_NUMBER", 3 },
+        { "TYPE_STRING", 4 },
+        { "TYPE_TABLE", 5 },
+        { "TYPE_FUNCTION", 6 },
+        { "TYPE_USERDATA", 7 },
+        { "TYPE_THREAD", 8 },
+        { "TYPE_ENTITY", 9 },
+        { "TYPE_VECTOR", 10 },
+        { "TYPE_ANGLE", 11 },
+        { "TYPE_PHYSOBJ", 12 },
+        { "TYPE_SAVE", 13 },
+        { "TYPE_RESTORE", 14 },
+        { "TYPE_DAMAGEINFO", 15 },
+        { "TYPE_EFFECTDATA", 16 },
+        { "TYPE_MOVEDATA", 17 },
+        { "TYPE_RECIPIENTFILTER", 18 },
+        { "TYPE_USERCMD", 19 },
+        { "TYPE_SCRIPTEDVEHICLE", 20 },
+        { "TYPE_MATERIAL", 21 },
+        { "TYPE_PANEL", 22 },
+        { "TYPE_PARTICLE", 23 },
+        { "TYPE_PARTICLEEMITTER", 24 },
+        { "TYPE_TEXTURE", 25 },
+        { "TYPE_USERMSG", 26 },
+        { "TYPE_CONVAR", 27 },
+        { "TYPE_IMESH", 28 },
+        { "TYPE_MATRIX", 29 },
+        { "TYPE_SOUND", 30 },
+        { "TYPE_PIXELVISHANDLE", 31 },
+        { "TYPE_DLIGHT", 32 },
+        { "TYPE_VIDEO", 33 },
+        { "TYPE_FILE", 34 },
+        { "TYPE_LOCOMOTION", 35 },
+        { "TYPE_PATH", 36 },
+        { "TYPE_NAVAREA", 37 },
+        { "TYPE_SOUNDHANDLE", 38 },
+        { "TYPE_NAVLADDER", 39 },
+        { "TYPE_PARTICLESYSTEM", 40 },
+        { "TYPE_PROJECTEDTEXTURE", 41 },
+        { "TYPE_PHYSCOLLIDE", 42 },
+        { "TYPE_SURFACEINFO", 43 },
+        { "TYPE_COUNT", 44 },
         { "RENDERMODE_NORMAL", kRenderNormal }, { "RENDERMODE_TRANSCOLOR", kRenderTransColor },
         { "RENDERMODE_TRANSTEXTURE", kRenderTransTexture }, { "RENDERMODE_GLOW", kRenderGlow },
         { "RENDERMODE_TRANSALPHA", kRenderTransAlpha }, { "RENDERMODE_TRANSADD", kRenderTransAdd },
@@ -90,6 +168,17 @@ void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
         { "EFL_USE_PARTITION_WHEN_NOT_SOLID", EFL_USE_PARTITION_WHEN_NOT_SOLID },
         { "EFL_TOUCHING_FLUID", EFL_TOUCHING_FLUID },
         { "EFL_IS_BEING_LIFTED_BY_BARNACLE", EFL_IS_BEING_LIFTED_BY_BARNACLE },
+        { "EFL_NO_ROTORWASH_PUSH", EFL_NO_ROTORWASH_PUSH },
+        { "EFL_NO_THINK_FUNCTION", EFL_NO_THINK_FUNCTION },
+        { "EFL_NO_GAME_PHYSICS_SIMULATION", EFL_NO_GAME_PHYSICS_SIMULATION },
+        { "EFL_CHECK_UNTOUCH", EFL_CHECK_UNTOUCH },
+        { "EFL_DONTBLOCKLOS", EFL_DONTBLOCKLOS },
+        { "EFL_DONTWALKON", EFL_DONTWALKON },
+        { "EFL_NO_DISSOLVE", EFL_NO_DISSOLVE },
+        { "EFL_NO_MEGAPHYSCANNON_RAGDOLL", EFL_NO_MEGAPHYSCANNON_RAGDOLL },
+        { "EFL_NO_WATER_VELOCITY_CHANGE", EFL_NO_WATER_VELOCITY_CHANGE },
+        { "EFL_NO_PHYSCANNON_INTERACTION", EFL_NO_PHYSCANNON_INTERACTION },
+        { "EFL_NO_DAMAGE_FORCES", EFL_NO_DAMAGE_FORCES },
     };
     for ( unsigned int i = 0; i < sizeof( globals ) / sizeof( globals[0] ); ++i )
     {
@@ -99,7 +188,9 @@ void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
 #ifndef CLIENT_DLL
     static const struct { const char *name; int value; } dispositions[] = {
         { "D_ER", 0 }, { "D_HT", 1 }, { "D_FR", 2 },
-        { "D_LI", 3 }, { "D_NU", 4 }
+        { "D_LI", 3 }, { "D_NU", 4 },
+        { "CT_DEFAULT", 0 }, { "CT_DOWNTRODDEN", 1 }, { "CT_REFUGEE", 2 },
+        { "CT_REBEL", 3 }, { "CT_UNIQUE", 4 }
     };
     for ( unsigned int i = 0; i < sizeof( dispositions ) / sizeof( dispositions[0] ); ++i )
     {
@@ -1271,8 +1362,7 @@ LUALIB_API int luaopen_FL_EDICT( lua_State *L )
     // HL2SB: GMod's SF_* spawnflag globals -- the constants Entity:HasSpawnFlags
     // (a SHARED binding) takes.  The reference's client surface is only the
     // physics/weapon subset while its server carries the full NPC/citizen set;
-    // the ifdef split below mirrors that per-realm surface (its current server
-    // binary has no SF_NPC_ALTCOLLISION, so neither does this one).  Client
+    // the ifdef split below mirrors that per-realm surface. Client
     // values are the archived reference capture; the server-only NPC/citizen
     // values are the wiki/FGD constants (both spellings cross-check on every
     // name the archive covers).  nobare: the flat SF_<name> global is what
@@ -1311,6 +1401,7 @@ LUALIB_API int luaopen_FL_EDICT( lua_State *L )
     lua_pushenum_nobare( L, 512,      "NPC_FADE_CORPSE" );
     lua_pushenum_nobare( L, 1024,     "NPC_ALWAYSTHINK" );
     lua_pushenum_nobare( L, 2048,     "NPC_TEMPLATE" );
+    lua_pushenum_nobare( L, 4096,     "NPC_ALTCOLLISION" );
     lua_pushenum_nobare( L, 8192,     "NPC_NO_WEAPON_DROP" );
     lua_pushenum_nobare( L, 16384,    "NPC_NO_PLAYER_PUSHAWAY" );
     lua_pushenum_nobare( L, 65536,    "CITIZEN_FOLLOW" );
