@@ -32,6 +32,9 @@
 void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
 {
     static const struct { const char *name; int value; } globals[] = {
+        { "TEAM_CONNECTING", 0 }, { "TEAM_UNASSIGNED", 1001 }, { "TEAM_SPECTATOR", 1002 },
+        { "BOX_FRONT", 0 }, { "BOX_BACK", 1 }, { "BOX_RIGHT", 2 },
+        { "BOX_LEFT", 3 }, { "BOX_TOP", 4 }, { "BOX_BOTTOM", 5 },
         { "CHAN_VOICE", 2 }, { "HITGROUP_HEAD", 1 }, { "HITGROUP_CHEST", 2 },
         { "HITGROUP_STOMACH", 3 }, { "HITGROUP_LEFTARM", 4 }, { "HITGROUP_RIGHTARM", 5 },
         { "HITGROUP_LEFTLEG", 6 }, { "HITGROUP_RIGHTLEG", 7 }, { "HITGROUP_GEAR", 10 },

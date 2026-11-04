@@ -4558,10 +4558,6 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_pushcfunction(L, lua_ProtectedCall); lua_setglobal(L, "ProtectedCall");
   lua_pop(L, 1);
 
-  lua_pushinteger(L, 0); lua_setglobal(L, "TEAM_CONNECTING");
-  lua_pushinteger(L, 1001); lua_setglobal(L, "TEAM_UNASSIGNED");
-  lua_pushinteger(L, 1002); lua_setglobal(L, "TEAM_SPECTATOR");
-
   /* HL2SB: re-assert the realm globals LAST.
   **
   ** public/lenumerations_shared.cpp:573 pushes the entity flag FL_CLIENT (256)

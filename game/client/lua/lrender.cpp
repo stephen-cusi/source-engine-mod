@@ -3279,6 +3279,8 @@ LUALIB_API int luaopen_render( lua_State *L )
     lua_pushenum( L, MaterialCullMode_t::MATERIAL_CULLMODE_CCW, "COUNTER_CLOCKWISE" );
     lua_pushenum( L, MaterialCullMode_t::MATERIAL_CULLMODE_CW, "CLOCKWISE" );
     LUA_SET_ENUM_LIB_END( L );
+    lua_pushinteger( L, MATERIAL_CULLMODE_CCW ); lua_setglobal( L, "MATERIAL_CULLMODE_CCW" );
+    lua_pushinteger( L, MATERIAL_CULLMODE_CW ); lua_setglobal( L, "MATERIAL_CULLMODE_CW" );
 
     LUA_SET_ENUM_LIB_BEGIN( L, "STENCIL_COMPARISON_FUNCTION" );
     lua_pushenum( L, StencilComparisonFunction_t::STENCILCOMPARISONFUNCTION_NEVER, "NEVER" );
@@ -3290,6 +3292,24 @@ LUALIB_API int luaopen_render( lua_State *L )
     lua_pushenum( L, StencilComparisonFunction_t::STENCILCOMPARISONFUNCTION_GREATEREQUAL, "GREATER_OR_EQUAL" );
     lua_pushenum( L, StencilComparisonFunction_t::STENCILCOMPARISONFUNCTION_ALWAYS, "ALWAYS" );
     LUA_SET_ENUM_LIB_END( L );
+
+    static const char * const stencilCompareGlobals[] = {
+        "STENCILCOMPARISONFUNCTION_NEVER", "STENCILCOMPARISONFUNCTION_LESS",
+        "STENCILCOMPARISONFUNCTION_EQUAL", "STENCILCOMPARISONFUNCTION_LESSEQUAL",
+        "STENCILCOMPARISONFUNCTION_GREATER", "STENCILCOMPARISONFUNCTION_NOTEQUAL",
+        "STENCILCOMPARISONFUNCTION_GREATEREQUAL", "STENCILCOMPARISONFUNCTION_ALWAYS"
+    };
+    static const char * const stencilOperationGlobals[] = {
+        "STENCILOPERATION_KEEP", "STENCILOPERATION_ZERO", "STENCILOPERATION_REPLACE",
+        "STENCILOPERATION_INCRSAT", "STENCILOPERATION_DECRSAT", "STENCILOPERATION_INVERT",
+        "STENCILOPERATION_INCR", "STENCILOPERATION_DECR"
+    };
+    for ( int i = 0; i < ARRAYSIZE( stencilCompareGlobals ); ++i ) {
+        lua_pushinteger( L, i + 1 );
+        lua_setglobal( L, stencilCompareGlobals[i] );
+        lua_pushinteger( L, i + 1 );
+        lua_setglobal( L, stencilOperationGlobals[i] );
+    }
 
     // HL2SB: the light types render.SetLocalModelLights takes
     // (https://wiki.facepunch.com/gmod/Enums/MATERIAL_LIGHT).  lua_pushenum publishes
