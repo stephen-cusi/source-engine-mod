@@ -2668,11 +2668,10 @@ bool CHL2MPScriptedWeapon::DispatchDrawWeaponSelection( int x, int y, int wide, 
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat (wiki): WEAPON:CustomAmmoDisplay() -> table with
 // Draw (boolean), PrimaryClip / PrimaryAmmo / SecondaryClip / SecondaryAmmo
-// (numbers, -1 = hide the value).  HL2's ammo HUD is a fixed
-// clip|reserve pair, so only Draw / PrimaryClip / PrimaryAmmo have a slot
-// here (hud_ammo.cpp consumes them).
+// (numbers, -1 = hide the value).
 //-----------------------------------------------------------------------------
-bool CHL2MPScriptedWeapon::DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo )
+bool CHL2MPScriptedWeapon::DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo,
+	int *pnSecondaryClip, int *pnSecondaryAmmo )
 {
 #if defined ( LUA_SDK )
 	BEGIN_LUA_CALL_WEAPON_METHOD( "CustomAmmoDisplay" );
@@ -2706,6 +2705,22 @@ bool CHL2MPScriptedWeapon::DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrima
 		lua_getfield( L, -1, "PrimaryAmmo" );
 		if ( lua_isnumber( L, -1 ) )
 			*pnPrimaryAmmo = (int)lua_tointeger( L, -1 );
+		lua_pop( L, 1 );
+	}
+
+	if ( pnSecondaryClip != NULL )
+	{
+		lua_getfield( L, -1, "SecondaryClip" );
+		if ( lua_isnumber( L, -1 ) )
+			*pnSecondaryClip = (int)lua_tointeger( L, -1 );
+		lua_pop( L, 1 );
+	}
+
+	if ( pnSecondaryAmmo != NULL )
+	{
+		lua_getfield( L, -1, "SecondaryAmmo" );
+		if ( lua_isnumber( L, -1 ) )
+			*pnSecondaryAmmo = (int)lua_tointeger( L, -1 );
 		lua_pop( L, 1 );
 	}
 

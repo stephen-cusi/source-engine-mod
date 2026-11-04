@@ -200,7 +200,8 @@ public:
 	// wiki: WEAPON:CustomAmmoDisplay() -> table { Draw, PrimaryClip,
 	// PrimaryAmmo, ... }.  Writes back only the fields present; returns true
 	// when the hook supplied a table at all.
-	bool	DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo );
+	bool	DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo,
+		int *pnSecondaryClip = NULL, int *pnSecondaryAmmo = NULL );
 #endif
 
 public:
