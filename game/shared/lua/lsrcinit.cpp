@@ -4528,7 +4528,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   // Player hands and other animating entity families use the same inherited
   // CBaseAnimating methods as GMod's Entity metatable.
   luasrc_install_animation_methods(L, LUA_BASEENTITYLIBNAME);
-  lua_pushinteger(L, ActivityList_RegisterPrivateActivity("ACT_MP_SWIM_IDLE"));
+  lua_pushinteger(L, ACT_MP_SWIM_IDLE);
   lua_setglobal(L, "ACT_MP_SWIM_IDLE");
 
   /* ...and the library tables themselves can be reachable under GMod's names. */
