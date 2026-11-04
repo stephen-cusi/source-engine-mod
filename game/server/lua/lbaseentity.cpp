@@ -398,11 +398,6 @@ static int CBaseEntity_IsTriggered (lua_State *L) {
   return 1;
 }
 
-static int CBaseEntity_GetDelay (lua_State *L) {
-  lua_pushnumber(L, luaL_checkentity(L, 1)->GetDelay());
-  return 1;
-}
-
 static int CBaseEntity_IsMoving (lua_State *L) {
   lua_pushboolean(L, luaL_checkentity(L, 1)->IsMoving());
   return 1;
@@ -629,16 +624,6 @@ static int CBaseEntity_CreateNoSpawn (lua_State *L) {
 static int CBaseEntity_GetDamageType (lua_State *L) {
   lua_pushinteger(L, luaL_checkentity(L, 1)->GetDamageType());
   return 1;
-}
-
-static int CBaseEntity_GetDamage (lua_State *L) {
-  lua_pushnumber(L, luaL_checkentity(L, 1)->GetDamage());
-  return 1;
-}
-
-static int CBaseEntity_SetDamage (lua_State *L) {
-  luaL_checkentity(L, 1)->SetDamage(luaL_checkinteger(L, 2));
-  return 0;
 }
 
 static int CBaseEntity_BodyTarget (lua_State *L) {
@@ -1041,7 +1026,6 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"Event_Killed", CBaseEntity_Event_Killed},
   {"Event_KilledOther", CBaseEntity_Event_KilledOther},
   {"IsTriggered", CBaseEntity_IsTriggered},
-  {"GetDelay", CBaseEntity_GetDelay},
   {"IsMoving", CBaseEntity_IsMoving},
   {"IsWorld", CBaseEntity_IsWorld},
   {"AddPoints", CBaseEntity_AddPoints},
@@ -1085,8 +1069,6 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"Create", CBaseEntity_Create},
   {"CreateNoSpawn", CBaseEntity_CreateNoSpawn},
   {"GetDamageType", CBaseEntity_GetDamageType},
-  {"GetDamage", CBaseEntity_GetDamage},
-  {"SetDamage", CBaseEntity_SetDamage},
   {"BodyTarget", CBaseEntity_BodyTarget},
   {"HeadTarget", CBaseEntity_HeadTarget},
   {"GetSmoothedVelocity", CBaseEntity_GetSmoothedVelocity},
