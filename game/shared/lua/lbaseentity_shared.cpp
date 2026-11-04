@@ -3327,39 +3327,11 @@ static int CBaseEntity_SetSize (lua_State *L) {
       {
         lua_pop( L, 1 );
       }
-      lua_pushnumber( L, size );
-      lua_setfield( L, -2, "__hl2sb_widget_size" );
       lua_pop( L, 1 );
     }
     return 0;
   }
   entity->SetSize(luaL_checkvector(L, 2), luaL_checkvector(L, 3));
-  return 0;
-}
-
-static int CBaseEntity_GetWidgetSize (lua_State *L) {
-  CBaseEntity *entity = luaL_checkentity( L, 1 );
-  if ( entity->m_nTableReference >= 0 && lua_isrefvalid( L, entity->m_nTableReference ) )
-  {
-    lua_getref( L, entity->m_nTableReference );
-    lua_getfield( L, -1, "__hl2sb_widget_size" );
-    if ( lua_isnumber( L, -1 ) ) { lua_remove( L, -2 ); return 1; }
-    lua_pop( L, 2 );
-  }
-  lua_pushnumber( L, 0.0f );
-  return 1;
-}
-
-static int CBaseEntity_SetWidgetSize (lua_State *L) {
-  CBaseEntity *entity = luaL_checkentity( L, 1 );
-  const float size = (float)luaL_checknumber( L, 2 );
-  if ( entity->m_nTableReference >= 0 && lua_isrefvalid( L, entity->m_nTableReference ) )
-  {
-    lua_getref( L, entity->m_nTableReference );
-    lua_pushnumber( L, size );
-    lua_setfield( L, -2, "__hl2sb_widget_size" );
-    lua_pop( L, 1 );
-  }
   return 0;
 }
 
@@ -7025,8 +6997,6 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetSimulatedEveryTick", CBaseEntity_SetSimulatedEveryTick},
   {"SetSimulationTime", CBaseEntity_SetSimulationTime},
   {"SetSize", CBaseEntity_SetSize},
-  {"GetSizeVar", CBaseEntity_GetWidgetSize},
-  {"SetSizeVar", CBaseEntity_SetWidgetSize},
   {"SetSolid", CBaseEntity_SetSolid},
   {"SetSolidFlags", CBaseEntity_SetSolidFlags},
   {"SetTextureFrameIndex", CBaseEntity_SetTextureFrameIndex},
