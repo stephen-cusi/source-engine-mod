@@ -883,6 +883,13 @@ static int IPhysicsObject_GetMass (lua_State *L) {
   return 1;
 }
 
+static int IPhysicsObject_GetVolume (lua_State *L) {
+  const CPhysCollide *shape = luaL_checkphysicsobject(L, 1)->GetCollide();
+  if ( !shape ) return 0;
+  lua_pushnumber(L, physcollision->CollideVolume(const_cast<CPhysCollide *>(shape)));
+  return 1;
+}
+
 static int IPhysicsObject_GetMassCenterLocalSpace (lua_State *L) {
   lua_pushvector(L, luaL_checkphysicsobject(L, 1)->GetMassCenterLocalSpace());
   return 1;
@@ -1355,6 +1362,7 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"GetInvMass", IPhysicsObject_GetInvMass},
   {"GetAABB", IPhysicsObject_GetAABB},
   {"GetMass", IPhysicsObject_GetMass},
+  {"GetVolume", IPhysicsObject_GetVolume},
   {"GetMassCenterLocalSpace", IPhysicsObject_GetMassCenterLocalSpace},
   {"GetMassCenter", IPhysicsObject_GetMassCenterLocalSpace},  /* HL2SB: GMod's name (local-space center of mass) */
   {"GetMaterialIndex", IPhysicsObject_GetMaterialIndex},

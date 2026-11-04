@@ -1120,7 +1120,7 @@ public:
 		// HL2SB diagnostic: the chase sets 450 and the bot still stands still with a
 		// valid path, so SOMETHING re-zeroes the speed afterwards.  Log every
 		// change (throttled) so the log names the value and the class.
-		if ( speed != m_flLuaDesiredSpeed )
+		if ( hl2sb_dev_msgs.GetBool() && speed != m_flLuaDesiredSpeed )
 		{
 			static float s_flNextSpeedReport = 0.0f;
 			float flNow = (float)gpGlobals->curtime;
@@ -1366,7 +1366,7 @@ static int CLuaLocomotion_SetDesiredSpeed( lua_State *L )
 		static float s_flNextScriptSpeedReport = 0.0f;
 		float flNow = (float)gpGlobals->curtime;
 
-		if ( flNow >= s_flNextScriptSpeedReport )
+		if ( hl2sb_dev_msgs.GetBool() && flNow >= s_flNextScriptSpeedReport )
 		{
 			s_flNextScriptSpeedReport = flNow + 1.0f;
 			Msg( "[HL2SB] loco:SetDesiredSpeed( %.0f ) called from script on '%s'\n",

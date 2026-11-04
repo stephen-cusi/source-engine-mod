@@ -20,6 +20,10 @@
 
 #undef NextBot
 
+#ifdef LUA_SDK
+extern ConVar hl2sb_dev_msgs;
+#endif
+
 ConVar NextBotShadowDist( "nb_shadow_dist", "400" );
 
 //-----------------------------------------------------------------------------
@@ -51,14 +55,16 @@ C_NextBotCombatCharacter::C_NextBotCombatCharacter()
 	// server, the client never built this class for it at all -- and then
 	// GetRenderGroup()/DrawModel() are unreachable by construction, which looks
 	// exactly like "the bot runs but is invisible".
+#ifdef LUA_SDK
 	static int s_nCtorReports = 0;
 
-	if ( s_nCtorReports < 40 )
+	if ( hl2sb_dev_msgs.GetBool() && s_nCtorReports < 40 )
 	{
 		++s_nCtorReports;
 		luasrc_LuaWarnMsgF( "[HL2SB] CLIENT C_NextBotCombatCharacter constructed: this=%p entindex=%d",
 			(void *)this, entindex() );
 	}
+#endif
 
 	TheClientNextBots().Register( this );
 }
@@ -466,7 +472,7 @@ void C_NextBotCombatCharacter::OnDataChanged( DataUpdateType_t updateType )
 	{
 		static int s_nCreatedReports = 0;
 
-		if ( s_nCreatedReports < 40 )
+		if ( hl2sb_dev_msgs.GetBool() && s_nCreatedReports < 40 )
 		{
 			++s_nCreatedReports;
 			luasrc_LuaWarnMsgF( "[HL2SB] CLIENT nextbot entity created: networked='%s' classname='%s' model='%s' luaInit=%d",
@@ -549,7 +555,7 @@ void C_NextBotCombatCharacter::OnDataChanged( DataUpdateType_t updateType )
 
 				static int s_nInitReports = 0;
 
-				if ( s_nInitReports < 40 )
+				if ( hl2sb_dev_msgs.GetBool() && s_nInitReports < 40 )
 				{
 					++s_nInitReports;
 
@@ -585,7 +591,7 @@ RenderGroup_t C_NextBotCombatCharacter::GetRenderGroup( void )
 	// found, or the draw hook is not there -- and without an entry line the first
 	// two look identical (both print nothing at all).
 	static int s_nRenderGroupReports = 0;
-	const bool bReport = ( s_nRenderGroupReports < 40 );
+	const bool bReport = hl2sb_dev_msgs.GetBool() && ( s_nRenderGroupReports < 40 );
 
 	if ( bReport )
 	{
@@ -687,7 +693,7 @@ int C_NextBotCombatCharacter::DrawModel( int flags )
 			pSlot = &s_DrawReports[i];
 	}
 
-	const bool bReport = ( pSlot != NULL && pSlot->nReports < 3 );
+	const bool bReport = hl2sb_dev_msgs.GetBool() && ( pSlot != NULL && pSlot->nReports < 3 );
 
 	if ( bReport )
 	{
