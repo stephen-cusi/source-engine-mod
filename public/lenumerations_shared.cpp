@@ -742,6 +742,7 @@ LUALIB_API int luaopen_ACTIVITY( lua_State *L )
     // the above advice and registers all enumerations.
     // Leaving Andrew's advice here for future reference.
     LUA_SET_ENUM_LIB_BEGIN( L, "ACTIVITY" );
+    lua_pushenum( L, ACT_INVALID, "ACT_INVALID" );
     // HL2SB (2026-09-21): one-shot bisection instrumentation for the
     // "ACTIVITY FAILED: attempt to index a string value" failure.  The
     // REGISTER_SHARED_ACTIVITY macro (activitylist.h) indexes slot -3, so if

@@ -1142,11 +1142,9 @@ void CHL2MP_Player::HL2SB_AnimRestartGestureInternal( int iSlot, Activity activi
 	// ACT_HL2MP_GESTURE_RANGE_ATTACK_<holdtype>); fall back to the bare
 	// activity for model-authored layer activities (ACT_GMOD_IN_CHAT,
 	// ACT_GMOD_NOCLIP_LAYER).
-	Activity translated = Weapon_TranslateActivity( activity );
-	int iSequence = SelectWeightedSequence( translated );
-	Activity broadcastAct = ( iSequence > 0 ) ? translated : activity;
-	if ( iSequence <= 0 )
-		iSequence = SelectWeightedSequence( activity );
+	Activity translated = HL2SB_TranslateActivityLua( activity, Weapon_TranslateActivity( activity ) );
+	int iSequence = translated >= 0 ? SelectWeightedSequence( translated ) : -1;
+	Activity broadcastAct = translated;
 
 	// This helper's temporary-entity transport remains for the other fork
 	// gesture paths. The standard act command uses its dedicated player message.
@@ -1161,8 +1159,7 @@ void CHL2MP_Player::HL2SB_AnimRestartGestureInternal( int iSlot, Activity activi
 	// first shot.  A different activity (or an empty slot) starts a new layer.
 	if ( m_iHL2SBSlotLayer[iSlot] >= 0 && m_iHL2SBSlotActivity[iSlot] == activity )
 	{
-		if ( bRestart )
-			SetLayerCycle( m_iHL2SBSlotLayer[iSlot], 0.0f, 0.0f );
+		SetLayerCycle( m_iHL2SBSlotLayer[iSlot], 0.0f, 0.0f );
 
 		return;
 	}
@@ -1185,7 +1182,7 @@ void CHL2MP_Player::HL2SB_AnimRestartGestureInternal( int iSlot, Activity activi
 		return;
 	}
 
-	int iLayer = AddGestureSequence( iSequence, true );
+	int iLayer = AddGestureSequence( iSequence, bRestart );
 	if ( iLayer < 0 )
 	{
 		if ( hl2sb_anim_debug.GetBool() )
@@ -1293,9 +1290,11 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
         break;
     case PLAYER_ATTACK1:
         HL2SB_DoAnimationEventLua( PLAYERANIMEVENT_ATTACK_PRIMARY, 0 );
+        TE_PlayerAnimEvent( this, PLAYERANIMEVENT_ATTACK_PRIMARY, 0 );
         break;
     case PLAYER_RELOAD:
         HL2SB_DoAnimationEventLua( PLAYERANIMEVENT_RELOAD, 0 );
+        TE_PlayerAnimEvent( this, PLAYERANIMEVENT_RELOAD, 0 );
         break;
     default:
         break;

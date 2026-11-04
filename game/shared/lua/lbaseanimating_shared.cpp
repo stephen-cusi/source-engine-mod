@@ -607,29 +607,23 @@ LUA_BINDING_END( "table", "The materials", "integer", "The number of materials" 
 
 LUA_BINDING_BEGIN( CBaseAnimating, GetSubModels, "class", "Get the submodels" )
 {
-    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
-
-    CStudioHdr *pStudioHdr = pAnimating->GetModelPtr();
-
-    if ( !pStudioHdr )
-    {
-        lua_pushnil( L );
-        return 1;
-    }
+    lua_CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+    const model_t *pModel = pEntity->GetModel();
+    const studiohdr_t *pRenderHdr = pModel && modelinfo ? modelinfo->GetStudiomodel( pModel ) : NULL;
+    if ( !pRenderHdr )
+        return 0;
 
     lua_newtable( L );
 
-    for ( int i = 0; i < pStudioHdr->numbodyparts(); i++ )
+    for ( int i = 0; i < pRenderHdr->numincludemodels; i++ )
     {
-        mstudiobodyparts_t *pBodyPart = pStudioHdr->pBodypart( i );
-
-        // TODO: Make a nice struct push function for this
+        const mstudiomodelgroup_t *pGroup = pRenderHdr->pModelGroup( i );
         lua_newtable( L );
 
-        lua_pushstring( L, pBodyPart->pszName() );
+        lua_pushstring( L, pGroup->pszName() );
         lua_setfield( L, -2, "name" );
 
-        lua_pushinteger( L, pBodyPart->modelindex );
+        lua_pushinteger( L, i );
         lua_setfield( L, -2, "id" );
 
         lua_rawseti( L, -2, i + 1 );  // 1 indexed

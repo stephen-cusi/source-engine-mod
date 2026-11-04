@@ -1659,14 +1659,10 @@ static int CBaseAnimating_RetrieveRagdollInfo (lua_State *L) {
 
 static int CBaseAnimating_SelectWeightedSequence (lua_State *L) {
   CBaseAnimating *entity = luaL_checkanimating(L, 1);
+  if ( !entity->GetModelPtr() ) return 0;
   const int activity = luaL_checkint(L, 2);
-  const char *name = NULL;
-  if ( activity == ACT_GMOD_SIT_ROLLERCOASTER ) name = "sit_rollercoaster";
-  else if ( activity == ACT_HL2MP_SIT ) name = "sit";
-  else if ( activity == ActivityList_IndexForName("ACT_DRIVE_JEEP") ) name = "drive_jeep";
-  else if ( activity == ActivityList_IndexForName("ACT_DRIVE_AIRBOAT") ) name = "drive_airboat";
-  int sequence = name ? entity->LookupSequence(name) : -1;
-  lua_pushinteger(L, sequence >= 0 ? sequence : entity->SelectWeightedSequence((Activity)activity));
+  if ( activity < 0 ) return luaL_argerror(L, 2, "invalid activity");
+  lua_pushinteger(L, entity->SelectWeightedSequence((Activity)activity));
   return 1;
 }
 

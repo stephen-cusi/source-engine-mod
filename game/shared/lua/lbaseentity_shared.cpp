@@ -1760,7 +1760,8 @@ static int CBaseEntity_PhysicsDestroy (lua_State *L) {
 }
 
 static int CBaseEntity_OnGround (lua_State *L) {
-  return CBaseEntity_IsOnGround(L);
+  lua_pushboolean(L, (luaL_checkentity(L, 1)->GetFlags() & FL_ONGROUND) != 0);
+  return 1;
 }
 
 // HL2SB GMod compat (2026-09-24): Entity:SetIK( bool ) - accepted as a safe
@@ -5053,17 +5054,19 @@ static int CBaseEntity_SetVelocity (lua_State *L) {
   return 0;
 }
 
-#ifdef CLIENT_DLL
 static int CBaseEntity_GetVelocity (lua_State *L) {
   CBaseEntity *entity = luaL_checkentity(L, 1);
   Vector velocity = entity->GetAbsVelocity();
   IPhysicsObject *physics = entity->VPhysicsGetObject();
-  if (entity->GetMoveType() == MOVETYPE_VPHYSICS && physics)
-    physics->GetVelocity(&velocity, NULL);
+  if (entity->GetMoveType() == MOVETYPE_VPHYSICS) {
+#ifndef CLIENT_DLL
+    velocity.Init();
+#endif
+    if (physics) physics->GetVelocity(&velocity, NULL);
+  }
   lua_pushvector(L, velocity);
   return 1;
 }
-#endif
 
 // HL2SB GMod compat: the direction vectors GMod exposes on every entity.  GMod
 // weapon scripts build their knockback from them - weapon_fists/shared.lua:127
@@ -6116,18 +6119,15 @@ static int CBaseEntity_SetPoseParameter (lua_State *L) {
     : (int)luaL_checknumber(L, 2);
   float flValue = (float)luaL_checknumber(L, 3);
   if ( pAnim == NULL || nIndex < 0 )
-  {
-    lua_pushnumber( L, 0 );
-    return 1;
-  }
-  lua_pushnumber( L, pAnim->SetPoseParameter( nIndex, flValue ) );
+    return 0;
+  pAnim->SetPoseParameter( nIndex, flValue );
 #ifdef CLIENT_DLL
   // HL2SB (2026-10-04) GMod contract: a pose write must be visible to the next
   // bone build -- see the twin binding in lc_baseanimating.cpp for the jitter
   // this per-frame bone cache dedup caused with pose-manipulating addons.
   pAnim->InvalidateBoneCache();
 #endif
-  return 1;
+  return 0;
 }
 
 static int CBaseEntity_LookupPoseParameter (lua_State *L) {
@@ -6716,11 +6716,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   // the wiki use (Entity:GetAbsVelocity is the rarer twin).  ent_nyan_bomb's
   // ENT:Draw opens with self:GetVelocity() -- without this the draw died on
   // its first line every frame and the flying cat rendered as nothing at all.
-#ifdef CLIENT_DLL
   {"GetVelocity", CBaseEntity_GetVelocity},
-#else
-  {"GetVelocity", CBaseEntity_GetAbsVelocity},
-#endif
   {"GetAttachment", CBaseEntity_GetAttachment},
   {"GetAnimTime", CBaseEntity_GetAnimTime},
   {"GetPoseParameter", CBaseEntity_GetPoseParameter},

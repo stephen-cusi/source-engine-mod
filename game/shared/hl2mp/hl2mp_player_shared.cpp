@@ -961,7 +961,7 @@ void CHL2MP_Player::HL2SB_ClientSetLayerSequence( int iSlot, int iSequence, Acti
 	int iEnt = entindex();
 	if ( iEnt <= 0 || iEnt > MAX_PLAYERS )
 		return;
-	if ( iSlot < 0 || iSlot >= HL2SBClientGesture::SLOT_COUNT || iSequence <= 0 )
+	if ( iSlot < 0 || iSlot >= HL2SBClientGesture::SLOT_COUNT || iSequence < 0 )
 		return;
 
 	HL2SB_ClientEnsureOverlaySlots( this );
@@ -1005,7 +1005,16 @@ void CHL2MP_Player::HL2SB_ClientRestartGesture( int iSlot, Activity activity, bo
 	if ( iSlot < 0 || iSlot >= HL2SBClientGesture::SLOT_COUNT || activity <= ACT_INVALID )
 		return;
 
-	int iSequence = SelectWeightedSequence( activity );
+	Activity translated = activity;
+	const int stackTop = L ? lua_gettop( L ) : 0;
+	if ( HL2SB_PushPlayerAnimationHook( "TranslateActivity", this ) )
+	{
+		lua_pushinteger( L, activity );
+		if ( luasrc_pcall( L, 3, 1, 0 ) == 0 && lua_isnumber( L, -1 ) )
+			translated = (Activity)lua_tointeger( L, -1 );
+		lua_settop( L, stackTop );
+	}
+	int iSequence = translated >= 0 ? SelectWeightedSequence( translated ) : -1;
 	if ( iSequence <= 0 )
 	{
 		if ( hl2sb_anim_debug.GetBool() )
@@ -1153,7 +1162,7 @@ void CHL2MP_Player::HL2SB_ClientAdvanceGestures( void )
 		C_AnimationLayer *pLayer = GetAnimOverlay( iSlot );
 		// Model changed (playermodel switch resets the layers in OnNewModel)
 		// - drop the bookkeeping; self-healing.
-		if ( (int)pLayer->m_nSequence <= 0 || (int)pLayer->m_nOrder != iSlot )
+		if ( (int)pLayer->m_nSequence < 0 || (int)pLayer->m_nOrder != iSlot )
 		{
 			HL2SBClientGesture::ClearSlot( iEnt, iSlot );
 			continue;
