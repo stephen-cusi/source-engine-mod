@@ -1589,14 +1589,7 @@ void CBaseServerVehicle::ItemPostFrame( CBasePlayer *player )
 
 	GetDrivableVehicle()->ItemPostFrame( player );
 
-	// HL2SB: gate on the RAW usercmd button, not the pressed edge.  ItemPreFrame
-	// runs PlayerUse first; FindUseEntity traces from the driver's eyes, and for a
-	// driver sitting inside their own vehicle that trace starts solid (endpos ==
-	// startpos, distance 0), selects the vehicle itself and the vehicle's Use()
-	// calls ResetUseKey() - which wipes the pressed edge before this check runs.
-	// The held button is immune to that, so +use inside a vehicle always reaches
-	// the exit path.  Exit anims stay single-shot via CanExitVehicle.
-	if ( player->m_nButtons & IN_USE )
+	if ( player->m_afButtonPressed & IN_USE )
 	{
 		if ( GetDrivableVehicle()->CanExitVehicle(player) )
 		{

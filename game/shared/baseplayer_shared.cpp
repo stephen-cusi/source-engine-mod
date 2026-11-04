@@ -1688,6 +1688,10 @@ void CBasePlayer::PlayerUse ( void )
 	}
 #endif
 
+	// The vehicle exit path consumes the use press separately.
+	if ( IsInAVehicle() && pUseEntity == GetVehicleEntity() )
+		return;
+
 	// Found an object
 	if ( pUseEntity )
 	{
@@ -1718,7 +1722,7 @@ void CBasePlayer::PlayerUse ( void )
 			pUseEntity->AcceptInput( "Use", this, this, emptyVariant, USE_OFF );
 		}
 	}
-	else if ( m_afButtonPressed & IN_USE )
+	else if ( ( m_afButtonPressed & IN_USE ) && !IsInAVehicle() )
 	{
 		PlayUseDenySound();
 	}
