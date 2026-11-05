@@ -2369,7 +2369,23 @@ static bool HL2SB_GlobalSend(lua_State *state, const char *name, int value, CBas
     default: return false;
   }
   unsigned char payload[512];
-  int len = HL2SB_NWSerialize(state, value, tag, payload, sizeof(payload));
+  int len;
+  if (tag == HL2SB_NWTAG_ENTITY) {
+    CBaseEntity *entity = lua_toentity(state, value);
+    unsigned int encoded = INVALID_NETWORKED_EHANDLE_VALUE;
+    if (entity && entity->GetRefEHandle().IsValid() &&
+        entity->entindex() >= 0 && entity->entindex() < MAX_EDICTS) {
+      const unsigned int serial = entity->GetRefEHandle().GetSerialNumber() &
+          ((1u << NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS) - 1);
+      encoded = (serial << MAX_EDICT_BITS) | (unsigned int)entity->entindex();
+    }
+    tag = 'H';
+    bf_write writer("HL2SB_GlobalEntity", payload, sizeof(payload));
+    writer.WriteLong((int)encoded);
+    len = writer.GetNumBytesWritten();
+  } else {
+    len = HL2SB_NWSerialize(state, value, tag, payload, sizeof(payload));
+  }
   if (len < 0 || len + (int)Q_strlen(name) + 7 > MAX_USER_MSG_DATA) return false;
   CRecipientFilter filter;
   filter.MakeReliable();
@@ -2628,7 +2644,12 @@ static void __MsgFunc_HL2SB_NW( bf_read &read )
 		if (lua_istable(L, -1)) {
 			HL2SB_NWReplicatedStore(iFamily, 0, szName, tag, payload, len);
 			lua_pushstring(L, szName);
-			if (tag == 'N' || !HL2SB_NWReplicatedPushFamily(L, iFamily, 0, szName)) lua_pushnil(L);
+			if (tag == 'H' && len == 4) {
+				bf_read entityRead("HL2SB_GlobalEntity", payload, len);
+				lua_newtable(L);
+				lua_pushinteger(L, (unsigned int)entityRead.ReadLong());
+				lua_setfield(L, -2, "__hl2sb_global_entity_handle");
+			} else if (tag == 'N' || !HL2SB_NWReplicatedPushFamily(L, iFamily, 0, szName)) lua_pushnil(L);
 			lua_rawset(L, -3);
 		}
 		lua_settop(L, top);
@@ -4342,6 +4363,26 @@ static int HL2SB_GetGlobalValue(lua_State *L) {
   HL2SB_PushGlobalValues(L);
   lua_pushstring(L, name);
   lua_rawget(L, -2);
+#ifdef CLIENT_DLL
+  if (lua_istable(L, -1)) {
+    lua_getfield(L, -1, "__hl2sb_global_entity_handle");
+    if (lua_isinteger(L, -1)) {
+      const unsigned int encoded = (unsigned int)lua_tointeger(L, -1);
+      C_BaseEntity *entity = NULL;
+      if (encoded != INVALID_NETWORKED_EHANDLE_VALUE) {
+        const int index = encoded & ((1u << MAX_EDICT_BITS) - 1);
+        const unsigned int serial = encoded >> MAX_EDICT_BITS;
+        C_BaseEntity *candidate = cl_entitylist->GetBaseEntity(index);
+        if (candidate && (candidate->GetRefEHandle().GetSerialNumber() &
+            ((1u << NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS) - 1)) == serial)
+          entity = candidate;
+      }
+      lua_pushentity(L, entity);
+      return 1;
+    }
+    lua_pop(L, 1);
+  }
+#endif
   if (!lua_isnil(L, -1)) return 1;
   lua_pop(L, 1);
   if (!lua_isnoneornil(L, 2)) { lua_pushvalue(L, 2); return 1; }

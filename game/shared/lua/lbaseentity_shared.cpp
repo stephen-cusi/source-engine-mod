@@ -21,6 +21,7 @@
 #include "model_types.h"
 #include "lbaseentity_shared.h"
 #include "basescripted.h"
+#include "hl2sb_transmit_parent.h"
 #include "mathlib/vmatrix.h"	// HL2SB: VMatrix for the transform matrix getters
 #include "mathlib/lvmatrix.h"	// HL2SB: lua_pushvmatrix for Entity:GetWorldTransformMatrix
 #ifdef CLIENT_DLL
@@ -6150,25 +6151,22 @@ static int CBaseEntity_SetDSP (lua_State *L) {
   return 0;
 }
 
+#ifndef CLIENT_DLL
+extern void HL2SB_SetScriptedUseCaps( CBaseScripted *entity, int caps );
 static int CBaseEntity_SetUseType (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
-  (void)luaL_checkint(L, 2);  // USE_* / SIMPLE_USE -- accepted and kept on the
-                              // entity's Lua field table for read-back; this
-                              // fork's Use dispatch behaviour is unchanged.
-  if ( pEntity->m_nTableReference < 0 ||
-       !lua_isrefvalid( L, pEntity->m_nTableReference ) )
-  {
-    if ( pEntity->m_nTableReference > 0 )
-      lua_unref( L, pEntity->m_nTableReference );
-    lua_newtable( L );
-    pEntity->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
+  const int type = (int)luaL_checknumber(L, 2);
+  CBaseScripted *pScripted = dynamic_cast<CBaseScripted *>(pEntity);
+  if ( pScripted ) {
+    int caps = FCAP_CONTINUOUS_USE;
+    if ( type == 1 ) caps = FCAP_ONOFF_USE;
+    else if ( type == 2 ) caps = FCAP_DIRECTIONAL_USE;
+    else if ( type == 3 ) caps = FCAP_IMPULSE_USE;
+    HL2SB_SetScriptedUseCaps( pScripted, caps );
   }
-  lua_getref( L, pEntity->m_nTableReference );
-  lua_pushvalue( L, 2 );
-  lua_setfield( L, -2, "UseType" );
-  lua_pop( L, 1 );
   return 0;
 }
+#endif
 
 static int CBaseEntity_PhysicsInitBox (lua_State *L) {
   /* HL2SB fix (2026-09-20, two rounds):
@@ -6380,23 +6378,32 @@ static int CBaseEntity_GetFlexWeight (lua_State *L) {
   return 1;
 }
 
-// HL2SB (2026-10-02): GMod Entity:SetTransmitWithParent( transmit = nil ) and
-// Entity:GetTransmitWithParent().  GMod's own bindings (reference, both
-// realms) just set/clear/test one flag bit on the entity; the server-side bit
-// is what the transmit loop consumes - this fork carries it as
-// EFL_TRANSMIT_WITH_PARENT and CServerGameEnts::CheckTransmit makes the entity
-// ride its move-parent's transmit decision.
+static CUtlMap<CBaseEntity *, bool> s_TransmitWithParent( DefLessFunc(CBaseEntity *) );
+
+bool HL2SB_GetTransmitWithParent( CBaseEntity *entity )
+{
+  const unsigned short index = s_TransmitWithParent.Find( entity );
+  return index != s_TransmitWithParent.InvalidIndex();
+}
+
+void HL2SB_SetTransmitWithParent( CBaseEntity *entity, bool enabled )
+{
+  if ( !entity ) return;
+  const unsigned short index = s_TransmitWithParent.Find( entity );
+  if ( enabled && index == s_TransmitWithParent.InvalidIndex() )
+    s_TransmitWithParent.Insert( entity, true );
+  else if ( !enabled && index != s_TransmitWithParent.InvalidIndex() )
+    s_TransmitWithParent.RemoveAt( index );
+}
+
 static int CBaseEntity_SetTransmitWithParent (lua_State *L) {
   CBaseEntity *pEnt = luaL_checkentity(L, 1);
   if ( lua_isnone(L, 2) )
   {
-    lua_pushboolean( L, ( pEnt->GetEFlags() & EFL_TRANSMIT_WITH_PARENT ) != 0 );
+    lua_pushboolean( L, HL2SB_GetTransmitWithParent( pEnt ) );
     return 1;
   }
-  if ( lua_toboolean(L, 2) )
-    pEnt->AddEFlags( EFL_TRANSMIT_WITH_PARENT );
-  else
-    pEnt->RemoveEFlags( EFL_TRANSMIT_WITH_PARENT );
+  HL2SB_SetTransmitWithParent( pEnt, lua_toboolean(L, 2) != 0 );
 #ifdef GAME_DLL
   pEnt->DispatchUpdateTransmitState();
 #endif
@@ -6405,7 +6412,7 @@ static int CBaseEntity_SetTransmitWithParent (lua_State *L) {
 
 static int CBaseEntity_GetTransmitWithParent (lua_State *L) {
   CBaseEntity *pEnt = luaL_checkentity(L, 1);
-  lua_pushboolean( L, ( pEnt->GetEFlags() & EFL_TRANSMIT_WITH_PARENT ) != 0 );
+  lua_pushboolean( L, HL2SB_GetTransmitWithParent( pEnt ) );
   return 1;
 }
 
@@ -7200,9 +7207,9 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetEFlags", CBaseEntity_SetEFlags},
   {"SetFriction", CBaseEntity_SetFriction},
   {"SetGravity", CBaseEntity_SetGravity},
-  // HL2SB GMod compat: minecraft addon (SetUseType(SIMPLE_USE) storage,
-  // box-built water blocks, waterizer point tests).
+#ifndef CLIENT_DLL
   {"SetUseType", CBaseEntity_SetUseType},
+#endif
   {"SetDSP", CBaseEntity_SetDSP},
   {"PhysicsInitBox", CBaseEntity_PhysicsInitBox},
   {"IsPointInside", CBaseEntity_IsPointInside},

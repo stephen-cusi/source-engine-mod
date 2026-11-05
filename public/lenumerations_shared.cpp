@@ -31,7 +31,160 @@
 
 void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
 {
+    static const struct { const char *name; unsigned int value; } nativeFlags[] = {
+        { "MASK_ALL", (unsigned int)MASK_ALL },
+        { "MASK_SOLID", (unsigned int)MASK_SOLID },
+        { "MASK_PLAYERSOLID", (unsigned int)MASK_PLAYERSOLID },
+        { "MASK_NPCSOLID", (unsigned int)MASK_NPCSOLID },
+        { "MASK_WATER", (unsigned int)MASK_WATER },
+        { "MASK_OPAQUE", (unsigned int)MASK_OPAQUE },
+        { "MASK_OPAQUE_AND_NPCS", (unsigned int)MASK_OPAQUE_AND_NPCS },
+        { "MASK_BLOCKLOS", (unsigned int)MASK_BLOCKLOS },
+        { "MASK_BLOCKLOS_AND_NPCS", (unsigned int)MASK_BLOCKLOS_AND_NPCS },
+        { "MASK_VISIBLE", (unsigned int)MASK_VISIBLE },
+        { "MASK_VISIBLE_AND_NPCS", (unsigned int)MASK_VISIBLE_AND_NPCS },
+        { "MASK_SHOT", (unsigned int)MASK_SHOT },
+        { "MASK_SHOT_HULL", (unsigned int)MASK_SHOT_HULL },
+        { "MASK_SHOT_PORTAL", (unsigned int)MASK_SHOT_PORTAL },
+        { "MASK_SOLID_BRUSHONLY", (unsigned int)MASK_SOLID_BRUSHONLY },
+        { "MASK_PLAYERSOLID_BRUSHONLY", (unsigned int)MASK_PLAYERSOLID_BRUSHONLY },
+        { "MASK_NPCSOLID_BRUSHONLY", (unsigned int)MASK_NPCSOLID_BRUSHONLY },
+        { "MASK_NPCWORLDSTATIC", (unsigned int)MASK_NPCWORLDSTATIC },
+        { "MASK_SPLITAREAPORTAL", (unsigned int)MASK_SPLITAREAPORTAL },
+        { "MASK_CURRENT", (unsigned int)MASK_CURRENT },
+        { "MASK_DEADSOLID", (unsigned int)MASK_DEADSOLID },
+        { "IN_ATTACK", (unsigned int)IN_ATTACK },
+        { "IN_JUMP", (unsigned int)IN_JUMP },
+        { "IN_DUCK", (unsigned int)IN_DUCK },
+        { "IN_FORWARD", (unsigned int)IN_FORWARD },
+        { "IN_BACK", (unsigned int)IN_BACK },
+        { "IN_USE", (unsigned int)IN_USE },
+        { "IN_CANCEL", (unsigned int)IN_CANCEL },
+        { "IN_LEFT", (unsigned int)IN_LEFT },
+        { "IN_RIGHT", (unsigned int)IN_RIGHT },
+        { "IN_MOVELEFT", (unsigned int)IN_MOVELEFT },
+        { "IN_MOVERIGHT", (unsigned int)IN_MOVERIGHT },
+        { "IN_ATTACK2", (unsigned int)IN_ATTACK2 },
+        { "IN_RUN", (unsigned int)IN_RUN },
+        { "IN_RELOAD", (unsigned int)IN_RELOAD },
+        { "IN_ALT1", (unsigned int)IN_ALT1 },
+        { "IN_ALT2", (unsigned int)IN_ALT2 },
+        { "IN_SCORE", (unsigned int)IN_SCORE },
+        { "IN_SPEED", (unsigned int)IN_SPEED },
+        { "IN_WALK", (unsigned int)IN_WALK },
+        { "IN_ZOOM", (unsigned int)IN_ZOOM },
+        { "IN_WEAPON1", (unsigned int)IN_WEAPON1 },
+        { "IN_WEAPON2", (unsigned int)IN_WEAPON2 },
+        { "IN_BULLRUSH", (unsigned int)IN_BULLRUSH },
+        { "IN_GRENADE1", (unsigned int)IN_GRENADE1 },
+        { "IN_GRENADE2", (unsigned int)IN_GRENADE2 },
+        { "SURF_LIGHT", (unsigned int)SURF_LIGHT },
+        { "SURF_SKY2D", (unsigned int)SURF_SKY2D },
+        { "SURF_SKY", (unsigned int)SURF_SKY },
+        { "SURF_WARP", (unsigned int)SURF_WARP },
+        { "SURF_TRANS", (unsigned int)SURF_TRANS },
+        { "SURF_NOPORTAL", (unsigned int)SURF_NOPORTAL },
+        { "SURF_TRIGGER", (unsigned int)SURF_TRIGGER },
+        { "SURF_NODRAW", (unsigned int)SURF_NODRAW },
+        { "SURF_HINT", (unsigned int)SURF_HINT },
+        { "SURF_SKIP", (unsigned int)SURF_SKIP },
+        { "SURF_NOLIGHT", (unsigned int)SURF_NOLIGHT },
+        { "SURF_BUMPLIGHT", (unsigned int)SURF_BUMPLIGHT },
+        { "SURF_NOSHADOWS", (unsigned int)SURF_NOSHADOWS },
+        { "SURF_NODECALS", (unsigned int)SURF_NODECALS },
+        { "SURF_NOCHOP", (unsigned int)SURF_NOCHOP },
+        { "SURF_HITBOX", (unsigned int)SURF_HITBOX },
+        { "GESTURE_SLOT_ATTACK_AND_RELOAD", (unsigned int)GESTURE_SLOT_ATTACK_AND_RELOAD },
+        { "GESTURE_SLOT_GRENADE", (unsigned int)GESTURE_SLOT_GRENADE },
+        { "GESTURE_SLOT_JUMP", (unsigned int)GESTURE_SLOT_JUMP },
+        { "GESTURE_SLOT_SWIM", (unsigned int)GESTURE_SLOT_SWIM },
+        { "GESTURE_SLOT_FLINCH", (unsigned int)GESTURE_SLOT_FLINCH },
+        { "GESTURE_SLOT_VCD", (unsigned int)GESTURE_SLOT_VCD },
+        { "GESTURE_SLOT_CUSTOM", (unsigned int)GESTURE_SLOT_CUSTOM },
+        { "OBS_MODE_NONE", (unsigned int)OBS_MODE_NONE },
+        { "OBS_MODE_DEATHCAM", (unsigned int)OBS_MODE_DEATHCAM },
+        { "OBS_MODE_FREEZECAM", (unsigned int)OBS_MODE_FREEZECAM },
+        { "OBS_MODE_FIXED", (unsigned int)OBS_MODE_FIXED },
+        { "OBS_MODE_IN_EYE", (unsigned int)OBS_MODE_IN_EYE },
+        { "OBS_MODE_CHASE", (unsigned int)OBS_MODE_CHASE },
+        { "OBS_MODE_ROAMING", (unsigned int)OBS_MODE_ROAMING },
+        { "DMG_GENERIC", (unsigned int)DMG_GENERIC },
+        { "DMG_CRUSH", (unsigned int)DMG_CRUSH },
+        { "DMG_BULLET", (unsigned int)DMG_BULLET },
+        { "DMG_SLASH", (unsigned int)DMG_SLASH },
+        { "DMG_BURN", (unsigned int)DMG_BURN },
+        { "DMG_VEHICLE", (unsigned int)DMG_VEHICLE },
+        { "DMG_FALL", (unsigned int)DMG_FALL },
+        { "DMG_BLAST", (unsigned int)DMG_BLAST },
+        { "DMG_CLUB", (unsigned int)DMG_CLUB },
+        { "DMG_SHOCK", (unsigned int)DMG_SHOCK },
+        { "DMG_SONIC", (unsigned int)DMG_SONIC },
+        { "DMG_ENERGYBEAM", (unsigned int)DMG_ENERGYBEAM },
+        { "DMG_PREVENT_PHYSICS_FORCE", (unsigned int)DMG_PREVENT_PHYSICS_FORCE },
+        { "DMG_NEVERGIB", (unsigned int)DMG_NEVERGIB },
+        { "DMG_ALWAYSGIB", (unsigned int)DMG_ALWAYSGIB },
+        { "DMG_DROWN", (unsigned int)DMG_DROWN },
+        { "DMG_PARALYZE", (unsigned int)DMG_PARALYZE },
+        { "DMG_NERVEGAS", (unsigned int)DMG_NERVEGAS },
+        { "DMG_POISON", (unsigned int)DMG_POISON },
+        { "DMG_RADIATION", (unsigned int)DMG_RADIATION },
+        { "DMG_DROWNRECOVER", (unsigned int)DMG_DROWNRECOVER },
+        { "DMG_ACID", (unsigned int)DMG_ACID },
+        { "DMG_SLOWBURN", (unsigned int)DMG_SLOWBURN },
+        { "DMG_REMOVENORAGDOLL", (unsigned int)DMG_REMOVENORAGDOLL },
+        { "DMG_PHYSGUN", (unsigned int)DMG_PHYSGUN },
+        { "DMG_PLASMA", (unsigned int)DMG_PLASMA },
+        { "DMG_AIRBOAT", (unsigned int)DMG_AIRBOAT },
+        { "DMG_DISSOLVE", (unsigned int)DMG_DISSOLVE },
+        { "DMG_BLAST_SURFACE", (unsigned int)DMG_BLAST_SURFACE },
+        { "DMG_DIRECT", (unsigned int)DMG_DIRECT },
+        { "DMG_BUCKSHOT", (unsigned int)DMG_BUCKSHOT },
+        { "DMG_SNIPER", (unsigned int)DMG_SNIPER },
+        { "DMG_MISSILEDEFENSE", (unsigned int)(1u << 31) },
+        { "IN_ATTACK3", (unsigned int)IN_ATTACK3 },
+        { "GESTURE_SLOT_COUNT", (unsigned int)GESTURE_SLOT_COUNT },
+        { "DMG_PREVENTPHYSICSFORCE", (unsigned int)DMG_PREVENT_PHYSICS_FORCE },
+        { "DMG_BLASTSURFACE", (unsigned int)DMG_BLAST_SURFACE },
+        { "DMG_LASTGENERICFLAG", (unsigned int)DMG_LASTGENERICFLAG },
+    };
+    for ( unsigned int i = 0; i < sizeof( nativeFlags ) / sizeof( nativeFlags[0] ); ++i )
+    {
+        lua_pushinteger( L, (lua_Integer)nativeFlags[i].value );
+        lua_setglobal( L, nativeFlags[i].name );
+    }
+    lua_pushinteger( L, GESTURE_SLOT_INVALID );
+    lua_setglobal( L, "GESTURE_SLOT_INVALID" );
     static const struct { const char *name; int value; } globals[] = {
+        { "CONTINUOUS_USE", 0 }, { "ONOFF_USE", 1 },
+        { "DIRECTIONAL_USE", 2 }, { "SIMPLE_USE", 3 },
+        { "MOVECOLLIDE_DEFAULT", MOVECOLLIDE_DEFAULT },
+        { "MOVECOLLIDE_FLY_BOUNCE", MOVECOLLIDE_FLY_BOUNCE },
+        { "MOVECOLLIDE_FLY_CUSTOM", MOVECOLLIDE_FLY_CUSTOM },
+        { "MOVECOLLIDE_FLY_SLIDE", MOVECOLLIDE_FLY_SLIDE },
+        { "MOVECOLLIDE_COUNT", MOVECOLLIDE_COUNT },
+        { "MOVETYPE_NONE", MOVETYPE_NONE }, { "MOVETYPE_ISOMETRIC", MOVETYPE_ISOMETRIC },
+        { "MOVETYPE_WALK", MOVETYPE_WALK }, { "MOVETYPE_STEP", MOVETYPE_STEP },
+        { "MOVETYPE_FLY", MOVETYPE_FLY }, { "MOVETYPE_FLYGRAVITY", MOVETYPE_FLYGRAVITY },
+        { "MOVETYPE_FLY_GRAVITY", MOVETYPE_FLYGRAVITY },
+        { "MOVETYPE_VPHYSICS", MOVETYPE_VPHYSICS }, { "MOVETYPE_PUSH", MOVETYPE_PUSH },
+        { "MOVETYPE_NOCLIP", MOVETYPE_NOCLIP }, { "MOVETYPE_LADDER", MOVETYPE_LADDER },
+        { "MOVETYPE_OBSERVER", MOVETYPE_OBSERVER }, { "MOVETYPE_CUSTOM", MOVETYPE_CUSTOM },
+        { "MOVETYPE_LAST", MOVETYPE_LAST },
+        { "SOLID_NONE", SOLID_NONE }, { "SOLID_BSP", SOLID_BSP },
+        { "SOLID_BBOX", SOLID_BBOX }, { "SOLID_AABB", SOLID_BBOX },
+        { "SOLID_OBB", SOLID_OBB }, { "SOLID_OBB_YAW", SOLID_OBB_YAW },
+        { "SOLID_CUSTOM", SOLID_CUSTOM }, { "SOLID_VPHYSICS", SOLID_VPHYSICS },
+        { "SOLID_LAST", SOLID_LAST },
+        { "FSOLID_CUSTOMRAYTEST", FSOLID_CUSTOMRAYTEST },
+        { "FSOLID_CUSTOMBOXTEST", FSOLID_CUSTOMBOXTEST },
+        { "FSOLID_NOT_SOLID", FSOLID_NOT_SOLID }, { "FSOLID_TRIGGER", FSOLID_TRIGGER },
+        { "FSOLID_NOT_STANDABLE", FSOLID_NOT_STANDABLE },
+        { "FSOLID_VOLUME_CONTENTS", FSOLID_VOLUME_CONTENTS },
+        { "FSOLID_FORCE_WORLD_ALIGNED", FSOLID_FORCE_WORLD_ALIGNED },
+        { "FSOLID_USE_TRIGGER_BOUNDS", FSOLID_USE_TRIGGER_BOUNDS },
+        { "FSOLID_ROOT_PARENT_ALIGNED", FSOLID_ROOT_PARENT_ALIGNED },
+        { "FSOLID_TRIGGER_TOUCH_DEBRIS", FSOLID_TRIGGER_TOUCH_DEBRIS },
+        { "FSOLID_MAX_BITS", FSOLID_MAX_BITS }, { "HITGROUP_GENERIC", HITGROUP_GENERIC },
         { "TEAM_CONNECTING", 0 }, { "TEAM_UNASSIGNED", 1001 }, { "TEAM_SPECTATOR", 1002 },
         { "BOX_FRONT", 0 }, { "BOX_BACK", 1 }, { "BOX_RIGHT", 2 },
         { "BOX_LEFT", 3 }, { "BOX_TOP", 4 }, { "BOX_BOTTOM", 5 },
@@ -47,6 +200,7 @@ void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
         { "EF_BONEMERGE_FASTCULL", EF_BONEMERGE_FASTCULL },
         { "EF_ITEM_BLINK", EF_ITEM_BLINK }, { "EF_PARENT_ANIMATES", EF_PARENT_ANIMATES },
         { "EF_FOLLOWBONE", EF_FOLLOWBONE },
+        { "EF_NOFLASHLIGHT", 8192 },
         { "HUD_PRINTNOTIFY", HUD_PRINTNOTIFY }, { "HUD_PRINTCONSOLE", HUD_PRINTCONSOLE },
         { "HUD_PRINTTALK", HUD_PRINTTALK }, { "HUD_PRINTCENTER", HUD_PRINTCENTER },
         { "KEY_PAD_0", KEY_PAD_0 },
@@ -224,8 +378,28 @@ void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
         { "CHAN_VOICE", 2 }, { "HITGROUP_HEAD", 1 }, { "HITGROUP_CHEST", 2 },
         { "HITGROUP_STOMACH", 3 }, { "HITGROUP_LEFTARM", 4 }, { "HITGROUP_RIGHTARM", 5 },
         { "HITGROUP_LEFTLEG", 6 }, { "HITGROUP_RIGHTLEG", 7 }, { "HITGROUP_GEAR", 10 },
-        { "COLLISION_GROUP_IN_VEHICLE", 10 }, { "COLLISION_GROUP_DEBRIS", 1 },
-        { "COLLISION_GROUP_WEAPON", COLLISION_GROUP_WEAPON }, { "COLLISION_GROUP_WORLD", 20 },
+        { "COLLISION_GROUP_NONE", COLLISION_GROUP_NONE },
+        { "COLLISION_GROUP_DEBRIS", COLLISION_GROUP_DEBRIS },
+        { "COLLISION_GROUP_DEBRIS_TRIGGER", COLLISION_GROUP_DEBRIS_TRIGGER },
+        { "COLLISION_GROUP_INTERACTIVE_DEBRIS", COLLISION_GROUP_INTERACTIVE_DEBRIS },
+        { "COLLISION_GROUP_INTERACTIVE", COLLISION_GROUP_INTERACTIVE },
+        { "COLLISION_GROUP_PLAYER", COLLISION_GROUP_PLAYER },
+        { "COLLISION_GROUP_BREAKABLE_GLASS", COLLISION_GROUP_BREAKABLE_GLASS },
+        { "COLLISION_GROUP_VEHICLE", COLLISION_GROUP_VEHICLE },
+        { "COLLISION_GROUP_PLAYER_MOVEMENT", COLLISION_GROUP_PLAYER_MOVEMENT },
+        { "COLLISION_GROUP_NPC", COLLISION_GROUP_NPC },
+        { "COLLISION_GROUP_IN_VEHICLE", COLLISION_GROUP_IN_VEHICLE },
+        { "COLLISION_GROUP_WEAPON", COLLISION_GROUP_WEAPON },
+        { "COLLISION_GROUP_VEHICLE_CLIP", COLLISION_GROUP_VEHICLE_CLIP },
+        { "COLLISION_GROUP_PROJECTILE", COLLISION_GROUP_PROJECTILE },
+        { "COLLISION_GROUP_DOOR_BLOCKER", COLLISION_GROUP_DOOR_BLOCKER },
+        { "COLLISION_GROUP_PASSABLE_DOOR", COLLISION_GROUP_PASSABLE_DOOR },
+        { "COLLISION_GROUP_DISSOLVING", COLLISION_GROUP_DISSOLVING },
+        { "COLLISION_GROUP_PUSHAWAY", COLLISION_GROUP_PUSHAWAY },
+        { "COLLISION_GROUP_NPC_ACTOR", COLLISION_GROUP_NPC_ACTOR },
+        { "COLLISION_GROUP_NPC_SCRIPTED", COLLISION_GROUP_NPC_SCRIPTED },
+        { "COLLISION_GROUP_WORLD", 20 }, { "LAST_SHARED_COLLISION_GROUP", 21 },
+        { "COLLISION_GROUP_LAST", 21 }, { "COLLISION_GROUP_HL2_SPIT", HL2COLLISION_GROUP_SPIT },
         { "CONTENTS_TEAM3", 1024 }, { "CONTENTS_TEAM4", 512 },
         { "LAST_VISIBLE_CONTENTS", LAST_VISIBLE_CONTENTS }, { "ALL_VISIBLE_CONTENTS", ALL_VISIBLE_CONTENTS },
         { "PLAYER_IDLE", 0 }, { "PLAYER_WALK", 1 }, { "PLAYER_JUMP", 2 },
@@ -242,6 +416,7 @@ void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
         { "EFL_NOCLIP_ACTIVE", EFL_NOCLIP_ACTIVE },
         { "EFL_SETTING_UP_BONES", EFL_SETTING_UP_BONES },
         { "EFL_KEEP_ON_RECREATE_ENTITIES", EFL_KEEP_ON_RECREATE_ENTITIES },
+        { "EFL_HAS_PLAYER_CHILD", EFL_HAS_PLAYER_CHILD },
         { "EFL_DIRTY_SHADOWUPDATE", EFL_DIRTY_SHADOWUPDATE },
         { "EFL_NOTIFY", EFL_NOTIFY },
         { "EFL_FORCE_CHECK_TRANSMIT", EFL_FORCE_CHECK_TRANSMIT },
@@ -274,6 +449,42 @@ void HL2SB_RegisterLegacyGlobalEnums( lua_State *L )
         lua_pushinteger( L, globals[i].value );
         lua_setglobal( L, globals[i].name );
     }
+#ifdef CLIENT_DLL
+    static const struct { const char *name; int value; } dockGlobals[] = {
+        { "NODOCK", vgui::Panel::DOCK_NONE }, { "FILL", vgui::Panel::DOCK_FILL },
+        { "LEFT", vgui::Panel::DOCK_LEFT }, { "RIGHT", vgui::Panel::DOCK_RIGHT },
+        { "TOP", vgui::Panel::DOCK_TOP }, { "BOTTOM", vgui::Panel::DOCK_BOTTOM },
+    };
+    for ( unsigned int i = 0; i < sizeof( dockGlobals ) / sizeof( dockGlobals[0] ); ++i )
+    {
+        lua_pushinteger( L, dockGlobals[i].value );
+        lua_setglobal( L, dockGlobals[i].name );
+    }
+#endif
+    static const struct { const char *name; int value; } sensorBones[] = {
+        { "HIP", 0 }, { "SPINE", 1 }, { "SHOULDER", 2 }, { "HEAD", 3 },
+        { "SHOULDER_LEFT", 4 }, { "ELBOW_LEFT", 5 }, { "WRIST_LEFT", 6 }, { "HAND_LEFT", 7 },
+        { "SHOULDER_RIGHT", 8 }, { "ELBOW_RIGHT", 9 }, { "WRIST_RIGHT", 10 }, { "HAND_RIGHT", 11 },
+        { "HIP_LEFT", 12 }, { "KNEE_LEFT", 13 }, { "ANKLE_LEFT", 14 }, { "FOOT_LEFT", 15 },
+        { "HIP_RIGHT", 16 }, { "KNEE_RIGHT", 17 }, { "ANKLE_RIGHT", 18 }, { "FOOT_RIGHT", 19 },
+    };
+    lua_newtable( L );
+    for ( unsigned int i = 0; i < sizeof( sensorBones ) / sizeof( sensorBones[0] ); ++i )
+    {
+        lua_pushinteger( L, sensorBones[i].value );
+        lua_setfield( L, -2, sensorBones[i].name );
+    }
+    lua_setglobal( L, "SENSORBONE" );
+    static const struct { const char *name; int value; } textureFilters[] = {
+        { "NONE", 0 }, { "POINT", 1 }, { "LINEAR", 2 }, { "ANISOTROPIC", 3 },
+    };
+    lua_newtable( L );
+    for ( unsigned int i = 0; i < sizeof( textureFilters ) / sizeof( textureFilters[0] ); ++i )
+    {
+        lua_pushinteger( L, textureFilters[i].value );
+        lua_setfield( L, -2, textureFilters[i].name );
+    }
+    lua_setglobal( L, "TEXFILTER" );
 #ifndef CLIENT_DLL
     static const struct { const char *name; int value; } dispositions[] = {
         { "D_ER", 0 }, { "D_HT", 1 }, { "D_FR", 2 },
@@ -456,7 +667,7 @@ LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
     // "COLLISION_GROUP_WORLD or 20" never fires because the engine already set
     // the global to 1.
     lua_pushenum( L, 20 /* GMod COLLISION_GROUP_WORLD */, "WORLD" );
-    lua_pushenum( L, LAST_SHARED_COLLISION_GROUP, "LAST" );
+    lua_pushenum( L, LAST_SHARED_COLLISION_GROUP + 1, "LAST" );
     LUA_SET_ENUM_LIB_END( L );
 
     LUA_SET_ENUM_LIB_BEGIN( L, "PLAYER_ANIMATION" );
@@ -1425,6 +1636,20 @@ LUALIB_API int luaopen_EF( lua_State *L )
 */
 LUALIB_API int luaopen_FL_EDICT( lua_State *L )
 {
+    static const struct { const char *name; int value; } aliases[] = {
+        { "FL_EDICT_CHANGED", FL_EDICT_CHANGED }, { "FL_EDICT_FREE", FL_EDICT_FREE },
+        { "FL_EDICT_FULL", FL_EDICT_FULL }, { "FL_EDICT_FULL_CHECK", FL_EDICT_FULLCHECK },
+        { "FL_EDICT_ALWAYS", FL_EDICT_ALWAYS }, { "FL_EDICT_DONTSEND", FL_EDICT_DONTSEND },
+        { "FL_EDICT_PVSCHECK", FL_EDICT_PVSCHECK }, { "FL_EDICT_DONT_SEND", FL_EDICT_DONTSEND },
+        { "FL_EDICT_PVS_CHECK", FL_EDICT_PVSCHECK },
+        { "FL_EDICT_PENDING_DORMANT_CHECK", FL_EDICT_PENDING_DORMANT_CHECK },
+        { "FL_EDICT_DIRTY_PVS_INFORMATION", FL_EDICT_DIRTY_PVS_INFORMATION },
+    };
+    for ( unsigned int i = 0; i < sizeof( aliases ) / sizeof( aliases[0] ); ++i )
+    {
+        lua_pushinteger( L, aliases[i].value );
+        lua_setglobal( L, aliases[i].name );
+    }
     LUA_SET_ENUM_LIB_BEGIN( L, LUA_FLEDICTLIBNAME );
     lua_pushenum( L, FL_EDICT_CHANGED, "CHANGED" );
     lua_pushenum( L, FL_EDICT_FREE, "FREE" );

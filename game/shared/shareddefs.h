@@ -594,7 +594,7 @@ enum
 	EFL_SETTING_UP_BONES =		(1<<3),	// Set while a model is setting up its bones.
 	EFL_KEEP_ON_RECREATE_ENTITIES = (1<<4), // This is a special entity that should not be deleted when we restart entities only
 
-	EFL_HAS_PLAYER_CHILD=		(1<<4),	// One of the child entities is a player.
+	EFL_HAS_PLAYER_CHILD=		(1<<16),	// One of the child entities is a player.
 
 	EFL_DIRTY_SHADOWUPDATE =	(1<<5),	// Client only- need shadow manager to update the shadow...
 	EFL_NOTIFY =				(1<<6),	// Another entity is watching events on this entity (used by teleport)
@@ -615,7 +615,6 @@ enum
 	EFL_DIRTY_ABSANGVELOCITY =	(1<<13),
 	EFL_DIRTY_SURROUNDING_COLLISION_BOUNDS	= (1<<14),
 	EFL_DIRTY_SPATIAL_PARTITION = (1<<15),
-	EFL_TRANSMIT_WITH_PARENT =	(1<<16),	// HL2SB: GMod Entity:SetTransmitWithParent - transmitted whenever the move-parent is transmitted, even outside the recipient's PVS (consumed by CServerGameEnts::CheckTransmit)
 
 	EFL_IN_SKYBOX =				(1<<17),	// This is set if the entity detects that it's in the skybox.
 											// This forces it to pass the "in PVS" for transmission.

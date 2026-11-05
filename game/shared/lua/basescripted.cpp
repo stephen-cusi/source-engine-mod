@@ -8,6 +8,7 @@
 
 #include "cbase.h"
 #include "basescripted.h"
+#include "hl2sb_transmit_parent.h"
 #include "luamanager.h"
 #ifdef CLIENT_DLL
 #include "lc_baseanimating.h"
@@ -126,8 +127,26 @@ CBaseScripted::CBaseScripted( void )
 #endif
 }
 
+#ifndef CLIENT_DLL
+static CUtlMap<CBaseScripted *, int> s_ScriptedUseCaps( DefLessFunc(CBaseScripted *) );
+
+void HL2SB_SetScriptedUseCaps( CBaseScripted *entity, int caps )
+{
+	unsigned short index = s_ScriptedUseCaps.Find( entity );
+	if ( index == s_ScriptedUseCaps.InvalidIndex() )
+		s_ScriptedUseCaps.Insert( entity, caps );
+	else
+		s_ScriptedUseCaps[index] = caps;
+}
+#endif
+
 CBaseScripted::~CBaseScripted( void )
 {
+#ifndef CLIENT_DLL
+	unsigned short index = s_ScriptedUseCaps.Find( this );
+	if ( index != s_ScriptedUseCaps.InvalidIndex() )
+		s_ScriptedUseCaps.RemoveAt( index );
+#endif
 	// Andrew; This is actually done in CBaseEntity. I'm doing it here because
 	// this is the class that initialized the reference.
 	//
@@ -1039,7 +1058,7 @@ int CBaseScripted::UpdateTransmitState( void )
 	// Parent visibility and recipient ownership must be checked together.
 	// Keep this entity eligible while its parent is hidden so it can resume
 	// transmission without requiring a new model or parent assignment.
-	if ( IsEFlagSet( EFL_TRANSMIT_WITH_PARENT ) )
+	if ( HL2SB_GetTransmitWithParent( this ) )
 		return SetTransmitState( FL_EDICT_FULLCHECK );
 
 #ifdef LUA_SDK
@@ -1211,7 +1230,8 @@ static ConVar hl2sb_physicscollide_debug(
 //-----------------------------------------------------------------------------
 int CBaseScripted::ObjectCaps( void )
 {
-	return BaseClass::ObjectCaps() | FCAP_IMPULSE_USE;
+	unsigned short index = s_ScriptedUseCaps.Find( this );
+	return BaseClass::ObjectCaps() | ( index == s_ScriptedUseCaps.InvalidIndex() ? FCAP_CONTINUOUS_USE : s_ScriptedUseCaps[index] );
 }
 
 void CBaseScripted::UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )

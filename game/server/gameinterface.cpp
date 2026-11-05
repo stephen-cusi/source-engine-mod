@@ -9,6 +9,7 @@
 #include "cbase.h"
 #ifdef LUA_SDK
 #include "lua/hl2sb_playerbuttons.h"
+#include "lua/hl2sb_transmit_parent.h"
 #endif
 #include "gamestringpool.h"
 #include "mapentities_shared.h"
@@ -2890,6 +2891,7 @@ void CServerGameEnts::CheckTransmit( CCheckTransmitInfo *pInfo, const unsigned s
 			continue;
 		}
 
+#ifdef LUA_SDK
 		// HL2SB (2026-10-02): GMod Entity:SetTransmitWithParent - an entity with
 		// this EFlag rides its move-parent's transmit decision even outside the
 		// recipient's PVS (the gmod_hands arms entity parents onto the
@@ -2898,7 +2900,7 @@ void CServerGameEnts::CheckTransmit( CCheckTransmitInfo *pInfo, const unsigned s
 		// priority because this sits below them.
 		{
 			CBaseEntity *pFlagEnt = ( CBaseEntity * )pEdict->GetUnknown();
-			if ( pFlagEnt && ( pFlagEnt->GetEFlags() & EFL_TRANSMIT_WITH_PARENT ) )
+			if ( pFlagEnt && HL2SB_GetTransmitWithParent( pFlagEnt ) )
 			{
 				CServerNetworkProperty *pFlagParent = netProp->GetNetworkParent();
 				if ( pFlagParent && pInfo->m_pTransmitEdict->Get( pFlagParent->entindex() ) )
@@ -2908,6 +2910,7 @@ void CServerGameEnts::CheckTransmit( CCheckTransmitInfo *pInfo, const unsigned s
 				}
 			}
 		}
+#endif
 
 		// If the entity is marked "check PVS" but it's in hierarchy, walk up the hierarchy looking for the
 		//  for any parent which is also in the PVS.  If none are found, then we don't need to worry about sending ourself

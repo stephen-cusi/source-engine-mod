@@ -1,5 +1,6 @@
 #include "cbase.h"
 #include "hl2sb_bonemanipulator.h"
+#include "hl2sb_transmit_parent.h"
 #include "tier0/memdbgon.h"
 
 #ifdef CLIENT_DLL
@@ -109,7 +110,7 @@ static CBoneManipulate *BoneController(CBaseEntity *entity, bool create = false)
             controller->SetSolid(SOLID_NONE);
             controller->SetMoveType(MOVETYPE_NONE);
             controller->AddEffects(EF_NODRAW);
-            controller->AddEFlags(EFL_TRANSMIT_WITH_PARENT);
+            HL2SB_SetTransmitWithParent(controller, true);
             DispatchSpawn(controller);
         }
         return controller;

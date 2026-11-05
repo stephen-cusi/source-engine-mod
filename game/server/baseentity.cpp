@@ -25,6 +25,9 @@
 #include "IEffects.h"
 #include "vstdlib/random.h"
 #include "baseentity.h"
+#ifdef LUA_SDK
+#include "lua/hl2sb_transmit_parent.h"
+#endif
 #include "collisionutils.h"
 #include "coordsize.h"
 #include "animation.h"
@@ -308,7 +311,7 @@ IMPLEMENT_SERVERCLASS_ST_NOBASE( CBaseEntity, DT_BaseEntity )
 	SendPropDataTable( SENDINFO_DT( m_Collision ), &REFERENCE_SEND_TABLE(DT_CollisionProperty) ),
 	SendPropInt		(SENDINFO(m_nRenderFX),		8, SPROP_UNSIGNED ),
 	SendPropInt		(SENDINFO(m_nRenderMode),	8, SPROP_UNSIGNED ),
-	SendPropInt		(SENDINFO(m_fEffects),		EF_MAX_BITS, SPROP_UNSIGNED),
+	SendPropInt		(SENDINFO(m_fEffects),		16, SPROP_UNSIGNED),
 #ifdef LUA_SDK
 	SendPropInt("m_bSpawnEffect", 0, sizeof(int), 1, SPROP_UNSIGNED, SendProxy_SpawnEffect),
 	SendPropFloat("m_flSpawnEffectCreationTime", 0, sizeof(float), 0, SPROP_NOSCALE, 0, HIGH_DEFAULT, SendProxy_SpawnEffectTime),
@@ -493,6 +496,9 @@ extern bool g_bDisableEhandleAccess;
 //-----------------------------------------------------------------------------
 CBaseEntity::~CBaseEntity( )
 {
+#ifdef LUA_SDK
+	HL2SB_SetTransmitWithParent( this, false );
+#endif
 	// FIXME: This can't be called from UpdateOnRemove! There's at least one
 	// case where friction sounds are added between the call to UpdateOnRemove + ~CBaseEntity
 	PhysCleanupFrictionSounds( this );
@@ -3802,13 +3808,15 @@ int CBaseEntity::DispatchUpdateTransmitState()
 //-----------------------------------------------------------------------------
 int CBaseEntity::ShouldTransmit( const CCheckTransmitInfo *pInfo )
 {
-	if ( IsEFlagSet( EFL_TRANSMIT_WITH_PARENT ) )
+#ifdef LUA_SDK
+	if ( HL2SB_GetTransmitWithParent( this ) )
 	{
 		CBaseEntity *pParent = GetMoveParent();
 		if ( !pParent || ( pParent->DispatchUpdateTransmitState() & FL_EDICT_DONTSEND ) )
 			return FL_EDICT_DONTSEND;
 		return pParent->ShouldTransmit( pInfo );
 	}
+#endif
 
 	int fFlags = DispatchUpdateTransmitState();
 

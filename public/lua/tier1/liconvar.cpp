@@ -50,6 +50,8 @@ LUALIB_API int luaopen_FCVAR (lua_State *L) {
 	lua_pushenum(L, FCVAR_SERVER_CAN_EXECUTE, "SERVER_CAN_EXECUTE");
 	lua_pushenum(L, FCVAR_SERVER_CANNOT_QUERY, "SERVER_CANNOT_QUERY");
 	lua_pushenum(L, FCVAR_CLIENTCMD_CAN_EXECUTE, "CLIENTCMD_CAN_EXECUTE");
+	lua_pushenum(L, 1 << 26, "LUA_CLIENT");
+	lua_pushenum(L, 1 << 27, "LUA_SERVER");
   END_LUA_SET_ENUM_LIB(L);
   return 0;
 }

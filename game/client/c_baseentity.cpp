@@ -6,6 +6,9 @@
 //===========================================================================//
 #include "cbase.h"
 #include "c_baseentity.h"
+#ifdef LUA_SDK
+#include "lua/hl2sb_transmit_parent.h"
+#endif
 #include "c_baseanimating.h"	// HL2SB: EF_FOLLOWBONE parent transform (GetBoneTransform)
 #include "prediction.h"
 #include "model_types.h"
@@ -1120,6 +1123,9 @@ C_BaseEntity::C_BaseEntity() :
 //-----------------------------------------------------------------------------
 C_BaseEntity::~C_BaseEntity()
 {
+#ifdef LUA_SDK
+	HL2SB_SetTransmitWithParent( this, false );
+#endif
 	Term();
 	ClearDataChangedEvent( m_DataChangeEventRef );
 #if !defined( NO_ENTITY_PREDICTION )
@@ -1710,7 +1716,7 @@ bool C_BaseEntity::ShouldReceiveProjectedTextures( int flags )
 {
 	Assert( flags & SHADOW_FLAGS_PROJECTED_TEXTURE_TYPE_MASK );
 
-	if ( IsEffectActive( EF_NODRAW ) )
+	if ( IsEffectActive( EF_NODRAW | (1 << 13) ) )
 		 return false;
 
 	if( flags & SHADOW_FLAGS_FLASHLIGHT )
