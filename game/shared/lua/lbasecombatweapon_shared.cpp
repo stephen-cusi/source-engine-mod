@@ -61,8 +61,7 @@ static void HL2SB_PushWeaponRaw (lua_State *L, lua_CBaseCombatWeapon *pWeapon) {
 // "attempt to call a nil value (method 'GetOwner')" on the client.  The
 // weapon itself rides as the upvalue (a handle, so the answer stays live
 // after the weapon changes hands or is removed), and the lookup mirrors
-// CBaseCombatWeapon_GetOwner exactly: Player for player owners, plain Entity
-// otherwise, a NULL entity for none.  A script-defined GetOwner keeps priority -- the
+// Entity:GetOwner, including its NULL entity result. A script-defined GetOwner keeps priority -- the
 // seed only runs when the merged instance table has no GetOwner FUNCTION (a
 // non-function value is shadowed, matching the userdata __index order).
 static int HL2SB_WeaponTableGetOwner (lua_State *L) {
@@ -71,11 +70,7 @@ static int HL2SB_WeaponTableGetOwner (lua_State *L) {
     lua_pushnil(L);
     return 1;
   }
-  CBaseCombatCharacter *pOwner = pWeapon->GetOwner();
-  if (pOwner && pOwner->IsPlayer())
-    lua_pushplayer(L, (CBasePlayer *)pOwner);
-  else
-    lua_pushentity(L, pOwner);
+  CBaseEntity::PushLuaInstanceSafe(L, pWeapon->GetOwnerEntity());
   return 1;
 }
 
@@ -396,15 +391,9 @@ static int CBaseCombatWeapon_GetName (lua_State *L) {
   return 1;
 }
 
-// HL2SB (2026-10-03): GMod's GetOwner answers a Player for player owners and
-// a plain Entity for anything else; the old cast pushed NPCs wrapped in
-// Player userdata.
+// Entity ownership can be assigned before the weapon is equipped.
 static int CBaseCombatWeapon_GetOwner (lua_State *L) {
-  CBaseCombatCharacter *pOwner = luaL_checkweapon(L, 1)->GetOwner();
-  if (pOwner && pOwner->IsPlayer())
-    lua_pushplayer(L, (CBasePlayer *)pOwner);
-  else
-    lua_pushentity(L, pOwner);
+  CBaseEntity::PushLuaInstanceSafe(L, luaL_checkweapon(L, 1)->GetOwnerEntity());
   return 1;
 }
 

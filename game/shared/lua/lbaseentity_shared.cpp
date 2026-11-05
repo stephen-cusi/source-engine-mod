@@ -3459,11 +3459,6 @@ static int CBaseEntity_SUB_Remove (lua_State *L) {
   return 0;
 }
 
-static int CBaseEntity_Think (lua_State *L) {
-  luaL_checkentity(L, 1)->Think();
-  return 0;
-}
-
 static int CBaseEntity_ToggleFlag (lua_State *L) {
   luaL_checkentity(L, 1)->ToggleFlag(luaL_checkint(L, 2));
   return 0;
@@ -5269,9 +5264,7 @@ static int CBaseEntity_TakeDamageInfo (lua_State *L) {
 static int CBaseEntity_GetOwner (lua_State *L) {
   CBaseEntity *entity = luaL_checkentity( L, 1 );
   CBaseViewModel *viewModel = dynamic_cast<CBaseViewModel *>( entity );
-  CBaseCombatWeapon *weapon = dynamic_cast<CBaseCombatWeapon *>( entity );
-  CBaseEntity *owner = viewModel ? viewModel->GetOwner() :
-    ( weapon ? weapon->GetOwner() : entity->GetOwnerEntity() );
+  CBaseEntity *owner = viewModel ? viewModel->GetOwner() : entity->GetOwnerEntity();
   CBaseEntity::PushLuaInstanceSafe( L, owner );
   return 1;
 }
@@ -7269,7 +7262,6 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"StartTouch", CBaseEntity_StartTouch},
   {"StopFollowingEntity", CBaseEntity_StopFollowingEntity},
   {"SUB_Remove", CBaseEntity_SUB_Remove},
-  {"Think", CBaseEntity_Think},
   {"ToggleFlag", CBaseEntity_ToggleFlag},
   {"Touch", CBaseEntity_Touch},
   {"TraceBleed", CBaseEntity_TraceBleed},

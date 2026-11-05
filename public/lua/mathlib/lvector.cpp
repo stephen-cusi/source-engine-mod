@@ -625,7 +625,7 @@ static int luasrc_Vector (lua_State *L) {
   // HL2SB: GMod's three Vector() signatures (https://wiki.facepunch.com/gmod/Global.Vector):
   //   Vector( x, y, z )   - numbers, the original signature
   //   Vector( vector )    - a copy
-  //   Vector( "x y z" )   - parsed; unparsable input gives ( 0, 0, 0 )
+  //   Vector( "x y z" )   - parsed when all three components are present
   // The string form is the one that matters for GMod Lua:
   // Vector( GetConVarString( "cl_playercolor" ) ) is written by
   // garrysmod/gamemodes/sandbox/gamemode/editor_player.lua, and here it used to raise
@@ -634,19 +634,21 @@ static int luasrc_Vector (lua_State *L) {
   {
     Vector v = vec3_origin;
 
-    sscanf( lua_tostring( L, 1 ), "%f %f %f", &v.x, &v.y, &v.z );
-
-    lua_pushvector( L, v );
-    return 1;
+    if ( sscanf( lua_tostring( L, 1 ), "%f %f %f", &v.x, &v.y, &v.z ) == 3 )
+    {
+      lua_pushvector( L, v );
+      return 1;
+    }
   }
 
-  if ( lua_isuserdata( L, 1 ) != 0 )
+  const lua_Vector *source = (const lua_Vector *)luaL_testudata( L, 1, "Vector" );
+  if ( source != NULL )
   {
-    lua_pushvector( L, luaL_checkvector( L, 1 ) );
+    lua_pushvector( L, *source );
     return 1;
   }
 
-  lua_pushvector(L, Vector((vec_t)luaL_optnumber(L, 1, 0.0f), (vec_t)luaL_optnumber(L, 2, 0.0f), (vec_t)luaL_optnumber(L, 3, 0.0f)));
+  lua_pushvector( L, Vector( (vec_t)lua_tonumber( L, 1 ), (vec_t)lua_tonumber( L, 2 ), (vec_t)lua_tonumber( L, 3 ) ) );
   return 1;
 }
 
