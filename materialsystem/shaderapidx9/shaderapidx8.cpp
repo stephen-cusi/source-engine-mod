@@ -6871,6 +6871,17 @@ void CShaderAPIDx8::SetTextureState( Sampler_t sampler, ShaderAPITextureHandle_t
 		mipFilter = D3DTEXF_POINT;
 	}
 
+	const int overrideMin = IntRenderingParameters[INT_RENDERPARM_TEXTURE_FILTER_MIN];
+	const int overrideMag = IntRenderingParameters[INT_RENDERPARM_TEXTURE_FILTER_MAG];
+	if ( overrideMag != 0 )
+		magFilter = static_cast<D3DTEXTUREFILTERTYPE>( overrideMag );
+	if ( overrideMin != 0 )
+	{
+		minFilter = static_cast<D3DTEXTUREFILTERTYPE>( overrideMin );
+		if ( tex.m_NumLevels > 1 )
+			mipFilter = static_cast<D3DTEXTUREFILTERTYPE>( overrideMin );
+	}
+
 	D3DTEXTUREADDRESS uTexWrap = tex.m_UTexWrap;
 	D3DTEXTUREADDRESS vTexWrap = tex.m_VTexWrap;
 	D3DTEXTUREADDRESS wTexWrap = tex.m_WTexWrap;
@@ -13247,8 +13258,23 @@ void CShaderAPIDx8::SetFloatRenderingParameter( int parm_number, float value )
 void CShaderAPIDx8::SetIntRenderingParameter( int parm_number, int value )
 {
 	LOCK_SHADERAPI();
-	if ( parm_number < ARRAYSIZE( IntRenderingParameters ))
-		IntRenderingParameters[parm_number] = value;
+	if ( parm_number < 0 || parm_number >= ARRAYSIZE( IntRenderingParameters ) )
+		return;
+	const bool textureFilter = parm_number == INT_RENDERPARM_TEXTURE_FILTER_MIN ||
+		parm_number == INT_RENDERPARM_TEXTURE_FILTER_MAG;
+	if ( textureFilter && IntRenderingParameters[parm_number] != value )
+		FlushBufferedPrimitives();
+	const bool changed = IntRenderingParameters[parm_number] != value;
+	IntRenderingParameters[parm_number] = value;
+	if ( textureFilter && changed )
+	{
+		for ( int i = 0; i < g_pHardwareConfig->ActualCaps().m_NumSamplers && i < MAX_SAMPLERS; ++i )
+		{
+			SamplerState_t &state = SamplerState( i );
+			if ( state.m_TextureEnable && state.m_BoundTexture != INVALID_SHADERAPI_TEXTURE_HANDLE )
+				SetTextureState( (Sampler_t)i, state.m_BoundTexture, true );
+		}
+	}
 }
 
 void CShaderAPIDx8::SetVectorRenderingParameter( int parm_number, Vector const & value )

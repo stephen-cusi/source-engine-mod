@@ -50,6 +50,7 @@ class CMatCallQueue;
 #include "../../../thirdparty/stb/stb_image_write.h"
 #include "tier1/utlbuffer.h"
 #include "tier2/renderutils.h"
+#include "tier2/beamsegdraw.h"
 #include "materialsystem/imaterialsystemhardwareconfig.h"
 #include "c_rope.h"
 #if defined( _WIN32 )
@@ -65,8 +66,8 @@ LUA_REGISTRATION_INIT( Renders );
 #ifdef CLIENT_DLL
 
 // Minifaction and magnification filter stacks
-static CUtlStack< ShaderAPITextureHandle_t > filterTextureHandlesMinification;
-static CUtlStack< ShaderAPITextureHandle_t > filterTextureHandlesMagnification;
+static CUtlStack<int> s_TextureFilterMin;
+static CUtlStack<int> s_TextureFilterMag;
 struct HL2SBRenderTargetState {
     int depthAlpha;
     bool iconAlpha;
@@ -2069,35 +2070,55 @@ static ShaderTexFilterMode_t FilterModeFromEnumeration( int enumeration )
 ** outside the materialsystem DLL.  The filter stacks they maintained had no other
 ** user, so the whole group is left out rather than shipped broken.
 */
-// GMod spelling of the filter pair (addons call Push/PopFilterMag|Min - the
-// NVG addon wraps its HUD draws in PushFilterMag(TEXFILTER.ANISOTROPIC)).
-// The per-draw sampler override below is still the disabled experiment, so
-// these register as argument-checked no-ops: the call chain keeps running
-// and draws fall back to the default filtering instead of raising
-// "attempt to call a nil value (method 'PushFilterMag')".
-LUA_BINDING_BEGIN( Renders, PushFilterMag, "library", "Push a magnification filter (no-op in this fork).", "client" )
+// Queue filter changes through the render context so they remain ordered with draws.
+static int HL2SB_PushTextureFilter( lua_State *L, CUtlStack<int> &stack, int parameter, const char *name )
 {
-    LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "filter" );
+    const int filter = clamp( (int)luaL_checknumber( L, 1 ), 0, 8 );
+    if ( stack.Count() >= 200 )
+    {
+        luasrc_LuaErrorMsgF( "%s overflow\n", name );
+        return 0;
+    }
+    stack.Push( filter );
+    CMatRenderContextPtr context( materials );
+    context->SetIntRenderingParameter( parameter, filter );
     return 0;
+}
+
+static int HL2SB_PopTextureFilter( lua_State *L, CUtlStack<int> &stack, int parameter, const char *name )
+{
+    if ( stack.Count() == 0 )
+    {
+        luasrc_LuaErrorMsgF( "%s underflow!\n", name );
+        return 0;
+    }
+    stack.Pop();
+    CMatRenderContextPtr context( materials );
+    context->SetIntRenderingParameter( parameter, stack.Count() ? stack.Top() : 0 );
+    return 0;
+}
+
+LUA_BINDING_BEGIN( Renders, PushFilterMag, "library", "Push a magnification filter.", "client" )
+{
+    return HL2SB_PushTextureFilter( L, s_TextureFilterMag, INT_RENDERPARM_TEXTURE_FILTER_MAG, "render.PushFilterMag" );
 }
 LUA_BINDING_END()
 
-LUA_BINDING_BEGIN( Renders, PushFilterMin, "library", "Push a minification filter (no-op in this fork).", "client" )
+LUA_BINDING_BEGIN( Renders, PushFilterMin, "library", "Push a minification filter.", "client" )
 {
-    LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "filter" );
-    return 0;
+    return HL2SB_PushTextureFilter( L, s_TextureFilterMin, INT_RENDERPARM_TEXTURE_FILTER_MIN, "render.PushFilterMin" );
 }
 LUA_BINDING_END()
 
-LUA_BINDING_BEGIN( Renders, PopFilterMag, "library", "Pop a magnification filter (no-op in this fork).", "client" )
+LUA_BINDING_BEGIN( Renders, PopFilterMag, "library", "Pop a magnification filter.", "client" )
 {
-    return 0;
+    return HL2SB_PopTextureFilter( L, s_TextureFilterMag, INT_RENDERPARM_TEXTURE_FILTER_MAG, "render.PopFilterMag" );
 }
 LUA_BINDING_END()
 
-LUA_BINDING_BEGIN( Renders, PopFilterMin, "library", "Pop a minification filter (no-op in this fork).", "client" )
+LUA_BINDING_BEGIN( Renders, PopFilterMin, "library", "Pop a minification filter.", "client" )
 {
-    return 0;
+    return HL2SB_PopTextureFilter( L, s_TextureFilterMin, INT_RENDERPARM_TEXTURE_FILTER_MIN, "render.PopFilterMin" );
 }
 LUA_BINDING_END()
 
@@ -2337,6 +2358,30 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
 }
 LUA_BINDING_END()
 
+LUA_BINDING_BEGIN( Renders, DrawQuad, "library", "Draws a quad with the currently bound material.", "client" )
+{
+    Vector corners[4] = {
+        luaL_checkvector(L, 1), luaL_checkvector(L, 2),
+        luaL_checkvector(L, 3), luaL_checkvector(L, 4)
+    };
+    lua_Color color = luaL_optcolor(L, 5, lua_Color(255, 255, 255, 255));
+    CMatRenderContextPtr context(materials);
+    IMesh *mesh = context->GetDynamicMesh(true, NULL, NULL, g_pHL2SBLastBoundMaterial);
+    CMeshBuilder builder;
+    builder.Begin(mesh, MATERIAL_QUADS, 1);
+    const float uv[4][2] = { {0, 0}, {1, 0}, {1, 1}, {0, 1} };
+    for (int i = 0; i < 4; ++i) {
+        builder.Position3fv(corners[i].Base());
+        builder.Color4ub(color.r(), color.g(), color.b(), color.a());
+        builder.TexCoord2f(0, uv[i][0], uv[i][1]);
+        builder.AdvanceVertex();
+    }
+    builder.End();
+    mesh->Draw();
+    return 0;
+}
+LUA_BINDING_END()
+
 LUA_BINDING_BEGIN( Renders, DrawQuadEasy, "library", "Draws a quad with the currently bound material, facing the given normal.", "client" )
 {
     Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
@@ -2512,6 +2557,28 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
 
     CMatRenderContextPtr pRenderContext( materials );
 
+    if ( g_pHL2SBLastBoundMaterial != NULL )
+    {
+        const VertexFormat_t format = g_pHL2SBLastBoundMaterial->GetVertexFormat();
+        if ( (format & VERTEX_TANGENT_SPACE) == VERTEX_TANGENT_SPACE && TexCoordSize(1, format) >= 2 )
+        {
+            CBeamSegDraw beam;
+            beam.Start( pRenderContext, 2, g_pHL2SBLastBoundMaterial );
+            BeamSeg_t segment;
+            segment.m_vColor.Init( color.r() / 255.0f, color.g() / 255.0f, color.b() / 255.0f );
+            segment.m_flAlpha = color.a() / 255.0f;
+            segment.m_flWidth = width;
+            segment.m_vPos = start;
+            segment.m_flTexCoord = textureStart;
+            beam.NextSeg( &segment );
+            segment.m_vPos = end;
+            segment.m_flTexCoord = textureEnd;
+            beam.NextSeg( &segment );
+            beam.End();
+            return 0;
+        }
+    }
+
     // HL2SB: hand-built ribbon instead of CBeamSegDraw.
     //
     // CBeamSegDraw::SpecifySeg() writes a SECOND texture coordinate and
@@ -2585,34 +2652,34 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
 
     meshBuilder.Begin( pMesh, MATERIAL_QUADS, 1 );
 
-    // Start edge, u = 1
-    VectorMA( start, -1.0f, vecHalfA, vecTmp );
-    meshBuilder.Position3fv( vecTmp.Base() );
-    meshBuilder.TexCoord2f( 0, 1.0f, textureStart );
-    meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
-    meshBuilder.Normal3fv( vecAxis.Base() );
-    meshBuilder.AdvanceVertex();
-
     // Start edge, u = 0
-    VectorMA( start, 1.0f, vecHalfA, vecTmp );
+    VectorMA( start, -1.0f, vecHalfA, vecTmp );
     meshBuilder.Position3fv( vecTmp.Base() );
     meshBuilder.TexCoord2f( 0, 0.0f, textureStart );
     meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
     meshBuilder.Normal3fv( vecAxis.Base() );
     meshBuilder.AdvanceVertex();
 
-    // End edge, u = 0
-    VectorMA( end, 1.0f, vecHalfA, vecTmp );
+    // Start edge, u = 1
+    VectorMA( start, 1.0f, vecHalfA, vecTmp );
     meshBuilder.Position3fv( vecTmp.Base() );
-    meshBuilder.TexCoord2f( 0, 0.0f, textureEnd );
+    meshBuilder.TexCoord2f( 0, 1.0f, textureStart );
     meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
     meshBuilder.Normal3fv( vecAxis.Base() );
     meshBuilder.AdvanceVertex();
 
     // End edge, u = 1
-    VectorMA( end, -1.0f, vecHalfA, vecTmp );
+    VectorMA( end, 1.0f, vecHalfA, vecTmp );
     meshBuilder.Position3fv( vecTmp.Base() );
     meshBuilder.TexCoord2f( 0, 1.0f, textureEnd );
+    meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
+    meshBuilder.Normal3fv( vecAxis.Base() );
+    meshBuilder.AdvanceVertex();
+
+    // End edge, u = 0
+    VectorMA( end, -1.0f, vecHalfA, vecTmp );
+    meshBuilder.Position3fv( vecTmp.Base() );
+    meshBuilder.TexCoord2f( 0, 0.0f, textureEnd );
     meshBuilder.Color4ub( ubRed, ubGreen, ubBlue, ubAlpha );
     meshBuilder.Normal3fv( vecAxis.Base() );
     meshBuilder.AdvanceVertex();
