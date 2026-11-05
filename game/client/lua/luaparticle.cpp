@@ -591,7 +591,7 @@ LUA_BINDING_END()
 	LUA_BINDING_END()
 
 LUA_PARTICLE_SETTER_BEGIN( SetStartAlpha )
-	pParticle->m_uchStartAlpha = (unsigned char)clamp( (int)luaL_checknumber( L, 2 ), 0, 255 );
+	pParticle->m_uchStartAlpha = (unsigned char)(int)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( GetStartAlpha )
@@ -599,7 +599,7 @@ LUA_PARTICLE_SETTER_BEGIN( GetStartAlpha )
 LUA_PARTICLE_SETTER_END( 1 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetEndAlpha )
-	pParticle->m_uchEndAlpha = (unsigned char)clamp( (int)luaL_checknumber( L, 2 ), 0, 255 );
+	pParticle->m_uchEndAlpha = (unsigned char)(int)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( GetEndAlpha )
@@ -611,17 +611,17 @@ LUA_PARTICLE_SETTER_BEGIN( SetVelocity )
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetStartSize )
-	pParticle->m_flStartSize = MAX( 0.0f, (float)luaL_checknumber( L, 2 ) );
+	pParticle->m_flStartSize = (float)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetEndSize )
-	pParticle->m_flEndSize = MAX( 0.0f, (float)luaL_checknumber( L, 2 ) );
+	pParticle->m_flEndSize = (float)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetDieTime )
 	// GMod wiki: "Sets the time where the particle will be removed" -- relative
 	// to now, since lifetime counts up from 0 at creation.
-	pParticle->m_flDieTime = MAX( 0.0f, (float)luaL_checknumber( L, 2 ) );
+	pParticle->m_flDieTime = (float)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( GetDieTime )
@@ -629,7 +629,7 @@ LUA_PARTICLE_SETTER_BEGIN( GetDieTime )
 LUA_PARTICLE_SETTER_END( 1 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetLifeTime )
-	pParticle->m_flLifetime = MAX( 0.0f, (float)luaL_checknumber( L, 2 ) );
+	pParticle->m_flLifetime = (float)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( GetLifeTime )
@@ -709,9 +709,9 @@ LUA_PARTICLE_SETTER_BEGIN( GetVelocity )
 LUA_PARTICLE_SETTER_END( 1 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetColor )
-	pParticle->m_uchColor[0] = (unsigned char)clamp( (int)luaL_checknumber( L, 2 ), 0, 255 );
-	pParticle->m_uchColor[1] = (unsigned char)clamp( (int)luaL_checknumber( L, 3 ), 0, 255 );
-	pParticle->m_uchColor[2] = (unsigned char)clamp( (int)luaL_checknumber( L, 4 ), 0, 255 );
+	pParticle->m_uchColor[0] = (unsigned char)(int)luaL_checknumber( L, 2 );
+	pParticle->m_uchColor[1] = (unsigned char)(int)luaL_checknumber( L, 3 );
+	pParticle->m_uchColor[2] = (unsigned char)(int)luaL_checknumber( L, 4 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetRoll )

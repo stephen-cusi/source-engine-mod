@@ -195,7 +195,13 @@ static int CTakeDamageInfo_SetDamageCustom (lua_State *L) {
 }
 
 static int CTakeDamageInfo_SetDamageForce (lua_State *L) {
-  luaL_checkdamageinfo(L, 1).SetDamageForce(luaL_checkvector(L, 2));
+  lua_CTakeDamageInfo &info = luaL_checkdamageinfo(L, 1);
+  const Vector &force = luaL_checkvector(L, 2);
+  const float limit = 1.029474606256436e19f;
+  if (force.x > -limit && force.x < limit &&
+      force.y > -limit && force.y < limit &&
+      force.z > -limit && force.z < limit)
+    info.SetDamageForce(force);
   return 0;
 }
 
