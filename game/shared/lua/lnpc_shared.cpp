@@ -370,15 +370,18 @@ static CBaseEntity *NPCArgEnemyOrCurrent (lua_State *L, lua_NPC *pNPC) {
 
 static int NPC_GetEnemy (lua_State *L) {
   lua_NPC *pNPC = ToNPC(L, 1);
-  CBaseEntity::PushLuaInstanceSafe(L, pNPC != NULL ? pNPC->GetEnemy() : NULL);
+  CBaseEntity *pEnemy = pNPC != NULL ? pNPC->GetEnemy() : NULL;
+  if (pEnemy == NULL)
+    return 0;
+  CBaseEntity::PushLuaInstanceSafe(L, pEnemy);
   return 1;
 }
 
 static int NPC_SetEnemy (lua_State *L) {
   lua_NPC *pNPC = ToNPC(L, 1);
   CBaseEntity *pEnemy = lua_toentity(L, 2);
-  if (pNPC != NULL && pEnemy != NULL)
-    pNPC->SetEnemy(pEnemy);
+  if (pNPC != NULL)
+    pNPC->SetEnemy(pEnemy, luaL_optboolean(L, 3, true) != 0);
   return 0;
 }
 
@@ -1432,19 +1435,9 @@ static int NPC_GetShootPos (lua_State *L) {
   return 1;
 }
 
-/* GMod's Entity:GetAimVector semantics for an NPC: aimed at the enemy when
-** there is one, along the facing otherwise (the same computation the shared
-** Entity binding does). */
 static int NPC_GetAimVector (lua_State *L) {
   lua_NPC *pNPC = ToNPC(L, 1);
-  Vector vecAim = vec3_origin;
-  if (pNPC != NULL) {
-    CBaseEntity *pEnemy = pNPC->GetEnemy();
-    if (pEnemy != NULL)
-      vecAim = pEnemy->WorldSpaceCenter() - pNPC->EyePosition();
-    else
-      AngleVectors(pNPC->GetAbsAngles(), &vecAim);
-  }
+  Vector vecAim = pNPC != NULL ? pNPC->GetActualShootTrajectory(pNPC->Weapon_ShootPosition()) : vec3_origin;
   lua_pushvector(L, vecAim);
   return 1;
 }
@@ -1604,7 +1597,7 @@ static int NPC_SetCurrentWeaponProficiency (lua_State *L) {
   lua_NPC *pNPC = ToNPC(L, 1);
   int iProficiency = luaL_checkint(L, 2);
   if (pNPC != NULL)
-    pNPC->SetCurrentWeaponProficiency((WeaponProficiency_t)iProficiency);
+    pNPC->SetCurrentWeaponProficiency((WeaponProficiency_t)clamp(iProficiency, 0, 4));
   return 0;
 }
 

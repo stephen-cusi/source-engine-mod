@@ -807,6 +807,10 @@ static int CBaseAnimating_GetAnimTimeInterval (lua_State *L) {
 }
 
 static int CBaseAnimating_GetAttachment (lua_State *L) {
+  if (lua_type(L, 2) == LUA_TNUMBER) {
+    extern int CBaseEntity_GetAttachment(lua_State *L);
+    return CBaseEntity_GetAttachment(L);
+  }
   // HL2SB (2026-09-22): GMod signature GetAttachment( id|name ) -> a table
   // { Pos = Vector, Ang = Angle }, nil when the attachment doesn't exist.
   // cf_beast's shell eject reads vm:GetAttachment(att) this way; the old

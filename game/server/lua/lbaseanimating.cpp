@@ -100,6 +100,10 @@ static int CBaseAnimating_GetAnimTimeInterval (lua_State *L) {
 }
 
 static int CBaseAnimating_GetAttachment (lua_State *L) {
+  if (lua_type(L, 2) == LUA_TNUMBER) {
+    extern int CBaseEntity_GetAttachment(lua_State *L);
+    return CBaseEntity_GetAttachment(L);
+  }
   switch(lua_type(L, 2)) {
 	case LUA_TNUMBER:
       {

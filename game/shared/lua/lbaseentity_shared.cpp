@@ -1740,12 +1740,11 @@ static int CBaseEntity_IsAlive (lua_State *L) {
 //
 // and the nil-method raise killed its behaviour coroutine mid-attack, which is
 // what "still not working normally" looked like once the kill itself stopped
-// crashing the server.  FL_ONGROUND is what the engine maintains; the ground
-// entity test covers the frame it is being set in.
+// crashing the server.
 static int CBaseEntity_IsOnGround (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
 
-  lua_pushboolean(L, ( ( pEntity->GetFlags() & FL_ONGROUND ) != 0 ) || ( pEntity->GetGroundEntity() != NULL ) );
+  lua_pushboolean(L, (pEntity->GetFlags() & FL_ONGROUND) != 0);
   return 1;
 }
 
@@ -2326,26 +2325,16 @@ static int CBaseEntity_MapCreationID (lua_State *L) {
   return 1;
 }
 
-/* HL2SB GMod compat: Entity:GetModelBounds() (GMod wiki: returns the model's
-** min/max bounding box, animation bboxes included, NOT scaled by
-** SetModelScale).  The studio path is the engine's own sequence bbox helper,
-** which is exactly "bounds that account for the animations compiled into the
-** model"; non-studio models answer the collision OBB. */
-#include "animation.h"					// HL2SB: Entity:GetModelBounds (ExtractBbox)
+/* Entity:GetModelBounds returns the unscaled bounds of the model itself. */
+#include "animation.h"
 
 static int CBaseEntity_GetModelBounds (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const model_t *pModel = pEntity->GetModel();
+  if ( !pModel || !modelinfo )
+    return 0;
   Vector mins, maxs;
-  CBaseAnimating *pAnim = pEntity->GetBaseAnimating();
-  if ( pAnim != NULL && pAnim->GetModelPtr() != NULL )
-  {
-    ExtractBbox( pAnim->GetModelPtr(), pAnim->GetSequence(), mins, maxs );
-  }
-  else
-  {
-    mins = pEntity->CollisionProp()->OBBMins();
-    maxs = pEntity->CollisionProp()->OBBMaxs();
-  }
+  modelinfo->GetModelBounds( pModel, mins, maxs );
   lua_pushvector(L, mins);
   lua_pushvector(L, maxs);
   return 2;
@@ -3533,14 +3522,12 @@ static int CBaseEntity_GetPhysicsObjectCount (lua_State *L) {
 // GMod hands back the body of physics bone #n; the ragdoll's object list is
 // in physics-bone order, so indexing the list is the same mapping GMod uses.
 static int CBaseEntity_GetPhysicsObjectNum (lua_State *L) {
-  int nNum = luaL_checkint(L, 2);
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  int nNum = (int)luaL_checknumber(L, 2);
   IPhysicsObject *pList[VPHYSICS_MAX_OBJECT_LIST_COUNT];
-  int count = luaL_checkentity(L, 1)->VPhysicsGetObjectList( pList, ARRAYSIZE(pList) );
-  if ( nNum < 0 || nNum >= count || nNum >= ARRAYSIZE(pList) || pList[nNum] == NULL )
-  {
-    lua_pushnil(L);
-    return 1;
-  }
+  int count = pEntity->VPhysicsGetObjectList( pList, ARRAYSIZE(pList) );
+  if ( nNum < 0 || nNum >= count || nNum >= ARRAYSIZE(pList) )
+    return 0;
   lua_pushphysicsobject(L, pList[nNum]);
   return 1;
 }
@@ -5402,9 +5389,8 @@ static int CBaseEntity_GetRenderGroup (lua_State *L) {
 
 //-----------------------------------------------------------------------------
 // HL2SB (2026-09-21): Entity:GetAimVector() -- wiki: Player:GetAimVector is the
-// player form (already bound in lbaseplayer_shared); NPC:GetAimVector aims at
-// the NPC's current enemy and defaults to Entity:GetForward with none (the
-// engine's weapon-spread noise is deliberately not reproduced).  scp173 reads
+// player form (already bound in lbaseplayer_shared); NPC:GetAimVector uses
+// the NPC's shooting trajectory.  scp173 reads
 // each NPC victim's aim to build its vision cone; with no binding the call
 // raised once per victim per think.
 //-----------------------------------------------------------------------------
@@ -5415,11 +5401,9 @@ static int CBaseEntity_GetAimVector (lua_State *L) {
   CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
   if ( pNPC != NULL )
   {
-    CBaseEntity *pEnemy = pNPC->GetEnemy();
-    if ( pEnemy != NULL )
-      vecAim = pEnemy->WorldSpaceCenter() - pNPC->EyePosition();
-    else
-      AngleVectors( pNPC->GetAbsAngles(), &vecAim );
+    vecAim = pNPC->GetActualShootTrajectory( pNPC->Weapon_ShootPosition() );
+    lua_pushvector( L, vecAim );
+    return 1;
   }
   else
 #endif
@@ -5511,7 +5495,7 @@ static int CBaseEntity_SetEnemy (lua_State *L) {
   CAI_BaseNPC *pNPC = pEntity->MyNPCPointer();
   if ( pNPC == NULL )
     return 0;
-  pNPC->SetEnemy( lua_toentity( L, 2 ) );
+  pNPC->SetEnemy( lua_toentity( L, 2 ), luaL_optboolean( L, 3, true ) != 0 );
   return 0;
 }
 
@@ -6277,24 +6261,43 @@ static int CBaseEntity_StopParticles (lua_State *L) {
 // ent:GetAttachment( data:GetAttachment() ); with the method missing, every
 // CS-style muzzle flash fell through to EffectData origin (0,0,0) and drew at
 // world origin - invisible at the gun.  1-based ids (0 == none); returns the
-// AngPos table { Ang, Pos } or nil when the attachment does not exist, per
-// wiki.  Bone is not filled - CAttachmentData does not carry it here.
-static int CBaseEntity_GetAttachment (lua_State *L) {
+// AngPos table { Ang, Pos, Bone } or nil when the attachment does not exist.
+static int CBaseEntity_GetAttachments (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
-  const int nAttachment = luaL_checkinteger(L, 2);
+  CBaseAnimating *pAnim = pEntity ? pEntity->GetBaseAnimating() : NULL;
+  CStudioHdr *pHdr = pAnim ? pAnim->GetModelPtr() : NULL;
+  lua_newtable(L);
+  if ( !pHdr )
+    return 1;
+  for ( int i = 0; i < pHdr->GetNumAttachments(); ++i ) {
+    lua_createtable(L, 0, 2);
+    lua_pushstring(L, pHdr->pAttachment(i).pszName());
+    lua_setfield(L, -2, "name");
+    lua_pushinteger(L, i + 1);
+    lua_setfield(L, -2, "id");
+    lua_rawseti(L, -2, i + 1);
+  }
+  return 1;
+}
+
+int CBaseEntity_GetAttachment (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const int nAttachment = (int)luaL_checknumber(L, 2);
   CBaseAnimating *pAnim = pEntity ? dynamic_cast<CBaseAnimating *>( pEntity ) : NULL;
   Vector vecPos;
   QAngle angPos;
-  if ( pAnim == NULL || nAttachment < 1
+  CStudioHdr *pHdr = pAnim ? pAnim->GetModelPtr() : NULL;
+  if ( pHdr == NULL || nAttachment < 1 || nAttachment > pHdr->GetNumAttachments()
        || !pAnim->GetAttachment( nAttachment, vecPos, angPos ) ) {
-    lua_pushnil(L);
-    return 1;
+    return 0;
   }
   lua_newtable(L);
   lua_pushvector(L, vecPos);
   lua_setfield(L, -2, "Pos");
   lua_pushangle(L, angPos);
   lua_setfield(L, -2, "Ang");
+  lua_pushinteger(L, pHdr->GetAttachmentBone(nAttachment - 1));
+  lua_setfield(L, -2, "Bone");
   return 1;
 }
 
@@ -6943,6 +6946,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   // its first line every frame and the flying cat rendered as nothing at all.
   {"GetVelocity", CBaseEntity_GetVelocity},
   {"GetAttachment", CBaseEntity_GetAttachment},
+  {"GetAttachments", CBaseEntity_GetAttachments},
   {"GetAnimTime", CBaseEntity_GetAnimTime},
   {"GetPoseParameter", CBaseEntity_GetPoseParameter},
   {"SetPoseParameter", CBaseEntity_SetPoseParameter},
