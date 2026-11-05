@@ -557,6 +557,17 @@ LUA_BINDING_END()
 // DrawScreenQuad binding below sees it; SetMaterial (further down) writes it.
 static IMaterial *s_pRendersLastSetMaterial = NULL;
 
+LUA_BINDING_BEGIN( Renders, DrawLine, "library", "Draws a line in 3D space.", "client" )
+{
+    const Vector start = luaL_checkvector( L, 1 );
+    const Vector end = luaL_checkvector( L, 2 );
+    const lua_Color color = luaL_checkcolor( L, 3 );
+    const bool writeDepth = lua_toboolean( L, 4 ) != 0;
+    RenderLine( start, end, Color( color.r(), color.g(), color.b(), color.a() ), writeDepth );
+    return 0;
+}
+LUA_BINDING_END()
+
 LUA_BINDING_BEGIN( Renders, DrawBox, "library", "Draws an oriented box with the current material.", "client" )
 {
     const Vector origin = luaL_checkvector( L, 1 );

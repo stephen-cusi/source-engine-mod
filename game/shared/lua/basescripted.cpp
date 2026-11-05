@@ -592,6 +592,11 @@ RenderGroup_t CBaseScripted::GetRenderGroup( void )
 			m_bLuaRenderGroupRead = true;
 			m_nLuaRenderGroup = -1;
 
+			luasrc_PushScriptField( L, -1, "WantsTranslucency" );
+			if ( lua_toboolean( L, -1 ) )
+				m_nLuaRenderGroup = -2;
+			lua_pop( L, 1 );
+
 			// Protected read: the table can answer through an __index metamethod,
 			// and an error raised there from C is not protected by anything.
 			luasrc_PushScriptField( L, -1, "RenderGroup" );
@@ -612,6 +617,11 @@ RenderGroup_t CBaseScripted::GetRenderGroup( void )
 
 	if ( m_nLuaRenderGroup >= 0 )
 		return (RenderGroup_t)m_nLuaRenderGroup;
+	if ( m_nLuaRenderGroup == -2 )
+	{
+		RenderGroup_t group = BaseClass::GetRenderGroup();
+		return group == RENDER_GROUP_OPAQUE_ENTITY ? RENDER_GROUP_TWOPASS : group;
+	}
 #endif
 
 	return BaseClass::GetRenderGroup();
@@ -772,7 +782,8 @@ int CBaseScripted::DrawModel( int flags )
 
 	if ( bHasOverride )
 		pszFunc = "RenderOverride";
-	else if ( CBaseScripted_IsTranslucentGroup( GetRenderGroup() ) && bHasTranslucent )
+	else if ( CBaseScripted_IsTranslucentGroup( GetRenderGroup() ) && bHasTranslucent &&
+		( GetRenderGroup() != RENDER_GROUP_TWOPASS || ( flags & STUDIO_TRANSPARENCY ) != 0 ) )
 		pszFunc = "DrawTranslucent";
 	else if ( bHasDraw )
 		pszFunc = "Draw";

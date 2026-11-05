@@ -73,6 +73,8 @@ enum IconResult
     ICON_GENERATED
 };
 
+void PreloadCachedIcon(const std::string &path);
+
 class IconPixels : public ITextureRegenerator
 {
 public:
@@ -133,7 +135,10 @@ public:
         m_Body = body;
         m_Custom = false;
         m_Force = false;
-        m_Path.clear();
+        m_Width = IconSize(GetWide());
+        m_Height = IconSize(GetTall());
+        m_Path = m_Model.empty() ? std::string() : IconPath(m_Model, m_Skin, m_Body, m_Width, m_Height);
+        if (!m_Path.empty()) PreloadCachedIcon(m_Path);
     }
 
     void SetSpawnIcon(const char *path)
@@ -144,6 +149,7 @@ public:
         for (size_t i = 0; i < m_Path.size(); ++i)
             if (m_Path[i] == '\\') m_Path[i] = '/';
         m_Custom = false;
+        if (!m_Path.empty()) PreloadCachedIcon(m_Path);
     }
 
     void Rebuild(lua_State *state, int options)
@@ -224,6 +230,13 @@ bool LoadImage(const std::string &path, IconImage &image)
     g_pMatSystemSurface->DrawSetTextureMaterial(image.texture, material);
     image.material = material;
     return true;
+}
+
+void PreloadCachedIcon(const std::string &path)
+{
+    IconImage &image = s_Images[path];
+    if (!image.material && !image.queued)
+        LoadImage(path, image);
 }
 
 void LModelImage::Paint()
@@ -404,7 +417,8 @@ void HL2SB_ProcessModelImages()
 {
     // Existing files load without creating model entities or rendering a snapshot.
     const double deadline = Plat_FloatTime() + 0.003;
-    while (!s_Jobs.empty())
+    size_t remaining = s_Jobs.size();
+    while (remaining-- > 0 && !s_Jobs.empty())
     {
         IconJob job = s_Jobs.front();
         s_Jobs.pop_front();
@@ -424,7 +438,8 @@ void HL2SB_ProcessModelImages()
         {
             image.queued = true;
             s_Jobs.push_back(job);
-            break;
+            if (Plat_FloatTime() >= deadline) break;
+            continue;
         }
         panel->m_Force = false;
         image.failed = result != ICON_GENERATED || !LoadImage(job.path, image);

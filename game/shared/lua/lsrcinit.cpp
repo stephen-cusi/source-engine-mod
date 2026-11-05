@@ -3871,8 +3871,8 @@ static void HL2SB_UIPushKV(lua_State *L, KeyValues *pKV, int depth = 0)
   for (KeyValues *p = pKV->GetFirstSubKey(); p; p = p->GetNextKey()) {
     const char *name = p->GetName();
     char *end = NULL;
-    long index = strtol(name, &end, 10);
-    if (*name && end && !*end && index > 0) lua_pushinteger(L, index);
+    double index = strtod(name, &end);
+    if (end != name && !*end) lua_pushnumber(L, (float)index);
     else lua_pushstring(L, name);
     if (p->GetDataType() == KeyValues::TYPE_NONE) HL2SB_UIPushKV(L, p, depth + 1);
     else {

@@ -24,6 +24,10 @@
 #include "iviewrender.h"       // HL2SB: gui.ScreenToVector -> view->GetViewSetup()
 #include "iclientmode.h"
 #include "vgui_controls/Panel.h"
+#ifdef CLIENT_DLL
+#include "vgui_int.h"
+#include "vgui/Cursor.h"
+#endif
 #include "view_shared.h"       // HL2SB: CViewSetup fields (origin/angles/fov)
 #include "mathlib/lvector.h"   // HL2SB: lua_pushvector
 #include "hl2sb_framestats.h"	// HL2SB: hl2sb_framestats surface draw counter
@@ -586,6 +590,30 @@ static int HL2SB_gui_SetMousePos (lua_State *L) {
   if ( vgui::input() ) vgui::input()->SetCursorPos(x, y);
   return 0;
 }
+
+#ifdef CLIENT_DLL
+static int HL2SB_gui_EnableScreenClicker (lua_State *L) {
+  static vgui::DHANDLE<vgui::Panel> clicker;
+  const bool enabled = lua_toboolean(L, 1) != 0;
+  vgui::Panel *root = VGui_GetClientLuaRootPanel();
+  if (!root) return 0;
+  if (enabled && !clicker.Get()) {
+    clicker = new vgui::Panel(root, "ScreenClicker");
+    clicker->SetPaintBackgroundEnabled(false);
+    clicker->SetPaintEnabled(false);
+    clicker->SetKeyBoardInputEnabled(false);
+    clicker->SetCursor(vgui::dc_arrow);
+    clicker->SetAutoResize(vgui::Panel::PIN_TOPLEFT, vgui::Panel::AUTORESIZE_DOWNANDRIGHT, 0, 0, 0, 0);
+  }
+  if (clicker.Get()) {
+    clicker->SetBounds(0, 0, root->GetWide(), root->GetTall());
+    clicker->SetMouseInputEnabled(enabled);
+    clicker->SetVisible(enabled);
+    if (enabled) clicker->MoveToFront();
+  }
+  return 0;
+}
+#endif
 
 static int HL2SB_gui_MouseX (lua_State *L) {
   int x = 0, y = 0;
@@ -1364,6 +1392,10 @@ LUALIB_API int luaopen_surface (lua_State *L) {
   lua_setfield(L, -2, "MouseY");
   lua_pushcfunction(L, HL2SB_gui_SetMousePos);
   lua_setfield(L, -2, "SetMousePos");
+#ifdef CLIENT_DLL
+  lua_pushcfunction(L, HL2SB_gui_EnableScreenClicker);
+  lua_setfield(L, -2, "EnableScreenClicker");
+#endif
   lua_pushcfunction(L, HL2SB_gui_MousePos);
   lua_setfield(L, -2, "MousePos");
   lua_pushcfunction(L, HL2SB_gui_ScreenWidth);
