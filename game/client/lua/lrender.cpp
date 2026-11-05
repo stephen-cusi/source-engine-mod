@@ -574,7 +574,7 @@ LUA_BINDING_BEGIN( Renders, DrawBox, "library", "Draws an oriented box with the 
     const QAngle angles = luaL_checkangle( L, 2 );
     const Vector mins = luaL_checkvector( L, 3 );
     const Vector maxs = luaL_checkvector( L, 4 );
-    const lua_Color color = luaL_checkcolor( L, 5 );
+    const lua_Color color = luaL_optcolor( L, 5, Color( 255, 255, 255, 255 ) );
     if ( s_pRendersLastSetMaterial )
         RenderBox( origin, angles, mins, maxs,
             Color( color.r(), color.g(), color.b(), color.a() ), s_pRendersLastSetMaterial, false );
