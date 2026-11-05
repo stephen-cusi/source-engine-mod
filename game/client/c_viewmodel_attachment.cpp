@@ -19,6 +19,7 @@
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialvar.h"
 #include "c_baseplayer.h"
+#include "hl2mp/c_hl2mp_player.h"
 #include "iclientrenderable.h"	// proxy bindable -> entity (CResultProxy::BindArgToEntity inline)
 // HL2SB: LUA_NOREF / the entity's Lua table reference, for the PlayerColor proxy's
 // "is this a Lua-created clientside model?" test.
@@ -96,7 +97,7 @@ static bool HL2SB_GetLuaPlayerColor( C_BaseEntity *pEntity, Vector &color )
 class CPlayerColorProxy : public IMaterialProxy
 {
 public:
-	CPlayerColorProxy( void ) : m_pColor( NULL ), m_bArmsMaterial( false )
+	CPlayerColorProxy( void ) : m_pColor( NULL )
 	{
 		m_flDefault[0] = 0.2f; m_flDefault[1] = 0.4f; m_flDefault[2] = 0.7f;
 	}
@@ -107,14 +108,6 @@ public:
 		bool found = false;
 		const char *pszResultVar = pKeyValues->GetString( "resultVar", "$color2" );
 		m_pColor = pMaterial->FindVar( pszResultVar, &found, false );
-
-		// HL2SB: which colour this material belongs to is a property of the MATERIAL, not
-		// of whoever is drawing it.  The arm/sleeve materials are the c_arms_* chain, and
-		// deciding by entity class broke as soon as the player model selector opened: a
-		// non-matching draw of the same material (the menu's own clientside models) wrote
-		// the default white over the arms (2026-09-17).
-		const char *pszMatName = pMaterial->GetName();
-		m_bArmsMaterial = ( pszMatName != NULL && Q_stristr( pszMatName, "c_arms" ) != NULL );
 
 		// Parse the "default" color (e.g. "0.2 0.4 0.7").
 		const char *pszDefault = pKeyValues->GetString( "default", NULL );
@@ -132,25 +125,6 @@ public:
 			return;
 
 		Vector v;
-
-		// HL2SB: the arm/sleeve chain always wears the WEAPON colour, and that is
-		// decided by the MATERIAL - so no other entity drawing the same material can
-		// knock it back to white (opening the player model selector did exactly that,
-		// 2026-09-17).  Reference behavior for the weapon colour carries the same
-		// always-on pulse as the PlayerWeaponColor proxy (col + col * mul, GMod's
-		// lua/matproxy/player_weapon_color.lua), so the sleeves breathe with the gun.
-		if ( m_bArmsMaterial )
-		{
-			C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-			if ( pLocal != NULL )
-				v = HL2SB_GetWeaponColor( pLocal->GetUserID() );
-			else
-				v.Init( 0.30f, 1.80f, 2.10f );
-
-			float mul = ( 1.0f + sin( gpGlobals->curtime * 5.0f ) ) * 0.5f;
-			m_pColor->SetVecValue( v.x + v.x * mul, v.y + v.y * mul, v.z + v.z * mul );
-			return;
-		}
 
 		// HL2SB: reference behavior reads the colour from the entity being drawn,
 		// exactly like GMod's lua/matproxy/player_color.lua: players and ragdolls
@@ -183,6 +157,10 @@ public:
 			{
 				pPlayer = ToBasePlayer( pEntity );
 			}
+			else if ( C_HL2MPRagdoll *pRagdoll = dynamic_cast< C_HL2MPRagdoll * >( pEntity ) )
+			{
+				pPlayer = UTIL_PlayerByIndex( pRagdoll->GetPlayerEntIndex() );
+			}
 			else if ( dynamic_cast< C_BaseAnimating * >( pEntity ) != NULL &&
 					  dynamic_cast< C_BaseAnimating * >( pEntity )->IsRagdoll() )
 			{
@@ -203,11 +181,6 @@ public:
 			}
 			else if ( pLocal != NULL )
 			{
-				// GMod-style separation, as asked for on 2026-09-17: the ARMS follow the
-				// WEAPON colour while the player MODEL follows the player colour.  The
-				// arms' VMTs declare "PlayerColor", so they used to move with the skin
-				// mixer and the two were inseparable - the weapon mixer looked dead.  The
-				// weapon sheets keep their own PlayerWeaponColor proxy.
 				const char *pszClass = pEntity->GetClassname();
 
 				if ( pszClass != NULL &&
@@ -215,11 +188,7 @@ public:
 					   Q_stristr( pszClass, "arms" ) != NULL ||
 					   Q_stristr( pszClass, "hands" ) != NULL ) )
 				{
-					v = HL2SB_GetWeaponColor( pLocal->GetUserID() );
-
-					float mul = ( 1.0f + sin( gpGlobals->curtime * 5.0f ) ) * 0.5f;
-					m_pColor->SetVecValue( v.x + v.x * mul, v.y + v.y * mul, v.z + v.z * mul );
-					return;
+					pPlayer = pLocal;
 				}
 			}
 		}
@@ -253,7 +222,6 @@ public:
 private:
 	IMaterialVar	*m_pColor;
 	float			m_flDefault[3];
-	bool			m_bArmsMaterial;
 };
 
 EXPOSE_INTERFACE( CPlayerColorProxy, IMaterialProxy, "PlayerColor" IMATERIAL_PROXY_INTERFACE_VERSION );

@@ -1314,6 +1314,11 @@ C_HL2MPRagdoll::C_HL2MPRagdoll()
 
 }
 
+int C_HL2MPRagdoll::GetPlayerEntIndex() const
+{
+	return m_hPlayer.Get() ? m_hPlayer->entindex() : 0;
+}
+
 C_HL2MPRagdoll::~C_HL2MPRagdoll()
 {
 	PhysCleanupFrictionSounds( this );
