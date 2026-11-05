@@ -19,6 +19,7 @@
 #include "filesystem.h"
 #include "utlstring.h"
 #include "utlvector.h"
+#include "tier0/icommandline.h"
 
 #include "hl2sb_gma.h"
 
@@ -33,7 +34,7 @@ extern ConVar hl2sb_dev_msgs;
 //-----------------------------------------------------------------------------
 void HL2SB_MountGMAAddons()
 {
-	if ( !filesystem )
+	if ( !filesystem || CommandLine()->FindParm( "-noaddons" ) != 0 )
 		return;
 
 	CUtlVector< CUtlString > archives;

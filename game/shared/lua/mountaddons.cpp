@@ -396,6 +396,7 @@ void MountAddons()
 		fn = g_pFullFileSystem->FindNext( fh );
 	}
 	g_pFullFileSystem->FindClose( fh );
+	HL2SB_MountGMAAddons();
 }
 
 //-----------------------------------------------------------------------------
