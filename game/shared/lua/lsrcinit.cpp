@@ -4683,6 +4683,14 @@ static int luasrc_AddCSLuaFile( lua_State *pL ) {
   return 0;
 }
 
+#ifdef CLIENT_DLL
+static int luasrc_MotionSensorIsAvailable( lua_State *L )
+{
+  lua_pushboolean( L, 0 );
+  return 1;
+}
+#endif
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   HL2SB_RefreshGameContentPaths();
   lua_pushcfunction( L, lua_global_RealTime ); lua_setglobal( L, "RealTime" );
@@ -4712,6 +4720,13 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
       lua_pop(L, 1);
     }
   }
+
+#ifdef CLIENT_DLL
+  lua_newtable( L );
+  lua_pushcfunction( L, luasrc_MotionSensorIsAvailable );
+  lua_setfield( L, -2, "IsAvailable" );
+  lua_setglobal( L, "motionsensor" );
+#endif
 
 /* HL2SB GMod compat: the DEFINE_BASECLASS( name ) global (wiki: it is a
  * PREPROCESSOR keyword in GMod -- the loader's own GLua rewrite pass expands
