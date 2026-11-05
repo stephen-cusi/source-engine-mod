@@ -1090,7 +1090,8 @@ static int CBaseAnimating_GetCollideType (lua_State *L) {
 }
 
 static int CBaseAnimating_GetCycle (lua_State *L) {
-  lua_pushnumber(L, luaL_checkanimating(L, 1)->GetCycle());
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  lua_pushnumber(L, pEntity->IsMarkedForDeletion() ? 0 : pEntity->GetCycle());
   return 1;
 }
 
@@ -1379,7 +1380,8 @@ static int CBaseAnimating_GetRenderOrigin (lua_State *L) {
 }
 
 static int CBaseAnimating_GetSequence (lua_State *L) {
-  lua_pushinteger(L, luaL_checkanimating(L, 1)->GetSequence());
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  lua_pushinteger(L, pEntity->IsMarkedForDeletion() ? 0 : pEntity->GetSequence());
   return 1;
 }
 
@@ -1417,7 +1419,8 @@ static int CBaseAnimating_GetSequenceLinearMotion (lua_State *L) {
 }
 
 static int CBaseAnimating_GetSequenceName (lua_State *L) {
-  lua_pushstring(L, luaL_checkanimating(L, 1)->GetSequenceName(luaL_checkint(L, 2)));
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  lua_pushstring(L, pEntity->IsMarkedForDeletion() ? "" : pEntity->GetSequenceName(luaL_checkint(L, 2)));
   return 1;
 }
 

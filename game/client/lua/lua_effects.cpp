@@ -150,8 +150,7 @@ public:
 		else if ( !IsMarkedForDeletion() && !m_bReady )
 		{
 			m_bReady = true;
-			if ( GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE )
-				ClientLeafSystem()->RenderableChanged( GetRenderHandle() );
+			UpdateVisibility();
 		}
 	}
 

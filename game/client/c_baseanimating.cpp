@@ -8,6 +8,7 @@
 #include "c_baseanimating.h"
 #include "model_types.h"
 #include "materialsystem/imaterial.h"
+#include "materialsystem/imaterialsystem.h"
 #include "materialsystem/imaterialvar.h"	// HL2SB: IMaterialVar for the glow-shell $color tint
 #include "c_sprite.h"
 #include "bone_setup.h"
@@ -3406,6 +3407,7 @@ bool C_BaseAnimating::OnInternalDrawModel( ClientModelRenderInfo_t *pInfo )
 //-----------------------------------------------------------------------------
 #if defined( LUA_SDK )
 extern IMaterial *HL2SB_EntityMaterialOverride( C_BaseEntity *pEntity );
+extern IMaterial *HL2SB_EntitySubMaterialOverride( C_BaseEntity *pEntity, int nSlot );
 #endif
 
 void C_BaseAnimating::DoInternalDrawModel( ClientModelRenderInfo_t *pInfo, DrawModelState_t *pState, matrix3x4_t *pBoneToWorldArray )
@@ -3424,7 +3426,44 @@ void C_BaseAnimating::DoInternalDrawModel( ClientModelRenderInfo_t *pInfo, DrawM
 		if ( pEntityMaterial )
 			modelrender->ForcedMaterialOverride( pEntityMaterial );
 #endif
-		modelrender->DrawModelExecute( *pState, *pInfo, pBoneToWorldArray );
+#if defined( LUA_SDK )
+		IMaterial *subMaterials[32] = { NULL };
+		bool hasSubMaterials = false;
+		if ( !pForcedMaterial && !pEntityMaterial && overrideType == OVERRIDE_NORMAL &&
+			!( pInfo->flags & ( STUDIO_SHADOWDEPTHTEXTURE | STUDIO_SSAODEPTHTEXTURE ) ) )
+		{
+			for ( int i = 0; i < 32; ++i )
+			{
+				subMaterials[i] = HL2SB_EntitySubMaterialOverride( this, i );
+				hasSubMaterials = hasSubMaterials || subMaterials[i] != NULL;
+			}
+		}
+		studiohwdata_t *hardware = pState->m_pStudioHWData;
+		if ( hasSubMaterials && hardware && hardware->m_pLODs && pState->m_pStudioHdr &&
+			pState->m_lod >= 0 && pState->m_lod < hardware->m_NumLODs &&
+			hardware->m_pLODs[pState->m_lod].ppMaterials && pState->m_pStudioHdr->numtextures > 0 )
+		{
+			CMatRenderContextPtr context( materials );
+			CMatRenderData<studiohwdata_t> copyHardware( context, 1, hardware );
+			CMatRenderData<studioloddata_t> copyLods( context, hardware->m_NumLODs, hardware->m_pLODs );
+			const int nMaterials = pState->m_pStudioHdr->numtextures;
+			CMatRenderData<IMaterial *> copyMaterials( context, nMaterials, hardware->m_pLODs[pState->m_lod].ppMaterials );
+			if ( copyHardware.IsValid() && copyLods.IsValid() && copyMaterials.IsValid() )
+			{
+				for ( int i = 0; i < nMaterials && i < 32; ++i )
+					if ( subMaterials[i] ) copyMaterials[i] = subMaterials[i];
+				copyLods[pState->m_lod].ppMaterials = copyMaterials.Base();
+				copyHardware[0].m_pLODs = copyLods.Base();
+				DrawModelState_t state = *pState;
+				state.m_pStudioHWData = copyHardware.Base();
+				modelrender->DrawModelExecute( state, *pInfo, pBoneToWorldArray );
+			}
+			else
+				modelrender->DrawModelExecute( *pState, *pInfo, pBoneToWorldArray );
+		}
+		else
+#endif
+			modelrender->DrawModelExecute( *pState, *pInfo, pBoneToWorldArray );
 #if defined( LUA_SDK )
 		if ( pEntityMaterial )
 			modelrender->ForcedMaterialOverride( pForcedMaterial, overrideType );

@@ -571,39 +571,10 @@ LUA_BINDING_END( "string", "The flex controller name" )
 
 LUA_BINDING_BEGIN( CBaseAnimating, GetMaterials, "class", "Get the materials" )
 {
-    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
-
-    CStudioHdr *pStudioHdr = pAnimating->GetModelPtr();
-
-    if ( !pStudioHdr )
-    {
-        lua_pushnil( L );
-        return 1;
-    }
-
-    const studiohdr_t *pRenderHdr = pStudioHdr->GetRenderHdr();
-
-    IMaterial *pMaterials[128];
-    int iMaterialCount = g_pStudioRender->GetMaterialList( ( studiohdr_t * )pRenderHdr, ARRAYSIZE( pMaterials ), pMaterials );
-
-    lua_newtable( L );
-
-    for ( int i = 0; i < iMaterialCount; i++ )
-    {
-        IMaterial *pMaterial = pMaterials[i];
-
-        if ( !pMaterial )
-            continue;
-
-        lua_pushnumber( L, i + 1 );  // 1 indexed
-        lua_pushmaterial( L, pMaterial );
-        lua_settable( L, -3 );
-    }
-
-    lua_pushinteger( L, iMaterialCount );
-    return 2;
+    extern int HL2SB_EntityGetMaterials( lua_State *L );
+    return HL2SB_EntityGetMaterials( L );
 }
-LUA_BINDING_END( "table", "The materials", "integer", "The number of materials" )
+LUA_BINDING_END( "table", "The materials" )
 
 LUA_BINDING_BEGIN( CBaseAnimating, GetSubModels, "class", "Get the submodels" )
 {

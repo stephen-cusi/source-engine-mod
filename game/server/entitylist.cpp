@@ -1303,9 +1303,12 @@ void CNotifyList::LevelShutdownPreEntity( void )
 void CNotifyList::OnEntityCreated( CBaseEntity *pEntity )
 {
 #if defined ( LUA_SDK )
-	BEGIN_LUA_CALL_HOOK( "OnEntityCreated" );
-		lua_pushentity( L, pEntity );
-	END_LUA_CALL_HOOK( 1, 0 );
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "OnEntityCreated" );
+			lua_pushentity( L, pEntity );
+		END_LUA_CALL_HOOK( 1, 0 );
+	}
 #endif
 }
 
@@ -1327,10 +1330,7 @@ void CNotifyList::OnEntityDeleted( CBaseEntity *pEntity )
 	// Second argument matches the reference: a full-update flag.  Server-side
 	// removals are always real removals, so it is false here.
 	//
-	// The `L` guard matters here in a way it does not for OnEntityCreated:
-	// level shutdown tears the Lua state down (luasrc_shutdown() sets L = NULL)
-	// while entities are still being deleted, and the macro dereferences L
-	// unconditionally.
+	// Entity deletion can continue after the Lua state has shut down.
 	if ( L )
 	{
 		BEGIN_LUA_CALL_HOOK( "EntityRemoved" );

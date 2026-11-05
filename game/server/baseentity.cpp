@@ -1580,8 +1580,7 @@ void CBaseEntity::TakeDamage( const CTakeDamageInfo &inputInfo )
 		// traces); the vphysics callback queue re-enters TakeDamage, so deferred
 		// damage fires here too.  Wiki: EntityTakeDamage runs before the damage is
 		// applied and returning true blocks the whole event; PostEntityTakeDamage
-		// runs afterwards and reports whether health actually dropped.
-		int iHealthBefore = m_iHealth;
+		// runs afterwards and reports the result of the damage handler.
 
 		BEGIN_LUA_CALL_HOOK( "EntityTakeDamage" );
 			lua_pushentity( L, this );
@@ -1594,12 +1593,12 @@ void CBaseEntity::TakeDamage( const CTakeDamageInfo &inputInfo )
 		if ( bBlocked )
 			return;
 
-		OnTakeDamage( info );
+		const int iDamageResult = OnTakeDamage( info );
 
 		BEGIN_LUA_CALL_HOOK( "PostEntityTakeDamage" );
 			lua_pushentity( L, this );
 			lua_pushdamageinfo( L, info );
-			lua_pushboolean( L, m_iHealth < iHealthBefore );
+			lua_pushboolean( L, iDamageResult != 0 );
 		END_LUA_CALL_HOOK( 3, 0 );
 #else
 		OnTakeDamage( info );

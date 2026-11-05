@@ -62,7 +62,7 @@ static void HL2SB_PushWeaponRaw (lua_State *L, lua_CBaseCombatWeapon *pWeapon) {
 // weapon itself rides as the upvalue (a handle, so the answer stays live
 // after the weapon changes hands or is removed), and the lookup mirrors
 // CBaseCombatWeapon_GetOwner exactly: Player for player owners, plain Entity
-// otherwise, nil for none.  A script-defined GetOwner keeps priority -- the
+// otherwise, a NULL entity for none.  A script-defined GetOwner keeps priority -- the
 // seed only runs when the merged instance table has no GetOwner FUNCTION (a
 // non-function value is shadowed, matching the userdata __index order).
 static int HL2SB_WeaponTableGetOwner (lua_State *L) {
@@ -72,9 +72,7 @@ static int HL2SB_WeaponTableGetOwner (lua_State *L) {
     return 1;
   }
   CBaseCombatCharacter *pOwner = pWeapon->GetOwner();
-  if (pOwner == NULL)
-    lua_pushnil(L);
-  else if (pOwner->IsPlayer())
+  if (pOwner && pOwner->IsPlayer())
     lua_pushplayer(L, (CBasePlayer *)pOwner);
   else
     lua_pushentity(L, pOwner);
@@ -403,9 +401,7 @@ static int CBaseCombatWeapon_GetName (lua_State *L) {
 // Player userdata.
 static int CBaseCombatWeapon_GetOwner (lua_State *L) {
   CBaseCombatCharacter *pOwner = luaL_checkweapon(L, 1)->GetOwner();
-  if (pOwner == NULL)
-    lua_pushnil(L);
-  else if (pOwner->IsPlayer())
+  if (pOwner && pOwner->IsPlayer())
     lua_pushplayer(L, (CBasePlayer *)pOwner);
   else
     lua_pushentity(L, pOwner);

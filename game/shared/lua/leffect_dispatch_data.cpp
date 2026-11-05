@@ -18,6 +18,7 @@
 #include "leffect_dispatch_data.h"
 #include "lbaseentity_shared.h"
 #include "mathlib/lvector.h"
+#include <new>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -28,9 +29,14 @@
 */
 
 
+struct LuaEffectData {
+  lua_CEffectData data;
+  lua_CEffectData *value;
+};
+
 LUA_API lua_CEffectData &lua_toeffect (lua_State *L, int idx) {
-  lua_CEffectData *data = (lua_CEffectData *)lua_touserdata(L, idx);
-  return *data;
+  LuaEffectData *data = (LuaEffectData *)lua_touserdata(L, idx);
+  return *data->value;
 }
 
 
@@ -41,16 +47,18 @@ LUA_API lua_CEffectData &lua_toeffect (lua_State *L, int idx) {
 
 
 LUA_API void lua_pusheffect (lua_State *L, lua_CEffectData &data) {
-  lua_CEffectData *pData = (lua_CEffectData *)lua_newuserdata(L, sizeof(lua_CEffectData));
-  *pData = data;
+  LuaEffectData *pData = (LuaEffectData *)lua_newuserdata(L, sizeof(LuaEffectData));
+  new (pData) LuaEffectData;
+  pData->data = data;
+  pData->value = &pData->data;
   luaL_getmetatable(L, "CEffectData");
   lua_setmetatable(L, -2);
 }
 
 
 LUALIB_API lua_CEffectData &luaL_checkeffect (lua_State *L, int narg) {
-  lua_CEffectData *d = (lua_CEffectData *)luaL_checkudata(L, narg, "CEffectData");
-  return *d;
+  LuaEffectData *d = (LuaEffectData *)luaL_checkudata(L, narg, "CEffectData");
+  return *d->value;
 }
 
 
@@ -66,12 +74,15 @@ static int CEffectData_GetEffectNameIndex (lua_State *L) {
   return 1;
 }
 
-#ifdef CLIENT_DLL
   static int CEffectData_GetEntity (lua_State *L) {
+#ifdef CLIENT_DLL
     lua_pushentity(L, luaL_checkeffect(L, 1).GetEntity());
+#else
+    int index = luaL_checkeffect(L, 1).m_nEntIndex;
+    lua_pushentity(L, index > 0 ? UTIL_EntityByIndex(index) : NULL);
+#endif
     return 1;
   }
-#endif
 
 // HL2SB GMod compat (Nuke Pack audit 2026-09-20): CEffectData:SetEntity( ent )
 // -- the server half of `effectdata:SetEntity( weapon )` before util.Effect
@@ -272,9 +283,7 @@ static const luaL_Reg CEffectDatameta[] = {
   {"entindex", CEffectData_entindex},
 #endif
   {"GetEffectNameIndex", CEffectData_GetEffectNameIndex},
-#ifdef CLIENT_DLL
   {"GetEntity", CEffectData_GetEntity},
-#endif
   // HL2SB (2026-09-22): SetEntity is CLIENT-safe too -- m_nEntIndex is a plain
   // field on the shared CEffectData.  It used to be server-only, and
   // cf_beast's Muzzle() (which runs on the CLIENT via Weapon:CallOnClient)
@@ -327,8 +336,9 @@ static const luaL_Reg CEffectDatameta[] = {
 
 
 static int luasrc_CEffectData (lua_State *L) {
-  CEffectData data = CEffectData();
-  lua_pusheffect(L, data);
+  static CEffectData sharedData;
+  lua_pusheffect(L, sharedData);
+  ((LuaEffectData *)lua_touserdata(L, -1))->value = &sharedData;
   return 1;
 }
 

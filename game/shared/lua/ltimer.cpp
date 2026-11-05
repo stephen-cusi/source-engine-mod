@@ -74,12 +74,14 @@ struct HL2SB_LuaTimer_t
 	bool		m_bPaused;
 	bool		m_bStopped;
 	bool		m_bFailed;		// callback errored last run -> retire on sight
+	bool		m_bRemoved;
 	CUtlString	m_sLocation;	// where Create() was called, for "Timer Failed!"
 };
 
 struct HL2SB_LuaSimpleTimer_t
 {
 	int			m_iFuncRef;		// callback id in the library-private table (see below)
+	const void *m_pFunction;
 	double		m_flFireTime;
 	CUtlString	m_sLocation;
 };
@@ -89,6 +91,9 @@ struct HL2SB_LuaSimpleTimer_t
 typedef CUtlHashtable<CUtlString, HL2SB_LuaTimer_t> HL2SB_LuaTimerMap;
 static HL2SB_LuaTimerMap g_LuaTimers;
 static CUtlVector<HL2SB_LuaSimpleTimer_t> g_LuaSimpleTimers;
+static CUtlVector<HL2SB_LuaSimpleTimer_t> g_LuaPendingSimpleTimers;
+static const void *s_pRunningSimpleFunction = NULL;
+static bool s_bRunningSimpleTimers = false;
 
 // HL2SB (2026-10-19): the lua_State the records above were created against.
 // Every m_iFuncRef is an index into THAT state's registry, so a record may only
@@ -103,14 +108,17 @@ static lua_State *s_pTimerState = NULL;
 // an unrelated object (or corrupt the free list).
 static void HL2SB_TimerDropForeignRecords( const char *pszWhy )
 {
-	if ( g_LuaTimers.Count() == 0 && g_LuaSimpleTimers.Count() == 0 )
+	if ( g_LuaTimers.Count() == 0 && g_LuaSimpleTimers.Count() == 0 && g_LuaPendingSimpleTimers.Count() == 0 )
 		return;
 
 	luasrc_LuaErrorMsgF( "Timer registry reset (%s): dropped %d named / %d simple timer(s) created against Lua state %p, current state is %p\n",
-		pszWhy, g_LuaTimers.Count(), g_LuaSimpleTimers.Count(),
+		pszWhy, g_LuaTimers.Count(), g_LuaSimpleTimers.Count() + g_LuaPendingSimpleTimers.Count(),
 		(void *)s_pTimerState, (void *)L );
 	g_LuaTimers.Purge();
 	g_LuaSimpleTimers.Purge();
+	g_LuaPendingSimpleTimers.Purge();
+	s_pRunningSimpleFunction = NULL;
+	s_bRunningSimpleTimers = false;
 }
 
 // Adopt the current state, purging whatever belonged to another one.
@@ -273,6 +281,7 @@ static int timer_Create (lua_State *L) {
 	t.m_bPaused = false;
 	t.m_bStopped = false;
 	t.m_bFailed = false;
+	t.m_bRemoved = false;
 	t.m_sLocation = sLoc;
 
 	// Replace any existing timer under this id (GMod does the same and drops
@@ -299,10 +308,14 @@ static int timer_Simple (lua_State *L) {
 
 	HL2SB_LuaSimpleTimer_t s;
 	s.m_iFuncRef = HL2SB_TimerStoreCallback( L, 2 );
+	s.m_pFunction = lua_topointer( L, 2 );
 	s.m_flFireTime = HL2SB_TimerNow() + flDelay;
 	s.m_sLocation = sLoc;
 
-	g_LuaSimpleTimers.AddToTail( s );
+	if ( s_bRunningSimpleTimers && s_pRunningSimpleFunction == s.m_pFunction )
+		g_LuaPendingSimpleTimers.AddToTail( s );
+	else
+		g_LuaSimpleTimers.AddToTail( s );
 	return 0;
 }
 
@@ -311,16 +324,14 @@ static int timer_Remove (lua_State *L) {
 	CUtlString sKey = HL2SB_TimerKey( L, 1 );
 	UtlHashHandle_t h = g_LuaTimers.Find( sKey );
 	if ( h != g_LuaTimers.InvalidHandle() )
-	{
-		HL2SB_TimerDropCallback( g_LuaTimers[ h ].m_iFuncRef );
-		g_LuaTimers.Remove( sKey );
-	}
+		g_LuaTimers[ h ].m_bRemoved = true;
 	return 0;
 }
 
 // timer.Exists( identifier ) -> boolean
 static int timer_Exists (lua_State *L) {
-	lua_pushboolean( L, g_LuaTimers.Find( HL2SB_TimerKey( L, 1 ) ) != g_LuaTimers.InvalidHandle() );
+	UtlHashHandle_t h = g_LuaTimers.Find( HL2SB_TimerKey( L, 1 ) );
+	lua_pushboolean( L, h != g_LuaTimers.InvalidHandle() && !g_LuaTimers[ h ].m_bRemoved );
 	return 1;
 }
 
@@ -546,13 +557,22 @@ LUA_API void HL2SB_TimerTick ( void )
 	double flNow = HL2SB_TimerNow();
 
 	// --- one-shot simple timers ---
-	for ( int i = g_LuaSimpleTimers.Count() - 1; i >= 0; --i )
+	FOR_EACH_VEC( g_LuaPendingSimpleTimers, pending )
+		g_LuaSimpleTimers.AddToTail( g_LuaPendingSimpleTimers[ pending ] );
+	g_LuaPendingSimpleTimers.Purge();
+	s_bRunningSimpleTimers = true;
+	int nSimpleCallbacks = 0;
+	for ( int i = 0; i < g_LuaSimpleTimers.Count() && nSimpleCallbacks < 1024; )
 	{
 		HL2SB_LuaSimpleTimer_t &s = g_LuaSimpleTimers[ i ];
 		if ( flNow < s.m_flFireTime )
+		{
+			++i;
 			continue;
+		}
 
 		int iRef = s.m_iFuncRef;
+		const void *pFunction = s.m_pFunction;
 		CUtlString sLoc = s.m_sLocation;
 		g_LuaSimpleTimers.Remove( i );
 
@@ -566,6 +586,8 @@ LUA_API void HL2SB_TimerTick ( void )
 			continue;
 		}
 		HL2SB_TimerClearCallback( L, iRef );
+		++nSimpleCallbacks;
+		s_pRunningSimpleFunction = pFunction;
 		if ( lua_pcall( L, 0, 0, 0 ) != 0 )
 		{
 			const char *pszErr = lua_tostring( L, -1 );
@@ -580,17 +602,31 @@ LUA_API void HL2SB_TimerTick ( void )
 			HL2SB_CollectLuaError( pszErr, lua_tostring( L, -1 ) );
 			lua_pop( L, 2 );
 		}
+		s_pRunningSimpleFunction = NULL;
 	}
+	s_bRunningSimpleTimers = false;
 
 	// --- named timers ---
 	// Collect the due set first: a callback may Create/Remove timers, and
 	// mutating the hashtable while walking it would invalidate the iterator.
 	CUtlVector<CUtlString> due;
+	CUtlVector<CUtlString> removed;
 	FOR_EACH_HASHTABLE( g_LuaTimers, hIter )
 	{
 		const HL2SB_LuaTimer_t &t = g_LuaTimers[ hIter ];
-		if ( !t.m_bPaused && !t.m_bStopped && flNow >= t.m_flNext )
+		if ( t.m_bRemoved )
+			removed.AddToTail( g_LuaTimers.Key( hIter ) );
+		else if ( !t.m_bPaused && !t.m_bStopped && flNow >= t.m_flNext )
 			due.AddToTail( g_LuaTimers.Key( hIter ) );
+	}
+	for ( int i = 0; i < removed.Count(); ++i )
+	{
+		UtlHashHandle_t h = g_LuaTimers.Find( removed[ i ] );
+		if ( h != g_LuaTimers.InvalidHandle() && g_LuaTimers[ h ].m_bRemoved )
+		{
+			HL2SB_TimerDropCallback( g_LuaTimers[ h ].m_iFuncRef );
+			g_LuaTimers.Remove( removed[ i ] );
+		}
 	}
 
 	for ( int i = 0; i < due.Count(); ++i )
@@ -600,6 +636,8 @@ LUA_API void HL2SB_TimerTick ( void )
 			continue; // an earlier callback removed it already
 
 		HL2SB_LuaTimer_t &t = g_LuaTimers[ h ];
+		if ( t.m_bRemoved || t.m_bPaused || t.m_bStopped || flNow < t.m_flNext )
+			continue;
 
 		// GMod advances by exactly the delay (keeps the original cadence).
 		t.m_flNext = t.m_flNext + t.m_flDelay;
@@ -653,7 +691,7 @@ LUA_API void HL2SB_TimerTick ( void )
 		if ( bFailed )
 			t2.m_bFailed = true;
 
-		if ( iRepsAfter == 0 || bFailed )
+		if ( iRepsAfter == 0 || bFailed || t2.m_bRemoved )
 		{
 			HL2SB_TimerDropCallback( t2.m_iFuncRef );
 			g_LuaTimers.Remove( sKey );
@@ -676,6 +714,11 @@ LUA_API void HL2SB_TimerShutdown ( void )
 	FOR_EACH_VEC( g_LuaSimpleTimers, i )
 		HL2SB_TimerDropCallback( g_LuaSimpleTimers[ i ].m_iFuncRef );
 	g_LuaSimpleTimers.Purge();
+	FOR_EACH_VEC( g_LuaPendingSimpleTimers, i )
+		HL2SB_TimerDropCallback( g_LuaPendingSimpleTimers[ i ].m_iFuncRef );
+	g_LuaPendingSimpleTimers.Purge();
+	s_pRunningSimpleFunction = NULL;
+	s_bRunningSimpleTimers = false;
 
 	s_pTimerState = NULL;
 }
@@ -696,5 +739,8 @@ LUA_API void HL2SB_TimerResetForNewState ( lua_State *pL )
 {
 	g_LuaTimers.Purge();
 	g_LuaSimpleTimers.Purge();
+	g_LuaPendingSimpleTimers.Purge();
+	s_pRunningSimpleFunction = NULL;
+	s_bRunningSimpleTimers = false;
 	s_pTimerState = pL;
 }

@@ -208,6 +208,7 @@ static void HL2SB_MergeScriptedBaseChain( lua_State *L, int destination )
 
 void CBaseScripted::LoadScriptedEntity( void )
 {
+  const int stackBase = lua_gettop( L );
   const char *pszScriptClass = NULL;
 #ifdef CLIENT_DLL
   pszScriptClass = GetScriptedClassname();
@@ -238,9 +239,10 @@ void CBaseScripted::LoadScriptedEntity( void )
     lua_pop( L, 1 );
   }
 
-  // Replace the leaf table with the GMod scripted_ents.Get copy so Base
-  // methods are inherited without changing the entity initialization order.
-  if ( lua_istable( L, -1 ) )
+  // Runtime registrations need not have a legacy file-backed entity table.
+  // Keep one stack slot for that optional table while resolving the class.
+  if ( lua_gettop( L ) == stackBase )
+    lua_pushnil( L );
   {
     const int leaf = lua_gettop( L );
 
@@ -258,7 +260,8 @@ void CBaseScripted::LoadScriptedEntity( void )
         {
           // Keep runtime scripted_ents overrides while filling any missing
           // methods from the file-backed entity table and its base chain.
-          HL2SB_MergeMissingEntityFields( L, -1, leaf );
+          if ( lua_istable( L, leaf ) )
+            HL2SB_MergeMissingEntityFields( L, -1, leaf );
           HL2SB_MergeScriptedBaseChain( L, -1 );
           lua_remove( L, leaf );
         }

@@ -17,6 +17,8 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "gamestringpool.h"
+#include "materialsystem/imaterial.h"
+#include "model_types.h"
 #include "lbaseentity_shared.h"
 #include "basescripted.h"
 #include "mathlib/vmatrix.h"	// HL2SB: VMatrix for the transform matrix getters
@@ -758,8 +760,13 @@ static int CBaseEntity_EndTouch (lua_State *L) {
   return 0;
 }
 
+static bool HL2SB_IsDTEntity(lua_State *L, int index);
+
 static int CBaseEntity_entindex (lua_State *L) {
-  lua_pushinteger(L, luaL_checkentity(L, 1)->entindex());
+  if (!lua_isnil(L, 1) && !HL2SB_IsDTEntity(L, 1))
+    return luaL_typerror(L, 1, "Entity");
+  CBaseEntity *entity = lua_isnil(L, 1) ? NULL : lua_toentity(L, 1);
+  lua_pushinteger(L, entity ? entity->entindex() : 0);
   return 1;
 }
 
@@ -1836,18 +1843,23 @@ static int CBaseEntity_SetFlexScale (lua_State *L)
 // reaches it (lua_toanimating() RTTI-casts the handle and answers NULL for
 // entities that are not animating, e.g. a brush).
 static int CBaseEntity_SetModelScale (lua_State *L) {
-  lua_CBaseAnimating *pAnimating = lua_toanimating(L, 1);
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  lua_CBaseAnimating *pAnimating = pEntity->GetBaseAnimating();
 
-  if (pAnimating != NULL)
-    pAnimating->SetModelScale((float)luaL_checknumber(L, 2), (float)luaL_optnumber(L, 3, 0.0f));
+  if (pAnimating != NULL && !pEntity->IsMarkedForDeletion())
+    pAnimating->SetModelScale((float)luaL_checknumber(L, 2),
+      lua_type(L, 3) == LUA_TNUMBER ? (float)lua_tonumber(L, 3) : 0.0f);
 
   return 0;
 }
 
 static int CBaseEntity_GetModelScale (lua_State *L) {
-  lua_CBaseAnimating *pAnimating = lua_toanimating(L, 1);
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  lua_CBaseAnimating *pAnimating = pEntity->GetBaseAnimating();
 
-  lua_pushnumber(L, (pAnimating != NULL) ? pAnimating->GetModelScale() : 1.0f);
+  if (pAnimating == NULL || pEntity->IsMarkedForDeletion())
+    return 0;
+  lua_pushnumber(L, pAnimating->GetModelScale());
   return 1;
 }
 
@@ -1998,8 +2010,7 @@ static int CBaseEntity_LocalToWorld (lua_State *L) {
   Vector vecLocal = luaL_checkvector(L, 2);
   Vector vecWorld;
 
-  VectorRotate(vecLocal, pEntity->GetAbsAngles(), vecWorld);
-  vecWorld += pEntity->GetAbsOrigin();
+  pEntity->EntityToWorldSpace( vecLocal, &vecWorld );
 
   lua_pushvector(L, vecWorld);
   return 1;
@@ -2048,10 +2059,9 @@ static int CBaseEntity_LocalToWorldAngles (lua_State *L) {
   QAngle angLocal = luaL_checkangle(L, 2);
   QAngle angWorld;
 
-  matrix3x4_t mEntity, mLocal, mWorld;
-  AngleMatrix( pEntity->GetAbsAngles(), pEntity->GetAbsOrigin(), mEntity );
+  matrix3x4_t mLocal, mWorld;
   AngleMatrix( angLocal, mLocal );
-  ConcatTransforms( mEntity, mLocal, mWorld );
+  ConcatTransforms( pEntity->EntityToWorldTransform(), mLocal, mWorld );
   MatrixAngles( mWorld, angWorld );
 
   lua_pushangle(L, angWorld);
@@ -3208,6 +3218,59 @@ static int CBaseEntity_GetColor (lua_State *L) {
   return 1;
 }
 
+static int CBaseEntity_GetCycle (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  lua_CBaseAnimating *pAnimating = pEntity->GetBaseAnimating();
+  lua_pushnumber( L, pAnimating && !pEntity->IsMarkedForDeletion() ? pAnimating->GetCycle() : 0 );
+  return 1;
+}
+
+static int CBaseEntity_GetSequence (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  lua_CBaseAnimating *pAnimating = pEntity->GetBaseAnimating();
+  lua_pushinteger( L, pAnimating && !pEntity->IsMarkedForDeletion() ? pAnimating->GetSequence() : 0 );
+  return 1;
+}
+
+static int CBaseEntity_GetSequenceName (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  lua_CBaseAnimating *pAnimating = pEntity->GetBaseAnimating();
+  if ( !pAnimating || pEntity->IsMarkedForDeletion() ) {
+    lua_pushstring( L, "" );
+    return 1;
+  }
+  lua_pushstring( L, pAnimating->GetSequenceName( luaL_checkint( L, 2 ) ) );
+  return 1;
+}
+
+int HL2SB_EntityGetMaterials (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  const model_t *pModel = pEntity->GetModel();
+  lua_newtable( L );
+  if ( pModel == NULL || modelinfo == NULL )
+    return 1;
+
+  const int modelType = modelinfo->GetModelType( pModel );
+  if ( modelType != mod_studio && modelType != mod_brush )
+    return 1;
+  if ( modelType == mod_studio && modelinfo->GetStudiomodel( pModel ) == NULL )
+    return 1;
+  int count = modelType == mod_studio ? 128 : modelinfo->GetModelMaterialCount( pModel );
+  count = clamp( count, 0, 128 );
+  if ( count == 0 )
+    return 1;
+  CUtlVector<IMaterial *> materials;
+  materials.SetCount( count + 1 );
+  for ( int i = 0; i <= count; ++i )
+    materials[i] = NULL;
+  modelinfo->GetModelMaterials( pModel, count, materials.Base() );
+  for ( int i = 0; i < count && materials[i] != NULL; ++i ) {
+    lua_pushstring( L, materials[i]->GetName() );
+    lua_rawseti( L, -2, i + 1 );
+  }
+  return 1;
+}
+
 static int CBaseEntity_SetColor (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   lua_Color clr = luaL_checkcolor(L, 2);
@@ -3834,12 +3897,138 @@ static int CBaseEntity_SetMaterial( lua_State *L )
   return 0;
 }
 
+// HL2SB (2026-11-05) GMod compat: Entity:SetSubMaterial( index, material ).
+// Reference behavior / GMod does: a non-numeric index clears all 32 slots,
+// only slots 0..31 are writable (out-of-range indices are ignored), and an
+// empty material clears the slot.  Keep the names in the same native NW2 store
+// as Entity:SetMaterial so a server write is replicated to clients.
+static void HL2SB_EntitySubMaterialKey( CBaseEntity *pEntity, int nSlot, char *key, size_t size )
+{
+#ifdef CLIENT_DLL
+  // Client-only models share entindex -1 but have distinct entity handles.
+  if ( pEntity->entindex() < 0 )
+  {
+    Q_snprintf( key, size, "__hl2sb_submat_%d_%u", nSlot, pEntity->GetRefEHandle().ToInt() );
+    return;
+  }
+#endif
+  Q_snprintf( key, size, "__hl2sb_submat_%d", nSlot );
+}
+
+static void HL2SB_EntitySubMaterialName( CBaseEntity *pEntity, int nSlot, CUtlString &name )
+{
+  name = "";
+  if ( nSlot < 0 || nSlot > 31 )
+    return;
+  char key[64];
+  HL2SB_EntitySubMaterialKey( pEntity, nSlot, key, sizeof( key ) );
+  HL2SB_NWValue *p = NW2VarGetOrCreate( pEntity, key, false );
+  if ( p && p->tag == HL2SB_NWTAG_STRING )
+  {
+    name = p->s;
+    return;
+  }
+#ifdef CLIENT_DLL
+  if ( pEntity->entindex() >= 0 )
+  {
+    char replicatedKey[64];
+    Q_snprintf( replicatedKey, sizeof( replicatedKey ), "__hl2sb_submat_%d", nSlot );
+    HL2SB_NWReplicatedString( HL2SB_NWFAMILY_NW2, pEntity->entindex(), replicatedKey, name );
+  }
+#endif
+}
+
+#ifdef CLIENT_DLL
+static CUtlDict<CMaterialReference, unsigned short> s_EntitySubMaterialRefs;
+
+IMaterial *HL2SB_EntitySubMaterialOverride( CBaseEntity *pEntity, int nSlot )
+{
+  CUtlString name;
+  HL2SB_EntitySubMaterialName( pEntity, nSlot, name );
+  char key[64];
+  Q_snprintf( key, sizeof( key ), "%u_%d", pEntity->GetRefEHandle().ToInt(), nSlot );
+  IMaterial *pMaterial = name.IsEmpty() ? NULL : materials->FindMaterial( name.Get(), TEXTURE_GROUP_MODEL, false );
+  if ( !pMaterial || pMaterial->IsErrorMaterial() ) {
+    s_EntitySubMaterialRefs.Remove( key );
+    return NULL;
+  }
+  unsigned short index = s_EntitySubMaterialRefs.Find( key );
+  if ( !s_EntitySubMaterialRefs.IsValidIndex( index ) )
+    index = s_EntitySubMaterialRefs.Insert( key );
+  s_EntitySubMaterialRefs[index].Init( pMaterial );
+  return pMaterial;
+}
+#endif
+
+// Reference behavior / GMod does: GetSubMaterial returns the override name for
+// the slot, or an empty string when the slot is not overridden.
+static int CBaseEntity_GetSubMaterial( lua_State *L )
+{
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  const int nSlot = (int)luaL_checknumber( L, 2 );
+  CUtlString name;
+  HL2SB_EntitySubMaterialName( pEntity, nSlot, name );
+  lua_pushstring( L, name.Get() );
+  return 1;
+}
+
+static int CBaseEntity_SetSubMaterial( lua_State *L )
+{
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  const bool bClearAll = lua_isnoneornil( L, 2 ) || !lua_isnumber( L, 2 );
+  const int nSlot = bClearAll ? -1 : (int)lua_tonumber( L, 2 );
+  // GMod compares the index as unsigned against 31; negative indices are ignored.
+  if ( !bClearAll && (unsigned int)nSlot > 31u )
+    return 0;
+  const char *pszMaterial = bClearAll ? "" : luaL_optstring( L, 3, "" );
+  char szMaterial[256];
+  Q_strncpy( szMaterial, pszMaterial ? pszMaterial : "", sizeof( szMaterial ) );
+
+  const int nFirst = bClearAll ? 0 : nSlot;
+  const int nLast = bClearAll ? 31 : nSlot;
+  for ( int i = nFirst; i <= nLast; ++i )
+  {
+    char key[64];
+    HL2SB_EntitySubMaterialKey( pEntity, i, key, sizeof( key ) );
+    HL2SB_NWValue *p = NW2VarGetOrCreate( pEntity, key, true );
+    if ( !p )
+      continue;
+#ifndef CLIENT_DLL
+    const bool bChanged = p->tag != HL2SB_NWTAG_STRING || Q_strcmp( p->s.Get(), szMaterial ) != 0;
+#endif
+    p->s = szMaterial;
+    p->tag = HL2SB_NWTAG_STRING;
+#ifndef CLIENT_DLL
+    if ( bChanged )
+    {
+      char replicatedKey[64];
+      Q_snprintf( replicatedKey, sizeof( replicatedKey ), "__hl2sb_submat_%d", i );
+      lua_pushstring( L, szMaterial );
+      HL2SB_NWReplicateValue( HL2SB_NWFAMILY_NW2, pEntity, replicatedKey,
+        HL2SB_NWTAG_STRING, L, -1 );
+      lua_pop( L, 1 );
+    }
+#endif
+  }
+  return 0;
+}
+
 #ifdef CLIENT_DLL
 void HL2SB_EntityMaterialReleased( CBaseEntity *pEntity )
 {
   char refKey[32];
   HL2SB_EntityMaterialRefKey( pEntity, refKey, sizeof( refKey ) );
   s_EntityMaterialRefs.Remove( refKey );
+  for ( int slot = 0; slot < 32; ++slot ) {
+    char subKey[64];
+    Q_snprintf( subKey, sizeof( subKey ), "%u_%d", pEntity->GetRefEHandle().ToInt(), slot );
+    s_EntitySubMaterialRefs.Remove( subKey );
+    if ( pEntity->entindex() < 0 ) {
+      char key[64];
+      HL2SB_EntitySubMaterialKey( pEntity, slot, key, sizeof( key ) );
+      HL2SB_NWDropLocalVar( HL2SB_NWFAMILY_NW2, pEntity->entindex(), key );
+    }
+  }
   if ( pEntity->entindex() >= 0 )
     HL2SB_NWFreeEntityVars( pEntity->entindex() );
   else
@@ -4683,8 +4872,8 @@ void HL2SB_PushNullEntityIndex (lua_State *L, const char *pszField) {
     bKnown = HL2SB_PushClassField( L, s_pszNullIndexParents[i], pszField );
 
   if ( bKnown ) {
-    // DT methods validate NULL receivers themselves.
-    if (lua_isfunction(L,-1) && (!Q_strncmp(pszField,"GetDT",5) || !Q_strncmp(pszField,"SetDT",5))) return;
+    // These methods handle NULL receivers themselves.
+    if (lua_isfunction(L,-1) && (!Q_strncmp(pszField,"GetDT",5) || !Q_strncmp(pszField,"SetDT",5) || !Q_strcmp(pszField,"EntIndex") || !Q_strcmp(pszField,"entindex"))) return;
     lua_pop( L, 1 );   /* drop the looked-up value; answer the call-safe stub */
     lua_pushcfunction( L, HL2SB_NullEntityMethod );
   } else {
@@ -5092,12 +5281,11 @@ static int CBaseEntity_TakeDamageInfo (lua_State *L) {
 //-----------------------------------------------------------------------------
 static int CBaseEntity_GetOwner (lua_State *L) {
   CBaseEntity *entity = luaL_checkentity( L, 1 );
+  CBaseViewModel *viewModel = dynamic_cast<CBaseViewModel *>( entity );
   CBaseCombatWeapon *weapon = dynamic_cast<CBaseCombatWeapon *>( entity );
-  CBaseEntity *owner = weapon ? weapon->GetOwner() : entity->GetOwnerEntity();
-  if ( owner == NULL )
-    lua_pushnil( L );
-  else
-    CBaseEntity::PushLuaInstanceSafe( L, owner );
+  CBaseEntity *owner = viewModel ? viewModel->GetOwner() :
+    ( weapon ? weapon->GetOwner() : entity->GetOwnerEntity() );
+  CBaseEntity::PushLuaInstanceSafe( L, owner );
   return 1;
 }
 
@@ -5697,6 +5885,64 @@ static bool HL2SB_PushClientFieldFallback (lua_State *L, CBaseEntity *pEntity, c
   return false;
 }
 #endif // CLIENT_DLL
+
+#if defined( GAME_DLL )
+static int CBaseEntity_GetKeyValues (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  lua_newtable( L );
+
+  for ( datamap_t *pMap = pEntity->GetDataDescMap(); pMap != NULL; pMap = pMap->baseMap ) {
+    for ( int i = 0; i < pMap->dataNumFields; ++i ) {
+      const char *pName = pMap->dataDesc[i].externalName;
+      variant_t value;
+      if ( pName == NULL || !pEntity->ReadKeyField( pName, &value ) )
+        continue;
+
+      switch ( value.FieldType() ) {
+      case FIELD_VOID:
+        continue;
+      case FIELD_FLOAT:
+        lua_pushnumber( L, value.Float() );
+        break;
+      case FIELD_STRING:
+      case FIELD_SOUNDNAME:
+        lua_pushstring( L, value.String() );
+        break;
+      case FIELD_INTEGER:
+      case FIELD_SHORT:
+      case FIELD_CHARACTER:
+        lua_pushnumber( L, value.Int() );
+        break;
+      case FIELD_BOOLEAN:
+        lua_pushnumber( L, value.Bool() ? 1 : 0 );
+        break;
+      case FIELD_COLOR32: {
+        color32 color = value.Color32();
+        char text[32];
+        Q_snprintf( text, sizeof( text ), "%d %d %d %d", color.r, color.g, color.b, color.a );
+        lua_pushstring( L, text );
+        break;
+      }
+      case FIELD_EHANDLE:
+        CBaseEntity::PushLuaInstanceSafe( L, value.Entity().Get() );
+        break;
+      case FIELD_VECTOR:
+      case FIELD_POSITION_VECTOR: {
+        Vector vector;
+        value.Vector3D( vector );
+        lua_pushvector( L, vector );
+        break;
+      }
+      default:
+        lua_pushstring( L, "<UNHANDLED>" );
+        break;
+      }
+      lua_setfield( L, -2, pName );
+    }
+  }
+  return 1;
+}
+#endif
 
 static int CBaseEntity_GetSaveTable (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity( L, 1 );
@@ -6572,6 +6818,13 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"IsConstraint", CBaseEntity_IsConstraint},
   {"SendLua", CBaseEntity_SendLua},
   {"GetSaveTable", CBaseEntity_GetSaveTable},
+  {"GetCycle", CBaseEntity_GetCycle},
+  {"GetSequence", CBaseEntity_GetSequence},
+  {"GetSequenceName", CBaseEntity_GetSequenceName},
+  {"GetMaterials", HL2SB_EntityGetMaterials},
+#ifdef GAME_DLL
+  {"GetKeyValues", CBaseEntity_GetKeyValues},
+#endif
   {"SetSaveValue", CBaseEntity_SetSaveValue},
   {"TakeDamageInfo", CBaseEntity_TakeDamageInfo},
   {"GetOwner", CBaseEntity_GetOwner},
@@ -6989,6 +7242,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetBodyGroups", CBaseEntity_SetBodyGroups},
   {"SetColor4Part", CBaseEntity_SetColor4Part},
   {"SetMaterial", CBaseEntity_SetMaterial},
+  {"SetSubMaterial", CBaseEntity_SetSubMaterial},
+  {"GetSubMaterial", CBaseEntity_GetSubMaterial},
   {"SetSkin", CBaseEntity_SetSkin},
   {"SetRenderColorA", CBaseEntity_SetRenderColorA},
   {"SetRenderColorB", CBaseEntity_SetRenderColorB},

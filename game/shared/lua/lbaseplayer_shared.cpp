@@ -619,7 +619,7 @@ static int CBasePlayer_GetAmmoCount (lua_State *L) {
   switch(lua_type(L, 2)) {
 	case LUA_TNUMBER:
 	default:
-      lua_pushinteger(L, luaL_checkplayer(L, 1)->GetAmmoCount(luaL_checkint(L, 2)));
+	  lua_pushinteger(L, luaL_checkplayer(L, 1)->GetAmmoCount((int)luaL_checknumber(L, 2)));
 	  break;
 	case LUA_TSTRING:
       lua_pushinteger(L, luaL_checkplayer(L, 1)->GetAmmoCount((char *)luaL_checkstring(L, 2)));
@@ -1711,6 +1711,12 @@ static int CBasePlayer_SetCurrentViewOffset (lua_State *L) {
 // the view-entity half of ClientModeShared::ShouldDrawLocalPlayer.
 static int CBasePlayer_ShouldDrawLocalPlayer (lua_State *L) {
   C_BasePlayer *pPlayer = lua_toplayer(L, 1);
+  // Reference behavior / GMod rejects a NULL player instead of dereferencing it.
+  if ( !pPlayer )
+  {
+    lua_pushboolean( L, false );
+    return 1;
+  }
   bool bShouldDraw = true;
   if ( pPlayer->index == render->GetViewEntity() && !C_BasePlayer::ShouldDrawLocalPlayer() )
     bShouldDraw = false;

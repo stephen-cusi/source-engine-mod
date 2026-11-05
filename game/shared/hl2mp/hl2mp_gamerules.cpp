@@ -1003,11 +1003,11 @@ void CHL2MPRules::PlayerGotItem( CBasePlayer *pPlayer, CItem *pItem )
 //=========================================================
 int CHL2MPRules::ItemShouldRespawn( CItem *pItem )
 {
-	BEGIN_LUA_CALL_HOOK( "ItemShouldRespawn" );
-		lua_pushentity( L, pItem );
-	END_LUA_CALL_HOOK( 1, 1 );
-
-	RETURN_LUA_INTEGER();
+	extern int HL2SB_MapCreationID( CBaseEntity *pEntity );
+	ConVarRef weaponRespawn( "mp_weaponrespawn" );
+	if ( !weaponRespawn.IsValid() || weaponRespawn.GetInt() <= 0 ||
+		 HL2SB_MapCreationID( pItem ) == -1 )
+		return GR_ITEM_RESPAWN_NO;
 
 	return BaseClass::ItemShouldRespawn( pItem );
 }

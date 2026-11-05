@@ -7934,8 +7934,6 @@ void CBasePlayer::Weapon_DropSlot( int weaponSlot )
 //-----------------------------------------------------------------------------
 void CBasePlayer::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 {
-	BaseClass::Weapon_Equip( pWeapon );
-
 #if defined( LUA_SDK )
 	// HL2SB GMod compat (2026-10-13): GM:WeaponEquip( weapon, owner ) -- GMod
 	// fires this from the PLAYER-side Weapon_Equip (one call per player weapon),
@@ -7950,6 +7948,8 @@ void CBasePlayer::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 		END_LUA_CALL_HOOK( 2, 0 );
 	}
 #endif
+
+	BaseClass::Weapon_Equip( pWeapon );
 
 	bool bShouldSwitch = g_pGameRules->FShouldSwitchWeapon( this, pWeapon );
 
