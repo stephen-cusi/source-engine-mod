@@ -641,21 +641,22 @@ IMaterial *HL2SB_FindImageMaterial( const char *pMaterialName, const char *pDigi
     return pMaterial;
 }
 
-// HL2SB GMod compat: IMaterial:SetInt( name, value ) / GetInt( name )
-// / SetFloat / GetFloat (wiki: IMaterial).  The Nuke Pack's nukestrike cl_init
-// opens with matTargetLight:SetInt("$spriterendermode", 9) and the whole client
-// file failed to load without it.  Implemented over IMaterial::FindVar, which
-// creates the var when missing (same as the material system's own users).
+// Material variables are looked up without creating missing parameters.
 static int HL2SB_IMaterial_SetInt( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-    const int iValue = luaL_checkint( L, 3 );
-
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    if ( pVar != NULL )
-        pVar->SetIntValue( iValue );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar != NULL && bFound )
+    {
+        const int iValue = (int)luaL_checknumber( L, 3 );
+        if ( pVar->GetIntValue() != iValue )
+        {
+            pVar->SetIntValue( iValue );
+            pMaterial->RecomputeStateSnapshots();
+        }
+    }
     return 0;
 }
 
@@ -665,8 +666,10 @@ static int HL2SB_IMaterial_GetInt( lua_State *L )
     const char *pszVar = luaL_checkstring( L, 2 );
 
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    lua_pushinteger( L, ( pVar != NULL ) ? pVar->GetIntValue() : 0 );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar == NULL || !bFound )
+        return 0;
+    lua_pushinteger( L, pVar->GetIntValue() );
     return 1;
 }
 
@@ -674,12 +677,10 @@ static int HL2SB_IMaterial_SetFloat( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-    const float flValue = (float)luaL_checknumber( L, 3 );
-
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    if ( pVar != NULL )
-        pVar->SetFloatValue( flValue );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar != NULL && bFound )
+        pVar->SetFloatValue( (float)luaL_checknumber( L, 3 ) );
     return 0;
 }
 
