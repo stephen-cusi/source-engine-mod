@@ -93,14 +93,24 @@ static int Vector_Cross (lua_State *L) {
   return 1;
 }
 
+static void HL2SB_NormalizeLuaVector( Vector &vec ) {
+  const float length = sqrtf( vec.x * vec.x + vec.y * vec.y + vec.z * vec.z );
+  const float scale = 1.0f / ( length + 1.0e-10f );
+  vec.x *= scale;
+  vec.y *= scale;
+  vec.z *= scale;
+}
+
 // HL2SB GMod compat: the Vector methods GMod scripts use that this fork never
 // bound.  Vector:Angle() is the first one a ported SWEP needs:
 // weapon_flechettegun/shared.lua:77 does ent:SetAngles( fwd:Angle() ) and threw
 //     attempt to call a nil value (method 'Angle')
 // 20 times in one session, stopping the shot before ents.Create() could run.
 static int Vector_Angle (lua_State *L) {
+  Vector vec = luaL_checkvector(L, 1);
+  HL2SB_NormalizeLuaVector( vec );
   QAngle angAngles;
-  VectorAngles( luaL_checkvector(L, 1), angAngles );
+  VectorAngles( vec, angAngles );
   lua_pushangle(L, angAngles);
   return 1;
 }
@@ -117,14 +127,20 @@ static int Vector_Angle (lua_State *L) {
 // line, so the angles come back NaN -- and SetAngles(NaN) on a vphysics-solid
 // entity drove the physics solver into an infinite loop (whole process frozen
 // on scp173's first FaceVictim).  Fall back to the world-up form whenever the
-// inputs are not finite or the cross collapses.
+// inputs are not finite or the cross collapses. Normalize the inputs first,
+// so a small but nonzero up vector does not lose its direction.
 static int Vector_AngleEx (lua_State *L) {
   Vector vecForward = luaL_checkvector(L, 1);
   Vector vecUp = luaL_checkvector(L, 2);
   QAngle angAngles;
 
+  if ( vecForward.IsValid() && vecUp.IsValid() ) {
+    HL2SB_NormalizeLuaVector( vecForward );
+    HL2SB_NormalizeLuaVector( vecUp );
+  }
   Vector vecLeft = vecUp.Cross(vecForward);
-  if ( !vecForward.IsValid() || !vecUp.IsValid() || vecLeft.IsZero() )
+  if ( !vecForward.IsValid() || !vecUp.IsValid() || !vecLeft.IsValid() ||
+       ( vecLeft.x == 0.0f && vecLeft.y == 0.0f && vecLeft.z == 0.0f ) )
     VectorAngles( vecForward, angAngles );
   else
     VectorAngles( vecForward, vecUp, angAngles );
@@ -148,7 +164,7 @@ static int Vector_ToTable (lua_State *L) {
 
 static int Vector_GetNormalized (lua_State *L) {
   Vector vec = luaL_checkvector(L, 1);
-  vec.NormalizeInPlace();
+  HL2SB_NormalizeLuaVector( vec );
   lua_pushvector(L, vec);
   return 1;
 }
@@ -168,7 +184,7 @@ static int Vector_GetNormalized (lua_State *L) {
 //-----------------------------------------------------------------------------
 static int Vector_GetNormal (lua_State *L) {
   Vector vec = luaL_checkvector(L, 1);
-  vec.NormalizeInPlace();
+  HL2SB_NormalizeLuaVector( vec );
   lua_pushvector(L, vec);
   return 1;
 }
@@ -193,8 +209,14 @@ static int Vector_IsEqualTol (lua_State *L) {
   Vector vec = luaL_checkvector(L, 1);
   Vector other = luaL_checkvector(L, 2);
   float flTolerance = (float)luaL_optnumber(L, 3, 0.0);
+  const float zDifference = vec.z - other.z;
 
-  lua_pushboolean(L, fabs(vec.x - other.x) <= flTolerance && fabs(vec.y - other.y) <= flTolerance && fabs(vec.z - other.z) <= flTolerance);
+  // Preserve the reference's ordered final comparison under fast-math builds.
+  lua_pushboolean(L, !(fabs(vec.x - other.x) > flTolerance) &&
+                     !(fabs(vec.y - other.y) > flTolerance) &&
+                     FloatAbsBits(zDifference) <= 0x7f800000u &&
+                     FloatAbsBits(flTolerance) <= 0x7f800000u &&
+                     fabs(zDifference) <= flTolerance);
   return 1;
 }
 
@@ -211,7 +233,7 @@ static int Vector_IsEqualTol (lua_State *L) {
 // too now: no caller in the tree consumed it, and a reference script testing
 // the result would see a vector where the reference answers nil.
 static int Vector_Normalize (lua_State *L) {
-  luaL_checkvector(L, 1).NormalizeInPlace();
+  HL2SB_NormalizeLuaVector( luaL_checkvector(L, 1) );
   return 0;
 }
 

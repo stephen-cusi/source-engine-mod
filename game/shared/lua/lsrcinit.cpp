@@ -4527,6 +4527,15 @@ static int luasrc_LocalToWorld (lua_State *L) {
   return 2;
 }
 
+#ifndef CLIENT_DLL
+static int luasrc_PrintMessage (lua_State *L) {
+  const char *message = luaL_checkstring(L, 2);
+  const int destination = (int)luaL_checknumber(L, 1);
+  UTIL_ClientPrintAll(destination, "%s1", message);
+  return 0;
+}
+#endif
+
 static int luasrc_MsgAll (lua_State *L) {
   const int count = lua_gettop(L);
   char text[4096] = { 0 };
@@ -4919,6 +4928,10 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   */
   lua_pushcfunction(L, luasrc_MsgAll);
   lua_setglobal(L, "MsgAll");
+#ifndef CLIENT_DLL
+  lua_pushcfunction(L, luasrc_PrintMessage);
+  lua_setglobal(L, "PrintMessage");
+#endif
   lua_pushcfunction(L, luasrc_LocalToWorld);
   lua_setglobal(L, "LocalToWorld");
 

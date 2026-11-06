@@ -358,12 +358,10 @@ static int IMaterial_GetColor (lua_State *L) {
 static int IMaterial_SetString (lua_State *L) {
   IMaterial *pMaterial = luaL_checkmaterial(L, 1);
   const char *pszVarName = luaL_checkstring(L, 2);
-  const char *pszValue = luaL_checkstring(L, 3);
-
   bool bFound = false;
   IMaterialVar *pVar = pMaterial->FindVar( pszVarName, &bFound, false );
-  if ( pVar != NULL )
-    pVar->SetStringValue( pszValue );
+  if ( pVar != NULL && bFound )
+    pVar->SetStringValue( luaL_checkstring(L, 3) );
   return 0;
 }
 

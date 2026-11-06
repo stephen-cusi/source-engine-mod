@@ -69,7 +69,8 @@ void RegisterLuaNextBot( const char *pszClassname )
 
 	InstallNextBotEntityMethods();
 
-	Msg( "[HL2SB] Lua nextbot registered: %s\n", pszClassname );
+	if ( hl2sb_dev_msgs.GetBool() )
+		Msg( "[HL2SB] Lua nextbot registered: %s\n", pszClassname );
 }
 
 bool IsLuaNextBot( const char *pszClassname )
@@ -1179,7 +1180,7 @@ public:
 	{
 		static int s_nLogs = 0;
 
-		if ( s_nLogs < 12 )
+		if ( hl2sb_dev_msgs.GetBool() && s_nLogs < 12 )
 		{
 			++s_nLogs;
 			Msg( "[HL2SB] loco %p: %s() called - it writes m_desiredSpeed itself, script speed was %.0f\n",
@@ -1295,7 +1296,7 @@ public:
 		//   ApplyAccumulatedApproach(): maxSpeed = MIN( m_desiredSpeed, GetSpeedLimit() )
 		//   Update():                   if ( !IsAttemptingToMove() ) velocity = 0
 		// Every ~250 ticks, so a long session stays readable.
-		if ( pBot != NULL && ( pBot->m_nLocoUpdateCalls % 250 ) == 1 )
+		if ( hl2sb_dev_msgs.GetBool() && pBot != NULL && ( pBot->m_nLocoUpdateCalls % 250 ) == 1 )
 		{
 			// The last gate is the body: a MOTION_CONTROLLED_XY activity makes
 			// Update() throw the acceleration away and take the velocity from the

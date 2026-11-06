@@ -15,6 +15,7 @@
 #endif
 #include "takedamageinfo.h"
 #include "luamanager.h"
+extern ConVar hl2sb_dev_msgs;
 #include "luasrclib.h"
 #include "gamestringpool.h"
 #include "materialsystem/imaterial.h"
@@ -7459,7 +7460,7 @@ static int luasrc_ents_Create (lua_State *L) {
     }
     else
     {
-      luasrc_LuaWarnMsgF( "[HL2SB] ents.Create('%s'): created a non-scripted '%s' - no Lua class will be bound\n",
+      if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaWarnMsgF( "[HL2SB] ents.Create('%s'): created a non-scripted '%s' - no Lua class will be bound\n",
         pszClassName, pEntity->GetClassname() );
     }
   }

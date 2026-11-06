@@ -739,21 +739,28 @@ static int HL2SB_IMaterial_SetTexture( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar == NULL || !bFound )
+        return 0;
     ITexture *pTexture = NULL;
-    if ( lua_isstring( L, 3 ) )
+    if ( lua_type( L, 3 ) == LUA_TSTRING )
     {
-        pTexture = materials->FindTexture( lua_tostring( L, 3 ), TEXTURE_GROUP_SKYBOX );
+        pTexture = materials->FindTexture( lua_tostring( L, 3 ), "" );
     }
     else
     {
         pTexture = luaL_checkitexture( L, 3 );
     }
 
-    bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    if ( pVar != NULL && pTexture != NULL )
+    CMatRenderContextPtr pRenderContext( materials );
+    ITexture *pCurrent = ( pVar->GetType() == MATERIAL_VAR_TYPE_TEXTURE || pRenderContext->GetCallQueue() )
+        ? pVar->GetTextureValue() : materials->FindTexture( "error", TEXTURE_GROUP_OTHER, true );
+    if ( pTexture != NULL && pTexture != pCurrent )
+    {
         pVar->SetTextureValue( pTexture );
+        pMaterial->RecomputeStateSnapshots();
+    }
     return 0;
 }
 
@@ -763,12 +770,10 @@ static int HL2SB_IMaterial_SetString( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-    const char *pszValue = luaL_checkstring( L, 3 );
-
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    if ( pVar != NULL )
-        pVar->SetStringValue( pszValue );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar != NULL && bFound )
+        pVar->SetStringValue( luaL_checkstring( L, 3 ) );
     return 0;
 }
 
@@ -778,8 +783,10 @@ static int HL2SB_IMaterial_GetFloat( lua_State *L )
     const char *pszVar = luaL_checkstring( L, 2 );
 
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    lua_pushnumber( L, ( pVar != NULL ) ? pVar->GetFloatValue() : 0.0f );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar == NULL || !bFound )
+        return 0;
+    lua_pushnumber( L, pVar->GetFloatValue() );
     return 1;
 }
 

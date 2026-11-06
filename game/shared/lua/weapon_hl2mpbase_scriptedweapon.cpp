@@ -374,7 +374,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	// OnDataChanged retries once it arrives.
 	if ( !m_iScriptedClassname.Get() || !m_iScriptedClassname.Get()[0] )
 	{
-		luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT InitScriptedWeapon DEFERRED (no scripted name yet) ent=%d baseclass='%s'\n",
+		if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT InitScriptedWeapon DEFERRED (no scripted name yet) ent=%d baseclass='%s'\n",
 			entindex(), BaseClass::GetClassname() );
 		return;
 	}
@@ -433,7 +433,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	if ( !lua_istable( L, -1 ) )
 	{
 		lua_pop( L, 1 );
-		luasrc_LuaInfoMsgF( "[HL2SB wp] InitScriptedWeapon NO TABLE from weapons.Get('%s') ent=%d\n",
+		if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] InitScriptedWeapon NO TABLE from weapons.Get('%s') ent=%d\n",
 			className, entindex() );
 		return;
 	}
@@ -847,7 +847,7 @@ void CHL2MPScriptedWeapon::OnDataChanged( DataUpdateType_t updateType )
 	if ( !m_pLuaWeaponInfo->bParsedScript
 	  && m_iScriptedClassname.Get() && m_iScriptedClassname.Get()[0] )
 	{
-		luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT weapon bind ent=%d update=%d baseclass='%s' scripted='%s' refBefore=%d\n",
+		if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT weapon bind ent=%d update=%d baseclass='%s' scripted='%s' refBefore=%d\n",
 			entindex(), (int)updateType, BaseClass::GetClassname(), m_iScriptedClassname.Get(), (int)m_nTableReference );
 
 		SetClassname( m_iScriptedClassname.Get() );
@@ -865,7 +865,7 @@ void CHL2MPScriptedWeapon::OnDataChanged( DataUpdateType_t updateType )
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 #endif
 
-			luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT weapon bound ent=%d refAfter=%d vmidx=%d\n",
+			if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT weapon bound ent=%d refAfter=%d vmidx=%d\n",
 				entindex(), (int)m_nTableReference, (int)m_iViewModelIndex );
 		}
 	}
@@ -967,7 +967,7 @@ void CHL2MPScriptedWeapon::Precache( void )
 
 	// HL2SB (2026-10-01) probe: server-side bind outcome (this is the ONLY
 	// server bind site). Remove after the fists diagnosis.
-	luasrc_LuaInfoMsgF( "[HL2SB wp] SERVER weapon precache ent=%d class='%s' ref=%d vm='%s' wm='%s'\n",
+	if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] SERVER weapon precache ent=%d class='%s' ref=%d vm='%s' wm='%s'\n",
 		entindex(), GetClassname(), (int)m_nTableReference, GetViewModel(), GetWorldModel() );
 #endif
 }
@@ -1386,7 +1386,7 @@ void CHL2MPScriptedWeapon::PrimaryAttack( void )
 	// HL2SB (2026-10-01) probe: was the fire button ever routed into the Lua
 	// SWEP on the first equip? -2/-1 ref = the script never ran. Remove after
 	// the fists diagnosis.
-	luasrc_LuaInfoMsgF( "[HL2SB wp] %s PrimaryAttack ent=%d class='%s' ref=%d\n",
+	if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] %s PrimaryAttack ent=%d class='%s' ref=%d\n",
 #ifdef CLIENT_DLL
 		"CLIENT",
 #else
@@ -1786,7 +1786,7 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 #if defined ( LUA_SDK )
 	// HL2SB (2026-10-01) probe: first-equip deploy reached C++? what ref state?
 	// Remove after the fists diagnosis.
-	luasrc_LuaInfoMsgF( "[HL2SB wp] %s Deploy ent=%d class='%s' ref=%d state=%d\n",
+	if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] %s Deploy ent=%d class='%s' ref=%d state=%d\n",
 #ifdef CLIENT_DLL
 		"CLIENT",
 #else
@@ -1828,6 +1828,7 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
 
 	// Capture the script result before the return-value handler consumes it.
+	if ( hl2sb_dev_msgs.GetBool() )
 	{
 		const int iTop = lua_gettop( L );
 		const bool bIsBool = ( iTop > 0 && lua_isboolean( L, -1 ) ) != 0;
