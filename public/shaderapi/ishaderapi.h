@@ -626,6 +626,8 @@ public:
 	virtual void TexLodBias( float bias ) = 0;
 	
 	virtual void CopyTextureToTexture( ShaderAPITextureHandle_t srcTex, ShaderAPITextureHandle_t dstTex ) = 0;
+	virtual void OverrideBlendColor( bool enable, bool blend, int src, int dst, int op ) {}
+	virtual void OverrideBlendAlpha( bool enable, bool blend, int src, int dst, int op ) {}
 	
 };
 

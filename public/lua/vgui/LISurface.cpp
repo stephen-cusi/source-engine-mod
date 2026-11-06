@@ -382,6 +382,35 @@ static int surface_DrawLine (lua_State *L) {
   return 0;
 }
 
+static int surface_DrawCircle (lua_State *L) {
+  const int x = (int)luaL_checknumber( L, 1 );
+  const int y = (int)luaL_checknumber( L, 2 );
+  const float radius = (float)luaL_checknumber( L, 3 );
+  if ( !lua_isnoneornil( L, 4 ) ) {
+    int channels[4] = { 255, 255, 255, 255 };
+    if ( lua_istable( L, 4 ) ) {
+      const char *names[] = { "r", "g", "b", "a" };
+      for ( int i = 0; i < 4; ++i ) {
+        lua_getfield( L, 4, names[i] );
+        if ( lua_isnumber( L, -1 ) )
+          channels[i] = (int)lua_tonumber( L, -1 );
+        lua_pop( L, 1 );
+      }
+    } else {
+      for ( int i = 0; i < 3; ++i )
+        channels[i] = (int)luaL_checknumber( L, 4 + i );
+      if ( lua_isnumber( L, 7 ) )
+        channels[3] = (int)lua_tonumber( L, 7 );
+    }
+    surface()->DrawSetColor( clamp( channels[0], 0, 255 ), clamp( channels[1], 0, 255 ),
+                             clamp( channels[2], 0, 255 ), clamp( channels[3], 0, 255 ) );
+  }
+  const float magnitude = radius < 0 ? -radius : radius;
+  const int segments = (int)clamp( magnitude, 8.0f, 64.0f );
+  surface()->DrawOutlinedCircle( x, y, (int)radius, segments );
+  return 0;
+}
+
 static int surface_DrawOutlinedCircle (lua_State *L) {
   surface()->DrawOutlinedCircle(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
   return 0;
@@ -1276,6 +1305,7 @@ static const luaL_Reg surfacelib[] = {
   {"DrawGetTextureId",   surface_DrawGetTextureId},
   {"DrawGetTextureSize",   surface_DrawGetTextureSize},
   {"DrawLine",   surface_DrawLine},
+  {"DrawCircle", surface_DrawCircle},
   {"DrawOutlinedCircle",   surface_DrawOutlinedCircle},
   {"DrawOutlinedRect",   surface_DrawOutlinedRect},
   {"DrawPrintText",   surface_DrawPrintText},

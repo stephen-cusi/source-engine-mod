@@ -281,6 +281,40 @@ LUA_BINDING_BEGIN( Sounds, Play, "library", "Plays a sound emitting from a place
 }
 LUA_BINDING_END()
 
+static int luasrc_GlobalEmitSound( lua_State *L )
+{
+    const char *name = luaL_checkstring( L, 1 );
+    const Vector origin = luaL_checkvector( L, 2 );
+    int entity = (int)luaL_optnumber( L, 3, 0 );
+    CSoundParameters soundParameters;
+    CBaseEntity::GetParametersForSound( name, soundParameters, NULL );
+    EmitSound_t params;
+    params.m_pSoundName = name;
+    params.m_pOrigin = &origin;
+    params.m_nChannel = (int)luaL_optnumber( L, 4, soundParameters.channel );
+    params.m_flVolume = (float)luaL_optnumber( L, 5, soundParameters.volume );
+    params.m_SoundLevel = (soundlevel_t)(int)luaL_optnumber( L, 6, soundParameters.soundlevel );
+    params.m_nFlags = (int)luaL_optnumber( L, 7, 0 );
+    params.m_nPitch = (int)luaL_optnumber( L, 8, soundParameters.pitch );
+    params.m_nSpecialDSP = (int)luaL_optnumber( L, 9, 0 );
+    params.m_bWarnOnDirectWaveReference = false;
+#ifndef CLIENT_DLL
+    if ( entity < 0 ) entity = 0;
+    if ( name[0] != '!' && name[0] != '?' && HL2SB_PrecacheOnce( name ) )
+    {
+        CBaseEntity::PrecacheScriptSound( name );
+        enginesound->PrecacheSound( name );
+    }
+#endif
+    lua_CRecipientFilter filter;
+    if ( lua_issoundsrecipientfilter( L, 10 ) )
+        filter = luaL_checkrecipientfilter( L, 10 );
+    else
+        filter = CPASAttenuationFilter( origin, params.m_SoundLevel );
+    CBaseEntity::EmitSound( filter, entity, params );
+    return 0;
+}
+
 
 #ifdef CLIENT_DLL
 // HL2SB: GMod's sound.PlayFile (CLIENT only per the reference contract).  The
@@ -302,6 +336,9 @@ LUA_BINDING_END()
 LUALIB_API int luaopen_Sounds( lua_State *L )
 {
     LUA_REGISTRATION_COMMIT_LIBRARY( Sounds );
+
+    lua_pushcfunction( L, luasrc_GlobalEmitSound );
+    lua_setglobal( L, "EmitSound" );
 
     return 1;
 }

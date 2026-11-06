@@ -29,6 +29,7 @@ BEGIN_VS_SHADER_FLAGS( screenspace_general_dx9, "Help for screenspace_general", 
 		SHADER_PARAM( C3_Z,SHADER_PARAM_TYPE_FLOAT,"0","")
 		SHADER_PARAM( C3_W,SHADER_PARAM_TYPE_FLOAT,"0","")
 		SHADER_PARAM( PIXSHADER, SHADER_PARAM_TYPE_STRING, "", "Name of the pixel shader to use" )
+		SHADER_PARAM( VERTEXTRANSFORM, SHADER_PARAM_TYPE_INTEGER, "0", "Transform positions using the current view projection" )
 		SHADER_PARAM( DISABLE_COLOR_WRITES,SHADER_PARAM_TYPE_INTEGER,"0","")
 		SHADER_PARAM( ALPHATESTED,SHADER_PARAM_TYPE_FLOAT,"0","")
 		SHADER_PARAM( ALPHA_BLEND_COLOR_OVERLAY, SHADER_PARAM_TYPE_INTEGER, "0", "")
@@ -163,9 +164,14 @@ BEGIN_VS_SHADER_FLAGS( screenspace_general_dx9, "Help for screenspace_general", 
 			}				
 			int fmt = VERTEX_POSITION;
 
-			if ( IS_PARAM_DEFINED( X360APPCHOOSER ) && ( params[X360APPCHOOSER]->GetIntValue() ) )
+			const bool bAppChooser = IS_PARAM_DEFINED( X360APPCHOOSER ) && params[X360APPCHOOSER]->GetIntValue();
+			const bool bTransformVerts = params[VERTEXTRANSFORM]->GetIntValue() != 0;
+			if ( bAppChooser || bTransformVerts )
 			{
 				fmt |= VERTEX_COLOR;
+			}
+			if ( bAppChooser )
+			{
 				EnableAlphaBlending( SHADER_BLEND_SRC_ALPHA, SHADER_BLEND_ONE_MINUS_SRC_ALPHA );
 			}
 			pShaderShadow->VertexShaderVertexFormat( fmt, 1, 0, 0 );
@@ -178,7 +184,7 @@ BEGIN_VS_SHADER_FLAGS( screenspace_general_dx9, "Help for screenspace_general", 
 
 			// Pre-cache shaders
 			DECLARE_STATIC_VERTEX_SHADER( screenspaceeffect_vs20 );
-			SET_STATIC_VERTEX_SHADER_COMBO( X360APPCHOOSER, IS_PARAM_DEFINED( X360APPCHOOSER ) ? params[X360APPCHOOSER]->GetIntValue() : 0 );
+			SET_STATIC_VERTEX_SHADER_COMBO( X360APPCHOOSER, bAppChooser || bTransformVerts );
 			vsh_forgot_to_set_static_X360APPCHOOSER = 0; // This is a dirty workaround to the shortcut [= 0] in the fxc
 			SET_STATIC_VERTEX_SHADER( screenspaceeffect_vs20 );
 

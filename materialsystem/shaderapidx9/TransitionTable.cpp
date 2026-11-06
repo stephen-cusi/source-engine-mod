@@ -658,6 +658,18 @@ void ApplyAlphaBlend( const ShadowState_t& state, int stage )
 
 void CTransitionTable::ApplyAlphaBlend( const ShadowState_t& state )
 {
+	if ( m_CurrentState.m_OverrideBlendColor )
+	{
+		ShadowState_t overridden = state;
+		overridden.m_AlphaBlendEnable = m_CurrentState.m_OverrideColorEnabled;
+		overridden.m_SrcBlend = m_CurrentState.m_OverrideSrcColor;
+		overridden.m_DestBlend = m_CurrentState.m_OverrideDstColor;
+		overridden.m_BlendOp = m_CurrentState.m_OverrideOpColor;
+		m_CurrentState.m_OverrideBlendColor = false;
+		ApplyAlphaBlend( overridden );
+		m_CurrentState.m_OverrideBlendColor = true;
+		return;
+	}
 	if (m_CurrentState.m_AlphaBlendEnable != state.m_AlphaBlendEnable)
 	{
 		SetRenderStateConstMacro( D3DRS_ALPHABLENDENABLE, state.m_AlphaBlendEnable );
@@ -702,6 +714,18 @@ void ApplySeparateAlphaBlend( const ShadowState_t& state, int stage )
 
 void CTransitionTable::ApplySeparateAlphaBlend( const ShadowState_t& state )
 {
+	if ( m_CurrentState.m_OverrideBlendAlpha )
+	{
+		ShadowState_t overridden = state;
+		overridden.m_SeparateAlphaBlendEnable = m_CurrentState.m_OverrideAlphaEnabled;
+		overridden.m_SrcBlendAlpha = m_CurrentState.m_OverrideSrcAlpha;
+		overridden.m_DestBlendAlpha = m_CurrentState.m_OverrideDstAlpha;
+		overridden.m_BlendOpAlpha = m_CurrentState.m_OverrideOpAlpha;
+		m_CurrentState.m_OverrideBlendAlpha = false;
+		ApplySeparateAlphaBlend( overridden );
+		m_CurrentState.m_OverrideBlendAlpha = true;
+		return;
+	}
 	if (m_CurrentState.m_SeparateAlphaBlendEnable != state.m_SeparateAlphaBlendEnable)
 	{
 		SetRenderStateConstMacro( D3DRS_SEPARATEALPHABLENDENABLE, state.m_SeparateAlphaBlendEnable );
@@ -1721,6 +1745,8 @@ void CTransitionTable::UseDefaultState( )
 	m_CurrentState.m_bOverrideDepthEnable = false;
 	m_CurrentState.m_bOverrideAlphaWriteEnable = false;
 	m_CurrentState.m_bOverrideColorWriteEnable = false;
+	m_CurrentState.m_OverrideBlendColor = false;
+	m_CurrentState.m_OverrideBlendAlpha = false;
 	m_CurrentState.m_ForceDepthFuncEquals = false;
 	m_CurrentState.m_bLinearColorSpaceFrameBufferEnable = false;
 	ApplyTransition( m_DefaultTransition, m_DefaultStateSnapshot );
@@ -1791,6 +1817,30 @@ void CTransitionTable::OverrideDepthEnable( bool bEnable, bool bDepthEnable )
 			}
 		}
 	}
+}
+
+void CTransitionTable::OverrideBlendColor( bool enable, bool blend, D3DBLEND src, D3DBLEND dst, D3DBLENDOP op )
+{
+	ShaderAPI()->FlushBufferedPrimitives();
+	m_CurrentState.m_OverrideBlendColor = enable;
+	m_CurrentState.m_OverrideColorEnabled = blend;
+	m_CurrentState.m_OverrideSrcColor = src;
+	m_CurrentState.m_OverrideDstColor = dst;
+	m_CurrentState.m_OverrideOpColor = op;
+	const ShadowState_t *state = CurrentShadowState();
+	if ( state ) ApplyAlphaBlend( *state );
+}
+
+void CTransitionTable::OverrideBlendAlpha( bool enable, bool blend, D3DBLEND src, D3DBLEND dst, D3DBLENDOP op )
+{
+	ShaderAPI()->FlushBufferedPrimitives();
+	m_CurrentState.m_OverrideBlendAlpha = enable;
+	m_CurrentState.m_OverrideAlphaEnabled = blend;
+	m_CurrentState.m_OverrideSrcAlpha = src;
+	m_CurrentState.m_OverrideDstAlpha = dst;
+	m_CurrentState.m_OverrideOpAlpha = op;
+	const ShadowState_t *state = CurrentShadowState();
+	if ( state ) ApplySeparateAlphaBlend( *state );
 }
 
 void CTransitionTable::OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable )
@@ -1885,6 +1935,15 @@ void CTransitionTable::EnableLinearColorSpaceFrameBuffer( bool bEnable )
 void CTransitionTable::PerformShadowStateOverrides( )
 {
 	VPROF("CTransitionTable::PerformShadowStateOverrides");
+	if ( m_CurrentState.m_OverrideBlendColor || m_CurrentState.m_OverrideBlendAlpha )
+	{
+		const ShadowState_t *state = CurrentShadowState();
+		if ( state )
+		{
+			if ( m_CurrentState.m_OverrideBlendColor ) ApplyAlphaBlend( *state );
+			if ( m_CurrentState.m_OverrideBlendAlpha ) ApplySeparateAlphaBlend( *state );
+		}
+	}
 	// Deal with funky overrides here, because the state blocks can't...
 	if ( m_CurrentState.m_ForceDepthFuncEquals )
 	{

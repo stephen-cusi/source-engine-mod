@@ -93,6 +93,15 @@ Vector HL2SB_GetWeaponColor( int iUserID );
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+#ifdef CLIENT_DLL
+CLIENTEFFECT_REGISTER_BEGIN( PrecacheHL2SBPhysgunMaterials )
+    CLIENTEFFECT_MATERIAL( "sprites/physbeam" )
+    CLIENTEFFECT_MATERIAL( "sprites/physbeama" )
+    CLIENTEFFECT_MATERIAL( "sprites/physg_glow1" )
+    CLIENTEFFECT_MATERIAL( "sprites/physg_glow2" )
+CLIENTEFFECT_REGISTER_END()
+#endif
+
 
 // HL2SB GMod compat (ConVars In Garrysmod): the physgun's dynamic feel, same
 // names GMod exposes.  SERVER side: the shadow controller and the input maths

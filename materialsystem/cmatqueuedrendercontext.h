@@ -244,6 +244,8 @@ public:
 	DEFINE_QUEUED_CALL_4(					ClearColor4ub, unsigned char, unsigned char, unsigned char, unsigned char, IMatRenderContext, m_pHardwareContext );
 	DEFINE_QUEUED_CALL_2(					OverrideDepthEnable, bool, bool, IMatRenderContext, m_pHardwareContext );
 	DEFINE_QUEUED_CALL_2(					OverrideAlphaWriteEnable, bool, bool, IMatRenderContext, m_pHardwareContext );
+	DEFINE_QUEUED_CALL_5( OverrideBlendColor, bool, bool, int, int, int, IMatRenderContext, m_pHardwareContext );
+	DEFINE_QUEUED_CALL_5( OverrideBlendAlpha, bool, bool, int, int, int, IMatRenderContext, m_pHardwareContext );
 	DEFINE_QUEUED_CALL_2(					OverrideColorWriteEnable, bool, bool, IMatRenderContext, m_pHardwareContext );
 	DEFINE_QUEUED_CALL_1(					DrawScreenSpaceQuad, IMaterial *, IMatRenderContext, m_pHardwareContext );
 

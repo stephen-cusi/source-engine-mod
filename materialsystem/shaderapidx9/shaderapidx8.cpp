@@ -734,6 +734,8 @@ public:
 	void OverrideDepthEnable( bool bEnable, bool bDepthEnable );
 
 	void OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable );
+	void OverrideBlendColor( bool enable, bool blend, int src, int dst, int op );
+	void OverrideBlendAlpha( bool enable, bool blend, int src, int dst, int op );
 	void OverrideColorWriteEnable( bool bOverrideEnable, bool bColorWriteEnable );
 
 	void SetHeightClipZ( float z );
@@ -5350,6 +5352,26 @@ void CShaderAPIDx8::OverrideDepthEnable( bool bEnable, bool bDepthEnable )
 	{
 		m_TransitionTable.OverrideDepthEnable( bEnable, bDepthEnable );
 	}
+}
+
+static D3DBLEND HL2SB_BlendFactor( int value )
+{
+	static const D3DBLEND factors[] = { D3DBLEND_ZERO, D3DBLEND_ONE, D3DBLEND_DESTCOLOR, D3DBLEND_INVDESTCOLOR, D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA, D3DBLEND_DESTALPHA, D3DBLEND_INVDESTALPHA, D3DBLEND_SRCALPHASAT, D3DBLEND_SRCCOLOR, D3DBLEND_INVSRCCOLOR };
+	return value >= 0 && value < ARRAYSIZE( factors ) ? factors[value] : D3DBLEND_ONE;
+}
+
+void CShaderAPIDx8::OverrideBlendColor( bool enable, bool blend, int src, int dst, int op )
+{
+	LOCK_SHADERAPI();
+	if ( !g_pShaderDeviceDx8->IsDeactivated() )
+		m_TransitionTable.OverrideBlendColor( enable, blend, HL2SB_BlendFactor( src ), HL2SB_BlendFactor( dst ), (D3DBLENDOP)( op >= 0 && op <= 4 ? op + 1 : 1 ) );
+}
+
+void CShaderAPIDx8::OverrideBlendAlpha( bool enable, bool blend, int src, int dst, int op )
+{
+	LOCK_SHADERAPI();
+	if ( !g_pShaderDeviceDx8->IsDeactivated() )
+		m_TransitionTable.OverrideBlendAlpha( enable, blend, HL2SB_BlendFactor( src ), HL2SB_BlendFactor( dst ), (D3DBLENDOP)( op >= 0 && op <= 4 ? op + 1 : 1 ) );
 }
 
 void CShaderAPIDx8::OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable )

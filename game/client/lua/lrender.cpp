@@ -688,6 +688,43 @@ LUA_BINDING_BEGIN( Renders, SetRenderTarget, "library", "Sets the render target 
 LUA_BINDING_END()
 
 // render.PushRenderTarget( texture [, x, y, w, h] ) / render.PopRenderTarget()
+LUA_BINDING_BEGIN( Renders, OverrideBlend, "library", "Overrides color and alpha blending.", "client" )
+{
+    CMatRenderContextPtr context( materials );
+    context->OverrideBlendColor( false, true, -1, -1, -1 );
+    context->OverrideBlendAlpha( false, true, -1, -1, -1 );
+    if ( lua_toboolean( L, 1 ) )
+    {
+        const int count = lua_gettop( L );
+        context->OverrideBlendColor( true, count > 1, (int)lua_tonumber( L, 2 ), (int)lua_tonumber( L, 3 ), (int)lua_tonumber( L, 4 ) );
+        context->OverrideBlendAlpha( true, count > 4, (int)lua_tonumber( L, 5 ), (int)lua_tonumber( L, 6 ), (int)lua_tonumber( L, 7 ) );
+    }
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, OverrideAlphaWriteEnable, "library", "Overrides alpha writes for rendering.", "client" )
+{
+    const bool enable = lua_toboolean( L, 1 ) != 0;
+    const bool write = lua_toboolean( L, 2 ) != 0;
+    CMatRenderContextPtr context( materials );
+    context->OverrideAlphaWriteEnable( enable, write );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, SetViewPort, "library", "Sets the current render viewport.", "client" )
+{
+    const int x = (int)luaL_checknumber( L, 1 );
+    const int y = (int)luaL_checknumber( L, 2 );
+    const int width = (int)luaL_checknumber( L, 3 );
+    const int height = (int)luaL_checknumber( L, 4 );
+    CMatRenderContextPtr context( materials );
+    context->Viewport( x, y, width, height );
+    return 0;
+}
+LUA_BINDING_END()
+
 LUA_BINDING_BEGIN( Renders, PushRenderTarget, "library", "Pushes a render target and viewport for rendering.", "client" )
 {
     CMatRenderContextPtr pRenderContext( materials );
@@ -827,6 +864,44 @@ LUA_BINDING_BEGIN( Renders, Capture, "library", "Captures a render target rectan
     if (written) lua_pushlstring(L, static_cast<const char *>(output.Base()), output.TellPut());
     else lua_pushnil(L);
     return 1;
+}
+LUA_BINDING_END()
+
+static CUtlVector<unsigned char> s_CapturedPixels;
+static int s_CapturedWidth = 0;
+static int s_CapturedHeight = 0;
+
+LUA_BINDING_BEGIN( Renders, CapturePixels, "library", "Captures the current render target for pixel reads.", "client" )
+{
+    CMatRenderContextPtr context( materials );
+    int width = 0, height = 0;
+    context->GetRenderTargetDimensions( width, height );
+    if ( width <= 0 || height <= 0 || width > 8192 || height > 8192 )
+    {
+        s_CapturedPixels.RemoveAll();
+        s_CapturedWidth = s_CapturedHeight = 0;
+        return 0;
+    }
+    s_CapturedWidth = width;
+    s_CapturedHeight = height;
+    s_CapturedPixels.SetCount( width * height * 4 );
+    context->ReadPixels( 0, 0, width, height, s_CapturedPixels.Base(), IMAGE_FORMAT_RGBA8888 );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, ReadPixel, "library", "Reads a pixel from the last capture.", "client" )
+{
+    const int x = (int)luaL_checknumber( L, 1 );
+    const int y = (int)luaL_checknumber( L, 2 );
+    if ( x < 0 || y < 0 || x >= s_CapturedWidth || y >= s_CapturedHeight || s_CapturedPixels.Count() == 0 )
+    {
+        lua_pushinteger( L, 0 ); lua_pushinteger( L, 0 ); lua_pushinteger( L, 0 );
+        return 3;
+    }
+    const unsigned char *pixel = s_CapturedPixels.Base() + ( y * s_CapturedWidth + x ) * 4;
+    for ( int i = 0; i < 4; ++i ) lua_pushinteger( L, pixel[i] );
+    return 4;
 }
 LUA_BINDING_END()
 
@@ -2028,6 +2103,15 @@ LUA_BINDING_BEGIN( Renders, SetWriteDepthToDestinationAlpha, "library", "Set the
 {
     bool bEnable = LUA_BINDING_ARGUMENT( lua_toboolean, 1, "enable" );
 
+    CMatRenderContextPtr pRenderContext( materials );
+    pRenderContext->SetIntRenderingParameter( INT_RENDERPARM_WRITE_DEPTH_TO_DESTALPHA, bEnable );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, SetWriteDepthToDestAlpha, "library", "Set the write depth to destination alpha.", "client" )
+{
+    bool bEnable = lua_toboolean( L, 1 ) != 0;
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->SetIntRenderingParameter( INT_RENDERPARM_WRITE_DEPTH_TO_DESTALPHA, bEnable );
     return 0;
@@ -3305,10 +3389,20 @@ LUALIB_API int luaopen_render( lua_State *L )
     lua_setglobal( L, "GetRenderTargetEx" );
     lua_pushinteger( L, RT_SIZE_FULL_FRAME_BUFFER );
     lua_setglobal( L, "RT_SIZE_FULL_FRAME_BUFFER" );
+    lua_pushinteger( L, RT_SIZE_NO_CHANGE );
+    lua_setglobal( L, "RT_SIZE_NO_CHANGE" );
+    lua_pushinteger( L, MATERIAL_RT_DEPTH_SEPARATE );
+    lua_setglobal( L, "MATERIAL_RT_DEPTH_SEPARATE" );
     lua_pushinteger( L, MATERIAL_RT_DEPTH_NONE );
     lua_setglobal( L, "MATERIAL_RT_DEPTH_NONE" );
     lua_pushinteger( L, -1 );
     lua_setglobal( L, "IMAGE_FORMAT_DEFAULT" );
+    lua_pushinteger( L, IMAGE_FORMAT_RGBA8888 );
+    lua_setglobal( L, "IMAGE_FORMAT_RGBA8888" );
+    lua_pushinteger( L, IMAGE_FORMAT_BGR888 );
+    lua_setglobal( L, "IMAGE_FORMAT_BGR888" );
+    lua_pushinteger( L, IMAGE_FORMAT_BGRA8888 );
+    lua_setglobal( L, "IMAGE_FORMAT_BGRA8888" );
 
     // HL2SB: the cam library -- cam.Start( {type="3D"/"2D", ...} ) / cam.End() /
     // cam.IgnoreZ().  The content render.lua shim builds cam.Start3D/Start2D on

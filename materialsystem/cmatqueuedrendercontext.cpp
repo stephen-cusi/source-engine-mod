@@ -1733,21 +1733,25 @@ void CMatQueuedRenderContext::UnlockLookup( ColorCorrectionHandle_t handle )
 // NOTE: We should also have a queued read pixels in the API for doing mid frame reads (as opposed to screenshots)
 void CMatQueuedRenderContext::ReadPixels( int x, int y, int width, int height, unsigned char *data, ImageFormat dstFormat )
 {
-	EndRender();
+	if ( m_iRenderDepth > 0 )
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::EndRender );
 	MaterialLock_t hLock = m_pMaterialSystem->Lock();
 	this->CallQueued(false);
 	g_pShaderAPI->ReadPixels( x, y, width, height, data, dstFormat );
 	m_pMaterialSystem->Unlock( hLock );
-	BeginRender();
+	if ( m_iRenderDepth > 0 )
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::BeginRender );
 }
 
 void CMatQueuedRenderContext::ReadPixelsAndStretch( Rect_t *pSrcRect, Rect_t *pDstRect, unsigned char *pBuffer, ImageFormat dstFormat, int nDstStride )
 {
-	EndRender();
+	if ( m_iRenderDepth > 0 )
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::EndRender );
 	MaterialLock_t hLock = m_pMaterialSystem->Lock();
 	this->CallQueued(false);
 	g_pShaderAPI->ReadPixels( pSrcRect, pDstRect, pBuffer, dstFormat, nDstStride );
 	m_pMaterialSystem->Unlock( hLock );
-	BeginRender();
+	if ( m_iRenderDepth > 0 )
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::BeginRender );
 }
 
