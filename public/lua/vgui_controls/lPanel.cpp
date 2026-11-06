@@ -49,6 +49,8 @@
 #include "view_shared.h"
 #include <string>
 #include <vector>
+#include "../../../game/client/lua/servo/servo_backend.h"
+#include "../../../game/client/lua/servo/servo_ime_menu.h"
 
 extern ConVar hl2sb_dev_msgs;
 
@@ -2326,26 +2328,113 @@ static std::string HL2SB_HTMLQuote(const char *text)
   return result + "\"";
 }
 
+static ConVar hl2sb_html_servo("hl2sb_html_servo", "0", FCVAR_ARCHIVE,
+  "Use the experimental Servo HTML backend for new HTML panels.");
+static HLSBServoRuntime *s_htmlServoRuntime = NULL;
+static int s_htmlServoViews = 0;
+
+static std::string HL2SB_HTMLDataURL(const char *text)
+{
+  static const char hex[] = "0123456789ABCDEF";
+  std::string result("data:text/html;charset=utf-8,");
+  for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+    if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+        (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.' || *p == '~') {
+      result += (char)*p;
+    } else {
+      result += '%'; result += hex[*p >> 4]; result += hex[*p & 15];
+    }
+  }
+  return result;
+}
+
+static const char *HL2SB_HTMLKey(KeyCode code)
+{
+  switch (code) {
+    case KEY_ENTER: return "Enter";
+    case KEY_PAD_ENTER: return "Enter";
+    case KEY_BACKSPACE: return "Backspace";
+    case KEY_DELETE: return "Delete";
+    case KEY_TAB: return "Tab";
+    case KEY_ESCAPE: return "Escape";
+    case KEY_UP: return "ArrowUp";
+    case KEY_DOWN: return "ArrowDown";
+    case KEY_LEFT: return "ArrowLeft";
+    case KEY_RIGHT: return "ArrowRight";
+    case KEY_HOME: return "Home";
+    case KEY_END: return "End";
+    case KEY_PAGEUP: return "PageUp";
+    case KEY_PAGEDOWN: return "PageDown";
+    default: return NULL;
+  }
+}
+
+static int HL2SB_HTMLMouseButton(MouseCode code)
+{
+  switch (code) {
+    case MOUSE_LEFT: return 0;
+    case MOUSE_MIDDLE: return 1;
+    case MOUSE_RIGHT: return 2;
+    case MOUSE_4: return 3;
+    case MOUSE_5: return 4;
+    default: return -1;
+  }
+}
+
 class CHL2SBLuaHTML : public vgui::HTML
 {
-  typedef vgui::HTML BaseClass;
+  DECLARE_CLASS_SIMPLE(CHL2SBLuaHTML, HTML);
 public:
   lua_State *m_lua_State;
   int m_nTableReference;
   bool m_loading;
   std::vector<std::string> m_bridges;
   std::string m_tempFile;
+  HLSBServoView *m_servo;
+  int m_servoTexture;
+  uint64_t m_servoSequence;
+  std::string m_servoURL;
+  int m_servoMouseX, m_servoMouseY;
+  HLSBServoIMEMenu m_servoIME;
+  bool m_servoComposing;
+  std::wstring m_servoIMECommit;
+  wchar_t m_servoHighSurrogate;
 
   CHL2SBLuaHTML(Panel *parent, const char *name, lua_State *state)
-    : HTML(parent, name, true), m_lua_State(state), m_loading(true)
+    : HTML(parent, name, true, false, hl2sb_html_servo.GetBool()), m_lua_State(state), m_loading(true),
+      m_servo(NULL), m_servoTexture(0), m_servoSequence(0), m_servoMouseX(0), m_servoMouseY(0),
+      m_servoIME(this), m_servoComposing(false), m_servoHighSurrogate(0)
   {
     luaPushPanelRefTable(state, this, true);
     m_nTableReference = luaL_ref(state, LUA_REGISTRYINDEX);
     HL2SB_LuaPanelTrack(this, state);
+    if (hl2sb_html_servo.GetBool()) {
+      if (!s_htmlServoRuntime) {
+        char path[MAX_PATH];
+#if defined(_WIN32)
+        const char *library = "bin/servo_capi.dll";
+#else
+        const char *library = "bin/libservo_capi.so";
+#endif
+        if (filesystem->RelativePathToFullPath(library, "MOD", path, sizeof(path)))
+          s_htmlServoRuntime = HLSBServoCreateRuntime(path);
+      }
+      if (s_htmlServoRuntime) m_servo = HLSBServoCreateView(s_htmlServoRuntime, 1, 1);
+      if (m_servo) { ++s_htmlServoViews; SetMouseInputEnabled(true); SetKeyBoardInputEnabled(true); }
+      else {
+        Warning("Servo HTML backend unavailable; using the existing HTML backend.\n");
+        InitializeSteamBackend();
+      }
+    }
   }
 
   virtual ~CHL2SBLuaHTML()
   {
+    if (m_servoTexture && surface()) surface()->DeleteTextureByID(m_servoTexture);
+    if (m_servo) {
+      HLSBServoDestroyView(m_servo);
+      --s_htmlServoViews;
+    }
     HL2SB_LuaPanelUntrack(this);
     if (Live()) luaDropPanelRefTable(m_lua_State, this);
     HL2SB_LuaPanelUnref(m_lua_State, m_nTableReference);
@@ -2375,6 +2464,16 @@ public:
 
   void AddCallback(const char *object, const char *function)
   {
+    if (m_servo) {
+      const std::string obj = HL2SB_HTMLQuote(object);
+      const std::string fn = HL2SB_HTMLQuote(function);
+      std::string script = "window[" + obj + "]=window[" + obj + "]||{};window[" + obj + "][" + fn + "]=function(){"
+        "var a=Array.prototype.slice.call(arguments);var r=prompt('__hl2sb_bridge__'+JSON.stringify([" + obj + "," + fn + ",a]),'');"
+        "try { var v=JSON.parse(r); return v.length===1?v[0]:v; } catch(e) { return null; }};";
+      m_bridges.push_back(script);
+      if (!m_loading) RunJavascript(script.c_str());
+      return;
+    }
     std::string script = "window[" + HL2SB_HTMLQuote(object) + "][" + HL2SB_HTMLQuote(function) + "]=function(){"
       "var args=Array.prototype.slice.call(arguments),cb=null;"
       "if(typeof args[args.length-1]==='function')cb=args.pop();"
@@ -2448,9 +2547,204 @@ public:
   virtual void OnThink()
   {
     BaseClass::OnThink();
+    if (m_servo) {
+      int wide, tall; GetSize(wide, tall);
+      if (wide > 0 && tall > 0) HLSBServoResize(m_servo, wide, tall);
+      HLSBServoPump(s_htmlServoRuntime);
+      uint64_t request = 0;
+      char message[65536];
+      while (m_servo && HLSBServoPopBridgeEvent(m_servo, &request, message, sizeof(message))) {
+        std::string reply = ServoBridgeReply(message);
+        if (!HLSBServoBridgeReply(m_servo, request, reply.c_str()))
+          HLSBServoBridgeReply(m_servo, request, "[]");
+      }
+      int status;
+      while (HLSBServoPopLoadEvent(m_servo, &status)) {
+        if (status == 1) {
+          BEGIN_LUA_CALL_PANEL_METHOD("OnDocumentReady");
+            lua_pushstring(m_lua_State, m_servoURL.c_str());
+          END_LUA_CALL_PANEL_METHOD(1, 0);
+        } else if (status == 2) {
+          m_loading = false;
+          RunJavascript(BridgeScript().c_str());
+          BEGIN_LUA_CALL_PANEL_METHOD("OnFinishLoadingDocument");
+            lua_pushstring(m_lua_State, m_servoURL.c_str());
+          END_LUA_CALL_PANEL_METHOD(1, 0);
+        } else if (status == 3) m_loading = false;
+      }
+      uint32_t width = 0, height = 0; uint64_t sequence = 0;
+      size_t bytes = HLSBServoCopyFrame(m_servo, NULL, 0, &width, &height, &sequence);
+      if (bytes && sequence != m_servoSequence) {
+        std::vector<unsigned char> pixels(bytes);
+        if (HLSBServoCopyFrame(m_servo, &pixels[0], bytes, &width, &height, &sequence) == bytes) {
+          if (!m_servoTexture) m_servoTexture = surface()->CreateNewTextureID(true);
+          surface()->DrawSetTextureRGBA(m_servoTexture, &pixels[0], width, height, 1, true);
+          m_servoSequence = sequence;
+          Repaint();
+        }
+      }
+    }
     BEGIN_LUA_CALL_PANEL_METHOD("Think");
     END_LUA_CALL_PANEL_METHOD(0, 0);
   }
+
+  std::string ServoBridgeReply(const char *message)
+  {
+    if (!Live()) return "[]";
+    lua_State *state = m_lua_State;
+    const int top = lua_gettop(state);
+    std::string result("[]");
+    lua_checkstack(state, 32);
+    lua_pushcfunction(state, luasrc_UTIL_JSONToTable);
+    lua_pushstring(state, message);
+    if (lua_pcall(state, 1, 1, 0) == LUA_OK && lua_istable(state, -1)) {
+      const int args = lua_gettop(state);
+      lua_getref(state, m_nTableReference);
+      lua_getfield(state, -1, "OnCallback");
+      lua_remove(state, -2);
+      if (lua_isfunction(state, -1)) {
+        lua_pushpanel(state, this);
+        lua_rawgeti(state, args, 1);
+        lua_rawgeti(state, args, 2);
+        lua_rawgeti(state, args, 3);
+        if (lua_pcall(state, 4, LUA_MULTRET, 0) == LUA_OK) {
+          const int count = lua_gettop(state) - args;
+          lua_newtable(state);
+          for (int i = 0; i < count; ++i) { lua_pushvalue(state, args + i + 1); lua_rawseti(state, -2, i + 1); }
+          lua_pushcfunction(state, luasrc_UTIL_TableToJSON);
+          lua_insert(state, -2);
+          if (lua_pcall(state, 1, 1, 0) == LUA_OK && lua_isstring(state, -1)) result = lua_tostring(state, -1);
+        } else {
+          luasrc_LuaWarnMsgF("HTML callback: %s\n", lua_tostring(state, -1));
+        }
+      }
+    }
+    lua_settop(state, top);
+    return result;
+  }
+
+  virtual void Paint()
+  {
+    if (!m_servo) { BaseClass::Paint(); return; }
+    if (!m_servoTexture) return;
+    int wide, tall; GetSize(wide, tall);
+    surface()->DrawSetColor(255, 255, 255, 255);
+    surface()->DrawSetTexture(m_servoTexture);
+    surface()->DrawTexturedRect(0, 0, wide, tall);
+  }
+
+  virtual void RunJavascript(const char *script)
+  {
+    if (!m_servo) { BaseClass::RunJavascript(script); return; }
+    if (!HLSBServoEvalJS(m_servo, script)) Warning("Servo HTML JavaScript interface unavailable.\n");
+  }
+
+  virtual bool Refresh()
+  {
+    return m_servo ? HLSBServoReload(m_servo) : BaseClass::Refresh();
+  }
+
+  virtual void GoBack()
+  {
+    if (m_servo) HLSBServoBack(m_servo); else BaseClass::GoBack();
+  }
+
+  virtual void GoForward()
+  {
+    if (m_servo) HLSBServoForward(m_servo); else BaseClass::GoForward();
+  }
+
+  virtual void OnCursorMoved(int x, int y)
+  {
+    if (!m_servo) { BaseClass::OnCursorMoved(x, y); return; }
+    m_servoMouseX = x; m_servoMouseY = y;
+    HLSBServoMouseMove(m_servo, (float)x, (float)y);
+  }
+
+  virtual void OnMousePressed(MouseCode code)
+  {
+    if (!m_servo) { BaseClass::OnMousePressed(code); return; }
+    int button = HL2SB_HTMLMouseButton(code);
+    if (button >= 0) HLSBServoMouseButton(m_servo, (float)m_servoMouseX, (float)m_servoMouseY, button, true);
+    RequestFocus();
+  }
+
+  virtual void OnMouseReleased(MouseCode code)
+  {
+    if (!m_servo) { BaseClass::OnMouseReleased(code); return; }
+    int button = HL2SB_HTMLMouseButton(code);
+    if (button >= 0) HLSBServoMouseButton(m_servo, (float)m_servoMouseX, (float)m_servoMouseY, button, false);
+  }
+
+  virtual void OnMouseWheeled(int delta)
+  {
+    if (!m_servo) { BaseClass::OnMouseWheeled(delta); return; }
+    HLSBServoMouseWheel(m_servo, (float)m_servoMouseX, (float)m_servoMouseY, 0.0, -40.0 * delta);
+  }
+
+  virtual void OnKeyCodeTyped(KeyCode code)
+  {
+    if (!m_servo) { BaseClass::OnKeyCodeTyped(code); return; }
+    const char *key = HL2SB_HTMLKey(code);
+    if (key) HLSBServoKey(m_servo, key, true);
+  }
+
+  virtual void OnKeyCodeReleased(KeyCode code)
+  {
+    if (!m_servo) { BaseClass::OnKeyCodeReleased(code); return; }
+    const char *key = HL2SB_HTMLKey(code);
+    if (key) HLSBServoKey(m_servo, key, false);
+  }
+
+  virtual void OnKeyTyped(wchar_t unichar)
+  {
+    if (!m_servo) { BaseClass::OnKeyTyped(unichar); return; }
+    if (unichar < 32 || unichar == 127) return;
+    if (m_servoComposing) { m_servoIMECommit += unichar; return; }
+    wchar_t input[3] = {0, 0, 0}; char text[8] = {0};
+    if (sizeof(wchar_t) == 2 && unichar >= 0xD800 && unichar <= 0xDBFF) {
+      m_servoHighSurrogate = unichar;
+      return;
+    }
+    if (sizeof(wchar_t) == 2 && unichar >= 0xDC00 && unichar <= 0xDFFF) {
+      if (!m_servoHighSurrogate) return;
+      input[0] = m_servoHighSurrogate;
+      input[1] = unichar;
+    } else {
+      input[0] = unichar;
+    }
+    m_servoHighSurrogate = 0;
+    if (V_UnicodeToUTF8(input, text, sizeof(text))) HLSBServoText(m_servo, text);
+  }
+
+  MESSAGE_FUNC_WCHARPTR(ServoComposition, "DoCompositionString", string)
+  {
+    if (!m_servo) return;
+    if (string && *string) {
+      if (!m_servoComposing) {
+        m_servoComposing = true;
+        m_servoIMECommit.clear();
+        HLSBServoComposition(m_servo, 0, "");
+      }
+      char text[4096] = {0};
+      if (V_UnicodeToUTF8(string, text, sizeof(text))) HLSBServoComposition(m_servo, 1, text);
+    } else if (m_servoComposing) {
+      char text[4096] = {0};
+      V_UnicodeToUTF8(m_servoIMECommit.c_str(), text, sizeof(text));
+      HLSBServoComposition(m_servo, 1, text);
+      HLSBServoComposition(m_servo, 2, text);
+      m_servoIMECommit.clear();
+      m_servoComposing = false;
+      m_servoIME.Hide();
+    }
+  }
+
+  MESSAGE_FUNC(ServoShowCandidates, "DoShowIMECandidates")
+  { if (m_servo) m_servoIME.Update(m_servoMouseX, m_servoMouseY + 20); }
+  MESSAGE_FUNC(ServoUpdateCandidates, "DoUpdateIMECandidates")
+  { if (m_servo) m_servoIME.Update(m_servoMouseX, m_servoMouseY + 20); }
+  MESSAGE_FUNC(ServoHideCandidates, "DoHideIMECandidates")
+  { m_servoIME.Hide(); }
 
   virtual void OnURLChanged(const char *url, const char *post, bool redirect)
   {
@@ -2468,6 +2762,18 @@ public:
 
   void LoadMarkup(const char *markup)
   {
+    if (m_servo) {
+      m_servoURL = "about:blank";
+      const std::string url = HL2SB_HTMLDataURL(markup);
+      m_loading = HLSBServoNavigate(m_servo, url.c_str());
+      if (!m_loading) Warning("Servo HTML failed to load markup.\n");
+      else {
+        BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
+          lua_pushstring(m_lua_State, m_servoURL.c_str());
+        END_LUA_CALL_PANEL_METHOD(1, 0);
+      }
+      return;
+    }
     m_loading = true;
     std::string document = "<script>" + BridgeScript() + "</script>" + markup;
     char temporary[MAX_PATH], full[MAX_PATH];
@@ -2483,6 +2789,21 @@ public:
 
   void LoadURL(const char *url)
   {
+    if (m_servo) {
+      if (Q_stricmp(url, "about:blank")) {
+        Warning("Servo HTML URL navigation is not available yet.\n");
+        return;
+      }
+      m_servoURL = url;
+      m_loading = HLSBServoNavigate(m_servo, url);
+      if (!m_loading) Warning("Servo HTML failed to load URL.\n");
+      else {
+        BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
+          lua_pushstring(m_lua_State, m_servoURL.c_str());
+        END_LUA_CALL_PANEL_METHOD(1, 0);
+      }
+      return;
+    }
     m_loading = true;
     BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
       lua_pushstring(m_lua_State, url);

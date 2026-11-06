@@ -115,6 +115,7 @@ $Project "Client (HL2SB)"
 		$File "lua/scripted_controls/scriptedclientluapanel.cpp"
 		$File "lua/scripted_controls/scriptedhudviewport.cpp"
 		$File "lua/scripted_controls/lPanel.cpp"
+		$File "lua/servo/servo_backend.cpp"
 			$File "lua/scripted_controls/lModelPanel.cpp"
 		$File "lua/scripted_controls/lModelImage.cpp"
 

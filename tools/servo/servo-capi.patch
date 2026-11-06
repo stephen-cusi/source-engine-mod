@@ -1,0 +1,268 @@
+diff --git a/components/fonts/platform/windows/font_list.rs b/components/fonts/platform/windows/font_list.rs
+--- a/components/fonts/platform/windows/font_list.rs
++++ b/components/fonts/platform/windows/font_list.rs
+@@ -10,6 +10,7 @@
+ use style::values::computed::font::GenericFontFamily;
+ use style::values::computed::{FontStyle as StyleFontStyle, FontWeight as StyleFontWeight};
+ use style::values::specified::font::FontWidthKeyword;
++use winapi::um::dwrite::IDWriteLocalizedStrings;
+ 
+ use crate::{
+     EmojiPresentationPreference, FallbackFontSelectionOptions, FontIdentifier, FontTemplate,
+@@ -24,6 +25,27 @@
+     for family in system_fc.families_iter() {
+         if let Ok(family_name) = family.family_name() {
+             callback(&family_name);
++        }
++        // DirectWrite exposes localized and canonical names for the same family.
++        // Font fallback and CSS may refer to any of these names.
++        unsafe {
++            let mut names: *mut IDWriteLocalizedStrings = std::ptr::null_mut();
++            if (*family.as_ptr()).GetFamilyNames(&mut names) != 0 || names.is_null() {
++                continue;
++            }
++            for index in 0..(*names).GetCount() {
++                let mut length = 0;
++                if (*names).GetStringLength(index, &mut length) != 0 {
++                    continue;
++                }
++                let mut value = vec![0u16; length as usize + 1];
++                if (*names).GetString(index, value.as_mut_ptr(), length + 1) == 0 {
++                    if let Ok(name) = String::from_utf16(&value[..length as usize]) {
++                        callback(&name);
++                    }
++                }
++            }
++            (*names).Release();
+         }
+     }
+ }
+diff --git a/ffi/capi/webview.rs b/ffi/capi/webview.rs
+--- a/ffi/capi/webview.rs
++++ b/ffi/capi/webview.rs
+@@ -8,6 +8,10 @@
+ 
+ use euclid::Scale;
+ use servo_api::{Servo, WebView, WebViewBuilder};
++use servo_api::{
++    CompositionEvent, CompositionState, DevicePoint, ImeEvent, InputEvent, Key, KeyState, KeyboardEvent, MouseButton,
++    MouseButtonAction, MouseButtonEvent, MouseMoveEvent, WheelDelta, WheelEvent, WheelMode,
++};
+ 
+ use crate::rendering_context::RenderingContext;
+ use crate::webview_delegate::ServoWebViewDelegate;
+@@ -385,6 +389,142 @@
+         },
+         Err(_) => -1,
+     }
++}
++
++// These helpers accept the same thread-bound WebView handles as the upstream C API.
++// Strings are borrowed NUL-terminated UTF-8 and are copied before returning.
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_eval_js(webview: *mut WebView, script: *const c_char) -> i32 {
++    if webview.is_null() || script.is_null() {
++        return -1;
++    }
++    let Ok(script) = (unsafe { CStr::from_ptr(script) }).to_str() else {
++        return -1;
++    };
++    unsafe { &*webview }.evaluate_javascript(script, |_| {});
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_mouse_move(webview: *mut WebView, x: f32, y: f32) -> i32 {
++    if webview.is_null() || !x.is_finite() || !y.is_finite() {
++        return -1;
++    }
++    unsafe { &*webview }.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(
++        DevicePoint::new(x, y).into(),
++    )));
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_mouse_button(
++    webview: *mut WebView,
++    x: f32,
++    y: f32,
++    button: i32,
++    down: bool,
++) -> i32 {
++    if webview.is_null() || !x.is_finite() || !y.is_finite() || !(0..=4).contains(&button) {
++        return -1;
++    }
++    let action = if down { MouseButtonAction::Down } else { MouseButtonAction::Up };
++    unsafe { &*webview }.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(
++        action,
++        MouseButton::from(button),
++        DevicePoint::new(x, y).into(),
++    )));
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_mouse_wheel(
++    webview: *mut WebView,
++    x: f32,
++    y: f32,
++    dx: f64,
++    dy: f64,
++) -> i32 {
++    if webview.is_null() || !x.is_finite() || !y.is_finite() || !dx.is_finite() || !dy.is_finite() {
++        return -1;
++    }
++    unsafe { &*webview }.notify_input_event(InputEvent::Wheel(WheelEvent::new(
++        WheelDelta { x: dx, y: dy, z: 0.0, mode: WheelMode::DeltaPixel },
++        DevicePoint::new(x, y).into(),
++    )));
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_key(webview: *mut WebView, key: *const c_char, down: bool) -> i32 {
++    if webview.is_null() || key.is_null() {
++        return -1;
++    }
++    let Ok(key) = (unsafe { CStr::from_ptr(key) }).to_str() else {
++        return -1;
++    };
++    let Ok(key) = key.parse::<Key>() else {
++        return -1;
++    };
++    let state = if down { KeyState::Down } else { KeyState::Up };
++    unsafe { &*webview }.notify_input_event(InputEvent::Keyboard(KeyboardEvent::from_state_and_key(state, key)));
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_text(webview: *mut WebView, text: *const c_char) -> i32 {
++    if webview.is_null() || text.is_null() {
++        return -1;
++    }
++    let Ok(text) = (unsafe { CStr::from_ptr(text) }).to_str() else {
++        return -1;
++    };
++    unsafe { &*webview }.notify_input_event(InputEvent::Ime(ImeEvent::Commit(text.to_owned())));
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_composition(
++    webview: *mut WebView,
++    stage: i32,
++    text: *const c_char,
++) -> i32 {
++    if webview.is_null() || text.is_null() {
++        return -1;
++    }
++    let Ok(text) = (unsafe { CStr::from_ptr(text) }).to_str() else {
++        return -1;
++    };
++    let state = match stage {
++        0 => CompositionState::Start,
++        1 => CompositionState::Update,
++        2 => CompositionState::End,
++        _ => return -1,
++    };
++    unsafe { &*webview }.notify_input_event(InputEvent::Ime(ImeEvent::Composition(
++        CompositionEvent { state, data: text.to_owned() },
++    )));
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_reload(webview: *mut WebView) -> i32 {
++    if webview.is_null() { return -1; }
++    unsafe { &*webview }.reload();
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_go_back(webview: *mut WebView) -> i32 {
++    if webview.is_null() { return -1; }
++    unsafe { &*webview }.go_back(1);
++    0
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_go_forward(webview: *mut WebView) -> i32 {
++    if webview.is_null() { return -1; }
++    unsafe { &*webview }.go_forward(1);
++    0
+ }
+ 
+ /// Asynchronously takes a screenshot of the full `WebView` viewport.
+diff --git a/ffi/capi/webview_delegate.rs b/ffi/capi/webview_delegate.rs
+--- a/ffi/capi/webview_delegate.rs
++++ b/ffi/capi/webview_delegate.rs
+@@ -2,10 +2,34 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+ 
+-use std::ffi::c_void;
++use std::cell::{Cell, RefCell};
++use std::collections::HashMap;
++use std::ffi::{c_char, c_void, CStr, CString};
+ 
+ pub use servo_api::LoadStatus;
+-use servo_api::{WebView, WebViewDelegate};
++use servo_api::{EmbedderControl, NavigationRequest, PromptDialog, SimpleDialog, WebView, WebViewDelegate};
++
++thread_local! {
++    static BRIDGE_NEXT: Cell<u64> = const { Cell::new(1) };
++    static BRIDGE_PENDING: RefCell<HashMap<u64, (usize, PromptDialog)>> = RefCell::new(HashMap::new());
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_bridge_reply(id: u64, value: *const c_char) -> bool {
++    if value.is_null() { return false; }
++    let Ok(value) = (unsafe { CStr::from_ptr(value) }).to_str() else { return false; };
++    BRIDGE_PENDING.with(|pending| {
++        let Some((_, mut prompt)) = pending.borrow_mut().remove(&id) else { return false; };
++        prompt.set_current_value(value);
++        prompt.confirm();
++        true
++    })
++}
++
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_bridge_cancel(user_data: *mut c_void) {
++    BRIDGE_PENDING.with(|pending| pending.borrow_mut().retain(|_, (owner, _)| *owner != user_data as usize));
++}
+ 
+ /// The delegate that receives notifications about `WebView` events.
+ ///
+@@ -59,9 +83,31 @@
+     /// call `servo_webview_paint` to update the rendering context.
+     pub notify_new_frame_ready:
+         Option<unsafe extern "C" fn(webview: *mut WebView, user_data: *mut c_void)>,
++
++    pub notify_bridge: Option<unsafe extern "C" fn(id: u64, message: *const c_char, user_data: *mut c_void) -> bool>,
+ }
+ 
+ impl WebViewDelegate for ServoWebViewDelegate {
++    fn show_embedder_control(&self, _webview: WebView, control: EmbedderControl) {
++        let EmbedderControl::SimpleDialog(SimpleDialog::Prompt(prompt)) = control else { return; };
++        let Some(message) = prompt.message().strip_prefix("__hl2sb_bridge__") else { return; };
++        let Some(callback) = self.notify_bridge else { return; };
++        let Ok(message) = CString::new(message) else { return; };
++        let id = BRIDGE_NEXT.with(|next| { let id = next.get(); next.set(id.wrapping_add(1).max(1)); id });
++        BRIDGE_PENDING.with(|pending| { pending.borrow_mut().insert(id, (self.user_data as usize, prompt)); });
++        if !unsafe { callback(id, message.as_ptr(), self.user_data) } {
++            BRIDGE_PENDING.with(|pending| { pending.borrow_mut().remove(&id); });
++        }
++    }
++
++    fn request_navigation(&self, _webview: WebView, request: NavigationRequest) {
++        if request.url.as_str() == "about:blank" || request.url.scheme() == "data" {
++            request.allow();
++        } else {
++            request.deny();
++        }
++    }
++
+     fn notify_load_status_changed(&self, mut webview: WebView, load_status: LoadStatus) {
+         let Some(callback) = self.notify_load_status_changed else {
+             return;

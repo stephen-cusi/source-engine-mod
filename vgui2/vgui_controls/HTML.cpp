@@ -110,7 +110,12 @@ private:
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-HTML::HTML(Panel *parent, const char *name, bool allowJavaScript, bool bPopupWindow) : Panel(parent, name), 
+HTML::HTML(Panel *parent, const char *name, bool allowJavaScript, bool bPopupWindow)
+	: HTML(parent, name, allowJavaScript, bPopupWindow, false)
+{
+}
+
+HTML::HTML(Panel *parent, const char *name, bool allowJavaScript, bool bPopupWindow, bool deferSteam) : Panel(parent, name),
 m_NeedsPaint( this, &HTML::BrowserNeedsPaint ),
 m_StartRequest( this, &HTML::BrowserStartRequest ),
 m_URLChanged( this, &HTML::BrowserURLChanged ),
@@ -146,17 +151,8 @@ m_HideTooltip( this, &HTML::BrowserHideToolTip )
 	SetPostChildPaintEnabled( true );
 
 	m_unBrowserHandle = INVALID_HTMLBROWSER;
-	m_SteamAPIContext.Init();
-	if ( m_SteamAPIContext.SteamHTMLSurface() )
-	{
-		m_SteamAPIContext.SteamHTMLSurface()->Init();
-		SteamAPICall_t hSteamAPICall = m_SteamAPIContext.SteamHTMLSurface()->CreateBrowser( surface()->GetWebkitHTMLUserAgentString(), NULL );
-		m_SteamCallResultBrowserReady.Set( hSteamAPICall, this, &HTML::OnBrowserReady );
-	}
-	else
-	{
-		Warning("Unable to access SteamHTMLSurface\n");
-	}
+	if ( !deferSteam )
+		InitializeSteamBackend();
 	m_iScrollBorderX=m_iScrollBorderY=0;
 	m_bScrollBarEnabled = true;
 	m_bContextMenuEnabled = true; 
@@ -190,6 +186,21 @@ m_HideTooltip( this, &HTML::BrowserHideToolTip )
 	m_pContextMenu->AddMenuItem( "#TextEntry_Paste", new KeyValues( "Command", "command", "paste" ), this );
 	m_pContextMenu->AddSeparator();
 	m_nViewSourceAllowedIndex = m_pContextMenu->AddMenuItem( "#vgui_HTMLViewSource", new KeyValues( "Command", "command", "viewsource" ), this );
+}
+
+void HTML::InitializeSteamBackend()
+{
+	m_SteamAPIContext.Init();
+	if ( m_SteamAPIContext.SteamHTMLSurface() )
+	{
+		m_SteamAPIContext.SteamHTMLSurface()->Init();
+		SteamAPICall_t hSteamAPICall = m_SteamAPIContext.SteamHTMLSurface()->CreateBrowser( surface()->GetWebkitHTMLUserAgentString(), NULL );
+		m_SteamCallResultBrowserReady.Set( hSteamAPICall, this, &HTML::OnBrowserReady );
+	}
+	else
+	{
+		Warning("Unable to access SteamHTMLSurface\n");
+	}
 }
 
 

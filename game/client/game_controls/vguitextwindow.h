@@ -93,8 +93,19 @@ protected:
 		DECLARE_CLASS_SIMPLE( CMOTDHTML, vgui::HTML );
 	
 	public:
-		CMOTDHTML( Panel *parent, const char *pchName ) : vgui::HTML( parent, pchName ) {}
+		CMOTDHTML( Panel *parent, const char *pchName ) : vgui::HTML( parent, pchName, false, false, true ), m_bSteamInitialized( false ) {}
+		virtual void OpenURL( const char *url, const char *postData, bool force = false ) OVERRIDE
+		{
+			if ( !m_bSteamInitialized )
+			{
+				m_bSteamInitialized = true;
+				InitializeSteamBackend();
+			}
+			BaseClass::OpenURL( url, postData, force );
+		}
 		virtual bool OnStartRequest( const char *url, const char *target, const char *pchPostData, bool bIsRedirect ) OVERRIDE;
+	private:
+		bool m_bSteamInitialized;
 	};
 	CMOTDHTML		*m_pHTMLMessage;
 	

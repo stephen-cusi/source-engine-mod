@@ -41,7 +41,9 @@ class HTML: public Panel
 public:
 
 	HTML(Panel *parent,const char *name, bool allowJavaScript = false, bool bPopupWindow = false);
+	HTML(Panel *parent,const char *name, bool allowJavaScript, bool bPopupWindow, bool deferSteam);
 	~HTML();
+	void InitializeSteamBackend();
 
 	// IHTML pass through functions
 	virtual void OpenURL( const char *URL, const char *pchPostData, bool bForce = false );

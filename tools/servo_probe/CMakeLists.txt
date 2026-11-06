@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(servo_probe LANGUAGES CXX)
+add_executable(servo_probe servo_probe.cpp)
+target_compile_features(servo_probe PRIVATE cxx_std_11)
+if(CMAKE_DL_LIBS)
+    target_link_libraries(servo_probe PRIVATE ${CMAKE_DL_LIBS})
+endif()
