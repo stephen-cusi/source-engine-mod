@@ -1395,10 +1395,10 @@ static void JSON_EmitEscaped( CUtlString &out, const char *psz )
 static void JSON_EmitNumber( CUtlString &out, lua_Number num )
 {
 	char szNum[ 40 ];
-	if ( num == (double)(long long)num && num > -9.0e15 && num < 9.0e15 )
+	if ( num > -9.0e15 && num < 9.0e15 && num == (double)(long long)num )
 		V_sprintf_safe( szNum, "%lld", (long long)num );
 	else
-		V_sprintf_safe( szNum, "%.14g", num );
+		V_sprintf_safe( szNum, "%.17g", num );
 	out += szNum;
 }
 
@@ -1517,7 +1517,11 @@ static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty,
 		case LUA_TNIL:		out += "null"; break;
 		case LUA_TBOOLEAN:	out += lua_toboolean( L, i ) ? "true" : "false"; break;
 		case LUA_TNUMBER:	JSON_EmitNumber( out, lua_tonumber( L, i ) ); break;
-		case LUA_TSTRING:	JSON_EmitEscaped( out, lua_tostring( L, i ) ); break;
+		case LUA_TSTRING:
+			out += "\"";
+			JSON_EmitEscaped( out, lua_tostring( L, i ) );
+			out += "\"";
+			break;
 		case LUA_TTABLE:	JSON_EmitTable( L, i, out, pretty, depth, indent ); break;
 		case LUA_TUSERDATA:
 		{
@@ -1589,45 +1593,70 @@ LUA_API int luasrc_UTIL_TableToJSON( lua_State *L )
 }
 
 // walk a KeyValues tree (from the JSON parser) back into a Lua value/table
-static void JSON_KVToLua( lua_State *L, KeyValues *pNode )
+static void JSON_SkipWhitespace( const char *&p )
 {
+	for ( ;; )
+	{
+		while ( *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' ) ++p;
+		if ( p[0] != '/' || p[1] != '/' ) return;
+		p += 2;
+		while ( *p && *p != '\r' && *p != '\n' ) ++p;
+	}
+}
+
+static void JSON_SkipString( const char *&p )
+{
+	const char quote = *p;
+	if ( quote != '"' && quote != '\'' ) return;
+	++p;
+	while ( *p && *p != quote )
+	{
+		if ( *p == '\\' && p[1] ) ++p;
+		++p;
+	}
+	if ( *p ) ++p;
+}
+
+static void JSON_KVToLua( lua_State *L, KeyValues *pNode, const char *&pJson )
+{
+	JSON_SkipWhitespace( pJson );
+	const char token = *pJson;
+	if ( token == 't' || token == 'f' )
+	{
+		lua_pushboolean( L, token == 't' );
+		pJson += token == 't' ? 4 : 5;
+		return;
+	}
+	if ( token == 'n' )
+	{
+		lua_pushnil( L );
+		pJson += 4;
+		return;
+	}
+	if ( token == '"' || token == '\'' )
+	{
+		lua_pushstring( L, pNode->GetString() );
+		JSON_SkipString( pJson );
+		return;
+	}
+	if ( token != '{' && token != '[' )
+	{
+		char *pEnd = NULL;
+		const double number = strtod( pJson, &pEnd );
+		lua_pushnumber( L, number );
+		pJson = pEnd;
+		return;
+	}
+	const bool isArray = token == '[';
+	++pJson;
 	KeyValues *pChild = pNode->GetFirstSubKey();
 
 	if ( pChild == NULL )
 	{
-		// leaf.  NOTE: "{}" parses to a childless TYPE_NONE node - that is an
-		// empty table, not null (null comes through as TYPE_PTR).
-		if ( pNode->GetDataType() == KeyValues::TYPE_NONE )
-		{
-			lua_newtable( L );
-		}
-		else if ( pNode->GetDataType() == KeyValues::TYPE_PTR )
-		{
-			lua_pushnil( L );	// JSON null
-		}
-		else
-		{
-			switch ( pNode->GetDataType() )
-			{
-				case KeyValues::TYPE_INT:     lua_pushinteger( L, pNode->GetInt() ); break;
-				case KeyValues::TYPE_UINT64:  lua_pushnumber( L, (lua_Number)pNode->GetUint64() ); break;
-				case KeyValues::TYPE_FLOAT:   lua_pushnumber( L, pNode->GetFloat() ); break;
-				default:                      lua_pushstring( L, pNode->GetString() ); break;
-			}
-		}
+		JSON_SkipWhitespace( pJson );
+		++pJson;
+		lua_newtable( L );
 		return;
-	}
-
-	// container.  ParseArray names children "0","1",... - sequential numeric
-	// names mean this was a JSON array and comes back as a 1-based Lua array;
-	// otherwise it is a map (GMod converts numeric-looking keys to numbers
-	// "wherever possible").
-	bool isArray = true;
-	int expected = 0;
-	for ( KeyValues *p = pChild; p != NULL; p = p->GetNextKey() )
-	{
-		if ( V_atoi( p->GetName() ) != expected ) { isArray = false; break; }
-		++expected;
 	}
 
 	lua_newtable( L );
@@ -1635,24 +1664,56 @@ static void JSON_KVToLua( lua_State *L, KeyValues *pNode )
 	int arrayIdx = 0;
 	for ( KeyValues *p = pChild; p != NULL; p = p->GetNextKey() )
 	{
+		JSON_SkipWhitespace( pJson );
+		const char *pKeyStart = NULL;
+		const char *pKeyEnd = NULL;
+		if ( !isArray )
+		{
+			pKeyStart = pJson;
+			JSON_SkipString( pJson );
+			pKeyEnd = pJson;
+			JSON_SkipWhitespace( pJson );
+			++pJson; // colon
+		}
 		if ( isArray )
 		{
-			JSON_KVToLua( L, p );
+			JSON_KVToLua( L, p, pJson );
 			lua_rawseti( L, -2, ++arrayIdx );
 		}
 		else
 		{
-			const char *pszKey = p->GetName();
+			bool bEscaped = false;
+			for ( const char *pKey = pKeyStart + 1; pKey < pKeyEnd - 1; ++pKey )
+				if ( *pKey == '\\' ) { bEscaped = true; break; }
+			if ( bEscaped )
+			{
+				CUtlString keyJson( "{\"value\":" );
+				keyJson.Append( pKeyStart, (int)( pKeyEnd - pKeyStart ) );
+				keyJson += "}";
+				KeyValuesJSONParser keyParser( keyJson.Get() );
+				KeyValues *pKeyRoot = keyParser.ParseFile();
+				KeyValues *pKeyValue = pKeyRoot ? pKeyRoot->GetFirstSubKey() : NULL;
+				lua_pushstring( L, pKeyValue ? pKeyValue->GetString() : "" );
+				if ( pKeyRoot ) pKeyRoot->deleteThis();
+			}
+			else
+				lua_pushlstring( L, pKeyStart + 1, pKeyEnd - pKeyStart - 2 );
+			const char *pszKey = lua_tostring( L, -1 );
 			char *pszEnd = NULL;
 			long lKey = strtol( pszKey, &pszEnd, 10 );
 			if ( pszEnd && *pszEnd == '\0' && pszEnd != pszKey )
+			{
+				lua_pop( L, 1 );
 				lua_pushinteger( L, (lua_Integer)lKey );
-			else
-				lua_pushstring( L, pszKey );
-			JSON_KVToLua( L, p );
+			}
+			JSON_KVToLua( L, p, pJson );
 			lua_settable( L, -3 );
 		}
+		JSON_SkipWhitespace( pJson );
+		if ( *pJson == ',' ) ++pJson;
 	}
+	JSON_SkipWhitespace( pJson );
+	++pJson; // closing bracket or brace
 
 	// HL2SB (2026-10-05): GMod's decoder hands {"x":..,"y":..,"z":..} objects
 	// back as real Vector userdata (the duplicator round-trip feeds them
@@ -1724,7 +1785,7 @@ LUA_API int luasrc_UTIL_JSONToTable( lua_State *L )
 		return 1;
 	}
 
-	JSON_KVToLua( L, pRoot );
+	JSON_KVToLua( L, pRoot, pszJson );
 	pRoot->deleteThis();
 	return 1;
 }
