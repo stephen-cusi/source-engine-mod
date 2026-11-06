@@ -2682,7 +2682,11 @@ void C_BaseEntity::UnlinkFromHierarchy()
 			pChild->UnlinkFromHierarchy();
 		}
 		else
+		{
+			// Recalculate the child's transform after detaching it from its parent.
+			pChild->AddEFlags( EFL_DIRTY_ABSTRANSFORM );
 			pChild->UnlinkFromHierarchy();
+		}
 		pChild = FirstMoveChild();
 	}
 }
