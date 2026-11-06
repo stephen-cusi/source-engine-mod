@@ -35,6 +35,7 @@
 #include "materialsystem/MaterialSystemUtil.h"
 #else
 #include "lbaseanimating.h"
+#include "physconstraint.h"
 #include "physconstraint_lua.h"
 #include "world.h"
 #include "hl2sb_motioncontroller.h"
@@ -5529,20 +5530,10 @@ static int CBaseEntity_PhysicsInitShadow (lua_State *L) {
 }
 
 //-----------------------------------------------------------------------------
-// HL2SB GMod compat: Entity:IsConstraint().
-//
-// lua/includes/modules/constraint.lua asks this of every entity that goes away
-//     if ( ent:IsConstraint() || constraintClasses[ ent:GetClass() ] ) then ...
-// and the call was nil, so the hook threw on EVERY entity removal ("Hook
-// 'Constraint Library - ConstraintRemoved' (EntityRemoved) Failed").
-//
-// GMod answers it from a CBaseEntity predicate this fork does not have, and one
-// cannot be written portably: CPhysConstraint is a server-only C++ type
-// (game/server/physconstraint.cpp) and the client has no such class at all.  So
-// match the class names the constraint entities are registered under -- which is
-// what constraint.lua already does for itself, for the two classes ("phys_spring",
-// "phys_slideconstraint") it knows the predicate misses.
+// Entity:IsConstraint is a server-side type check. The client retains its
+// existing class-name compatibility behavior.
 //-----------------------------------------------------------------------------
+#ifdef CLIENT_DLL
 static const char *s_pHL2SB_ConstraintClasses[] = {
   "phys_constraint",
   "phys_constraintsystem",
@@ -5570,10 +5561,17 @@ static bool HL2SB_IsConstraintClass (const char *pszClass) {
 
   return false;
 }
+#endif
 
 static int CBaseEntity_IsConstraint (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
+#ifdef CLIENT_DLL
   lua_pushboolean(L, pEntity != NULL && HL2SB_IsConstraintClass(pEntity->GetClassname()));
+#else
+  const bool isConstraint = dynamic_cast<CPhysConstraint *>(pEntity) != NULL &&
+      Q_stricmp(pEntity->GetClassname(), "phys_slideconstraint") != 0;
+  lua_pushboolean(L, isConstraint);
+#endif
   return 1;
 }
 
