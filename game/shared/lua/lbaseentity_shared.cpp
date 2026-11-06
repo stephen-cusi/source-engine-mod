@@ -5219,7 +5219,7 @@ static int CBaseEntity_GetVelocity (lua_State *L) {
 // run, which aborted DealDamage() before it could apply anything.
 static void lua_pushdirection (lua_State *L, CBaseEntity *pEntity, int nWhich) {
   Vector vecForward, vecRight, vecUp;
-  AngleVectors( pEntity->GetAbsAngles(), &vecForward, &vecRight, &vecUp );
+  pEntity->GetVectors( &vecForward, &vecRight, &vecUp );
 
   switch ( nWhich ) {
     case 0:  lua_pushvector( L, vecForward ); break;
