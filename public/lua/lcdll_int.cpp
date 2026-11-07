@@ -11,6 +11,8 @@
 #include "luasrclib.h"
 #include "mathlib/lvector.h"
 #include "filesystem.h"
+#include "KeyValues.h"
+#include "tier0/icommandline.h"
 #include <string>
 #include <vector>
 
@@ -18,6 +20,44 @@ static int engine_ActiveGamemode (lua_State *L) {
   ConVarRef mode( "gamemode" );
   lua_pushstring( L, mode.IsValid() ? mode.GetString() : "sandbox" );
   return 1;
+}
+
+static int engine_GetGamemodes (lua_State *L) {
+  lua_newtable( L );
+  int index = 1;
+  FileFindHandle_t handle = FILESYSTEM_INVALID_FIND_HANDLE;
+  const char *name = filesystem->FindFirstEx( "gamemodes/*", "GAME", &handle );
+  while ( name ) {
+    if ( name[0] != '.' && filesystem->FindIsDirectory( handle ) ) {
+      char path[MAX_PATH];
+      Q_snprintf( path, sizeof(path), "gamemodes/%s/%s.txt", name, name );
+      KeyValues *details = new KeyValues( name );
+      if ( details->LoadFromFile( filesystem, path, "GAME" ) ) {
+        lua_newtable( L );
+        lua_pushstring( L, name ); lua_setfield( L, -2, "name" );
+        lua_pushstring( L, details->GetString( "title", name ) ); lua_setfield( L, -2, "title" );
+        lua_pushstring( L, details->GetString( "maps", "" ) ); lua_setfield( L, -2, "maps" );
+        lua_pushboolean( L, details->GetInt( "menusystem", 0 ) != 0 ); lua_setfield( L, -2, "menusystem" );
+        lua_pushstring( L, "0" ); lua_setfield( L, -2, "workshopid" );
+        lua_rawseti( L, -2, index++ );
+      }
+      details->deleteThis();
+    }
+    name = filesystem->FindNext( handle );
+  }
+  if ( handle != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( handle );
+  return 1;
+}
+
+static int engine_GetUserContent (lua_State *L) {
+  lua_newtable( L );
+  return 1;
+}
+
+static int menu_GetAddonStatus (lua_State *L) {
+  lua_pushboolean( L, CommandLine()->FindParm( "-noaddons" ) != 0 );
+  lua_pushboolean( L, CommandLine()->FindParm( "-noworkshop" ) != 0 );
+  return 2;
 }
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -560,6 +600,8 @@ static const luaL_Reg enginelib[] = {
   {"GetDXSupportLevel", engine_GetDXSupportLevel},
   {"GetAddons", engine_GetAddons},
   {"GetGames", HL2SB_EngineGetGames},
+  {"GetGamemodes", engine_GetGamemodes},
+  {"GetUserContent", engine_GetUserContent},
   {"GetContentSources", HL2SB_EngineGetContentSources},
   {"MountContentSource", HL2SB_EngineMountContentSource},
   {"SetContentMounted", HL2SB_EngineSetContentMounted},
@@ -634,6 +676,10 @@ static const luaL_Reg enginelib[] = {
 */
 LUALIB_API int luaopen_engine (lua_State *L) {
   luaL_register(L, LUA_ENGINELIBNAME, enginelib);
+  if ( L == LGameUI ) {
+    lua_pushcfunction( L, menu_GetAddonStatus );
+    lua_setglobal( L, "GetAddonStatus" );
+  }
   return 1;
 }
 

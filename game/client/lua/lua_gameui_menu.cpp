@@ -49,7 +49,405 @@
 #include "vgui_controls/lPanel.h"
 #include "vgui_controls/Panel.h"
 #include "vgui/IInput.h"
+#include "vgui/IVGui.h"
+#include "vgui_int.h"
+#include "GameUI/IGameUI.h"
+#include "GameUI/IGameConsole.h"
+#include "ienginevgui.h"
+#include "materialsystem/imaterialsystemhardwareconfig.h"
+#include "inetchannelinfo.h"
+#include "filesystem.h"
+#include "utlbuffer.h"
+#include <map>
+#include <string>
+#include <vector>
 #include "tier0/memdbgon.h"
+
+struct HL2SBMenuTimer
+{
+	double fireTime;
+	int functionRef;
+};
+
+static std::vector<HL2SBMenuTimer> s_MenuSimpleTimers;
+static CDllDemandLoader s_MenuGameUI( "GameUI" );
+static bool s_MenuOverrideActive = false;
+
+static std::map<std::string, unsigned int> s_MenuPermanentPermissions;
+static std::map<std::string, unsigned int> s_MenuTemporaryPermissions;
+static bool s_MenuPermissionsLoaded = false;
+
+static int HL2SB_MenuPermissionIndex( const char *name )
+{
+	if ( !Q_strcmp( name, "connect" ) ) return 0;
+	if ( !Q_strcmp( name, "voicerecord" ) ) return 1;
+	if ( !Q_strcmp( name, "motionsensor" ) ) return 6;
+	return -1;
+}
+
+static const char *HL2SB_MenuCurrentServer()
+{
+	INetChannelInfo *channel = engine->GetNetChannelInfo();
+	return channel ? channel->GetAddress() : NULL;
+}
+
+static void HL2SB_MenuLoadPermissions()
+{
+	if ( s_MenuPermissionsLoaded ) return;
+	s_MenuPermissionsLoaded = true;
+	CUtlBuffer data;
+	if ( !filesystem->ReadFile( "settings/permissions.bin", "MOD", data ) ) return;
+	const unsigned char *bytes = static_cast<const unsigned char *>( data.Base() );
+	const size_t size = static_cast<size_t>( data.TellPut() );
+	if ( !bytes || size < 4 ) return;
+	const unsigned count = unsigned(bytes[0]) | (unsigned(bytes[1]) << 8) | (unsigned(bytes[2]) << 16) | (unsigned(bytes[3]) << 24);
+	if ( count > 65536 ) return;
+	size_t position = 4;
+	std::map<std::string, unsigned int> loaded;
+	for ( unsigned i = 0; i < count && position < size; ++i ) {
+		const size_t start = position;
+		while ( position < size && bytes[position] && position - start < 255 ) ++position;
+		if ( position >= size || bytes[position] || position == start || position - start >= 255 ) break;
+		std::string address( reinterpret_cast<const char *>( bytes + start ), position - start );
+		++position;
+		if ( size - position < 4 ) break;
+		const unsigned flags = unsigned(bytes[position]) | (unsigned(bytes[position + 1]) << 8) |
+			(unsigned(bytes[position + 2]) << 16) | (unsigned(bytes[position + 3]) << 24);
+		position += 4;
+		loaded[address] = flags;
+	}
+	s_MenuPermanentPermissions.swap( loaded );
+}
+
+static void HL2SB_MenuSavePermissions()
+{
+	CUtlBuffer data( 0, 0, 0 );
+	unsigned count = 0;
+	for ( const auto &entry : s_MenuPermanentPermissions )
+		if ( entry.second && entry.first != "loopback" ) ++count;
+	data.PutInt( count );
+	for ( const auto &entry : s_MenuPermanentPermissions ) {
+		if ( !entry.second || entry.first == "loopback" ) continue;
+		data.PutString( entry.first.c_str() );
+		data.PutInt( entry.second );
+	}
+	filesystem->CreateDirHierarchy( "settings", "MOD" );
+	if ( !filesystem->WriteFile( "settings/permissions.bin", "MOD", data ) )
+		Warning( "Unable to save menu permissions.\n" );
+}
+
+static void HL2SB_PushPermissions( lua_State *state, const std::map<std::string, unsigned int> &entries )
+{
+	static const char *const names[] = { "connect", "voicerecord", "workshopdownload", "javascript", "escapemenu", "filewrite", "motionsensor" };
+	lua_newtable( state );
+	for ( const auto &entry : entries ) {
+		std::string value;
+		for ( unsigned i = 0; i < ARRAYSIZE(names); ++i ) {
+			if ( !(entry.second & (1u << i)) ) continue;
+			if ( !value.empty() ) value += ',';
+			value += names[i];
+		}
+		if ( !value.empty() ) { lua_pushlstring( state, value.data(), value.size() ); lua_setfield( state, -2, entry.first.c_str() ); }
+	}
+}
+
+static int HL2SB_PermissionsGetAll( lua_State *state )
+{
+	HL2SB_MenuLoadPermissions();
+	lua_newtable( state );
+	HL2SB_PushPermissions( state, s_MenuPermanentPermissions ); lua_setfield( state, -2, "permanent" );
+	HL2SB_PushPermissions( state, s_MenuTemporaryPermissions ); lua_setfield( state, -2, "temporary" );
+	return 1;
+}
+
+static void HL2SB_MenuCallHook( const char *name );
+
+static int HL2SB_PermissionsGrant( lua_State *state )
+{
+	const char *name = luaL_checkstring( state, 1 );
+	const char *address = HL2SB_MenuCurrentServer();
+	if ( !address || !address[0] ) return 0;
+	const int index = HL2SB_MenuPermissionIndex( name );
+	if ( index < 0 ) return luaL_error( state, "Invalid permission '%s'!", name );
+	HL2SB_MenuLoadPermissions();
+	const bool temporary = lua_toboolean( state, 2 ) != 0;
+	std::map<std::string, unsigned int> &entries = temporary ? s_MenuTemporaryPermissions : s_MenuPermanentPermissions;
+	entries[address] |= 1u << index;
+	if ( !temporary ) HL2SB_MenuSavePermissions();
+	HL2SB_MenuCallHook( "OnPermissionsChanged" );
+	return 0;
+}
+
+static int HL2SB_PermissionsRevoke( lua_State *state )
+{
+	const char *name = luaL_checkstring( state, 1 );
+	const char *address = luaL_optstring( state, 2, NULL );
+	if ( !address ) address = HL2SB_MenuCurrentServer();
+	if ( !address || !address[0] ) return 0;
+	const int index = HL2SB_MenuPermissionIndex( name );
+	if ( index < 0 ) return luaL_error( state, "Invalid permission '%s'!", name );
+	HL2SB_MenuLoadPermissions();
+	const unsigned mask = ~(1u << index);
+	s_MenuPermanentPermissions[address] &= mask;
+	s_MenuTemporaryPermissions[address] &= mask;
+	HL2SB_MenuSavePermissions();
+	HL2SB_MenuCallHook( "OnPermissionsChanged" );
+	return 0;
+}
+
+static int HL2SB_PermissionsIsGranted( lua_State *state )
+{
+	const char *name = luaL_checkstring( state, 1 );
+	const char *address = HL2SB_MenuCurrentServer();
+	if ( !address || !address[0] ) { lua_pushboolean( state, false ); return 1; }
+	const int index = HL2SB_MenuPermissionIndex( name );
+	if ( index < 0 ) return luaL_error( state, "Invalid permission '%d'!", 8 );
+	HL2SB_MenuLoadPermissions();
+	const unsigned flags = s_MenuPermanentPermissions[address] | s_MenuTemporaryPermissions[address];
+	lua_pushboolean( state, (flags & (1u << index)) != 0 );
+	return 1;
+}
+
+static int HL2SB_PermissionsConnect( lua_State *state )
+{
+	std::string address = luaL_checkstring( state, 1 );
+	const size_t first = address.find_first_not_of( " \t;" );
+	if ( first == std::string::npos ) return 0;
+	const size_t last = address.find_last_not_of( " \t;" );
+	address = address.substr( first, last - first + 1 );
+	if ( address.find_first_of( ";\r\n\"" ) != std::string::npos || address.size() > 200 ) return 0;
+	char command[256];
+	Q_snprintf( command, sizeof(command), "connect %s serverbrowser\n", address.c_str() );
+	engine->ClientCmd_Unrestricted( command );
+	s_MenuTemporaryPermissions[address] |= 1u;
+	return 0;
+}
+
+static IGameUI *HL2SB_GetMenuGameUI()
+{
+	CreateInterfaceFn factory = s_MenuGameUI.GetFactory();
+	return factory ? static_cast<IGameUI *>( factory( GAMEUI_INTERFACE_VERSION, NULL ) ) : NULL;
+}
+
+static void HL2SB_ClearMenuOverride()
+{
+	if ( !s_MenuOverrideActive ) return;
+	IGameUI *gameUI = HL2SB_GetMenuGameUI();
+	if ( gameUI ) gameUI->SetMainMenuOverride( NULL );
+	s_MenuOverrideActive = false;
+}
+
+static int HL2SB_SetMenuOverride( lua_State *state )
+{
+	vgui::Panel *panel = luaL_checkpanel( state, 1 );
+	IGameUI *gameUI = HL2SB_GetMenuGameUI();
+	if ( !panel || !gameUI ) { lua_pushboolean( state, false ); return 1; }
+	gameUI->SetMainMenuOverride( panel->GetVPanel() );
+	s_MenuOverrideActive = true;
+	lua_pushboolean( state, true );
+	return 1;
+}
+
+static int HL2SB_RestoreMenuOverride( lua_State *state )
+{
+	HL2SB_ClearMenuOverride();
+	return 0;
+}
+
+static int HL2SB_MenuIsInGame( lua_State *state )
+{
+	lua_pushboolean( state, engine->IsInGame() );
+	return 1;
+}
+
+static int HL2SB_MenuIsInLoading( lua_State *state )
+{
+	lua_pushboolean( state, engine->IsDrawingLoadingImage() );
+	return 1;
+}
+
+static int HL2SB_RunGameUICommand( lua_State *state )
+{
+	const char *command = luaL_checkstring( state, 1 );
+	IGameUI *gameUI = HL2SB_GetMenuGameUI();
+	if ( gameUI ) gameUI->SendMainMenuCommand( command );
+	return 0;
+}
+
+static int HL2SB_GetAPIManifest( lua_State *state )
+{
+	luaL_checktype( state, 1, LUA_TFUNCTION );
+	return 0;
+}
+
+static int HL2SB_MenuGuiActivate( lua_State *state )
+{
+	if ( !enginevgui || !enginevgui->IsGameUIVisible() )
+		engine->ClientCmd_Unrestricted( "gameui_activate\n" );
+	return 0;
+}
+
+static int HL2SB_MenuGuiHide( lua_State *state )
+{
+	engine->ClientCmd_Unrestricted( "gameui_hide\n" );
+	return 0;
+}
+
+static int HL2SB_MenuGuiShowConsole( lua_State *state )
+{
+	CreateInterfaceFn factory = s_MenuGameUI.GetFactory();
+	IGameConsole *console = factory ? static_cast<IGameConsole *>( factory( GAMECONSOLE_INTERFACE_VERSION, NULL ) ) : NULL;
+	if ( console ) console->Activate();
+	return 0;
+}
+
+static int HL2SB_MenuGuiIsConsoleVisible( lua_State *state )
+{
+	CreateInterfaceFn factory = s_MenuGameUI.GetFactory();
+	IGameConsole *console = factory ? static_cast<IGameConsole *>( factory( GAMECONSOLE_INTERFACE_VERSION, NULL ) ) : NULL;
+	lua_pushboolean( state, console && console->IsConsoleVisible() );
+	return 1;
+}
+
+static int HL2SB_MotionSensorUnavailable( lua_State *state )
+{
+	lua_pushboolean( state, false );
+	return 1;
+}
+
+static int HL2SB_MenuRenderDXLevel( lua_State *state )
+{
+	lua_pushnumber( state, g_pMaterialSystemHardwareConfig ? g_pMaterialSystemHardwareConfig->GetDXSupportLevel() : 0 );
+	return 1;
+}
+
+static int HL2SB_MenuRenderSupportsHDR( lua_State *state )
+{
+	lua_pushboolean( state, g_pMaterialSystemHardwareConfig && g_pMaterialSystemHardwareConfig->GetHardwareHDRType() != HDR_TYPE_NONE );
+	return 1;
+}
+
+static int HL2SB_MenuRenderSupportsPS14( lua_State *state )
+{
+	lua_pushboolean( state, g_pMaterialSystemHardwareConfig && g_pMaterialSystemHardwareConfig->SupportsPixelShaders_1_4() );
+	return 1;
+}
+
+static int HL2SB_MenuRenderSupportsPS20( lua_State *state )
+{
+	lua_pushboolean( state, g_pMaterialSystemHardwareConfig && g_pMaterialSystemHardwareConfig->SupportsPixelShaders_2_0() );
+	return 1;
+}
+
+static int HL2SB_MenuRenderSupportsVS20( lua_State *state )
+{
+	lua_pushboolean( state, g_pMaterialSystemHardwareConfig && g_pMaterialSystemHardwareConfig->SupportsVertexShaders_2_0() );
+	return 1;
+}
+
+CON_COMMAND( hl2sb_restore_source_menu, "Restore the Source main menu" )
+{
+	HL2SB_ClearMenuOverride();
+}
+class CHL2SBMenuTick;
+static CHL2SBMenuTick *s_pMenuTick = NULL;
+
+static int HL2SB_MenuTimerSimple( lua_State *state )
+{
+	const float delay = static_cast<float>( luaL_checknumber( state, 1 ) );
+	luaL_checktype( state, 2, LUA_TFUNCTION );
+	lua_pushvalue( state, 2 );
+	HL2SBMenuTimer timer = { static_cast<double>( gpGlobals->realtime ) + delay,
+		luaL_ref( state, LUA_REGISTRYINDEX ) };
+	s_MenuSimpleTimers.push_back( timer );
+	return 0;
+}
+
+void HL2SB_MenuInstallTimer( lua_State *state )
+{
+	lua_getglobal( state, "timer" );
+	if ( lua_istable( state, -1 ) )
+	{
+		lua_pushcfunction( state, HL2SB_MenuTimerSimple );
+		lua_setfield( state, -2, "Simple" );
+	}
+	lua_pop( state, 1 );
+}
+
+static void HL2SB_MenuCallHook( const char *name )
+{
+	if ( !LGameUI ) return;
+	const int top = lua_gettop( LGameUI );
+	lua_getglobal( LGameUI, "hook" );
+	if ( lua_istable( LGameUI, -1 ) )
+	{
+		lua_getfield( LGameUI, -1, "Call" );
+		if ( lua_isfunction( LGameUI, -1 ) )
+		{
+			lua_pushstring( LGameUI, name );
+			luasrc_pcall( LGameUI, 1, 0, 0 );
+		}
+	}
+	lua_settop( LGameUI, top );
+}
+
+class CHL2SBMenuTick : public vgui::Panel
+{
+public:
+	CHL2SBMenuTick() : vgui::Panel( VGui_GetGameUIPanel(), "HL2SBMenuTick" ), m_bInTick( false )
+	{
+		SetVisible( false );
+		vgui::ivgui()->AddTickSignal( GetVPanel(), 0 );
+	}
+	virtual ~CHL2SBMenuTick() { if ( s_pMenuTick == this ) s_pMenuTick = NULL; }
+	virtual void OnTick()
+	{
+		if ( !LGameUI || m_bInTick ) return;
+		m_bInTick = true;
+		HL2SB_MenuCallHook( "Think" );
+		size_t remaining = s_MenuSimpleTimers.size();
+		size_t index = 0;
+		const double now = gpGlobals->realtime;
+		while ( LGameUI && remaining-- && index < s_MenuSimpleTimers.size() )
+		{
+			if ( s_MenuSimpleTimers[index].fireTime > now ) { ++index; continue; }
+			const int ref = s_MenuSimpleTimers[index].functionRef;
+			s_MenuSimpleTimers.erase( s_MenuSimpleTimers.begin() + index );
+			lua_rawgeti( LGameUI, LUA_REGISTRYINDEX, ref );
+			luaL_unref( LGameUI, LUA_REGISTRYINDEX, ref );
+			if ( lua_isfunction( LGameUI, -1 ) ) luasrc_pcall( LGameUI, 0, 0, 0 );
+			else lua_pop( LGameUI, 1 );
+		}
+		m_bInTick = false;
+	}
+private:
+	bool m_bInTick;
+};
+
+void HL2SB_MenuRuntimeStart()
+{
+	if ( !LGameUI || s_pMenuTick ) return;
+	s_pMenuTick = new CHL2SBMenuTick();
+	HL2SB_MenuCallHook( "MenuStart" );
+}
+
+void HL2SB_MenuRuntimeStop()
+{
+	HL2SB_ClearMenuOverride();
+	if ( s_pMenuTick )
+	{
+		vgui::ivgui()->RemoveTickSignal( s_pMenuTick->GetVPanel() );
+		delete s_pMenuTick;
+		s_pMenuTick = NULL;
+	}
+	if ( LGameUI )
+		for ( size_t i = 0; i < s_MenuSimpleTimers.size(); ++i )
+			luaL_unref( LGameUI, LUA_REGISTRYINDEX, s_MenuSimpleTimers[i].functionRef );
+	s_MenuSimpleTimers.clear();
+	s_MenuTemporaryPermissions.clear();
+	s_MenuPermanentPermissions.clear();
+	s_MenuPermissionsLoaded = false;
+}
 
 //-----------------------------------------------------------------------------
 // Purpose: depth-first walk of a panel tree.
@@ -211,6 +609,12 @@ static int lua_HL2SB_MenuConsoleCommand( lua_State *L )
 //-----------------------------------------------------------------------------
 static const luaL_Reg gameui_menu_funcs[] =
 {
+	{ "HL2SB_SetMenuOverride", HL2SB_SetMenuOverride },
+	{ "HL2SB_RestoreMenuOverride", HL2SB_RestoreMenuOverride },
+	{ "IsInGame", HL2SB_MenuIsInGame },
+	{ "IsInLoading", HL2SB_MenuIsInLoading },
+	{ "RunGameUICommand", HL2SB_RunGameUICommand },
+	{ "GetAPIManifest", HL2SB_GetAPIManifest },
 	{ "HL2SB_MenuLayout",     lua_HL2SB_MenuLayout },
 	{ "HL2SB_MenuDumpLayout", lua_HL2SB_MenuDumpLayout_Entry },
 	{ "HL2SB_MenuConsoleCommand", lua_HL2SB_MenuConsoleCommand },
@@ -219,6 +623,43 @@ static const luaL_Reg gameui_menu_funcs[] =
 
 LUALIB_API int luaopen_gameui_menu (lua_State *L)
 {
+	static const luaL_Reg permissionFuncs[] = {
+		{ "GetAll", HL2SB_PermissionsGetAll }, { "Grant", HL2SB_PermissionsGrant },
+		{ "Revoke", HL2SB_PermissionsRevoke }, { "IsGranted", HL2SB_PermissionsIsGranted },
+		{ "Connect", HL2SB_PermissionsConnect }, { NULL, NULL }
+	};
+	luaL_register( L, "permissions", permissionFuncs );
+	lua_pop( L, 1 );
+	lua_getglobal( L, "gui" );
+	if ( lua_istable( L, -1 ) ) {
+		lua_pushcfunction( L, HL2SB_MenuGuiActivate ); lua_setfield( L, -2, "ActivateGameUI" );
+		lua_pushcfunction( L, HL2SB_MenuGuiHide ); lua_setfield( L, -2, "HideGameUI" );
+		lua_pushcfunction( L, HL2SB_MenuGuiShowConsole ); lua_setfield( L, -2, "ShowConsole" );
+		lua_pushcfunction( L, HL2SB_MenuGuiIsConsoleVisible ); lua_setfield( L, -2, "IsConsoleVisible" );
+	}
+	lua_pop( L, 1 );
+	static const luaL_Reg menuRender[] = {
+		{ "GetDXLevel", HL2SB_MenuRenderDXLevel },
+		{ "SupportsHDR", HL2SB_MenuRenderSupportsHDR },
+		{ "SupportsPixelShaders_1_4", HL2SB_MenuRenderSupportsPS14 },
+		{ "SupportsPixelShaders_2_0", HL2SB_MenuRenderSupportsPS20 },
+		{ "SupportsVertexShaders_2_0", HL2SB_MenuRenderSupportsVS20 },
+		{ NULL, NULL }
+	};
+	luaL_register( L, "render", menuRender );
+	lua_pop( L, 1 );
+	lua_newtable( L );
+	lua_pushcfunction( L, HL2SB_MotionSensorUnavailable );
+	lua_setfield( L, -2, "IsAvailable" );
+	lua_setglobal( L, "motionsensor" );
+	lua_pushstring( L, engine->GetProductVersionString() );
+	lua_setglobal( L, "VERSIONSTR" );
+	char protocol[32];
+	Q_snprintf( protocol, sizeof(protocol), "%u", engine->GetProtocolVersion() );
+	lua_pushstring( L, protocol );
+	lua_setglobal( L, "NETVERSIONSTR" );
+	lua_pushliteral( L, "unknown" );
+	lua_setglobal( L, "BRANCH" );
 	// Publish as plain globals: the menu scripts are plain Lua files, not modules, and
 	// GMod's own menu helpers are globals too.  luaL_register( L, NULL, ... )
 	// registers into the table ON TOP OF THE STACK -- with nothing pushed, that

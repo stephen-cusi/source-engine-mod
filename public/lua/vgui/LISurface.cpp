@@ -464,7 +464,11 @@ static int surface_DrawSetAlphaMultiplier (lua_State *L) {
 }
 
 static int surface_DrawSetColor (lua_State *L) {
-  surface()->DrawSetColor(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
+  const int r = clamp(luaL_checkint(L, 1), 0, 255);
+  const int g = clamp(luaL_checkint(L, 2), 0, 255);
+  const int b = clamp(luaL_checkint(L, 3), 0, 255);
+  const int a = clamp(luaL_checkint(L, 4), 0, 255);
+  surface()->DrawSetColor(r, g, b, a);
   return 0;
 }
 

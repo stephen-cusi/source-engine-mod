@@ -1,7 +1,24 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index cb61e004c..d4e8e4f9d 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -8425,9 +8425,11 @@ version = "0.8.0"
+ dependencies = [
+  "dpi",
+  "euclid",
++ "http",
+  "libc",
+  "log",
+  "servo",
++ "servo-embedder-traits",
+  "url",
+ ]
+ 
 diff --git a/components/fonts/platform/windows/font_list.rs b/components/fonts/platform/windows/font_list.rs
+index c640e9316..a3f15d45b 100644
 --- a/components/fonts/platform/windows/font_list.rs
 +++ b/components/fonts/platform/windows/font_list.rs
-@@ -10,6 +10,7 @@
+@@ -10,6 +10,7 @@ use servo_base::text::{UnicodeBlock, UnicodeBlockMethod, unicode_plane};
  use style::values::computed::font::GenericFontFamily;
  use style::values::computed::{FontStyle as StyleFontStyle, FontWeight as StyleFontWeight};
  use style::values::specified::font::FontWidthKeyword;
@@ -9,11 +26,10 @@ diff --git a/components/fonts/platform/windows/font_list.rs b/components/fonts/p
  
  use crate::{
      EmojiPresentationPreference, FallbackFontSelectionOptions, FontIdentifier, FontTemplate,
-@@ -24,6 +25,27 @@
-     for family in system_fc.families_iter() {
+@@ -25,6 +26,27 @@ where
          if let Ok(family_name) = family.family_name() {
              callback(&family_name);
-+        }
+         }
 +        // DirectWrite exposes localized and canonical names for the same family.
 +        // Font fallback and CSS may refer to any of these names.
 +        unsafe {
@@ -34,16 +50,103 @@ diff --git a/components/fonts/platform/windows/font_list.rs b/components/fonts/p
 +                }
 +            }
 +            (*names).Release();
-         }
++        }
      }
  }
+ 
+diff --git a/components/servo/tests/user_content_manager.rs b/components/servo/tests/user_content_manager.rs
+index dcbaa485c..dfbac4790 100644
+--- a/components/servo/tests/user_content_manager.rs
++++ b/components/servo/tests/user_content_manager.rs
+@@ -31,6 +31,34 @@ fn test_user_content_manager_empty() {
+     assert_eq!(result, Ok(JSValue::Undefined));
+ }
+ 
++#[test]
++fn test_user_script_precedes_first_head_script() {
++    let servo_test = ServoTest::new();
++    let (_, url) = make_server(move |_, response| {
++        *response.body_mut() = make_body(
++            b"<!doctype html><html><head><script>window.firstHeadValue = window.menuBridgeValue;</script></head></html>".to_vec(),
++        );
++    });
++    let manager = Rc::new(UserContentManager::new(servo_test.servo()));
++    let first = Rc::new(UserScript::from("window.menuBridgeValue = 41;"));
++    manager.add_script(first.clone());
++    let webview = WebViewBuilder::new(servo_test.servo(), servo_test.rendering_context.clone())
++        .user_content_manager(manager.clone())
++        .url(url.as_url().clone())
++        .build();
++    assert_eq!(
++        evaluate_javascript(&servo_test, webview.clone(), "window.firstHeadValue"),
++        Ok(JSValue::Number(41.0))
++    );
++    manager.remove_script(first);
++    manager.add_script(Rc::new(UserScript::from("window.menuBridgeValue = 73;")));
++    webview.reload();
++    assert_eq!(
++        evaluate_javascript(&servo_test, webview, "window.firstHeadValue"),
++        Ok(JSValue::Number(73.0))
++    );
++}
++
+ #[test]
+ fn test_user_content_manager_user_script() {
+     let servo_test = ServoTest::new();
+diff --git a/ffi/capi/Cargo.toml b/ffi/capi/Cargo.toml
+index 071f38c8f..6eecfc75e 100644
+--- a/ffi/capi/Cargo.toml
++++ b/ffi/capi/Cargo.toml
+@@ -21,7 +21,9 @@ capi = [] # Needed by `cargo-c`.
+ 
+ [dependencies]
+ dpi = { workspace = true }
++embedder_traits = { workspace = true }
+ euclid = { workspace = true }
++http = { workspace = true }
+ libc = { workspace = true }
+ log = { workspace = true }
+ # TODO: We need 'baked-in-resources' as the `inventory` based `ResourceReader`
+diff --git a/ffi/capi/lib.rs b/ffi/capi/lib.rs
+index f80d8aac6..01f115b13 100644
+--- a/ffi/capi/lib.rs
++++ b/ffi/capi/lib.rs
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+ 
+ mod options;
++mod asset_protocol;
+ mod preferences;
+ mod rendering_context;
+ mod servo;
+@@ -230,6 +231,10 @@ pub unsafe extern "C" fn servo_builder_build(builder: *mut ServoBuilder) -> *mut
+ 
+     rust_builder = rust_builder.event_loop_waker(Box::new(builder.event_loop_waker));
+ 
++    let mut protocols = servo_api::protocol_handler::ProtocolRegistry::default();
++    let _ = protocols.register("asset", asset_protocol::AssetProtocol);
++    rust_builder = rust_builder.protocol_registry(protocols);
++
+     let servo = rust_builder.build();
+     Box::into_raw(Box::new(servo))
+ }
 diff --git a/ffi/capi/webview.rs b/ffi/capi/webview.rs
+index b397acec1..398129dcc 100644
 --- a/ffi/capi/webview.rs
 +++ b/ffi/capi/webview.rs
-@@ -8,6 +8,10 @@
+@@ -2,16 +2,26 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+ 
++use std::cell::RefCell;
++use std::collections::HashMap;
+ use std::ffi::{CStr, c_void};
+ use std::os::raw::c_char;
+ use std::rc::Rc;
  
  use euclid::Scale;
- use servo_api::{Servo, WebView, WebViewBuilder};
+-use servo_api::{Servo, WebView, WebViewBuilder};
++use servo_api::{Servo, UserContentManager, UserScript, WebView, WebViewBuilder};
 +use servo_api::{
 +    CompositionEvent, CompositionState, DevicePoint, ImeEvent, InputEvent, Key, KeyState, KeyboardEvent, MouseButton,
 +    MouseButtonAction, MouseButtonEvent, MouseMoveEvent, WheelDelta, WheelEvent, WheelMode,
@@ -51,12 +154,76 @@ diff --git a/ffi/capi/webview.rs b/ffi/capi/webview.rs
  
  use crate::rendering_context::RenderingContext;
  use crate::webview_delegate::ServoWebViewDelegate;
-@@ -385,6 +389,142 @@
-         },
-         Err(_) => -1,
-     }
+ 
++thread_local! {
++    static DOCUMENT_SCRIPTS: RefCell<HashMap<usize, Rc<UserScript>>> = RefCell::new(HashMap::new());
 +}
 +
+ /// An opaque struct representing a builder object for constructing new
+ /// `WebView`s.
+ ///
+@@ -187,7 +197,9 @@ pub unsafe extern "C" fn servo_webview_builder_build(
+     // for `builder` documented above. We take ownership here.
+     let builder = unsafe { Box::from_raw(builder) };
+ 
+-    let mut webview_builder = WebViewBuilder::new(&builder.servo, builder.rendering_context);
++    let manager = Rc::new(UserContentManager::new(&builder.servo));
++    let mut webview_builder = WebViewBuilder::new(&builder.servo, builder.rendering_context)
++        .user_content_manager(manager);
+ 
+     if let Some(url) = builder.url {
+         webview_builder = webview_builder.url(url);
+@@ -200,6 +212,46 @@ pub unsafe extern "C" fn servo_webview_builder_build(
+     Box::into_raw(Box::new(webview_builder.build()))
+ }
+ 
++/// Replaces the user script injected into future documents for this WebView.
++/// Changes take effect on the next navigation or reload, not the current page.
++/// An empty string removes the script. Returns 0 on success and -1 on invalid input.
++///
++/// # Safety
++///
++/// `webview` must be a live handle created by `servo_webview_builder_build`,
++/// and `script` must point to a valid NUL-terminated string. The call must run
++/// on the thread which created the WebView.
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_webview_set_document_script(
++    webview: *mut WebView,
++    script: *const c_char,
++) -> i32 {
++    if webview.is_null() || script.is_null() {
++        return -1;
++    }
++    let Ok(source) = (unsafe { CStr::from_ptr(script) }).to_str() else {
++        return -1;
++    };
++    if source.len() > 8 * 1024 * 1024 {
++        return -1;
++    }
++    let Some(manager) = (unsafe { &*webview }).user_content_manager() else {
++        return -1;
++    };
++    DOCUMENT_SCRIPTS.with(|scripts| {
++        let mut scripts = scripts.borrow_mut();
++        if let Some(previous) = scripts.remove(&(webview as usize)) {
++            manager.remove_script(previous);
++        }
++        if !source.is_empty() {
++            let next = Rc::new(UserScript::from(source));
++            manager.add_script(next.clone());
++            scripts.insert(webview as usize, next);
++        }
++    });
++    0
++}
++
+ /// Destroys `builder` and frees its memory.
+ ///
+ /// `builder` is a handle to a `ServoWebViewBuilder` object.
+@@ -387,6 +439,142 @@ pub unsafe extern "C" fn servo_webview_load(webview: *mut WebView, url: *const c
+     }
+ }
+ 
 +// These helpers accept the same thread-bound WebView handles as the upstream C API.
 +// Strings are borrowed NUL-terminated UTF-8 and are copied before returning.
 +#[unsafe(no_mangle)]
@@ -191,13 +358,27 @@ diff --git a/ffi/capi/webview.rs b/ffi/capi/webview.rs
 +    if webview.is_null() { return -1; }
 +    unsafe { &*webview }.go_forward(1);
 +    0
- }
- 
++}
++
  /// Asynchronously takes a screenshot of the full `WebView` viewport.
+ ///
+ /// The provided `callback` will be invoked with either the image data
+@@ -502,6 +690,10 @@ pub unsafe extern "C" fn servo_webview_take_screenshot(
+ pub unsafe extern "C" fn servo_webview_free(webview: *mut WebView) {
+     assert!(!webview.is_null(), "webview pointer must not be null");
+ 
++    DOCUMENT_SCRIPTS.with(|scripts| {
++        scripts.borrow_mut().remove(&(webview as usize));
++    });
++
+     // SAFETY: The caller is assumed to uphold the safety requirements
+     // for `webview` documented above.
+     unsafe {
 diff --git a/ffi/capi/webview_delegate.rs b/ffi/capi/webview_delegate.rs
+index 13b1061eb..f07c1fd77 100644
 --- a/ffi/capi/webview_delegate.rs
 +++ b/ffi/capi/webview_delegate.rs
-@@ -2,10 +2,34 @@
+@@ -2,10 +2,90 @@
   * License, v. 2.0. If a copy of the MPL was not distributed with this
   * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
  
@@ -206,13 +387,69 @@ diff --git a/ffi/capi/webview_delegate.rs b/ffi/capi/webview_delegate.rs
 +use std::collections::HashMap;
 +use std::ffi::{c_char, c_void, CStr, CString};
  
++use embedder_traits::WebResourceResponse;
++use http::{header, HeaderMap, HeaderValue, Method, StatusCode};
  pub use servo_api::LoadStatus;
 -use servo_api::{WebView, WebViewDelegate};
-+use servo_api::{EmbedderControl, NavigationRequest, PromptDialog, SimpleDialog, WebView, WebViewDelegate};
++use servo_api::{EmbedderControl, NavigationRequest, PromptDialog, SimpleDialog, WebResourceLoad, WebView, WebViewDelegate};
 +
 +thread_local! {
 +    static BRIDGE_NEXT: Cell<u64> = const { Cell::new(1) };
 +    static BRIDGE_PENDING: RefCell<HashMap<u64, (usize, PromptDialog)>> = RefCell::new(HashMap::new());
++    static ASSET_NEXT: Cell<u64> = const { Cell::new(1) };
++    static ASSET_PENDING: RefCell<HashMap<u64, (usize, WebResourceLoad)>> = RefCell::new(HashMap::new());
++}
++
++const MAX_ASSET_BYTES: usize = 32 * 1024 * 1024;
++
++fn cancel_asset(load: WebResourceLoad) {
++    let response = WebResourceResponse::new(load.request().url.clone().into_url());
++    load.intercept(response).cancel();
++}
++
++/// Resolves one queued asset request. Must be called on the Servo owner thread.
++/// The supplied buffers are copied before this function returns.
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_asset_reply(
++    id: u64,
++    status: u16,
++    mime: *const c_char,
++    bytes: *const u8,
++    len: usize,
++) -> bool {
++    if !matches!(status, 200 | 404) || mime.is_null() || len > MAX_ASSET_BYTES || (len != 0 && bytes.is_null()) {
++        return false;
++    }
++    let Ok(content_type) = HeaderValue::from_bytes(unsafe { CStr::from_ptr(mime) }.to_bytes()) else {
++        return false;
++    };
++    let Some((_, load)) = ASSET_PENDING.with(|pending| pending.borrow_mut().remove(&id)) else {
++        return false;
++    };
++    let mut headers = HeaderMap::new();
++    headers.insert(header::CONTENT_TYPE, content_type);
++    let response = WebResourceResponse::new(load.request().url.clone().into_url())
++        .status_code(StatusCode::from_u16(status).unwrap())
++        .status_message(if status == 200 { b"OK".to_vec() } else { b"Not Found".to_vec() })
++        .headers(headers);
++    let body = if len == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(bytes, len) }.to_vec() };
++    let mut intercepted = load.intercept(response);
++    // An empty chunk still marks an empty response body as complete.
++    intercepted.send_body_data(body);
++    intercepted.finish();
++    true
++}
++
++/// Cancels all queued asset requests for one delegate on the Servo owner thread.
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn servo_asset_cancel(user_data: *mut c_void) {
++    let loads = ASSET_PENDING.with(|pending| {
++        let mut pending = pending.borrow_mut();
++        let ids: Vec<u64> = pending.iter().filter_map(|(&id, (owner, _))|
++            (*owner == user_data as usize).then_some(id)).collect();
++        ids.into_iter().filter_map(|id| pending.remove(&id).map(|(_, load)| load)).collect::<Vec<_>>()
++    });
++    for load in loads { cancel_asset(load); }
 +}
 +
 +#[unsafe(no_mangle)]
@@ -234,15 +471,39 @@ diff --git a/ffi/capi/webview_delegate.rs b/ffi/capi/webview_delegate.rs
  
  /// The delegate that receives notifications about `WebView` events.
  ///
-@@ -59,9 +83,31 @@
+@@ -59,9 +139,57 @@ pub struct ServoWebViewDelegate {
      /// call `servo_webview_paint` to update the rendering context.
      pub notify_new_frame_ready:
          Option<unsafe extern "C" fn(webview: *mut WebView, user_data: *mut c_void)>,
 +
 +    pub notify_bridge: Option<unsafe extern "C" fn(id: u64, message: *const c_char, user_data: *mut c_void) -> bool>,
++
++    /// The URL is borrowed only for the duration of the callback.
++    pub notify_asset: Option<unsafe extern "C" fn(id: u64, url: *const c_char, user_data: *mut c_void) -> bool>,
  }
  
  impl WebViewDelegate for ServoWebViewDelegate {
++    fn load_web_resource(&self, _webview: WebView, load: WebResourceLoad) {
++        let request = load.request();
++        let url = request.url.as_url();
++        if url.scheme() != "asset" { return; }
++        if request.method != Method::GET || !matches!(url.host_str(), Some("garrysmod") | Some("mapimage")) ||
++            !url.username().is_empty() || url.password().is_some() || url.port().is_some() ||
++            url.as_str().len() > 8192 {
++            cancel_asset(load);
++            return;
++        }
++        let Some(callback) = self.notify_asset else { cancel_asset(load); return; };
++        let Ok(url) = CString::new(url.as_str()) else { cancel_asset(load); return; };
++        let id = ASSET_NEXT.with(|next| { let id = next.get(); next.set(id.wrapping_add(1).max(1)); id });
++        ASSET_PENDING.with(|pending| { pending.borrow_mut().insert(id, (self.user_data as usize, load)); });
++        if !unsafe { callback(id, url.as_ptr(), self.user_data) } {
++            if let Some((_, load)) = ASSET_PENDING.with(|pending| pending.borrow_mut().remove(&id)) {
++                cancel_asset(load);
++            }
++        }
++    }
++
 +    fn show_embedder_control(&self, _webview: WebView, control: EmbedderControl) {
 +        let EmbedderControl::SimpleDialog(SimpleDialog::Prompt(prompt)) = control else { return; };
 +        let Some(message) = prompt.message().strip_prefix("__hl2sb_bridge__") else { return; };
@@ -256,7 +517,9 @@ diff --git a/ffi/capi/webview_delegate.rs b/ffi/capi/webview_delegate.rs
 +    }
 +
 +    fn request_navigation(&self, _webview: WebView, request: NavigationRequest) {
-+        if request.url.as_str() == "about:blank" || request.url.scheme() == "data" {
++        if request.url.as_str() == "about:blank" || request.url.scheme() == "data" ||
++            (request.url.scheme() == "asset" && request.url.host_str() == Some("garrysmod") &&
++             request.url.username().is_empty() && request.url.password().is_none() && request.url.port().is_none()) {
 +            request.allow();
 +        } else {
 +            request.deny();
@@ -266,3 +529,32 @@ diff --git a/ffi/capi/webview_delegate.rs b/ffi/capi/webview_delegate.rs
      fn notify_load_status_changed(&self, mut webview: WebView, load_status: LoadStatus) {
          let Some(callback) = self.notify_load_status_changed else {
              return;
+diff --git a/ffi/capi/asset_protocol.rs b/ffi/capi/asset_protocol.rs
+new file mode 100644
+index 000000000..5c0297ee5
+--- /dev/null
++++ b/ffi/capi/asset_protocol.rs
+@@ -0,0 +1,23 @@
++use std::future::{ready, Future};
++use std::pin::Pin;
++
++use servo_api::protocol_handler::{DoneChannel, FetchContext, NetworkError, ProtocolHandler, Request, Response};
++
++pub struct AssetProtocol;
++
++impl ProtocolHandler for AssetProtocol {
++    fn load<'a>(
++        &'a self,
++        _request: &'a mut Request,
++        _done: &mut DoneChannel,
++        _context: &FetchContext,
++    ) -> Pin<Box<dyn Future<Output = Response> + Send + 'a>> {
++        Box::pin(ready(Response::network_error(NetworkError::ResourceLoadError(
++            "Asset resource was not handled by the embedder".into(),
++        ))))
++    }
++
++    fn is_fetchable(&self) -> bool {
++        true
++    }
++}

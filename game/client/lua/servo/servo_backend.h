@@ -26,7 +26,11 @@ int HLSBServoLoadStatus(HLSBServoView *view);
 bool HLSBServoPopLoadEvent(HLSBServoView *view, int *status);
 bool HLSBServoPopBridgeEvent(HLSBServoView *view, uint64_t *id, char *message, size_t capacity);
 bool HLSBServoBridgeReply(HLSBServoView *view, uint64_t id, const char *reply);
+bool HLSBServoPopAssetEvent(HLSBServoView *view, uint64_t *id, char *url, size_t capacity);
+bool HLSBServoAssetReply(HLSBServoView *view, uint64_t id, uint16_t status,
+                         const char *mime, const uint8_t *bytes, size_t length);
 bool HLSBServoEvalJS(HLSBServoView *view, const char *script);
+bool HLSBServoSetDocumentScript(HLSBServoView *view, const char *script);
 bool HLSBServoMouseMove(HLSBServoView *view, float x, float y);
 bool HLSBServoMouseButton(HLSBServoView *view, float x, float y, int button, bool down);
 bool HLSBServoMouseWheel(HLSBServoView *view, float x, float y, double dx, double dy);

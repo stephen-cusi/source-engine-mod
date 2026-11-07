@@ -1198,6 +1198,8 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 	luasrc_init_gameui();
 
 	luasrc_dofolder( LGameUI, LUA_PATH_GAMEUI );
+	extern void HL2SB_MenuRuntimeStart();
+	HL2SB_MenuRuntimeStart();
 #endif
 
 	// Add the client systems.	
@@ -1385,6 +1387,8 @@ void CHLClient::Shutdown( void )
 #endif
 
 #ifdef LUA_SDK
+	extern void HL2SB_MenuRuntimeStop();
+	HL2SB_MenuRuntimeStop();
 	luasrc_shutdown_gameui();
 #endif
 

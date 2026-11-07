@@ -21,6 +21,7 @@ std::atomic<bool> s_runtimeExists(false);
 struct Servo;
 struct ServoBuilder;
 struct ServoOptions;
+struct ServoPreferences;
 struct RenderingContext;
 struct WebViewBuilder;
 struct WebView;
@@ -29,6 +30,7 @@ struct Delegate {
     void (*load)(WebView *, int32_t, void *);
     void (*frame)(WebView *, void *);
     bool (*bridge)(uint64_t, const char *, void *);
+    bool (*asset)(uint64_t, const char *, void *);
 };
 typedef void (*ScreenshotCallback)(const uint8_t *, uint32_t, uint32_t, int32_t, void *);
 
@@ -37,6 +39,10 @@ struct Api {
     Servo *(*builder_build)(ServoBuilder *);
     void (*builder_free)(ServoBuilder *);
     void (*builder_set_options)(ServoBuilder *, ServoOptions *);
+    ServoPreferences *(*preferences_create)();
+    void (*preferences_set_string)(ServoPreferences *, const char *, const char *);
+    void (*preferences_set_f64_array)(ServoPreferences *, const char *, const double *, size_t);
+    void (*builder_set_preferences)(ServoBuilder *, ServoPreferences *);
     ServoOptions *(*options_create)();
     void (*options_set_multiprocess)(ServoOptions *, bool);
     void (*servo_free)(Servo *);
@@ -53,8 +59,11 @@ struct Api {
     int32_t (*view_load)(WebView *, const char *);
     void (*view_screenshot)(WebView *, ScreenshotCallback, void *);
     int32_t (*eval_js)(WebView *, const char *);
+    int32_t (*set_document_script)(WebView *, const char *);
     bool (*bridge_reply)(uint64_t, const char *);
     void (*bridge_cancel)(void *);
+    bool (*asset_reply)(uint64_t, uint16_t, const char *, const uint8_t *, size_t);
+    void (*asset_cancel)(void *);
     int32_t (*mouse_move)(WebView *, float, float);
     int32_t (*mouse_button)(WebView *, float, float, int32_t, bool);
     int32_t (*mouse_wheel)(WebView *, float, float, double, double);
@@ -108,6 +117,10 @@ bool LoadApi(Library &lib, Api &api) {
     LOAD(builder_set_options, "servo_builder_set_options");
     LOAD(options_create, "servo_options_create");
     LOAD(options_set_multiprocess, "servo_options_set_multiprocess");
+    LOAD(preferences_create, "servo_preferences_create");
+    LOAD(preferences_set_string, "servo_preferences_set_string");
+    LOAD(preferences_set_f64_array, "servo_preferences_set_f64_array");
+    LOAD(builder_set_preferences, "servo_builder_set_preferences");
     LOAD(servo_free, "servo_free");
     LOAD(spin, "servo_spin_event_loop");
     LOAD(context_create, "servo_rendering_context_create_software");
@@ -123,6 +136,9 @@ bool LoadApi(Library &lib, Api &api) {
     LOAD(view_screenshot, "servo_webview_take_screenshot");
     LOAD(bridge_reply, "servo_bridge_reply");
     LOAD(bridge_cancel, "servo_bridge_cancel");
+    LOAD(asset_reply, "servo_asset_reply");
+    LOAD(asset_cancel, "servo_asset_cancel");
+    LOAD(set_document_script, "servo_webview_set_document_script");
 #undef LOAD
     lib.Symbol(api.eval_js, "servo_webview_eval_js");
     lib.Symbol(api.mouse_move, "servo_webview_mouse_move");
@@ -204,6 +220,7 @@ struct HLSBServoView {
     int loadStatus;
     std::vector<int> loadEvents;
     std::vector<std::pair<uint64_t, std::string> > bridgeEvents;
+    std::vector<std::pair<uint64_t, std::string> > assetEvents;
     CallbackState *callback;
     std::vector<uint8_t> pixels;
 };
@@ -234,6 +251,11 @@ bool BridgeCallback(uint64_t id, const char *message, void *user) {
     if (!v || !message || std::strlen(message) > 65535) return false;
     try { v->bridgeEvents.push_back(std::make_pair(id, std::string(message))); return true; } catch (...) { return false; }
 }
+bool AssetCallback(uint64_t id, const char *url, void *user) {
+    HLSBServoView *v = static_cast<CallbackState *>(user)->view;
+    if (!v || v->assetEvents.size() >= 256 || !ValidUTF8(url, 8191)) return false;
+    try { v->assetEvents.push_back(std::make_pair(id, std::string(url))); return true; } catch (...) { return false; }
+}
 void Screenshot(const uint8_t *data, uint32_t width, uint32_t height, int32_t, void *user) {
     HLSBServoView *v = static_cast<CallbackState *>(user)->view;
     if (!v) return;
@@ -245,6 +267,17 @@ void Screenshot(const uint8_t *data, uint32_t width, uint32_t height, int32_t, v
     }
     try {
         v->pixels.assign(data, data + size_t(width) * height * 4);
+        for (size_t i = 0; i < v->pixels.size(); i += 4) {
+            const unsigned alpha = v->pixels[i + 3];
+            if (!alpha) {
+                v->pixels[i] = v->pixels[i + 1] = v->pixels[i + 2] = 0;
+            } else if (alpha < 255) {
+                for (size_t channel = 0; channel < 3; ++channel) {
+                    const unsigned value = (unsigned(v->pixels[i + channel]) * 255u + alpha / 2u) / alpha;
+                    v->pixels[i + channel] = static_cast<uint8_t>((std::min)(value, 255u));
+                }
+            }
+        }
         v->frameWidth = width;
         v->frameHeight = height;
         ++v->sequence;
@@ -270,6 +303,15 @@ HLSBServoRuntime *HLSBServoCreateRuntime(const char *path) {
     if (!options) { r->api.builder_free(builder); delete r; s_runtimeExists = false; return NULL; }
     r->api.options_set_multiprocess(options, false);
     r->api.builder_set_options(builder, options);
+    ServoPreferences *preferences = r->api.preferences_create();
+    if (!preferences) { r->api.builder_free(builder); delete r; s_runtimeExists = false; return NULL; }
+    const double transparent[4] = {0.0, 0.0, 0.0, 0.0};
+    r->api.preferences_set_f64_array(preferences, "shell_background_color_rgba", transparent, 4);
+#if defined(_WIN32)
+    r->api.preferences_set_string(preferences, "user_agent",
+        "Mozilla/5.0 (Windows NT; Valve Source Client) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36 GMod/13");
+#endif
+    r->api.builder_set_preferences(builder, preferences);
     r->servo = r->api.builder_build(builder);
     if (!r->servo) { delete r; s_runtimeExists = false; return NULL; }
     return r;
@@ -300,7 +342,7 @@ HLSBServoView *HLSBServoCreateView(HLSBServoRuntime *r, uint32_t width, uint32_t
     if (!context) { v->callback->view = NULL; delete v; return NULL; }
     WebViewBuilder *builder = r->api.view_builder_create(r->servo, context);
     if (!builder) { r->api.context_free(context); v->callback->view = NULL; delete v; return NULL; }
-    Delegate delegate = {v->callback, LoadCallback, FrameCallback, BridgeCallback};
+    Delegate delegate = {v->callback, LoadCallback, FrameCallback, BridgeCallback, AssetCallback};
     r->api.view_builder_delegate(builder, delegate);
     v->view = r->api.view_builder_build(builder);
     if (!v->view) { v->callback->view = NULL; delete v; return NULL; }
@@ -312,6 +354,7 @@ bool HLSBServoDestroyView(HLSBServoView *v) {
     if (!v || !Available(v->runtime)) return false;
     HLSBServoRuntime *r = v->runtime;
     r->api.bridge_cancel(v->callback);
+    r->api.asset_cancel(v->callback);
     v->callback->view = NULL;
     r->api.view_free(v->view);
     r->views.erase(std::remove(r->views.begin(), r->views.end(), v), r->views.end());
@@ -346,6 +389,10 @@ bool HLSBServoPump(HLSBServoRuntime *r) {
 
 bool HLSBServoNavigate(HLSBServoView *v, const char *url) {
     if (!v || !Available(v->runtime) || !ValidUTF8(url, 8u * 1024u * 1024u)) return false;
+    v->runtime->api.bridge_cancel(v->callback);
+    v->runtime->api.asset_cancel(v->callback);
+    v->bridgeEvents.clear();
+    v->assetEvents.clear();
     if (!v->initialized) {
         try { v->pendingURL = url; } catch (...) { return false; }
     } else if (v->runtime->api.view_load(v->view, url) != 0) return false;
@@ -389,8 +436,29 @@ bool HLSBServoBridgeReply(HLSBServoView *v, uint64_t id, const char *reply) {
     return v && Available(v->runtime) && ValidUTF8(reply, 65536) && v->runtime->api.bridge_reply(id, reply);
 }
 
+bool HLSBServoPopAssetEvent(HLSBServoView *v, uint64_t *id, char *url, size_t capacity) {
+    if (!v || !id || !url || !Available(v->runtime) || v->assetEvents.empty()) return false;
+    const std::pair<uint64_t, std::string> &event = v->assetEvents.front();
+    if (event.second.size() >= capacity) return false;
+    *id = event.first;
+    std::memcpy(url, event.second.c_str(), event.second.size() + 1);
+    v->assetEvents.erase(v->assetEvents.begin());
+    return true;
+}
+
+bool HLSBServoAssetReply(HLSBServoView *v, uint64_t id, uint16_t status,
+                         const char *mime, const uint8_t *bytes, size_t length) {
+    return v && Available(v->runtime) && (status == 200 || status == 404) &&
+        ValidUTF8(mime, 128) && length <= 32u * 1024u * 1024u && (bytes || !length) &&
+        v->runtime->api.asset_reply(id, status, mime, bytes, length);
+}
+
 bool HLSBServoEvalJS(HLSBServoView *v, const char *script) {
     return v && Available(v->runtime) && ValidUTF8(script, 8u * 1024u * 1024u) && v->runtime->api.eval_js && v->runtime->api.eval_js(v->view, script) == 0;
+}
+bool HLSBServoSetDocumentScript(HLSBServoView *v, const char *script) {
+    return v && Available(v->runtime) && ValidUTF8(script, 8u * 1024u * 1024u) &&
+        v->runtime->api.set_document_script(v->view, script) == 0;
 }
 bool HLSBServoMouseMove(HLSBServoView *v, float x, float y) {
     return v && Available(v->runtime) && v->runtime->api.mouse_move && v->runtime->api.mouse_move(v->view, x, y) == 0;

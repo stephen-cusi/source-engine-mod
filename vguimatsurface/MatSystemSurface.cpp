@@ -29,6 +29,7 @@ ILauncherMgr *g_pLauncherMgr = NULL;
 #include "Clip2D.h"
 #include <vgui_controls/Panel.h>
 #include <vgui/IInput.h>
+#include <vgui/IPanelFocusExt.h>
 #include <vgui/Point.h>
 #include "bitmap/imageformat.h"
 #include "TextureDictionary.h"
@@ -2837,7 +2838,8 @@ void CMatSystemSurface::BringToFront(VPANEL panel)
 	g_pVGuiPanel->MoveToFront(panel);
 
 	// move panel to top of popup list
-	if ( g_pVGuiPanel->IsPopup( panel ) )
+	if ( g_pVGuiPanel->IsPopup( panel ) &&
+		 static_cast<vgui::IPanelFocusExt *>( g_pVGuiPanel )->IsPopupFocusRaiseEnabled( panel ) )
 	{
 		MovePopupToFront( panel );
 	}
@@ -2852,7 +2854,8 @@ void CMatSystemSurface::SetTopLevelFocus(VPANEL pSubFocus)
 	{
 		if (ipanel()->IsPopup(pSubFocus) && ipanel()->IsMouseInputEnabled(pSubFocus))
 		{
-			BringToFront(pSubFocus);
+			if ( static_cast<vgui::IPanelFocusExt *>( ipanel() )->IsPopupFocusRaiseEnabled( pSubFocus ) )
+				BringToFront(pSubFocus);
 			break;
 		}
 		

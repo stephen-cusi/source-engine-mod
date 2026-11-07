@@ -3658,7 +3658,10 @@ static int HL2SB_Lua_RunConsoleCommand( lua_State *L )
   if ( blocked )
     return luaL_error( L, "RunConsoleCommand: Command is blocked! (%s)", name );
 #ifdef CLIENT_DLL
-  engine->ClientCmd( command );
+  if ( L == LGameUI )
+    engine->ClientCmd_Unrestricted( command );
+  else
+    engine->ClientCmd( command );
 #else
   engine->ServerCommand( command );
 #endif
@@ -3676,6 +3679,10 @@ void HL2SB_RegisterConsoleGlobals( lua_State *state )
   lua_setglobal( state, "Msg" );
   lua_pushcfunction( state, lua_MsgN );
   lua_setglobal( state, "MsgN" );
+  lua_pushcfunction( state, lua_MsgC );
+  lua_setglobal( state, "MsgC" );
+  lua_pushcfunction( state, lua_Warning );
+  lua_setglobal( state, "Warning" );
   lua_pushcfunction( state, lua_UnPredictedCurTime );
   lua_setglobal( state, "UnPredictedCurTime" );
   lua_pushcfunction( state, luasrc_AddCSLuaFile );
@@ -4123,6 +4130,21 @@ static int HL2SB_UIKeyValuesToTable(lua_State *L)
 static int HL2SB_KeyValuesToTablePreserveOrder(lua_State *L)
 {
   return HL2SB_ReadUtilityKV(L, true);
+}
+
+extern int luasrc_UTIL_TableToJSON(lua_State *L);
+extern int luasrc_UTIL_JSONToTable(lua_State *L);
+
+void HL2SB_InstallMenuUtilBindings(lua_State *state)
+{
+  lua_getglobal(state, "util");
+  if (lua_istable(state, -1)) {
+    lua_pushcfunction(state, luasrc_UTIL_TableToJSON); lua_setfield(state, -2, "TableToJSON");
+    lua_pushcfunction(state, luasrc_UTIL_JSONToTable); lua_setfield(state, -2, "JSONToTable");
+    lua_pushcfunction(state, HL2SB_UIKeyValuesToTable); lua_setfield(state, -2, "KeyValuesToTable");
+    lua_pushcfunction(state, HL2SB_UITableToKeyValues); lua_setfield(state, -2, "TableToKeyValues");
+  }
+  lua_pop(state, 1);
 }
 
 static int lua_ProtectedCall(lua_State *L)

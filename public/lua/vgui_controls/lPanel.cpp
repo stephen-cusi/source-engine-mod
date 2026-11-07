@@ -17,6 +17,7 @@
 #include <vgui/IInput.h>
 #include <vgui/ISurface.h>
 #include <vgui/IPanel.h>
+#include <vgui/IPanelFocusExt.h>
 #include <Color.h>
 #include <vgui/Cursor.h>
 #include <vgui_controls/Label.h>
@@ -727,6 +728,12 @@ static int Panel_IsOpaque (lua_State *L) {
 static int Panel_IsPopup (lua_State *L) {
   lua_pushboolean(L, luaL_checkpanel(L, 1)->IsPopup());
   return 1;
+}
+
+static int Panel_SetPopupStayAtBack (lua_State *L) {
+  vgui::Panel *panel = luaL_checkpanel(L, 1);
+  static_cast<vgui::IPanelFocusExt *>(ipanel())->SetPopupFocusRaiseEnabled(panel->GetVPanel(), !lua_toboolean(L, 2));
+  return 0;
 }
 
 static int Panel_IsProportional (lua_State *L) {
@@ -2348,6 +2355,89 @@ static std::string HL2SB_HTMLDataURL(const char *text)
   return result;
 }
 
+static int HL2SB_AssetHex(char c)
+{
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+static bool HL2SB_AssetPath(const char *url, std::string &path)
+{
+  const char *prefix = "asset://garrysmod/";
+  if (!url || Q_strnicmp(url, prefix, Q_strlen(prefix))) return false;
+  path.clear();
+  for (const char *p = url + Q_strlen(prefix); *p && *p != '?' && *p != '#'; ++p) {
+    unsigned char c = static_cast<unsigned char>(*p);
+    if (c == '%') {
+      if (!p[1] || !p[2]) return false;
+      const int high = HL2SB_AssetHex(p[1]), low = HL2SB_AssetHex(p[2]);
+      if (high < 0 || low < 0) return false;
+      c = static_cast<unsigned char>((high << 4) | low);
+      p += 2;
+    }
+    if (c < 32 || c == 127 || c == '\\' || c == ':') return false;
+    path += static_cast<char>(c);
+  }
+  if (path.empty() || path[0] == '/') return false;
+  size_t start = 0;
+  while (start < path.size()) {
+    const size_t end = path.find('/', start);
+    const size_t length = (end == std::string::npos ? path.size() : end) - start;
+    if (!length || (length == 1 && path[start] == '.') ||
+        (length == 2 && path[start] == '.' && path[start + 1] == '.')) return false;
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return path[path.size() - 1] != '/';
+}
+
+static const char *HL2SB_AssetMime(const std::string &path)
+{
+  const char *ext = strrchr(path.c_str(), '.');
+  if (!ext) return "application/octet-stream";
+  if (!Q_stricmp(ext, ".html") || !Q_stricmp(ext, ".htm")) return "text/html; charset=utf-8";
+  if (!Q_stricmp(ext, ".css")) return "text/css; charset=utf-8";
+  if (!Q_stricmp(ext, ".js")) return "text/javascript; charset=utf-8";
+  if (!Q_stricmp(ext, ".json")) return "application/json; charset=utf-8";
+  if (!Q_stricmp(ext, ".png")) return "image/png";
+  if (!Q_stricmp(ext, ".jpg") || !Q_stricmp(ext, ".jpeg")) return "image/jpeg";
+  if (!Q_stricmp(ext, ".gif")) return "image/gif";
+  if (!Q_stricmp(ext, ".svg")) return "image/svg+xml";
+  if (!Q_stricmp(ext, ".webp")) return "image/webp";
+  if (!Q_stricmp(ext, ".woff")) return "font/woff";
+  if (!Q_stricmp(ext, ".woff2")) return "font/woff2";
+  if (!Q_stricmp(ext, ".ttf")) return "font/ttf";
+  return "application/octet-stream";
+}
+
+static bool HL2SB_MapImagePath(const char *url, std::string &path)
+{
+  const char *prefix = "asset://mapimage/";
+  if (!url || Q_strnicmp(url, prefix, Q_strlen(prefix))) return false;
+  std::string name;
+  for (const char *p = url + Q_strlen(prefix); *p && *p != '?' && *p != '#'; ++p) {
+    unsigned char c = static_cast<unsigned char>(*p);
+    if (c == '%') {
+      if (!p[1] || !p[2]) return false;
+      const int high = HL2SB_AssetHex(p[1]), low = HL2SB_AssetHex(p[2]);
+      if (high < 0 || low < 0) return false;
+      c = static_cast<unsigned char>((high << 4) | low);
+      p += 2;
+    }
+    if (c < 32 || c == 127 || c == '/' || c == '\\' || c == ':') return false;
+    name += static_cast<char>(c);
+  }
+  if (name.empty() || name == "." || name == ".." || name.size() > 200) return false;
+  path = "maps/thumb/" + name + ".png";
+  if (filesystem->FileExists(path.c_str(), "GAME")) return true;
+  path = "maps/" + name + ".png";
+  if (filesystem->FileExists(path.c_str(), "GAME")) return true;
+  path = "maps/thumb/noicon.png";
+  return filesystem->FileExists(path.c_str(), "GAME");
+}
+
 static const char *HL2SB_HTMLKey(KeyCode code)
 {
   switch (code) {
@@ -2393,6 +2483,7 @@ public:
   HLSBServoView *m_servo;
   int m_servoTexture;
   uint64_t m_servoSequence;
+  std::vector<unsigned char> m_servoPixels;
   std::string m_servoURL;
   int m_servoMouseX, m_servoMouseY;
   HLSBServoIMEMenu m_servoIME;
@@ -2401,14 +2492,14 @@ public:
   wchar_t m_servoHighSurrogate;
 
   CHL2SBLuaHTML(Panel *parent, const char *name, lua_State *state)
-    : HTML(parent, name, true, false, hl2sb_html_servo.GetBool()), m_lua_State(state), m_loading(true),
+    : HTML(parent, name, true, false, state == LGameUI || hl2sb_html_servo.GetBool()), m_lua_State(state), m_loading(true),
       m_servo(NULL), m_servoTexture(0), m_servoSequence(0), m_servoMouseX(0), m_servoMouseY(0),
       m_servoIME(this), m_servoComposing(false), m_servoHighSurrogate(0)
   {
     luaPushPanelRefTable(state, this, true);
     m_nTableReference = luaL_ref(state, LUA_REGISTRYINDEX);
     HL2SB_LuaPanelTrack(this, state);
-    if (hl2sb_html_servo.GetBool()) {
+    if (state == LGameUI || hl2sb_html_servo.GetBool()) {
       if (!s_htmlServoRuntime) {
         char path[MAX_PATH];
 #if defined(_WIN32)
@@ -2450,6 +2541,14 @@ public:
       "window.__hl2sbHTMLNext=window.__hl2sbHTMLNext||0;"
       "window.__hl2sbHTMLReply=function(id,args){var cb=window.__hl2sbHTMLCallbacks[id];"
       "delete window.__hl2sbHTMLCallbacks[id];if(cb)cb.apply(null,args||[]);};";
+    if (m_lua_State == LGameUI) script +=
+      "if(location.protocol==='asset:'&&location.hostname==='garrysmod'&&location.pathname==='/html/menu.html'){"
+      "try{void window.localStorage;}catch(e){var s=Object.create(null);"
+      "Object.defineProperty(s,'getItem',{value:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(s,k)?s[k]:null;}});"
+      "Object.defineProperty(s,'setItem',{value:function(k,v){s[String(k)]=String(v);}});"
+      "Object.defineProperty(s,'removeItem',{value:function(k){delete s[String(k)];}});"
+      "Object.defineProperty(s,'clear',{value:function(){Object.keys(s).forEach(function(k){delete s[k];});}});"
+      "Object.defineProperty(window,'localStorage',{value:s,configurable:true});}}";
     for (size_t i = 0; i < m_bridges.size(); ++i) script += m_bridges[i];
     return script;
   }
@@ -2459,6 +2558,8 @@ public:
     std::string key = HL2SB_HTMLQuote(name);
     std::string script = "window[" + key + "]=window[" + key + "]||{};";
     m_bridges.push_back(script);
+    if (m_servo && !HLSBServoSetDocumentScript(m_servo, BridgeScript().c_str()))
+      Warning("Servo HTML failed to register the document script.\n");
     if (!m_loading) RunJavascript(script.c_str());
   }
 
@@ -2468,9 +2569,13 @@ public:
       const std::string obj = HL2SB_HTMLQuote(object);
       const std::string fn = HL2SB_HTMLQuote(function);
       std::string script = "window[" + obj + "]=window[" + obj + "]||{};window[" + obj + "][" + fn + "]=function(){"
-        "var a=Array.prototype.slice.call(arguments);var r=prompt('__hl2sb_bridge__'+JSON.stringify([" + obj + "," + fn + ",a]),'');"
-        "try { var v=JSON.parse(r); return v.length===1?v[0]:v; } catch(e) { return null; }};";
+        "var a=Array.prototype.slice.call(arguments),cb=null;"
+        "if(typeof a[a.length-1]==='function')cb=a.pop();"
+        "setTimeout(function(){var r=prompt('__hl2sb_bridge__'+JSON.stringify([" + obj + "," + fn + ",a]),'');"
+        "if(cb){var v;try { v=JSON.parse(r); } catch(e) { return; } cb.apply(null,v); }},0);};";
       m_bridges.push_back(script);
+      if (!HLSBServoSetDocumentScript(m_servo, BridgeScript().c_str()))
+        Warning("Servo HTML failed to register the document script.\n");
       if (!m_loading) RunJavascript(script.c_str());
       return;
     }
@@ -2551,6 +2656,23 @@ public:
       int wide, tall; GetSize(wide, tall);
       if (wide > 0 && tall > 0) HLSBServoResize(m_servo, wide, tall);
       HLSBServoPump(s_htmlServoRuntime);
+      uint64_t assetRequest = 0;
+      char assetURL[8192];
+      while (HLSBServoPopAssetEvent(m_servo, &assetRequest, assetURL, sizeof(assetURL))) {
+        std::string path;
+        CUtlBuffer contents;
+        const bool found = (HL2SB_AssetPath(assetURL, path) || HL2SB_MapImagePath(assetURL, path)) &&
+          filesystem->FileExists(path.c_str(), "GAME") &&
+          filesystem->Size(path.c_str(), "GAME") <= 32u * 1024u * 1024u &&
+          filesystem->ReadFile(path.c_str(), "GAME", contents);
+        if (found) {
+          if (!HLSBServoAssetReply(m_servo, assetRequest, 200, HL2SB_AssetMime(path),
+                                   static_cast<const uint8_t *>(contents.Base()), contents.TellPut()))
+            HLSBServoAssetReply(m_servo, assetRequest, 404, "text/plain", NULL, 0);
+        } else {
+          HLSBServoAssetReply(m_servo, assetRequest, 404, "text/plain", NULL, 0);
+        }
+      }
       uint64_t request = 0;
       char message[65536];
       while (m_servo && HLSBServoPopBridgeEvent(m_servo, &request, message, sizeof(message))) {
@@ -2575,10 +2697,10 @@ public:
       uint32_t width = 0, height = 0; uint64_t sequence = 0;
       size_t bytes = HLSBServoCopyFrame(m_servo, NULL, 0, &width, &height, &sequence);
       if (bytes && sequence != m_servoSequence) {
-        std::vector<unsigned char> pixels(bytes);
-        if (HLSBServoCopyFrame(m_servo, &pixels[0], bytes, &width, &height, &sequence) == bytes) {
+        m_servoPixels.resize(bytes);
+        if (HLSBServoCopyFrame(m_servo, &m_servoPixels[0], bytes, &width, &height, &sequence) == bytes) {
           if (!m_servoTexture) m_servoTexture = surface()->CreateNewTextureID(true);
-          surface()->DrawSetTextureRGBA(m_servoTexture, &pixels[0], width, height, 1, true);
+          surface()->DrawSetTextureRGBA(m_servoTexture, &m_servoPixels[0], width, height, 1, true);
           m_servoSequence = sequence;
           Repaint();
         }
@@ -2667,6 +2789,12 @@ public:
     int button = HL2SB_HTMLMouseButton(code);
     if (button >= 0) HLSBServoMouseButton(m_servo, (float)m_servoMouseX, (float)m_servoMouseY, button, true);
     RequestFocus();
+  }
+
+  virtual void OnMouseDoublePressed(MouseCode code)
+  {
+    if (!m_servo) { BaseClass::OnMouseDoublePressed(code); return; }
+    OnMousePressed(code);
   }
 
   virtual void OnMouseReleased(MouseCode code)
@@ -2765,7 +2893,8 @@ public:
     if (m_servo) {
       m_servoURL = "about:blank";
       const std::string url = HL2SB_HTMLDataURL(markup);
-      m_loading = HLSBServoNavigate(m_servo, url.c_str());
+      m_loading = HLSBServoSetDocumentScript(m_servo, BridgeScript().c_str()) &&
+        HLSBServoNavigate(m_servo, url.c_str());
       if (!m_loading) Warning("Servo HTML failed to load markup.\n");
       else {
         BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
@@ -2790,12 +2919,14 @@ public:
   void LoadURL(const char *url)
   {
     if (m_servo) {
-      if (Q_stricmp(url, "about:blank")) {
+      std::string assetPath;
+      if (Q_stricmp(url, "about:blank") && !HL2SB_AssetPath(url, assetPath)) {
         Warning("Servo HTML URL navigation is not available yet.\n");
         return;
       }
       m_servoURL = url;
-      m_loading = HLSBServoNavigate(m_servo, url);
+      m_loading = HLSBServoSetDocumentScript(m_servo, BridgeScript().c_str()) &&
+        HLSBServoNavigate(m_servo, url);
       if (!m_loading) Warning("Servo HTML failed to load URL.\n");
       else {
         BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
@@ -2837,7 +2968,8 @@ public:
 
 int HL2SB_LuaCreateHTML(lua_State *L)
 {
-  CHL2SBLuaHTML *panel = new CHL2SBLuaHTML(luaL_optpanel(L, 1, VGui_GetClientLuaRootPanel()), luaL_optstring(L, 2, "HTML"), L);
+  Panel *root = L == LGameUI ? VGui_GetGameUIPanel() : VGui_GetClientLuaRootPanel();
+  CHL2SBLuaHTML *panel = new CHL2SBLuaHTML(luaL_optpanel(L, 1, root), luaL_optstring(L, 2, "HTML"), L);
   lua_pushpanel(L, panel);
   return 1;
 }
@@ -3059,6 +3191,7 @@ static const luaL_Reg Panelmeta[] = {
   {"IsMouseInputEnabled", Panel_IsMouseInputEnabled},
   {"IsOpaque", Panel_IsOpaque},
   {"IsPopup", Panel_IsPopup},
+  {"SetPopupStayAtBack", Panel_SetPopupStayAtBack},
   {"IsProportional", Panel_IsProportional},
   {"IsRightAligned", Panel_IsRightAligned},
   {"IsStartDragWhenMouseExitsPanel", Panel_IsStartDragWhenMouseExitsPanel},

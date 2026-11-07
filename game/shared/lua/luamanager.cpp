@@ -776,12 +776,10 @@ void luasrc_init_gameui (void) {
   lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "_GAMEUI");  /* set global _GAMEUI */
 
-  /* GMod's menu-state marker (wiki: States) -- menu code detects its realm with
-     MENU_DLL, not with CLIENT/SERVER.  The menu state is neither client nor
-     server, so both of those globals are explicitly false here. */
+  /* The menu state is client-side and has its own menu marker. */
   lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "MENU_DLL");
-  lua_pushboolean(LGameUI, 0);
+  lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "CLIENT");
   lua_pushboolean(LGameUI, 0);
   lua_setglobal(LGameUI, "SERVER");
@@ -923,8 +921,8 @@ void luasrc_init_gameui (void) {
   }
   else
     lua_pop( LGameUI, 1 );
-  if ( luasrc_dofile( LGameUI, LUA_PATH_EXTENSIONS "/util.lua" ) != 0 )
-    luasrc_LuaWarnMsgF( "HL2SB: menu util extension failed to load\n" );
+  extern void HL2SB_InstallMenuUtilBindings( lua_State *state );
+  HL2SB_InstallMenuUtilBindings( LGameUI );
 #ifndef _WIN32
   if ( luasrc_dofile( LGameUI, LUA_ROOT "/hl2sb/compat/binary_modules.lua" ) != 0 )
     luasrc_LuaWarnMsgF( "HL2SB: menu binary module paths failed to load\n" );
@@ -945,6 +943,7 @@ void luasrc_init_gameui (void) {
     LUA_PATH_EXTENSIONS "/panel.lua",
     LUA_PATH_MODULES "/hook.lua",         // hook.add("LuaError", ...)
     LUA_PATH_MODULES "/concommand.lua",   // concommand.Create
+    LUA_PATH_EXTENSIONS "/util.lua",
     LUA_ROOT "/includes/util/sql.lua",
     LUA_PATH_MODULES "/language.lua",
     // HL2SB: the reference menu init requires the draw module; DNumberScratch
@@ -963,6 +962,8 @@ void luasrc_init_gameui (void) {
 
   if (luasrc_dofile(LGameUI, LUA_ROOT "/hl2sb/compat/menu_timer.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu timer initialization failed\n");
+  extern void HL2SB_MenuInstallTimer( lua_State *state );
+  HL2SB_MenuInstallTimer( LGameUI );
   if (luasrc_dofile(LGameUI, LUA_PATH_MODULES "/cookie.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu cookie initialization failed\n");
 
