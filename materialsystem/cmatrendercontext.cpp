@@ -355,6 +355,11 @@ void CMatRenderContextBase::InitializeFrom( CMatRenderContextBase *pInitialState
 	{
 		m_MatrixStacks[i].CopyFrom( pInitialState->m_MatrixStacks[i] );
 	}
+	// CopyFrom releases each previous stack buffer. Rebind the cached current
+	// entry before any matrix operation can use the replaced storage.
+	Assert( m_MatrixMode >= 0 && m_MatrixMode < NUM_MATRIX_MODES );
+	Assert( m_MatrixStacks[m_MatrixMode].Count() > 0 );
+	m_pCurMatrixItem = &m_MatrixStacks[m_MatrixMode].Top();
 
 	m_bFlashlightEnable = pInitialState->m_bFlashlightEnable;
 
@@ -496,7 +501,16 @@ void CMatRenderContextBase::PushMatrix()
 
 void CMatRenderContextBase::PopMatrix()
 {
-	Assert( m_MatrixStacks[m_MatrixMode].Count() > 1 );
+	if ( m_MatrixStacks[m_MatrixMode].Count() <= 1 )
+	{
+		static bool s_bWarnedMatrixUnderflow = false;
+		if ( !s_bWarnedMatrixUnderflow )
+		{
+			s_bWarnedMatrixUnderflow = true;
+			Warning( "CMatRenderContextBase::PopMatrix: matrix stack underflow (mode %d)\n", (int)m_MatrixMode );
+		}
+		return;
+	}
 	m_MatrixStacks[ m_MatrixMode ].Pop();
 	m_pCurMatrixItem = &m_MatrixStacks[m_MatrixMode].Top();
 	CurrentMatrixChanged();

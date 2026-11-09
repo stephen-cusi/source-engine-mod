@@ -1220,7 +1220,8 @@ static int CBaseCombatWeapon_CallOnClient(lua_State *L) {
     return 0;
   }
   const char *method = luaL_checkstring(L,2);
-  const char *data = lua_type(L,3) == LUA_TSTRING ? lua_tostring(L,3) : "";
+  const char *data = lua_tostring(L,3);
+  if (!data) data = "";
   if (Q_strlen(method) + Q_strlen(data) > 254) {
     DevMsg("CallOnClient arguments exceed the usermessage limit\n");
     return 0;

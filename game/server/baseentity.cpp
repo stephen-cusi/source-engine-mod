@@ -281,11 +281,16 @@ static void SendProxy_SpawnEffect(const SendProp *, const void *entity, const vo
 static void SendProxy_SpawnEffectTime(const SendProp *, const void *entity, const void *, DVariant *out, int, int) {
 	out->m_Float = HL2SB_GetSpawnEffectTime((CBaseEntity *)entity);
 }
+extern bool HL2SB_HasCustomCollisionCheck( CBaseEntity *entity );
+static void SendProxy_CustomCollisionCheck(const SendProp *, const void *entity, const void *, DVariant *out, int, int) {
+	out->m_Int = HL2SB_HasCustomCollisionCheck((CBaseEntity *)entity) ? 1 : 0;
+}
 #endif
 
 // This table encodes the CBaseEntity data.
 IMPLEMENT_SERVERCLASS_ST_NOBASE( CBaseEntity, DT_BaseEntity )
 #ifdef LUA_SDK
+	SendPropInt("m_bLuaCustomCollisionCheck", 0, sizeof(int), 1, SPROP_UNSIGNED, SendProxy_CustomCollisionCheck),
 	SendPropArray3(SENDINFO_ARRAY3(m_GMOD_bool), SendPropInt(SENDINFO_ARRAY(m_GMOD_bool), 1, SPROP_UNSIGNED)),
 	SendPropArray3(SENDINFO_ARRAY3(m_GMOD_float), SendPropFloat(SENDINFO_ARRAY(m_GMOD_float), 0, SPROP_NOSCALE)),
 	SendPropArray3(SENDINFO_ARRAY3(m_GMOD_int), SendPropInt(SENDINFO_ARRAY(m_GMOD_int), 32, 0)),

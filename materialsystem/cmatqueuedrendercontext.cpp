@@ -1447,6 +1447,16 @@ void CMatQueuedRenderContext::PushMatrix()
 
 void CMatQueuedRenderContext::PopMatrix()
 {
+	if ( m_MatrixStacks[m_MatrixMode].Count() <= 1 )
+	{
+		static bool s_bWarnedMatrixUnderflow = false;
+		if ( !s_bWarnedMatrixUnderflow )
+		{
+			s_bWarnedMatrixUnderflow = true;
+			Warning( "CMatQueuedRenderContext::PopMatrix: matrix stack underflow (mode %d)\n", (int)m_MatrixMode );
+		}
+		return;
+	}
 	CMatRenderContextBase::PopMatrix();
 	m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::PopMatrix );
 }

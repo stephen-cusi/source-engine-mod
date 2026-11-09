@@ -140,6 +140,22 @@ static int VMatrix_InverseGeneral (lua_State *L) {
   return 1;
 }
 
+static int VMatrix_GetInverse (lua_State *L) {
+  VMatrix inverse;
+  if (!luaL_checkvmatrix(L, 1).InverseGeneral(inverse)) return 0;
+  lua_pushvmatrix(L, inverse);
+  return 1;
+}
+
+static int VMatrix_Invert (lua_State *L) {
+  VMatrix &matrix = luaL_checkvmatrix(L, 1);
+  VMatrix inverse;
+  const bool success = matrix.InverseGeneral(inverse);
+  if (success) matrix = inverse;
+  lua_pushboolean(L, success);
+  return 1;
+}
+
 static int VMatrix_InverseTR (lua_State *L) {
   lua_pushvmatrix(L, luaL_checkvmatrix(L, 1).InverseTR());
   return 1;
@@ -153,6 +169,13 @@ static int VMatrix_IsIdentity (lua_State *L) {
 static int VMatrix_IsRotationMatrix (lua_State *L) {
   lua_pushboolean(L, luaL_checkvmatrix(L, 1).IsRotationMatrix());
   return 1;
+}
+
+static int VMatrix_Mul (lua_State *L) {
+  VMatrix &matrix = luaL_checkvmatrix(L, 1);
+  const VMatrix &other = luaL_checkvmatrix(L, 2);
+  matrix = matrix * other;
+  return 0;
 }
 
 static int VMatrix_MatrixMul (lua_State *L) {
@@ -366,10 +389,13 @@ static const luaL_Reg VMatrixmeta[] = {
   {"Identity", VMatrix_Identity},
   {"Init", VMatrix_Init},
   {"InverseGeneral", VMatrix_InverseGeneral},
+  {"GetInverse", VMatrix_GetInverse},
+  {"Invert", VMatrix_Invert},
   {"InverseTR", VMatrix_InverseTR},
   {"IsIdentity", VMatrix_IsIdentity},
   {"IsRotationMatrix", VMatrix_IsRotationMatrix},
   {"MatrixMul", VMatrix_MatrixMul},
+  {"Mul", VMatrix_Mul},
   {"NormalizeBasisVectors", VMatrix_NormalizeBasisVectors},
   {"PostTranslate", VMatrix_PostTranslate},
   {"PreTranslate", VMatrix_PreTranslate},

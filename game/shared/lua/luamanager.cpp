@@ -1754,6 +1754,9 @@ void luasrc_shutdown (void) {
   // map, the nyan gun silent for the rest of the process).
   HL2SB_PrecacheOnceFlushForNewLevel();
 
+  extern void HL2SB_ClearCustomCollisionChecks();
+  HL2SB_ClearCustomCollisionChecks();
+
 //  lcf_close(L);
   // HL2SB (sbrust): GMod 的 gmod13_close 生命周期 -- 同菜单态。
   HL2SB_RunBinaryModuleCloses( L );

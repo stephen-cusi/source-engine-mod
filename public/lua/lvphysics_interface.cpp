@@ -1122,6 +1122,14 @@ static int IPhysicsObject_SetContents (lua_State *L) {
   return 0;
 }
 
+static int IPhysicsObject_SetDamping (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
+  float linear = (float)luaL_checknumber(L, 2);
+  float angular = (float)luaL_checknumber(L, 3);
+  object->SetDamping(&linear, &angular);
+  return 0;
+}
+
 static int IPhysicsObject_SetDragCoefficient (lua_State *L) {
   float pDrag = luaL_checknumber(L, 2);
   float pAngularDrag = luaL_checknumber(L, 3);
@@ -1141,6 +1149,14 @@ static int IPhysicsObject_SetGameIndex (lua_State *L) {
 
 static int IPhysicsObject_SetMass (lua_State *L) {
   luaL_checkphysicsobject(L, 1)->SetMass(luaL_checknumber(L, 2));
+  return 0;
+}
+
+static int IPhysicsObject_SetMaterial (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
+  const char *name = luaL_checkstring(L, 2);
+  const int index = physprops ? physprops->GetSurfaceIndex(name) : -1;
+  if (index > 0) object->SetMaterialIndex(index);
   return 0;
 }
 
@@ -1408,10 +1424,12 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"SetBuoyancyRatio", IPhysicsObject_SetBuoyancyRatio},
   {"SetCallbackFlags", IPhysicsObject_SetCallbackFlags},
   {"SetContents", IPhysicsObject_SetContents},
+  {"SetDamping", IPhysicsObject_SetDamping},
   {"SetDragCoefficient", IPhysicsObject_SetDragCoefficient},
   {"SetGameFlags", IPhysicsObject_SetGameFlags},
   {"SetGameIndex", IPhysicsObject_SetGameIndex},
   {"SetMass", IPhysicsObject_SetMass},
+  {"SetMaterial", IPhysicsObject_SetMaterial},
   {"SetMaterialIndex", IPhysicsObject_SetMaterialIndex},
   {"SetShadow", IPhysicsObject_SetShadow},
   {"UpdateShadow", IPhysicsObject_UpdateShadow},

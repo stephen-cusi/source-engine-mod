@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include "tier0/platform.h"
 #include "studiorendercontext.h"
+#include "istudiomaterialoverride.h"
 #include "optimize.h"
 #include "materialsystem/imaterialvar.h"
 #include "materialsystem/imesh.h"
@@ -56,6 +57,20 @@ static CStudioRenderContext s_StudioRenderContext;
 EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CStudioRenderContext, IStudioRender, 
 						STUDIO_RENDER_INTERFACE_VERSION, s_StudioRenderContext );
 
+class CHL2SBStudioMaterialOverride : public IHL2SBStudioMaterialOverride
+{
+public:
+	void SetMaterialOverrideByIndex( int index, IMaterial *material )
+	{
+		s_StudioRenderContext.SetMaterialOverrideByIndex( index, material );
+	}
+	void ClearMaterialOverridesByIndex()
+	{
+		s_StudioRenderContext.ClearMaterialOverridesByIndex();
+	}
+};
+EXPOSE_SINGLE_INTERFACE( CHL2SBStudioMaterialOverride, IHL2SBStudioMaterialOverride, HL2SB_STUDIO_MATERIAL_OVERRIDE_VERSION );
+
 
 //-----------------------------------------------------------------------------
 // Constructor, destructor
@@ -64,6 +79,7 @@ CStudioRenderContext::CStudioRenderContext()
 {
 	// Initialize render context
 	m_RC.m_pForcedMaterial = NULL;
+	memset( m_RC.m_pIndexedMaterial, 0, sizeof( m_RC.m_pIndexedMaterial ) );
 	m_RC.m_nForcedMaterialType = OVERRIDE_NORMAL;
 	m_RC.m_ColorMod[0] = m_RC.m_ColorMod[1] = m_RC.m_ColorMod[2] = 1.0f;
 	m_RC.m_AlphaMod = 1.0f;
@@ -140,6 +156,7 @@ InitReturnVal_t CStudioRenderContext::Init()
 
 void CStudioRenderContext::Shutdown( void )
 {
+	ClearMaterialOverridesByIndex();
 	g_pStudioRenderImp->Shutdown();
 	BaseClass::Shutdown();
 }
@@ -1962,6 +1979,27 @@ void CStudioRenderContext::ForcedMaterialOverride( IMaterial *newMaterial, Overr
 {
 	m_RC.m_pForcedMaterial = newMaterial;
 	m_RC.m_nForcedMaterialType = nOverrideType;
+}
+
+void CStudioRenderContext::SetMaterialOverrideByIndex( int index, IMaterial *material )
+{
+	if ( index < 0 || index >= 32 ) return;
+	MaterialLock_t lock = g_pMaterialSystem->Lock();
+	if ( material ) material->IncrementReferenceCount();
+	if ( m_RC.m_pIndexedMaterial[index] ) m_RC.m_pIndexedMaterial[index]->DecrementReferenceCount();
+	m_RC.m_pIndexedMaterial[index] = material;
+	g_pMaterialSystem->Unlock( lock );
+}
+
+void CStudioRenderContext::ClearMaterialOverridesByIndex()
+{
+	MaterialLock_t lock = g_pMaterialSystem->Lock();
+	for ( int i = 0; i < 32; ++i )
+	{
+		if ( m_RC.m_pIndexedMaterial[i] ) m_RC.m_pIndexedMaterial[i]->DecrementReferenceCount();
+		m_RC.m_pIndexedMaterial[i] = NULL;
+	}
+	g_pMaterialSystem->Unlock( lock );
 }
 
 //-----------------------------------------------------------------------------

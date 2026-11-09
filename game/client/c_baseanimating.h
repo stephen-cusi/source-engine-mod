@@ -402,6 +402,7 @@ public:
 	const matrix3x4_t&				GetBone( int iBone ) const;
 	matrix3x4_t&					GetBoneForWrite( int iBone );
 	bool                            IsBoneMatrixAvailable( int iBone, bool bForWrite );
+	bool                            OwnsBoneMergeCache( const CBoneMergeCache *cache ) const { return m_pBoneMergeCache == cache; }
 
 	// Used for debugging. Will produce asserts if someone tries to setup bones or
 	// attachments before it's allowed.

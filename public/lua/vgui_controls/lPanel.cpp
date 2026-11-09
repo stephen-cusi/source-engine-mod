@@ -23,6 +23,7 @@
 #include <vgui_controls/Label.h>
 #include <vgui_controls/TextImage.h>
 #include <vgui_controls/TextEntry.h>
+#include <vgui_controls/RichText.h>
 #include <vgui_controls/Frame.h>
 #include <vgui_controls/FocusNavGroup.h>
 #include "panelmetaclassmgr.h"
@@ -1570,7 +1571,11 @@ static int Panel_MouseCapture (lua_State *L) {
 // which is not safe to run from a Lua callback, so defer it like the engine's
 // own panels do.
 static int Panel_Remove (lua_State *L) {
-  Panel *pPanel = luaL_checkpanel(L, 1);
+  // Removing a handle whose panel has already been destroyed is harmless.
+  // The handle remains a Lua userdata even after its native panel has gone.
+  luaL_checktype(L, 1, LUA_TUSERDATA);
+  Panel *pPanel = lua_topanel(L, 1);
+  if (!pPanel) return 0;
 
   if ( pPanel && vgui::ivgui() ) {
     vgui::ivgui()->MarkPanelForDeletion(pPanel->GetVPanel());
@@ -1672,7 +1677,12 @@ bool HL2SB_LuaPanelGeometryWrite(lua_State *L) {
 
 static int Panel___index (lua_State *L) {
   Panel *p = lua_topanel(L, 1);
-  if (!p) { lua_pushnil(L); return 1; }
+  if (!p) {
+    const char *key = lua_tostring(L, 2);
+    if (key && !Q_strcmp(key, "Remove")) lua_pushcfunction(L, Panel_Remove);
+    else lua_pushnil(L);
+    return 1;
+  }
   if (HL2SB_LuaPanelGeometryIndex(L)) return 1;
   Panel_GetRefTable(L);
   if (lua_istable(L, -1)) {
@@ -1906,30 +1916,11 @@ static int Panel_IsModal (lua_State *L) {
   return 1;
 }
 
-// Register non-popup controls in the surface's ordered paint list without
-// changing keyboard or mouse input. A topmost flag alone does not paint them.
+extern void HL2SB_PanelSetDrawOnTop(vgui::Panel *panel, bool onTop);
+
 static int Panel_SetDrawOnTop (lua_State *L) {
   Panel *panel = luaL_checkpanel(L, 1);
-  const bool onTop = luaL_checkboolean(L, 2) != 0;
-  Panel_PushTable(L, panel);
-  lua_pushliteral(L, "__hl2sb_DrawOnTopPopup");
-  lua_rawget(L, -2);
-  const bool promoted = lua_toboolean(L, -1) != 0;
-  lua_pop(L, 1);
-  if (onTop && !panel->IsPopup()) {
-    vgui::surface()->CreatePopup(panel->GetVPanel(), false, false, false,
-        panel->IsMouseInputEnabled(), panel->IsKeyBoardInputEnabled());
-    lua_pushboolean(L, true);
-    lua_setfield(L, -2, "__hl2sb_DrawOnTopPopup");
-  } else if (!onTop && promoted) {
-    vgui::surface()->ReleasePanel(panel->GetVPanel());
-    vgui::ipanel()->SetPopup(panel->GetVPanel(), false);
-    lua_pushnil(L);
-    lua_setfield(L, -2, "__hl2sb_DrawOnTopPopup");
-  }
-  lua_pop(L, 1);
-  vgui::ipanel()->SetTopmostPopup(panel->GetVPanel(), onTop);
-  if (onTop) vgui::surface()->MovePopupToFront(panel->GetVPanel());
+  HL2SB_PanelSetDrawOnTop(panel, lua_toboolean(L, 2) != 0);
   return 0;
 }
 
@@ -3659,7 +3650,23 @@ static int Panel_SetDrawLanguageID(lua_State *L) {
   return 0;
 }
 
+static int Panel_CopySelected(lua_State *L) {
+  vgui::Panel *panel = luaL_checkpanel(L, 1);
+  if (vgui::TextEntry *entry = dynamic_cast<vgui::TextEntry *>(panel)) entry->CopySelected();
+  if (vgui::RichText *rich = dynamic_cast<vgui::RichText *>(panel)) rich->CopySelected();
+  return 0;
+}
+
+static int Panel_SelectAll(lua_State *L) {
+  vgui::Panel *panel = luaL_checkpanel(L, 1);
+  if (vgui::TextEntry *entry = dynamic_cast<vgui::TextEntry *>(panel)) entry->SelectAllText(false);
+  if (vgui::RichText *rich = dynamic_cast<vgui::RichText *>(panel)) rich->SelectAllText();
+  return 0;
+}
+
 static const luaL_Reg Panelmeta[] = {
+  {"CopySelected", Panel_CopySelected},
+  {"SelectAll", Panel_SelectAll},
   {"SetDrawLanguageID", Panel_SetDrawLanguageID},
   {"OpenURL", Panel_HTMLOpenURL},
   {"RunJavascript", Panel_HTMLJavascript},

@@ -269,6 +269,7 @@ public:
 
 	void	SetBaseFlags( int iFlags ) { m_baseFlags = iFlags; }
 	void	SetSoundLevel( soundlevel_t soundlevel ) { m_soundlevel = soundlevel; }
+	soundlevel_t GetSoundLevel() const { return m_soundlevel; }
 	
 	// Returns the ent index
 	int		EntIndex() const;
@@ -309,6 +310,11 @@ void HL2SB_SoundPatchSetSoundLevel( CSoundPatch *pSound, soundlevel_t soundlevel
 {
 	if ( pSound )
 		pSound->SetSoundLevel( soundlevel );
+}
+
+soundlevel_t HL2SB_SoundPatchGetSoundLevel( CSoundPatch *pSound )
+{
+	return pSound ? pSound->GetSoundLevel() : SNDLVL_NORM;
 }
 #include "tier0/memdbgon.h"
 

@@ -1550,6 +1550,15 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 
 	for (int i = 0; i < hdr->numbones(); i++) 
 	{
+		// Bone transforms follow the model's hierarchy. A stale parent-cache
+		// entry must never be used as an index into the bone matrix array.
+		// Prefer the model's own parent whenever the cached value disagrees.
+		const int modelParent = pbones[i].parent;
+		const int cachedParent = hdr->boneParent( i );
+		int parent = cachedParent == modelParent ? cachedParent : modelParent;
+		if ( parent < -1 || parent >= i )
+			parent = -1;
+
 		// Only update bones reference by the bone mask.
 		if ( !( hdr->boneFlags( i ) & boneMask ) )
 		{
@@ -1592,13 +1601,13 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 				// compute desired bone orientation
 				matrix3x4_t goalMX;
 
-				if (pbones[i].parent == -1) 
+				if (parent == -1)
 				{
 					ConcatTransforms( cameraTransform, bonematrix, goalMX );
 				} 
 				else 
 				{
-					ConcatTransforms( GetBone( pbones[i].parent ), bonematrix, goalMX );
+					ConcatTransforms( GetBone( parent ), bonematrix, goalMX );
 				}
 
 				// get jiggle properties from QC data
@@ -1613,17 +1622,17 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 				m_pJiggleBones->BuildJiggleTransformations( i, gpGlobals->realtime, jiggleInfo, goalMX, GetBoneForWrite( i ) );
 
 			}
-			else if (hdr->boneParent(i) == -1) 
+			else if (parent == -1)
 			{
 				ConcatTransforms( cameraTransform, bonematrix, GetBoneForWrite( i ) );
 			} 
 			else 
 			{
-				ConcatTransforms( GetBone( hdr->boneParent(i) ), bonematrix, GetBoneForWrite( i ) );
+				ConcatTransforms( GetBone( parent ), bonematrix, GetBoneForWrite( i ) );
 			}
 		}
 
-		if (hdr->boneParent(i) == -1) 
+		if (parent == -1)
 		{
 			// Apply client-side effects to the transformation matrix
 			ApplyBoneMatrixTransform( GetBoneForWrite( i ) );

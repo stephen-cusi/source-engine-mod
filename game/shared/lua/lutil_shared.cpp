@@ -3346,6 +3346,14 @@ static void HL2SB_ChannelShutdown( lua_State *L, int nIndex ) {
   HL2SB_ChannelSetBool( L, nIndex, HL2SB_CHANNEL_FIELD_PLAYING, false );
 }
 
+static int luasrc_Channel_GetSoundLevel (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  CSoundPatch *patch = HL2SB_ChannelEnsurePatch( L, 1 );
+  if ( !patch ) return 0;
+  lua_pushnumber( L, HL2SB_SoundPatchGetSoundLevel( patch ) );
+  return 1;
+}
+
 static int luasrc_Channel_SetSoundLevel (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   const double flLevel = luaL_checknumber( L, 2 );
@@ -3601,6 +3609,7 @@ static int luasrc_CreateSound (lua_State *L) {
     { "Pause",        luasrc_Channel_Pause },
     { "SetVolume",    luasrc_Channel_SetVolume },
     { "SetSoundLevel", luasrc_Channel_SetSoundLevel },
+    { "GetSoundLevel", luasrc_Channel_GetSoundLevel },
     { "ChangeVolume", luasrc_Channel_ChangeVolume },
     { "GetVolume",    luasrc_Channel_GetVolume },
     { "SetPitch",     luasrc_Channel_SetPitch },

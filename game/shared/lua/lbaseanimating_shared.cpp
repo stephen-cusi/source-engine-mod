@@ -39,6 +39,64 @@
 
 LUA_REGISTRATION_INIT( CBaseAnimating )
 
+#ifndef CLIENT_DLL
+// A lighting-origin entity is stored on animating entities and networked by
+// CBaseAnimating. Non-animating entities accept this operation as a no-op.
+int HL2SB_EntitySetLightingOriginEntity( lua_State *L )
+{
+    CBaseEntity *entity = luaL_checkentity( L, 1 );
+    CBaseAnimating *animating = entity->GetBaseAnimating();
+    if ( !animating ) return 0;
+    CBaseEntity *origin = NULL;
+    if ( !lua_isnoneornil( L, 2 ) ) {
+        if ( !lua_isuserdata( L, 2 ) )
+            return luaL_argerror( L, 2, "Entity expected" );
+        origin = lua_toentity( L, 2 );
+    }
+    animating->SetLightingOrigin( origin );
+    return 0;
+}
+#endif
+
+LUA_BINDING_BEGIN( CBaseAnimating, GetHitBoxBone, "class", "Gets the bone associated with a hitbox." )
+{
+    lua_CBaseEntity *entity = luaL_checkentity( L, 1 );
+    lua_CBaseAnimating *animating = entity->GetBaseAnimating();
+    if ( !animating || entity->IsMarkedForDeletion() ) return 0;
+    CStudioHdr *header = animating->GetModelPtr();
+    if ( !header ) return 0;
+
+    const double boxValue = luaL_checknumber( L, 2 );
+    const double setValue = luaL_checknumber( L, 3 );
+    if ( !( boxValue > -2147483649.0 && boxValue < 2147483648.0 ) ||
+         !( setValue > -2147483649.0 && setValue < 2147483648.0 ) ) return 0;
+    const int box = (int)boxValue;
+    const int set = (int)setValue;
+    if ( set < 0 || set >= header->numhitboxsets() || box < 0 ) return 0;
+    mstudiohitboxset_t *hitboxSet = header->pHitboxSet( set );
+    if ( !hitboxSet || box >= hitboxSet->numhitboxes ) return 0;
+    lua_pushnumber( L, hitboxSet->pHitbox( box )->bone );
+    return 1;
+}
+LUA_BINDING_END( "number", "The associated bone index" )
+
+LUA_BINDING_BEGIN( CBaseAnimating, GetSequenceList, "class", "Gets the model sequence names." )
+{
+    lua_CBaseEntity *entity = luaL_checkentity( L, 1 );
+    lua_CBaseAnimating *animating = entity->GetBaseAnimating();
+    if ( !animating || entity->IsMarkedForDeletion() ) return 0;
+    CStudioHdr *header = animating->GetModelPtr();
+    if ( !header ) return 0;
+
+    lua_createtable( L, 0, header->GetNumSeq() );
+    for ( int i = 0; i < header->GetNumSeq(); ++i ) {
+        lua_pushstring( L, header->pSeqdesc( i ).pszLabel() );
+        lua_rawseti( L, -2, i );
+    }
+    return 1;
+}
+LUA_BINDING_END( "table", "Sequence names indexed from zero" )
+
 // HL2SB (2026-10-16) GMod compat: the tolerant self-resolution used by the
 // bindings below.  GMod keeps ONE entity method table, so any of these methods
 // can be reached with a NON-animating self: a trace result (worldspawn, a

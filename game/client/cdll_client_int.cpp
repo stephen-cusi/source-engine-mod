@@ -1102,6 +1102,8 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 	{
 		extern void HL2SB_BrushSurfaceConnect( CreateInterfaceFn );
 		HL2SB_BrushSurfaceConnect( appSystemFactory );
+		extern void HL2SB_RenderBrushOverrideConnect( CreateInterfaceFn );
+		HL2SB_RenderBrushOverrideConnect( appSystemFactory );
 	}
 #endif
 	if ( (random = (IUniformRandomStream *)appSystemFactory(VENGINE_CLIENT_RANDOM_INTERFACE_VERSION, NULL)) == NULL )

@@ -1335,6 +1335,13 @@ void CViewRender::Render( vrect_t *rect )
 
 		render->Push2DView( view2d, 0, NULL, GetFrustum() );
 		render->VGui_Paint( PAINT_UIPANELS | PAINT_CURSOR );
+#if defined( LUA_SDK )
+		if ( engine->IsInGame() )
+		{
+			extern void HL2SB_PanelPaintDrawOnTop();
+			HL2SB_PanelPaintDrawOnTop();
+		}
+#endif
 		g_pClientMode->PostRenderVGui();
 		render->PopView( GetFrustum() );
 	}

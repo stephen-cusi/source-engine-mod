@@ -629,6 +629,17 @@ static int CBasePlayer_FindUseEntity (lua_State *L) {
   return 1;
 }
 
+static int CBasePlayer_GetPreviousWeapon (lua_State *L) {
+  CBasePlayer *player = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  CBaseCombatWeapon *weapon = player->GetLastWeapon();
+#else
+  CBaseCombatWeapon *weapon = player->Weapon_GetLast();
+#endif
+  lua_pushweapon(L, weapon);
+  return 1;
+}
+
 static int CBasePlayer_GetActiveWeapon (lua_State *L) {
   CBaseCombatWeapon *pWeapon = luaL_checkplayer(L, 1)->GetActiveWeapon();
   lua_pushweapon(L, pWeapon);
@@ -786,6 +797,15 @@ static int CBasePlayer_GetLaggedMovementValue (lua_State *L) {
   lua_pushnumber(L, luaL_checkplayer(L, 1)->GetLaggedMovementValue());
   return 1;
 }
+
+#ifndef CLIENT_DLL
+static int CBasePlayer_SetLaggedMovementValue (lua_State *L) {
+  CBasePlayer *player = luaL_checkplayer(L, 1);
+  const float value = (float)luaL_checknumber(L, 2);
+  if (value >= 0.0f) player->SetLaggedMovementValue(value);
+  return 0;
+}
+#endif
 
 static int CBasePlayer_GetLastKnownPlaceName (lua_State *L) {
   lua_pushstring(L, luaL_checkplayer(L, 1)->GetLastKnownPlaceName());
@@ -3347,6 +3367,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"EyeVectors", CBasePlayer_EyeVectors},
   {"FindUseEntity", CBasePlayer_FindUseEntity},
   {"GetActiveWeapon", CBasePlayer_GetActiveWeapon},
+  {"GetPreviousWeapon", CBasePlayer_GetPreviousWeapon},
   {"GetWeapons", CBasePlayer_GetWeapons},
   {"GetAmmoCount", CBasePlayer_GetAmmoCount},
   {"GetAmmo", CBasePlayer_GetAmmo},
@@ -3389,6 +3410,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SetMaxArmor", CBasePlayer_SetMaxArmor},
   {"GetImpulse", CBasePlayer_GetImpulse},
   {"GetLaggedMovementValue", CBasePlayer_GetLaggedMovementValue},
+#ifndef CLIENT_DLL
+  {"SetLaggedMovementValue", CBasePlayer_SetLaggedMovementValue},
+#endif
   {"GetLastKnownPlaceName", CBasePlayer_GetLastKnownPlaceName},
   {"GetNextAttack", CBasePlayer_GetNextAttack},
   {"GetObserverMode", CBasePlayer_GetObserverMode},
@@ -3792,7 +3816,9 @@ static const luaL_Reg HL2SB_MoveDatameta[] = {
   {"GetMaxSpeed",         MoveData_GetMaxSpeed},
   {"SetMaxSpeed",         MoveData_SetMaxSpeed},
   {"GetClientMaxSpeed",   MoveData_GetClientMaxSpeed},
+  {"GetMaxClientSpeed",   MoveData_GetClientMaxSpeed},
   {"SetClientMaxSpeed",   MoveData_SetClientMaxSpeed},
+  {"SetMaxClientSpeed",   MoveData_SetClientMaxSpeed},
   {"GetOrigin",           MoveData_GetOrigin},
   {"SetOrigin",           MoveData_SetOrigin},
   {"GetVelocity",         MoveData_GetVelocity},

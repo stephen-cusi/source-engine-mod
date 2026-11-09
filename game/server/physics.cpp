@@ -46,6 +46,10 @@
 #include "tier1/callqueue.h"
 #include "vphysics/constraints.h"
 
+#ifdef LUA_SDK
+extern bool HL2SB_CustomCollisionAllows( CBaseEntity *, CBaseEntity * );
+#endif
+
 #ifdef PORTAL
 #include "portal_physics_collisionevent.h"
 #include "physicsshadowclone.h"
@@ -628,6 +632,11 @@ int CCollisionEvent::ShouldCollide_2( IPhysicsObject *pObj0, IPhysicsObject *pOb
 
 #if defined( HL2SB ) && defined( LUA_SDK )
 	if ( HL2SB_NonCollidingTeammates( pEntity0, pEntity1 ) )
+		return 0;
+#endif
+
+#ifdef LUA_SDK
+	if ( !HL2SB_CustomCollisionAllows( pEntity0, pEntity1 ) )
 		return 0;
 #endif
 

@@ -2861,7 +2861,8 @@ int CStudioRender::SortMeshes( int* pIndices, IMaterial **ppMaterials,
 		{
 			// Don't add opaque materials
 			mstudiomesh_t*	pmesh = m_pSubModel->pMesh(i);
-			IMaterial *pMaterial = ppMaterials[pskinref[pmesh->material]];
+			const int materialIndex = pskinref[pmesh->material];
+			IMaterial *pMaterial = m_pRC->GetIndexedMaterial( materialIndex, ppMaterials[materialIndex] );
 			if( !pMaterial || !pMaterial->IsTranslucent() )
 				continue;
 
@@ -2885,7 +2886,8 @@ int CStudioRender::SortMeshes( int* pIndices, IMaterial **ppMaterials,
 		for (int i = 0; i < numMeshLimit; ++i)
 		{
 			mstudiomesh_t*	pmesh = m_pSubModel->pMesh(i);
-			IMaterial *pMaterial = ppMaterials[pskinref[pmesh->material]];
+			const int materialIndex = pskinref[pmesh->material];
+			IMaterial *pMaterial = m_pRC->GetIndexedMaterial( materialIndex, ppMaterials[materialIndex] );
 			if( !pMaterial )
 				continue;
 

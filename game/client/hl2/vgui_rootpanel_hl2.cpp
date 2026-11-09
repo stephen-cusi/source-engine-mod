@@ -143,6 +143,11 @@ C_ScriptedBaseGameUIPanel::~C_ScriptedBaseGameUIPanel( void )
 void C_ScriptedBaseGameUIPanel::PostChildPaint()
 {
 	BaseClass::PostChildPaint();
+	if ( !engine->IsInGame() )
+	{
+		extern void HL2SB_PanelPaintDrawOnTop();
+		HL2SB_PanelPaintDrawOnTop();
+	}
 
 	// Draw all panel effects
 	RenderPanelEffects();

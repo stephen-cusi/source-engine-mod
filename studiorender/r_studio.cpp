@@ -92,7 +92,7 @@ IMaterial* CStudioRender::R_StudioSetupSkinAndLighting( IMatRenderContext *pRend
 	{
 		if ( !m_pRC->m_pForcedMaterial && ( m_pRC->m_nForcedMaterialType != OVERRIDE_DEPTH_WRITE && m_pRC->m_nForcedMaterialType != OVERRIDE_SSAO_DEPTH_WRITE ) )
 		{
-			pMaterial = ppMaterials[index];
+			pMaterial = m_pRC->GetIndexedMaterial( index, ppMaterials[index] );
 			if ( !pMaterial )
 			{
 				Assert( 0 );

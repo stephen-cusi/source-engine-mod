@@ -2440,6 +2440,14 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 		if( bPaintMainMenu )
 			render->VGui_Paint( PAINT_UIPANELS | PAINT_CURSOR );
 
+#if defined( LUA_SDK )
+		if ( UseVR() && bPaintMainMenu && engine->IsInGame() )
+		{
+			extern void HL2SB_PanelPaintDrawOnTop();
+			HL2SB_PanelPaintDrawOnTop();
+		}
+#endif
+
 		AllowCurrentViewAccess( false );
 
 		VGui_PostRender();

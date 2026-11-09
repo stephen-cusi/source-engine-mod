@@ -375,7 +375,17 @@ static int IMaterial_GetString (lua_State *L) {
   return 1;
 }
 
+static int IMaterial_SetUndefined (lua_State *L) {
+  IMaterial *material = luaL_checkmaterial(L, 1);
+  const char *name = luaL_checkstring(L, 2);
+  bool found = false;
+  IMaterialVar *value = material->FindVar(name, &found, false);
+  if (found && value) value->SetUndefined();
+  return 0;
+}
+
 static const luaL_Reg IMaterialmeta[] = {
+  {"SetUndefined", IMaterial_SetUndefined},
   {"AddRef", IMaterial_AddRef},
   {"AlphaModulate", IMaterial_AlphaModulate},
   {"ColorModulate", IMaterial_ColorModulate},

@@ -403,12 +403,13 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 			if ( iExistingReference >= 0 && lua_isrefvalid( L, iExistingReference ) )
 			{
 				lua_getref( L, iExistingReference );
-				if ( lua_istable( L, -1 ) )
-					bReusedInstance = true;
-				else
-					lua_pop( L, 1 );
+				bReusedInstance = lua_istable( L, -1 );
+				lua_pop( L, 1 );
 			}
-			luasrc_pcall( L, bReusedInstance ? 2 : 1, 1, 0 );
+			// Build inheritance in a plain table. Passing an entity instance to
+			// weapons.Get lets its native __index answer inherited script names,
+			// so TableInherit incorrectly skips the corresponding SWEP methods.
+			luasrc_pcall( L, 1, 1, 0 );
 		}
 		else
 		{

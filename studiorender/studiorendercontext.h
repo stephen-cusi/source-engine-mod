@@ -69,6 +69,13 @@ struct StudioRenderContext_t
 	float					m_AlphaMod;
 	IMaterial*				m_pForcedMaterial;
 	OverrideType_t			m_nForcedMaterialType;
+	IMaterial *m_pIndexedMaterial[32];
+
+	IMaterial *GetIndexedMaterial( int index, IMaterial *fallback ) const
+	{
+		return !m_pForcedMaterial && m_nForcedMaterialType == OVERRIDE_NORMAL && index >= 0 && index < 32 && m_pIndexedMaterial[index]
+			? m_pIndexedMaterial[index] : fallback;
+	}
 };
 
 
@@ -159,6 +166,8 @@ public:
 	virtual void LockFlexWeights( int nWeightCount, float **ppFlexWeights, float **ppFlexDelayedWeights = NULL );
 	virtual void UnlockFlexWeights();
 	virtual void GetMaterialOverride( IMaterial** ppOutForcedMaterial, OverrideType_t* pOutOverrideType );
+	void SetMaterialOverrideByIndex( int index, IMaterial *material );
+	void ClearMaterialOverridesByIndex();
 
 	// Other public methods
 public:

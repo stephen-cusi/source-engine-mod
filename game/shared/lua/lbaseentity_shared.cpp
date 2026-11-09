@@ -413,6 +413,71 @@ static int CBaseEntity_ClearFlags (lua_State *L) {
   return 0;
 }
 
+// The reference keeps this bit in its entity network state. Keep entity
+// handles here rather than reusing engine EFlags, whose corresponding bit has
+// a different meaning in this branch.
+static CUtlVector<EHANDLE> s_CustomCollisionEntities;
+static CThreadFastMutex s_CustomCollisionMutex;
+
+void HL2SB_ClearCustomCollisionChecks() {
+  AUTO_LOCK( s_CustomCollisionMutex );
+  s_CustomCollisionEntities.Purge();
+}
+
+bool HL2SB_HasCustomCollisionCheck( CBaseEntity *entity ) {
+  AUTO_LOCK( s_CustomCollisionMutex );
+  for ( int i = s_CustomCollisionEntities.Count() - 1; i >= 0; --i ) {
+    CBaseEntity *current = s_CustomCollisionEntities[i].Get();
+    if ( !current ) s_CustomCollisionEntities.Remove( i );
+    else if ( current == entity ) return true;
+  }
+  return false;
+}
+
+void HL2SB_SetCustomCollisionCheck( CBaseEntity *entity, bool enabled ) {
+  if ( !entity ) return;
+  {
+    AUTO_LOCK( s_CustomCollisionMutex );
+    for ( int i = s_CustomCollisionEntities.Count() - 1; i >= 0; --i )
+      if ( !s_CustomCollisionEntities[i].Get() ) s_CustomCollisionEntities.Remove( i );
+    int found = -1;
+    for ( int i = 0; i < s_CustomCollisionEntities.Count(); ++i )
+      if ( s_CustomCollisionEntities[i].Get() == entity ) { found = i; break; }
+    if ( ( found >= 0 ) == enabled ) return;
+    if ( enabled ) {
+      EHANDLE handle = entity;
+      s_CustomCollisionEntities.AddToTail( handle );
+    } else {
+      s_CustomCollisionEntities.Remove( found );
+    }
+  }
+#ifndef CLIENT_DLL
+  entity->NetworkStateChanged();
+#endif
+}
+
+bool HL2SB_CustomCollisionAllows( CBaseEntity *first, CBaseEntity *second ) {
+  if ( !first || !second || !ThreadInMainThread() || !L ) return true;
+  const bool firstEnabled = HL2SB_HasCustomCollisionCheck( first );
+  if ( !firstEnabled && !HL2SB_HasCustomCollisionCheck( second ) ) return true;
+  CBaseEntity *marked = firstEnabled ? first : second;
+  CBaseEntity *other = firstEnabled ? second : first;
+  bool allow = true;
+  BEGIN_LUA_CALL_HOOK( "ShouldCollide" );
+    CBaseEntity::PushLuaInstanceSafe( L, marked );
+    CBaseEntity::PushLuaInstanceSafe( L, other );
+  END_LUA_CALL_HOOK( 2, 1 );
+  if ( lua_isboolean( L, -1 ) ) allow = lua_toboolean( L, -1 ) != 0;
+  lua_pop( L, 1 );
+  return allow;
+}
+
+static int CBaseEntity_SetCustomCollisionCheck( lua_State *L ) {
+  CBaseEntity *entity = luaL_checkentity( L, 1 );
+  HL2SB_SetCustomCollisionCheck( entity, lua_toboolean( L, 2 ) != 0 );
+  return 0;
+}
+
 static int CBaseEntity_CollisionRulesChanged (lua_State *L) {
   luaL_checkentity(L, 1)->CollisionRulesChanged();
   return 0;
@@ -783,18 +848,6 @@ static int CBaseEntity_EntityToWorldSpace (lua_State *L) {
 static int CBaseEntity_EyeAngles (lua_State *L) {
   QAngle v = luaL_checkentity(L, 1)->EyeAngles();
   lua_pushangle(L, v);
-  return 1;
-}
-
-static int CBaseEntity_GetShootPos (lua_State *L) {
-  CBaseEntity *entity = luaL_checkentity( L, 1 );
-  CBaseCombatCharacter *character = entity->MyCombatCharacterPointer();
-#ifdef CLIENT_DLL
-  Vector pos = entity->EyePosition();
-#else
-  Vector pos = character ? character->Weapon_ShootPosition() : entity->EyePosition();
-#endif
-  lua_pushvector( L, pos );
   return 1;
 }
 
@@ -6869,7 +6922,13 @@ static int CBaseEntity_SetPersistent( lua_State *L ) {
   return 0;
 }
 
+#ifndef CLIENT_DLL
+extern int HL2SB_EntitySetLightingOriginEntity(lua_State *L);
+#endif
 static const luaL_Reg CBaseEntitymeta[] = {
+#ifndef CLIENT_DLL
+  {"SetLightingOriginEntity", HL2SB_EntitySetLightingOriginEntity},
+#endif
   {"GetDTBool", CBaseEntity_GetDTBool},
   {"SetDTBool", CBaseEntity_SetDTBool},
   {"GetDTFloat", CBaseEntity_GetDTFloat},
@@ -6960,6 +7019,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"ClearEffects", CBaseEntity_ClearEffects},
   {"ClearFlags", CBaseEntity_ClearFlags},
   {"CollisionRulesChanged", CBaseEntity_CollisionRulesChanged},
+  {"SetCustomCollisionCheck", CBaseEntity_SetCustomCollisionCheck},
   {"ComputeAbsDirection", CBaseEntity_ComputeAbsDirection},
   {"ComputeAbsPosition", CBaseEntity_ComputeAbsPosition},
   {"ComputeWorldSpaceSurroundingBox", CBaseEntity_ComputeWorldSpaceSurroundingBox},
@@ -6987,7 +7047,6 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"EntityToWorldSpace", CBaseEntity_EntityToWorldSpace},
   {"EyeAngles", CBaseEntity_EyeAngles},
   {"EyePosition", CBaseEntity_EyePosition},
-  {"GetShootPos", CBaseEntity_GetShootPos},
   // HL2SB: GMod's public spelling is EyePos (wiki: Entity:EyePos, client and
   // server), and Team Sandbox only ever published the C++ name EyePosition.  So
   // every GMod script that asks an entity for its view position died with

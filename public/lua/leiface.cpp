@@ -34,6 +34,11 @@ static int engine_GetAddons( lua_State *L ) {
   return 1;
 }
 
+static int engine_TickInterval( lua_State *L ) {
+  lua_pushnumber( L, gpGlobals->interval_per_tick );
+  return 1;
+}
+
 static int engine_AllowImmediateEdictReuse (lua_State *L) {
   engine->AllowImmediateEdictReuse();
   return 0;
@@ -307,6 +312,7 @@ extern int HL2SB_EngineMountContentSource( lua_State *L );
 extern int HL2SB_EngineSetContentMounted( lua_State *L );
 
 static const luaL_Reg enginelib[] = {
+  {"TickInterval", engine_TickInterval},
   {"GetAddons", engine_GetAddons},
   {"GetGames", HL2SB_EngineGetGames},
   {"GetContentSources", HL2SB_EngineGetContentSources},

@@ -38,6 +38,8 @@ extern int HL2SB_LuaSetDOFMode( lua_State *state );
 #include <mathlib/lvmatrix.h>
 // HL2SB: g_pStudioRender, for render.SetLocalModelLights (declared in istudiorender.h:383).
 #include "istudiorender.h"
+#include "istudiomaterialoverride.h"
+#include "engine/ibrushmaterialoverride.h"
 // HL2SB: render.DynamicLight -- dlight_t layout and the IEFX allocator.
 #include "dlight.h"
 #include "iefx.h"
@@ -79,6 +81,13 @@ static CUtlStack<HL2SBRenderTargetState> s_RenderTargetDepthAlpha;
 // explicitly to CBeamSegDraw::Start (relying on the bound-material path made
 // the Nyan Gun's rainbow tracer invisible).
 static IMaterial *g_pHL2SBLastBoundMaterial = NULL;
+static IHL2SBBrushMaterialOverride *s_pBrushMaterialOverride = NULL;
+
+void HL2SB_RenderBrushOverrideConnect( CreateInterfaceFn factory )
+{
+    s_pBrushMaterialOverride = factory ? static_cast<IHL2SBBrushMaterialOverride *>(
+        factory( HL2SB_BRUSH_MATERIAL_OVERRIDE_VERSION, NULL ) ) : NULL;
+}
 
 // HL2SB: path -> IMaterial cache.  SetMaterial is called every frame from
 // ENT:Draw and effect Render; re-resolving through FindMaterialEx each time
@@ -714,6 +723,33 @@ LUA_BINDING_BEGIN( Renders, OverrideAlphaWriteEnable, "library", "Overrides alph
 }
 LUA_BINDING_END()
 
+LUA_BINDING_BEGIN( Renders, OverrideColorWriteEnable, "library", "Overrides color writes for rendering.", "client" )
+{
+    const bool enable = lua_toboolean( L, 1 ) != 0;
+    const bool write = lua_toboolean( L, 2 ) != 0;
+    CMatRenderContextPtr context( materials );
+    context->OverrideColorWriteEnable( enable, write );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, ComputePixelDiameterOfSphere, "library", "Computes the screen diameter of a sphere.", "client" )
+{
+    const Vector position = luaL_checkvector( L, 1 );
+    const float radius = (float)luaL_checknumber( L, 2 );
+    CMatRenderContextPtr context( materials );
+    lua_pushnumber( L, context->ComputePixelDiameterOfSphere( position, radius ) );
+    return 1;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, UpdateFullScreenDepthTexture, "library", "Updates the full-screen depth texture.", "client" )
+{
+    UpdateFullScreenDepthTexture();
+    return 0;
+}
+LUA_BINDING_END()
+
 LUA_BINDING_BEGIN( Renders, OverrideDepthEnable, "library", "Overrides depth testing.", "client" )
 {
     const bool enable = lua_toboolean( L, 1 ) != 0;
@@ -1339,6 +1375,34 @@ LUA_BINDING_BEGIN( Renders, MaterialOverride, "library", "Overrides the material
     return Renders_ModelMaterialOverride( L );
 LUA_BINDING_END()
 
+LUA_BINDING_BEGIN( Renders, MaterialOverrideByIndex, "library", "Overrides a model material by index.", "client" )
+{
+    IHL2SBStudioMaterialOverride *overrides = g_pStudioRender
+        ? static_cast<IHL2SBStudioMaterialOverride *>( g_pStudioRender->QueryInterface( HL2SB_STUDIO_MATERIAL_OVERRIDE_VERSION ) ) : NULL;
+    if ( !overrides ) return luaL_error( L, "indexed studio material overrides are unavailable" );
+    if ( lua_type( L, 1 ) != LUA_TNUMBER )
+    {
+        overrides->ClearMaterialOverridesByIndex();
+        return 0;
+    }
+    const double number = lua_tonumber( L, 1 );
+    const int index = ( number > -2147483649.0 && number < 2147483648.0 )
+        ? (int)number : (-2147483647 - 1);
+    IMaterial *material = luaL_testudata( L, 2, LUA_MATERIALLIBNAME ) ? luaL_checkmaterial( L, 2 ) : NULL;
+    overrides->SetMaterialOverrideByIndex( index, material );
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, BrushMaterialOverride, "library", "Overrides brush rendering materials.", "client" )
+{
+    if ( !s_pBrushMaterialOverride ) return luaL_error( L, "brush material override is unavailable" );
+    IMaterial *material = luaL_testudata( L, 1, LUA_MATERIALLIBNAME ) ? luaL_checkmaterial( L, 1 ) : NULL;
+    s_pBrushMaterialOverride->SetBrushMaterialOverride( material );
+    return 0;
+}
+LUA_BINDING_END()
+
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: the cam library.  cam.Start( {type="3D"/"2D", ...} )
 // mirrors the table API the content render.lua shim builds on top of.
@@ -1399,7 +1463,6 @@ static int cam_Start (lua_State *L) {
 
   // Reuse the active render view, including camera overrides and its aspect.
   CViewSetup viewSetup( *view->GetViewSetup() );
-  s_nCamViewDepth++;
 
   lua_getfield( L, 1, "origin" );
   if ( !lua_isnil( L, -1 ) ) viewSetup.origin = luaL_checkvector( L, -1 );
@@ -1442,6 +1505,7 @@ static int cam_Start (lua_State *L) {
   lua_pop( L, 1 );
 
   render->Push3DView( viewSetup, 0, NULL, view->GetFrustum() );
+  s_nCamViewDepth++;
   return 0;
 }
 

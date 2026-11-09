@@ -1149,6 +1149,84 @@ void Panel::OnChildSettingsApplied( KeyValues *pInResourceData, Panel *pChild  )
 // Weak panel handles avoid retaining windows or reusing state after deletion.
 static CUtlVector<PHandle> s_ManualPaintPanels;
 static Panel *s_ManualPaintRoot = NULL;
+struct HL2SBDrawOnTopEntry
+{
+	PHandle panel;
+};
+static CUtlVector<HL2SBDrawOnTopEntry> s_DrawOnTopPanels;
+static bool s_DrawingOnTopPanels = false;
+
+void HL2SB_PanelSetDrawOnTop(Panel *panel, bool onTop)
+{
+	if (!panel) return;
+	bool found = false;
+	for (int i = s_DrawOnTopPanels.Count() - 1; i >= 0; --i)
+	{
+		Panel *entry = s_DrawOnTopPanels[i].panel.Get();
+		if (!entry || (entry == panel && !onTop)) s_DrawOnTopPanels.Remove(i);
+		else if (entry == panel) found = true;
+	}
+	if (onTop && !found)
+	{
+		int index = s_DrawOnTopPanels.AddToTail();
+		s_DrawOnTopPanels[index].panel.Set(panel);
+	}
+}
+
+static int HL2SB_PanelDrawOnTopIndex(Panel *panel)
+{
+	for (int i = s_DrawOnTopPanels.Count() - 1; i >= 0; --i)
+	{
+		Panel *entry = s_DrawOnTopPanels[i].panel.Get();
+		if (!entry) s_DrawOnTopPanels.Remove(i);
+		else if (entry == panel) return i;
+	}
+	return -1;
+}
+
+static bool HL2SB_PanelIsAncestor(Panel *parent, Panel *child)
+{
+	const VPANEL target = parent->GetVPanel();
+	for (VPANEL current = ipanel()->GetParent(child->GetVPanel()); current; current = ipanel()->GetParent(current))
+		if (current == target) return true;
+	return false;
+}
+
+static bool HL2SB_PanelHasPaintableClip(Panel *panel)
+{
+	int x0, y0, x1, y1;
+	ipanel()->GetClipRect(panel->GetVPanel(), x0, y0, x1, y1);
+	return x1 > x0 && y1 > y0;
+}
+
+void HL2SB_PanelPaintDrawOnTop()
+{
+	if (s_DrawingOnTopPanels) return;
+	CUtlVector<PHandle> panels;
+	for (int i = s_DrawOnTopPanels.Count() - 1; i >= 0; --i)
+	{
+		Panel *panel = s_DrawOnTopPanels[i].panel.Get();
+		if (!panel) s_DrawOnTopPanels.Remove(i);
+		else panels[panels.AddToHead()].Set(panel);
+	}
+	s_DrawingOnTopPanels = true;
+	for (int i = 0; i < panels.Count(); ++i)
+	{
+		Panel *panel = panels[i].Get();
+		if (!panel || !panel->IsVisible() || HL2SB_PanelDrawOnTopIndex(panel) < 0) continue;
+		bool alreadyPainted = false;
+		for (int j = 0; j < panels.Count(); ++j)
+		{
+			Panel *parent = panels[j].Get();
+			if (parent && parent != panel && parent->IsVisible() && HL2SB_PanelHasPaintableClip(parent) &&
+				HL2SB_PanelDrawOnTopIndex(parent) >= 0 && HL2SB_PanelIsAncestor(parent, panel))
+			{ alreadyPainted = true; break; }
+		}
+		if (alreadyPainted) continue;
+		surface()->PaintTraverseEx(panel->GetVPanel(), false);
+	}
+	s_DrawingOnTopPanels = false;
+}
 
 void HL2SB_PanelSetPaintedManually(Panel *panel, bool manual)
 {
@@ -1199,6 +1277,15 @@ void Panel::PaintTraverse( bool repaint, bool allowForce )
 	if ( !IsVisible() )
 	{
 		return;
+	}
+
+	if (!s_DrawingOnTopPanels)
+	{
+		const int index = HL2SB_PanelDrawOnTopIndex(this);
+		if (index >= 0)
+		{
+			return;
+		}
 	}
 
 	float oldAlphaMultiplier = surface()->DrawGetAlphaMultiplier();
