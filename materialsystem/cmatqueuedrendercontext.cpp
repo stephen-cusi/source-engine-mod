@@ -780,6 +780,8 @@ void CMatQueuedRenderContext::BeginQueue( CMatRenderContextBase *pInitialState )
 		pInitialState = m_pHardwareContext;
 	}
 	CMatRenderContextBase::InitializeFrom( pInitialState );
+	for ( int i = 0; i < MAX_INT_RENDER_PARMS; ++i )
+		m_IntRenderingParameters[i] = pInitialState->GetIntRenderingParameter( i );
 	g_pShaderAPI->GetBackBufferDimensions( m_WidthBackBuffer, m_HeightBackBuffer );
 	m_FogMode = pInitialState->GetFogMode();
 	m_nBoneCount = pInitialState->GetCurrentNumBones();

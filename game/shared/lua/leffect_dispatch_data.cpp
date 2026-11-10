@@ -164,12 +164,33 @@ HL2SB_EFFECTDATA_ANGLE_ACCESSORS( Angles,  m_vAngles )
 HL2SB_EFFECTDATA_NUMBER_ACCESSORS( Scale,     m_flScale )
 HL2SB_EFFECTDATA_NUMBER_ACCESSORS( Magnitude, m_flMagnitude )
 HL2SB_EFFECTDATA_NUMBER_ACCESSORS( Radius,    m_flRadius )
-HL2SB_EFFECTDATA_INT_ACCESSORS( Flags,        m_fFlags )
-HL2SB_EFFECTDATA_INT_ACCESSORS( Attachment,   m_nAttachmentIndex )
+static int CEffectData_GetFlags( lua_State *L ) {
+  lua_pushnumber( L, luaL_checkeffect( L, 1 ).m_fFlags );
+  return 1;
+}
+static int CEffectData_SetFlags( lua_State *L ) {
+  luaL_checkeffect( L, 1 ).m_fFlags = (int)luaL_checknumber( L, 2 );
+  return 0;
+}
+static int CEffectData_GetAttachment( lua_State *L ) {
+  lua_pushnumber( L, luaL_checkeffect( L, 1 ).m_nAttachmentIndex );
+  return 1;
+}
+static int CEffectData_SetAttachment( lua_State *L ) {
+  luaL_checkeffect( L, 1 ).m_nAttachmentIndex = (int)luaL_checknumber( L, 2 );
+  return 0;
+}
 HL2SB_EFFECTDATA_INT_ACCESSORS( HitBox,       m_nHitBox )
 HL2SB_EFFECTDATA_INT_ACCESSORS( DamageType,   m_nDamageType )
 HL2SB_EFFECTDATA_INT_ACCESSORS( Material,     m_nMaterial )
-HL2SB_EFFECTDATA_INT_ACCESSORS( SurfaceProp,  m_nSurfaceProp )
+static int CEffectData_GetSurfaceProp( lua_State *L ) {
+  lua_pushnumber( L, luaL_checkeffect( L, 1 ).m_nSurfaceProp );
+  return 1;
+}
+static int CEffectData_SetSurfaceProp( lua_State *L ) {
+  luaL_checkeffect( L, 1 ).m_nSurfaceProp = (short)(int)luaL_checknumber( L, 2 );
+  return 0;
+}
 HL2SB_EFFECTDATA_INT_ACCESSORS( Color,        m_nColor )
 
 // GMod's GetEntIndex / SetEntIndex are aliases of the entity the effect belongs to.

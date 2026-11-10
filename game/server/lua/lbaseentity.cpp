@@ -805,25 +805,6 @@ void HL2SB_LuaPostEntityFireBullets( CBaseEntity *pShooter, const FireBulletsInf
 }
 
 
-// HL2SB GMod compat (2026-10-13): hook.Run( "EntityEmitSound", ent, name ).
-// GMod fires this from the sound emit path with a full sound table and accepts
-// a replacement table; nothing in this fork's addon set uses the mutation half,
-// so this minimal form fires the two values consumers read.
-void HL2SB_LuaEntityEmitSound( CBaseEntity *pEnt, const char *pszSoundName )
-{
-  if ( L == NULL )
-    return;
-
-  BEGIN_LUA_CALL_HOOK( "EntityEmitSound" );
-    lua_pushentity( L, pEnt );
-    if ( pszSoundName != NULL )
-      lua_pushstring( L, pszSoundName );
-    else
-      lua_pushnil( L );
-  END_LUA_CALL_HOOK( 2, 0 );
-}
-
-
 // HL2SB GMod compat (2026-10-13): hook.Run( "PlayerDroppedWeapon", ply, weapon )
 // - fired from CBaseCombatWeapon::Drop with the previous owner.
 void HL2SB_LuaPlayerDroppedWeapon( CBasePlayer *pPlayer, CBaseCombatWeapon *pWeapon )

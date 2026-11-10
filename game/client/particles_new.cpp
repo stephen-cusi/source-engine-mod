@@ -49,6 +49,7 @@ void CNewParticleEffect::Construct()
 	m_bDontRemove = false;
 	m_bRemove = false;
 	m_bDrawn = false;
+	m_bShouldDraw = true;
 	m_bNeedsBBoxUpdate = false;
 	m_bIsFirstFrame = true;
 	m_bAutoUpdateBBox = false;
@@ -504,6 +505,8 @@ void CNewParticleEffect::DebugDrawBbox ( bool bCulled )
 int CNewParticleEffect::DrawModel( int flags )
 {
 	VPROF_BUDGET( "CNewParticleEffect::DrawModel", VPROF_BUDGETGROUP_PARTICLE_RENDERING );
+	if ( !m_bShouldDraw )
+		return 0;
 	if ( r_DrawParticles.GetBool() == false )
 		return 0;
 

@@ -29,6 +29,7 @@ extern int HL2SB_LuaSetDOFMode( lua_State *state );
 #include <lColor.h>
 #include <renderparm.h>
 #include <view.h>
+#include "viewrender.h"
 #include <litexture.h>
 #include <shaderapi/ishaderapi.h>
 #include <utlstack.h>
@@ -67,6 +68,58 @@ class CMatCallQueue;
 LUA_REGISTRATION_INIT( Renders );
 
 #ifdef CLIENT_DLL
+
+LUA_BINDING_BEGIN( Renders, GetViewSetup, "library", "Returns the current view setup.", "client" )
+{
+    const bool noPlayer = lua_isboolean( L, 1 ) && lua_toboolean( L, 1 ) != 0;
+    const CViewSetup *setup = noPlayer ? view->GetViewSetup() : view->GetPlayerViewSetup();
+    if ( !setup )
+        return 0;
+
+    lua_newtable( L );
+    lua_pushvector( L, setup->origin ); lua_setfield( L, -2, "origin" );
+    lua_pushangle( L, setup->angles ); lua_setfield( L, -2, "angles" );
+    lua_pushnumber( L, setup->m_flAspectRatio ); lua_setfield( L, -2, "aspect" );
+    lua_pushinteger( L, setup->x ); lua_setfield( L, -2, "x" );
+    lua_pushinteger( L, setup->y ); lua_setfield( L, -2, "y" );
+    lua_pushinteger( L, setup->width ); lua_setfield( L, -2, "width" );
+    lua_pushinteger( L, setup->height ); lua_setfield( L, -2, "height" );
+    lua_pushnumber( L, setup->fov ); lua_setfield( L, -2, "fov" );
+    lua_pushnumber( L, setup->fovViewmodel ); lua_setfield( L, -2, "fovviewmodel" );
+    const float aspectScale = 1.3333333730697632f / setup->m_flAspectRatio;
+    const float fovUnscaled = 2.0f * RAD2DEG( atanf( tanf( DEG2RAD( setup->fov ) * 0.5f ) * aspectScale ) );
+    const float vmFovUnscaled = 2.0f * RAD2DEG( atanf( tanf( DEG2RAD( setup->fovViewmodel ) * 0.5f ) * aspectScale ) );
+    lua_pushnumber( L, fovUnscaled ); lua_setfield( L, -2, "fov_unscaled" );
+    lua_pushnumber( L, vmFovUnscaled ); lua_setfield( L, -2, "fovviewmodel_unscaled" );
+    lua_pushinteger( L, CurrentViewID() ); lua_setfield( L, -2, "viewid" );
+    lua_pushnumber( L, setup->zNear ); lua_setfield( L, -2, "znear" );
+    lua_pushnumber( L, setup->zFar ); lua_setfield( L, -2, "zfar" );
+    lua_pushnumber( L, setup->zNearViewmodel ); lua_setfield( L, -2, "znearviewmodel" );
+    lua_pushnumber( L, setup->zFarViewmodel ); lua_setfield( L, -2, "zfarviewmodel" );
+    lua_pushboolean( L, setup->m_bDoBloomAndToneMapping ); lua_setfield( L, -2, "bloomtone" );
+    lua_pushboolean( L, setup->m_bRenderToSubrectOfLargerScreen ); lua_setfield( L, -2, "subrect" );
+
+    if ( setup->m_bOrtho )
+    {
+        lua_newtable( L );
+        lua_pushnumber( L, setup->m_OrthoLeft ); lua_setfield( L, -2, "left" );
+        lua_pushnumber( L, setup->m_OrthoRight ); lua_setfield( L, -2, "right" );
+        lua_pushnumber( L, setup->m_OrthoTop ); lua_setfield( L, -2, "top" );
+        lua_pushnumber( L, setup->m_OrthoBottom ); lua_setfield( L, -2, "bottom" );
+        lua_setfield( L, -2, "ortho" );
+    }
+    if ( setup->m_bOffCenter )
+    {
+        lua_newtable( L );
+        lua_pushnumber( L, setup->m_flOffCenterLeft ); lua_setfield( L, -2, "left" );
+        lua_pushnumber( L, setup->m_flOffCenterRight ); lua_setfield( L, -2, "right" );
+        lua_pushnumber( L, setup->m_flOffCenterTop ); lua_setfield( L, -2, "top" );
+        lua_pushnumber( L, setup->m_flOffCenterBottom ); lua_setfield( L, -2, "bottom" );
+        lua_setfield( L, -2, "offcenter" );
+    }
+    return 1;
+}
+LUA_BINDING_END()
 
 // Minifaction and magnification filter stacks
 static CUtlStack<int> s_TextureFilterMin;
@@ -143,14 +196,10 @@ LUA_BINDING_BEGIN( Renders, GetRenderTarget, "library", "Get the currently activ
     CMatRenderContextPtr pRenderContext( materials );
     ITexture *pTexture = pRenderContext->GetRenderTarget();
 
-    // HL2SB (2026-09-22): NULL (the backbuffer) is Lua nil -- pushing a
-    // NULL-wrapped ITexture made the caller's SetRenderTarget( rt_Scene )
-    // throw "ITexture expected, got NULL" inside halo's failure fuse, which
-    // is what kept the frame black.
+    // GMod returns no values for the backbuffer rather than wrapping NULL.
     if ( pTexture == NULL )
-        lua_pushnil( L );
-    else
-        lua_pushitexture( L, pTexture );
+        return 0;
+    lua_pushitexture( L, pTexture );
 
     return 1;
 }
@@ -661,12 +710,12 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( Renders, Clear, "library", "Clears the current render target with the given color.", "client" )
 {
     color32 clr;
-    clr.r = (unsigned char)clamp( (int)luaL_checknumber( L, 1 ), 0, 255 );
-    clr.g = (unsigned char)clamp( (int)luaL_checknumber( L, 2 ), 0, 255 );
-    clr.b = (unsigned char)clamp( (int)luaL_checknumber( L, 3 ), 0, 255 );
-    clr.a = (unsigned char)clamp( (int)luaL_checknumber( L, 4 ), 0, 255 );
-    bool bClearDepth = luaL_optboolean( L, 5, 0 ) ? true : false;
-    bool bClearStencil = luaL_optboolean( L, 6, 0 ) ? true : false;
+    clr.r = (unsigned char)(int)luaL_checknumber( L, 1 );
+    clr.g = (unsigned char)(int)luaL_checknumber( L, 2 );
+    clr.b = (unsigned char)(int)luaL_checknumber( L, 3 );
+    clr.a = (unsigned char)(int)luaL_checknumber( L, 4 );
+    bool bClearDepth = lua_toboolean( L, 5 ) != 0;
+    bool bClearStencil = lua_toboolean( L, 6 ) != 0;
 
     CMatRenderContextPtr pRenderContext( materials );
 
@@ -786,8 +835,19 @@ LUA_BINDING_END()
 
 LUA_BINDING_BEGIN( Renders, PushRenderTarget, "library", "Pushes a render target and viewport for rendering.", "client" )
 {
+    ITexture **texture = (ITexture **)luaL_testudata( L, 1, LUA_ITEXTUREMETANAME );
+    ITexture *pTexture = texture ? *texture : NULL;
+    const bool bExplicitViewport = lua_type( L, 2 ) == LUA_TNUMBER;
+    int nX = 0, nY = 0, nW = 0, nH = 0;
+    if ( bExplicitViewport )
+    {
+        nX = (int)luaL_checknumber( L, 2 );
+        nY = (int)luaL_checknumber( L, 3 );
+        nW = (int)luaL_checknumber( L, 4 );
+        nH = (int)luaL_checknumber( L, 5 );
+    }
     CMatRenderContextPtr pRenderContext( materials );
-    ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
+    pRenderContext->Flush( false );
     IMatRenderContextInternal *internal = static_cast<IMatRenderContextInternal *>(pRenderContext.operator->());
     HL2SBRenderTargetState state = {internal->GetIntRenderingParameter(INT_RENDERPARM_WRITE_DEPTH_TO_DESTALPHA), lua_toboolean(L, 6) != 0};
     s_RenderTargetDepthAlpha.Push(state);
@@ -796,12 +856,8 @@ LUA_BINDING_BEGIN( Renders, PushRenderTarget, "library", "Pushes a render target
         pRenderContext->OverrideAlphaWriteEnable(true, true);
     }
 
-    if ( lua_isnumber( L, 2 ) && lua_isnumber( L, 3 ) && lua_isnumber( L, 4 ) && lua_isnumber( L, 5 ) )
+    if ( bExplicitViewport )
     {
-        int nX = (int)lua_tonumber( L, 2 );
-        int nY = (int)lua_tonumber( L, 3 );
-        int nW = (int)lua_tonumber( L, 4 );
-        int nH = (int)lua_tonumber( L, 5 );
         pRenderContext->PushRenderTargetAndViewport( pTexture, nX, nY, nW, nH );
     }
     else
@@ -814,7 +870,13 @@ LUA_BINDING_END()
 
 LUA_BINDING_BEGIN( Renders, PopRenderTarget, "library", "Pops a render target pushed with PushRenderTarget.", "client" )
 {
+    if ( s_RenderTargetDepthAlpha.Count() == 0 )
+    {
+        Warning( "render.PopRenderTarget underflow\n" );
+        return 0;
+    }
     CMatRenderContextPtr pRenderContext( materials );
+    pRenderContext->Flush( false );
     pRenderContext->PopRenderTargetAndViewport();
     if (s_RenderTargetDepthAlpha.Count()) {
         HL2SBRenderTargetState state = s_RenderTargetDepthAlpha.Top();
@@ -916,6 +978,22 @@ bool HL2SB_RenderSpawnIcon(C_BaseAnimating *entity, const CViewSetup &camera,
         pixels.Base(), width * 4) != 0;
 }
 
+// GMod's RenderCaptureData integer fields accept numbers and truncate them.
+// A non-number field uses its default instead of raising a Lua type error.
+static int HL2SB_CaptureIntField( lua_State *L, const char *name, int fallback )
+{
+    lua_getfield( L, 1, name );
+    int value = fallback;
+    if ( lua_type( L, -1 ) == LUA_TNUMBER )
+    {
+        const double number = lua_tonumber( L, -1 );
+        value = ( number > -2147483649.0 && number < 2147483648.0 )
+            ? (int)number : (-2147483647 - 1);
+    }
+    lua_pop( L, 1 );
+    return value;
+}
+
 LUA_BINDING_BEGIN( Renders, Capture, "library", "Captures a render target rectangle as PNG or JPEG data.", "client" )
 {
     luaL_checktype(L, 1, LUA_TTABLE);
@@ -928,11 +1006,11 @@ LUA_BINDING_BEGIN( Renders, Capture, "library", "Captures a render target rectan
     bool jpeg = !Q_stricmp(format, "jpg") || !Q_stricmp(format, "jpeg");
     lua_pop(L, 1);
     if (!png && !jpeg) return luaL_error(L, "render.Capture: unsupported image format");
-    lua_getfield(L, 1, "x"); int x = luaL_optint(L, -1, 0); lua_pop(L, 1);
-    lua_getfield(L, 1, "y"); int y = luaL_optint(L, -1, 0); lua_pop(L, 1);
-    lua_getfield(L, 1, "w"); int width = luaL_optint(L, -1, targetWidth); lua_pop(L, 1);
-    lua_getfield(L, 1, "h"); int height = luaL_optint(L, -1, targetHeight); lua_pop(L, 1);
-    lua_getfield(L, 1, "quality"); int quality = clamp(luaL_optint(L, -1, 90), 1, 100); lua_pop(L, 1);
+    const int x = HL2SB_CaptureIntField( L, "x", 0 );
+    const int y = HL2SB_CaptureIntField( L, "y", 0 );
+    const int width = HL2SB_CaptureIntField( L, "w", 512 );
+    const int height = HL2SB_CaptureIntField( L, "h", 512 );
+    const int quality = clamp( HL2SB_CaptureIntField( L, "quality", 90 ), 1, 100 );
     lua_getfield(L, 1, "alpha"); bool alpha = png && (lua_isnil(L, -1) || lua_toboolean(L, -1)); lua_pop(L, 1);
     if (x < 0 || y < 0 || width < 1 || height < 1 || width > 8192 || height > 8192 ||
         x > targetWidth - width || y > targetHeight - height) {
@@ -1038,8 +1116,11 @@ LUA_BINDING_BEGIN( Renders, DrawScreenQuad, "library", "Draws a fullscreen quad 
 {
     CMatRenderContextPtr pRenderContext( materials );
     IMaterial *pMaterial = s_pRendersLastSetMaterial;
-    if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
-        return luaL_error( L, "render.DrawScreenQuad: no material bound (call render.SetMaterial first)" );
+    if ( pMaterial == NULL )
+    {
+        Warning( "render.DrawScreenQuad - No Material!\n" );
+        return 0;
+    }
 
     int nWide, nTall;
     pRenderContext->GetRenderTargetDimensions( nWide, nTall );
@@ -1145,6 +1226,12 @@ LUA_BINDING_END()
 // nested render matches the screen the hook is drawing inside.
 LUA_BINDING_BEGIN( Renders, RenderView, "library", "Renders a scene view into the current render target.", "client" )
 {
+    if ( lua_isnoneornil( L, 1 ) )
+    {
+        lua_settop( L, 1 );
+        lua_newtable( L );
+        lua_replace( L, 1 );
+    }
     luaL_checktype( L, 1, LUA_TTABLE );
 
     CViewSetup viewSetup;
@@ -1213,6 +1300,21 @@ LUA_BINDING_BEGIN( Renders, RenderView, "library", "Renders a scene view into th
 
     lua_getfield( L, 1, "aspect" );
     if ( lua_isnumber( L, -1 ) ) viewSetup.m_flAspectRatio = (float)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    // The reference reads the legacy alias after aspect, so it takes precedence.
+    lua_getfield( L, 1, "aspectratio" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.m_flAspectRatio = (float)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+
+    lua_getfield( L, 1, "viewmodelfov" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.fovViewmodel = (float)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+    lua_getfield( L, 1, "znearviewmodel" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.zNearViewmodel = (float)lua_tonumber( L, -1 );
+    lua_pop( L, 1 );
+    lua_getfield( L, 1, "zfarviewmodel" );
+    if ( lua_isnumber( L, -1 ) ) viewSetup.zFarViewmodel = (float)lua_tonumber( L, -1 );
     lua_pop( L, 1 );
 
     lua_getfield( L, 1, "ortho" );
@@ -1414,6 +1516,7 @@ LUA_BINDING_END()
 
 static int s_nCam2DDepth = 0;   // open cam.Start2D without a matching cam.End
 static int s_nCamViewDepth = 0; // 3D views pushed through cam.Start
+static int s_nCam3D2DDepth = 0; // independent 3D2D model scopes
 
 static void HL2SB_PushCam2DMatrices()
 {
@@ -1599,18 +1702,27 @@ static int cam_Start3D2D (lua_State *L) {
 	CMatRenderContextPtr pRenderContext( materials );
 	pRenderContext->MatrixMode( MATERIAL_MODEL );
 	pRenderContext->PushMatrix();
-	pRenderContext->LoadIdentity();
 	pRenderContext->LoadMatrix( vm );
+	++s_nCam3D2DDepth;
 	return 0;
 }
 
 static int cam_End3D2D (lua_State *L) {
 	if ( !g_pMatSystemSurface )
 		return 0;
-	g_pMatSystemSurface->PopModelMatrix();
+	if ( s_nCam3D2DDepth <= 0 )
+	{
+		Warning( "cam.End3D2D() called without a matching cam.Start3D2D()!\n" );
+		return 0;
+	}
+	--s_nCam3D2DDepth;
+	// Text is batched by the surface; submit it while the 3D2D model
+	// transform is still active, before restoring the previous matrix.
+	vgui::surface()->DrawFlushText();
 	CMatRenderContextPtr pRenderContext( materials );
 	pRenderContext->MatrixMode( MATERIAL_MODEL );
 	pRenderContext->PopMatrix();
+	g_pMatSystemSurface->PopModelMatrix();
 	return 0;
 }
 
@@ -1752,6 +1864,17 @@ LUA_BINDING_BEGIN( Renders, SetModelLighting, "library", "Sets one model lightin
         s_ModelLighting[face] = color;
         HL2SB_ApplyModelLighting();
     }
+    return 0;
+}
+LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, SetAmbientLight, "library", "Sets ambient lighting for subsequent rendering.", "client" )
+{
+    const float r = (float)luaL_checknumber( L, 1 );
+    const float g = (float)luaL_checknumber( L, 2 );
+    const float b = (float)luaL_checknumber( L, 3 );
+    CMatRenderContextPtr context( materials );
+    context->SetAmbientLight( r, g, b );
     return 0;
 }
 LUA_BINDING_END()
@@ -3134,6 +3257,15 @@ LUA_BINDING_BEGIN( Renders, GetToneMappingScaleLinear, "library", "Returns the l
 }
 LUA_BINDING_END()
 
+LUA_BINDING_BEGIN( Renders, SetToneMappingScaleLinear, "library", "Sets the linear tone mapping scale.", "client" )
+{
+    const Vector &scales = luaL_checkvector( L, 1 );
+    CMatRenderContextPtr context( materials );
+    context->SetToneMappingScaleLinear( scales );
+    return 0;
+}
+LUA_BINDING_END()
+
 // HL2SB GMod compat (2026-10-07): DynamicLight( index [, elight ] ) -- creates
 // (or reuses, keyed) an engine dynamic light and hands back a LIVE table view:
 // every recognised field write lands directly in the engine light struct, and
@@ -3220,6 +3352,23 @@ static int HL2SB_DynamicLightNewIndex( lua_State *L )
     lua_pushvalue( L, 3 );
     lua_rawset( L, 1 );
 
+    // Recognized color fields are case-insensitive. Keep a canonical copy
+    // for recomputation: ARC9 writes "brightness" while other addons use
+    // "Brightness", and likewise for uppercase RGB.
+    const char *pColorKey = NULL;
+    if ( Q_stricmp( pszKey, "r" ) == 0 ) pColorKey = "r";
+    else if ( Q_stricmp( pszKey, "g" ) == 0 ) pColorKey = "g";
+    else if ( Q_stricmp( pszKey, "b" ) == 0 ) pColorKey = "b";
+    else if ( Q_stricmp( pszKey, "brightness" ) == 0 ) pColorKey = "Brightness";
+    if ( pColorKey )
+    {
+        lua_pushfstring( L, "__%s", pColorKey );
+        lua_pushvalue( L, 3 );
+        lua_rawset( L, 1 );
+        HL2SB_DynamicLightRecomputeColor( L, 1, dl );
+        return 0;
+    }
+
     if ( Q_stricmp( pszKey, "Pos" ) == 0 && luaL_testudata( L, 3, "Vector" ) != NULL )
         dl->origin = luaL_checkvector( L, 3 );
     else if ( Q_stricmp( pszKey, "Dir" ) == 0 && luaL_testudata( L, 3, "Vector" ) != NULL )
@@ -3240,8 +3389,6 @@ static int HL2SB_DynamicLightNewIndex( lua_State *L )
         dl->m_InnerAngle = (float)lua_tonumber( L, 3 );
     else if ( Q_stricmp( pszKey, "OuterAngle" ) == 0 && lua_isnumber( L, 3 ) )
         dl->m_OuterAngle = (float)lua_tonumber( L, 3 );
-    else if ( Q_stricmp( pszKey, "r" ) == 0 || Q_stricmp( pszKey, "g" ) == 0 || Q_stricmp( pszKey, "b" ) == 0 || Q_stricmp( pszKey, "Brightness" ) == 0 )
-        HL2SB_DynamicLightRecomputeColor( L, 1, dl );
     // unrecognised keys (nomodel/noworld and everything else) are kept on the
     // table only -- the same "write accepted, engine side may ignore" answer
     return 0;

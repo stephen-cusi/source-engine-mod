@@ -13,6 +13,7 @@
 #include "tier1/utlenvelope.h"
 #include "tier1/memstack.h"
 #include "mathlib/mathlib.h"
+#include "renderparm.h"
 
 #include "tier0/memdbgon.h"
 
@@ -108,6 +109,7 @@ public:
 		m_flFogMaxDensity( 1.0 )
 	{
 		memset( &m_FogColor, 0, sizeof(m_FogColor) );
+		memset( m_IntRenderingParameters, 0, sizeof(m_IntRenderingParameters) );
 	}
 
 	bool									Init( CMaterialSystem *pMaterialSystem, CMatRenderContextBase *pHardwareContext );
@@ -308,7 +310,12 @@ public:
 	void									CopyTextureToRenderTargetEx( int i, ITexture *pTexture, Rect_t *pSrc, Rect_t *pDst );
 
 	DEFINE_QUEUED_CALL_2(					SetFloatRenderingParameter, int, float, IMatRenderContext, m_pHardwareContext );
-	DEFINE_QUEUED_CALL_2(					SetIntRenderingParameter, int, int, IMatRenderContext, m_pHardwareContext );
+	void SetIntRenderingParameter( int parm_number, int value )
+	{
+		if ( parm_number >= 0 && parm_number < MAX_INT_RENDER_PARMS )
+			m_IntRenderingParameters[parm_number] = value;
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::SetIntRenderingParameter, parm_number, value );
+	}
 
 	void SetVectorRenderingParameter( int i, const Vector &v )
 	{
@@ -323,8 +330,8 @@ public:
 
 	int GetIntRenderingParameter(int parm_number) const
 	{
-		CannotSupport();
-		return 0;
+		return ( parm_number >= 0 && parm_number < MAX_INT_RENDER_PARMS )
+			? m_IntRenderingParameters[parm_number] : 0;
 	}
 
 	Vector GetVectorRenderingParameter(int parm_number) const
@@ -612,6 +619,7 @@ private:
 	CMatRenderContextBase *m_pHardwareContext;
 
 	int m_iRenderDepth;
+	int m_IntRenderingParameters[MAX_INT_RENDER_PARMS];
 	int m_WidthBackBuffer, m_HeightBackBuffer;
 	int m_nBoneCount;
 	MaterialFogMode_t m_FogMode;

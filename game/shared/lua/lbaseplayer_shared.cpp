@@ -350,11 +350,17 @@ static int CBasePlayer_CmdCommandNumber (lua_State *L) {
   return 1;
 }
 
+static int CBasePlayer_CmdTickCount (lua_State *L) {
+  lua_getfield(L, 1, "tick_count");
+  return 1;
+}
+
 static const luaL_Reg HL2SB_UserCmdMeta[] = {
   {"AddKey",             CBasePlayer_CmdAddKey},
   {"RemoveKey",          CBasePlayer_CmdRemoveKey},
   {"SetMouseY",          CBasePlayer_CmdSetMouseY},
   {"CommandNumber",      CBasePlayer_CmdCommandNumber},
+  {"TickCount",          CBasePlayer_CmdTickCount},
   {"KeyDown",            CBasePlayer_CmdKeyDown},
   {"GetMouseX",          CBasePlayer_CmdGetMouseX},
   {"GetMouseY",          CBasePlayer_CmdGetMouseY},
@@ -2677,21 +2683,21 @@ static int CBasePlayer_GetAllowFullRotation (lua_State *L) {
 */
 static int CBasePlayer_KeyDown (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  const int nKey = luaL_checkint(L, 2);
+  const int nKey = (int)luaL_checknumber(L, 2);
   lua_pushboolean(L, (pPlayer->m_nButtons & nKey) != 0);
   return 1;
 }
 
 static int CBasePlayer_KeyPressed (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  const int nKey = luaL_checkint(L, 2);
+  const int nKey = (int)luaL_checknumber(L, 2);
   lua_pushboolean(L, (pPlayer->m_afButtonPressed & nKey) != 0);
   return 1;
 }
 
 static int CBasePlayer_KeyReleased (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  const int nKey = luaL_checkint(L, 2);
+  const int nKey = (int)luaL_checknumber(L, 2);
   lua_pushboolean(L, (pPlayer->m_afButtonReleased & nKey) != 0);
   return 1;
 }

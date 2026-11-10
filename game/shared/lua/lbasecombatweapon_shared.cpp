@@ -205,14 +205,15 @@ static int CBaseCombatWeapon_Clip2 (lua_State *L) {
   return 1;
 }
 
-// HL2SB GMod SWEP compat: GMod calls self:SetClip1(n) / self:SetClip2(n).
+// GMod reads a Lua number and truncates it to the clip integer.  In Lua 5.4,
+// luaL_checkint rejects fractional numbers instead of performing that cast.
 static int CBaseCombatWeapon_SetClip1 (lua_State *L) {
-  luaL_checkweapon(L, 1)->m_iClip1.GetForModify() = luaL_checkint(L, 2);
+  luaL_checkweapon(L, 1)->m_iClip1.GetForModify() = (int)luaL_checknumber(L, 2);
   return 0;
 }
 
 static int CBaseCombatWeapon_SetClip2 (lua_State *L) {
-  luaL_checkweapon(L, 1)->m_iClip2.GetForModify() = luaL_checkint(L, 2);
+  luaL_checkweapon(L, 1)->m_iClip2.GetForModify() = (int)luaL_checknumber(L, 2);
   return 0;
 }
 

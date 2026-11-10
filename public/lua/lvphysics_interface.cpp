@@ -17,6 +17,7 @@
 #include "lbaseentity_shared.h"
 #include "vphysics/lperformance.h"
 #include "mathlib/lvector.h"
+#include "mathlib/vmatrix.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -704,11 +705,9 @@ static int IPhysicsObject_IsValid (lua_State *L) {
 ** very next line would have raised "bad argument #3 to 'AddVelocity'".
 */
 static int IPhysicsObject_AddVelocity (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   Vector velocity = luaL_checkvector(L, 2);
-  AngularImpulse angularVelocity = vec3_origin;
-  if (!lua_isnoneornil(L, 3))
-    angularVelocity = luaL_checkvector(L, 3);
-  luaL_checkphysicsobject(L, 1)->AddVelocity(&velocity, &angularVelocity);
+  if (velocity.IsValid()) object->AddVelocity(&velocity, NULL);
   return 0;
 }
 
@@ -934,6 +933,21 @@ static int IPhysicsObject_GetAngles (lua_State *L) {
   return 1;
 }
 
+static int IPhysicsObject_RotateAroundAxis (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
+  Vector axis = luaL_checkvector(L, 2);
+  float degrees = (float)luaL_checknumber(L, 3);
+  QAngle angles;
+  object->GetPosition(NULL, &angles);
+  Vector forward, right, up;
+  AngleVectors(angles, &forward, &right, &up);
+  VMatrix rotation;
+  MatrixBuildRotationAboutAxis(rotation, axis, degrees);
+  VectorAngles(rotation * forward, rotation * up, angles);
+  lua_pushangle(L, angles);
+  return 1;
+}
+
 static int IPhysicsObject_GetPosition (lua_State *L) {
   Vector worldPosition;
   QAngle angles;
@@ -973,9 +987,10 @@ static int IPhysicsObject_GetPos (lua_State *L) {
 static int IPhysicsObject_SetPos (lua_State *L) {
   IPhysicsObject *pPhysics = luaL_checkphysicsobject(L, 1);
   Vector worldPosition = luaL_checkvector(L, 2);
+  const bool teleport = luaL_optboolean(L, 3, 0) != 0;
   QAngle angles;
   pPhysics->GetPosition(NULL, &angles);
-  pPhysics->SetPosition(worldPosition, angles, true);
+  pPhysics->SetPosition(worldPosition, angles, teleport);
   return 0;
 }
 
@@ -997,8 +1012,7 @@ static int IPhysicsObject_GetVelocity (lua_State *L) {
   Vector velocity, angularVelocity;
   luaL_checkphysicsobject(L, 1)->GetVelocity(&velocity, &angularVelocity);
   lua_pushvector(L, velocity);
-  lua_pushvector(L, angularVelocity);
-  return 2;
+  return 1;
 }
 
 static int IPhysicsObject_GetVelocityAtPoint (lua_State *L) {
@@ -1131,9 +1145,9 @@ static int IPhysicsObject_SetDamping (lua_State *L) {
 }
 
 static int IPhysicsObject_SetDragCoefficient (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   float pDrag = luaL_checknumber(L, 2);
-  float pAngularDrag = luaL_checknumber(L, 3);
-  luaL_checkphysicsobject(L, 1)->SetDragCoefficient(&pDrag, &pAngularDrag);
+  object->SetDragCoefficient(&pDrag, NULL);
   return 0;
 }
 
@@ -1148,7 +1162,13 @@ static int IPhysicsObject_SetGameIndex (lua_State *L) {
 }
 
 static int IPhysicsObject_SetMass (lua_State *L) {
-  luaL_checkphysicsobject(L, 1)->SetMass(luaL_checknumber(L, 2));
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
+  float mass = (float)luaL_checknumber(L, 2);
+  // GMod compares the float-converted value with the double constant 0.1;
+  // values at or below that threshold (including NaN) become 1 kg.
+  if (!((double)mass > 0.1)) mass = 1.0f;
+  if (mass > VPHYSICS_MAX_MASS) mass = VPHYSICS_MAX_MASS;
+  object->SetMass(mass);
   return 0;
 }
 
@@ -1170,13 +1190,15 @@ static int IPhysicsObject_SetShadow (lua_State *L) {
   return 0;
 }
 
-/* HL2SB: same GMod one-argument shape as AddVelocity above. */
+/* Preserve the current angular velocity when setting linear velocity. */
 static int IPhysicsObject_SetVelocity (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   Vector velocity = luaL_checkvector(L, 2);
-  AngularImpulse angularVelocity = vec3_origin;
-  if (!lua_isnoneornil(L, 3))
-    angularVelocity = luaL_checkvector(L, 3);
-  luaL_checkphysicsobject(L, 1)->SetVelocity(&velocity, &angularVelocity);
+  if (velocity.IsValid()) {
+    Vector oldVelocity, angularVelocity;
+    object->GetVelocity(&oldVelocity, &angularVelocity);
+    object->SetVelocity(&velocity, &angularVelocity);
+  }
   return 0;
 }
 
@@ -1264,13 +1286,15 @@ static int IPhysicsObject_ComputeShadowControl (lua_State *L) {
   return 0;
 }
 
-/* HL2SB: same GMod one-argument shape as AddVelocity above. */
+/* Preserve the current angular velocity when setting linear velocity. */
 static int IPhysicsObject_SetVelocityInstantaneous (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   Vector velocity = luaL_checkvector(L, 2);
-  AngularImpulse angularVelocity = vec3_origin;
-  if (!lua_isnoneornil(L, 3))
-    angularVelocity = luaL_checkvector(L, 3);
-  luaL_checkphysicsobject(L, 1)->SetVelocityInstantaneous(&velocity, &angularVelocity);
+  if (velocity.IsValid()) {
+    Vector oldVelocity, angularVelocity;
+    object->GetVelocity(&oldVelocity, &angularVelocity);
+    object->SetVelocityInstantaneous(&velocity, &angularVelocity);
+  }
   return 0;
 }
 
@@ -1288,24 +1312,23 @@ static int IPhysicsObject_SetVelocityInstantaneous (lua_State *L) {
 ** (addons/cod_c4/lua/weapons/seal6-c4/shared.lua:252 "phys:SetAngleVelocity(Vector(...))"),
 ** where the nil method aborted the throw before ents.Create() ran.
 **
-** The NULL-safety of the vphysics side is not documented, so the linear half is always
-** passed a real (zero) vector.
+** AddVelocity supports null pointers for components that are not being changed.
 */
 static int IPhysicsObject_SetAngleVelocity (lua_State *L) {
   IPhysicsObject *pObject = luaL_checkphysicsobject(L, 1);
   AngularImpulse angularVelocity = luaL_checkvector(L, 2);
-  Vector velocity, ignoredAngular;
-
-  pObject->GetVelocity(&velocity, &ignoredAngular);
-  pObject->SetVelocity(&velocity, &angularVelocity);
+  if (angularVelocity.IsValid()) {
+    Vector velocity, ignoredAngular;
+    pObject->GetVelocity(&velocity, &ignoredAngular);
+    pObject->SetVelocity(&velocity, &angularVelocity);
+  }
   return 0;
 }
 
 static int IPhysicsObject_AddAngleVelocity (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   AngularImpulse angularVelocity = luaL_checkvector(L, 2);
-  Vector noVelocity = vec3_origin;
-
-  luaL_checkphysicsobject(L, 1)->AddVelocity(&noVelocity, &angularVelocity);
+  if (angularVelocity.IsValid()) object->AddVelocity(NULL, &angularVelocity);
   return 0;
 }
 
@@ -1373,6 +1396,7 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"EnableMotion", IPhysicsObject_EnableMotion},
   {"GetAngleVelocity", IPhysicsObject_GetAngleVelocity},
   {"GetAngles", IPhysicsObject_GetAngles},
+  {"RotateAroundAxis", IPhysicsObject_RotateAroundAxis},
   {"GetCallbackFlags", IPhysicsObject_GetCallbackFlags},
   {"GetContactPoint", IPhysicsObject_GetContactPoint},
   {"GetContents", IPhysicsObject_GetContents},

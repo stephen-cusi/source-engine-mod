@@ -75,6 +75,15 @@ ILauncherMgr *g_pLauncherMgr = NULL;
 // of vguimatsurface for no gain; only StartDrawing() and the two new
 // IMatSystemSurface methods below touch it.
 static CUtlVector< VMatrix > g_SurfaceModelMatrixStack;
+struct SurfaceModelDrawingState
+{
+	bool wasDrawing;
+	bool scissorEnabled;
+	int left, top, right, bottom;
+	int translateX, translateY;
+	int extents[4];
+};
+static CUtlVector< SurfaceModelDrawingState > g_SurfaceModelDrawingStack;
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -3497,31 +3506,44 @@ void CMatSystemSurface::EndSkinCompositionPainting()
 //-----------------------------------------------------------------------------
 void CMatSystemSurface::PushModelMatrix( const VMatrix &matrix )
 {
-	// HL2SB GMod compat (2026-09-25): if a 2D batch is already open (e.g. the
-	// addon called surface.SetFont before cam.Start3D2D), it was started with
-	// the ortho projection - world-space vertices would be clipped out and the
-	// text would silently never show.  Close the batch so the next surface
-	// draw re-StartDrawings through the 3D branch with the camera projection.
-	if ( g_bInDrawing )
-	{
-		FinishDrawing();
-	}
+	// HUDPaint already has a surface drawing scope. Do not close it here:
+	// cam.Start3D has pushed view/projection matrices above that scope.
+	const bool wasDrawing = g_bInDrawing;
+	if ( wasDrawing )
+		DrawFlushText();
+	SurfaceModelDrawingState state;
+	state.wasDrawing = wasDrawing;
+	GetScissorRect( state.left, state.top, state.right, state.bottom, state.scissorEnabled );
+	state.translateX = m_nTranslateX;
+	state.translateY = m_nTranslateY;
+	for ( int i = 0; i < 4; ++i )
+		state.extents[i] = m_pSurfaceExtents[i];
 	g_SurfaceModelMatrixStack.AddToTail( matrix );
+	g_SurfaceModelDrawingStack.AddToTail( state );
+	if ( !wasDrawing )
+		StartDrawing();
+	m_nTranslateX = m_nTranslateY = 0;
+	EnableScissor( false );
 }
 
 void CMatSystemSurface::PopModelMatrix()
 {
-	if ( g_SurfaceModelMatrixStack.Count() > 0 )
-	{
-		g_SurfaceModelMatrixStack.Remove( g_SurfaceModelMatrixStack.Count() - 1 );
-	}
-
-	// leaving 3D2D: close the batch so regular 2D drawing restarts with the
-	// screen ortho projection (and the leaked open-batch state is gone).
-	if ( g_SurfaceModelMatrixStack.Count() == 0 && g_bInDrawing )
-	{
+	if ( g_SurfaceModelMatrixStack.Count() == 0 )
+		return;
+	if ( g_bInDrawing )
+		DrawFlushText();
+	const int index = g_SurfaceModelMatrixStack.Count() - 1;
+	const SurfaceModelDrawingState state = g_SurfaceModelDrawingStack[index];
+	if ( !state.wasDrawing && g_bInDrawing )
 		FinishDrawing();
-	}
+	g_SurfaceModelDrawingStack.Remove( index );
+	g_SurfaceModelMatrixStack.Remove( index );
+	m_nTranslateX = state.translateX;
+	m_nTranslateY = state.translateY;
+	for ( int i = 0; i < 4; ++i )
+		m_pSurfaceExtents[i] = state.extents[i];
+	SetScissorRect( state.left, state.top, state.right, state.bottom );
+	EnableScissor( state.scissorEnabled );
 }
 
 

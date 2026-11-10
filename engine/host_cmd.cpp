@@ -1233,6 +1233,9 @@ DWORD __declspec(dllimport) __stdcall GetEnvironmentVariableA( const char *, cha
 }
 #endif // _WIN32
 
+// HL2SB: GMod's gmod_mcore_test - indicates multi-core rendering status
+static ConVar gmod_mcore_test( "gmod_mcore_test", "0", FCVAR_NONE, "Indicates whether multi-core rendering is enabled (set by mat_queue_mode)" );
+
 CON_COMMAND( version, "Print version info string." )
 {
 	ConMsg( "Build Label:          %8d   # Uniquely identifies each build\n", GetSteamInfIDVersionInfo().ServerVersion );
@@ -1248,6 +1251,12 @@ CON_COMMAND( version, "Print version info string." )
 	{
 		ConMsg( "Client version:       %8i\n", GetSteamInfIDVersionInfo().ClientVersion );
 		ConMsg( "Client AppID:         %8i\n", GetSteamInfIDVersionInfo().AppID );
+
+		// HL2SB: GMod prints multicore status if gmod_mcore_test is set
+		if ( gmod_mcore_test.GetBool() )
+		{
+			ConMsg( "Multicore rendering:  enabled\n" );
+		}
 	}
 }
 

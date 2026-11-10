@@ -1641,26 +1641,20 @@ static void HL2SB_WeaponUpdateLuaSelfAliases( CHL2MPScriptedWeapon *pWeapon )
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat (wiki): WEAPON:GetTracerOrigin() -> Vector -- "override
 // where the tracer comes from".  Consumed once per shot by CBaseEntity::
-// FireBullets (baseentity_shared.cpp).  On the client only the local
-// player's prediction draws its own tracers, so only that shooter is asked;
-// everyone else's tracers arrive through the HL2MP TE, which carries the
-// server's answer.
+// FireBullets (baseentity_shared.cpp).  GMod exposes this as a client-only
+// hook.  In particular, SWEP implementations may call LocalPlayer(), which
+// does not exist on the server.
 //-----------------------------------------------------------------------------
 bool HL2SB_GetWeaponTracerOrigin( CBaseEntity *pShooter, Vector &vecOut )
 {
-#if defined ( LUA_SDK )
+#if defined ( LUA_SDK ) && defined ( CLIENT_DLL )
 	if ( pShooter == NULL || L == NULL )
 		return false;
 
 	CBaseCombatWeapon *pWeapon = NULL;
-#ifdef CLIENT_DLL
 	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
 	if ( pLocal != NULL && pShooter == pLocal )
 		pWeapon = pLocal->GetActiveWeapon();
-#else
-	if ( CBaseCombatCharacter *pCharacter = pShooter->MyCombatCharacterPointer() )
-		pWeapon = pCharacter->GetActiveWeapon();
-#endif
 	if ( pWeapon == NULL || !pWeapon->IsScripted() )
 		return false;
 
@@ -2294,8 +2288,6 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 		const bool bPrimaryAutomatic = lua_getweaponbool( L, m_nTableReference, "Primary", "Automatic", "", false );
 		const bool bSecondaryAutomatic = lua_getweaponbool( L, m_nTableReference, "Secondary", "Automatic", "", false );
 
-		const bool bPrimaryWants = ( nButtons & IN_ATTACK ) != 0 &&
-								   ( bPrimaryAutomatic || ( nPressed & IN_ATTACK ) != 0 );
 		const bool bSecondaryWants = ( nButtons & IN_ATTACK2 ) != 0 &&
 									 ( bSecondaryAutomatic || ( nPressed & IN_ATTACK2 ) != 0 );
 
@@ -2318,12 +2310,17 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 			BEGIN_LUA_CALL_WEAPON_METHOD( "SecondaryAttack" );
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 		}
-		else if ( bPrimaryWants && flTime >= m_flNextPrimaryAttack )
+		// GMod re-reads the owner's buttons after SecondaryAttack and tests
+		// primary independently.  A held automatic secondary must not block
+		// primary fire (ARC9 uses secondary for sights).
+		const bool bPrimaryWants = ( pOwner->m_nButtons & IN_ATTACK ) != 0 &&
+			( bPrimaryAutomatic || ( pOwner->m_afButtonPressed & IN_ATTACK ) != 0 );
+		if ( bPrimaryWants && flTime >= m_flNextPrimaryAttack )
 		{
 			BEGIN_LUA_CALL_WEAPON_METHOD( "PrimaryAttack" );
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 		}
-		else if ( ( nPressed & IN_RELOAD ) != 0 )
+		if ( ( pOwner->m_nButtons & IN_RELOAD ) != 0 && !m_bInReload )
 		{
 			BEGIN_LUA_CALL_WEAPON_METHOD( "Reload" );
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );

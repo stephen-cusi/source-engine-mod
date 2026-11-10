@@ -23,6 +23,7 @@
 #include "particles_simple.h"
 #include "particle_util.h"
 #include "particledraw.h"
+#include "model_types.h"
 #include "c_tracer.h"
 #include "luamanager.h"
 #include "luasrclib.h"
@@ -68,7 +69,9 @@ struct CLuaParticleX : public SimpleParticle
 	// HL2SB (2026-09-21, particle gap audit): the rest of the GMod surface.
 	QAngle m_angAngles;      // SetAngles / GetAngles (3D orientation)
 	QAngle m_vecAngVelocity; // SetAngleVelocity / GetAngleVelocity
-	bool m_bLighting;        // SetLighting -- stored; this host renders unlit
+	bool m_bLighting;
+	bool m_bLightValid;
+	Vector m_vecLight;
 	bool m_bVelocityScale;   // SetVelocityScale -- length = speed * lerp(lengths)
 	int m_nCollideRef;       // SetCollideCallback -- LUA_REFNIL when none
 };
@@ -110,6 +113,7 @@ public:
 		SetDontRemove( true );
 		m_bFinished = false;
 		m_bNoDraw = false;
+		m_bManualDraw = false;
 		m_flNearClipMin = 0.0f;
 		m_flNearClipMax = 0.0f;
 	}
@@ -135,6 +139,7 @@ public:
 	bool m_bFinished;
 	bool m_b3D;
 	bool m_bNoDraw;   // CLuaEmitter:SetNoDraw -- RenderParticles bails out
+	bool m_bManualDraw;
 	CUtlVector< int > m_aDeadSerials;
 	// HL2SB: CLuaEmitter:SetNearClip( min, max ) -- particles fade out between
 	// these camera distances (both 0 = disabled).
@@ -172,10 +177,10 @@ public:
 
 			// CLuaParticle:Think -- SetThinkFunction schedules via SetNextThink,
 			// which uses CurTime(); after a run the script must re-arm it.
-			if ( pParticle->m_nThinkRef != LUA_REFNIL && L != NULL &&
+			if ( pParticle->m_nThinkRef != LUA_REFNIL && L != NULL && pParticle->m_flNextThink != 0.0f &&
 				 gpGlobals->curtime >= pParticle->m_flNextThink )
 			{
-				pParticle->m_flNextThink = FLT_MAX;   // must SetNextThink again
+				pParticle->m_flNextThink = 0.0f;
 				lua_rawgeti( L, LUA_REGISTRYINDEX, pParticle->m_nThinkRef );
 				CLuaParticle_PushWrapper( this, pParticle );   // keeps emitter alive during the call
 				luasrc_pcall( L, 1, 0, 0 );
@@ -192,6 +197,19 @@ public:
 				pParticle->m_vecVelocity *= MAX( 0.0f, 1.0f - flDt );
 			}
 			pParticle->m_angAngles += pParticle->m_vecAngVelocity * flDt;
+			if ( pParticle->m_bLighting )
+			{
+				const bool moving = pParticle->m_vecVelocity != vec3_origin;
+				if ( moving || !pParticle->m_bLightValid )
+				{
+					const Vector light = WorldGetLightForPoint( pParticle->m_Pos, true );
+					if ( !moving && !pParticle->m_bLightValid )
+						pParticle->m_vecLight = light;
+					else
+						pParticle->m_vecLight = ( pParticle->m_vecLight * 3.0f + light ) * 0.25f;
+					pParticle->m_bLightValid = true;
+				}
+			}
 
 			Vector vDest = pParticle->m_Pos + pParticle->m_vecVelocity * flDt;
 			if ( pParticle->m_bCollide && pParticle->m_vecVelocity != vec3_origin )
@@ -202,6 +220,8 @@ public:
 				enginetrace->TraceRay( ray, MASK_SOLID, NULL, &tr );
 				if ( tr.fraction < 1.0f )
 				{
+					if ( pParticle->m_bLighting )
+						pParticle->m_vecLight = WorldGetLightForPoint( pParticle->m_Pos, true );
 					vDest = tr.endpos + tr.plane.normal * 0.5f;
 					// reflect around the hit normal, scaled by bounciness
 					float flDot = DotProduct( pParticle->m_vecVelocity, tr.plane.normal );
@@ -227,7 +247,7 @@ public:
 
 	virtual void RenderParticles( CParticleRenderIterator *pIterator )
 	{
-		if ( m_bNoDraw )
+		if ( m_bNoDraw && !m_bManualDraw )
 			return;
 
 		const CLuaParticleX *pParticle = (const CLuaParticleX *)pIterator->GetFirst();
@@ -243,7 +263,13 @@ public:
 				( (int)pParticle->m_uchEndAlpha - (int)pParticle->m_uchStartAlpha ) * flT ) / 255.0f;
 			Vector vColor( pParticle->m_uchColor[0] / 255.0f,
 				pParticle->m_uchColor[1] / 255.0f, pParticle->m_uchColor[2] / 255.0f );
-			float flRoll = pParticle->m_flRoll + pParticle->m_flRollDelta * pParticle->m_flLifetime;
+			if ( pParticle->m_bLighting )
+			{
+				vColor.x *= pParticle->m_vecLight.x;
+				vColor.y *= pParticle->m_vecLight.y;
+				vColor.z *= pParticle->m_vecLight.z;
+			}
+			float flRoll = pParticle->m_angAngles.x;
 
 			// Billboard vertices must be in camera space: the particle manager
 			// loads identity model/view matrices for this rendering mode.
@@ -438,6 +464,8 @@ LUA_BINDING_BEGIN( CSEmitterReg, Add, "method", "Creates a new CLuaParticle with
 	pParticle->m_angAngles.Init();
 	pParticle->m_vecAngVelocity.Init();
 	pParticle->m_bLighting = false;
+	pParticle->m_bLightValid = false;
+	pParticle->m_vecLight.Init();
 	pParticle->m_bVelocityScale = false;
 	pParticle->m_nCollideRef = LUA_REFNIL;
 
@@ -451,7 +479,10 @@ LUA_BINDING_BEGIN( CSEmitterReg, Finish, "method", "Removes the emitter, making 
 {
 	LuaParticleUD *pUD = LuaEmitter_checkudata( L, 1 );
 	if ( pUD->m_pEmitter.GetObject() != NULL )
+	{
 		pUD->m_pEmitter->Finish();
+		pUD->m_pEmitter = (CLuaEmitter *)NULL;
+	}
 	return 0;
 }
 LUA_BINDING_END()
@@ -460,16 +491,19 @@ LUA_BINDING_END()
 // HL2SB (2026-09-21 particle gap audit): the rest of GMod's CLuaEmitter surface.
 // ---------------------------------------------------------------------------
 
-// CSEmitter:Draw() -- GMod renders the emitter manually when SetNoDraw is set;
-// this host has no out-of-band particle render path, so manual Draw is a
-// no-op (particles always auto-draw), reported once.
-LUA_BINDING_BEGIN( CSEmitterReg, Draw, "method", "HL2SB: particles always auto-draw here; manual Draw is a no-op.", "client" )
+// Manual drawing is independent of the automatic rendering switch.
+LUA_BINDING_BEGIN( CSEmitterReg, Draw, "method", "Manually renders the emitter's particles.", "client" )
 {
-	static bool s_bWarned = false;
-	if ( !s_bWarned )
+	LuaParticleUD *pUD = LuaEmitter_checkudata( L, 1 );
+	CLuaEmitter *pEmitter = pUD->m_pEmitter.GetObject();
+	if ( pEmitter == NULL )
+		return luaL_error( L, "Tried to use a NULL CLuaEmitter!" );
+	if ( pEmitter != NULL )
 	{
-		s_bWarned = true;
-		Warning( "[HL2SB] CLuaEmitter:Draw has no manual render path in this engine; particles auto-draw.\n" );
+		const bool bWasManualDraw = pEmitter->m_bManualDraw;
+		pEmitter->m_bManualDraw = true;
+		pEmitter->GetBinding().DrawModel( STUDIO_RENDER );
+		pEmitter->m_bManualDraw = bWasManualDraw;
 	}
 	return 0;
 }
@@ -491,9 +525,9 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CSEmitterReg, GetPos, "method", "Returns the emitter's position.", "client" )
 {
 	LuaParticleUD *pUD = LuaEmitter_checkudata( L, 1 );
-	Vector vecPos( vec3_origin );
-	if ( pUD->m_pEmitter.GetObject() != NULL )
-		vecPos = pUD->m_pEmitter->GetSortOrigin();
+	if ( pUD->m_pEmitter.GetObject() == NULL )
+		return luaL_error( L, "Tried to use a NULL CLuaEmitter!" );
+	Vector vecPos = pUD->m_pEmitter->GetSortOrigin();
 	lua_pushvector( L, vecPos );
 	return 1;
 }
@@ -545,8 +579,9 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CSEmitterReg, SetNoDraw, "method", "Prevents the emitter's particles from automatically drawing.", "client" )
 {
 	LuaParticleUD *pUD = LuaEmitter_checkudata( L, 1 );
-	if ( pUD->m_pEmitter.GetObject() != NULL )
-		pUD->m_pEmitter->m_bNoDraw = luaL_checkboolean( L, 2 ) ? true : false;
+	if ( pUD->m_pEmitter.GetObject() == NULL )
+		return luaL_error( L, "Tried to use a NULL CLuaEmitter!" );
+	pUD->m_pEmitter->m_bNoDraw = lua_toboolean( L, 2 ) != 0;
 	return 0;
 }
 LUA_BINDING_END()
@@ -565,22 +600,23 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CSEmitterReg, SetPos, "method", "Sets the emitter's position (particle draw order).", "client" )
 {
 	LuaParticleUD *pUD = LuaEmitter_checkudata( L, 1 );
-	if ( pUD->m_pEmitter.GetObject() != NULL )
-		pUD->m_pEmitter->SetSortOrigin( luaL_checkvector( L, 2 ) );
+	if ( pUD->m_pEmitter.GetObject() == NULL )
+		return luaL_error( L, "Tried to use a NULL CLuaEmitter!" );
+	pUD->m_pEmitter->SetSortOrigin( luaL_checkvector( L, 2 ) );
 	return 0;
 }
 LUA_BINDING_END()
 
 // ---------------------------------------------------------------------------
-// CLuaParticle methods.  Dead particles: getters return the remembered value,
-// setters are a no-op -- a script that keeps a particle across frames must not
-// crash when the particle's lifetime runs out underneath it.
+// GMod reports an error for methods on a particle whose native object expired.
 // ---------------------------------------------------------------------------
 
 #define LUA_PARTICLE_SETTER_BEGIN( name )                                       \
 	LUA_BINDING_BEGIN( CLuaParticleReg, name, "method", "", "client" )          \
 	{                                                                            \
 		CLuaParticleX *pParticle = LuaParticle_checkalive( L, 1 );               \
+		if ( !pParticle )                                                        \
+			return luaL_error( L, "Tried to use a NULL CLuaParticle!" );            \
 		if ( pParticle )                                                         \
 		{
 
@@ -689,11 +725,11 @@ LUA_PARTICLE_SETTER_BEGIN( GetPos )
 LUA_PARTICLE_SETTER_END( 1 )
 
 LUA_PARTICLE_SETTER_BEGIN( GetRoll )
-	lua_pushnumber( L, pParticle->m_flRoll );
+	lua_pushnumber( L, pParticle->m_angAngles.x );
 LUA_PARTICLE_SETTER_END( 1 )
 
 LUA_PARTICLE_SETTER_BEGIN( GetRollDelta )
-	lua_pushnumber( L, pParticle->m_flRollDelta );
+	lua_pushnumber( L, pParticle->m_vecAngVelocity.x );
 LUA_PARTICLE_SETTER_END( 1 )
 
 LUA_PARTICLE_SETTER_BEGIN( GetStartLength )
@@ -715,15 +751,15 @@ LUA_PARTICLE_SETTER_BEGIN( SetColor )
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetRoll )
-	pParticle->m_flRoll = (float)luaL_checknumber( L, 2 );
+	pParticle->m_angAngles.x = (float)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetRollDelta )
-	pParticle->m_flRollDelta = (float)luaL_checknumber( L, 2 );
+	pParticle->m_vecAngVelocity.x = (float)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetAirResistance )
-	pParticle->m_flAirResistance = MAX( 0.0f, (float)luaL_checknumber( L, 2 ) );
+	pParticle->m_flAirResistance = (float)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetGravity )
@@ -731,11 +767,11 @@ LUA_PARTICLE_SETTER_BEGIN( SetGravity )
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetCollide )
-	pParticle->m_bCollide = luaL_checkboolean( L, 2 ) ? true : false;
+	pParticle->m_bCollide = lua_toboolean( L, 2 ) != 0;
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetBounce )
-	pParticle->m_flBounce = MAX( 0.0f, (float)luaL_checknumber( L, 2 ) );
+	pParticle->m_flBounce = (float)luaL_checknumber( L, 2 );
 LUA_PARTICLE_SETTER_END( 0 )
 
 LUA_PARTICLE_SETTER_BEGIN( SetStartLength )
@@ -753,10 +789,9 @@ LUA_PARTICLE_SETTER_BEGIN( SetVelocityScale )
 	pParticle->m_bVelocityScale = luaL_checkboolean( L, 2 ) ? true : false;
 LUA_PARTICLE_SETTER_END( 0 )
 
-// CLuaParticle:SetLighting( useLighting ) -- stored; this host renders particles
-// unlit, so the flag has no visual effect here.
+// CLuaParticle:SetLighting( useLighting )
 LUA_PARTICLE_SETTER_BEGIN( SetLighting )
-	pParticle->m_bLighting = luaL_checkboolean( L, 2 ) ? true : false;
+	pParticle->m_bLighting = lua_toboolean( L, 2 ) != 0;
 LUA_PARTICLE_SETTER_END( 0 )
 
 // CLuaParticle:SetPos( pos ) -- teleports the particle.
@@ -807,7 +842,6 @@ LUA_PARTICLE_SETTER_BEGIN( SetThinkFunction )
 	{
 		lua_pushvalue( L, 2 );
 		pParticle->m_nThinkRef = luaL_ref( L, LUA_REGISTRYINDEX );
-		pParticle->m_flNextThink = 0.0f;   // GMod: first think on the next SetNextThink
 	}
 LUA_PARTICLE_SETTER_END( 0 )
 

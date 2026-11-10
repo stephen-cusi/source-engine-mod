@@ -351,7 +351,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetShouldDraw, "method", "Sets whether the particle effect is drawn.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetDrawn( luaL_checkboolean( L, 2 ) ? true : false );
+	pEffect->SetShouldDraw( luaL_checkboolean( L, 2 ) ? true : false );
 	return 0;
 }
 LUA_BINDING_END()
@@ -447,19 +447,12 @@ LUA_BINDING_BEGIN( CNewParticleEffectReg, GetRenderBounds, "method", "Returns mi
 }
 LUA_BINDING_END()
 
-// Render() -- GMod can force a particle system into the current render
-// context (vgui panels).  This engine has no out-of-band particle render
-// path: systems only draw through the world renderable list, so this is a
-// reported no-op (same precedent as SetIsViewModelEffect above).
-LUA_BINDING_BEGIN( CNewParticleEffectReg, Render, "method", "HL2SB: no manual render path -- particle systems draw through the world render only.", "client" )
+// Manual rendering remains available when automatic rendering is disabled.
+LUA_BINDING_BEGIN( CNewParticleEffectReg, Render, "method", "Renders the particle system using the current render context.", "client" )
 {
-	LuaNewParticle_checkudata( L, 1 );
-	static bool s_bWarned = false;
-	if ( !s_bWarned )
-	{
-		s_bWarned = true;
-		Warning( "[HL2SB] CNewParticleEffect:Render has no manual render path in this engine; systems auto-draw.\n" );
-	}
+	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
+	CMatRenderContextPtr pRenderContext( materials );
+	pEffect->Render( pRenderContext, pEffect->IsTwoPass(), NULL );
 	return 0;
 }
 LUA_BINDING_END()

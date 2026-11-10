@@ -23,6 +23,7 @@ extern ConVar hl2sb_dev_msgs;
 #include "engine/ibrushsurfaceinfo.h"
 #include "model_types.h"
 #include "lbaseentity_shared.h"
+#include "lua_sound_hook.h"
 #include "basescripted.h"
 #include "hl2sb_transmit_parent.h"
 #include "mathlib/vmatrix.h"	// HL2SB: VMatrix for the transform matrix getters
@@ -266,9 +267,76 @@ LUALIB_API lua_CBaseEntity *luaL_optentity (lua_State *L, int narg,
 }
 
 
+static void HL2SB_SoundTableField( lua_State *L, const char *name ) {
+  lua_pushstring( L, name );
+  lua_rawget( L, -2 );
+}
+
+bool HL2SB_LuaEntityEmitSound( HL2SB_SoundHookData &sound ) {
+  // Lua states are owned by the game thread. Sound emission may also be
+  // reached from engine subsystems for which that ownership is not guaranteed.
+  if ( !ThreadInMainThread() || !L ) return true;
+  static int depth = 0;
+  if ( depth >= 100 ) return true;
+  ++depth;
+  const int top = lua_gettop( L );
+  lua_checkstack( L, 32 );
+  lua_newtable( L );
+  lua_pushstring( L, sound.soundName.Get() ); lua_setfield( L, -2, "SoundName" );
+  lua_pushstring( L, sound.originalSoundName.Get() ); lua_setfield( L, -2, "OriginalSoundName" );
+  lua_pushentity( L, sound.entity ); lua_setfield( L, -2, "Entity" );
+  lua_pushinteger( L, sound.channel ); lua_setfield( L, -2, "Channel" );
+  lua_pushinteger( L, sound.soundLevel ); lua_setfield( L, -2, "SoundLevel" );
+  lua_pushinteger( L, sound.flags ); lua_setfield( L, -2, "Flags" );
+  lua_pushinteger( L, sound.pitch ); lua_setfield( L, -2, "Pitch" );
+  lua_pushinteger( L, sound.dsp ); lua_setfield( L, -2, "DSP" );
+  lua_pushnumber( L, sound.volume ); lua_setfield( L, -2, "Volume" );
+  lua_pushnumber( L, sound.soundTime ); lua_setfield( L, -2, "SoundTime" );
+  if ( sound.hasPosition ) { lua_pushvector( L, sound.position ); lua_setfield( L, -2, "Pos" ); }
+  const int table = lua_gettop( L );
+  BEGIN_LUA_CALL_HOOK( "EntityEmitSound" );
+    lua_pushvalue( L, table );
+  END_LUA_CALL_HOOK( 1, 1 );
+  const bool isBoolean = lua_isboolean( L, -1 );
+  const bool apply = isBoolean && lua_toboolean( L, -1 );
+  const bool proceed = !isBoolean || lua_toboolean( L, -1 );
+  lua_pop( L, 1 );
+  if ( apply ) {
+    HL2SB_SoundTableField( L, "SoundName" );
+    if ( lua_type( L, -1 ) == LUA_TSTRING ) sound.soundName = lua_tostring( L, -1 );
+    lua_pop( L, 1 );
+#define HL2SB_SOUND_NUMBER(field, member, type) \
+    HL2SB_SoundTableField( L, field ); \
+    if ( lua_isnumber( L, -1 ) ) sound.member = (type)lua_tonumber( L, -1 ); \
+    lua_pop( L, 1 )
+    HL2SB_SOUND_NUMBER( "Channel", channel, int );
+    HL2SB_SOUND_NUMBER( "SoundLevel", soundLevel, int );
+    HL2SB_SOUND_NUMBER( "Flags", flags, int );
+    HL2SB_SOUND_NUMBER( "Pitch", pitch, int );
+    HL2SB_SOUND_NUMBER( "DSP", dsp, int );
+    HL2SB_SOUND_NUMBER( "Volume", volume, float );
+    HL2SB_SOUND_NUMBER( "SoundTime", soundTime, float );
+#undef HL2SB_SOUND_NUMBER
+    HL2SB_SoundTableField( L, "Pos" );
+    if ( luaL_testudata( L, -1, "Vector" ) ) {
+      sound.position = lua_tovector( L, -1 );
+      sound.hasPosition = true;
+    }
+    lua_pop( L, 1 );
+  }
+  lua_settop( L, top );
+  --depth;
+  return proceed;
+}
+
 static int CBaseEntity_Activate (lua_State *L) {
   luaL_checkentity(L, 1)->Activate();
   return 0;
+}
+
+static int CBaseEntity_Alive (lua_State *L) {
+  lua_pushboolean(L, luaL_checkentity(L, 1)->IsAlive());
+  return 1;
 }
 
 static int CBaseEntity_AddDataObjectType (lua_State *L) {
@@ -277,7 +345,7 @@ static int CBaseEntity_AddDataObjectType (lua_State *L) {
 }
 
 static int CBaseEntity_AddEffects (lua_State *L) {
-  luaL_checkentity(L, 1)->AddEffects(luaL_checkint(L, 2));
+  luaL_checkentity(L, 1)->AddEffects((int)luaL_checknumber(L, 2));
   return 0;
 }
 
@@ -977,7 +1045,8 @@ static int CBaseEntity_GetAbsOrigin (lua_State *L) {
 }
 
 static int CBaseEntity_GetAbsVelocity (lua_State *L) {
-  Vector v = luaL_checkentity(L, 1)->GetAbsVelocity();
+  // GMod exposes the local velocity through this historical API name.
+  Vector v = luaL_checkentity(L, 1)->GetLocalVelocity();
   lua_pushvector(L, v);
   return 1;
 }
@@ -1671,10 +1740,8 @@ static int CBaseEntity_GetSolidFlags (lua_State *L) {
 }
 
 // HL2SB GMod compat: Entity:GetViewEntity() -- the entity the player is
-// seeing through when a camera entity overrides their eyes, NULL otherwise.
-// Servers answer from the player's own m_hViewEntity; on the client only the
-// local player's answer is knowable (the engine's current view entity), any
-// other entity reports NULL, which is what the branching addons expect.
+// seeing through when a camera entity overrides their eyes. GMod falls back to
+// the player itself when no view override is available.
 static int CBaseEntity_GetViewEntity (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
 #ifdef CLIENT_DLL
@@ -1682,15 +1749,16 @@ static int CBaseEntity_GetViewEntity (lua_State *L) {
   if ( pLocal != NULL && pEntity == pLocal )
   {
       CBaseEntity *pCamera = cl_entitylist->GetEnt( render->GetViewEntity() );
-      lua_pushentity( L, pCamera );
+      lua_pushentity( L, pCamera ? pCamera : pEntity );
       return 1;
   }
-  lua_pushentity( L, NULL );
+  lua_pushentity( L, pEntity->IsPlayer() ? pEntity : NULL );
   return 1;
 #else
   if ( pEntity->IsPlayer() )
   {
-      lua_pushentity( L, static_cast< CBasePlayer * >( pEntity )->GetViewEntity() );
+      CBaseEntity *pCamera = static_cast< CBasePlayer * >( pEntity )->GetViewEntity();
+      lua_pushentity( L, pCamera ? pCamera : pEntity );
       return 1;
   }
   lua_pushentity( L, NULL );
@@ -7003,6 +7071,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"Get_HL2SBVehicleClass", Vehicle_GetVehicleClass},
   {"Set_HL2SBVehicleClass", Vehicle_SetVehicleClass},
   {"Activate", CBaseEntity_Activate},
+  {"Alive", CBaseEntity_Alive},
   {"AddDataObjectType", CBaseEntity_AddDataObjectType},
   {"AddEffects", CBaseEntity_AddEffects},
   {"AddEFlags", CBaseEntity_AddEFlags},

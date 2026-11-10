@@ -79,8 +79,8 @@ static int input_GetCurrentIMEHandle (lua_State *L) {
 // appear to do nothing at all.  (RememberCursorPosition is called from
 // spawnmenu.lua:126 and contextmenu.lua:74 in the same way.)
 static int input_GetCursorPos (lua_State *L) {
-  int x, y;
-  input()->GetCursorPos(x, y);
+  int x = 0, y = 0;
+  if (!engine || engine->IsActiveApp()) input()->GetCursorPos(x, y);
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
   return 2;
@@ -135,12 +135,12 @@ static int input_GetShouldInvertCompositionString (lua_State *L) {
 static int input_IsKeyDown (lua_State *L) {
   // HL2SB: GMod only accepts keyboard codes here (an out-of-range code pushes
   // false) -- the vgui key state array must not be indexed with garbage.
-  int iCode = (int)luaL_checkint(L, 1);
-  if ( iCode < 0 || iCode >= KEY_COUNT ) {
+  const double value = luaL_checknumber(L, 1);
+  if ( !(value > -1.0 && value < (double)KEY_COUNT) ) {
     lua_pushboolean(L, 0);
     return 1;
   }
-  lua_pushboolean(L, input()->IsKeyDown((KeyCode)iCode));
+  lua_pushboolean(L, input()->IsKeyDown((KeyCode)(int)value));
   return 1;
 }
 
@@ -155,7 +155,9 @@ static int input_IsControlDown (lua_State *L) {
 }
 
 static int input_IsMouseDown (lua_State *L) {
-  lua_pushboolean(L, input()->IsMouseDown((KeyCode)luaL_checkint(L, 1)));
+  const double value = luaL_checknumber(L, 1);
+  const bool valid = value >= (double)MOUSE_FIRST && value < (double)MOUSE_LAST + 1.0;
+  lua_pushboolean(L, valid && input()->IsMouseDown((MouseCode)(int)value));
   return 1;
 }
 
@@ -303,12 +305,14 @@ static int input_UnregisterKeyCodeUnhandledListener (lua_State *L) {
 }
 
 static int input_WasKeyPressed (lua_State *L) {
-  lua_pushboolean(L, input()->WasKeyPressed((KeyCode)luaL_checkint(L, 1)));
+  const double value = luaL_checknumber(L, 1);
+  lua_pushboolean(L, value > -1.0 && value < (double)KEY_COUNT && input()->WasKeyPressed((KeyCode)(int)value));
   return 1;
 }
 
 static int input_WasKeyReleased (lua_State *L) {
-  lua_pushboolean(L, input()->WasKeyReleased((KeyCode)luaL_checkint(L, 1)));
+  const double value = luaL_checknumber(L, 1);
+  lua_pushboolean(L, value > -1.0 && value < (double)KEY_COUNT && input()->WasKeyReleased((KeyCode)(int)value));
   return 1;
 }
 
@@ -323,7 +327,8 @@ static int input_WasMouseDoublePressed (lua_State *L) {
 }
 
 static int input_WasMousePressed (lua_State *L) {
-  lua_pushboolean(L, input()->WasMousePressed((MouseCode)luaL_checkint(L, 1)));
+  const double value = luaL_checknumber(L, 1);
+  lua_pushboolean(L, value >= (double)MOUSE_FIRST && value < (double)MOUSE_LAST + 1.0 && input()->WasMousePressed((MouseCode)(int)value));
   return 1;
 }
 
@@ -427,6 +432,15 @@ static int input_LookupBinding (lua_State *L) {
   return 1;
 }
 
+static int input_LookupKeyBinding (lua_State *L) {
+  const double value = luaL_checknumber(L, 1);
+  if (!(value > -1.0 && value < (double)BUTTON_CODE_LAST)) return 0;
+  const char *binding = engine->Key_BindingForKey((ButtonCode_t)(int)value);
+  if (!binding) return 0;
+  lua_pushstring(L, binding);
+  return 1;
+}
+
 
 extern void HL2SB_SelectWeapon( C_BaseCombatWeapon *weapon );
 
@@ -464,6 +478,7 @@ static const luaL_Reg inputlib[] = {
   {"CheckKeyTrapping",   input_CheckKeyTrapping},
   {"GetKeyName",   input_GetKeyName},
   {"LookupBinding",   input_LookupBinding},
+  {"LookupKeyBinding", input_LookupKeyBinding},
   {"IsKeyTrapping",   input_IsKeyTrapping},
   {"StartKeyTrapping",   input_StartKeyTrapping},
   {"GetAppModalSurface",   input_GetAppModalSurface},

@@ -397,13 +397,18 @@ LUA_BINDING_END( "string", "The country code of the user." )
 
 LUA_BINDING_BEGIN( Systems, HasFocus, "library", "Check if the application has focus." )
 {
-#ifdef _WIN32
+#ifdef CLIENT_DLL
+    lua_pushboolean( L, engine && engine->IsActiveApp() );
+#elif defined(_WIN32)
+    if ( engine && engine->IsDedicatedServer() ) return 0;
     HWND hWnd = ( HWND )GetAppWindow();
-    lua_pushboolean( L, hWnd == GetActiveWindow() );
+    if ( !hWnd ) return 0;
+    DWORD processId = 0;
+    HWND foreground = GetForegroundWindow();
+    if ( !foreground || !GetWindowThreadProcessId( foreground, &processId ) ) return 0;
+    lua_pushboolean( L, processId == GetCurrentProcessId() );
 #else
-    // TODO: Implement for other platforms
-    Assert( 0 );
-    lua_pushboolean( L, false );
+    return 0;
 #endif
 
     return 1;

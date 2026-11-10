@@ -136,7 +136,8 @@ static int CTakeDamageInfo_GetDamageStats (lua_State *L) {
 }
 
 static int CTakeDamageInfo_GetDamageType (lua_State *L) {
-  lua_pushinteger(L, luaL_checkdamageinfo(L, 1).GetDamageType());
+  // GMod promotes the 32-bit damage mask as unsigned to a Lua number.
+  lua_pushnumber(L, (unsigned int)luaL_checkdamageinfo(L, 1).GetDamageType());
   return 1;
 }
 
@@ -190,7 +191,8 @@ static int CTakeDamageInfo_SetDamage (lua_State *L) {
 }
 
 static int CTakeDamageInfo_SetDamageCustom (lua_State *L) {
-  luaL_checkdamageinfo(L, 1).SetDamageCustom(luaL_checkint(L, 2));
+  // GMod accepts a Lua number and truncates its fractional part.
+  luaL_checkdamageinfo(L, 1).SetDamageCustom((int)luaL_checknumber(L, 2));
   return 0;
 }
 
