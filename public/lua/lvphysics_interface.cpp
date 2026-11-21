@@ -18,6 +18,7 @@
 #include "vphysics/lperformance.h"
 #include "mathlib/lvector.h"
 #include "mathlib/vmatrix.h"
+#include <climits>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -560,10 +561,43 @@ static int physenv_GetNextFrameTime (lua_State *L) {
   return 1;
 }
 
+static const struct {
+  const char *name;
+  int physics_performanceparams_t::*member;
+} s_PhysPerformanceInts[] = {
+  {"MaxCollisionsPerObjectPerTimestep", &physics_performanceparams_t::maxCollisionsPerObjectPerTimestep},
+  {"MaxCollisionChecksPerTimestep", &physics_performanceparams_t::maxCollisionChecksPerTimestep},
+};
+
+static const struct {
+  const char *name;
+  float physics_performanceparams_t::*member;
+} s_PhysPerformanceFloats[] = {
+  {"MaxVelocity", &physics_performanceparams_t::maxVelocity},
+  {"MaxAngularVelocity", &physics_performanceparams_t::maxAngularVelocity},
+  {"LookAheadTimeObjectsVsWorld", &physics_performanceparams_t::lookAheadTimeObjectsVsWorld},
+  {"LookAheadTimeObjectsVsObject", &physics_performanceparams_t::lookAheadTimeObjectsVsObject},
+  {"MinFrictionMass", &physics_performanceparams_t::minFrictionMass},
+  {"MaxFrictionMass", &physics_performanceparams_t::maxFrictionMass},
+};
+
 static int physenv_GetPerformanceSettings (lua_State *L) {
-  physics_performanceparams_t pOutput;
-  physenv->GetPerformanceSettings(&pOutput);
-  lua_pushperformanceparams(L, &pOutput);
+  if (!physenv)
+    return 0;
+  physics_performanceparams_t settings;
+  physenv->GetPerformanceSettings(&settings);
+  lua_pushperformanceparams(L, &settings);
+  // Keep lowercase keys exposed by Box and return GMod's documented keys.
+  lua_pushinteger(L, settings.maxCollisionsPerObjectPerTimestep);
+  lua_setfield(L, -2, "maxCollisionsPerObjectPerTimestep");
+  for (const auto &field : s_PhysPerformanceInts) {
+    lua_pushnumber(L, static_cast<float>(settings.*field.member));
+    lua_setfield(L, -2, field.name);
+  }
+  for (const auto &field : s_PhysPerformanceFloats) {
+    lua_pushnumber(L, settings.*field.member);
+    lua_setfield(L, -2, field.name);
+  }
   return 1;
 }
 
@@ -603,7 +637,29 @@ static int physenv_SetGravity (lua_State *L) {
 }
 
 static int physenv_SetPerformanceSettings (lua_State *L) {
- // physenv->SetPerformanceSettings(&lua_toperformanceparams(L, 1));
+  IPhysicsEnvironment *environment = physenv;
+  if (!environment)
+    return 0;
+  luaL_checktype(L, 1, LUA_TTABLE);
+  physics_performanceparams_t settings;
+  environment->GetPerformanceSettings(&settings);
+  for (const auto &field : s_PhysPerformanceInts) {
+    if (lua_getfield(L, 1, field.name) == LUA_TNUMBER) {
+      const double value = lua_tonumber(L, -1);
+      // Match x64 truncation without invoking undefined C++ conversion.
+      settings.*field.member = value > static_cast<double>(INT_MIN) - 1.0 &&
+                                value < static_cast<double>(INT_MAX) + 1.0
+                                ? static_cast<int>(value) : INT_MIN;
+    }
+    lua_pop(L, 1);
+  }
+  for (const auto &field : s_PhysPerformanceFloats) {
+    if (lua_getfield(L, 1, field.name) == LUA_TNUMBER)
+      settings.*field.member = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+  }
+  if (physenv == environment)
+    environment->SetPerformanceSettings(&settings);
   return 0;
 }
 

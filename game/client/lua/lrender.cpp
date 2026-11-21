@@ -325,6 +325,28 @@ LUA_BINDING_BEGIN( Renders, CullMode, "library", "Sets the cull mode that decide
 }
 LUA_BINDING_END()
 
+static int GetScreenEffectTextureIndex( lua_State *L )
+{
+    if ( lua_type( L, 1 ) != LUA_TNUMBER )
+        return 0;
+    const double value = lua_tonumber( L, 1 );
+    if ( !( value > -1.0 && value < MAX_FB_TEXTURES ) )
+        return -1;
+    return static_cast<int>( value );
+}
+
+static ITexture *FindScreenEffectTexture( int index )
+{
+    if ( index < 0 )
+        return NULL;
+    // The engine creates slots 0 and 1. An optional slot may not exist.
+    if ( index < 2 )
+        return GetFullFrameFrameBufferTexture( index );
+    char name[32];
+    V_snprintf( name, sizeof( name ), "_rt_FullFrameFB%d", index );
+    return materials->FindTexture( name, TEXTURE_GROUP_RENDER_TARGET, false );
+}
+
 LUA_BINDING_BEGIN( Renders, GetScreenEffectTexture, "library", "Get the screen effect texture.", "client" )
 {
     // HL2SB (2026-09-24, second pass): hand out the ENGINE'S frame-buffer
@@ -341,9 +363,10 @@ LUA_BINDING_BEGIN( Renders, GetScreenEffectTexture, "library", "Get the screen e
     // this arrangement: halo captures with UpdateScreenEffectTexture BEFORE
     // drawing any silhouette, so the FB holds the pre-halo scene and is only
     // sampled after the pass.
-    int nIndex = (int)LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optnumber, 1, 0, "textureIndex" );
-    nIndex = clamp( nIndex, 0, 1 );
-    lua_pushitexture( L, GetFullFrameFrameBufferTexture( nIndex ) );
+    ITexture *texture = FindScreenEffectTexture( GetScreenEffectTextureIndex( L ) );
+    if ( IsErrorTexture( texture ) )
+        return 0;
+    lua_pushitexture( L, texture );
     return 1;
 }
 LUA_BINDING_END( "Texture", "The screen effect texture." )
@@ -461,6 +484,9 @@ LUA_BINDING_END( "number", "The alpha blend." )
 
 LUA_BINDING_BEGIN( Renders, UpdateScreenEffectTexture, "library", "Update the screen effect texture.", "client" )
 {
+    const int index = GetScreenEffectTextureIndex( L );
+    if ( IsErrorTexture( FindScreenEffectTexture( index ) ) )
+        return 0;
     const CViewSetup *pViewSetup = view->GetViewSetup();
 
     // HL2SB (2026-10-03): optional bDestFullScreen (arg 2).  The engine's own
@@ -470,8 +496,7 @@ LUA_BINDING_BEGIN( Renders, UpdateScreenEffectTexture, "library", "Update the sc
     bool bDestFullScreen = luaL_optboolean( L, 2, 0 ) ? true : false;
 
     UpdateScreenEffectTexture(
-        LUA_BINDING_ARGUMENT_WITH_DEFAULT(
-            luaL_optnumber, 1, 0, "textureIndex" ),
+        index,
         pViewSetup->x,
         pViewSetup->y,
         pViewSetup->width,
@@ -480,6 +505,14 @@ LUA_BINDING_BEGIN( Renders, UpdateScreenEffectTexture, "library", "Update the sc
     return 0;
 }
 LUA_BINDING_END()
+
+LUA_BINDING_BEGIN( Renders, UpdatePowerOfTwoTexture, "library", "Copies the current view into the power-of-two frame buffer.", "client" )
+{
+    UpdateRefractTexture();
+    lua_pushitexture( L, GetPowerOfTwoFrameBufferTexture() );
+    return 1;
+}
+LUA_BINDING_END( "Texture", "The power-of-two frame buffer texture." )
 
 // HL2SB GMod compat: render.UpdateRefractTexture() -- wiki: "Pretty much alias
 // of render.UpdatePowerOfTwoTexture but does not return the texture."  The

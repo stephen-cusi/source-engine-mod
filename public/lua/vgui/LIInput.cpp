@@ -424,10 +424,8 @@ static int input_LookupBinding (lua_State *L) {
   else
     pszKey = engine->Key_LookupBinding(pszBinding);
 
-  if ( pszKey == NULL )
-    lua_pushnil(L);
-  else
-    lua_pushstring(L, pszKey);
+  if ( pszKey == NULL ) return 0;
+  lua_pushstring(L, pszKey);
 
   return 1;
 }
