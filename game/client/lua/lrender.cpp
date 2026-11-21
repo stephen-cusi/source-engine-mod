@@ -3321,48 +3321,13 @@ static int HL2SB_DynamicLightIndex( lua_State *L )
     return 1;
 }
 
-static byte HL2SB_DynamicLightSaturate( float v )
+static byte HL2SB_DynamicLightColorByte( double value )
 {
-    int n = (int)v;
-    if ( n < 0 ) n = 0;
-    if ( n > 255 ) n = 255;
-    return (byte)n;
-}
-
-static void HL2SB_DynamicLightRecomputeColor( lua_State *L, int nTable, dlight_t *dl )
-{
-    if ( dl == NULL )
-        return;
-
-    // field floats (falling back to the GMod defaults when absent)
-    auto FieldFloat = []( lua_State *L, int nTable, const char *pszKey, float flDefault ) {
-        lua_pushfstring( L, "__%s", pszKey );
-        lua_rawget( L, nTable );
-        float v = lua_isnumber( L, -1 ) ? (float)lua_tonumber( L, -1 ) : flDefault;
-        lua_pop( L, 1 );
-        return v;
-    };
-
-    const float flR = FieldFloat( L, nTable, "r", 255.0f );
-    const float flG = FieldFloat( L, nTable, "g", 255.0f );
-    const float flB = FieldFloat( L, nTable, "b", 255.0f );
-    const float flBrightness = FieldFloat( L, nTable, "Brightness", 1.0f );
-
-    // one shared exponent for all three channels: raise it until the
-    // strongest channel fits a byte, then scale every channel the same way
-    const float flScaled[3] = { flR * flBrightness, flG * flBrightness, flB * flBrightness };
-    float flMax = MAX( MAX( flScaled[0], flScaled[1] ), flScaled[2] );
-    int nExp = 0;
-    while ( flMax > 255.0f && nExp < 15 )
-    {
-        flMax *= 0.5f;
-        ++nExp;
-    }
-    const float flNorm = (float)ldexp( 1.0, -nExp );
-    dl->color.r = HL2SB_DynamicLightSaturate( flScaled[0] * flNorm );
-    dl->color.g = HL2SB_DynamicLightSaturate( flScaled[1] * flNorm );
-    dl->color.b = HL2SB_DynamicLightSaturate( flScaled[2] * flNorm );
-    dl->color.exponent = nExp;
+    // GMod's x64 setter truncates to int32 and stores its low byte. An
+    // invalid conversion also stores zero in that byte; avoid undefined casts.
+    if ( !( value > -2147483649.0 && value < 2147483648.0 ) )
+        return 0;
+    return static_cast<byte>( static_cast<int>( value ) );
 }
 
 static int HL2SB_DynamicLightNewIndex( lua_State *L )
@@ -3385,24 +3350,20 @@ static int HL2SB_DynamicLightNewIndex( lua_State *L )
     lua_pushvalue( L, 3 );
     lua_rawset( L, 1 );
 
-    // Recognized color fields are case-insensitive. Keep a canonical copy
-    // for recomputation: ARC9 writes "brightness" while other addons use
-    // "Brightness", and likewise for uppercase RGB.
-    const char *pColorKey = NULL;
-    if ( Q_stricmp( pszKey, "r" ) == 0 ) pColorKey = "r";
-    else if ( Q_stricmp( pszKey, "g" ) == 0 ) pColorKey = "g";
-    else if ( Q_stricmp( pszKey, "b" ) == 0 ) pColorKey = "b";
-    else if ( Q_stricmp( pszKey, "brightness" ) == 0 ) pColorKey = "Brightness";
-    if ( pColorKey )
+    // RGB are independent bytes. Brightness is the signed RGB exponent.
+    // ARC9 customisation deliberately uses negative values to dim the model.
+    if ( Q_stricmp( pszKey, "r" ) == 0 )
+        dl->color.r = HL2SB_DynamicLightColorByte( luaL_checknumber( L, 3 ) );
+    else if ( Q_stricmp( pszKey, "g" ) == 0 )
+        dl->color.g = HL2SB_DynamicLightColorByte( luaL_checknumber( L, 3 ) );
+    else if ( Q_stricmp( pszKey, "b" ) == 0 )
+        dl->color.b = HL2SB_DynamicLightColorByte( luaL_checknumber( L, 3 ) );
+    else if ( Q_stricmp( pszKey, "brightness" ) == 0 )
     {
-        lua_pushfstring( L, "__%s", pColorKey );
-        lua_pushvalue( L, 3 );
-        lua_rawset( L, 1 );
-        HL2SB_DynamicLightRecomputeColor( L, 1, dl );
-        return 0;
+        const int exponent = HL2SB_DynamicLightColorByte( luaL_checknumber( L, 3 ) );
+        dl->color.exponent = static_cast<signed char>( exponent < 128 ? exponent : exponent - 256 );
     }
-
-    if ( Q_stricmp( pszKey, "Pos" ) == 0 && luaL_testudata( L, 3, "Vector" ) != NULL )
+    else if ( Q_stricmp( pszKey, "Pos" ) == 0 && luaL_testudata( L, 3, "Vector" ) != NULL )
         dl->origin = luaL_checkvector( L, 3 );
     else if ( Q_stricmp( pszKey, "Dir" ) == 0 && luaL_testudata( L, 3, "Vector" ) != NULL )
         dl->m_Direction = luaL_checkvector( L, 3 );

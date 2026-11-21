@@ -2261,7 +2261,19 @@ static int luasrc_util_SteamIDFrom64 (lua_State *L) {
 // util.SharedRandom -- GMod's name for the engine's SharedRandomFloat.
 //-----------------------------------------------------------------------------
 static int luasrc_util_SharedRandom (lua_State *L) {
-  return luasrc_SharedRandomFloat( L );
+  const char *name = luaL_checkstring( L, 1 );
+  const float minimum = (float)luaL_checknumber( L, 2 );
+  const float maximum = (float)luaL_checknumber( L, 3 );
+  int additionalSeed = 0;
+  if ( lua_type( L, 4 ) == LUA_TNUMBER ) {
+    const double value = lua_tonumber( L, 4 );
+    // GMod's x64 binding truncates fractional Lua numbers toward zero.
+    // Guard the conversion to reproduce its out-of-range result safely.
+    additionalSeed = value >= -2147483648.0 && value < 2147483648.0
+      ? static_cast<int>( value ) : (-2147483647 - 1);
+  }
+  lua_pushnumber( L, SharedRandomFloat( name, minimum, maximum, additionalSeed ) );
+  return 1;
 }
 
 //-----------------------------------------------------------------------------

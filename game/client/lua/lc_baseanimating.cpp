@@ -1634,18 +1634,31 @@ static int CBaseAnimating_ResetLatched (lua_State *L) {
   return 0;
 }
 
+static bool ReadNumericSequence( lua_State *L, int index, int &sequence ) {
+  const double value = lua_tonumber(L, index);
+  // GMod truncates numeric IDs. Guard the C++ conversion for non-finite
+  // and out-of-range values before passing an ID to the engine.
+  if (!(value > -2147483649.0 && value < 2147483648.0))
+    return false;
+  sequence = static_cast<int>(value);
+  return true;
+}
+
 static int CBaseAnimating_ResetSequence (lua_State *L) {
-  // HL2SB: GMod's Entity:ResetSequence takes number OR string -- a string is
-  // the sequence NAME and is resolved through LookupSequence first (the
-  // documented contract).  The nvg addon plays named sequences on
-  // ClientsideModels ("idleoff", "equip", ...); number-only checking aborted
-  // its model creation block on the first frame and left the night-vision
-  // camera entity permanently unset.
-  C_BaseAnimating *pAnimating = luaL_checkanimating(L, 1);
-  if ( lua_type(L, 2) == LUA_TSTRING )
-    pAnimating->ResetSequence(pAnimating->LookupSequence(luaL_checkstring(L, 2)));
-  else
-    pAnimating->ResetSequence(luaL_checkint(L, 2));
+  CBaseAnimating *entity = luaL_checkentity(L, 1)->GetBaseAnimating();
+  if (!entity)
+    return 0;
+
+  if (lua_type(L, 2) == LUA_TSTRING) {
+    const int sequence = entity->LookupSequence(luaL_checkstring(L, 2));
+    entity->ResetSequence(sequence);
+  } else if (lua_type(L, 2) == LUA_TNUMBER) {
+    int sequence;
+    if (ReadNumericSequence(L, 2, sequence))
+      entity->ResetSequence(sequence);
+  } else {
+    return luaL_argerror(L, 2, "number or string expected");
+  }
   return 0;
 }
 
@@ -1674,10 +1687,14 @@ static int CBaseAnimating_SelectWeightedSequence (lua_State *L) {
 }
 
 static int CBaseAnimating_SequenceDuration (lua_State *L) {
-  if (lua_isnoneornil(L, 2))
-    lua_pushnumber(L, luaL_checkanimating(L, 1)->SequenceDuration());
-  else
-	lua_pushnumber(L, luaL_checkanimating(L, 1)->SequenceDuration(luaL_checkint(L, 2)));
+  CBaseAnimating *entity = luaL_checkentity(L, 1)->GetBaseAnimating();
+  if (!entity)
+    return 0;
+
+  int sequence = entity->GetSequence();
+  if (lua_type(L, 2) == LUA_TNUMBER && !ReadNumericSequence(L, 2, sequence))
+    sequence = -1;
+  lua_pushnumber(L, entity->SequenceDuration(sequence));
   return 1;
 }
 

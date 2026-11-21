@@ -599,15 +599,31 @@ static int CBaseAnimating_LookupSequence (lua_State *L) {
   return 2;
 }
 
+static bool ReadNumericSequence( lua_State *L, int index, int &sequence ) {
+  const double value = lua_tonumber(L, index);
+  // GMod truncates numeric IDs. Guard the C++ conversion for non-finite
+  // and out-of-range values before passing an ID to the engine.
+  if (!(value > -2147483649.0 && value < 2147483648.0))
+    return false;
+  sequence = static_cast<int>(value);
+  return true;
+}
+
 static int CBaseAnimating_ResetSequence (lua_State *L) {
-  // HL2SB: match the client and GMod -- a string argument is the sequence
-  // NAME and goes through LookupSequence first (Entity:ResetSequence
-  // contract); numbers pass through unchanged.
-  CBaseAnimating *pAnimating = luaL_checkanimating(L, 1);
-  if ( lua_type(L, 2) == LUA_TSTRING )
-    pAnimating->ResetSequence(pAnimating->LookupSequence(luaL_checkstring(L, 2)));
-  else
-    pAnimating->ResetSequence(luaL_checkinteger(L, 2));
+  CBaseAnimating *entity = luaL_checkentity(L, 1)->GetBaseAnimating();
+  if (!entity)
+    return 0;
+
+  if (lua_type(L, 2) == LUA_TSTRING) {
+    const int sequence = entity->LookupSequence(luaL_checkstring(L, 2));
+    entity->ResetSequence(sequence);
+  } else if (lua_type(L, 2) == LUA_TNUMBER) {
+    int sequence;
+    if (ReadNumericSequence(L, 2, sequence))
+      entity->ResetSequence(sequence);
+  } else {
+    return luaL_argerror(L, 2, "number or string expected");
+  }
   return 0;
 }
 
@@ -626,15 +642,14 @@ static int CBaseAnimating_SelectWeightedSequence (lua_State *L) {
 }
 
 static int CBaseAnimating_SequenceDuration (lua_State *L) {
-  switch(lua_type(L, 2)) {
-    case LUA_TNONE:
-    default:
-      lua_pushnumber(L, luaL_checkanimating(L, 1)->SequenceDuration());
-      break;
-    case LUA_TNUMBER:
-      lua_pushnumber(L, luaL_checkanimating(L, 1)->SequenceDuration(luaL_checkint(L, 2)));
-      break;
-  }
+  CBaseAnimating *entity = luaL_checkentity(L, 1)->GetBaseAnimating();
+  if (!entity)
+    return 0;
+
+  int sequence = entity->GetSequence();
+  if (lua_type(L, 2) == LUA_TNUMBER && !ReadNumericSequence(L, 2, sequence))
+    sequence = -1;
+  lua_pushnumber(L, entity->SequenceDuration(sequence));
   return 1;
 }
 
