@@ -57,6 +57,8 @@ class CMatCallQueue;
 #include "tier2/beamsegdraw.h"
 #include "materialsystem/imaterialsystemhardwareconfig.h"
 #include "c_rope.h"
+#include <algorithm>
+#include <cfloat>
 #if defined( _WIN32 )
 #include <windows.h>
 #endif
@@ -146,8 +148,45 @@ void HL2SB_RenderBrushOverrideConnect( CreateInterfaceFn factory )
 // ENT:Draw and effect Render; re-resolving through FindMaterialEx each time
 // re-ran the PNG-synthesise path mid-render, which is the documented
 // "creating materials while drawing crashes" landmine.  Resolve once, reuse.
-struct HL2SB_MatCacheEntry_t { IMaterial *pMat; };
+struct HL2SB_MatCacheEntry_t
+{
+    IMaterial *pMat;
+    bool retained;
+};
 static CUtlDict<HL2SB_MatCacheEntry_t, unsigned short> s_MatCache;
+
+static void HL2SB_SetLastBoundMaterial( IMaterial *material )
+{
+    if ( material == g_pHL2SBLastBoundMaterial )
+        return;
+    if ( material )
+        material->IncrementReferenceCount();
+    if ( g_pHL2SBLastBoundMaterial )
+        g_pHL2SBLastBoundMaterial->DecrementReferenceCount();
+    g_pHL2SBLastBoundMaterial = material;
+}
+
+class CHL2SBLuaRenderMaterialSystem : public CAutoGameSystem
+{
+public:
+    CHL2SBLuaRenderMaterialSystem() : CAutoGameSystem( "HL2SB Lua render materials" ) {}
+    void LevelShutdownPostEntity() override { ReleaseMaterials(); }
+    void Shutdown() override { ReleaseMaterials(); }
+
+private:
+    static void ReleaseMaterials()
+    {
+        HL2SB_SetLastBoundMaterial( NULL );
+        for ( unsigned short i = s_MatCache.First(); i != s_MatCache.InvalidIndex(); i = s_MatCache.Next( i ) )
+        {
+            const HL2SB_MatCacheEntry_t &entry = s_MatCache[i];
+            if ( entry.retained )
+                entry.pMat->DecrementReferenceCount();
+        }
+        s_MatCache.Purge();
+    }
+};
+static CHL2SBLuaRenderMaterialSystem s_LuaRenderMaterialSystem;
 
 #ifdef GAME_DLL
 
@@ -647,7 +686,6 @@ LUA_BINDING_END()
 // HL2SB: the material render.SetMaterial last bound -- DrawScreenQuad draws it
 // (this render context has no GetBoundMaterial).  Defined here so the
 // DrawScreenQuad binding below sees it; SetMaterial (further down) writes it.
-static IMaterial *s_pRendersLastSetMaterial = NULL;
 
 LUA_BINDING_BEGIN( Renders, DrawLine, "library", "Draws a line in 3D space.", "client" )
 {
@@ -667,9 +705,9 @@ LUA_BINDING_BEGIN( Renders, DrawBox, "library", "Draws an oriented box with the 
     const Vector mins = luaL_checkvector( L, 3 );
     const Vector maxs = luaL_checkvector( L, 4 );
     const lua_Color color = luaL_optcolor( L, 5, Color( 255, 255, 255, 255 ) );
-    if ( s_pRendersLastSetMaterial )
+    if ( g_pHL2SBLastBoundMaterial )
         RenderBox( origin, angles, mins, maxs,
-            Color( color.r(), color.g(), color.b(), color.a() ), s_pRendersLastSetMaterial, false );
+            Color( color.r(), color.g(), color.b(), color.a() ), g_pHL2SBLastBoundMaterial, false );
     return 0;
 }
 LUA_BINDING_END()
@@ -866,6 +904,24 @@ LUA_BINDING_BEGIN( Renders, SetViewPort, "library", "Sets the current render vie
 }
 LUA_BINDING_END()
 
+static bool HL2SB_TryRenderInteger( double number, int &result )
+{
+    // GMod truncates toward zero. Reject values outside the integer range
+    // after truncation before asking C++ to perform the conversion.
+    if ( !( number > -2147483649.0 && number < 2147483648.0 ) )
+        return false;
+    result = static_cast<int>( number );
+    return true;
+}
+
+static int HL2SB_CheckRenderInteger( lua_State *L, int index )
+{
+    int result = 0;
+    if ( !HL2SB_TryRenderInteger( luaL_checknumber( L, index ), result ) )
+        luaL_argerror( L, index, "number is out of integer range" );
+    return result;
+}
+
 LUA_BINDING_BEGIN( Renders, PushRenderTarget, "library", "Pushes a render target and viewport for rendering.", "client" )
 {
     ITexture **texture = (ITexture **)luaL_testudata( L, 1, LUA_ITEXTUREMETANAME );
@@ -874,10 +930,10 @@ LUA_BINDING_BEGIN( Renders, PushRenderTarget, "library", "Pushes a render target
     int nX = 0, nY = 0, nW = 0, nH = 0;
     if ( bExplicitViewport )
     {
-        nX = (int)luaL_checknumber( L, 2 );
-        nY = (int)luaL_checknumber( L, 3 );
-        nW = (int)luaL_checknumber( L, 4 );
-        nH = (int)luaL_checknumber( L, 5 );
+        nX = HL2SB_CheckRenderInteger( L, 2 );
+        nY = HL2SB_CheckRenderInteger( L, 3 );
+        nW = HL2SB_CheckRenderInteger( L, 4 );
+        nH = HL2SB_CheckRenderInteger( L, 5 );
     }
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->Flush( false );
@@ -1019,9 +1075,8 @@ static int HL2SB_CaptureIntField( lua_State *L, const char *name, int fallback )
     int value = fallback;
     if ( lua_type( L, -1 ) == LUA_TNUMBER )
     {
-        const double number = lua_tonumber( L, -1 );
-        value = ( number > -2147483649.0 && number < 2147483648.0 )
-            ? (int)number : (-2147483647 - 1);
+        if ( !HL2SB_TryRenderInteger( lua_tonumber( L, -1 ), value ) )
+            value = -2147483647 - 1;
     }
     lua_pop( L, 1 );
     return value;
@@ -1031,7 +1086,8 @@ LUA_BINDING_BEGIN( Renders, Capture, "library", "Captures a render target rectan
 {
     luaL_checktype(L, 1, LUA_TTABLE);
     CMatRenderContextPtr context(materials);
-    int targetWidth, targetHeight;
+    int targetWidth = 0;
+    int targetHeight = 0;
     context->GetRenderTargetDimensions(targetWidth, targetHeight);
     lua_getfield(L, 1, "format");
     const char *format = luaL_optstring(L, -1, "jpg");
@@ -1046,6 +1102,7 @@ LUA_BINDING_BEGIN( Renders, Capture, "library", "Captures a render target rectan
     const int quality = clamp( HL2SB_CaptureIntField( L, "quality", 90 ), 1, 100 );
     lua_getfield(L, 1, "alpha"); bool alpha = png && (lua_isnil(L, -1) || lua_toboolean(L, -1)); lua_pop(L, 1);
     if (x < 0 || y < 0 || width < 1 || height < 1 || width > 8192 || height > 8192 ||
+        targetWidth < width || targetHeight < height ||
         x > targetWidth - width || y > targetHeight - height) {
         lua_pushnil(L);
         return 1;
@@ -1053,6 +1110,8 @@ LUA_BINDING_BEGIN( Renders, Capture, "library", "Captures a render target rectan
     int channels = alpha ? 4 : 3;
     CUtlVector<unsigned char> pixels;
     pixels.SetCount(width * height * channels);
+    // ReadPixels has no success result and may leave the destination untouched.
+    memset( pixels.Base(), 0, pixels.Count() );
     context->ReadPixels(x, y, width, height, pixels.Base(), alpha ? IMAGE_FORMAT_RGBA8888 : IMAGE_FORMAT_RGB888);
     CUtlBuffer output;
     int written = png ? stbi_write_png_to_func(HL2SB_CaptureWrite, &output, width, height, channels, pixels.Base(), width * channels) :
@@ -1063,7 +1122,13 @@ LUA_BINDING_BEGIN( Renders, Capture, "library", "Captures a render target rectan
 }
 LUA_BINDING_END()
 
-static CUtlVector<unsigned char> s_CapturedPixels;
+struct HL2SBCapturedPixel
+{
+    unsigned char rgba[4];
+};
+static_assert( sizeof( HL2SBCapturedPixel ) == 4, "RGBA8888 requires four contiguous bytes" );
+
+static CUtlVector<HL2SBCapturedPixel> s_CapturedPixels;
 static int s_CapturedWidth = 0;
 static int s_CapturedHeight = 0;
 
@@ -1080,22 +1145,28 @@ LUA_BINDING_BEGIN( Renders, CapturePixels, "library", "Captures the current rend
     }
     s_CapturedWidth = width;
     s_CapturedHeight = height;
-    s_CapturedPixels.SetCount( width * height * 4 );
-    context->ReadPixels( 0, 0, width, height, s_CapturedPixels.Base(), IMAGE_FORMAT_RGBA8888 );
+    s_CapturedPixels.SetCount( width * height );
+    // Readback failure must not expose an old or uninitialized pixel to Lua.
+    const HL2SBCapturedPixel black = {{ 0, 0, 0, 255 }};
+    std::fill_n( s_CapturedPixels.Base(), s_CapturedPixels.Count(), black );
+    context->ReadPixels( 0, 0, width, height,
+        reinterpret_cast<unsigned char *>( s_CapturedPixels.Base() ), IMAGE_FORMAT_RGBA8888 );
     return 0;
 }
 LUA_BINDING_END()
 
 LUA_BINDING_BEGIN( Renders, ReadPixel, "library", "Reads a pixel from the last capture.", "client" )
 {
-    const int x = (int)luaL_checknumber( L, 1 );
-    const int y = (int)luaL_checknumber( L, 2 );
-    if ( x < 0 || y < 0 || x >= s_CapturedWidth || y >= s_CapturedHeight || s_CapturedPixels.Count() == 0 )
+    const double inputX = luaL_checknumber( L, 1 );
+    const double inputY = luaL_checknumber( L, 2 );
+    int x, y;
+    if ( !HL2SB_TryRenderInteger( inputX, x ) || !HL2SB_TryRenderInteger( inputY, y ) ||
+        x < 0 || y < 0 || x >= s_CapturedWidth || y >= s_CapturedHeight || s_CapturedPixels.Count() == 0 )
     {
         lua_pushinteger( L, 0 ); lua_pushinteger( L, 0 ); lua_pushinteger( L, 0 );
         return 3;
     }
-    const unsigned char *pixel = s_CapturedPixels.Base() + ( y * s_CapturedWidth + x ) * 4;
+    const unsigned char *pixel = s_CapturedPixels[ y * s_CapturedWidth + x ].rgba;
     for ( int i = 0; i < 4; ++i ) lua_pushinteger( L, pixel[i] );
     return 4;
 }
@@ -1148,7 +1219,7 @@ LUA_BINDING_END( "Texture", "The second SuperFP render target texture." )
 LUA_BINDING_BEGIN( Renders, DrawScreenQuad, "library", "Draws a fullscreen quad with the currently bound material.", "client" )
 {
     CMatRenderContextPtr pRenderContext( materials );
-    IMaterial *pMaterial = s_pRendersLastSetMaterial;
+    IMaterial *pMaterial = g_pHL2SBLastBoundMaterial;
     if ( pMaterial == NULL )
     {
         Warning( "render.DrawScreenQuad - No Material!\n" );
@@ -1213,7 +1284,7 @@ LUA_BINDING_BEGIN( Renders, DrawScreenQuadEx, "library", "Draws a textured scree
     int nTall = LUA_BINDING_ARGUMENT( luaL_checknumber, 4, "tall" );
 
     CMatRenderContextPtr pRenderContext( materials );
-    IMaterial *pMaterial = s_pRendersLastSetMaterial;
+    IMaterial *pMaterial = g_pHL2SBLastBoundMaterial;
     if ( pMaterial == NULL || pMaterial->IsErrorMaterial() )
         return luaL_error( L, "render.DrawScreenQuadEx: no material bound (call render.SetMaterial first)" );
 
@@ -1492,7 +1563,7 @@ LUA_BINDING_BEGIN( Renders, ModelMaterialOverride, "library", "Forces a material
             lua_getfield( L, 1, "__path" );
             if ( lua_type( L, -1 ) == LUA_TSTRING )
                 pszName = lua_tostring( L, -1 );
-            lua_pop( L, 1 );
+            // Keep the result on the stack while pszName is in use.
         }
         if ( pszName != NULL && pszName[0] != '\0' )
             pMaterial = materials->FindMaterial( pszName, TEXTURE_GROUP_CLIENT_EFFECTS, false );
@@ -1550,6 +1621,20 @@ LUA_BINDING_END()
 static int s_nCam2DDepth = 0;   // open cam.Start2D without a matching cam.End
 static int s_nCamViewDepth = 0; // 3D views pushed through cam.Start
 static int s_nCam3D2DDepth = 0; // independent 3D2D model scopes
+enum LuaCameraScope { LUA_CAMERA_2D, LUA_CAMERA_3D, LUA_CAMERA_3D2D };
+static CUtlVector<LuaCameraScope> s_LuaCameraScopes;
+
+static void HL2SB_ForgetLuaCameraScope( LuaCameraScope scope )
+{
+  for ( int i = s_LuaCameraScopes.Count() - 1; i >= 0; --i )
+  {
+    if ( s_LuaCameraScopes[i] == scope )
+    {
+      s_LuaCameraScopes.Remove( i );
+      break;
+    }
+  }
+}
 
 static void HL2SB_PushCam2DMatrices()
 {
@@ -1594,6 +1679,7 @@ static int cam_Start (lua_State *L) {
   {
     HL2SB_PushCam2DMatrices();
     s_nCam2DDepth++;
+    s_LuaCameraScopes.AddToTail( LUA_CAMERA_2D );
     return 0;
   }
 
@@ -1642,6 +1728,7 @@ static int cam_Start (lua_State *L) {
 
   render->Push3DView( viewSetup, 0, NULL, view->GetFrustum() );
   s_nCamViewDepth++;
+  s_LuaCameraScopes.AddToTail( LUA_CAMERA_3D );
   return 0;
 }
 
@@ -1657,6 +1744,7 @@ static int cam_End2D (lua_State *L) {
     return 0;
   }
   s_nCam2DDepth--;
+  HL2SB_ForgetLuaCameraScope( LUA_CAMERA_2D );
   HL2SB_PopCam2DMatrices();
   return 0;
 }
@@ -1668,6 +1756,7 @@ static int cam_End3D (lua_State *L) {
     return 0;
   }
   s_nCamViewDepth--;
+  HL2SB_ForgetLuaCameraScope( LUA_CAMERA_3D );
   render->PopView( view->GetFrustum() );
   return 0;
 }
@@ -1679,10 +1768,7 @@ static int cam_End (lua_State *L) {
     return cam_End2D( L );
   }
   if ( s_nCamViewDepth > 0 )
-  {
-    s_nCamViewDepth--;
-    render->PopView( view->GetFrustum() );
-  }
+    return cam_End3D( L );
   return 0;
 }
 
@@ -1737,6 +1823,7 @@ static int cam_Start3D2D (lua_State *L) {
 	pRenderContext->PushMatrix();
 	pRenderContext->LoadMatrix( vm );
 	++s_nCam3D2DDepth;
+	s_LuaCameraScopes.AddToTail( LUA_CAMERA_3D2D );
 	return 0;
 }
 
@@ -1749,6 +1836,7 @@ static int cam_End3D2D (lua_State *L) {
 		return 0;
 	}
 	--s_nCam3D2DDepth;
+	HL2SB_ForgetLuaCameraScope( LUA_CAMERA_3D2D );
 	// Text is batched by the surface; submit it while the 3D2D model
 	// transform is still active, before restoring the previous matrix.
 	vgui::surface()->DrawFlushText();
@@ -1757,6 +1845,27 @@ static int cam_End3D2D (lua_State *L) {
 	pRenderContext->PopMatrix();
 	g_pMatSystemSurface->PopModelMatrix();
 	return 0;
+}
+
+int HL2SB_LuaCameraScopeDepth()
+{
+  return s_LuaCameraScopes.Count();
+}
+
+void HL2SB_UnwindLuaCameraScopes( lua_State *L, int depth )
+{
+  while ( s_LuaCameraScopes.Count() > depth )
+  {
+    const int before = s_LuaCameraScopes.Count();
+    switch ( s_LuaCameraScopes.Tail() )
+    {
+    case LUA_CAMERA_2D: cam_End2D( L ); break;
+    case LUA_CAMERA_3D: cam_End3D( L ); break;
+    case LUA_CAMERA_3D2D: cam_End3D2D( L ); break;
+    }
+    if ( s_LuaCameraScopes.Count() == before )
+      break;
+  }
 }
 
 static const luaL_Reg cam_funcs[] = {
@@ -1843,7 +1952,20 @@ LUA_BINDING_END()
 
 LUA_BINDING_BEGIN( Renders, SuppressEngineLighting, "library", "Suppress engine lighting.", "client" )
 {
-    modelrender->SuppressEngineLighting( LUA_BINDING_ARGUMENT( lua_toboolean, 1, "suppress" ) );
+    const bool suppress = LUA_BINDING_ARGUMENT( lua_toboolean, 1, "suppress" ) != 0;
+    modelrender->SuppressEngineLighting( suppress );
+    if ( suppress && g_pStudioRender )
+    {
+        // GMod uses a white ambient cube and no local lights when entering
+        // the custom lighting path, instead of inheriting the last model's.
+        static const Vector ambient[6] = {
+            Vector( 1.0f, 1.0f, 1.0f ), Vector( 1.0f, 1.0f, 1.0f ),
+            Vector( 1.0f, 1.0f, 1.0f ), Vector( 1.0f, 1.0f, 1.0f ),
+            Vector( 1.0f, 1.0f, 1.0f ), Vector( 1.0f, 1.0f, 1.0f ),
+        };
+        g_pStudioRender->SetAmbientLightColors( ambient );
+        g_pStudioRender->SetLocalLights( 0, NULL );
+    }
     return 0;
 }
 LUA_BINDING_END()
@@ -2338,10 +2460,10 @@ LUA_BINDING_END()
 
 LUA_BINDING_BEGIN( Renders, SetScissorRectangle, "library", "Set the scissor rectangle.", "client" )
 {
-    int nLeft = LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "left" );
-    int nTop = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "top" );
-    int nRight = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "right" );
-    int nBottom = LUA_BINDING_ARGUMENT( luaL_checknumber, 4, "bottom" );
+    int nLeft = LUA_BINDING_ARGUMENT( HL2SB_CheckRenderInteger, 1, "left" );
+    int nTop = LUA_BINDING_ARGUMENT( HL2SB_CheckRenderInteger, 2, "top" );
+    int nRight = LUA_BINDING_ARGUMENT( HL2SB_CheckRenderInteger, 3, "right" );
+    int nBottom = LUA_BINDING_ARGUMENT( HL2SB_CheckRenderInteger, 4, "bottom" );
     bool bEnableScissor = LUA_BINDING_ARGUMENT( lua_toboolean, 5, "enableScissor" );
 
     CMatRenderContextPtr pRenderContext( materials );
@@ -2355,10 +2477,10 @@ LUA_BINDING_END()
 // render.SetScissorRect, fork content used the long spelling.
 LUA_BINDING_BEGIN( Renders, SetScissorRect, "library", "Set the scissor rectangle.", "client" )
 {
-    int nLeft = LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "left" );
-    int nTop = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "top" );
-    int nRight = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "right" );
-    int nBottom = LUA_BINDING_ARGUMENT( luaL_checknumber, 4, "bottom" );
+    int nLeft = LUA_BINDING_ARGUMENT( HL2SB_CheckRenderInteger, 1, "left" );
+    int nTop = LUA_BINDING_ARGUMENT( HL2SB_CheckRenderInteger, 2, "top" );
+    int nRight = LUA_BINDING_ARGUMENT( HL2SB_CheckRenderInteger, 3, "right" );
+    int nBottom = LUA_BINDING_ARGUMENT( HL2SB_CheckRenderInteger, 4, "bottom" );
     bool bEnableScissor = LUA_BINDING_ARGUMENT( lua_toboolean, 5, "enableScissor" );
 
     CMatRenderContextPtr pRenderContext( materials );
@@ -2678,22 +2800,21 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
                 unsigned short newIdx = s_MatCache.Insert( pszName );
                 if ( s_MatCache.IsValidIndex( newIdx ) )
                 {
-                    s_MatCache[newIdx].pMat = pMaterial;
+                    const bool retained = pMaterial && !pMaterial->IsErrorMaterial();
+                    s_MatCache[newIdx] = { pMaterial, retained };
                     // Pin so the material system cannot evict it while the
                     // cache holds the pointer (dangling-pointer crash).
-                    if ( pMaterial && !pMaterial->IsErrorMaterial() )
+                    if ( retained )
                         pMaterial->IncrementReferenceCount();
                 }
             }
         }
     }
 
+    HL2SB_SetLastBoundMaterial( pMaterial );
     CMatRenderContextPtr pRenderContext( materials );
     pRenderContext->Bind( pMaterial );
 
-    // HL2SB: DrawScreenQuad draws THIS material -- render.SetMaterial is the
-    // only way Lua binds one, so remember it here.
-    s_pRendersLastSetMaterial = pMaterial;
     // HL2SB diagnostic: name what a script's Material() path actually resolved
     // to.  A proxy table (gmod_surface.lua's Material()) is not an IMaterial, so
     // this is also the place that can silently hand back the error material.
@@ -2710,13 +2831,6 @@ LUA_BINDING_BEGIN( Renders, SetMaterial, "library", "Binds a material for use in
             pMaterial->IsErrorMaterial() ? 1 : 0,
             ( pszName != NULL ) ? pszName : "<material object>" );
     }
-
-    // HL2SB: DrawBeam's CBeamSegDraw::Start(pCtx, n, NULL) is supposed to pick
-    // up the bound material, but the Nyan Gun's rainbow tracer came out
-    // invisible after the colour-range fix -- the beam drew with whatever
-    // material happened to be bound instead of the one SetMaterial just set.
-    // Remember it so DrawBeam can pass it explicitly.
-    g_pHL2SBLastBoundMaterial = pMaterial;
 
     return 0;
 }
@@ -2853,16 +2967,18 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( Renders, DrawSprite, "library", "Draws a sprite", "client" )
 {
     Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "position" );
-    float width = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "width" );
-    float height = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "height" );
+    const double width = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "width" );
+    const double height = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "height" );
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 4, lua_Color( 255, 255, 255, 255 ), "color" );
-
+    if ( !position.IsValid() || !( width >= -FLT_MAX && width <= FLT_MAX ) ||
+        !( height >= -FLT_MAX && height <= FLT_MAX ) )
+        return 0;
 
     // HL2SB: the casts are required - clang and gcc both reject narrowing an int
     // to color32's byte fields inside a braced initializer list
     // ([-Wc++11-narrowing] on the Android builds).  MSVC accepts it silently.
     color32 rawColor = { (byte)color.r(), (byte)color.g(), (byte)color.b(), (byte)color.a() };
-    DrawSprite( position, width, height, rawColor );
+    DrawSprite( position, static_cast<float>( width ), static_cast<float>( height ), rawColor );
 
     return 0;
 }
@@ -2892,12 +3008,26 @@ LUA_BINDING_END("Vector", "Dynamic lighting colour")
 
 LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
 {
-    Vector &start = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "start" );
-    Vector &end = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "end" );
-    float width = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "width" );
-    float textureStart = LUA_BINDING_ARGUMENT( luaL_checknumber, 4, "textureStart" );
-    float textureEnd = LUA_BINDING_ARGUMENT( luaL_checknumber, 5, "textureEnd" );
+    const Vector start = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "start" );
+    const Vector end = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "end" );
+    const double inputWidth = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "width" );
+    const double inputTextureStart = LUA_BINDING_ARGUMENT( luaL_checknumber, 4, "textureStart" );
+    const double inputTextureEnd = LUA_BINDING_ARGUMENT( luaL_checknumber, 5, "textureEnd" );
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 6, lua_Color( 255, 255, 255, 255 ), "color" );
+    if ( !start.IsValid() || !end.IsValid() ||
+        !( inputWidth >= -FLT_MAX && inputWidth <= FLT_MAX ) ||
+        !( inputTextureStart >= -FLT_MAX && inputTextureStart <= FLT_MAX ) ||
+        !( inputTextureEnd >= -FLT_MAX && inputTextureEnd <= FLT_MAX ) )
+        return 0;
+    const Vector vecAlong = end - start;
+    if ( !vecAlong.IsValid() )
+        return 0;
+    const float beamLengthSquared = vecAlong.LengthSqr();
+    if ( !IsFinite( beamLengthSquared ) || beamLengthSquared == 0.0f )
+        return 0;
+    const float width = static_cast<float>( inputWidth );
+    const float textureStart = static_cast<float>( inputTextureStart );
+    const float textureEnd = static_cast<float>( inputTextureEnd );
 
     CMatRenderContextPtr pRenderContext( materials );
 
@@ -2943,7 +3073,6 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     // every number in the log still correct, and not one pixel on screen.
     Vector vecCameraPos = MainViewOrigin();
 
-    Vector vecAlong = end - start;
     Vector vecWidth;
 
     CrossProduct( vecAlong, start - vecCameraPos, vecWidth );
@@ -2960,7 +3089,7 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
         CrossProduct( vecAlong, vecReference, vecWidth );
     }
 
-    if ( vecWidth.LengthSqr() < 1e-12f )
+    if ( !IsFinite( vecWidth.LengthSqr() ) || vecWidth.LengthSqr() < 1e-12f )
     {
         // Degenerate both ways (zero length beam): nothing to draw.
         return 0;
@@ -2986,6 +3115,8 @@ LUA_BINDING_BEGIN( Renders, DrawBeam, "library", "Draws a beam", "client" )
     // match the material at all -- the draw then writes the wrong fields and
     // nothing appears.  (CBeamSegDraw::Start did the same thing.)
     IMesh *pMesh = pRenderContext->GetDynamicMesh( true, NULL, NULL, g_pHL2SBLastBoundMaterial );
+    if ( !pMesh )
+        return 0;
     CMeshBuilder meshBuilder;
 
     // One quad, written exactly the way CFXLine::Draw() (game/client/fx_line.cpp)
@@ -3040,8 +3171,11 @@ LUA_BINDING_END()
 
 LUA_BINDING_BEGIN( Renders, SetStencilCompareFunction, "library", "Set the stencil compare function.", "client" )
 {
+    const int function = HL2SB_CheckRenderInteger( L, 1 );
+    if ( function < STENCILCOMPARISONFUNCTION_NEVER || function > STENCILCOMPARISONFUNCTION_ALWAYS )
+        return luaL_argerror( L, 1, "stencil compare function is out of range" );
     CMatRenderContextPtr pRenderContext( materials );
-    pRenderContext->SetStencilCompareFunction( LUA_BINDING_ARGUMENT_ENUM( STENCIL_COMPARISON_FUNCTION, 1, "compareFunction" ) );
+    pRenderContext->SetStencilCompareFunction( static_cast<STENCIL_COMPARISON_FUNCTION>( function ) );
     return 0;
 }
 LUA_BINDING_END()
@@ -3533,8 +3667,9 @@ static int mesh_TexCoord(lua_State *state)
 {
     LuaMeshVertex *vertex = LuaMeshCurrent(state);
     if (!vertex) return 0;
-    const int channel = (int)luaL_checknumber(state, 1);
-    if (channel < 0 || channel >= 8) return 0;
+    int channel;
+    if (!HL2SB_TryRenderInteger(luaL_checknumber(state, 1), channel) || channel < 0 || channel >= 8)
+        return 0;
     const int dimensions = MIN(lua_gettop(state) - 1, 4);
     for (int i = 0; i < dimensions; ++i)
         vertex->texcoord[channel][i] = (float)luaL_checknumber(state, i + 2);
@@ -3545,8 +3680,11 @@ static int mesh_Color(lua_State *state)
 {
     LuaMeshVertex *vertex = LuaMeshCurrent(state);
     if (!vertex) return 0;
+    int color[4];
     for (int i = 0; i < 4; ++i)
-        vertex->color[i] = (unsigned char)(int)luaL_checknumber(state, i + 1);
+        color[i] = HL2SB_CheckRenderInteger(state, i + 1);
+    for (int i = 0; i < 4; ++i)
+        vertex->color[i] = static_cast<unsigned char>(color[i]);
     return 0;
 }
 

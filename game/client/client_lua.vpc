@@ -122,6 +122,7 @@ $Project "Client (HL2SB)"
 		// HL2SB: the main-menu (GameUI) realm's own library - HL2SB_MenuLayout /
 		// HL2SB_MenuDumpLayout (the layout pass that realm never runs).
 		$File "lua/lua_gameui_menu.cpp"
+		$File "lua/lua_workshop_info.cpp"
 		
 		$File "$SRCDIR/game/shared/lua/lsrcinit.cpp"
 		$File "$SRCDIR/game/shared/lua/hl2sb_playerbuttons.cpp"

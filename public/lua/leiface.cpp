@@ -14,6 +14,7 @@
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
 #include "linetchannelinfo.h"
+#include "hl2sb_gma.h"
 
 static int engine_ActiveGamemode (lua_State *L) {
   ConVarRef mode( "gamemode" );
@@ -31,6 +32,7 @@ static int engine_ActiveGamemode (lua_State *L) {
 
 static int engine_GetAddons( lua_State *L ) {
   lua_newtable( L );
+  HL2SB_AppendMountedWorkshopAddons( L, 1 );
   return 1;
 }
 

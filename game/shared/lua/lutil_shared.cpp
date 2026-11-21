@@ -34,6 +34,7 @@
 #include "soundenvelope.h"
 #include "leffect_dispatch_data.h"
 #include <lColor.h>
+#include <climits>
 #include "hl2sb_framestats_cat.h"	// HL2SB frame profiler: per-category buckets
 
 #ifdef CLIENT_DLL
@@ -1628,11 +1629,7 @@ static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty,
 // (non-static: net_WriteTable reuses the emitter, lnet.cpp)
 LUA_API int luasrc_UTIL_TableToJSON( lua_State *L )
 {
-	if ( lua_type( L, 1 ) != LUA_TTABLE )
-	{
-		lua_pushnil( L );
-		return 1;
-	}
+	luaL_checktype( L, 1, LUA_TTABLE );
 
 	bool pretty = ( lua_toboolean( L, 2 ) != 0 );
 
@@ -1760,14 +1757,10 @@ static void JSON_KVToLua( lua_State *L, KeyValues *pNode, const char *&pJson, bo
 			}
 			else
 				lua_pushlstring( L, pKeyStart + 1, pKeyEnd - pKeyStart - 2 );
-			const char *pszKey = lua_tostring( L, -1 );
-			char *pszEnd = NULL;
-			long lKey = strtol( pszKey, &pszEnd, 10 );
-			if ( pszEnd && *pszEnd == '\0' && pszEnd != pszKey )
-			{
-				lua_pop( L, 1 );
-				lua_pushinteger( L, (lua_Integer)lKey );
-			}
+			// Use Lua's numeric conversion so Workshop IDs survive on platforms
+			// where long is 32-bit. The opt-out keeps object keys as strings.
+			if ( !ignoreConversions && lua_stringtonumber( L, lua_tostring( L, -1 ) ) != 0 )
+				lua_remove( L, -2 );
 			JSON_KVToLua( L, p, pJson, ignoreConversions );
 			lua_settable( L, -3 );
 		}
@@ -2135,18 +2128,34 @@ static int luasrc_util_Compress (lua_State *L) {
 static int luasrc_util_Decompress (lua_State *L) {
   size_t nLen = 0;
   const char *pIn = luaL_checklstring( L, 1, &nLen );
-  int nMaxSize = luaL_optint( L, 2, -1 );
-
   if ( nLen == 0 ) {
-    lua_pushnil( L );
+    lua_pushliteral( L, "" );
     return 1;
   }
 
-  // The engine's own "LZMA!"-wrapped blobs (BSP lumps, older data) go through
+  size_t nMaxSize = 0;
+  if ( lua_type( L, 2 ) == LUA_TNUMBER ) {
+    const double limit = lua_tonumber( L, 2 );
+    // A supplied number limits the output to at least one byte. Guard the
+    // conversion and match the x64 binding's fallback for out-of-range input.
+    nMaxSize = limit >= 1.0 && limit < 2147483648.0 ? static_cast<size_t>( limit ) : 1;
+  }
+
+  // The engine's own LZMA-wrapped blobs (BSP lumps, older data) go through
   // tier1's CLZMA directly (the utils/lzma glue is not linked into the game).
-  if ( CLZMA::IsCompressed( (unsigned char *)pIn ) ) {
+  if ( nLen >= sizeof( unsigned int ) && CLZMA::IsCompressed( (unsigned char *)pIn ) ) {
+    if ( nLen < sizeof( lzma_header_t ) ) {
+      lua_pushnil( L );
+      return 1;
+    }
+    lzma_header_t header;
+    memcpy( &header, pIn, sizeof( header ) );
+    if ( static_cast<size_t>( LittleLong( header.lzmaSize ) ) > nLen - sizeof( header ) ) {
+      lua_pushnil( L );
+      return 1;
+    }
     unsigned int nActual = CLZMA::GetActualSize( (unsigned char *)pIn );
-    if ( nActual == 0 || ( nMaxSize > 0 && (int)nActual > nMaxSize ) ) {
+    if ( nActual == 0 || ( nMaxSize > 0 && nActual > nMaxSize ) ) {
       lua_pushnil( L );
       return 1;
     }
@@ -2183,6 +2192,10 @@ static int luasrc_util_Decompress (lua_State *L) {
   // the same battle-tested path the engine uses for BSP lumps (a hand-rolled
   // LzmaDec loop here answered nil for this fork's own output).
   size_t nDataLen = nLen - 8 - LZMA_PROPS_SIZE - 8;
+  if ( nDataLen > UINT_MAX ) {
+    lua_pushnil( L );
+    return 1;
+  }
   size_t nWrapSize = sizeof( lzma_header_t ) + nDataLen;
   unsigned char *pWrap = (unsigned char *)malloc( nWrapSize );
   if ( !pWrap ) {
@@ -3159,10 +3172,10 @@ static int luasrc_SysTime (lua_State *L) {
 }
 
 /*
-** HL2SB GMod compat: CreateSound( entity, sound ) -> IGModAudioChannel.
+** HL2SB GMod compat: CreateSound( entity, sound ) -> CSoundPatch.
 **
-** GMod returns a BASS audio stream.  This fork has no BASS and no AudioChannel
-** library at all (see the note in lsrcinit.cpp), so the addon's music --
+** The Lua wrapper uses the engine sound-envelope controller for entity-bound
+** sounds, including the following addon loop:
 **
 **     self.LoopSound = CreateSound( self.Owner, Sound( "weapons/nyan/nyan_loop.wav" ) )
 **     if ( self.LoopSound ) then self.LoopSound:Play() end
@@ -3200,6 +3213,7 @@ static int luasrc_SysTime (lua_State *L) {
 #define HL2SB_CHANNEL_FIELD_ENT      "__hl2sb_ent"
 #define HL2SB_CHANNEL_FIELD_SOUND    "__hl2sb_sound"
 #define HL2SB_CHANNEL_FIELD_VOLUME   "__hl2sb_volume"
+#define HL2SB_CHANNEL_FIELD_PITCH    "__hl2sb_pitch"
 #define HL2SB_CHANNEL_FIELD_CHANNEL  "__hl2sb_channel"
 #define HL2SB_CHANNEL_FIELD_PLAYING  "__hl2sb_playing"
 #define HL2SB_CHANNEL_FIELD_PATCH    "__hl2sb_patch"
@@ -3392,7 +3406,15 @@ static int luasrc_Channel_Play (lua_State *L) {
     return 1;
   }
 
-  CSoundEnvelopeController::GetController().Play( pPatch, HL2SB_ChannelVolume( L, 1 ), PITCH_NORM );
+  // ARC9 calls Play every Think while a loop is active. The controller's
+  // Play resets the pitch and volume envelopes even for a playing patch.
+  if ( !HL2SB_SoundPatchIsPlaying( pPatch ) ) {
+    lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_PITCH );
+    const float flPitch = lua_isnumber( L, -1 ) ? (float)lua_tonumber( L, -1 ) : PITCH_NORM;
+    lua_pop( L, 1 );
+    const float flStartPitch = IsFinite( flPitch ) ? clamp( flPitch, 0.0f, 255.0f ) : PITCH_NORM;
+    CSoundEnvelopeController::GetController().Play( pPatch, HL2SB_ChannelVolume( L, 1 ), flStartPitch );
+  }
   HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PLAYING, true );
   HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED, false );
 
@@ -3462,6 +3484,9 @@ static int luasrc_Channel_ChangeVolume (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   const float flVolume = (float)luaL_checknumber( L, 2 );
   const float flDeltaTime = (float)luaL_optnumber( L, 3, 0.0f );
+  if ( !IsFinite( flVolume ) || !IsFinite( flDeltaTime ) )
+    return 0;
+
   HL2SB_ChannelSetVolume( L, 1, flVolume );
 
   CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
@@ -3471,14 +3496,20 @@ static int luasrc_Channel_ChangeVolume (lua_State *L) {
   return 0;
 }
 
+static void HL2SB_ChannelChangePitch( lua_State *L, float flPitch, float flDeltaTime ) {
+  // Retain settings applied before the first Play creates the native patch.
+  lua_pushnumber( L, flPitch );
+  lua_setfield( L, 1, HL2SB_CHANNEL_FIELD_PITCH );
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
+    CSoundEnvelopeController::GetController().SoundChangePitch( pPatch, flPitch, flDeltaTime );
+}
+
 static int luasrc_Channel_SetPitch (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   const float flPitch = (float)luaL_checknumber( L, 2 );
-
-  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
-  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
-    CSoundEnvelopeController::GetController().SoundChangePitch( pPatch, flPitch, 0.0f );
-
+  if ( IsFinite( flPitch ) )
+    HL2SB_ChannelChangePitch( L, clamp( flPitch, 0.0f, 255.0f ), 0.0f );
   return 0;
 }
 
@@ -3500,9 +3531,8 @@ static int luasrc_Channel_ChangePitch (lua_State *L) {
   const float flPitch = (float)luaL_checknumber( L, 2 );
   const float flDeltaTime = (float)luaL_optnumber( L, 3, 0.0f );
 
-  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
-  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
-    CSoundEnvelopeController::GetController().SoundChangePitch( pPatch, flPitch, flDeltaTime );
+  if ( IsFinite( flPitch ) && IsFinite( flDeltaTime ) )
+    HL2SB_ChannelChangePitch( L, clamp( flPitch, 0.0f, 255.0f ), flDeltaTime );
 
   return 0;
 }

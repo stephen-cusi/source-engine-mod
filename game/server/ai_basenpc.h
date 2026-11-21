@@ -931,6 +931,7 @@ public:
 	Activity			GetIdealActivity( void ) { return m_IdealActivity; }
 	void				SetIdealActivity( Activity NewActivity );
 	void				ResetIdealActivity( Activity newIdealActivity );
+	void				StartRangeAttack1Activity();
 	void				SetSequenceByName( const char *szSequence );
 	void				SetSequenceById( int iSequence );
 	Activity			GetScriptCustomMoveActivity( void );

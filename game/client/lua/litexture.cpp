@@ -9,6 +9,7 @@
 #include "filesystem.h"
 #include "tier1/utlmap.h"
 #include "hl2sb_framestats_cat.h"
+#include <climits>
 #ifdef CLIENT_DLL
 #include "rendertexture.h"
 #include "view_scene.h"
@@ -881,7 +882,10 @@ static int HL2SB_IMaterial_SetInt( lua_State *L )
     IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
     if ( pVar != NULL && bFound )
     {
-        const int iValue = (int)luaL_checknumber( L, 3 );
+        const double value = luaL_checknumber( L, 3 );
+        // Match the reference's signed truncation, including its out-of-range result.
+        const int iValue = value > static_cast<double>( INT_MIN ) - 1.0 &&
+            value < static_cast<double>( INT_MAX ) + 1.0 ? static_cast<int>( value ) : INT_MIN;
         if ( pVar->GetIntValue() != iValue )
         {
             pVar->SetIntValue( iValue );

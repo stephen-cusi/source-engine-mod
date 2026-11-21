@@ -18,6 +18,7 @@
 #include "lbaseplayer_shared.h"
 #include "datacache/imdlcache.h"
 #include "hl2sb_framestats_cat.h"
+#include "tier1/utlstring.h"
 #ifdef CLIENT_DLL
 #include "ienginevgui.h"
 #endif
@@ -650,6 +651,33 @@ static const luaL_Reg ConVarmeta[] = {
 };
 
 
+// ConVar borrows the name, default, and help text. Keep those strings alive
+// from before ConVar's constructor runs until after its destructor finishes.
+class CLuaConVarText
+{
+protected:
+  CLuaConVarText( const char *name, const char *defaultValue, const char *help )
+    : m_Name( name ), m_Default( defaultValue ), m_Help( help )
+  {
+  }
+
+  CUtlString m_Name;
+  CUtlString m_Default;
+  CUtlString m_Help;
+};
+
+class CLuaConVar : private CLuaConVarText, public ConVar
+{
+public:
+  CLuaConVar( const char *name, const char *defaultValue, int flags, const char *help,
+              bool hasMin, float minValue, bool hasMax, float maxValue )
+    : CLuaConVarText( name, defaultValue, help ),
+      ConVar( m_Name.Get(), m_Default.Get(), flags, help ? m_Help.Get() : NULL,
+              hasMin, minValue, hasMax, maxValue )
+  {
+  }
+};
+
 static CUtlDict< ConVar*, unsigned short > m_ConVarDatabase;
 #ifdef CLIENT_DLL
 static CUtlDict< ConVar*, unsigned short > m_GameUIConVarDatabase;
@@ -764,7 +792,11 @@ static int luasrc_ConVar (lua_State *L) {
   flags |= FCVAR_GAMEDLL | luaServerFlag;
 #endif
   const char *pHelp = luaL_optstring(L, 4, NULL);
-  ConVar *pConVar = new ConVar(strdup(pName), pDefault, flags, pHelp ? strdup(pHelp) : NULL, luaL_optboolean(L, 5, 0), luaL_optnumber(L, 6, 0.0), luaL_optboolean(L, 7, 0), luaL_optnumber(L, 8, 0));
+  const bool hasMin = luaL_optboolean( L, 5, 0 );
+  const float minValue = (float)luaL_optnumber( L, 6, 0.0 );
+  const bool hasMax = luaL_optboolean( L, 7, 0 );
+  const float maxValue = (float)luaL_optnumber( L, 8, 0.0 );
+  ConVar *pConVar = new CLuaConVar( pName, pDefault, flags, pHelp, hasMin, minValue, hasMax, maxValue );
 
   // HL2SB (2026-09-24): register with the engine cvar system.  GMod's
   // Lua-created convars ARE console-visible/queryable ("halo_draw" etc.);
@@ -940,6 +972,9 @@ static int luasrc_CreateConVar (lua_State *L) {
     if ( existing->IsFlagSet(FCVAR_HIDDEN | FCVAR_DEVELOPMENTONLY | FCVAR_UNREGISTERED) &&
          !existing->IsFlagSet(luaOwned) )
       return 0;
+#ifdef CLIENT_DLL
+    HL2SB_RetainMenuConVar( L, name );
+#endif
     lua_pushconvar(L, existing);
     return 1;
   }

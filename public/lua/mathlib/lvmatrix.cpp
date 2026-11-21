@@ -369,7 +369,7 @@ static int VMatrix_SetAngles (lua_State *L) {
   for (int row = 0; row < 3; ++row)
   {
     for (int column = 0; column < 3; ++column)
-      m[row][column] = rotation[row][column] * scale[row];
+      m[row][column] = rotation[row][column] * scale[column];
   }
   return 0;
 }
@@ -406,7 +406,8 @@ static const luaL_Reg VMatrixmeta[] = {
   {"SetLeft", VMatrix_SetLeft},
   {"SetTranslation", VMatrix_SetTranslation},
   {"SetAngles", VMatrix_SetAngles},
-  {"Translate", VMatrix_PostTranslate},
+  // ARC9's pivot transforms apply the displacement in the matrix's input space.
+  {"Translate", VMatrix_PreTranslate},
   {"SetUp", VMatrix_SetUp},
   {"SetupMatrixOrgAngles", VMatrix_SetupMatrixOrgAngles},
   {"Transpose", VMatrix_Transpose},
@@ -434,7 +435,8 @@ static int luasrc_VMatrix (lua_State *L) {
     matrix.Identity();
     lua_pushvmatrix(L, matrix);
   } else if (lua_gettop(L) < 3) {
-    VMatrix matrix = VMatrix(luaL_checkmatrix(L, 1));
+    const VMatrix *source = static_cast<const VMatrix *>(luaL_testudata(L, 1, "VMatrix"));
+    const VMatrix matrix = source ? *source : VMatrix(luaL_checkmatrix(L, 1));
     lua_pushvmatrix(L, matrix);
   } else if (lua_gettop(L) < 16) {
     VMatrix matrix = VMatrix(luaL_checkvector(L, 1), luaL_checkvector(L, 2), luaL_checkvector(L, 3));

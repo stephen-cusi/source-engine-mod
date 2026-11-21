@@ -1407,17 +1407,16 @@ LUA_API void luasrc_LuaConsoleMsg (const char *pszText, char cSeverity, bool bNe
 //-----------------------------------------------------------------------------
 // HL2SB (sbrust): MsgC 的颜色直通形态。GMod 的 MsgC( Color, ... ) 按 Color 参数
 // 切换控制台颜色，文本分片不带换行地续在同行（与 Msg 半行机制同一通路）；
-// hl2sb_lua.log 仍然只在整行（bNewline=true）时落盘，与 luasrc_LuaConsoleMsg
-// 的契约一致。调用方是 lsrcinit.cpp 的 lua_MsgC。
+// 调用方 lua_MsgC 只把最后一段交给 hl2sb_lua.log，不额外插入控制台换行。
 //-----------------------------------------------------------------------------
-LUA_API void luasrc_LuaConsoleMsgColor (const char *pszText, const Color &clr, bool bNewline)
+LUA_API void luasrc_LuaConsoleMsgColor (const char *pszText, const Color &clr, bool bLog)
 {
 	if ( pszText == NULL )
 		return;
 
-	ConColorMsg( 0, clr, "%s%s", pszText, bNewline ? "\n" : "" );
+	ConColorMsg( 0, clr, "%s", pszText );
 
-	if ( bNewline )
+	if ( bLog )
 		luasrc_LuaLogToFile( pszText, 'I' );
 }
 
@@ -2989,6 +2988,11 @@ static int luasrc_traceback (lua_State *L) {
 }
 
 LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
+#ifdef CLIENT_DLL
+  extern int HL2SB_LuaCameraScopeDepth();
+  extern void HL2SB_UnwindLuaCameraScopes( lua_State *L, int depth );
+  const int cameraDepth = HL2SB_LuaCameraScopeDepth();
+#endif
   bool bInjectedHandler = false;
 
   if (errfunc == 0) {
@@ -3010,6 +3014,7 @@ LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
 #ifdef CLIENT_DLL
     extern void HL2SB_AbortLuaMesh();
     HL2SB_AbortLuaMesh();
+    HL2SB_UnwindLuaCameraScopes( L, cameraDepth );
 #endif
     luasrc_LuaErrorMsg( lua_tostring(L, -1) );
     lua_pop(L, 1);

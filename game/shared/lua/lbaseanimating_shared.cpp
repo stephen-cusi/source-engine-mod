@@ -333,7 +333,9 @@ LUA_BINDING_BEGIN( CBaseAnimating, GetBodyGroups, "class", "Get the bodygroup va
 
         lua_setfield( L, -2, "submodels" );
 
-        lua_rawseti( L, -2, iGroup );
+        // Bodygroup IDs and submodel keys are zero based, but the bodygroup
+        // records are a Lua sequence. ARC9 iterates this list from 1 to #list.
+        lua_rawseti( L, -2, iGroup + 1 );
     }
 
     return 1;
@@ -342,12 +344,8 @@ LUA_BINDING_END( "table", "The bodygroup values" )
 
 LUA_BINDING_BEGIN( CBaseAnimating, SetSkin, "class", "Set the skin of the entity" )
 {
-    lua_CBaseAnimating *pAnimating = LUA_BINDING_ARGUMENT( luaL_checkanimating, 1, "entity" );
-    int iSkin = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "skin" );
-
-    pAnimating->m_nSkin = iSkin;
-
-    return 0;
+    extern int HL2SB_EntitySetSkin( lua_State *L );
+    return HL2SB_EntitySetSkin( L );
 }
 LUA_BINDING_END()
 

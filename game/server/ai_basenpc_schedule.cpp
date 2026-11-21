@@ -9,6 +9,9 @@
 #include "cbase.h"
 #include "ai_default.h"
 #include "animation.h"
+#if defined( HL2SB )
+#include "npcevent.h"
+#endif
 #include "scripted.h"
 #include "soundent.h"
 #include "entitylist.h"
@@ -1741,7 +1744,7 @@ void CAI_BaseNPC::StartTask( const Task_t *pTask )
 
 	case TASK_RANGE_ATTACK1:
 		SetLastAttackTime( gpGlobals->curtime );
-		ResetIdealActivity( ACT_RANGE_ATTACK1 );
+		StartRangeAttack1Activity();
 		break;
 
 	case TASK_RANGE_ATTACK2:
@@ -4245,6 +4248,64 @@ bool CAI_BaseNPC::UpdateTurnGesture( void )
 //			Set the activity to ACT_RESET if this is a replay, otherwise just set ideal activity
 // Input  : newIdealActivity - desired ideal activity
 //-----------------------------------------------------------------------------
+#if defined( HL2SB )
+static bool HasPrimaryWeaponFireEvent( CBaseAnimating *animating, int sequence )
+{
+	CStudioHdr *model = animating->GetModelPtr();
+	if ( !model || sequence < 0 || sequence >= model->GetNumSeq() )
+		return false;
+
+	animevent_t event;
+	int next = 0;
+	while ( ( next = GetAnimationEvent( model, sequence, &event, 0.0f, 1.0f, next ) ) != 0 )
+	{
+		if ( event.type & AE_TYPE_NEWEVENTSYSTEM )
+		{
+			if ( event.event == AE_NPC_WEAPON_FIRE && atoi( event.options ) == 0 )
+				return true;
+		}
+		else
+		{
+			switch ( event.event )
+			{
+			case EVENT_WEAPON_SMG1:
+			case EVENT_WEAPON_AR1:
+			case EVENT_WEAPON_AR2:
+			case EVENT_WEAPON_PISTOL_FIRE:
+			case EVENT_WEAPON_SHOTGUN_FIRE:
+				return true;
+			}
+		}
+	}
+	return false;
+}
+#endif
+
+void CAI_BaseNPC::StartRangeAttack1Activity()
+{
+	ResetIdealActivity( ACT_RANGE_ATTACK1 );
+#if defined( HL2SB )
+	CHandle<CBaseCombatWeapon> activeWeapon = GetActiveWeapon();
+	if ( !activeWeapon || !activeWeapon->IsScripted() || activeWeapon->GetOwner() != this )
+		return;
+	if ( !( activeWeapon->CapabilitiesGet() & bits_CAP_WEAPON_RANGE_ATTACK1 ) )
+		return;
+
+	// CapabilitiesGet can call a SWEP hook and change the active weapon.
+	CBaseCombatWeapon *weapon = activeWeapon.Get();
+	if ( !weapon || weapon != GetActiveWeapon() || weapon->GetOwner() != this )
+		return;
+
+	// The stock human AR2/SMG attack sequences may have no firing event.
+	// Dispatch at task start only when the selected sequences cannot fire later.
+	if ( HasPrimaryWeaponFireEvent( this, m_nIdealSequence ) ||
+		 HasPrimaryWeaponFireEvent( weapon, weapon->GetSequence() ) )
+		return;
+
+	weapon->Operator_ForceNPCFire( this, false );
+#endif
+}
+
 void CAI_BaseNPC::ResetIdealActivity( Activity newIdealActivity )
 {
 	if ( m_Activity == newIdealActivity )

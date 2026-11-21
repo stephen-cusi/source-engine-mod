@@ -46,9 +46,9 @@ LUA_API lua_CBaseCombatWeapon *lua_toweapon (lua_State *L, int idx) {
 // HL2SB: the raw push (userdata + metatable), no side effects.  lua_pushweapon
 // needs it for the seeded method's upvalue below -- routing that upvalue back
 // through lua_pushweapon would recurse into the seed forever.
-static void HL2SB_PushWeaponRaw (lua_State *L, lua_CBaseCombatWeapon *pWeapon) {
+static void HL2SB_PushWeaponRaw (lua_State *L, const CBaseHandle &weaponHandle) {
   CBaseHandle *hWeapon = (CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle));
-  hWeapon->Set((CBaseEntity *)pWeapon);
+  CopyConstruct(hWeapon, weaponHandle);
   luaL_getmetatable(L, "CBaseCombatWeapon");
   lua_setmetatable(L, -2);
 }
@@ -75,7 +75,12 @@ static int HL2SB_WeaponTableGetOwner (lua_State *L) {
 }
 
 LUA_API void lua_pushweapon (lua_State *L, lua_CBaseCombatWeapon *pWeapon) {
-  HL2SB_PushWeaponRaw(L, pWeapon);
+  // lua_newuserdata may run GC finalizers before returning. Capture the
+  // serial-checked handle while the original pointer is still valid.
+  CBaseHandle weaponHandle;
+  weaponHandle.Set(pWeapon);
+  HL2SB_PushWeaponRaw(L, weaponHandle);
+  pWeapon = lua_toweapon(L, -1);
 
   /* HL2SB (2026-10-11): keep the instance table's GetOwner seed in place.
   ** Every callback dispatch refreshes the owner fields through this push
@@ -89,19 +94,18 @@ LUA_API void lua_pushweapon (lua_State *L, lua_CBaseCombatWeapon *pWeapon) {
     lua_getref( L, pWeapon->m_nTableReference );
     if ( lua_istable( L, -1 ) )
     {
-      lua_getfield( L, -1, "GetOwner" );
-      if ( !lua_isfunction( L, -1 ) )
+      // weapons.Get materializes inherited methods in the instance table.
+      // Do not run user metamethods during a native userdata push.
+      lua_pushliteral( L, "GetOwner" );
+      lua_rawget( L, -2 );
+      const bool hasMethod = lua_isfunction( L, -1 );
+      lua_pop( L, 1 );
+      if ( !hasMethod )
       {
-        // Missing, or a data field: the userdata __index answers a C method
-        // over a non-function table value, so do the same here.
-        lua_pop( L, 1 );                          // the non-function value
-        HL2SB_PushWeaponRaw( L, pWeapon );        // upvalue: the weapon itself
+        lua_pushliteral( L, "GetOwner" );
+        HL2SB_PushWeaponRaw( L, weaponHandle );
         lua_pushcclosure( L, HL2SB_WeaponTableGetOwner, 1 );
-        lua_setfield( L, -2, "GetOwner" );        // [table] -> [table]
-      }
-      else
-      {
-        lua_pop( L, 1 );                          // the existing answer
+        lua_rawset( L, -3 );
       }
     }
     lua_pop( L, 1 );                              // the instance table

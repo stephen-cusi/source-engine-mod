@@ -30,6 +30,7 @@ using namespace vgui;
 
 extern int HL2SB_LuaPanelSetText(lua_State *L);
 extern int HL2SB_LuaLabelAlignment(int alignment, bool toNative);
+extern int HL2SB_LuaCheckLabelAlignment(lua_State *L, int arg);
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
@@ -214,7 +215,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( Label, SetContentAlignment, "class", "Sets the content alignment of the label" )
 {
     lua_Label *label = LUA_BINDING_ARGUMENT( luaL_checklabel, 1, "label" );
-    const int alignment = HL2SB_LuaLabelAlignment(luaL_checkint(L, 2), true);
+    const int alignment = HL2SB_LuaCheckLabelAlignment(L, 2);
     if (alignment >= 0)
         label->SetContentAlignment((vgui::Label::Alignment)alignment);
     return 0;

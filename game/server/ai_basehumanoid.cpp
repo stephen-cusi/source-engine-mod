@@ -243,7 +243,7 @@ void CAI_BaseHumanoid::StartTaskRangeAttack1( const Task_t *pTask )
 	if ( GetShotRegulator()->ShouldShoot() )
 	{
 		OnRangeAttack1();
-		ResetIdealActivity( ACT_RANGE_ATTACK1 );
+		StartRangeAttack1Activity();
 	}
 	else
 	{
@@ -319,7 +319,7 @@ void CAI_BaseHumanoid::RunTaskRangeAttack1( const Task_t *pTask )
 			if ( GetShotRegulator()->ShouldShoot() )
 			{
 				OnRangeAttack1();
-				ResetIdealActivity( ACT_RANGE_ATTACK1 );
+				StartRangeAttack1Activity();
 			}
 			return;
 		}

@@ -31,12 +31,15 @@
 
 struct LuaEffectData {
   lua_CEffectData data;
-  lua_CEffectData *value;
+  bool usesSharedData;
 };
 
+// EffectData() returns a shared reference. Callback arguments keep their own
+// inline copy, which remains valid if the Lua effect stores it for later.
+static CEffectData s_SharedEffectData;
+
 LUA_API lua_CEffectData &lua_toeffect (lua_State *L, int idx) {
-  LuaEffectData *data = (LuaEffectData *)lua_touserdata(L, idx);
-  return *data->value;
+  return luaL_checkeffect(L, idx);
 }
 
 
@@ -50,7 +53,7 @@ LUA_API void lua_pusheffect (lua_State *L, lua_CEffectData &data) {
   LuaEffectData *pData = (LuaEffectData *)lua_newuserdata(L, sizeof(LuaEffectData));
   new (pData) LuaEffectData;
   pData->data = data;
-  pData->value = &pData->data;
+  pData->usesSharedData = false;
   luaL_getmetatable(L, "CEffectData");
   lua_setmetatable(L, -2);
 }
@@ -58,7 +61,9 @@ LUA_API void lua_pusheffect (lua_State *L, lua_CEffectData &data) {
 
 LUALIB_API lua_CEffectData &luaL_checkeffect (lua_State *L, int narg) {
   LuaEffectData *d = (LuaEffectData *)luaL_checkudata(L, narg, "CEffectData");
-  return *d->value;
+  if (lua_type(L, narg) != LUA_TUSERDATA || lua_rawlen(L, narg) != sizeof(LuaEffectData))
+    luaL_argerror(L, narg, "invalid CEffectData storage");
+  return d->usesSharedData ? s_SharedEffectData : d->data;
 }
 
 
@@ -90,15 +95,28 @@ static int CEffectData_GetEffectNameIndex (lua_State *L) {
 // 2026-09-22: un-guarded from the server -- the CLIENT needs it just as much
 // (cf_beast's CallOnClient'd Muzzle sets the viewmodel on the EffectData).
 // Client stores a handle (m_hEntity); server stores an int index (m_nEntIndex).
-  static int CEffectData_SetEntity (lua_State *L) {
-    CBaseEntity *pEnt = lua_toentity( L, 2 );
-#ifdef CLIENT_DLL
-    luaL_checkeffect( L, 1 ).m_hEntity = pEnt ? pEnt->GetRefEHandle() : INVALID_EHANDLE_INDEX;
-#else
-    luaL_checkeffect( L, 1 ).m_nEntIndex = pEnt ? pEnt->entindex() : 0;
-#endif
-    return 0;
+bool HL2SB_IsEntityUserdata(lua_State *L, int index);
+
+static void CEffectData_SetEntityField (lua_State *L, CEffectData &data, int index) {
+  CBaseEntity *entity = NULL;
+  if ( !lua_isnoneornil( L, index ) ) {
+    if ( !HL2SB_IsEntityUserdata( L, index ) ) {
+      luaL_typerror( L, index, "Entity" );
+      return;
+    }
+    entity = lua_toentity( L, index );
   }
+#ifdef CLIENT_DLL
+  data.m_hEntity = entity ? entity->GetRefEHandle() : INVALID_EHANDLE_INDEX;
+#else
+  data.m_nEntIndex = entity ? entity->entindex() : 0;
+#endif
+}
+
+static int CEffectData_SetEntity (lua_State *L) {
+  CEffectData_SetEntityField( L, luaL_checkeffect( L, 1 ), 2 );
+  return 0;
+}
 
 /*
 ** HL2SB GMod compat: the accessors a GMod effect script actually calls.
@@ -147,13 +165,20 @@ static int CEffectData_GetEffectNameIndex (lua_State *L) {
     return 0;                                                 \
   }
 
+static int CEffectData_CheckInt (lua_State *L, int index) {
+  const double value = luaL_checknumber( L, index );
+  // Match x64 GMod's truncation without casting a non-finite or out-of-range value.
+  return value >= -2147483648.0 && value < 2147483648.0
+    ? static_cast<int>( value ) : (-2147483647 - 1);
+}
+
 #define HL2SB_EFFECTDATA_INT_ACCESSORS( Name, Field )         \
   static int CEffectData_Get##Name (lua_State *L) {           \
     lua_pushinteger(L, luaL_checkeffect(L, 1).Field);         \
     return 1;                                                 \
   }                                                           \
   static int CEffectData_Set##Name (lua_State *L) {           \
-    luaL_checkeffect(L, 1).Field = luaL_checkint(L, 2);       \
+    luaL_checkeffect(L, 1).Field = CEffectData_CheckInt(L, 2); \
     return 0;                                                 \
   }
 
@@ -169,7 +194,7 @@ static int CEffectData_GetFlags( lua_State *L ) {
   return 1;
 }
 static int CEffectData_SetFlags( lua_State *L ) {
-  luaL_checkeffect( L, 1 ).m_fFlags = (int)luaL_checknumber( L, 2 );
+  luaL_checkeffect( L, 1 ).m_fFlags = CEffectData_CheckInt( L, 2 );
   return 0;
 }
 static int CEffectData_GetAttachment( lua_State *L ) {
@@ -177,7 +202,7 @@ static int CEffectData_GetAttachment( lua_State *L ) {
   return 1;
 }
 static int CEffectData_SetAttachment( lua_State *L ) {
-  luaL_checkeffect( L, 1 ).m_nAttachmentIndex = (int)luaL_checknumber( L, 2 );
+  luaL_checkeffect( L, 1 ).m_nAttachmentIndex = CEffectData_CheckInt( L, 2 );
   return 0;
 }
 HL2SB_EFFECTDATA_INT_ACCESSORS( HitBox,       m_nHitBox )
@@ -188,7 +213,7 @@ static int CEffectData_GetSurfaceProp( lua_State *L ) {
   return 1;
 }
 static int CEffectData_SetSurfaceProp( lua_State *L ) {
-  luaL_checkeffect( L, 1 ).m_nSurfaceProp = (short)(int)luaL_checknumber( L, 2 );
+  luaL_checkeffect( L, 1 ).m_nSurfaceProp = static_cast<short>( CEffectData_CheckInt( L, 2 ) );
   return 0;
 }
 HL2SB_EFFECTDATA_INT_ACCESSORS( Color,        m_nColor )
@@ -255,7 +280,7 @@ static int CEffectData___index (lua_State *L) {
 }
 
 static int CEffectData___newindex (lua_State *L) {
-  CEffectData data = luaL_checkeffect(L, 1);
+  CEffectData &data = luaL_checkeffect(L, 1);
   const char *field = luaL_checkstring(L, 2);
   if (Q_strcmp(field, "m_fFlags") == 0)
     data.m_fFlags = luaL_checkint(L, 3);
@@ -267,7 +292,7 @@ static int CEffectData___newindex (lua_State *L) {
     data.m_flScale = luaL_checknumber(L, 3);
 #ifdef CLIENT_DLL
   else if (Q_strcmp(field, "m_hEntity") == 0)
-    data.m_hEntity = lua_toentity(L, 3)->GetRefEHandle();
+    CEffectData_SetEntityField( L, data, 3 );
 #else
   else if (Q_strcmp(field, "m_nEntIndex") == 0)
     data.m_nEntIndex = luaL_checkint(L, 3);
@@ -357,14 +382,15 @@ static const luaL_Reg CEffectDatameta[] = {
 
 
 static int luasrc_CEffectData (lua_State *L) {
-  static CEffectData sharedData;
-  lua_pusheffect(L, sharedData);
-  ((LuaEffectData *)lua_touserdata(L, -1))->value = &sharedData;
+  lua_pusheffect(L, s_SharedEffectData);
+  ((LuaEffectData *)lua_touserdata(L, -1))->usesSharedData = true;
   return 1;
 }
 
 static int luasrc_DispatchEffect (lua_State *L) {
-  DispatchEffect( luaL_checkstring(L, 1), luaL_checkeffect(L, 2) );
+  const char *name = luaL_checkstring(L, 1);
+  const CEffectData data = luaL_checkeffect(L, 2);
+  DispatchEffect( name, data );
   return 0;
 }
 

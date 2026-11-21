@@ -344,8 +344,16 @@ static int CBaseEntity_AddDataObjectType (lua_State *L) {
   return 0;
 }
 
+// The GMod bindings truncate toward zero and use INT_MIN if the result
+// cannot be represented. Guard the range before the C++ conversion.
+static int HL2SB_EntityNumberToInt( double value ) {
+  return value > -2147483649.0 && value < 2147483648.0
+       ? static_cast<int>(value) : (-2147483647 - 1);
+}
+
 static int CBaseEntity_AddEffects (lua_State *L) {
-  luaL_checkentity(L, 1)->AddEffects((int)luaL_checknumber(L, 2));
+  CBaseEntity *entity = luaL_checkentity(L, 1);
+  entity->AddEffects(HL2SB_EntityNumberToInt(luaL_checknumber(L, 2)));
   return 0;
 }
 
@@ -898,10 +906,10 @@ static int CBaseEntity_EndTouch (lua_State *L) {
   return 0;
 }
 
-static bool HL2SB_IsDTEntity(lua_State *L, int index);
+bool HL2SB_IsEntityUserdata(lua_State *L, int index);
 
 static int CBaseEntity_entindex (lua_State *L) {
-  if (!lua_isnil(L, 1) && !HL2SB_IsDTEntity(L, 1))
+  if (!lua_isnil(L, 1) && !HL2SB_IsEntityUserdata(L, 1))
     return luaL_typerror(L, 1, "Entity");
   CBaseEntity *entity = lua_isnil(L, 1) ? NULL : lua_toentity(L, 1);
   lua_pushinteger(L, entity ? entity->entindex() : 0);
@@ -2111,14 +2119,10 @@ static int CBaseEntity_OBBCenter (lua_State *L) {
 }
 
 static int CBaseEntity_StopSound (lua_State *L) {
-#ifndef CLIENT_DLL
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   const char *pszSound = luaL_checkstring(L, 2);
 
   pEntity->StopSound(pszSound);
-#else
-  (void)L;
-#endif
 
   return 0;
 }
@@ -3033,7 +3037,11 @@ static int CBaseEntity_SetCollisionBoundsWS (lua_State *L) {
 }
 
 static int CBaseEntity_SetCollisionGroup (lua_State *L) {
-  luaL_checkentity(L, 1)->SetCollisionGroup(luaL_checkint(L, 2));
+  CBaseEntity *entity = luaL_checkentity(L, 1);
+  const int group = HL2SB_EntityNumberToInt(luaL_checknumber(L, 2));
+  // GMod clamps to 33, but Box transmits m_CollisionGroup in five unsigned
+  // bits. Keep the value representable on both sides of that send table.
+  entity->SetCollisionGroup(clamp(group, static_cast<int>(COLLISION_GROUP_NONE), 31));
   return 0;
 }
 
@@ -3168,14 +3176,12 @@ static int CBaseEntity_SetMoveCollide (lua_State *L) {
 }
 
 static int CBaseEntity_SetMoveType (lua_State *L) {
-  // GMod clamps negatives to MOVETYPE_NONE and everything above the last
-  // movetype to that ceiling.
-  int nMoveType = luaL_checkint(L, 2);
-  if ( nMoveType < 0 )
-    nMoveType = 0;
-  else if ( nMoveType > 11 )
-    nMoveType = 11;
-  luaL_checkentity(L, 1)->SetMoveType((MoveType_t)nMoveType, (MoveCollide_t)luaL_optint(L, 3, MOVECOLLIDE_DEFAULT));
+  CBaseEntity *entity = luaL_checkentity(L, 1);
+  const int value = HL2SB_EntityNumberToInt(luaL_checknumber(L, 2));
+  const MoveType_t moveType = static_cast<MoveType_t>(
+    clamp(value, static_cast<int>(MOVETYPE_NONE), static_cast<int>(MOVETYPE_LAST)));
+  // The optional move-collision argument is a Box extension.
+  entity->SetMoveType(moveType, static_cast<MoveCollide_t>(luaL_optint(L, 3, MOVECOLLIDE_DEFAULT)));
   return 0;
 }
 
@@ -3207,29 +3213,54 @@ static int CBaseEntity_SetOwner (lua_State *L) {
   return 0;
 }
 
+// Check the proposed hierarchy before any mutation. Existing parent links
+// may also come from maps, so reject a cycle anywhere in the chain.
+static bool HL2SB_CanSetParent( CBaseEntity *entity, CBaseEntity *parent ) {
+  if ( entity->entindex() == 0 )
+    return false;
+
+  CBaseEntity *fast = parent;
+  for ( CBaseEntity *ancestor = parent; ancestor; ancestor = ancestor->GetMoveParent() ) {
+    if ( ancestor == entity )
+      return false;
+    if ( fast ) {
+      fast = fast->GetMoveParent();
+      if ( fast )
+        fast = fast->GetMoveParent();
+    }
+    if ( fast && fast == ancestor->GetMoveParent() )
+      return false;
+  }
+  return true;
+}
+
 // HL2SB: GMod's Entity:SetParent( parent = NULL, attachment = 0 ) - a missing or nil
 // parent CLEARS the parent instead of raising.  cod_c4 opens its explosion with
 //     if IsValid( self:GetParent() ) then self:SetParent() end
 // (addons/cod_c4/lua/entities/cod-c4/init.lua:83-85), i.e. a no-argument call, and the
 // charge sticks to walls by re-parenting it (same file:266/334).
 static int CBaseEntity_SetParent (lua_State *L) {
-  CBaseEntity *pParent = lua_toplayer(L, 2);
-
-  if (pParent == NULL)
-    pParent = lua_toentity(L, 2);
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  if ( !lua_isnoneornil( L, 2 ) && !HL2SB_IsEntityUserdata( L, 2 ) )
+    return luaL_typerror( L, 2, "Entity" );
+  CBaseEntity *pParent = lua_toentity(L, 2);
+  if ( !HL2SB_CanSetParent( pEntity, pParent ) )
+    return 0;
 
   // The client and server use different defaults for an omitted attachment.
 #ifdef CLIENT_DLL
   int iAttachment = 0;
   if ( lua_type( L, 3 ) == LUA_TNUMBER )
-    iAttachment = (int)lua_tonumber( L, 3 );
+    iAttachment = HL2SB_EntityNumberToInt( lua_tonumber( L, 3 ) );
 #else
   int iAttachment = -1;
   if ( lua_isnumber( L, 3 ) )
-    iAttachment = (int)lua_tonumber( L, 3 );
+    iAttachment = HL2SB_EntityNumberToInt( lua_tonumber( L, 3 ) );
 #endif
+  if ( iAttachment < -1 || iAttachment > 255 )
+    return luaL_argerror( L, 3, "attachment index out of range" );
 
-  luaL_checkentity(L, 1)->SetParent(pParent, iAttachment);
+  pEntity->SetParent(pParent, iAttachment);
   return 0;
 }
 
@@ -3265,9 +3296,11 @@ static int CBaseEntity_EnableCustomCollisions (lua_State *L) {
 static int CBaseEntity_FollowBone (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
 
-  CBaseEntity *pParent = lua_toplayer(L, 2);
-  if (pParent == NULL)
-    pParent = lua_toentity(L, 2);
+  if ( !lua_isnoneornil( L, 2 ) && !HL2SB_IsEntityUserdata( L, 2 ) )
+    return luaL_typerror( L, 2, "Entity" );
+  CBaseEntity *pParent = lua_toentity(L, 2);
+  if ( !HL2SB_CanSetParent( pEntity, pParent ) )
+    return 0;
 
   if (pParent == NULL)
   {
@@ -3276,7 +3309,7 @@ static int CBaseEntity_FollowBone (lua_State *L) {
     return 0;
   }
 
-  int iBone = (int)luaL_optnumber( L, 3, 0 );
+  int iBone = HL2SB_EntityNumberToInt( luaL_optnumber( L, 3, 0 ) );
   if ( iBone < 0 || iBone > 255 )
   {
     luasrc_LuaWarnMsgF( "FollowBone: bone index %d out of range (0-255)\n", iBone );
@@ -3506,11 +3539,14 @@ static lua_CBaseAnimating *HL2SB_EntityAsAnimating (lua_State *L, int narg) {
   return lua_toanimating( L, narg );
 }
 
-static int CBaseEntity_SetSkin (lua_State *L) {
+int HL2SB_EntitySetSkin( lua_State *L ) {
   luaL_checkentity( L, 1 );
   lua_CBaseAnimating *pAnimating = HL2SB_EntityAsAnimating( L, 1 );
-  if ( pAnimating != NULL )
-    pAnimating->m_nSkin = (int)luaL_checknumber( L, 2 );
+  if ( pAnimating != NULL ) {
+    const double skin = luaL_checknumber( L, 2 );
+    if ( skin > -2147483649.0 && skin < 2147483648.0 )
+      pAnimating->m_nSkin = static_cast<int>( skin );
+  }
   return 0;
 }
 
@@ -4517,8 +4553,6 @@ static int CBaseEntity_GetNWAngle (lua_State *L) {
   return 1;
 }
 
-static bool HL2SB_IsDTEntity(lua_State *L, int index);
-
 static int CBaseEntity_SetNWValue (lua_State *L) {
   CBaseEntity *entity = luaL_checkentity(L, 1);
   const char *name = luaL_checkstring(L, 2);
@@ -4538,7 +4572,7 @@ static int CBaseEntity_SetNWValue (lua_State *L) {
     case LUA_TUSERDATA:
       if (luaL_testudata(L, 3, "Vector")) return CBaseEntity_SetNWVector(L);
       if (luaL_testudata(L, 3, "Angle")) return CBaseEntity_SetNWAngle(L);
-      if (HL2SB_IsDTEntity(L, 3)) return CBaseEntity_SetNWEntity(L);
+      if (HL2SB_IsEntityUserdata(L, 3)) return CBaseEntity_SetNWEntity(L);
       break;
     default: break;
   }
@@ -5199,7 +5233,8 @@ static int CBaseEntity___index (lua_State *L) {
       bAnswered = HL2SB_PushClassField( L, "CBaseCombatWeapon", field );
 
     if ( !bAnswered && ( pEntity->GetBaseAnimating() != NULL ||
-         !Q_strcmp( field, "GetBoneCount" ) || !Q_strcmp( field, "GetBoneName" ) ) )
+         !Q_strcmp( field, "GetBoneCount" ) || !Q_strcmp( field, "GetBoneName" ) ||
+         !Q_strcmp( field, "GetBodyGroups" ) ) )
       bAnswered = HL2SB_PushClassField( L, "CBaseAnimating", field );
 
     if ( !bAnswered )
@@ -6691,7 +6726,7 @@ static int CBaseEntity_GetParentWorldTransformMatrix (lua_State *L) {
 }
 
 
-static bool HL2SB_IsDTEntity(lua_State *L, int index) {
+bool HL2SB_IsEntityUserdata(lua_State *L, int index) {
   if (lua_type(L,index) != LUA_TUSERDATA || lua_rawlen(L,index) != sizeof(CBaseHandle)) return false;
   static const char *const metatables[] = {
     "CBaseEntity", "CBaseAnimating", "CBaseFlex", "CBaseCombatCharacter",
@@ -6703,7 +6738,7 @@ static bool HL2SB_IsDTEntity(lua_State *L, int index) {
 }
 
 static CBaseEntity *HL2SB_DTEntity(lua_State *L) {
-  if (!HL2SB_IsDTEntity(L,1)) { luaL_typerror(L,1,"Entity"); return NULL; }
+  if (!HL2SB_IsEntityUserdata(L,1)) { luaL_typerror(L,1,"Entity"); return NULL; }
   CBaseEntity *entity = lua_toentity(L,1);
   if (!entity) luaL_error(L,"Tried to use a NULL entity!");
   return entity;
@@ -6827,7 +6862,7 @@ static int CBaseEntity_SetDTEntity(lua_State *L) {
   CBaseEntity *value = NULL;
   if (lua_isnone(L,3)) return luaL_typerror(L,3,"Entity");
   if (!lua_isnil(L,3)) {
-    if (!HL2SB_IsDTEntity(L,3)) return luaL_typerror(L,3,"Entity");
+    if (!HL2SB_IsEntityUserdata(L,3)) return luaL_typerror(L,3,"Entity");
     value = lua_toentity(L,3);
   }
   const int index = HL2SB_DTIndex(L,32,true);
@@ -6965,7 +7000,8 @@ static int CBaseEntity_GetBoneName( lua_State *L ) {
 static int CBaseEntity_SetBodyGroups( lua_State *L ) {
   CBaseAnimating *anim = luaL_checkentity( L, 1 )->GetBaseAnimating();
   if ( !anim ) return 0;
-  const char *groups = luaL_checkstring( L, 2 );
+  const char *groups = lua_tostring( L, 2 );
+  if ( !groups ) return 0;
   const int count = MIN( Q_strlen( groups ), anim->GetNumBodyGroups() );
   for ( int i = 0; i < count; ++i ) {
     const char c = groups[i];
@@ -7453,7 +7489,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetMaterial", CBaseEntity_SetMaterial},
   {"SetSubMaterial", CBaseEntity_SetSubMaterial},
   {"GetSubMaterial", CBaseEntity_GetSubMaterial},
-  {"SetSkin", CBaseEntity_SetSkin},
+  {"SetSkin", HL2SB_EntitySetSkin},
   {"SetRenderColorA", CBaseEntity_SetRenderColorA},
   {"SetRenderColorB", CBaseEntity_SetRenderColorB},
   {"SetRenderColorG", CBaseEntity_SetRenderColorG},

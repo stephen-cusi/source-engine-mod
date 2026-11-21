@@ -12,6 +12,8 @@
 #include "ltakedamageinfo.h"
 #include "lbaseentity_shared.h"
 #include "mathlib/lvector.h"
+#include <climits>
+#include <new>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -35,8 +37,8 @@ LUA_API lua_CTakeDamageInfo &lua_todamageinfo (lua_State *L, int idx) {
 
 
 LUA_API void lua_pushdamageinfo (lua_State *L, lua_CTakeDamageInfo &info) {
-  lua_CTakeDamageInfo *pInfo = (lua_CTakeDamageInfo *)lua_newuserdata(L, sizeof(lua_CTakeDamageInfo));
-  *pInfo = info;
+  void *storage = lua_newuserdata(L, sizeof(lua_CTakeDamageInfo));
+  new (storage) lua_CTakeDamageInfo(info);
   luaL_getmetatable(L, "CTakeDamageInfo");
   lua_setmetatable(L, -2);
 }
@@ -180,8 +182,21 @@ static int CTakeDamageInfo_SetAmmoType (lua_State *L) {
   return 0;
 }
 
+bool HL2SB_IsEntityUserdata(lua_State *L, int index);
+
+static CBaseEntity *CheckDamageEntity(lua_State *L, int arg) {
+  if (!HL2SB_IsEntityUserdata(L, arg)) {
+    luaL_typerror(L, arg, "Entity");
+    return NULL;
+  }
+
+  // A NULL or removed entity resolves to the invalid handle used to clear the field.
+  return lua_toentity(L, arg);
+}
+
 static int CTakeDamageInfo_SetAttacker (lua_State *L) {
-  luaL_checkdamageinfo(L, 1).SetAttacker(luaL_checkentity(L, 2));
+  lua_CTakeDamageInfo &info = luaL_checkdamageinfo(L, 1);
+  info.SetAttacker(CheckDamageEntity(L, 2));
   return 0;
 }
 
@@ -218,12 +233,18 @@ static int CTakeDamageInfo_SetDamageStats (lua_State *L) {
 }
 
 static int CTakeDamageInfo_SetDamageType (lua_State *L) {
-  luaL_checkdamageinfo(L, 1).SetDamageType(luaL_checkint(L, 2));
+  lua_CTakeDamageInfo &info = luaL_checkdamageinfo(L, 1);
+  const double value = luaL_checknumber(L, 2);
+  // Replicate the reference's signed 32-bit truncation without an out-of-range cast.
+  const int mask = value > static_cast<double>(INT_MIN) - 1.0 &&
+      value < static_cast<double>(INT_MAX) + 1.0 ? static_cast<int>(value) : INT_MIN;
+  info.SetDamageType(mask);
   return 0;
 }
 
 static int CTakeDamageInfo_SetInflictor (lua_State *L) {
-  luaL_checkdamageinfo(L, 1).SetInflictor(luaL_checkentity(L, 2));
+  lua_CTakeDamageInfo &info = luaL_checkdamageinfo(L, 1);
+  info.SetInflictor(CheckDamageEntity(L, 2));
   return 0;
 }
 

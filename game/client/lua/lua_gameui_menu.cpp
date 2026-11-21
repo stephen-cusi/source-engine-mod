@@ -77,6 +77,9 @@
 #include "tier0/memdbgon.h"
 
 extern CSteamAPIContext *steamapicontext;	// cdll_client_int.h
+int HL2SBWorkshopInfo( lua_State *state );
+void HL2SB_MenuPumpWorkshop( lua_State *state );
+void HL2SB_MenuStopWorkshop( lua_State *state );
 
 // The reference build always runs inside Steam, so its missing-interface
 // Warnings are unreachable there; here the game can start without Steam and
@@ -723,6 +726,7 @@ public:
 		if ( !LGameUI || m_bInTick ) return;
 		m_bInTick = true;
 		HL2SB_PumpManifest( LGameUI );
+		HL2SB_MenuPumpWorkshop( LGameUI );
 		HL2SB_MenuCallHook( "Think" );
 		size_t remaining = s_MenuSimpleTimers.size();
 		size_t index = 0;
@@ -752,6 +756,7 @@ void HL2SB_MenuRuntimeStart()
 
 void HL2SB_MenuRuntimeStop()
 {
+	HL2SB_MenuStopWorkshop( LGameUI );
 	if ( s_ManifestThread.joinable() ) s_ManifestThread.join();
 	if ( LGameUI ) for ( size_t i = 0; i < s_ManifestCallbacks.size(); ++i )
 		luaL_unref( LGameUI, LUA_REGISTRYINDEX, s_ManifestCallbacks[i] );
@@ -942,6 +947,7 @@ static const luaL_Reg gameui_menu_funcs[] =
 	{ "OpenFolder", HL2SB_MenuOpenFolder },
 	{ "RunGameUICommand", HL2SB_RunGameUICommand },
 	{ "GetAPIManifest", HL2SB_GetAPIManifest },
+	{ "HL2SBWorkshopInfo", HL2SBWorkshopInfo },
 	{ "HL2SB_MenuLayout",     lua_HL2SB_MenuLayout },
 	{ "HL2SB_MenuDumpLayout", lua_HL2SB_MenuDumpLayout_Entry },
 	{ "HL2SB_MenuConsoleCommand", lua_HL2SB_MenuConsoleCommand },

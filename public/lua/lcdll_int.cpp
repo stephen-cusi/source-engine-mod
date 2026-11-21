@@ -11,6 +11,7 @@
 #include "luasrclib.h"
 #include "mathlib/lvector.h"
 #include "filesystem.h"
+#include "hl2sb_gma.h"
 #include "KeyValues.h"
 #include "tier0/icommandline.h"
 #include "tier1/utlbuffer.h"
@@ -302,6 +303,7 @@ static int engine_GetAddons (lua_State *L) {
     lua_pushinteger(L, 0); lua_setfield(L, -2, "size");
     lua_rawseti(L, -2, i + 1);
   }
+  HL2SB_AppendMountedWorkshopAddons( L, addons.size() + 1 );
   return 1;
 }
 
@@ -309,6 +311,11 @@ extern int HL2SB_EngineGetGames( lua_State *L );
 extern int HL2SB_EngineGetContentSources( lua_State *L );
 extern int HL2SB_EngineMountContentSource( lua_State *L );
 extern int HL2SB_EngineSetContentMounted( lua_State *L );
+
+static int engine_GetLocalWorkshopContent (lua_State *L) {
+  HL2SB_PushLocalWorkshopContent( L, engine ? engine->GetGameDirectory() : NULL );
+  return 1;
+}
 
 static int engine_GetEngineBuildNumber (lua_State *L) {
   lua_pushinteger(L, engine->GetEngineBuildNumber());
@@ -764,6 +771,8 @@ static const luaL_Reg enginelib[] = {
 LUALIB_API int luaopen_engine (lua_State *L) {
   luaL_register(L, LUA_ENGINELIBNAME, enginelib);
   if ( L == LGameUI ) {
+    lua_pushcfunction( L, engine_GetLocalWorkshopContent );
+    lua_setfield( L, -2, "GetLocalWorkshopContent" );
     lua_pushcfunction( L, menu_GetAddonStatus );
     lua_setglobal( L, "GetAddonStatus" );
   }

@@ -29,6 +29,15 @@
 // possible.
 void HL2SB_MountGMAAddons();
 
+// Numeric Workshop directories contain archives mounted directly from disk.
+bool HL2SB_IsWorkshopAddonDirectory( const char *pszName );
+void HL2SB_UnmountWorkshopAddon( const char *pszName );
+
+struct lua_State;
+void HL2SB_AppendMountedWorkshopAddons( lua_State *L, int firstIndex );
+void HL2SB_PushLocalWorkshopContent( lua_State *L, const char *gameDirectory );
+bool HL2SB_HasLocalWorkshopContent( const char *gameDirectory, const char *id );
+
 // HL2SB: is this addon switched off in <gamedir>/addons_disabled.txt?  The list
 // is written by the main menu's Addons dialog (lua/gameui/addonsdialog.lua);
 // MountAddons() uses it to skip folders, HL2SB_MountGMAAddons() to skip

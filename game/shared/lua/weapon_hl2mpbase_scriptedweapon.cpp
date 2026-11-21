@@ -15,6 +15,9 @@
 #include "weapon_hl2mpbase_scriptedweapon.h"
 #include "in_buttons.h"
 #include "ammodef.h"
+#ifndef CLIENT_DLL
+#include "npcevent.h"
+#endif
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lbasecombatweapon_shared.h"
@@ -2394,6 +2397,24 @@ bool CHL2MPScriptedWeapon::AcceptInput( const char *szInputName, CBaseEntity *pA
 // implement that inline, the scripted one hands the shot to the Lua method
 // (weapon_base's NPCShoot_* route it into PrimaryAttack/SecondaryAttack).
 //-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator )
+{
+	if ( !( pEvent->type & AE_TYPE_NEWEVENTSYSTEM ) )
+	{
+		switch ( pEvent->event )
+		{
+		case EVENT_WEAPON_SMG1:
+		case EVENT_WEAPON_AR1:
+		case EVENT_WEAPON_AR2:
+		case EVENT_WEAPON_PISTOL_FIRE:
+		case EVENT_WEAPON_SHOTGUN_FIRE:
+			Operator_ForceNPCFire( pOperator, false );
+			return;
+		}
+	}
+	BaseClass::Operator_HandleAnimEvent( pEvent, pOperator );
+}
+
 void CHL2MPScriptedWeapon::Operator_ForceNPCFire( CBaseCombatCharacter *pOperator, bool bSecondary )
 {
 #if defined ( LUA_SDK )

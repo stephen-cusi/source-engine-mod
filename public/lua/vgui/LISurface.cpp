@@ -35,6 +35,7 @@ extern vgui::IInputInternal *g_InputInternal;
 #include "mathlib/lvector.h"   // HL2SB: lua_pushvector
 #include "hl2sb_framestats.h"	// HL2SB: hl2sb_framestats surface draw counter
 #include "hl2sb_framestats_cat.h"	// HL2SB: per-category wall-time buckets
+#include <cfloat>
 #include <climits>
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -59,10 +60,22 @@ static int SurfaceEndPixel( int position, int size )
   return static_cast<int>( clamp( end, static_cast<int64>( INT_MIN ), static_cast<int64>( INT_MAX ) ) );
 }
 
-static int SurfaceCheckChannel( lua_State *L, int arg )
+static float SurfaceCheckFloat( lua_State *L, int arg )
 {
   const double value = luaL_checknumber( L, arg );
+  if ( !( value >= -FLT_MAX && value <= FLT_MAX ) )
+    luaL_argerror( L, arg, "drawing value out of range" );
+  return static_cast<float>( value );
+}
+
+static int SurfaceChannel( double value )
+{
   return value > 0.0 ? static_cast<int>( MIN( value, 255.0 ) ) : 0;
+}
+
+static int SurfaceCheckChannel( lua_State *L, int arg )
+{
+  return SurfaceChannel( luaL_checknumber( L, arg ) );
 }
 
 static int SurfaceFontNumber( lua_State *L, int arg, int fallback, int minimum, int maximum )
@@ -427,9 +440,10 @@ static int surface_DrawLine (lua_State *L) {
 }
 
 static int surface_DrawCircle (lua_State *L) {
-  const int x = (int)luaL_checknumber( L, 1 );
-  const int y = (int)luaL_checknumber( L, 2 );
-  const float radius = (float)luaL_checknumber( L, 3 );
+  const int x = SurfaceCheckPixel( L, 1 );
+  const int y = SurfaceCheckPixel( L, 2 );
+  const double radius = luaL_checknumber( L, 3 );
+  const int pixelRadius = SurfaceCheckPixel( L, 3 );
   if ( !lua_isnoneornil( L, 4 ) ) {
     int channels[4] = { 255, 255, 255, 255 };
     if ( lua_istable( L, 4 ) ) {
@@ -437,21 +451,20 @@ static int surface_DrawCircle (lua_State *L) {
       for ( int i = 0; i < 4; ++i ) {
         lua_getfield( L, 4, names[i] );
         if ( lua_isnumber( L, -1 ) )
-          channels[i] = (int)lua_tonumber( L, -1 );
+          channels[i] = SurfaceChannel( lua_tonumber( L, -1 ) );
         lua_pop( L, 1 );
       }
     } else {
       for ( int i = 0; i < 3; ++i )
-        channels[i] = (int)luaL_checknumber( L, 4 + i );
+        channels[i] = SurfaceCheckChannel( L, 4 + i );
       if ( lua_isnumber( L, 7 ) )
-        channels[3] = (int)lua_tonumber( L, 7 );
+        channels[3] = SurfaceChannel( lua_tonumber( L, 7 ) );
     }
-    surface()->DrawSetColor( clamp( channels[0], 0, 255 ), clamp( channels[1], 0, 255 ),
-                             clamp( channels[2], 0, 255 ), clamp( channels[3], 0, 255 ) );
+    surface()->DrawSetColor( channels[0], channels[1], channels[2], channels[3] );
   }
-  const float magnitude = radius < 0 ? -radius : radius;
-  const int segments = (int)clamp( magnitude, 8.0f, 64.0f );
-  surface()->DrawOutlinedCircle( x, y, (int)radius, segments );
+  const double magnitude = radius < 0 ? -radius : radius;
+  const int segments = static_cast<int>( clamp( magnitude, 8.0, 64.0 ) );
+  surface()->DrawOutlinedCircle( x, y, pixelRadius, segments );
   return 0;
 }
 
@@ -484,37 +497,52 @@ static int surface_DrawOutlinedRect (lua_State *L) {
   return 0;
 }
 
-static int surface_DrawPrintText (lua_State *L) {
+static const char *SurfaceCheckText( lua_State *L, int arg, size_t &bytes )
+{
+  const char *text = luaL_checkstring( L, arg );
+  bytes = strlen( text );
+  if ( bytes >= INT_MAX / sizeof( wchar_t ) )
+    luaL_argerror( L, arg, "text is too long" );
+  return text;
+}
+
+static const wchar_t *SurfaceWideText( const char *text, size_t bytes, CUtlVectorFixedGrowable<wchar_t, 256> &buffer )
+{
+  if ( text[0] == '#' )
+  {
+    const wchar_t *phrase = g_pVGuiLocalize->Find( text + 1 );
+    if ( phrase )
+      return phrase;
+  }
+
+  buffer.SetCount( static_cast<int>( bytes + 1 ) );
+  buffer[0] = L'\0';
+  g_pVGuiLocalize->ConvertANSIToUnicode( text, buffer.Base(), buffer.Count() * sizeof( wchar_t ) );
+  return buffer.Base();
+}
+
+static int SurfacePrintText( lua_State *L, FontDrawType_t drawType )
+{
+  size_t bytes;
+  const char *utf8 = SurfaceCheckText( L, 1, bytes );
   HL2SB_FrameStats_AddSurfaceDraw();
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXTPRINT );
-  const char *sz = luaL_checkstring(L, 1);
-  if (sz[0] == '#')
-  {
-    const wchar_t *phrase = g_pVGuiLocalize->Find(sz + 1);
-    if (phrase)
-    {
-      surface()->DrawPrintText(phrase, wcslen(phrase), (FontDrawType_t)luaL_optint(L, 3, FONT_DRAW_DEFAULT));
-      return 0;
-    }
-  }
-  int bufSize = (strlen( sz ) + 1 ) * sizeof(wchar_t);
-  wchar_t *wbuf = static_cast<wchar_t *>( _alloca( bufSize ) );
-  if ( wbuf )
-  {
-	  g_pVGuiLocalize->ConvertANSIToUnicode( sz, wbuf, bufSize);
-	  surface()->DrawPrintText( wbuf, wcslen( wbuf ), (FontDrawType_t)luaL_optint(L, 3, FONT_DRAW_DEFAULT));
-  }
+  CUtlVectorFixedGrowable<wchar_t, 256> buffer;
+  const wchar_t *text = SurfaceWideText( utf8, bytes, buffer );
+  surface()->DrawPrintText( text, static_cast<int>( wcslen( text ) ), drawType );
   return 0;
+}
+
+static int surface_DrawPrintText( lua_State *L )
+{
+  return SurfacePrintText( L, static_cast<FontDrawType_t>( luaL_optint( L, 3, FONT_DRAW_DEFAULT ) ) );
 }
 
 static int surface_DrawText( lua_State *L )
 {
   const FontDrawType_t drawType = lua_isnoneornil( L, 2 ) ? FONT_DRAW_DEFAULT :
     ( lua_toboolean( L, 2 ) ? FONT_DRAW_ADDITIVE : FONT_DRAW_NONADDITIVE );
-  lua_settop( L, 3 );
-  lua_pushinteger( L, drawType );
-  lua_replace( L, 3 );
-  surface_DrawPrintText( L );
+  SurfacePrintText( L, drawType );
   surface()->DrawFlushText();
   return 0;
 }
@@ -913,13 +941,17 @@ static int surface_DrawTexturedSubRect (lua_State *L) {
 // argument-shape translation.  draw.RoundedBox() builds its corners with it.
 // ---------------------------------------------------------------------------
 static int surface_DrawTexturedRectUV (lua_State *L) {
-  HL2SB_FrameStats_AddSurfaceDraw();
-  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
   const int x = SurfaceCheckPixel(L, 1);
   const int y = SurfaceCheckPixel(L, 2);
   const int w = SurfaceCheckPixel(L, 3);
   const int h = SurfaceCheckPixel(L, 4);
-  surface()->DrawTexturedSubRect(x, y, SurfaceEndPixel(x, w), SurfaceEndPixel(y, h), luaL_checknumber(L, 5), luaL_checknumber(L, 6), luaL_checknumber(L, 7), luaL_checknumber(L, 8));
+  const float u0 = SurfaceCheckFloat(L, 5);
+  const float v0 = SurfaceCheckFloat(L, 6);
+  const float u1 = SurfaceCheckFloat(L, 7);
+  const float v1 = SurfaceCheckFloat(L, 8);
+  HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
+  surface()->DrawTexturedSubRect(x, y, SurfaceEndPixel(x, w), SurfaceEndPixel(y, h), u0, v0, u1, v1);
   return 0;
 }
 
@@ -948,13 +980,11 @@ static int surface_DrawTexturedRectUV (lua_State *L) {
 // fonts, which live in a shared page and are never drawn through this path.
 // ---------------------------------------------------------------------------
 static int surface_DrawTexturedRectRotated (lua_State *L) {
-  HL2SB_FrameStats_AddSurfaceDraw();
-  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
-  const float flX  = (float)luaL_checknumber(L, 1);
-  const float flY  = (float)luaL_checknumber(L, 2);
-  const float flW  = (float)luaL_checknumber(L, 3);
-  const float flH  = (float)luaL_checknumber(L, 4);
-  const float flRot = (float)luaL_checknumber(L, 5);
+  const float flX = SurfaceCheckFloat(L, 1);
+  const float flY = SurfaceCheckFloat(L, 2);
+  const float flW = SurfaceCheckFloat(L, 3);
+  const float flH = SurfaceCheckFloat(L, 4);
+  const float flRot = SurfaceCheckFloat(L, 5);
 
   const float flRad = flRot * 0.017453292519943295f;   // degrees -> radians
   const float flCos = cosf(flRad);
@@ -977,10 +1007,14 @@ static int surface_DrawTexturedRectRotated (lua_State *L) {
 
     verts[i].m_Position.x = flX + ( flPX * flCos + flPY * flSin );
     verts[i].m_Position.y = flY + ( -flPX * flSin + flPY * flCos );
+    if ( !IsFinite( verts[i].m_Position.x ) || !IsFinite( verts[i].m_Position.y ) )
+      return 0;
     verts[i].m_TexCoord.x = pflCU[i];
     verts[i].m_TexCoord.y = pflCV[i];
   }
 
+  HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
   surface()->DrawTexturedPolygon( 4, verts, true );
   return 0;
 }
@@ -1125,7 +1159,6 @@ static int surface_GetScreenSize (lua_State *L) {
 // here; GetTextSize falls back to it for the single-argument form.
 static HFont s_hLastSetTextFont = 0;
 static int surface_GetTextSize (lua_State *L) {
-  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXTMEASURE );
   // HL2SB (2026-10-12): single-argument contract verified against the
   // reference engine's binding, four points:
   //   1. ONE argument = the text, measured with the font last set by
@@ -1148,55 +1181,19 @@ static int surface_GetTextSize (lua_State *L) {
   //      tables; we use the engine's ILocalize, same result).
   // Two arguments keep the legacy Experiment:Source spelling
   // GetTextSize( font, text ).
-  if ( lua_gettop( L ) <= 1 || !luaL_testudata( L, 1, "HFont" ) )
-  {
-    if ( s_hLastSetTextFont == 0 )
-      return 0;
+  const bool hasExplicitFont = lua_gettop( L ) > 1 && luaL_testudata( L, 1, "HFont" );
+  const HFont font = hasExplicitFont ? luaL_checkfont( L, 1 ) : s_hLastSetTextFont;
+  if ( !hasExplicitFont && font == 0 )
+    return 0;
 
-    const char *szOnly = luaL_checkstring( L, 1 );
-    // A '#'-prefixed string is a localization token: measure the phrase when
-    // the tables know it, otherwise fall through and measure the raw text.
-    const wchar_t *wszOnly = NULL;
-    if ( szOnly[0] == '#' )
-      wszOnly = g_pVGuiLocalize->Find( szOnly + 1 );
-    int wideOnly = 0;
-    int tallOnly = 0;
-    int bufOnly = ( strlen( szOnly ) + 1 ) * sizeof( wchar_t );
-    wchar_t *wOnly = static_cast<wchar_t *>( _alloca( bufOnly ) );
-    if ( wszOnly == NULL && wOnly )
-    {
-      g_pVGuiLocalize->ConvertANSIToUnicode( szOnly, wOnly, bufOnly );
-      wszOnly = wOnly;
-    }
-    if ( wszOnly )
-      surface()->GetTextSize( s_hLastSetTextFont, wszOnly, wideOnly, tallOnly );
-    lua_pushinteger( L, wideOnly );
-    lua_pushinteger( L, tallOnly );
-    return 2;
-  }
-  const char *sz = luaL_checkstring(L, 2);
+  size_t bytes;
+  const char *utf8 = SurfaceCheckText( L, hasExplicitFont ? 2 : 1, bytes );
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXTMEASURE );
+  CUtlVectorFixedGrowable<wchar_t, 256> buffer;
+  const wchar_t *text = SurfaceWideText( utf8, bytes, buffer );
   int wide = 0;
   int tall = 0;
-  HFont font = luaL_checkfont(L, 1);
-  const wchar_t *phrase = sz[0] == '#' ? g_pVGuiLocalize->Find(sz + 1) : NULL;
-  if (phrase)
-  {
-    surface()->GetTextSize(font, phrase, wide, tall);
-    lua_pushinteger(L, wide);
-    lua_pushinteger(L, tall);
-    return 2;
-  }
-  int bufSize = (strlen( sz ) + 1 ) * sizeof(wchar_t);
-  wchar_t *wbuf = static_cast<wchar_t *>( _alloca( bufSize ) );
-  if ( wbuf )
-  {
-	  // HL2SB: this conversion was missing, so GetTextSize measured an
-	  // uninitialised stack buffer and returned a garbage width.  Every Lua
-	  // layout that measures text (the kill feed especially) was positioned
-	  // from those bogus values.
-	  g_pVGuiLocalize->ConvertANSIToUnicode( sz, wbuf, bufSize );
-	  surface()->GetTextSize(font, wbuf, wide, tall);
-  }
+  surface()->GetTextSize( font, text, wide, tall );
   lua_pushinteger(L, wide);
   lua_pushinteger(L, tall);
   return 2;

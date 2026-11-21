@@ -21,6 +21,7 @@ class CSoundPatch;
 // Update the attenuation used by future emissions of an existing patch.
 void HL2SB_SoundPatchSetSoundLevel( CSoundPatch *pSound, soundlevel_t soundlevel );
 soundlevel_t HL2SB_SoundPatchGetSoundLevel( CSoundPatch *pSound );
+bool HL2SB_SoundPatchIsPlaying( CSoundPatch *pSound );
 
 enum soundcommands_t
 {

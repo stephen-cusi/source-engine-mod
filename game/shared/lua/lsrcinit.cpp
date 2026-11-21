@@ -1616,7 +1616,9 @@ extern void HL2SB_SetGameTimeScale( float scale );
 
 static int lua_game_GetTimeScale( lua_State *L ) {
   float scale;
-  if ( !HL2SB_GetGameTimeScale( scale ) ) return 0;
+  // Sound hooks can query the scale before the rules exist.
+  if ( !HL2SB_GetGameTimeScale( scale ) )
+    scale = 1.0f;
   lua_pushnumber( L, scale );
   return 1;
 }
@@ -1715,7 +1717,7 @@ static int lua_UnPredictedCurTime (lua_State *L) {
 
 // HL2SB (sbrust): implemented in luamanager.cpp (local prototype, no header
 // churn -- same pattern as HL2SB_CollectLuaError below).
-void luasrc_LuaConsoleMsgColor( const char *pszText, const Color &clr, bool bNewline );
+void luasrc_LuaConsoleMsgColor( const char *pszText, const Color &clr, bool bLog );
 
 //-----------------------------------------------------------------------------
 // HL2SB (sbrust): GMod 的 MsgC( Color, ... )。契约（wiki + GMod 行为）：
@@ -1724,7 +1726,7 @@ void luasrc_LuaConsoleMsgColor( const char *pszText, const Color &clr, bool bNew
 //     r/g/b 至少存在即按 Color 处理；
 //   * 其余参数按 tostring 直接连拼（无分隔符 -- 与 print 的 \t 不同，
 //     `MsgC( c, "HP: ", hp )` 输出 "HP: 100"）；
-//   * 结尾补换行（MsgC 是整行语义；半行续行走 Msg/MsgN）；
+//   * 保留调用方提供的换行，支持多次 MsgC 调用拼成同一行；
 //   * 颜色经 luasrc_LuaConsoleMsgColor 直达控制台，整行照旧进 hl2sb_lua.log。
 // 首 Color 之前的文本用白色。缓冲写满时按当前颜色提前分片续行，视觉不变。
 //-----------------------------------------------------------------------------
@@ -1748,9 +1750,10 @@ static int lua_MsgC (lua_State *L) {
         }
         curColor = Color( (int)lua_tointeger( L, -4 ), (int)lua_tointeger( L, -3 ),
                           (int)lua_tointeger( L, -2 ), (int)lua_tointeger( L, -1 ) );
+        lua_pop( L, 4 );
+        continue;
       }
       lua_pop( L, 4 );
-      continue;
     }
 
     size_t nLength = 0;
@@ -1766,7 +1769,7 @@ static int lua_MsgC (lua_State *L) {
     lua_pop( L, 1 );
   }
 
-  if ( nSeg > 0 || nArgs == 0 )
+  if ( nSeg > 0 )
     luasrc_LuaConsoleMsgColor( szSegment, curColor, true );
   return 0;
 }

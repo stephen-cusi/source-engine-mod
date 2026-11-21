@@ -17,6 +17,7 @@
 #include "tier2/tier2.h"
 #include "c_basecombatweapon.h"
 #include "lbasecombatweapon_shared.h"
+#include <climits>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -265,7 +266,16 @@ static int input_SetCandidateWindowPos (lua_State *L) {
 }
 
 static int input_SetCursorPos (lua_State *L) {
-  input()->SetCursorPos(luaL_checkint(L, 1), luaL_checkint(L, 2));
+  // ARC9 adds frame-scaled gamepad movement to the current cursor position.
+  int position[2];
+  for ( int i = 0; i < 2; ++i ) {
+    const double value = luaL_checknumber(L, i + 1);
+    if ( !( value > static_cast<double>(INT_MIN) - 1.0 &&
+            value < static_cast<double>(INT_MAX) + 1.0 ) )
+      return luaL_argerror(L, i + 1, "cursor coordinate out of range");
+    position[i] = static_cast<int>(value);
+  }
+  input()->SetCursorPos(position[0], position[1]);
   return 0;
 }
 

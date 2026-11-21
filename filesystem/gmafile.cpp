@@ -643,6 +643,35 @@ bool CGmaPackFile::IndexToFilename( int nIndex, char *pBuffer, int nBufferSize )
 	return false;
 }
 
+static bool GMA_MatchesComponent( const char *name, const char *pattern )
+{
+	const char *star = NULL;
+	const char *retry = NULL;
+	while ( *name )
+	{
+		if ( *pattern == '*' )
+		{
+			star = ++pattern;
+			retry = name;
+		}
+		else if ( *pattern == '?' || ( *pattern && V_strnicmp( name, pattern, 1 ) == 0 ) )
+		{
+			++name;
+			++pattern;
+		}
+		else if ( star )
+		{
+			pattern = star;
+			name = ++retry;
+		}
+		else
+			return false;
+	}
+	while ( *pattern == '*' )
+		++pattern;
+	return *pattern == '\0';
+}
+
 //-----------------------------------------------------------------------------
 //	Build a list of matching files and directories for FindFirst().
 //	Same algorithm as CZipPackFile (archives carry no empty directories;
@@ -656,7 +685,6 @@ void CGmaPackFile::GetFileAndDirLists( const char *pRawWildCard, CUtlStringList 
 	char szWildCardExt[MAX_PATH] = { 0 };
 
 	size_t nLenWildcardPath = 0;
-	size_t nLenWildcardBase = 0;
 
 	bool bBaseWildcard = true;
 	bool bExtWildcard = true;
@@ -679,7 +707,6 @@ void CGmaPackFile::GetFileAndDirLists( const char *pRawWildCard, CUtlStringList 
 	bool bWildcardHasExt = !!V_strrchr( szWildCard, '.' );
 	V_ExtractFileExtension( szWildCard, szWildCardExt, sizeof( szWildCardExt ) );
 
-	// No partial wildcards (foo*bar.*); same rule as the zip implementation.
 	bBaseWildcard = ( V_strcmp( szWildCardBase, "*" ) == 0 );
 	bExtWildcard = ( V_strcmp( szWildCardExt, "*" ) == 0 );
 
@@ -690,7 +717,6 @@ void CGmaPackFile::GetFileAndDirLists( const char *pRawWildCard, CUtlStringList 
 	}
 
 	nLenWildcardPath = V_strlen( szWildCardPath );
-	nLenWildcardBase = V_strlen( szWildCardBase );
 
 	FOR_EACH_VEC( m_PackFiles, filesIdx )
 	{
@@ -740,12 +766,12 @@ void CGmaPackFile::GetFileAndDirLists( const char *pRawWildCard, CUtlStringList 
 			if ( bBaseWildcard )
 				bBaseMatch = true;
 			else
-				bBaseMatch = ( nLenWildcardBase && 0 == V_stricmp( szCandidateBaseName, szWildCardBase ) );
+				bBaseMatch = GMA_MatchesComponent( szCandidateBaseName, szWildCardBase );
 
 			if ( ( bExtWildcard && pExt ) || ( !pExt && !bWildcardHasExt ) )
 				bExtMatch = true;
 			else
-				bExtMatch = bWildcardHasExt && pExt && ( 0 == V_stricmp( pExt, szWildCardExt ) );
+				bExtMatch = bWildcardHasExt && pExt && GMA_MatchesComponent( pExt, szWildCardExt );
 
 			if ( bBaseMatch && bExtMatch )
 			{

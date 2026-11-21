@@ -279,8 +279,11 @@ bool HL2SB_SetAddonEnabled( const char *pszAddonName, bool bEnabled )
 	{
 		// Mirror MountAddons() exactly, then let the GMA pass pick up an
 		// archive the user just re-enabled (mounting is idempotent).
-		filesystem->AddSearchPath( relativepath, "MOD", PATH_ADD_TO_TAIL );
-		filesystem->AddSearchPath( relativepath, "GAME", PATH_ADD_TO_TAIL );
+		if ( !HL2SB_IsWorkshopAddonDirectory( pszAddonName ) )
+		{
+			filesystem->AddSearchPath( relativepath, "MOD", PATH_ADD_TO_TAIL );
+			filesystem->AddSearchPath( relativepath, "GAME", PATH_ADD_TO_TAIL );
+		}
 		HL2SB_MountGMAAddons();
 	}
 	else
@@ -297,6 +300,7 @@ bool HL2SB_SetAddonEnabled( const char *pszAddonName, bool bEnabled )
 		if ( filesystem->RemoveSearchPath( szArchiveRelative, "MOD" ) )
 			bRemoved = true;
 		filesystem->RemoveSearchPath( szArchiveRelative, "GAME" );
+		HL2SB_UnmountWorkshopAddon( pszAddonName );
 
 		if ( !bRemoved && !filesystem->IsDirectory( relativepath, "MOD" ) )
 			bRemoved = true;    // nothing was mounted: nothing to do
@@ -314,18 +318,13 @@ void MountAddons()
 	HL2SB_MountSelectedGameContent();
 	HL2SB_RefreshGameContentPaths();
 	// HL2SB: GMod's launch flags.  -noaddons skips addon mounting entirely
-	// (its engine.dll owns the flag; the game side just honours it), and
-	// -noworkshop skips the workshop layer -- this fork has no workshop layer,
-	// so honouring it is a logged no-op.
+	// (its engine.dll owns the flag; the game side just honours it).
 	if ( CommandLine()->FindParm( "-noaddons" ) != 0 )
 	{
 		if ( hl2sb_dev_msgs.GetBool() )
 		Msg( "[HL2SB] addons: -noaddons on the command line - not mounting any addon\n" );
 		return;
 	}
-	if ( CommandLine()->FindParm( "-noworkshop" ) != 0 )
-		if ( hl2sb_dev_msgs.GetBool() )
-		Msg( "[HL2SB] addons: -noworkshop on the command line (no workshop layer in this fork; nothing to skip)\n" );
 
 	// Andrew; mount the Lua cache directory first. We consider this a temporary
 	// addon used across servers
@@ -360,9 +359,9 @@ void MountAddons()
 			{
 				// HL2SB: the main-menu Addons dialog can switch an addon off;
 				// a disabled one is not mounted (see HL2SB_IsAddonDisabled).
-				if ( HL2SB_IsAddonDisabled( addonName ) )
+				if ( HL2SB_IsAddonDisabled( addonName ) || HL2SB_IsWorkshopAddonDirectory( addonName ) )
 				{
-					if ( hl2sb_dev_msgs.GetBool() )
+					if ( hl2sb_dev_msgs.GetBool() && HL2SB_IsAddonDisabled( addonName ) )
 					Msg( "[HL2SB] addons: '%s' is disabled - not mounted this session\n", addonName );
 					fn = g_pFullFileSystem->FindNext( fh );
 					continue;

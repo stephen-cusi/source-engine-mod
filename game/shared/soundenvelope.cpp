@@ -316,6 +316,11 @@ soundlevel_t HL2SB_SoundPatchGetSoundLevel( CSoundPatch *pSound )
 {
 	return pSound ? pSound->GetSoundLevel() : SNDLVL_NORM;
 }
+
+bool HL2SB_SoundPatchIsPlaying( CSoundPatch *pSound )
+{
+	return pSound && pSound->IsPlaying();
+}
 #include "tier0/memdbgon.h"
 
 int CSoundPatch::g_SoundPatchCount = 0;

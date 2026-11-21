@@ -1000,7 +1000,7 @@ void CNPC_Combine::StartTask( const Task_t *pTask )
 			m_flShotDelay = GetActiveWeapon()->GetFireRate();
 
 			m_flNextAttack = gpGlobals->curtime + m_flShotDelay - 0.1;
-			ResetIdealActivity( ACT_RANGE_ATTACK1 );
+			StartRangeAttack1Activity();
 			m_flLastAttackTime = gpGlobals->curtime;
 		}
 		break;
@@ -1150,7 +1150,7 @@ void CNPC_Combine::RunTask( const Task_t *pTask )
 					if (--m_nShots > 0)
 					{
 						// DevMsg("ACT_RANGE_ATTACK1\n");
-						ResetIdealActivity( ACT_RANGE_ATTACK1 );
+						StartRangeAttack1Activity();
 						m_flLastAttackTime = gpGlobals->curtime;
 						m_flNextAttack = gpGlobals->curtime + m_flShotDelay - 0.1;
 					}

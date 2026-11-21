@@ -49,6 +49,7 @@
 #include "filesystem.h"
 #include "iviewrender.h"
 #include "view_shared.h"
+#include <climits>
 #include <string>
 #include <vector>
 #include <utility>
@@ -1344,10 +1345,21 @@ static void Panel_SyncLuaGeometry (lua_State *L, Panel *pPanel) {
   lua_pop(L, 1);
 }
 
+static int Panel_CheckPixel(lua_State *L, int arg) {
+  // VPanel stores positions as signed shorts. Keep fractional pixel input,
+  // and reject coordinates that would wrap or fail Panel::SetPos's assertion.
+  const double value = luaL_checknumber(L, arg);
+  if (!(value > -static_cast<double>(SHRT_MAX) - 1.0 &&
+        value < static_cast<double>(SHRT_MAX) + 1.0))
+    return luaL_argerror(L, arg, "panel coordinate out of range");
+  return static_cast<int>(value);
+}
+
 static int Panel_SetPos (lua_State *L) {
   Panel *pPanel = luaL_checkpanel(L, 1);
-
-  pPanel->SetPos((int)luaL_checknumber(L, 2), (int)luaL_checknumber(L, 3));
+  const int x = Panel_CheckPixel(L, 2);
+  const int y = Panel_CheckPixel(L, 3);
+  pPanel->SetPos(x, y);
   Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
@@ -1788,7 +1800,11 @@ static int Panel___tostring (lua_State *L) {
 // the number straight through.
 //=============================================================================
 static int Panel_Dock (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetDock((int)luaL_checknumber(L, 2));
+  Panel *panel = luaL_checkpanel(L, 1);
+  const double dock = luaL_checknumber(L, 2);
+  if (!(dock > Panel::DOCK_NONE - 1.0 && dock < Panel::DOCK_BOTTOM + 1.0))
+    return luaL_argerror(L, 2, "invalid dock direction");
+  panel->SetDock(static_cast<int>(dock));
   return 0;
 }
 
@@ -1798,7 +1814,12 @@ static int Panel_GetDock (lua_State *L) {
 }
 
 static int Panel_DockPadding (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetDockPadding((int)luaL_checknumber(L, 2), (int)luaL_checknumber(L, 3), (int)luaL_checknumber(L, 4), (int)luaL_checknumber(L, 5));
+  Panel *panel = luaL_checkpanel(L, 1);
+  const int left = Panel_CheckPixel(L, 2);
+  const int top = Panel_CheckPixel(L, 3);
+  const int right = Panel_CheckPixel(L, 4);
+  const int bottom = Panel_CheckPixel(L, 5);
+  panel->SetDockPadding(left, top, right, bottom);
   return 0;
 }
 
@@ -1810,7 +1831,12 @@ static int Panel_GetDockPadding (lua_State *L) {
 }
 
 static int Panel_DockMargin (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetDockMargin((int)luaL_checknumber(L, 2), (int)luaL_checknumber(L, 3), (int)luaL_checknumber(L, 4), (int)luaL_checknumber(L, 5));
+  Panel *panel = luaL_checkpanel(L, 1);
+  const int left = Panel_CheckPixel(L, 2);
+  const int top = Panel_CheckPixel(L, 3);
+  const int right = Panel_CheckPixel(L, 4);
+  const int bottom = Panel_CheckPixel(L, 5);
+  panel->SetDockMargin(left, top, right, bottom);
   return 0;
 }
 
@@ -2179,13 +2205,19 @@ int HL2SB_LuaLabelAlignment(int alignment, bool toNative) {
   return (2 - alignment / 3) * 3 + alignment % 3 + 1;
 }
 
-static int Panel_SetContentAlignment (lua_State *L) {
-  vgui::Panel *pPanel = luaL_checkpanel(L, 1);
-  int alignment = HL2SB_LuaLabelAlignment(luaL_checkint(L, 2), true);
+int HL2SB_LuaCheckLabelAlignment(lua_State *L, int arg) {
+  const double value = luaL_checknumber(L, arg);
+  if (!(value >= 1.0 && value < 10.0))
+    return -1;
+  return HL2SB_LuaLabelAlignment(static_cast<int>(value), true);
+}
 
-  if (alignment >= 0)
-    if (Label *pLabel = dynamic_cast<Label *>(pPanel))
-      pLabel->SetContentAlignment((Label::Alignment)alignment);
+static int Panel_SetContentAlignment (lua_State *L) {
+  if (Label *label = dynamic_cast<Label *>(luaL_checkpanel(L, 1))) {
+    const int alignment = HL2SB_LuaCheckLabelAlignment(L, 2);
+    if (alignment >= 0)
+      label->SetContentAlignment(static_cast<Label::Alignment>(alignment));
+  }
   return 0;
 }
 

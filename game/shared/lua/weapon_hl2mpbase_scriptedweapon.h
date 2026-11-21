@@ -57,6 +57,7 @@ public:
 	// Override of the EXISTING CBaseCombatWeapon::Operator_ForceNPCFire
 	// virtual, same vtable slot.  NPC fire is server-only.
 #ifndef CLIENT_DLL
+	void Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator ) override;
 	virtual void			Operator_ForceNPCFire( CBaseCombatCharacter *pOperator, bool bSecondary );
 #endif
 
