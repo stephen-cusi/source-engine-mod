@@ -21,6 +21,11 @@
 #include "SoundEmitterSystem/isoundemittersystembase.h"
 
 #include "physics_saverestore.h"
+#if defined(LUA_SDK) && !defined(CLIENT_DLL)
+#include "player.h"
+#include "igamesystem.h"
+#include "tier1/utlmap.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -508,6 +513,20 @@ void PhysGetDefaultAABBSolid( solid_t &solid )
 //-----------------------------------------------------------------------------
 void PhysDestroyObject( IPhysicsObject *pObject, CBaseEntity *pEntity )
 {
+#ifdef LUA_SDK
+	HL2SB_InvalidateLuaPhysicsObject( pObject );
+#ifndef CLIENT_DLL
+	// Destroying the body can make the vehicle controller delete its wheels
+	// inside vphysics, without passing through this game-side helper again.
+	if ( pEntity && pObject && pEntity->VPhysicsGetObject() == pObject && pEntity->GetServerVehicle() )
+	{
+		IPhysicsObject *objects[VPHYSICS_MAX_OBJECT_LIST_COUNT];
+		const int count = pEntity->VPhysicsGetObjectList( objects, ARRAYSIZE( objects ) );
+		for ( int i = 0; i < count && i < ARRAYSIZE( objects ); ++i )
+			HL2SB_InvalidateLuaPhysicsObject( objects[i] );
+	}
+#endif
+#endif
 	g_pPhysSaveRestoreManager->ForgetModel( pObject );
 
 	
@@ -525,6 +544,67 @@ void PhysDestroyObject( IPhysicsObject *pObject, CBaseEntity *pEntity )
 		physenv->DestroyObject( pObject );
 	}
 }
+
+#if defined(LUA_SDK) && !defined(CLIENT_DLL)
+namespace
+{
+struct LuaPhysicsAttacker
+{
+	EHANDLE entity;
+	CHandle<CBasePlayer> player;
+	double expiresAt;
+};
+
+// One entry per entity slot, with serial-checked handles for both parties.
+CUtlMap<int, LuaPhysicsAttacker, int> s_LuaPhysicsAttackers( DefLessFunc( int ) );
+
+class CLuaPhysicsAttackerSystem : public CAutoGameSystem
+{
+public:
+	CLuaPhysicsAttackerSystem() : CAutoGameSystem( "LuaPhysicsAttackers" ) {}
+	void LevelShutdownPostEntity() override { s_LuaPhysicsAttackers.RemoveAll(); }
+};
+CLuaPhysicsAttackerSystem s_LuaPhysicsAttackerSystem;
+}
+
+void HL2SB_SetLuaPhysicsAttacker( CBaseEntity *entity, CBasePlayer *attacker, double duration )
+{
+	const CBaseHandle &handle = entity->GetRefEHandle();
+	if ( !handle.IsValid() )
+		return;
+	const int key = handle.GetEntryIndex();
+	if ( !attacker || !IsFinite( duration ) || duration <= 0.0 )
+	{
+		s_LuaPhysicsAttackers.Remove( key );
+		return;
+	}
+
+	const double expiresAt = gpGlobals->curtime + duration;
+	if ( IsFinite( expiresAt ) )
+	{
+		LuaPhysicsAttacker record = { entity, attacker, expiresAt };
+		s_LuaPhysicsAttackers.InsertOrReplace( key, record );
+	}
+}
+
+CBasePlayer *HL2SB_GetPhysicsAttacker( CBaseEntity *entity, float lookback )
+{
+	const CBaseHandle &handle = entity->GetRefEHandle();
+	if ( handle.IsValid() )
+	{
+		const int index = s_LuaPhysicsAttackers.Find( handle.GetEntryIndex() );
+		if ( s_LuaPhysicsAttackers.IsValidIndex( index ) )
+		{
+			const LuaPhysicsAttacker &record = s_LuaPhysicsAttackers[index];
+			CBasePlayer *attacker = record.player.Get();
+			if ( record.entity.Get() == entity && attacker && record.expiresAt > gpGlobals->curtime )
+				return attacker;
+			s_LuaPhysicsAttackers.RemoveAt( index );
+		}
+	}
+	return entity->HasPhysicsAttacker( lookback );
+}
+#endif
 
 void AddSurfacepropFile( const char *pFileName, IPhysicsSurfaceProps *pProps, IFileSystem *pFileSystem )
 {

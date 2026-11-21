@@ -209,6 +209,40 @@ static int net_ReadHeader( lua_State *L )
 	return 1;
 }
 
+static int Net_UIntBitCount( lua_State *L, int arg )
+{
+	const lua_Integer bits = luaL_optinteger( L, arg, 32 );
+	luaL_argcheck( L, bits >= 0 && bits <= 32, arg, "bit count must be between 0 and 32" );
+	return static_cast<int>( bits );
+}
+
+static int net_ReadUInt( lua_State *L )
+{
+	const int bits = Net_UIntBitCount( L, 1 );
+	bf_read *pRead = Net_GetRead();
+	// ARC9 can calculate a zero-bit width for an empty attachment registry.
+	lua_pushinteger( L, pRead && bits ? static_cast<lua_Integer>( pRead->ReadUBitLong( bits ) ) : 0 );
+	return 1;
+}
+
+static int net_ReadString( lua_State *L )
+{
+	bf_read *pRead = Net_GetRead();
+	if ( !pRead )
+	{
+		lua_pushliteral( L, "" );
+		return 1;
+	}
+
+	// ReadString consumes the zero terminator, even when the field starts at
+	// a bit offset. A message-sized scratch buffer avoids truncating presets.
+	static char buffer[ HL2SB_NET_MAX_SIZE ];
+	int length = 0;
+	pRead->ReadString( buffer, sizeof( buffer ), false, &length );
+	lua_pushlstring( L, buffer, length );
+	return 1;
+}
+
 #ifdef CLIENT_DLL
 //-----------------------------------------------------------------------------
 // Client side
@@ -310,35 +344,12 @@ static int net_ReadBit( lua_State *L )
 	return 1;
 }
 
-// net.ReadInt( bits ) / net.ReadUInt( bits ) - signed/unsigned N-bit read
+// net.ReadInt( bits ) - signed N-bit read
 static int net_ReadInt( lua_State *L )
 {
 	int bits = luaL_optint( L, 1, 32 );
 	bf_read *pRead = Net_GetRead();
 	lua_pushinteger( L, pRead ? pRead->ReadSBitLong( bits ) : 0 );
-	return 1;
-}
-
-static int net_ReadUInt( lua_State *L )
-{
-	int bits = luaL_optint( L, 1, 32 );
-	bf_read *pRead = Net_GetRead();
-	lua_pushinteger( L, pRead ? (int)pRead->ReadUBitLong( bits ) : 0 );
-	return 1;
-}
-
-// net.ReadString() -> string
-static int net_ReadString( lua_State *L )
-{
-	if ( !Net_GetRead() )
-	{
-		lua_pushstring( L, "" );
-		return 1;
-	}
-	char szBuf[ 512 ];
-	int iLen = sizeof( szBuf ) - 1;
-	Net_GetRead()->ReadString( szBuf, iLen );
-	lua_pushstring( L, szBuf );
 	return 1;
 }
 
@@ -564,9 +575,10 @@ static int net_WriteUInt( lua_State *L )
 {
 	if ( !g_cnetActive )
 		return 0;
-	unsigned int val = (unsigned int)luaL_checkint( L, 1 );
-	int bits = luaL_optint( L, 2, 32 );
-	g_cnetWrite.WriteUBitLong( val, bits );
+	unsigned int val = static_cast<unsigned int>( luaL_checkinteger( L, 1 ) );
+	const int bits = Net_UIntBitCount( L, 2 );
+	if ( bits )
+		g_cnetWrite.WriteUBitLong( val, bits );
 	return 0;
 }
 
@@ -1016,9 +1028,10 @@ static int net_WriteUInt( lua_State *L )
 {
 	if ( !g_netActive )
 		return 0;
-	unsigned int val = (unsigned int)luaL_checkint( L, 1 );
-	int bits = luaL_optint( L, 2, 32 );
-	g_netWrite.WriteUBitLong( val, bits );
+	unsigned int val = static_cast<unsigned int>( luaL_checkinteger( L, 1 ) );
+	const int bits = Net_UIntBitCount( L, 2 );
+	if ( bits )
+		g_netWrite.WriteUBitLong( val, bits );
 	return 0;
 }
 
@@ -1368,28 +1381,6 @@ static int net_ReadInt( lua_State *L )
 	int bits = luaL_optint( L, 1, 32 );
 	bf_read *pRead = Net_GetRead();
 	lua_pushinteger( L, pRead ? pRead->ReadSBitLong( bits ) : 0 );
-	return 1;
-}
-
-static int net_ReadUInt( lua_State *L )
-{
-	int bits = luaL_optint( L, 1, 32 );
-	bf_read *pRead = Net_GetRead();
-	lua_pushinteger( L, pRead ? (int)pRead->ReadUBitLong( bits ) : 0 );
-	return 1;
-}
-
-static int net_ReadString( lua_State *L )
-{
-	if ( !Net_GetRead() )
-	{
-		lua_pushstring( L, "" );
-		return 1;
-	}
-	char szBuf[ 512 ];
-	int iLen = sizeof( szBuf ) - 1;
-	Net_GetRead()->ReadString( szBuf, iLen );
-	lua_pushstring( L, szBuf );
 	return 1;
 }
 

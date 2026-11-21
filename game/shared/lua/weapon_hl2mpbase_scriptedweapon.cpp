@@ -709,32 +709,6 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 
-	// Primary ammo used.
-	lua_getweaponfield( L, m_nTableReference, "Primary", "Ammo", "" );
-	if ( lua_isstring( L, -1 ) )
-	{
-		const char *pAmmo = lua_tostring( L, -1 );
-		if ( strcmp("None", pAmmo) == 0 )
-			Q_strncpy( m_pLuaWeaponInfo->szAmmo1, "", sizeof( m_pLuaWeaponInfo->szAmmo1 ) );
-		else
-			Q_strncpy( m_pLuaWeaponInfo->szAmmo1, pAmmo, sizeof( m_pLuaWeaponInfo->szAmmo1 )  );
-		m_pLuaWeaponInfo->iAmmoType = GetAmmoDef()->Index( m_pLuaWeaponInfo->szAmmo1 );
-	}
-	lua_pop( L, 1 );
-	
-	// Secondary ammo used
-	lua_getweaponfield( L, m_nTableReference, "Secondary", "Ammo", "" );
-	if ( lua_isstring( L, -1 ) )
-	{
-		const char *pAmmo = lua_tostring( L, -1 );
-		if ( strcmp("None", pAmmo) == 0)
-			Q_strncpy( m_pLuaWeaponInfo->szAmmo2, "", sizeof( m_pLuaWeaponInfo->szAmmo2 ) );
-		else
-			Q_strncpy( m_pLuaWeaponInfo->szAmmo2, pAmmo, sizeof( m_pLuaWeaponInfo->szAmmo2 )  );
-		m_pLuaWeaponInfo->iAmmo2Type = GetAmmoDef()->Index( m_pLuaWeaponInfo->szAmmo2 );
-	}
-	lua_pop( L, 1 );
-
 	// Now read the weapon sounds
 	memset( m_pLuaWeaponInfo->aShootSounds, 0, sizeof( m_pLuaWeaponInfo->aShootSounds ) );
 	lua_pushweaponfield( L, m_nTableReference, "SoundData" );
@@ -768,6 +742,21 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Initialize" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+
+	// Initialize can fill the ammo fields on an instance whose class left
+	// them empty. Precache resolves the engine's ammo indices from this data.
+	lua_getweaponfield( L, m_nTableReference, "Primary", "Ammo", "" );
+	const char *pAmmo = lua_tostring( L, -1 );
+	Q_strncpy( m_pLuaWeaponInfo->szAmmo1, pAmmo && Q_stricmp( pAmmo, "none" ) ? pAmmo : "", sizeof( m_pLuaWeaponInfo->szAmmo1 ) );
+	m_pLuaWeaponInfo->iAmmoType = GetAmmoDef()->Index( m_pLuaWeaponInfo->szAmmo1 );
+	lua_pop( L, 1 );
+
+	lua_getweaponfield( L, m_nTableReference, "Secondary", "Ammo", "" );
+	pAmmo = lua_tostring( L, -1 );
+	Q_strncpy( m_pLuaWeaponInfo->szAmmo2, pAmmo && Q_stricmp( pAmmo, "none" ) ? pAmmo : "", sizeof( m_pLuaWeaponInfo->szAmmo2 ) );
+	m_pLuaWeaponInfo->iAmmo2Type = GetAmmoDef()->Index( m_pLuaWeaponInfo->szAmmo2 );
+	lua_pop( L, 1 );
+
 	UpdateHoldType();
 #endif
 }

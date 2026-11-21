@@ -18,6 +18,9 @@
 #include "vphysics/lperformance.h"
 #include "mathlib/lvector.h"
 #include "mathlib/vmatrix.h"
+#include "igamesystem.h"
+#include "physics_shared.h"
+#include "tier1/utlmap.h"
 #include <climits>
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -28,9 +31,50 @@
 */
 
 
+struct LuaPhysicsObject {
+  IPhysicsObject *object;
+  uint64 generation;
+};
+
+static CUtlMap<IPhysicsObject *, uint64, int> s_LuaPhysicsObjects( DefLessFunc( IPhysicsObject * ) );
+static uint64 s_NextLuaPhysicsGeneration = 0;
+
+class CLuaPhysicsObjectSystem : public CAutoGameSystem {
+public:
+  CLuaPhysicsObjectSystem() : CAutoGameSystem( "LuaPhysicsObjects" ) {}
+  void LevelShutdownPostEntity() override { s_LuaPhysicsObjects.RemoveAll(); }
+};
+static CLuaPhysicsObjectSystem s_LuaPhysicsObjectSystem;
+
+void HL2SB_InvalidateLuaPhysicsObject( IPhysicsObject *object ) {
+  if (object)
+    s_LuaPhysicsObjects.Remove(object);
+}
+
+static bool LuaPhysicsObjectIsLive( IPhysicsObject *object ) {
+  for (int i = 0; physics && object; ++i) {
+    IPhysicsEnvironment *environment = physics->GetActiveEnvironmentByIndex(i);
+    if (!environment)
+      return false;
+    int count = 0;
+    const IPhysicsObject **objects = environment->GetObjectList(&count);
+    for (int n = count - 1; n >= 0; --n) {
+      if (objects[n] == object)
+        return true;
+    }
+  }
+  return false;
+}
+
 LUA_API lua_IPhysicsObject *lua_tophysicsobject (lua_State *L, int idx) {
-  lua_IPhysicsObject **ppPhysicsObject = (lua_IPhysicsObject **)lua_touserdata(L, idx);
-  return *ppPhysicsObject;
+  if (lua_rawlen(L, idx) != sizeof(LuaPhysicsObject))
+    return NULL;
+  const LuaPhysicsObject *handle = static_cast<LuaPhysicsObject *>(luaL_testudata(L, idx, "IPhysicsObject"));
+  if (!handle || !handle->object)
+    return NULL;
+  const int index = s_LuaPhysicsObjects.Find(handle->object);
+  return s_LuaPhysicsObjects.IsValidIndex(index) &&
+      s_LuaPhysicsObjects[index] == handle->generation ? handle->object : NULL;
 }
 
 
@@ -339,21 +383,6 @@ LUA_API lua_IPhysicsSurfaceProps *lua_tophysicssurfaceprops (lua_State *L, int i
 */
 
 
-// FIXME?: So here's the deal folks; in the Source SDK storing physics objects
-// long-term is not done frequently. This is because physics objects are, for
-// the majority of the time, tied to plain physics props or other similar
-// movable entities.
-// 
-// In the Lau SDK, we want to promote the storage of the entity in variables in
-// Lua instead, which mirrors internal code storing entities in handles. There
-// are no handles for IPhysicsObjects in the Source SDK, so here we use a
-// pointer to a pointer.
-// 
-// This means this object is unsafe in Lua, since the entity which this physics
-// object is tied to could be gone when you attempt to use it.
-// 
-// Henry wrote up a handle system for this, so if we need to end up using that
-// due to unforeseen logical issues, we will.
 LUA_API void lua_pushphysicsobject (lua_State *L, lua_IPhysicsObject *pPhysicsObject) {
   // HL2SB GMod compat (2026-09-20, Nuke Pack): a physics-less entity's
   // GetPhysicsObject() used to push NIL, so the stock addon idiom
@@ -362,8 +391,18 @@ LUA_API void lua_pushphysicsobject (lua_State *L, lua_IPhysicsObject *pPhysicsOb
   // died on "attempt to index a nil value (local 'phys')".  GMod hands back a
   // NULL physics object whose IsValid() is false and whose other methods throw
   // the classic "Tried to use a NULL physics object!" -- mirror that here.
-  lua_IPhysicsObject **ppPhysicsObject = (lua_IPhysicsObject **)lua_newuserdata(L, sizeof(pPhysicsObject));
-  *ppPhysicsObject = pPhysicsObject;
+  LuaPhysicsObject *handle = static_cast<LuaPhysicsObject *>(lua_newuserdata(L, sizeof(LuaPhysicsObject)));
+  handle->object = NULL;
+  handle->generation = 0;
+  if (pPhysicsObject) {
+    int index = s_LuaPhysicsObjects.Find(pPhysicsObject);
+    if (!s_LuaPhysicsObjects.IsValidIndex(index) && LuaPhysicsObjectIsLive(pPhysicsObject))
+      index = s_LuaPhysicsObjects.Insert(pPhysicsObject, ++s_NextLuaPhysicsGeneration);
+    if (s_LuaPhysicsObjects.IsValidIndex(index)) {
+      handle->object = pPhysicsObject;
+      handle->generation = s_LuaPhysicsObjects[index];
+    }
+  }
   luaL_getmetatable(L, "IPhysicsObject");
   lua_setmetatable(L, -2);
 }
@@ -506,8 +545,7 @@ LUA_API void lua_pushphysicssurfaceprops (lua_State *L, lua_IPhysicsSurfaceProps
 
 
 LUALIB_API lua_IPhysicsObject *luaL_checkphysicsobject (lua_State *L, int narg) {
-  if (lua_type(L, narg) != LUA_TUSERDATA)
-    luaL_argerror(L, narg, "IPhysicsObject expected");
+  luaL_checkudata(L, narg, "IPhysicsObject");
   lua_IPhysicsObject *d = lua_tophysicsobject(L, narg);
   // HL2SB GMod compat: a NULL physics OBJECT (physics-less entity) is a real
   // sentinel since lua_pushphysicsobject stopped pushing nil -- anything but
@@ -739,15 +777,12 @@ LUALIB_API int luaopen_physenv (lua_State *L) {
 ** SpriteTrail from the same Initialize), so it just dropped out of the throw
 ** position.
 **
-** Reaching this method means the userdata exists, i.e. the pointer is non-NULL
-** (lua_pushphysicsobject pushes nil for a NULL object).  A physics object whose
-** entity has been removed is still a dangling pointer, exactly as in GMod.
+** Compare the Lua handle with the tracked generation without dereferencing an
+** object that may have been destroyed.
 */
 static int IPhysicsObject_IsValid (lua_State *L) {
-  // NULL sentinel: IsValid() is the one call that must NOT throw (GMod).  The
-  // raw userdata read here bypasses luaL_checkphysicsobject's throw.
-  lua_IPhysicsObject **pp = (lua_IPhysicsObject **)luaL_checkudata(L, 1, "IPhysicsObject");
-  lua_pushboolean(L, pp != NULL && *pp != NULL);
+  luaL_checkudata(L, 1, "IPhysicsObject");
+  lua_pushboolean(L, lua_tophysicsobject(L, 1) != NULL);
   return 1;
 }
 

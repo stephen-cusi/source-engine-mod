@@ -1150,7 +1150,7 @@ static int CBaseEntity_GetFirstThinkTick (lua_State *L) {
 #ifndef CLIENT_DLL
 static int CBaseEntity_GetPhysicsAttacker (lua_State *L) {
   CBaseEntity *entity = luaL_checkentity(L, 1);
-  lua_pushentity(L, entity->HasPhysicsAttacker((float)luaL_optnumber(L, 2, 1.0)));
+  lua_pushentity(L, HL2SB_GetPhysicsAttacker(entity, (float)luaL_optnumber(L, 2, 1.0)));
   return 1;
 }
 
@@ -3919,26 +3919,15 @@ static int CBaseEntity_PhysicsInitSphere (lua_State *L) {
   return 1;
 }
 
-/*
-** HL2SB GMod compat: Entity:SetPhysicsAttacker( entity [, time] ).
-**
-** GMod remembers the player that last shoved a physics object so a kill can be
-** credited to them.  This engine keeps no such member on CBaseEntity (only CGib,
-** CBreakableProp and CPhysicsCannister carry one, for the gravity gun), so there
-** is nothing to store it in.  What matters for the caller's intent -- kill
-** attribution -- is the entity's OWNER, which is what the engine's damage path
-** reads (CEnvExplosion::Explode() builds its CTakeDamageInfo from
-** GetOwnerEntity(), explode.cpp:391), so the attacker becomes the owner when the
-** entity does not have one yet.  The call is always accepted instead of raising.
-*/
+// Explicit physics attribution is independent of ownership and expires on the server.
 static int CBaseEntity_SetPhysicsAttacker (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
-  CBaseEntity *pAttacker = lua_toentity(L, 2);
-  luaL_optnumber(L, 3, 0.0f);
-
-  if (pEntity != NULL && pAttacker != NULL && pEntity->GetOwnerEntity() == NULL) {
-    pEntity->SetOwnerEntity(pAttacker);
-  }
+  if (!lua_isnoneornil(L, 2) && !HL2SB_IsEntityUserdata(L, 2))
+    return luaL_typerror(L, 2, "Entity");
+  const double duration = luaL_optnumber(L, 3, 0.0f);
+#ifndef CLIENT_DLL
+  HL2SB_SetLuaPhysicsAttacker(pEntity, ToBasePlayer(lua_toentity(L, 2)), duration);
+#endif
 
   return 0;
 }

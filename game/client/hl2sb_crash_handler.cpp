@@ -304,12 +304,18 @@ static wchar_t g_szHL2SBEngineSymbols[MAX_PATH];
 static wchar_t g_szHL2SBExtraSymbols[1024];
 
 static HANDLE g_hHL2SBCrashRequest;
+static HANDLE g_hHL2SBCrashNotify;
+static HANDLE g_hHL2SBCrashDumpReady;
 static HANDLE g_hHL2SBCrashDone;
 static HANDLE g_hHL2SBCrashThread;
+static HANDLE g_hHL2SBCrashNotifyThread;
 static volatile LONG g_bHL2SBCrashPending;
 static volatile LONG g_bHL2SBCrashThreadExit;
 static DWORD g_nHL2SBCrashThreadId;
+static DWORD g_nHL2SBCrashNotifyThreadId;
 static volatile LONG g_bHL2SBWritingDump;
+static wchar_t g_szHL2SBCrashDumpPath[MAX_PATH];
+static const DWORD s_nCrashDumpReportWaitMs = 3000;
 
 static struct
 {
@@ -393,7 +399,7 @@ static bool HL2SB_WriteWindowsDump( const wchar_t *kind,
 	return written;
 }
 
-static void HL2SB_ShowCrashReport( const wchar_t *dumpPath )
+static void HL2SB_ShowCrashReport( const wchar_t *dumpPath, bool dumpPending = false )
 {
 	const void *address = g_HL2SBCrash.record.ExceptionAddress;
 	MEMORY_BASIC_INFORMATION mapping = {};
@@ -401,11 +407,23 @@ static void HL2SB_ShowCrashReport( const wchar_t *dumpPath )
 	uintptr_t offset = 0;
 	if ( VirtualQuery( address, &mapping, sizeof( mapping ) ) && mapping.Type == MEM_IMAGE )
 	{
-		const DWORD length = GetModuleFileNameW( (HMODULE)mapping.AllocationBase, module, _countof( module ) );
-		if ( length && length < _countof( module ) )
-			offset = (uintptr_t)address - (uintptr_t)mapping.AllocationBase;
-		else
-			wcscpy_s( module, L"(unknown)" );
+		offset = (uintptr_t)address - (uintptr_t)mapping.AllocationBase;
+		// If DbgHelp is stalled, it may hold or be waiting on the loader lock.
+		if ( !dumpPending )
+		{
+			const DWORD length = GetModuleFileNameW( (HMODULE)mapping.AllocationBase, module, _countof( module ) );
+			if ( !length || length >= _countof( module ) )
+				wcscpy_s( module, L"(unknown)" );
+		}
+	}
+	wchar_t pending[MAX_PATH + 160];
+	const wchar_t *dumpStatus = dumpPath[0] ? dumpPath : L"Could not write a dump. Check Windows Error Reporting.";
+	if ( dumpPending )
+	{
+		_snwprintf_s( pending, _countof( pending ), _TRUNCATE,
+			L"Writing has not finished. Any dump file may be incomplete.\r\nDump folder: %ls",
+			g_szHL2SBDumpDirectory[0] ? g_szHL2SBDumpDirectory : L"%TEMP%" );
+		dumpStatus = pending;
 	}
 	wchar_t reason[128] = {};
 	wchar_t detail[512] = {};
@@ -419,7 +437,7 @@ static void HL2SB_ShowCrashReport( const wchar_t *dumpPath )
 		L"PDB lookup folders:\r\n%ls\r\n%ls%ls%ls",
 		reason, detail[0] ? L"\r\n" : L"", detail,
 		g_HL2SBCrash.record.ExceptionCode, address, (unsigned long long)offset, module,
-		g_HL2SBCrash.threadId, dumpPath[0] ? dumpPath : L"Could not write a dump. Check Windows Error Reporting.",
+		g_HL2SBCrash.threadId, dumpStatus,
 		g_szHL2SBGameSymbols, g_szHL2SBEngineSymbols,
 		g_szHL2SBExtraSymbols[0] ? L"\r\n_NT_SYMBOL_PATH: " : L"", g_szHL2SBExtraSymbols );
 
@@ -473,17 +491,33 @@ static DWORD WINAPI HL2SB_CrashReporterThread( LPVOID module )
 		// DbgHelp needs the original thread id and context, not this worker's.
 		EXCEPTION_POINTERS pointers = { &g_HL2SBCrash.record, &g_HL2SBCrash.context };
 		MINIDUMP_EXCEPTION_INFORMATION info = { g_HL2SBCrash.threadId, &pointers, FALSE };
-		wchar_t dumpPath[MAX_PATH];
-		HL2SB_WriteWindowsDump( L"crash", &info, dumpPath );
+		HL2SB_WriteWindowsDump( L"crash", &info, g_szHL2SBCrashDumpPath );
+		if ( g_hHL2SBCrashDumpReady )
+			SetEvent( g_hHL2SBCrashDumpReady );
 		log = HL2SB_EngineLogOpen();
-		HL2SB_EngineLogLine( log, "dump=%s", dumpPath[0] ? "written (see hl2sb_crash.log)" : "write failed" );
+		HL2SB_EngineLogLine( log, "dump=%s", g_szHL2SBCrashDumpPath[0] ? "written (see hl2sb_crash.log)" : "write failed" );
 		HL2SB_EngineLogLine( log, "end" );
 		HL2SB_EngineLogClose( log );
-		HL2SB_ShowCrashReport( dumpPath );
-		SetEvent( g_hHL2SBCrashDone );
 		break;
 	}
 
+	FreeLibraryAndExitThread( (HMODULE)module, 0 );
+}
+
+static DWORD WINAPI HL2SB_CrashNotifyThread( LPVOID module )
+{
+	if ( WaitForSingleObject( g_hHL2SBCrashNotify, INFINITE ) == WAIT_OBJECT_0 &&
+		!InterlockedCompareExchange( &g_bHL2SBCrashThreadExit, 0, 0 ) )
+	{
+		const DWORD result = WaitForSingleObject( g_hHL2SBCrashDumpReady, s_nCrashDumpReportWaitMs );
+		if ( !InterlockedCompareExchange( &g_bHL2SBCrashThreadExit, 0, 0 ) )
+		{
+			const bool ready = result == WAIT_OBJECT_0;
+			// The writer can still be updating the path when the wait expires.
+			HL2SB_ShowCrashReport( ready ? g_szHL2SBCrashDumpPath : L"", !ready );
+			SetEvent( g_hHL2SBCrashDone );
+		}
+	}
 	FreeLibraryAndExitThread( (HMODULE)module, 0 );
 }
 
@@ -492,7 +526,7 @@ static void HL2SB_ReportCrash( const char *reason, const char *detail, EXCEPTION
 	if ( !exception || !exception->ExceptionRecord || !exception->ContextRecord )
 		return;
 	const DWORD threadId = GetCurrentThreadId();
-	if ( threadId == g_nHL2SBCrashThreadId )
+	if ( threadId == g_nHL2SBCrashThreadId || threadId == g_nHL2SBCrashNotifyThreadId )
 		return;
 	if ( InterlockedCompareExchange( &g_bHL2SBCrashPending, 1, 0 ) )
 	{
@@ -511,16 +545,22 @@ static void HL2SB_ReportCrash( const char *reason, const char *detail, EXCEPTION
 	strncpy_s( g_HL2SBCrash.detail, detail ? detail : "", _TRUNCATE );
 
 	if ( g_hHL2SBCrashThread )
-	{
 		SetEvent( g_hHL2SBCrashRequest );
+	if ( g_hHL2SBCrashNotifyThread )
+	{
+		SetEvent( g_hHL2SBCrashNotify );
 		WaitForSingleObject( g_hHL2SBCrashDone, 60000 );
 	}
-	else if ( g_HL2SBCrash.record.ExceptionCode != EXCEPTION_STACK_OVERFLOW )
+	else
 	{
-		MINIDUMP_EXCEPTION_INFORMATION info = { g_HL2SBCrash.threadId, exception, FALSE };
-		wchar_t dumpPath[MAX_PATH];
-		HL2SB_WriteWindowsDump( L"crash", &info, dumpPath );
-		HL2SB_ShowCrashReport( dumpPath );
+		// Startup may have failed to create a worker. Never run DbgHelp
+		// synchronously on the exception thread.
+		const bool ready = g_hHL2SBCrashThread && g_hHL2SBCrashDumpReady &&
+			WaitForSingleObject( g_hHL2SBCrashDumpReady, s_nCrashDumpReportWaitMs ) == WAIT_OBJECT_0;
+		if ( g_HL2SBCrash.record.ExceptionCode != EXCEPTION_STACK_OVERFLOW )
+			HL2SB_ShowCrashReport( ready ? g_szHL2SBCrashDumpPath : L"", g_hHL2SBCrashThread && !ready );
+		if ( g_hHL2SBCrashDone )
+			SetEvent( g_hHL2SBCrashDone );
 	}
 }
 
@@ -712,6 +752,18 @@ static _purecall_handler g_pHL2SBPrevPurecall = NULL;
 static void ( __cdecl *g_pHL2SBPrevSigabrt )( int ) = NULL;
 static bool g_bHL2SBCrashHandlerInstalled = false;
 
+static HANDLE HL2SB_StartCrashReporterThread( LPTHREAD_START_ROUTINE start, DWORD *threadId )
+{
+	// Keep the client DLL mapped if DbgHelp or the dialog outlives shutdown.
+	HMODULE module = NULL;
+	if ( !GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)start, &module ) )
+		return NULL;
+	HANDLE thread = CreateThread( NULL, 0, start, module, 0, threadId );
+	if ( !thread )
+		FreeLibrary( module );
+	return thread;
+}
+
 static void HL2SB_InitCrashReporter()
 {
 	if ( g_hHL2SBCrashThread )
@@ -753,18 +805,15 @@ static void HL2SB_InitCrashReporter()
 
 	InterlockedExchange( &g_bHL2SBCrashThreadExit, 0 );
 	InterlockedExchange( &g_bHL2SBCrashPending, 0 );
+	g_szHL2SBCrashDumpPath[0] = 0;
 	g_hHL2SBCrashDone = CreateEventW( NULL, TRUE, FALSE, NULL );
 	g_hHL2SBCrashRequest = CreateEventW( NULL, FALSE, FALSE, NULL );
-	// Keep the client DLL mapped if DbgHelp or the dialog outlives shutdown.
-	HMODULE module = NULL;
-	if ( g_hHL2SBCrashDone && g_hHL2SBCrashRequest &&
-			GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-				(LPCWSTR)&HL2SB_CrashReporterThread, &module ) )
-	{
-		g_hHL2SBCrashThread = CreateThread( NULL, 0, HL2SB_CrashReporterThread, module, 0, &g_nHL2SBCrashThreadId );
-		if ( !g_hHL2SBCrashThread )
-			FreeLibrary( module );
-	}
+	g_hHL2SBCrashDumpReady = CreateEventW( NULL, TRUE, FALSE, NULL );
+	g_hHL2SBCrashNotify = CreateEventW( NULL, FALSE, FALSE, NULL );
+	if ( g_hHL2SBCrashDone && g_hHL2SBCrashRequest )
+		g_hHL2SBCrashThread = HL2SB_StartCrashReporterThread( HL2SB_CrashReporterThread, &g_nHL2SBCrashThreadId );
+	if ( g_hHL2SBCrashThread && g_hHL2SBCrashDumpReady && g_hHL2SBCrashNotify )
+		g_hHL2SBCrashNotifyThread = HL2SB_StartCrashReporterThread( HL2SB_CrashNotifyThread, &g_nHL2SBCrashNotifyThreadId );
 
 	// The guarantee is per-thread. The main thread is the one installing us.
 	ULONG stackBytes = 32 * 1024;
@@ -773,21 +822,41 @@ static void HL2SB_InitCrashReporter()
 
 static void HL2SB_StopCrashReporter()
 {
+	HANDLE workers[2];
+	DWORD count = 0;
 	if ( g_hHL2SBCrashThread )
+		workers[count++] = g_hHL2SBCrashThread;
+	if ( g_hHL2SBCrashNotifyThread )
+		workers[count++] = g_hHL2SBCrashNotifyThread;
+	if ( count )
 	{
 		InterlockedExchange( &g_bHL2SBCrashThreadExit, 1 );
 		SetEvent( g_hHL2SBCrashRequest );
-		if ( WaitForSingleObject( g_hHL2SBCrashThread, 5000 ) != WAIT_OBJECT_0 )
-			return; // Worker owns a DLL reference and may still need these handles.
-		CloseHandle( g_hHL2SBCrashThread );
+		SetEvent( g_hHL2SBCrashDone );
+		if ( g_hHL2SBCrashNotifyThread )
+		{
+			SetEvent( g_hHL2SBCrashNotify );
+			SetEvent( g_hHL2SBCrashDumpReady );
+		}
+		if ( WaitForMultipleObjects( count, workers, TRUE, 5000 ) != WAIT_OBJECT_0 )
+			return; // A worker may still need the handles and owns a DLL reference.
+		for ( DWORD i = 0; i < count; ++i )
+			CloseHandle( workers[i] );
 		g_hHL2SBCrashThread = NULL;
+		g_hHL2SBCrashNotifyThread = NULL;
 		g_nHL2SBCrashThreadId = 0;
+		g_nHL2SBCrashNotifyThreadId = 0;
 	}
 	if ( g_hHL2SBCrashRequest )
 		CloseHandle( g_hHL2SBCrashRequest );
 	if ( g_hHL2SBCrashDone )
 		CloseHandle( g_hHL2SBCrashDone );
+	if ( g_hHL2SBCrashDumpReady )
+		CloseHandle( g_hHL2SBCrashDumpReady );
+	if ( g_hHL2SBCrashNotify )
+		CloseHandle( g_hHL2SBCrashNotify );
 	g_hHL2SBCrashRequest = g_hHL2SBCrashDone = NULL;
+	g_hHL2SBCrashDumpReady = g_hHL2SBCrashNotify = NULL;
 	g_pHL2SBDumpWriter = NULL;
 	if ( g_hHL2SBDbgHelp )
 		FreeLibrary( g_hHL2SBDbgHelp );

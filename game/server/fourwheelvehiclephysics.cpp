@@ -18,6 +18,7 @@
 #include "movevars_shared.h"
 #include "te_effect_dispatch.h"
 #include "particle_parse.h"
+#include "physics_shared.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -181,6 +182,10 @@ CFourWheelVehiclePhysics::~CFourWheelVehiclePhysics ()
 	// to end up executing a freed object (crash_20260913_234437).
 	if ( m_pVehicle )
 	{
+#ifdef LUA_SDK
+		for ( int i = 0; i < m_wheelCount && i < ARRAYSIZE( m_pWheels ); ++i )
+			HL2SB_InvalidateLuaPhysicsObject( m_pWheels[i] );
+#endif
 		physenv->DestroyVehicleController( m_pVehicle );
 		m_pVehicle = NULL;
 	}

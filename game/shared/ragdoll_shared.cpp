@@ -11,6 +11,7 @@
 #include "vphysics/collision_set.h"
 #include "vcollide_parse.h"
 #include "vphysics_interface.h"
+#include "physics_shared.h"
 #include "tier0/vprof.h"
 #include "engine/ivdebugoverlay.h"
 #include "solidsetdefaults.h"
@@ -520,6 +521,9 @@ void RagdollDestroy( ragdoll_t &ragdoll )
 		// since that is saved separately.
 		if ( ragdoll.list[i].pObject )
 		{
+#ifdef LUA_SDK
+			HL2SB_InvalidateLuaPhysicsObject( ragdoll.list[i].pObject );
+#endif
 			physenv->DestroyObject( ragdoll.list[i].pObject );
 		}
 		ragdoll.list[i].pObject = NULL;
