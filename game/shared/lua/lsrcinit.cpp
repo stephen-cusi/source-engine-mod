@@ -1445,17 +1445,16 @@ static int lua_game_AddParticles (lua_State *L) {
   const char *pszParticleFile = luaL_checkstring( L, 1 );
   bool bLoaded = false;
 
-  // GMod's game.AddParticles( file ) loads a .pcf so that the particle systems
-  // inside it can be precached by name afterwards.  That is what GMod SWEPs rely
-  // on: the ported flechette gun runs
-  //     game.AddParticles( "particles/hunter_flechette.pcf" )
-  // and the weapon then precaches "hunter_muzzle_flash", "flechette_halo", ...
-  //
-  // This used to hand the *file name* to PrecacheParticleSystem(), which takes a
-  // system name, so every call produced
-  //     Attemped to precache unknown particle system "particles/....pcf"!
-  // and the weapon had no effects at all.  ReadParticleConfigFile() is the same
-  // entry the engine's own particles_manifest.txt loader uses.
+  // On the server, the addon's explicit PrecacheParticleSystem calls register
+  // names in the network table. Marking the whole PCF for eager precache also
+  // puts its unused definitions in the table at world spawn.
+  // The client loads materials here because the corresponding network names
+  // can arrive before the client runs the addon's particle setup script.
+#ifdef CLIENT_DLL
+  const bool bPrecache = true;
+#else
+  const bool bPrecache = false;
+#endif
   if ( pszParticleFile[0] == '\0' ) {
     lua_pushboolean( L, false );
     return 1;
@@ -1468,11 +1467,17 @@ static int lua_game_AddParticles (lua_State *L) {
     luasrc_LuaWarnMsgF( "[HL2SB] game.AddParticles: '%s' is not in the search paths - its particle systems stay unknown\n", pszParticleFile );
   }
   else {
-    bLoaded = g_pParticleSystemMgr->ReadParticleConfigFile( pszParticleFile, true, false );
+    bLoaded = g_pParticleSystemMgr->ReadParticleConfigFile( pszParticleFile, bPrecache, false );
 
     if ( !bLoaded ) {
       luasrc_LuaWarnMsgF( "[HL2SB] game.AddParticles: '%s' exists but could not be parsed\n", pszParticleFile );
     }
+#ifdef CLIENT_DLL
+    else {
+      extern void RequestCacheUsedMaterials();
+      RequestCacheUsedMaterials();
+    }
+#endif
   }
 
   lua_pushboolean( L, bLoaded );

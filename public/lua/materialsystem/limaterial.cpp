@@ -457,13 +457,9 @@ static const luaL_Reg IMaterialmeta[] = {
 ** the entity script threw on line 8, scripted_ents/entity.register never ran, and
 ** ents.Create( "ent_nyan_bomb" ) silently returned NULL.
 **
-** The shape below is the same one the client proxy hands out (`__path`,
-** GetName, IsError, Width/Height, GetColor, GetTexture, GetTextureID), so a
-** script sees one Material object on both realms.  It is deliberately NOT a
-** material-system lookup: this is the server realm, the only thing a server-side
-** Material is ever used for is to hand it back to another API, and reaching into
-** the material system from the server DLL is not something this fork does
-** anywhere.
+** Shared addon scripts also read and modify shader parameters while building
+** attachment tables. Keep those overrides on the Lua proxy, without loading
+** textures or mutating materials in the rendering system from the server.
 */
 static int luasrc_Material_server_GetName (lua_State *L) {
   lua_getfield(L, 1, "__path");
@@ -471,9 +467,11 @@ static int luasrc_Material_server_GetName (lua_State *L) {
 }
 
 static bool HL2SB_MaterialString(const char *path, const char *key, char *result, int size, int depth) {
-  if (depth > 8) return false;
+  if (depth > 8 || !*path) return false;
+  const char *extension = Q_GetFileExtension(Q_UnqualifiedFileName(path));
+  if (extension && Q_stricmp(extension, "vmt")) return false;
   char filename[MAX_PATH];
-  Q_snprintf(filename, sizeof(filename), "materials/%s", path);
+  Q_snprintf(filename, sizeof(filename), "materials/%s", !Q_strnicmp(path, "materials/", 10) ? path + 10 : path);
   Q_DefaultExtension(filename, ".vmt", sizeof(filename));
   KeyValues *values = new KeyValues("Material");
   bool found = false;
@@ -502,12 +500,77 @@ static bool HL2SB_MaterialString(const char *path, const char *key, char *result
 
 static int luasrc_Material_server_GetString (lua_State *L) {
   const char *key = luaL_checkstring(L, 2);
+  lua_getfield(L, 1, "__params");
+  if (lua_istable(L, -1)) {
+    lua_getfield(L, -1, key);
+    if (lua_isstring(L, -1)) {
+      lua_tostring(L, -1);
+      return 1;
+    }
+    lua_pop(L, 1);
+  }
+  lua_pop(L, 1);
+
   lua_getfield(L, 1, "__path");
   const char *path = lua_tostring(L, -1);
   char result[4096];
   if (path && HL2SB_MaterialString(path, key, result, sizeof(result), 0)) lua_pushstring(L, result);
   else lua_pushnil(L);
   return 1;
+}
+
+static int HL2SB_ServerMaterialInt (lua_Number value) {
+  return value > static_cast<lua_Number>(INT_MIN) - 1.0 &&
+    value < static_cast<lua_Number>(INT_MAX) + 1.0 ? static_cast<int>(value) : INT_MIN;
+}
+
+static int luasrc_Material_server_GetInt (lua_State *L) {
+  const char *key = luaL_checkstring(L, 2);
+  luasrc_Material_server_GetString(L);
+  int isNumber = 0;
+  const lua_Number value = lua_tonumberx(L, -1, &isNumber);
+  if (isNumber) {
+    lua_pushinteger(L, HL2SB_ServerMaterialInt(value));
+    return 1;
+  }
+
+  // The material system gives generated PNG materials a flags field even
+  // without a VMT. Shared EFT reticle setup reads it before setting additive.
+  if (!Q_stricmp(key, "$flags")) {
+    lua_pushinteger(L, 0);
+    return 1;
+  }
+  return 0;
+}
+
+static void HL2SB_PushServerMaterialParams (lua_State *L) {
+  lua_getfield(L, 1, "__params");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    lua_newtable(L);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, 1, "__params");
+  }
+}
+
+static int luasrc_Material_server_SetInt (lua_State *L) {
+  const char *key = luaL_checkstring(L, 2);
+  const int value = HL2SB_ServerMaterialInt(luaL_checknumber(L, 3));
+  HL2SB_PushServerMaterialParams(L);
+  lua_pushinteger(L, value);
+  lua_setfield(L, -2, key);
+  return 0;
+}
+
+static int luasrc_Material_server_SetVector (lua_State *L) {
+  const char *key = luaL_checkstring(L, 2);
+  const Vector &value = luaL_checkvector(L, 3);
+  char text[128];
+  Q_snprintf(text, sizeof(text), "[%g %g %g]", value.x, value.y, value.z);
+  HL2SB_PushServerMaterialParams(L);
+  lua_pushstring(L, text);
+  lua_setfield(L, -2, key);
+  return 0;
 }
 
 static int luasrc_Material_server_IsError (lua_State *L) {
@@ -577,6 +640,12 @@ static int luasrc_Material_server (lua_State *L) {
 
   lua_pushcfunction(L, luasrc_Material_server_GetString);
   lua_setfield(L, -2, "GetString");
+  lua_pushcfunction(L, luasrc_Material_server_GetInt);
+  lua_setfield(L, -2, "GetInt");
+  lua_pushcfunction(L, luasrc_Material_server_SetInt);
+  lua_setfield(L, -2, "SetInt");
+  lua_pushcfunction(L, luasrc_Material_server_SetVector);
+  lua_setfield(L, -2, "SetVector");
 
   lua_pushcfunction(L, luasrc_Material_server_GetShader);
   lua_setfield(L, -2, "GetShader");

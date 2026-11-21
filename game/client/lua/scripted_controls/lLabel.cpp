@@ -437,6 +437,10 @@ LUA_BINDING_BEGIN( Label, __index, "class", "Metamethod that is called when a no
 {
     lua_Label *pLabel = LUA_BINDING_ARGUMENT( lua_tolabel, 1, "label" );
     LUA_METATABLE_INDEX_CHECK_VALID( L, PanelIsValid );
+    if ( !pLabel && !Q_strcmp( luaL_checkstring( L, 2 ), "Remove" ) )
+    {
+        LUA_METATABLE_INDEX_DERIVE_INDEX( L, "Panel" );
+    }
     LUA_METATABLE_INDEX_CHECK( L, pLabel );
     if (HL2SB_LuaPanelGeometryIndex(L)) return 1;
 
