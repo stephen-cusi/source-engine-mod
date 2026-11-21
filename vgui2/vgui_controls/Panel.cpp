@@ -1154,7 +1154,7 @@ struct HL2SBDrawOnTopEntry
 	PHandle panel;
 };
 static CUtlVector<HL2SBDrawOnTopEntry> s_DrawOnTopPanels;
-static bool s_DrawingOnTopPanels = false;
+static Panel *s_DrawOnTopRoot = NULL;
 
 void HL2SB_PanelSetDrawOnTop(Panel *panel, bool onTop)
 {
@@ -1184,24 +1184,9 @@ static int HL2SB_PanelDrawOnTopIndex(Panel *panel)
 	return -1;
 }
 
-static bool HL2SB_PanelIsAncestor(Panel *parent, Panel *child)
-{
-	const VPANEL target = parent->GetVPanel();
-	for (VPANEL current = ipanel()->GetParent(child->GetVPanel()); current; current = ipanel()->GetParent(current))
-		if (current == target) return true;
-	return false;
-}
-
-static bool HL2SB_PanelHasPaintableClip(Panel *panel)
-{
-	int x0, y0, x1, y1;
-	ipanel()->GetClipRect(panel->GetVPanel(), x0, y0, x1, y1);
-	return x1 > x0 && y1 > y0;
-}
-
 void HL2SB_PanelPaintDrawOnTop()
 {
-	if (s_DrawingOnTopPanels) return;
+	if (s_DrawOnTopRoot) return;
 	CUtlVector<PHandle> panels;
 	for (int i = s_DrawOnTopPanels.Count() - 1; i >= 0; --i)
 	{
@@ -1209,23 +1194,16 @@ void HL2SB_PanelPaintDrawOnTop()
 		if (!panel) s_DrawOnTopPanels.Remove(i);
 		else panels[panels.AddToHead()].Set(panel);
 	}
-	s_DrawingOnTopPanels = true;
 	for (int i = 0; i < panels.Count(); ++i)
 	{
 		Panel *panel = panels[i].Get();
 		if (!panel || !panel->IsVisible() || HL2SB_PanelDrawOnTopIndex(panel) < 0) continue;
-		bool alreadyPainted = false;
-		for (int j = 0; j < panels.Count(); ++j)
-		{
-			Panel *parent = panels[j].Get();
-			if (parent && parent != panel && parent->IsVisible() && HL2SB_PanelHasPaintableClip(parent) &&
-				HL2SB_PanelDrawOnTopIndex(parent) >= 0 && HL2SB_PanelIsAncestor(parent, panel))
-			{ alreadyPainted = true; break; }
-		}
-		if (alreadyPainted) continue;
+		// Popup children are not painted by their parent's surface traversal.
+		// Paint each registered panel at its own position in the overlay list.
+		s_DrawOnTopRoot = panel;
 		surface()->PaintTraverseEx(panel->GetVPanel(), false);
+		s_DrawOnTopRoot = NULL;
 	}
-	s_DrawingOnTopPanels = false;
 }
 
 void HL2SB_PanelSetPaintedManually(Panel *panel, bool manual)
@@ -1279,14 +1257,9 @@ void Panel::PaintTraverse( bool repaint, bool allowForce )
 		return;
 	}
 
-	if (!s_DrawingOnTopPanels)
-	{
-		const int index = HL2SB_PanelDrawOnTopIndex(this);
-		if (index >= 0)
-		{
-			return;
-		}
-	}
+	// A registered descendant gets its own pass, even when the current root
+	// is also marked DrawOnTop. This keeps it from drawing twice.
+	if (this != s_DrawOnTopRoot && HL2SB_PanelDrawOnTopIndex(this) >= 0) return;
 
 	float oldAlphaMultiplier = surface()->DrawGetAlphaMultiplier();
 	float newAlphaMultiplier = oldAlphaMultiplier * m_flAlpha * 1.0f/255.0f;

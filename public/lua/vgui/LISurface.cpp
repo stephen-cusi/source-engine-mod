@@ -35,11 +35,41 @@ extern vgui::IInputInternal *g_InputInternal;
 #include "mathlib/lvector.h"   // HL2SB: lua_pushvector
 #include "hl2sb_framestats.h"	// HL2SB: hl2sb_framestats surface draw counter
 #include "hl2sb_framestats_cat.h"	// HL2SB: per-category wall-time buckets
+#include <climits>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
 using namespace vgui;
+
+// GMod HUDs pass Lua numbers even when ISurface needs pixels or byte colors.
+// In particular, ARC9 computes fractional coordinates, font sizes and alpha.
+static int SurfaceCheckPixel( lua_State *L, int arg )
+{
+  const double value = luaL_checknumber( L, arg );
+  if ( !( value > static_cast<double>( INT_MIN ) - 1.0 &&
+          value < static_cast<double>( INT_MAX ) + 1.0 ) )
+    return luaL_argerror( L, arg, "pixel value out of range" );
+  return static_cast<int>( value );
+}
+
+static int SurfaceEndPixel( int position, int size )
+{
+  const int64 end = static_cast<int64>( position ) + size;
+  return static_cast<int>( clamp( end, static_cast<int64>( INT_MIN ), static_cast<int64>( INT_MAX ) ) );
+}
+
+static int SurfaceCheckChannel( lua_State *L, int arg )
+{
+  const double value = luaL_checknumber( L, arg );
+  return value > 0.0 ? static_cast<int>( MIN( value, 255.0 ) ) : 0;
+}
+
+static int SurfaceFontNumber( lua_State *L, int arg, int fallback, int minimum, int maximum )
+{
+  const double value = luaL_optnumber( L, arg, fallback );
+  return value >= minimum ? static_cast<int>( MIN( value, static_cast<double>( maximum ) ) ) : minimum;
+}
 
 
 // ---------------------------------------------------------------------------
@@ -235,10 +265,10 @@ static int surface_CreateFont (lua_State *L) {
   const char *szName = luaL_checkstring( L, 1 );
 
   lua_getfield( L, 2, "font" );       const char *szFace  = luaL_optstring( L, -1, "Arial" ); lua_pop( L, 1 );
-  lua_getfield( L, 2, "size" );       int iTall           = luaL_optint( L, -1, 13 );           lua_pop( L, 1 );
-  lua_getfield( L, 2, "weight" );     int iWeight         = luaL_optint( L, -1, 500 );          lua_pop( L, 1 );
-  lua_getfield( L, 2, "blursize" );   int iBlur           = luaL_optint( L, -1, 0 );            lua_pop( L, 1 );
-  lua_getfield( L, 2, "scanlines" );  int iScanlines      = luaL_optint( L, -1, 0 );            lua_pop( L, 1 );
+  lua_getfield( L, 2, "size" );       int iTall          = SurfaceFontNumber( L, -1, 13, 4, 255 );       lua_pop( L, 1 );
+  lua_getfield( L, 2, "weight" );     int iWeight        = SurfaceFontNumber( L, -1, 500, 0, INT_MAX );   lua_pop( L, 1 );
+  lua_getfield( L, 2, "blursize" );   int iBlur          = SurfaceFontNumber( L, -1, 0, 0, 80 );         lua_pop( L, 1 );
+  lua_getfield( L, 2, "scanlines" );  int iScanlines     = SurfaceFontNumber( L, -1, 0, 0, INT_MAX );     lua_pop( L, 1 );
   lua_getfield( L, 2, "antialias" );  bool bAntialias     = luaL_optboolean( L, -1, true );     lua_pop( L, 1 );
   lua_getfield( L, 2, "extended" );   bool bExtended      = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
   lua_getfield( L, 2, "underline" );  bool bUnderline     = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
@@ -332,7 +362,18 @@ static int surface_CreatePopup (lua_State *L) {
 static int surface_DrawFilledRect (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_RECT );
-  surface()->DrawFilledRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
+  surface()->DrawFilledRect(SurfaceCheckPixel(L, 1), SurfaceCheckPixel(L, 2), SurfaceCheckPixel(L, 3), SurfaceCheckPixel(L, 4));
+  return 0;
+}
+
+static int surface_DrawRect (lua_State *L) {
+  HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_RECT );
+  const int x = SurfaceCheckPixel( L, 1 );
+  const int y = SurfaceCheckPixel( L, 2 );
+  const int width = SurfaceCheckPixel( L, 3 );
+  const int height = SurfaceCheckPixel( L, 4 );
+  surface()->DrawFilledRect( x, y, SurfaceEndPixel( x, width ), SurfaceEndPixel( y, height ) );
   return 0;
 }
 
@@ -381,7 +422,7 @@ static int surface_DrawGetTextureSize (lua_State *L) {
 }
 
 static int surface_DrawLine (lua_State *L) {
-  surface()->DrawLine(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
+  surface()->DrawLine(SurfaceCheckPixel(L, 1), SurfaceCheckPixel(L, 2), SurfaceCheckPixel(L, 3), SurfaceCheckPixel(L, 4));
   return 0;
 }
 
@@ -422,7 +463,24 @@ static int surface_DrawOutlinedCircle (lua_State *L) {
 static int surface_DrawOutlinedRect (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_RECT );
-  surface()->DrawOutlinedRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
+  const int x = SurfaceCheckPixel( L, 1 );
+  const int y = SurfaceCheckPixel( L, 2 );
+  const int width = SurfaceCheckPixel( L, 3 );
+  const int height = SurfaceCheckPixel( L, 4 );
+  const int thickness = lua_isnoneornil( L, 5 ) ? 1 : SurfaceCheckPixel( L, 5 );
+  if ( width <= 0 || height <= 0 || thickness <= 0 )
+    return 0;
+
+  const int right = SurfaceEndPixel( x, width );
+  const int bottom = SurfaceEndPixel( y, height );
+  const int topEdge = MIN( bottom, SurfaceEndPixel( y, thickness ) );
+  const int bottomEdge = MAX( topEdge, SurfaceEndPixel( bottom, -thickness ) );
+  const int leftEdge = MIN( right, SurfaceEndPixel( x, thickness ) );
+  const int rightEdge = MAX( leftEdge, SurfaceEndPixel( right, -thickness ) );
+  surface()->DrawFilledRect( x, y, right, topEdge );
+  surface()->DrawFilledRect( x, bottomEdge, right, bottom );
+  surface()->DrawFilledRect( x, topEdge, leftEdge, bottomEdge );
+  surface()->DrawFilledRect( rightEdge, topEdge, right, bottomEdge );
   return 0;
 }
 
@@ -467,16 +525,16 @@ static int surface_DrawSetAlphaMultiplier (lua_State *L) {
 }
 
 static int surface_DrawSetColor (lua_State *L) {
-  const int r = clamp(luaL_checkint(L, 1), 0, 255);
-  const int g = clamp(luaL_checkint(L, 2), 0, 255);
-  const int b = clamp(luaL_checkint(L, 3), 0, 255);
-  const int a = clamp(luaL_checkint(L, 4), 0, 255);
+  const int r = SurfaceCheckChannel(L, 1);
+  const int g = SurfaceCheckChannel(L, 2);
+  const int b = SurfaceCheckChannel(L, 3);
+  const int a = SurfaceCheckChannel(L, 4);
   surface()->DrawSetColor(r, g, b, a);
   return 0;
 }
 
 static int surface_DrawSetTextColor (lua_State *L) {
-  surface()->DrawSetTextColor(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
+  surface()->DrawSetTextColor(SurfaceCheckChannel(L, 1), SurfaceCheckChannel(L, 2), SurfaceCheckChannel(L, 3), SurfaceCheckChannel(L, 4));
   return 0;
 }
 
@@ -487,7 +545,7 @@ static int surface_DrawSetTextFont (lua_State *L) {
 }
 
 static int surface_DrawSetTextPos (lua_State *L) {
-  surface()->DrawSetTextPos(luaL_checkint(L, 1), luaL_checkint(L, 2));
+  surface()->DrawSetTextPos(SurfaceCheckPixel(L, 1), SurfaceCheckPixel(L, 2));
   return 0;
 }
 
@@ -686,9 +744,13 @@ static int HL2SB_gui_EnableScreenClicker (lua_State *L) {
   if (!root) return 0;
   if (enabled && !clicker.Get()) {
     clicker = new vgui::Panel(root, "ScreenClicker");
+    clicker->SetVisible(false);
     clicker->SetPaintBackgroundEnabled(false);
     clicker->SetPaintEnabled(false);
-    clicker->SetKeyBoardInputEnabled(false);
+    // Surface cursor visibility is driven by mouse-enabled popups. This
+    // popup only requests the cursor; the Lua controls still get the hits.
+    clicker->DisableMouseInputForThisPanel(true);
+    vgui::surface()->CreatePopup(clicker->GetVPanel(), false, false, false, true, false);
     clicker->SetCursor(vgui::dc_arrow);
     clicker->SetAutoResize(vgui::Panel::PIN_TOPLEFT, vgui::Panel::AUTORESIZE_DOWNANDRIGHT, 0, 0, 0, 0);
   }
@@ -696,7 +758,6 @@ static int HL2SB_gui_EnableScreenClicker (lua_State *L) {
     clicker->SetBounds(0, 0, root->GetWide(), root->GetTall());
     clicker->SetMouseInputEnabled(enabled);
     clicker->SetVisible(enabled);
-    if (enabled) clicker->MoveToFront();
   }
   return 0;
 }
@@ -831,7 +892,7 @@ static int surface_DrawSetTexturePNG (lua_State *L) {
 static int surface_DrawTexturedRect (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
-  surface()->DrawTexturedRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4));
+  surface()->DrawTexturedRect(SurfaceCheckPixel(L, 1), SurfaceCheckPixel(L, 2), SurfaceCheckPixel(L, 3), SurfaceCheckPixel(L, 4));
   return 0;
 }
 
@@ -854,11 +915,11 @@ static int surface_DrawTexturedSubRect (lua_State *L) {
 static int surface_DrawTexturedRectUV (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
-  int x = luaL_checkint(L, 1);
-  int y = luaL_checkint(L, 2);
-  int w = luaL_checkint(L, 3);
-  int h = luaL_checkint(L, 4);
-  surface()->DrawTexturedSubRect(x, y, x + w, y + h, luaL_checknumber(L, 5), luaL_checknumber(L, 6), luaL_checknumber(L, 7), luaL_checknumber(L, 8));
+  const int x = SurfaceCheckPixel(L, 1);
+  const int y = SurfaceCheckPixel(L, 2);
+  const int w = SurfaceCheckPixel(L, 3);
+  const int h = SurfaceCheckPixel(L, 4);
+  surface()->DrawTexturedSubRect(x, y, SurfaceEndPixel(x, w), SurfaceEndPixel(y, h), luaL_checknumber(L, 5), luaL_checknumber(L, 6), luaL_checknumber(L, 7), luaL_checknumber(L, 8));
   return 0;
 }
 
@@ -1366,6 +1427,7 @@ static const luaL_Reg surfacelib[] = {
   {"DrawCircle", surface_DrawCircle},
   {"DrawOutlinedCircle",   surface_DrawOutlinedCircle},
   {"DrawOutlinedRect",   surface_DrawOutlinedRect},
+  {"DrawRect",   surface_DrawRect},
   {"DrawPrintText",   surface_DrawPrintText},
   {"DrawText",   surface_DrawText},
   {"DrawSetAlphaMultiplier",   surface_DrawSetAlphaMultiplier},
