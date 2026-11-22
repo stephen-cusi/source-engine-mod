@@ -102,6 +102,7 @@ public:
 	bool CreateDisplacements( const QMap<int, QSet<int>> &facesBySolid, int power );
 	bool RemoveDisplacements( const QMap<int, QSet<int>> &facesBySolid );
 	bool SetDisplacementDistances( int solidId, int sideId, const QList<double> &distances );
+	bool SewDisplacements( const QMap<int, QSet<int>> &facesBySolid );
 	bool SetVisibleFaceProperties( const QMap<int, QList<SideLite>> &facesBySolid );
 	// One selected world brush or a brush entity owning exactly one solid.
 	const SolidLite *SingleSelectedSolid() const;

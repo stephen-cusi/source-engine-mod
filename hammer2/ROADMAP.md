@@ -5,8 +5,7 @@ verified steps. Checked items are implemented and covered by an automated test
 or a direct workflow check; partial support stays explicitly unchecked.
 
 ## Approximate Original-Hammer Coverage
-With the displacement regressions passing, static coverage is 10 of 20 equally
-weighted stock workflows (50%).
+Static coverage is 10 of 20 equally weighted stock workflows (50%).
 A usable basic workflow earns one point, an implementation with material
 restrictions earns half a point, and a missing workflow earns zero:
 
@@ -19,9 +18,12 @@ restrictions earns half a point, and a missing workflow earns zero:
 - Zero each: decals and overlays, prefabs, cordon
   editing, model and sound browsers.
 
-Displacement support raises the previous 9.5/20 baseline by half a point.
-Reaching 60% under this rubric requires two additional points and direct
-checks of the workflows being credited.
+The 3D geometry brush and sewing extend the displacement workflow. It
+continues to earn half a point while major parts of original Hammer's
+displacement workflow remain missing. Reaching 60% under this rubric
+requires two additional points and direct checks of the workflows being credited.
+Prioritize original Hammer parity and fixes to its behavior before adding
+features outside the original editor.
 
 ## Working Workflows
 - [ ] Qt UI uses a shared dark theme and a 2x2 viewport layout modeled on the
@@ -418,8 +420,13 @@ checks of the workflows being credited.
   orthographic views show the terrain outline and selected grid. Select faces
   with the Material tool and use Tools > Displacements to create on eligible
   quadrilateral world faces, remove terrain, or edit and smooth the per-vertex
-  distance grid. Map edits support undo. Interactive painting, sewing,
-  subdivision, power changes and complete material blending remain pending.
+  distance grid. Paint Geometry opens a modeless panel for spatial 3D
+  Raise/Lower, Raise To and Smooth strokes on selected displacements, with
+  radius and brush falloff controls. Sew joins compatible selected seams,
+  including reversed edges, mixed powers and midpoint T-junctions.
+  Map edits support undo. Additional original brush and axis options,
+  alpha painting, subdivision, power changes and full material blending
+  remain pending.
 - [ ] Grid settings, view filters, auto-combine, and remaining
   menu commands that are still placeholders.
 - [ ] Full game configuration UI with multiple games, FGDs, search paths and

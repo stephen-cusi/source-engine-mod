@@ -260,6 +260,20 @@
     <message><source>Power (2: 5×5, 3: 9×9, 4: 17×17):</source><translation>细分级别（2：5×5，3：9×9，4：17×17）：</translation></message>
     <message><source>Create requires visible, unmodified quadrilateral world faces without a displacement.</source><translation>只能在可见、尚无位移且未保存额外顶点数据的世界画刷四边形面上创建。</translation></message>
     <message><source>Remove Displacements</source><translation>移除位移地形</translation></message>
+    <message><source>Paint Geometry...</source><translation>绘制几何...</translation></message>
+    <message><source>Displacement Paint Geometry</source><translation>位移几何画笔</translation></message>
+    <message><source>Select a displacement face before painting.</source><translation>绘制前请选择一个位移面。</translation></message>
+    <message><source>Raise/Lower</source><translation>抬升／降低</translation></message>
+    <message><source>Raise To</source><translation>抬升至指定距离</translation></message>
+    <message><source>Smooth</source><translation>平滑</translation></message>
+    <message><source>Effect:</source><translation>效果：</translation></message>
+    <message><source>Radius:</source><translation>半径：</translation></message>
+    <message><source>Distance:</source><translation>距离：</translation></message>
+    <message><source>Brush:</source><translation>画笔：</translation></message>
+    <message><source>Soft-Edge</source><translation>柔边</translation></message>
+    <message><source>Hard-Edge</source><translation>硬边</translation></message>
+    <message><source>Sew</source><translation>缝合</translation></message>
+    <message><source>Select adjacent faces with a compatible displacement seam.</source><translation>请选择具有可缝合接缝的相邻面。</translation></message>
     <message><source>Every selected face must contain a displacement.</source><translation>每个选中的面都必须包含位移地形。</translation></message>
     <message><source>Edit Displacement Distances...</source><translation>编辑位移距离...</translation></message>
     <message><source>Edit Displacement Distances</source><translation>编辑位移距离</translation></message>
@@ -1847,6 +1861,7 @@ Qt %1
 </context>
 <context>
     <name>CQtViewport3D</name>
+    <message><source>Paint Geometry: drag | Esc cancels stroke</source><translation>绘制几何：拖动绘制｜Esc 取消当前笔画</translation></message>
     <message><source>Shift+X: clip in 2D</source><translation>Shift+X：在二维视图裁切</translation></message>
     <message><source>Clip (Shift+X): define the clipping line in a 2D view | drag orbits | wheel zooms</source><translation>裁切（Shift+X）：在二维视图绘制裁切线；拖动旋转；滚轮缩放</translation></message>
     <message>

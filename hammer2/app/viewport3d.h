@@ -13,6 +13,8 @@
 #pragma once
 
 #include <QWidget>
+#include <array>
+#include <optional>
 #include "materialpreviewrenderer.h"
 
 class QPainter;
@@ -49,6 +51,7 @@ public:
 	QString interactionHint() const;
 	QString interactionHelp() const;
 	const QMap<int, QSet<int>> &selectedFaces() const { return m_selectedFaces; }
+	void setDisplacementPaint( bool enabled, int effect = 0, double radius = 64, double amount = 8, bool soft = true );
 
 signals:
 	void cameraPositionChanged();
@@ -91,11 +94,23 @@ private:
 	void SetMouseLook( bool enabled );
 	void ClearFaceSelection();
 	void PruneFaceSelection();
+	bool DisplacementPaintActive() const;
+	void UpdateDisplacementPaint( const QPoint &position, bool dab );
+	void FinishDisplacementPaint( bool cancel );
+	void DrawDisplacementBrush( QPainter &painter, const Camera &cam );
 
 	CHammerDocument *m_pDocument;
 	CMaterialPreviewRenderer m_materialRenderer;
 	CTexturedViewportSurface *m_texturedSurface = nullptr;
 	QMap<int, QSet<int>> m_selectedFaces; // session-only solid ID -> face IDs
+	bool m_displacementPaintEnabled = false;
+	bool m_displacementPaintApplying = false;
+	int m_displacementPaintEffect = 0;
+	double m_displacementPaintRadius = 64;
+	double m_displacementPaintAmount = 8;
+	bool m_displacementPaintSoft = true;
+	Qt::MouseButton m_displacementPaintButton = Qt::NoButton;
+	std::optional<std::array<double, 3>> m_displacementBrushCenter;
 
 	// Orbit camera state
 	double m_flYaw;         // degrees around the Z axis

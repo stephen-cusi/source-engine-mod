@@ -13,6 +13,7 @@
 #include "brushentityview.h"
 #include "vertexedit.h"
 #include "displacementedit.h"
+#include "displacementsew.h"
 
 #include <QFile>
 #include <QFileDialog>
@@ -1875,6 +1876,43 @@ bool CHammerDocument::SetDisplacementDistances( int solidId, int sideId, const Q
 			}
 	BeginEdit();
 	m_Map.SolidById( solidId )->sides[index].displacement = updated;
+	TouchContent();
+	EndEdit();
+	return true;
+}
+
+bool CHammerDocument::SewDisplacements( const QMap<int, QSet<int>> &facesBySolid )
+{
+	using namespace HammerDisplacementSew;
+	QList<Face> faces;
+	for ( auto it = facesBySolid.cbegin(); it != facesBySolid.cend(); ++it )
+	{
+		const SolidLite *solid = static_cast<const MapDocLite &>( m_Map ).SolidById( it.key() );
+		if ( !solid || it.value().isEmpty() || !HammerBrushEntityView::Visible( m_Map, m_ViewFilter, *solid ) ) return false;
+		QList<HammerWinding::Polygon> polygons;
+		if ( !HammerWinding::BuildFaces( *solid, polygons ) ) return false;
+		QSet<int> found;
+		for ( int i = 0; i < solid->sides.size(); ++i )
+		{
+			const SideLite &side = solid->sides[i];
+			if ( !it.value().contains( side.id ) ) continue;
+			if ( found.contains( side.id ) ) return false;
+			found.insert( side.id );
+			Face face{ solid->id, i, side, {}, {} };
+			if ( !Prepare( face, polygons[i] ) ) return false;
+			faces.append( std::move( face ) );
+		}
+		if ( found != it.value() ) return false;
+	}
+	QSet<int> changes;
+	if ( !Sew( faces, changes ) ) return false;
+	if ( changes.isEmpty() ) return true;
+	BeginEdit();
+	for ( int index : changes )
+	{
+		const Face &face = faces[index];
+		m_Map.SolidById( face.solidId )->sides[face.sideIndex].displacement = face.side.displacement;
+	}
 	TouchContent();
 	EndEdit();
 	return true;

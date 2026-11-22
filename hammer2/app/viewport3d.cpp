@@ -12,6 +12,8 @@
 #include "mapmodel.h"
 #include "brushwindings.h"
 #include "facehit.h"
+#include "displacementedit.h"
+#include "displacementpaint.h"
 #include "theme.h"
 
 #include <cmath>
@@ -272,6 +274,12 @@ void CQtViewport3D::contextMenuEvent( QContextMenuEvent *event )
 // advances one step; native key repeat provides continued movement.
 void CQtViewport3D::keyPressEvent( QKeyEvent *event )
 {
+	if ( m_displacementPaintButton != Qt::NoButton )
+	{
+		if ( event->key() == Qt::Key_Escape ) FinishDisplacementPaint( true );
+		event->accept();
+		return;
+	}
 	if ( m_pDocument && m_pDocument->GetTool() == TOOL_TEXTURE && !m_mouseLook && !m_bDragging )
 	{
 		if ( event->key() == Qt::Key_Escape && !m_selectedFaces.isEmpty() )
@@ -370,6 +378,7 @@ void CQtViewport3D::keyPressEvent( QKeyEvent *event )
 //-----------------------------------------------------------------------------
 void CQtViewport3D::setDocument( CHammerDocument *pDocument )
 {
+	FinishDisplacementPaint( true );
 	CancelMoveEdit();
 	ClearFaceSelection();
 	if ( m_pDocument ) disconnect( m_pDocument, nullptr, this, nullptr );
@@ -388,13 +397,19 @@ void CQtViewport3D::setDocument( CHammerDocument *pDocument )
 
 void CQtViewport3D::ClearFaceSelection()
 {
+	if ( m_displacementPaintApplying ) return;
 	if ( m_selectedFaces.isEmpty() ) return;
 	m_selectedFaces.clear(); UpdateViews();
 }
 
 void CQtViewport3D::PruneFaceSelection()
 {
-	if ( !m_pDocument || m_pDocument->GetTool() != TOOL_TEXTURE ) { ClearFaceSelection(); return; }
+	if ( !m_pDocument || m_pDocument->GetTool() != TOOL_TEXTURE )
+	{
+		FinishDisplacementPaint( true );
+		ClearFaceSelection();
+		return;
+	}
 	bool changed = false;
 	for ( auto it = m_selectedFaces.begin(); it != m_selectedFaces.end(); )
 	{
@@ -570,6 +585,7 @@ void CQtViewport3D::PaintScene( QWidget *target, bool textured )
 	if ( !textured && m_groundGridVisible ) DrawGridFloor( painter, cam );
 	if ( !textured ) DrawSolids( painter, cam );
 	DrawEntities( painter, cam );
+	DrawDisplacementBrush( painter, cam );
 	if ( m_pDocument )
 	{
 		const auto &points = m_pDocument->PointFilePoints();
@@ -621,6 +637,7 @@ void CQtViewport3D::PaintScene( QWidget *target, bool textured )
 QString CQtViewport3D::interactionHint() const
 {
 	if ( m_mouseLook ) return tr( "Z look | WASD | Esc exit" );
+	if ( DisplacementPaintActive() ) return tr( "Paint Geometry: drag | Esc cancels stroke" );
 	switch ( m_pDocument ? m_pDocument->GetTool() : TOOL_SELECT )
 	{
 		case TOOL_ENTITY: return tr( "2 Entity: place in 2D" );
@@ -914,6 +931,123 @@ void CQtViewport3D::CancelMoveEdit()
 	m_moveCandidate = false;
 }
 
+void CQtViewport3D::setDisplacementPaint( bool enabled, int effect, double radius, double amount, bool soft )
+{
+	FinishDisplacementPaint( true );
+	m_displacementPaintEnabled = enabled;
+	m_displacementPaintEffect = std::clamp( effect, 0, 2 );
+	m_displacementPaintRadius = std::isfinite( radius ) ? std::clamp( radius, 1.0, 4096.0 ) : 64.0;
+	m_displacementPaintAmount = std::isfinite( amount ) ? std::clamp( amount, -32768.0, 32768.0 ) : 8.0;
+	m_displacementPaintSoft = soft;
+	if ( enabled ) SetMouseLook( false );
+	UpdateViews();
+}
+
+bool CQtViewport3D::DisplacementPaintActive() const
+{
+	return m_displacementPaintEnabled && m_pDocument && m_pDocument->GetTool() == TOOL_TEXTURE;
+}
+
+void CQtViewport3D::FinishDisplacementPaint( bool cancel )
+{
+	m_displacementBrushCenter.reset();
+	if ( m_displacementPaintButton == Qt::NoButton ) return;
+	m_displacementPaintButton = Qt::NoButton;
+	if ( m_pDocument )
+	{
+		m_displacementPaintApplying = true;
+		if ( cancel ) m_pDocument->CancelEdit();
+		else m_pDocument->EndEdit();
+		m_displacementPaintApplying = false;
+	}
+	UpdateViews();
+}
+
+void CQtViewport3D::UpdateDisplacementPaint( const QPoint &position, bool dab )
+{
+	m_displacementBrushCenter.reset();
+	UpdateViews();
+	if ( !DisplacementPaintActive() || m_selectedFaces.isEmpty() || height() <= 0 ) return;
+	Camera cam;
+	BuildCamera( cam );
+	const double x = ( position.x() - width() / 2.0 ) / cam.focal;
+	const double y = ( height() / 2.0 - position.y() ) / cam.focal;
+	double ray[3];
+	for ( int i = 0; i < 3; ++i ) ray[i] = cam.forward[i] + x * cam.right[i] + y * cam.up[i];
+	const auto hit = HammerFaceHit::Find( *m_pDocument, cam.eye, ray, kNearPlane );
+	const MapDocLite &map = m_pDocument->Map();
+	const SolidLite *hitSolid = map.SolidById( hit.solidId );
+	HammerDisplacementMesh::Mesh hitMesh;
+	QList<HammerWinding::Polygon> hitFaces;
+	if ( !hitSolid || hit.faceIndex < 0 || hit.faceIndex >= hitSolid->sides.size() ||
+		!m_selectedFaces.value( hit.solidId ).contains( hitSolid->sides[hit.faceIndex].id ) ||
+		!HammerWinding::BuildFaces( *hitSolid, hitFaces ) ||
+		!HammerDisplacementMesh::Build( hitSolid->sides[hit.faceIndex], hitFaces[hit.faceIndex], hitMesh ) ) return;
+
+	HammerWinding::Point intersection;
+	for ( int i = 0; i < 3; ++i ) intersection[i] = cam.eye[i] + ray[i] * hit.distance;
+	const auto nearest = std::min_element( hitMesh.vertices.cbegin(), hitMesh.vertices.cend(),
+		[&intersection]( const auto &a, const auto &b ) {
+			return HammerDisplacementPaint::DistanceSquared( a, intersection ) <
+				HammerDisplacementPaint::DistanceSquared( b, intersection );
+		} );
+	const auto center = *nearest;
+	m_displacementBrushCenter = center;
+	if ( !dab ) return;
+
+	struct Edit { int solidId; int faceId; QList<double> distances; };
+	QList<Edit> edits;
+	const auto effect = static_cast<HammerDisplacementPaint::Effect>( m_displacementPaintEffect );
+	const double amount = m_displacementPaintButton == Qt::RightButton ? -m_displacementPaintAmount : m_displacementPaintAmount;
+	for ( auto selection = m_selectedFaces.cbegin(); selection != m_selectedFaces.cend(); ++selection )
+	{
+		const SolidLite *solid = map.SolidById( selection.key() );
+		QList<HammerWinding::Polygon> faces;
+		if ( !solid || !HammerBrushEntityView::Visible( map, m_pDocument->GetViewFilter(), *solid ) ||
+			!HammerWinding::BuildFaces( *solid, faces ) ) continue;
+		for ( int i = 0; i < solid->sides.size(); ++i )
+		{
+			const SideLite &side = solid->sides[i];
+			if ( !side.displacement || !selection.value().contains( side.id ) ) continue;
+			HammerDisplacementMesh::Mesh mesh;
+			QList<double> distances;
+			if ( !HammerDisplacementMesh::Build( side, faces[i], mesh ) ||
+				!HammerDisplacementEdit::ReadDistances( *side.displacement, distances ) ) continue;
+			const auto updated = HammerDisplacementPaint::Dab( mesh, distances, center, effect,
+				m_displacementPaintRadius, amount, m_displacementPaintSoft );
+			if ( updated != distances ) edits.append( { solid->id, side.id, updated } );
+		}
+	}
+	m_displacementPaintApplying = true;
+	bool applied = true;
+	for ( const Edit &edit : edits )
+		if ( !m_pDocument->SetDisplacementDistances( edit.solidId, edit.faceId, edit.distances ) )
+		{
+			applied = false;
+			break;
+		}
+	m_displacementPaintApplying = false;
+	if ( !applied ) FinishDisplacementPaint( true );
+}
+
+void CQtViewport3D::DrawDisplacementBrush( QPainter &painter, const Camera &cam )
+{
+	if ( !DisplacementPaintActive() || !m_displacementBrushCenter ) return;
+	QPointF center;
+	if ( !Project( cam, m_displacementBrushCenter->data(), center ) ) return;
+	QPointF edge;
+	double end[3];
+	for ( int i = 0; i < 3; ++i ) end[i] = ( *m_displacementBrushCenter )[i] + cam.right[i] * m_displacementPaintRadius;
+	if ( !Project( cam, end, edge ) ) return;
+	const double radius = std::abs( edge.x() - center.x() );
+	painter.save();
+	painter.setPen( QPen( QColor( 255, 210, 100 ), 1.5 ) );
+	painter.setBrush( Qt::NoBrush );
+	painter.drawEllipse( center, radius, radius );
+	painter.drawEllipse( center, 2, 2 );
+	painter.restore();
+}
+
 void CQtViewport3D::SetMouseLook( bool enabled )
 {
 	if ( m_mouseLook == enabled ) return;
@@ -929,11 +1063,22 @@ void CQtViewport3D::SetMouseLook( bool enabled )
 
 bool CQtViewport3D::event( QEvent *event )
 {
+	if ( event->type() == QEvent::ShortcutOverride && m_displacementPaintButton != Qt::NoButton )
+	{
+		event->accept();
+		return true;
+	}
+	if ( event->type() == QEvent::Leave )
+	{
+		m_displacementBrushCenter.reset();
+		UpdateViews();
+	}
 	if ( event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut )
 		UpdateViews();
 	if ( event->type() == QEvent::UngrabMouse || event->type() == QEvent::FocusOut ||
 		 event->type() == QEvent::WindowDeactivate || event->type() == QEvent::Hide )
 	{
+		FinishDisplacementPaint( true );
 		SetMouseLook( false );
 		CancelMoveEdit();
 		m_bDragging = false;
@@ -947,6 +1092,20 @@ bool CQtViewport3D::event( QEvent *event )
 void CQtViewport3D::mousePressEvent( QMouseEvent *event )
 {
 	if ( m_mouseLook ) { event->accept(); return; }
+	if ( DisplacementPaintActive() && ( event->button() == Qt::LeftButton || event->button() == Qt::RightButton ) &&
+		( m_displacementPaintButton != Qt::NoButton || !event->modifiers().testFlag( Qt::ControlModifier ) ) )
+	{
+		if ( m_displacementPaintButton == Qt::NoButton &&
+			( event->button() == Qt::LeftButton || m_displacementPaintEffect == HammerDisplacementPaint::RaiseLower ) )
+		{
+			setFocus();
+			m_displacementPaintButton = event->button();
+			m_pDocument->BeginEdit();
+			UpdateDisplacementPaint( event->pos(), true );
+		}
+		event->accept();
+		return;
+	}
 	if ( event->button() == Qt::LeftButton || event->button() == Qt::RightButton )
 	{
 		m_bDragging = true;
@@ -978,6 +1137,15 @@ void CQtViewport3D::mousePressEvent( QMouseEvent *event )
 
 void CQtViewport3D::mouseMoveEvent( QMouseEvent *event )
 {
+	if ( DisplacementPaintActive() && !m_mouseLook && !m_bDragging )
+	{
+		if ( m_displacementPaintButton != Qt::NoButton && !( event->buttons() & m_displacementPaintButton ) )
+			FinishDisplacementPaint( true );
+		const bool dab = m_displacementPaintButton != Qt::NoButton && !event->modifiers().testFlag( Qt::ControlModifier );
+		UpdateDisplacementPaint( event->pos(), dab );
+		event->accept();
+		return;
+	}
 	if ( m_mouseLook )
 	{
 		const QPoint center = rect().center();
@@ -1045,6 +1213,13 @@ void CQtViewport3D::mouseMoveEvent( QMouseEvent *event )
 
 void CQtViewport3D::mouseReleaseEvent( QMouseEvent *event )
 {
+	if ( event->button() == m_displacementPaintButton )
+	{
+		FinishDisplacementPaint( false );
+		UpdateDisplacementPaint( event->pos(), false );
+		event->accept();
+		return;
+	}
 	if ( m_bDragging && event->button() == m_pressedButton )
 	{
 		m_bDragging = false;
@@ -1106,7 +1281,7 @@ void CQtViewport3D::mouseReleaseEvent( QMouseEvent *event )
 
 void CQtViewport3D::wheelEvent( QWheelEvent *event )
 {
-	if ( m_moveEditActive ) { event->accept(); return; }
+	if ( m_moveEditActive || m_displacementPaintButton != Qt::NoButton ) { event->accept(); return; }
 	const double factor = ( event->angleDelta().y() > 0 ) ? 1.0 / 1.15 : 1.15;
 	m_flDist = qBound( 64.0, m_flDist * factor, 8192.0 );
 	UpdateViews();

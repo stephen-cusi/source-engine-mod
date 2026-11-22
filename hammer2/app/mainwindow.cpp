@@ -940,6 +940,77 @@ void CMainWindow::CreateMenus()
         if ( !faces.isEmpty() && !m_pDocument->RemoveDisplacements( faces ) )
             QMessageBox::warning( this, tr( "Displacements" ), tr( "Every selected face must contain a displacement." ) );
     } );
+    QAction *paintGeometry = displacementMenu->addAction( tr( "Paint Geometry..." ) );
+    paintGeometry->setObjectName( "paintDisplacementGeometry" );
+    connect( paintGeometry, &QAction::triggered, this, [this, displacementFaces] {
+        const auto faces = displacementFaces();
+        if ( faces.isEmpty() ) return;
+        bool hasDisplacement = false;
+        for ( auto it = faces.cbegin(); it != faces.cend(); ++it )
+            if ( const SolidLite *solid = m_pDocument->Map().SolidById( it.key() ) )
+                for ( const SideLite &side : solid->sides )
+                    if ( side.displacement && it.value().contains( side.id ) ) hasDisplacement = true;
+        if ( !hasDisplacement )
+        {
+            QMessageBox::information( this, tr( "Displacements" ), tr( "Select a displacement face before painting." ) );
+            return;
+        }
+        if ( QDialog *existing = findChild<QDialog *>( QStringLiteral( "displacementGeometryDialog" ) ) )
+        {
+            existing->raise();
+            existing->activateWindow();
+            return;
+        }
+
+        auto *dialog = new QDialog( this, Qt::Tool );
+        dialog->setAttribute( Qt::WA_DeleteOnClose );
+        dialog->setObjectName( "displacementGeometryDialog" );
+        dialog->setWindowTitle( tr( "Displacement Paint Geometry" ) );
+        auto *layout = new QFormLayout( dialog );
+        auto *effect = new QComboBox( dialog );
+        effect->setObjectName( "displacementPaintEffect" );
+        effect->addItems( { tr( "Raise/Lower" ), tr( "Raise To" ), tr( "Smooth" ) } );
+        layout->addRow( tr( "Effect:" ), effect );
+        auto *radius = new QDoubleSpinBox( dialog );
+        radius->setRange( 1, 4096 );
+        radius->setValue( 64 );
+        layout->addRow( tr( "Radius:" ), radius );
+        auto *distance = new QDoubleSpinBox( dialog );
+        distance->setRange( 0, 60 );
+        distance->setValue( 8 );
+        layout->addRow( tr( "Distance:" ), distance );
+        auto *edge = new QComboBox( dialog );
+        edge->addItems( { tr( "Soft-Edge" ), tr( "Hard-Edge" ) } );
+        layout->addRow( tr( "Brush:" ), edge );
+        auto *close = new QDialogButtonBox( QDialogButtonBox::Close, dialog );
+        layout->addRow( close );
+        connect( close, &QDialogButtonBox::rejected, dialog, &QDialog::reject );
+        const auto updatePaint = [this, effect, radius, distance, edge] {
+            const int selectedEffect = effect->currentIndex();
+            distance->setEnabled( selectedEffect != 2 );
+            const double amount = selectedEffect == 2 ? 2.0 : distance->value();
+            m_pViewport3D->setDisplacementPaint( true, selectedEffect, radius->value(),
+                amount, edge->currentIndex() == 0 );
+        };
+        connect( effect, &QComboBox::currentIndexChanged, dialog, updatePaint );
+        connect( radius, &QDoubleSpinBox::valueChanged, dialog, updatePaint );
+        connect( distance, &QDoubleSpinBox::valueChanged, dialog, updatePaint );
+        connect( edge, &QComboBox::currentIndexChanged, dialog, updatePaint );
+        connect( dialog, &QDialog::finished, m_pViewport3D, [view = m_pViewport3D] { view->setDisplacementPaint( false ); } );
+        connect( m_pDocument, &CHammerDocument::stateChanged, dialog, [this, dialog] {
+            if ( m_pDocument->GetTool() != TOOL_TEXTURE ) dialog->reject();
+        } );
+        connect( m_pDocument, &CHammerDocument::fileNameChanged, dialog, &QDialog::reject );
+        updatePaint();
+        dialog->show();
+    } );
+    QAction *sewDisplacements = displacementMenu->addAction( tr( "Sew" ) );
+    sewDisplacements->setObjectName( "sewDisplacements" );
+    connect( sewDisplacements, &QAction::triggered, this, [this, displacementFaces] {
+        const auto faces = displacementFaces();
+        if ( !faces.isEmpty() && !m_pDocument->SewDisplacements( faces ) )
+            QMessageBox::information( this, tr( "Displacements" ), tr( "Select adjacent faces with a compatible displacement seam." ) );
+    } );
     QAction *editDisplacement = displacementMenu->addAction( tr( "Edit Displacement Distances..." ) );
     connect( editDisplacement, &QAction::triggered, this, [this, displacementFaces] {
         const auto faces = displacementFaces();

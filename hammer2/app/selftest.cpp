@@ -12,6 +12,7 @@
 #include "displacementinspect.h"
 #include "displacementedit.h"
 #include "displacementmeshtest.h"
+#include "displacementsewtest.h"
 #include "groupinspect.h"
 #include "corebounds.h"
 #include "entityreportdialog.h"
@@ -5924,6 +5925,102 @@ int RunHammerSelfTest( const QString &vmfPath )
 		ctx.Step( "displacement-edit", ok, QStringLiteral( "create, distance edits, destruction, atomic rejection and undo/redo" ) );
 	}
 	ctx.Step( "displacement-mesh", TestHammerDisplacementMesh(), QStringLiteral( "mesh construction, deformation and picking" ) );
+	{
+		CHammerDocument doc;
+		CQtViewport3D view;
+		view.setDocument( &doc );
+		view.resize( 400, 300 );
+		const double mins[3] = { 64, -32, 68 }, maxs[3] = { 96, 32, 132 };
+		const double eye[3] = { 0, 0, 100 }, angles[3] = { 0, 0, 0 };
+		const int id = doc.CreateBrush( mins, maxs );
+		doc.SetTool( TOOL_TEXTURE );
+		view.setCameraPositionAngles( eye, angles );
+		const QPointF center( 200, 150 );
+		const auto button = [&]( QEvent::Type type, Qt::MouseButton mouseButton ) {
+			QMouseEvent event( type, center, mouseButton,
+				type == QEvent::MouseButtonRelease ? Qt::NoButton : mouseButton, Qt::NoModifier );
+			QCoreApplication::sendEvent( &view, &event );
+		};
+		const auto click = [&]( Qt::MouseButton mouseButton ) {
+			button( QEvent::MouseButtonPress, mouseButton );
+			button( QEvent::MouseButtonRelease, mouseButton );
+		};
+		click( Qt::LeftButton );
+		const auto faces = view.selectedFaces();
+		bool ok = faces.value( id ).size() == 1 && doc.CreateDisplacements( faces, 2 );
+		if ( ok )
+		{
+			const int faceId = *faces.value( id ).cbegin();
+			const auto distances = [&] {
+				QList<double> result;
+				const SolidLite *solid = doc.Map().SolidById( id );
+				if ( solid ) for ( const SideLite &side : solid->sides )
+					if ( side.id == faceId && side.displacement )
+						HammerDisplacementEdit::ReadDistances( *side.displacement, result );
+				return result;
+			};
+			click( Qt::LeftButton );
+			view.setDisplacementPaint( true, 0, 12, 8, true );
+			click( Qt::LeftButton );
+			const auto raised = distances();
+			ok = raised.size() == 25 && raised[12] == 8.0 && view.selectedFaces() == faces;
+			click( Qt::RightButton );
+			const auto lowered = distances();
+			ok = ok && lowered.size() == 25 && lowered[12] == 0.0;
+			button( QEvent::MouseButtonPress, Qt::LeftButton );
+			QKeyEvent escape( QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier );
+			QCoreApplication::sendEvent( &view, &escape );
+			button( QEvent::MouseButtonRelease, Qt::LeftButton );
+			ok = ok && distances() == lowered && doc.Undo() && distances() == raised &&
+				doc.Redo() && distances() == lowered;
+		}
+		ctx.Step( "displacement-paint-gesture", ok, QStringLiteral( "selected 3D face, raise/lower, cancellation and undo/redo" ) );
+	}
+	ctx.Step( "displacement-sew", TestHammerDisplacementSew(), QStringLiteral( "reversed shared edge, mixed power, planar T-junction, selection guard and undo/redo" ) );
+	{
+		CMainWindow terrainWindow( nullptr, false );
+		CHammerDocument *doc = terrainWindow.findChild<CHammerDocument *>();
+		CQtViewport3D *view = terrainWindow.findChild<CQtViewport3D *>( QStringLiteral( "Viewport3D" ) );
+		QAction *paint = terrainWindow.findChild<QAction *>( QStringLiteral( "paintDisplacementGeometry" ) );
+		QAction *sew = terrainWindow.findChild<QAction *>( QStringLiteral( "sewDisplacements" ) );
+		bool ok = doc && view && paint && sew && !paint->text().isEmpty() && !sew->text().isEmpty();
+		if ( ok )
+		{
+			const double mins[3] = { 32, -16, 84 }, maxs[3] = { 64, 16, 116 };
+			const double eye[3] = { 0, 0, 100 }, angles[3] = { 0, 0, 0 };
+			const int brushId = doc->CreateBrush( mins, maxs );
+			doc->SetTool( TOOL_TEXTURE );
+			view->resize( 400, 300 );
+			view->setCameraPositionAngles( eye, angles );
+			const QPointF center( view->width() * 0.5, view->height() * 0.5 );
+			const auto click = [&] {
+				QMouseEvent down( QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier );
+				QMouseEvent up( QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton, Qt::NoModifier );
+				QCoreApplication::sendEvent( view, &down );
+				QCoreApplication::sendEvent( view, &up );
+			};
+			click();
+			const auto faces = view->selectedFaces();
+			ok = faces.value( brushId ).size() == 1 && doc->CreateDisplacements( faces, 2 );
+			if ( ok )
+			{
+				click();
+				ok = view->selectedFaces().value( brushId ).size() == 1;
+				if ( ok ) paint->trigger();
+				QDialog *panel = terrainWindow.findChild<QDialog *>( QStringLiteral( "displacementGeometryDialog" ) );
+				auto *effects = panel ? panel->findChild<QComboBox *>( QStringLiteral( "displacementPaintEffect" ) ) : nullptr;
+				ok = panel && !panel->isModal() && !panel->isHidden() && effects && effects->count() == 3;
+				if ( ok )
+				{
+					effects->setCurrentIndex( 2 );
+					doc->SetTool( TOOL_SELECT );
+					ok = panel->isHidden();
+				}
+			}
+		}
+		ctx.Step( "displacement-command-surface", ok,
+			QStringLiteral( "3D face selection opens a modeless paint panel; tool changes close it" ) );
+	}
 	//--- Summary --------------------------------------------------------------------
 	const bool bAllPassed = ( ctx.nFailed == 0 );
 	ctx.Step( "summary", bAllPassed,
