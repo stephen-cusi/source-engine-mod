@@ -35,6 +35,7 @@ enum EHammerTool
 	TOOL_VERTEX,	// conservative projected vertex editing
 	TOOL_CAMERA,
 	TOOL_DECAL,
+	TOOL_OVERLAY,
 };
 
 class CHammerDocument : public QObject
@@ -137,6 +138,8 @@ public:
 	//          entity id or -1 when the class is unknown.
 	int PlaceEntity( const QString &className, const double origin[3] );
 	int PlaceDecal( const double origin[3] );
+	int PlaceOverlay( int solidId, int sideId, const double origin[3], double width = 32.0, double height = 32.0 );
+	bool MoveOverlayHandle( int entityId, int corner, const double origin[3] );
 
 	// Purpose: Creates a box solid from snapped bounds. Returns the solid id
 	//          or -1 for a degenerate box.

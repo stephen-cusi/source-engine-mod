@@ -15,6 +15,7 @@
 #include "vertexedit.h"
 #include "displacementedit.h"
 #include "displacementsew.h"
+#include "overlaydata.h"
 
 #include <QFile>
 #include <QFileDialog>
@@ -29,6 +30,45 @@ namespace
 {
 	// This material is present in the stock Half-Life 2 content.
 	const char *kDefaultTexture = "concrete/concretewall074a";
+	void TranslateEntity( EntityLite &entity, const double delta[3] )
+	{
+		for ( int i = 0; i < 3; ++i ) entity.origin[i] += delta[i];
+		if ( entity.classname.compare( QLatin1String( "info_overlay" ), Qt::CaseInsensitive ) != 0 ) return;
+		HammerOverlay::Point basis;
+		const QString key = QStringLiteral( "BasisOrigin" );
+		if ( !ParseVec3( HammerOverlay::Value( entity, key ), basis.data() ) ) return;
+		for ( int i = 0; i < 3; ++i ) basis[i] += delta[i];
+		HammerOverlay::Set( entity, key, FormatVec3( basis.data() ) );
+	}
+	bool CanPasteOverlayFaces( const QList<EntityLite> &entities, const QList<SolidLite> &solids, bool sameDocument )
+	{
+		if ( sameDocument ) return true;
+		QSet<int> copiedFaces;
+		for ( const SolidLite &solid : solids )
+			for ( const SideLite &side : solid.sides ) copiedFaces.insert( side.id );
+		for ( const EntityLite &entity : entities )
+		{
+			if ( entity.classname.compare( QLatin1String( "info_overlay" ), Qt::CaseInsensitive ) != 0 ) continue;
+			HammerOverlay::Data overlay;
+			if ( !HammerOverlay::Parse( entity, overlay ) ) return false;
+			for ( int faceId : overlay.sides ) if ( !copiedFaces.contains( faceId ) ) return false;
+		}
+		return true;
+	}
+
+	void RemapPastedOverlayFaces( MapDocLite &map, int firstEntity, const QMap<int, int> &faceIds )
+	{
+		if ( faceIds.isEmpty() ) return;
+		for ( int i = firstEntity; i < map.entities.size(); ++i )
+		{
+			EntityLite &entity = map.entities[i];
+			HammerOverlay::Data overlay;
+			if ( !HammerOverlay::Parse( entity, overlay ) ) continue;
+			QStringList ids;
+			for ( int id : overlay.sides ) ids.append( QString::number( faceIds.value( id, id ) ) );
+			HammerOverlay::Set( entity, QStringLiteral( "sides" ), ids.join( QLatin1Char( ' ' ) ) );
+		}
+	}
 	bool HasProtectedVisgroupState( bool hiddenWrapper, const QList<QPair<QString, QString>> &properties )
 	{
 		if ( hiddenWrapper ) return true;
@@ -154,6 +194,97 @@ int CHammerDocument::PlaceDecal( const double origin[3] )
 	return entity.id;
 }
 
+int CHammerDocument::PlaceOverlay( int solidId, int sideId, const double origin[3], double width, double height )
+{
+	using namespace HammerOverlay;
+	if ( !origin || m_strActiveMaterial.trimmed().isEmpty() ||
+		 !std::isfinite( width ) || !std::isfinite( height ) || width < 0.001 || height < 0.001 ||
+		 width > 32768 || height > 32768 ) return -1;
+	for ( int axis = 0; axis < 3; ++axis ) if ( !std::isfinite( origin[axis] ) ) return -1;
+	const MapDocLite &map = m_Map;
+	const SolidLite *solid = map.SolidById( solidId );
+	if ( !solid || !HammerBrushEntityView::Visible( map, m_ViewFilter, *solid ) || sideId <= 0 ) return -1;
+	int faceIndex = -1;
+	for ( const SolidLite &candidate : map.solids )
+		for ( int i = 0; i < candidate.sides.size(); ++i )
+			if ( candidate.sides[i].id == sideId )
+			{
+				if ( &candidate != solid || faceIndex >= 0 ) return -1;
+				faceIndex = i;
+			}
+	QList<HammerWinding::Plane> planes;
+	if ( faceIndex < 0 || !HammerWinding::BuildPlanes( *solid, planes ) ) return -1;
+	const auto &plane = planes[faceIndex];
+	const Point &normal = plane.normal;
+	const Point guess = std::abs( normal[0] ) >= std::abs( normal[1] ) && std::abs( normal[0] ) >= std::abs( normal[2] )
+		? Point{ 0, 1, 0 } : Point{ 1, 0, 0 };
+	Point v = HammerWinding::Cross( normal, guess );
+	if ( !HammerWinding::Normalize( v ) ) return -1;
+	Point u = HammerWinding::Cross( v, normal );
+	if ( !HammerWinding::Normalize( u ) ) return -1;
+	Point center{ origin[0], origin[1], origin[2] };
+	const double offPlane = HammerWinding::Dot( center, normal ) - plane.dist;
+	for ( int axis = 0; axis < 3; ++axis ) center[axis] -= normal[axis] * offPlane;
+
+	EntityLite entity;
+	entity.classname = QStringLiteral( "info_overlay" );
+	entity.keyvalues = m_Fgd.DefaultKeyValues( entity.classname );
+	for ( int axis = 0; axis < 3; ++axis ) entity.origin[axis] = origin[axis];
+	Set( entity, QStringLiteral( "material" ), m_strActiveMaterial );
+	Set( entity, QStringLiteral( "sides" ), QString::number( sideId ) );
+	Set( entity, QStringLiteral( "BasisOrigin" ), FormatVec3( center.data() ) );
+	Set( entity, QStringLiteral( "BasisU" ), FormatVec3( u.data() ) );
+	Set( entity, QStringLiteral( "BasisV" ), FormatVec3( v.data() ) );
+	Set( entity, QStringLiteral( "BasisNormal" ), FormatVec3( normal.data() ) );
+	const auto positiveMajor = []( const Point &axis ) {
+		int major = 0;
+		for ( int i = 1; i < 3; ++i )
+			if ( std::abs( axis[i] ) > std::abs( axis[major] ) ) major = i;
+		return axis[major] >= 0;
+	};
+	const bool reverse = positiveMajor( u ) != positiveMajor( v );
+	Set( entity, QStringLiteral( "StartU" ), reverse ? QStringLiteral( "1" ) : QStringLiteral( "0" ) );
+	Set( entity, QStringLiteral( "EndU" ), reverse ? QStringLiteral( "0" ) : QStringLiteral( "1" ) );
+	Set( entity, QStringLiteral( "StartV" ), reverse ? QStringLiteral( "0" ) : QStringLiteral( "1" ) );
+	Set( entity, QStringLiteral( "EndV" ), reverse ? QStringLiteral( "1" ) : QStringLiteral( "0" ) );
+	Set( entity, QStringLiteral( "RenderOrder" ), QStringLiteral( "0" ) );
+	const double x = width / 2, y = height / 2;
+	const Point corners[] = { { -x, -y, 0 }, { -x, y, 0 }, { x, y, 0 }, { x, -y, 0 } };
+	for ( int i = 0; i < 4; ++i ) Set( entity, QStringLiteral( "uv%1" ).arg( i ), FormatVec3( corners[i].data() ) );
+	Data parsed;
+	if ( !Parse( entity, parsed ) || !Convex( parsed ) ) return -1;
+	BeginEdit();
+	entity.id = m_Map.AllocId();
+	m_Map.entities.append( entity );
+	SetSelection( QSet<int>() << entity.id, entity.id );
+	TouchContent();
+	EndEdit();
+	return entity.id;
+}
+
+bool CHammerDocument::MoveOverlayHandle( int entityId, int corner, const double origin[3] )
+{
+	using namespace HammerOverlay;
+	if ( !origin || corner < 0 || corner >= 4 ) return false;
+	const EntityLite *entity = m_Map.EntityById( entityId );
+	Data data;
+	if ( !entity || !m_SelectedIds.contains( entityId ) || !m_ViewFilter.EntityVisible( *entity ) ||
+		 !Parse( *entity, data ) ) return false;
+	const Point delta{ origin[0]-data.origin[0], origin[1]-data.origin[1], origin[2]-data.origin[2] };
+	Point &handle = data.points[corner];
+	const double u = HammerWinding::Dot( delta, data.u ), v = HammerWinding::Dot( delta, data.v );
+	if ( !std::isfinite( u ) || !std::isfinite( v ) || std::abs( u ) > 65536 || std::abs( v ) > 65536 ) return false;
+	if ( std::abs( handle[0] - u ) < 0.000001 && std::abs( handle[1] - v ) < 0.000001 ) return true;
+	handle[0] = u;
+	handle[1] = v;
+	if ( !Convex( data ) ) return false;
+	BeginEdit();
+	Set( *m_Map.EntityById( entityId ), QStringLiteral( "uv%1" ).arg( corner ), FormatVec3( handle.data() ) );
+	TouchContent();
+	EndEdit();
+	return true;
+}
+
 int CHammerDocument::PlaceEntity( const QString &className, const double origin[3] )
 {
 	BeginEdit();
@@ -247,9 +378,7 @@ bool CHammerDocument::MoveSelection( const double delta[3] )
 		EntityLite *pEntity = m_Map.EntityById( id );
 		if ( pEntity )
 		{
-			pEntity->origin[0] += delta[0];
-			pEntity->origin[1] += delta[1];
-			pEntity->origin[2] += delta[2];
+			TranslateEntity( *pEntity, delta );
 			for ( SolidLite &solid : m_Map.solids )
 				if ( solid.ownerEntityId == id ) TranslateSolid( solid, delta );
 			moved = true;
@@ -936,7 +1065,7 @@ bool CHammerDocument::SnapSelectionToGrid( bool individually )
 		if ( delta[0] == 0 && delta[1] == 0 && delta[2] == 0 ) continue;
 		if ( entity )
 		{
-			for ( int axis = 0; axis < 3; ++axis ) entity->origin[axis] += delta[axis];
+			TranslateEntity( *entity, delta );
 			for ( SolidLite &child : m_Map.solids ) if ( child.ownerEntityId == id ) TranslateSolid( child, delta );
 		}
 		else TranslateSolid( *solid, delta );
@@ -1132,6 +1261,8 @@ int CHammerDocument::PasteSpecial( int copies, const double step[3], const doubl
 {
 	if ( !HasClipboardObjects() || ClipboardHasForeignVisgroupState() || !step || copies < 1 || copies > 256 )
 		return -1;
+	if ( !CanPasteOverlayFaces( m_ClipboardEntities, m_ClipboardSolids, m_nClipboardDocumentIdentity == m_nDocumentIdentity ) )
+		return -1;
 	for ( const SolidLite &solid : m_ClipboardSolids ) if ( solid.ownerEntityId )
 	{
 		bool found = false;
@@ -1171,6 +1302,8 @@ int CHammerDocument::PasteSpecial( int copies, const double step[3], const doubl
 	for ( int copy = 0; copy < copies; ++copy )
 	{
 		QMap<int, int> owners;
+		QMap<int, int> faceIds;
+		const int firstEntity = m_Map.entities.size();
 		const double offset[3] = {
 			( firstOffset ? firstOffset[0] : step[0] ) + step[0] * copy,
 			( firstOffset ? firstOffset[1] : step[1] ) + step[1] * copy,
@@ -1180,7 +1313,7 @@ int CHammerDocument::PasteSpecial( int copies, const double step[3], const doubl
 			EntityLite entity = original;
 			entity.id = m_Map.AllocId();
 			owners.insert( original.id, entity.id );
-			for ( int axis = 0; axis < 3; ++axis ) entity.origin[axis] += offset[axis];
+			TranslateEntity( entity, offset );
 			if ( primaryId < 0 || original.id == m_nClipboardPrimaryId ) primaryId = entity.id;
 			pastedIds.insert( entity.id );
 			m_Map.entities.append( entity );
@@ -1190,12 +1323,18 @@ int CHammerDocument::PasteSpecial( int copies, const double step[3], const doubl
 			SolidLite solid = original;
 			solid.id = m_Map.AllocId();
 			if ( solid.ownerEntityId ) solid.ownerEntityId = owners.value( solid.ownerEntityId, 0 );
-			for ( SideLite &side : solid.sides ) side.id = m_Map.AllocId();
+			for ( SideLite &side : solid.sides )
+			{
+				const int oldId = side.id;
+				side.id = m_Map.AllocId();
+				faceIds.insert( oldId, side.id );
+			}
 			TranslateSolid( solid, offset );
 			if ( primaryId < 0 || original.id == m_nClipboardPrimaryId ) primaryId = solid.id;
 			if ( !solid.ownerEntityId ) pastedIds.insert( solid.id );
 			m_Map.solids.append( solid );
 		}
+		RemapPastedOverlayFaces( m_Map, firstEntity, faceIds );
 	}
 	SetSelection( pastedIds, primaryId );
 	TouchContent();
@@ -1206,6 +1345,8 @@ int CHammerDocument::PasteSpecial( int copies, const double step[3], const doubl
 int CHammerDocument::PasteSelection()
 {
 	if ( ( m_ClipboardEntities.isEmpty() && m_ClipboardSolids.isEmpty() ) || ClipboardHasForeignVisgroupState() )
+		return -1;
+	if ( !CanPasteOverlayFaces( m_ClipboardEntities, m_ClipboardSolids, m_nClipboardDocumentIdentity == m_nDocumentIdentity ) )
 		return -1;
 	for ( const SolidLite &solid : m_ClipboardSolids ) if ( solid.ownerEntityId )
 	{
@@ -1219,14 +1360,14 @@ int CHammerDocument::PasteSelection()
 	int pastedId = -1;
 	QSet<int> pastedIds;
 	QMap<int, int> owners;
+	QMap<int, int> faceIds;
+	const int firstEntity = m_Map.entities.size();
 	for ( const EntityLite &original : m_ClipboardEntities )
 	{
 		EntityLite entity = original;
 		entity.id = m_Map.AllocId();
 		owners.insert( original.id, entity.id );
-		entity.origin[0] += offset[0];
-		entity.origin[1] += offset[1];
-		entity.origin[2] += offset[2];
+		TranslateEntity( entity, offset );
 		if ( pastedId < 0 || original.id == m_nClipboardPrimaryId ) pastedId = entity.id;
 		pastedIds.insert( entity.id );
 		m_Map.entities.append( entity );
@@ -1237,12 +1378,17 @@ int CHammerDocument::PasteSelection()
 		solid.id = m_Map.AllocId();
 		if ( solid.ownerEntityId ) solid.ownerEntityId = owners.value( solid.ownerEntityId, 0 );
 		for ( SideLite &side : solid.sides )
+		{
+			const int oldId = side.id;
 			side.id = m_Map.AllocId();
+			faceIds.insert( oldId, side.id );
+		}
 		TranslateSolid( solid, offset );
 		if ( pastedId < 0 || original.id == m_nClipboardPrimaryId ) pastedId = solid.id;
 		if ( !solid.ownerEntityId ) pastedIds.insert( solid.id );
 		m_Map.solids.append( solid );
 	}
+	RemapPastedOverlayFaces( m_Map, firstEntity, faceIds );
 	++m_nClipboardPasteCount;
 	SetSelection( pastedIds, pastedId );
 	TouchContent();
@@ -1392,7 +1538,29 @@ bool CHammerDocument::SetSelectedEntityKey( const QString &key, const QString &v
 		EndEdit();
 		return false;
 	}
-	entity->keyvalues.insert( key, value );
+	if ( entity->classname.compare( QLatin1String( "info_overlay" ), Qt::CaseInsensitive ) == 0 &&
+		 key.compare( QLatin1String( "sides" ), Qt::CaseInsensitive ) == 0 )
+	{
+		EntityLite test = *entity;
+		HammerOverlay::Set( test, key, value );
+		HammerOverlay::Data overlay;
+		if ( !HammerOverlay::Parse( test, overlay ) || overlay.sides.size() > 64 )
+		{
+			EndEdit();
+			return false;
+		}
+		QSet<int> match;
+		for ( const SolidLite &solid : static_cast<const MapDocLite &>( m_Map ).solids )
+			for ( const SideLite &side : solid.sides )
+				if ( overlay.sides.contains( side.id ) )
+				{
+					if ( match.contains( side.id ) ) { EndEdit(); return false; }
+					match.insert( side.id );
+				}
+		if ( match.size() != overlay.sides.size() ) { EndEdit(); return false; }
+		HammerOverlay::Set( *entity, key, value );
+	}
+	else entity->keyvalues.insert( key, value );
 	TouchContent();
 	EndEdit();
 	return true;

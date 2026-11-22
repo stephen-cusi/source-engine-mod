@@ -416,9 +416,19 @@ features outside the original editor.
   entities, entity report, model/sound browsers, and target navigation.
 - [ ] Displacement create/edit/paint/sew/subdivide; overlays, decals, paths,
   prefab library, groups, visgroups, and map-check/pointfile workflows.
-- [ ] Apply Decals places an undoable `infodecal` using the selected material
-  at the 3D hit location. Overlay editing and a projected decal preview remain
-  incomplete.
+- [ ] Apply Decals places an undoable `infodecal` at the 3D hit location.
+  Textured 3D mode projects the selected material onto intersecting planar
+  faces, clipping the projection at their boundaries. Preview supports the
+  renderer's base-texture material subset, including decal alpha and
+  DecalModulate; full Source shader and displacement projection remain pending.
+- [ ] Apply Overlays (Shift+O) places an undoable `info_overlay` on a picked face.
+  Textured 3D mode projects its material onto referenced planar faces and
+  supported displacement meshes. Distorted quads use triangle-interpolated UVs.
+  The overlay tool selects existing overlays and drags corners on linked faces;
+  the Object Properties Faces field has a Pick Faces action to rebind geometry.
+  VMF stores face references, basis, handles, texture coordinates, and render
+  order. Rotating overlays with the generalized selection transform, original
+  handle reset, shoreline overlays and full Source material rendering remain pending.
 - [ ] Create Prefab saves selected objects as a VMF prefab; Insert Original
   Prefab browses the remembered folder and inserts at the saved coordinates.
   Brush-entity ownership, object and face IDs, and entity outputs are preserved

@@ -274,6 +274,8 @@
     <message><source>Filter by name</source><translation>按名称筛选</translation></message>
     <message><source>%1 archive(s) could not be indexed.</source><translation>无法索引 %1 个资源包。</translation></message>
     <message><source>Apply Decals</source><translation>应用贴花</translation></message>
+    <message><source>Apply Overlays</source><translation>应用覆盖层</translation></message>
+    <message><source>Pick Faces</source><translation>拾取画刷面</translation></message>
     <message><source>Create Prefab...</source><translation>创建预制件...</translation></message>
     <message><source>Create Prefab</source><translation>创建预制件</translation></message>
     <message><source>Select objects to create a prefab.</source><translation>请先选择要保存为预制件的对象。</translation></message>
@@ -1890,6 +1892,9 @@ Qt %1
 <context>
     <name>CQtViewport3D</name>
     <message><source>Decal: click a brush face</source><translation>贴花：点击画刷面</translation></message>
+    <message><source>Overlay: click a face / drag a corner</source><translation>覆盖层：点击画刷面／拖动角点</translation></message>
+    <message><source>Pick Overlay Faces: click / Ctrl-click | Enter apply | Esc cancel</source><translation>选择覆盖层的画刷面：点击／Ctrl+点击｜Enter 应用｜Esc 取消</translation></message>
+    <message><source>Overlay (Shift+O): click a brush face to place | select an overlay and drag its corners</source><translation>覆盖层 (Shift+O)：点击画刷面放置｜选中覆盖层后拖动角点</translation></message>
     <message><source>Decal (Shift+D): click a brush face to place the current material</source><translation>贴花（Shift+D）：点击画刷面放置当前材质</translation></message>
     <message><source>Paint Geometry: drag | Esc cancels stroke</source><translation>绘制几何：拖动绘制｜Esc 取消当前笔画</translation></message>
     <message><source>Shift+X: clip in 2D</source><translation>Shift+X：在二维视图裁切</translation></message>

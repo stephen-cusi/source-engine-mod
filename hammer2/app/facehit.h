@@ -69,6 +69,9 @@ inline Result Find( CHammerDocument &document, const double eye[3], const double
 	for ( const EntityLite &entity : document.Map().entities )
 	{
 		if ( !filter.EntityVisible( entity ) ) continue;
+		// The overlay lies on its linked faces; its invisible point-entity box
+		// must not obstruct those faces when editing either the overlay or brush.
+		if ( entity.classname.compare( QLatin1String( "info_overlay" ), Qt::CaseInsensitive ) == 0 ) continue;
 		if ( HammerBrushEntityView::HasBrushes( document.Map(), entity.id ) ) continue;
 		double mins[3], maxs[3], distance;
 		document.Fgd().ClassBounds( entity.classname, mins, maxs );

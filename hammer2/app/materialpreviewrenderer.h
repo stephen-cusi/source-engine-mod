@@ -50,11 +50,22 @@ public:
 
 private:
 	struct Vertex { QVector3D position; QVector2D uv; };
-	struct TextureEntry { GLuint id = 0; int width = 1; int height = 1; bool missing = false; };
+	struct MaterialProjection { double decalScale = 1.0; bool modulate = false; };
+	struct TextureEntry {
+		GLuint id = 0;
+		int width = 1, height = 1;
+		bool missing = false;
+		MaterialProjection projection;
+	};
 
 	bool EnsureProgram();
+	bool ResolveBaseTexture( const QString &materialName, QString &textureName, QString *detail, MaterialProjection *projection ) const;
+	bool LoadMaterialImage( const QString &materialName, QImage &image, MaterialProjection *projection );
 	GLuint TextureForMaterial( const QString &materialName );
 	void DrawSolid( const SolidLite &solid, const QMatrix4x4 &mvp, bool textured, bool selected, const QSet<int> &selectedFaces );
+	void DrawProjectedMaterials( const MapDocLite &map );
+	void DrawOverlays( const MapDocLite &map );
+	void DrawProjectedTriangles( const QVector<Vertex> &vertices, const TextureEntry &texture, bool clampUv );
 
 	QOpenGLShaderProgram m_program;
 	QHash<QString, TextureEntry> m_textures;

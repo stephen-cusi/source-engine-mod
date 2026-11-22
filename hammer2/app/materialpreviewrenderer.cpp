@@ -1,8 +1,10 @@
 #include "materialpreviewrenderer.h"
 
 #include "brushwindings.h"
+#include "decalprojection.h"
 #include "displacementmesh.h"
 #include "materialcatalog.h"
+#include "overlayprojection.h"
 
 #include "tier1/utlbuffer.h"
 #include "tier1/KeyValues.h"
@@ -345,9 +347,14 @@ bool CMaterialPreviewRenderer::EnsureProgram()
 		"uniform vec4 uColor;\n"
 		"uniform int uTextured;\n"
 		"uniform int uFaceSelected;\n"
+		"uniform int uClampUv;\n"
+		"uniform int uModulate;\n"
 		"uniform vec2 uTextureSize;\n"
 		"varying vec2 vUv;\n"
-		"void main(){ vec4 base = uTextured!=0 ? texture2D(uTexture,vUv/uTextureSize)*uColor : uColor; "
+		"void main(){ vec2 uv = vUv/uTextureSize;"
+		"if(uClampUv!=0) uv=clamp(uv,0.5/uTextureSize,1.0-0.5/uTextureSize);"
+		"vec4 base = uTextured!=0 ? texture2D(uTexture,uv)*uColor : uColor; "
+		"if(uModulate!=0 && base.a<=0.0) discard;"
 		"gl_FragColor = uFaceSelected!=0 ? vec4(mix(base.rgb,vec3(1.0,0.25,0.12),0.55),base.a) : base; }\n";
 	if ( !m_program.addShaderFromSourceCode( QOpenGLShader::Vertex, vertexSource ) ||
 		!m_program.addShaderFromSourceCode( QOpenGLShader::Fragment, fragmentSource ) ) return false;
@@ -367,6 +374,11 @@ void CMaterialPreviewRenderer::Release()
 
 bool CMaterialPreviewRenderer::ResolveBaseTexture( const QString &materialName, QString &textureName, QString *detail ) const
 {
+	return ResolveBaseTexture( materialName, textureName, detail, nullptr );
+}
+
+bool CMaterialPreviewRenderer::ResolveBaseTexture( const QString &materialName, QString &textureName, QString *detail, MaterialProjection *projection ) const
+{
 	QString name = materialName;
 	if ( !ValidAssetName( name, QStringLiteral( ".vmt" ) ) )
 	{
@@ -376,6 +388,7 @@ bool CMaterialPreviewRenderer::ResolveBaseTexture( const QString &materialName, 
 	QMap<QString, QString> inserts, replacements, base;
 	QSet<QString> visited;
 	bool foundBase = false;
+	bool modulate = false;
 	for ( int depth = 0; depth <= 10; ++depth )
 	{
 		const QString identity = name.toLower();
@@ -392,7 +405,8 @@ bool CMaterialPreviewRenderer::ResolveBaseTexture( const QString &materialName, 
 		{ if ( detail ) *detail = QStringLiteral( "invalid VMT" ); return false; }
 		const QString shader = QString::fromUtf8( root->GetName() );
 		const bool patch = shader.compare( QLatin1String( "patch" ), Qt::CaseInsensitive ) == 0;
-		if ( !patch && shader.compare( QLatin1String( "LightmappedGeneric" ), Qt::CaseInsensitive ) != 0 &&
+		modulate = shader.compare( QLatin1String( "DecalModulate" ), Qt::CaseInsensitive ) == 0;
+		if ( !patch && !modulate && shader.compare( QLatin1String( "LightmappedGeneric" ), Qt::CaseInsensitive ) != 0 &&
 			shader.compare( QLatin1String( "VertexLitGeneric" ), Qt::CaseInsensitive ) != 0 &&
 			shader.compare( QLatin1String( "UnlitGeneric" ), Qt::CaseInsensitive ) != 0 )
 		{ if ( detail ) *detail = QStringLiteral( "unsupported VMT shader" ); return false; }
@@ -437,14 +451,26 @@ bool CMaterialPreviewRenderer::ResolveBaseTexture( const QString &materialName, 
 	if ( !ValidAssetName( result, QStringLiteral( ".vtf" ) ) )
 	{ if ( detail ) *detail = QStringLiteral( "VMT found; no valid $basetexture" ); return false; }
 	textureName = result;
+	if ( projection )
+	{
+		bool ok = false;
+		const double scale = base.value( QStringLiteral( "$decalscale" ) ).toDouble( &ok );
+		projection->decalScale = ok && std::isfinite( scale ) && scale > 0 ? scale : 1.0;
+		projection->modulate = modulate;
+	}
 	return true;
 }
 
 bool CMaterialPreviewRenderer::LoadMaterialImage( const QString &materialName, QImage &image )
 {
+	return LoadMaterialImage( materialName, image, nullptr );
+}
+
+bool CMaterialPreviewRenderer::LoadMaterialImage( const QString &materialName, QImage &image, MaterialProjection *projection )
+{
 	image = QImage();
 	QString textureName;
-	if ( !ResolveBaseTexture( materialName, textureName ) ) return false;
+	if ( !ResolveBaseTexture( materialName, textureName, nullptr, projection ) ) return false;
 	const QString vtfPath = QStringLiteral( "materials/%1.vtf" ).arg( textureName );
 	const QByteArray vtf = ReadMountedFile( m_searchPaths, vtfPath );
 	if ( vtf.isEmpty() ) return false;
@@ -518,7 +544,7 @@ GLuint CMaterialPreviewRenderer::TextureForMaterial( const QString &materialName
 	if ( found != m_textures.end() ) return found->id;
 	TextureEntry entry;
 	QImage image;
-	if ( LoadMaterialImage( materialName, image ) )
+	if ( LoadMaterialImage( materialName, image, &entry.projection ) )
 	{
 		image = image.convertToFormat( QImage::Format_RGBA8888 );
 		entry.width = image.width();
@@ -578,6 +604,127 @@ void CMaterialPreviewRenderer::DrawSolid( const SolidLite &solid, const QMatrix4
 	}
 }
 
+void CMaterialPreviewRenderer::DrawProjectedTriangles( const QVector<Vertex> &vertices, const TextureEntry &texture, bool clampUv )
+{
+	if ( vertices.isEmpty() || !texture.id ) return;
+	if ( texture.projection.modulate ) glBlendFunc( GL_DST_COLOR, GL_SRC_COLOR );
+	else glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+	glActiveTexture( GL_TEXTURE0 );
+	glBindTexture( GL_TEXTURE_2D, texture.id );
+	m_program.setUniformValue( "uTexture", 0 );
+	m_program.setUniformValue( "uTextureSize", QVector2D( texture.width, texture.height ) );
+	m_program.setUniformValue( "uTextured", 1 );
+	m_program.setUniformValue( "uColor", QVector4D( 1, 1, 1, 1 ) );
+	m_program.setUniformValue( "uFaceSelected", 0 );
+	m_program.setUniformValue( "uClampUv", clampUv ? 1 : 0 );
+	m_program.setUniformValue( "uModulate", texture.projection.modulate ? 1 : 0 );
+	glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( Vertex ), &vertices[0].position );
+	glVertexAttribPointer( 1, 2, GL_FLOAT, GL_FALSE, sizeof( Vertex ), &vertices[0].uv );
+	glDrawArrays( GL_TRIANGLES, 0, vertices.size() );
+}
+
+void CMaterialPreviewRenderer::DrawProjectedMaterials( const MapDocLite &map )
+{
+	glDepthMask( GL_FALSE );
+	glEnable( GL_POLYGON_OFFSET_FILL );
+	glPolygonOffset( -1.0f, -1.0f );
+	for ( const EntityLite &entity : map.entities )
+	{
+		if ( entity.classname.compare( QLatin1String( "infodecal" ), Qt::CaseInsensitive ) != 0 ) continue;
+		QString material;
+		for ( auto key = entity.keyvalues.cbegin(); key != entity.keyvalues.cend(); ++key )
+			if ( key.key().compare( QLatin1String( "texture" ), Qt::CaseInsensitive ) == 0 ) { material = key.value(); break; }
+		if ( material.isEmpty() || !TextureForMaterial( material ) ) continue;
+		const TextureEntry texture = m_textures.value( material.toLower() );
+		const double width = texture.width * texture.projection.decalScale;
+		const double height = texture.height * texture.projection.decalScale;
+		const double radius = std::hypot( width, height ) * 0.5 + 16.0;
+		const HammerWinding::Point origin{ entity.origin[0], entity.origin[1], entity.origin[2] };
+		QVector<Vertex> vertices;
+		for ( const SolidLite &solid : map.solids )
+		{
+			bool overlaps = true;
+			for ( int axis = 0; axis < 3; ++axis )
+				if ( origin[axis] + radius < solid.mins[axis] || origin[axis] - radius > solid.maxs[axis] )
+				{ overlaps = false; break; }
+			if ( !overlaps ) continue;
+			QList<HammerWinding::Plane> planes;
+			QList<HammerWinding::Polygon> faces;
+			if ( !HammerWinding::BuildFaces( solid, faces ) || !HammerWinding::BuildPlanes( solid, planes ) ) continue;
+			for ( int i = 0; i < faces.size(); ++i )
+			{
+				if ( solid.sides[i].displacement ) continue;
+				const auto clipped = HammerDecalProjection::Build( faces[i], planes[i], origin, width, height );
+				for ( int fan = 1; fan + 1 < clipped.size(); ++fan )
+					for ( const int index : { 0, fan, fan + 1 } )
+					{
+						const auto &v = clipped[index];
+						vertices.append( { QVector3D( v.position[0], v.position[1], v.position[2] ),
+							QVector2D( v.uv[0] * texture.width, v.uv[1] * texture.height ) } );
+					}
+			}
+		}
+		DrawProjectedTriangles( vertices, texture, true );
+	}
+	DrawOverlays( map );
+	glDisable( GL_POLYGON_OFFSET_FILL );
+	glDepthMask( GL_TRUE );
+}
+
+void CMaterialPreviewRenderer::DrawOverlays( const MapDocLite &map )
+{
+	QList<HammerOverlay::Data> overlays;
+	for ( const EntityLite &entity : map.entities )
+	{
+		HammerOverlay::Data data;
+		if ( HammerOverlay::Parse( entity, data ) ) overlays.append( data );
+	}
+	std::stable_sort( overlays.begin(), overlays.end(), []( const auto &a, const auto &b ) {
+		return a.renderOrder < b.renderOrder;
+	} );
+	for ( const auto &overlay : overlays )
+	{
+		if ( !TextureForMaterial( overlay.material ) ) continue;
+		const TextureEntry texture = m_textures.value( overlay.material.toLower() );
+		QVector<Vertex> vertices;
+		for ( const SolidLite &solid : map.solids )
+		{
+			bool containsSide = false;
+			for ( const SideLite &side : solid.sides ) if ( overlay.sides.contains( side.id ) ) { containsSide = true; break; }
+			if ( !containsSide ) continue;
+			QList<HammerWinding::Plane> planes;
+			QList<HammerWinding::Polygon> faces;
+			if ( !HammerWinding::BuildFaces( solid, faces ) || !HammerWinding::BuildPlanes( solid, planes ) ) continue;
+			for ( int i = 0; i < faces.size(); ++i )
+			{
+				const SideLite &side = solid.sides[i];
+				if ( !overlay.sides.contains( side.id ) ) continue;
+				const auto append = [&]( const HammerDecalProjection::Vertex &point ) {
+					vertices.append( { QVector3D( point.position[0], point.position[1], point.position[2] ),
+						QVector2D( point.uv[0] * texture.width, point.uv[1] * texture.height ) } );
+				};
+				if ( !side.displacement )
+				{
+					for ( const auto &point : HammerOverlay::ProjectTriangles( overlay, faces[i], planes[i] ) ) append( point );
+					continue;
+				}
+				HammerDisplacementMesh::Mesh mesh;
+				if ( !HammerDisplacementMesh::Build( side, faces[i], mesh ) ) continue;
+				for ( const auto &triangle : mesh.triangles )
+				{
+					const HammerWinding::Polygon base{ mesh.base[triangle[0]], mesh.base[triangle[1]], mesh.base[triangle[2]] };
+					for ( auto point : HammerOverlay::ProjectTriangles( overlay, base, planes[i] ) )
+					{
+						if ( HammerOverlay::MapTriangle( point.position, base, mesh.vertices[triangle[0]],
+								mesh.vertices[triangle[1]], mesh.vertices[triangle[2]] ) ) append( point );
+					}
+				}
+			}
+		}
+		DrawProjectedTriangles( vertices, texture, false );
+	}
+}
+
 void CMaterialPreviewRenderer::Render( const MapDocLite *map, const QSet<int> &selectedIds,
 	const double eye[3], const double forward[3], const double up[3], int width, int height, bool textured, const QMap<int, QSet<int>> &selectedFaces )
 {
@@ -606,7 +753,14 @@ void CMaterialPreviewRenderer::Render( const MapDocLite *map, const QSet<int> &s
 	glEnableVertexAttribArray( 0 );
 	glEnableVertexAttribArray( 1 );
 	const QMatrix4x4 mvp = projection * view;
+	m_program.setUniformValue( "uClampUv", 0 );
+	m_program.setUniformValue( "uModulate", 0 );
 	for ( const SolidLite &solid : map->solids ) DrawSolid( solid, mvp, textured, selectedIds.contains( solid.id ), selectedFaces.value( solid.id ) );
+	if ( textured )
+	{
+		m_program.setUniformValue( "uMvp", mvp );
+		DrawProjectedMaterials( *map );
+	}
 	glDisableVertexAttribArray( 0 );
 	glDisableVertexAttribArray( 1 );
 	m_program.release();

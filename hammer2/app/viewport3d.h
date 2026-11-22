@@ -52,6 +52,7 @@ public:
 	QString interactionHelp() const;
 	const QMap<int, QSet<int>> &selectedFaces() const { return m_selectedFaces; }
 	void setDisplacementPaint( bool enabled, int effect = 0, double radius = 64, double amount = 8, bool soft = true );
+	bool beginOverlayFacePick( int entityId );
 
 signals:
 	void cameraPositionChanged();
@@ -98,6 +99,12 @@ private:
 	void UpdateDisplacementPaint( const QPoint &position, bool dab );
 	void FinishDisplacementPaint( bool cancel );
 	void DrawDisplacementBrush( QPainter &painter, const Camera &cam );
+	bool BeginOverlayDrag( const Camera &cam, const QPointF &position );
+	bool SelectOverlayAt( const Camera &cam, const QPointF &position, int hitSideId );
+	void DrawOverlayHandles( QPainter &painter, const Camera &cam );
+	void UpdateOverlayDrag( const QPointF &position, bool snap );
+	void FinishOverlayDrag( bool cancel );
+	void FinishOverlayFacePick( bool apply );
 
 	CHammerDocument *m_pDocument;
 	CMaterialPreviewRenderer m_materialRenderer;
@@ -111,6 +118,10 @@ private:
 	bool m_displacementPaintSoft = true;
 	Qt::MouseButton m_displacementPaintButton = Qt::NoButton;
 	std::optional<std::array<double, 3>> m_displacementBrushCenter;
+	int m_overlayDragEntity = -1;
+	int m_overlayDragCorner = -1;
+	int m_overlayPickEntity = -1;
+	int m_overlayPickPreviousTool = -1;
 
 	// Orbit camera state
 	double m_flYaw;         // degrees around the Z axis

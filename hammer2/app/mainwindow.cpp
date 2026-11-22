@@ -1348,6 +1348,9 @@ void CMainWindow::CreateMenus()
         { QT_TR_NOOP( "Apply Decals" ), "decal",
             QList<QKeySequence>() << QKeySequence( "Shift+D" ),
             ":/tool_decal.svg" },
+        { QT_TR_NOOP( "Apply Overlays" ), "overlay",
+            QList<QKeySequence>() << QKeySequence( "Shift+O" ),
+            ":/tool_overlay.svg" },
         { QT_TR_NOOP( "Clipping Tool" ), "clip",
             QList<QKeySequence>() << QKeySequence( "Shift+X" ),
             ":/tool_clip.svg" },
@@ -1813,6 +1816,19 @@ void CMainWindow::CreateDockWidgets()
     propertiesLayout->addWidget( selectedClassLabel );
     propertiesLayout->addWidget( m_pEntityClassCombo );
     propertiesLayout->addWidget( m_pPropertyTree, 1 );
+    QPushButton *pickOverlayFaces = new QPushButton( tr( "Pick Faces" ), propertiesPanel );
+    pickOverlayFaces->setObjectName( "PickOverlayFaces" );
+    pickOverlayFaces->hide();
+    propertiesLayout->addWidget( pickOverlayFaces );
+    connect( m_pPropertyTree, &QTreeWidget::currentItemChanged, pickOverlayFaces, [this, pickOverlayFaces]( QTreeWidgetItem *item ) {
+        const EntityLite *entity = m_pDocument->Map().EntityById( m_pDocument->SelectedId() );
+        pickOverlayFaces->setVisible( item && entity && m_pDocument->SelectedIds().size() == 1 &&
+            entity->classname.compare( QLatin1String( "info_overlay" ), Qt::CaseInsensitive ) == 0 &&
+            item->data( 0, Qt::UserRole ).toString().compare( QLatin1String( "sides" ), Qt::CaseInsensitive ) == 0 );
+    } );
+    connect( pickOverlayFaces, &QPushButton::clicked, this, [this] {
+        m_pViewport3D->beginOverlayFacePick( m_pDocument->SelectedId() );
+    } );
     QPushButton *browseResource = new QPushButton( tr( "Browse..." ), propertiesPanel );
     browseResource->setObjectName( "BrowseEntityResource" );
     browseResource->setEnabled( false );
@@ -2895,6 +2911,8 @@ void CMainWindow::OnToolModeChanged( QAction *action )
         m_pDocument->SetTool( TOOL_TEXTURE );
     else if ( id == QLatin1String( "decal" ) )
         m_pDocument->SetTool( TOOL_DECAL );
+    else if ( id == QLatin1String( "overlay" ) )
+        m_pDocument->SetTool( TOOL_OVERLAY );
     else if ( id == QLatin1String( "vertex" ) )
         m_pDocument->SetTool( TOOL_VERTEX );
     else if ( id == QLatin1String( "clip" ) )

@@ -7,6 +7,7 @@
 //=============================================================================
 
 #include "viewport3d.h"
+#include "overlaydata.h"
 
 #include "document.h"
 #include "mapmodel.h"
@@ -274,6 +275,19 @@ void CQtViewport3D::contextMenuEvent( QContextMenuEvent *event )
 // advances one step; native key repeat provides continued movement.
 void CQtViewport3D::keyPressEvent( QKeyEvent *event )
 {
+	if ( m_overlayPickEntity >= 0 &&
+		 ( event->key() == Qt::Key_Escape || event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter ) )
+	{
+		FinishOverlayFacePick( event->key() != Qt::Key_Escape );
+		event->accept();
+		return;
+	}
+	if ( m_overlayDragEntity >= 0 )
+	{
+		if ( event->key() == Qt::Key_Escape ) FinishOverlayDrag( true );
+		event->accept();
+		return;
+	}
 	if ( m_displacementPaintButton != Qt::NoButton )
 	{
 		if ( event->key() == Qt::Key_Escape ) FinishDisplacementPaint( true );
@@ -378,6 +392,8 @@ void CQtViewport3D::keyPressEvent( QKeyEvent *event )
 //-----------------------------------------------------------------------------
 void CQtViewport3D::setDocument( CHammerDocument *pDocument )
 {
+	FinishOverlayFacePick( false );
+	FinishOverlayDrag( true );
 	FinishDisplacementPaint( true );
 	CancelMoveEdit();
 	ClearFaceSelection();
@@ -389,9 +405,19 @@ void CQtViewport3D::setDocument( CHammerDocument *pDocument )
 		connect( pDocument, &CHammerDocument::documentChanged, this, &CQtViewport3D::UpdateViews );
 		// Geometry, IDs and document identity may all change on edit or undo.
 		connect( pDocument, &CHammerDocument::documentChanged, this, &CQtViewport3D::ClearFaceSelection );
+		connect( pDocument, &CHammerDocument::documentChanged, this, [this] { FinishOverlayFacePick( false ); } );
 		connect( pDocument, &CHammerDocument::selectionChanged, this, &CQtViewport3D::UpdateViews );
+		connect( pDocument, &CHammerDocument::selectionChanged, this, [this] {
+			if ( m_overlayPickEntity >= 0 && ( m_pDocument->SelectedId() != m_overlayPickEntity ||
+				m_pDocument->SelectedIds().size() != 1 ) ) FinishOverlayFacePick( false );
+		} );
 		connect( pDocument, &CHammerDocument::stateChanged, this, &CQtViewport3D::UpdateViews );
 		connect( pDocument, &CHammerDocument::stateChanged, this, &CQtViewport3D::PruneFaceSelection );
+		connect( pDocument, &CHammerDocument::stateChanged, this, [this] {
+			if ( m_pDocument->GetTool() != TOOL_OVERLAY ) FinishOverlayDrag( true );
+			if ( m_overlayPickEntity >= 0 && m_pDocument->GetTool() != m_overlayPickPreviousTool )
+				FinishOverlayFacePick( false );
+		} );
 	}
 }
 
@@ -404,7 +430,7 @@ void CQtViewport3D::ClearFaceSelection()
 
 void CQtViewport3D::PruneFaceSelection()
 {
-	if ( !m_pDocument || m_pDocument->GetTool() != TOOL_TEXTURE )
+	if ( !m_pDocument || ( m_pDocument->GetTool() != TOOL_TEXTURE && m_overlayPickEntity < 0 ) )
 	{
 		FinishDisplacementPaint( true );
 		ClearFaceSelection();
@@ -549,6 +575,8 @@ void CQtViewport3D::PaintScene( QWidget *target, bool textured )
 			visibleMap = m_pDocument->Map();
 			visibleMap.solids.erase( std::remove_if( visibleMap.solids.begin(), visibleMap.solids.end(),
 				[&filter, this]( const SolidLite &solid ) { return !HammerBrushEntityView::Visible( m_pDocument->Map(), filter, solid ); } ), visibleMap.solids.end() );
+			visibleMap.entities.erase( std::remove_if( visibleMap.entities.begin(), visibleMap.entities.end(),
+				[&filter]( const EntityLite &entity ) { return !filter.EntityVisible( entity ); } ), visibleMap.entities.end() );
 			renderMap = &visibleMap;
 		}
 		QSet<int> selected = m_pDocument->SelectedIds();
@@ -585,6 +613,7 @@ void CQtViewport3D::PaintScene( QWidget *target, bool textured )
 	if ( !textured && m_groundGridVisible ) DrawGridFloor( painter, cam );
 	if ( !textured ) DrawSolids( painter, cam );
 	DrawEntities( painter, cam );
+	DrawOverlayHandles( painter, cam );
 	DrawDisplacementBrush( painter, cam );
 	if ( m_pDocument )
 	{
@@ -636,6 +665,7 @@ void CQtViewport3D::PaintScene( QWidget *target, bool textured )
 
 QString CQtViewport3D::interactionHint() const
 {
+	if ( m_overlayPickEntity >= 0 ) return tr( "Pick Overlay Faces: click / Ctrl-click | Enter apply | Esc cancel" );
 	if ( m_mouseLook ) return tr( "Z look | WASD | Esc exit" );
 	if ( DisplacementPaintActive() ) return tr( "Paint Geometry: drag | Esc cancels stroke" );
 	switch ( m_pDocument ? m_pDocument->GetTool() : TOOL_SELECT )
@@ -644,6 +674,7 @@ QString CQtViewport3D::interactionHint() const
 		case TOOL_BLOCK: return tr( "3 Block: draw in 2D" );
 		case TOOL_TEXTURE: return tr( "Face: click / Enter apply" );
 		case TOOL_DECAL: return tr( "Decal: click a brush face" );
+		case TOOL_OVERLAY: return tr( "Overlay: click a face / drag a corner" );
 		case TOOL_CLIP: return tr( "Shift+X: clip in 2D" );
 		default: return tr( "1 Select: click / drag" );
 	}
@@ -651,6 +682,7 @@ QString CQtViewport3D::interactionHint() const
 
 QString CQtViewport3D::interactionHelp() const
 {
+	if ( m_overlayPickEntity >= 0 ) return tr( "Pick Overlay Faces: click / Ctrl-click | Enter apply | Esc cancel" );
 	QString toolHint;
 	if ( m_mouseLook )
 		toolHint = tr( "Mouse look: mouse aims | WASD moves | Z or Esc exits" );
@@ -672,6 +704,9 @@ QString CQtViewport3D::interactionHelp() const
 				break;
 			case TOOL_DECAL:
 				toolHint = tr( "Decal (Shift+D): click a brush face to place the current material" );
+				break;
+			case TOOL_OVERLAY:
+				toolHint = tr( "Overlay (Shift+O): click a brush face to place | select an overlay and drag its corners" );
 				break;
 			case TOOL_SELECT:
 			default:
@@ -1079,9 +1114,203 @@ void CQtViewport3D::SetMouseLook( bool enabled )
 	UpdateViews();
 }
 
+bool CQtViewport3D::BeginOverlayDrag( const Camera &cam, const QPointF &position )
+{
+	const auto &map = static_cast<const CHammerDocument &>( *m_pDocument ).Map();
+	int entityId = -1, corner = -1;
+	double bestDistance = 64.0;
+	for ( const EntityLite &entity : map.entities )
+	{
+		HammerOverlay::Data overlay;
+		if ( !m_pDocument->IsSelected( entity.id ) || !m_pDocument->GetViewFilter().EntityVisible( entity ) ||
+			!HammerOverlay::Parse( entity, overlay ) ) continue;
+		for ( int i = 0; i < 4; ++i )
+		{
+			QPointF projected;
+			const auto point = HammerOverlay::WorldPoint( overlay, i );
+			if ( !Project( cam, point.data(), projected ) ) continue;
+			const QPointF delta = position - projected;
+			const double distance = QPointF::dotProduct( delta, delta );
+			if ( distance >= bestDistance ) continue;
+			bestDistance = distance;
+			entityId = entity.id;
+			corner = i;
+		}
+	}
+	if ( entityId < 0 ) return false;
+	m_overlayDragEntity = entityId;
+	m_overlayDragCorner = corner;
+	m_pDocument->BeginEdit();
+	return true;
+}
+
+bool CQtViewport3D::SelectOverlayAt( const Camera &cam, const QPointF &position, int hitSideId )
+{
+	if ( hitSideId <= 0 ) return false;
+	const auto &map = static_cast<const CHammerDocument &>( *m_pDocument ).Map();
+	int hit = -1, renderOrder = -1;
+	for ( const EntityLite &entity : map.entities )
+	{
+		HammerOverlay::Data overlay;
+		if ( !m_pDocument->GetViewFilter().EntityVisible( entity ) || !HammerOverlay::Parse( entity, overlay ) ||
+			!overlay.sides.contains( hitSideId ) || !HammerOverlay::Convex( overlay ) ||
+			overlay.renderOrder < renderOrder ) continue;
+		QPolygonF quad;
+		for ( int i = 0; i < 4; ++i )
+		{
+			const auto point = HammerOverlay::WorldPoint( overlay, i );
+			QPointF screen;
+			if ( !Project( cam, point.data(), screen ) ) break;
+			quad.append( screen );
+		}
+		if ( quad.size() != 4 || !quad.containsPoint( position, Qt::OddEvenFill ) ) continue;
+		renderOrder = overlay.renderOrder;
+		hit = entity.id;
+	}
+	if ( hit < 0 ) return false;
+	m_pDocument->SelectObject( hit );
+	return true;
+}
+
+void CQtViewport3D::DrawOverlayHandles( QPainter &painter, const Camera &cam )
+{
+	if ( !m_pDocument || m_pDocument->GetTool() != TOOL_OVERLAY ) return;
+	const auto &map = static_cast<const CHammerDocument &>( *m_pDocument ).Map();
+	for ( const EntityLite &entity : map.entities )
+	{
+		HammerOverlay::Data overlay;
+		if ( !m_pDocument->IsSelected( entity.id ) || !m_pDocument->GetViewFilter().EntityVisible( entity ) ||
+			!HammerOverlay::Parse( entity, overlay ) ) continue;
+		QPolygonF quad;
+		for ( int i = 0; i < 4; ++i )
+		{
+			const auto point = HammerOverlay::WorldPoint( overlay, i );
+			QPointF screen;
+			if ( !Project( cam, point.data(), screen ) ) break;
+			quad.append( screen );
+		}
+		if ( quad.size() != 4 ) continue;
+		painter.save();
+		painter.setPen( QPen( HammerTheme::Colors().selection, 1 ) );
+		painter.setBrush( Qt::NoBrush );
+		painter.drawPolygon( quad );
+		for ( int i = 0; i < quad.size(); ++i )
+		{
+			const auto &p = quad[i];
+			const bool active = m_overlayDragEntity == entity.id && m_overlayDragCorner == i;
+			painter.fillRect( QRectF( p.x() - 3, p.y() - 3, 6, 6 ), active ? HammerTheme::Colors().selection : QColor( Qt::white ) );
+		}
+		painter.restore();
+	}
+}
+
+void CQtViewport3D::UpdateOverlayDrag( const QPointF &position, bool snap )
+{
+	if ( m_pDocument->GetTool() != TOOL_OVERLAY ) { FinishOverlayDrag( true ); return; }
+	const auto &map = static_cast<const CHammerDocument &>( *m_pDocument ).Map();
+	const EntityLite *entity = nullptr;
+	for ( const EntityLite &candidate : map.entities )
+		if ( candidate.id == m_overlayDragEntity ) { entity = &candidate; break; }
+	HammerOverlay::Data overlay;
+	if ( !entity || !HammerOverlay::Parse( *entity, overlay ) ) { FinishOverlayDrag( true ); return; }
+	Camera cam;
+	BuildCamera( cam );
+	const double x = ( position.x() - width() / 2.0 ) / cam.focal;
+	const double y = ( height() / 2.0 - position.y() ) / cam.focal;
+	double ray[3];
+	for ( int axis = 0; axis < 3; ++axis ) ray[axis] = cam.forward[axis] + x * cam.right[axis] + y * cam.up[axis];
+	const auto face = HammerFaceHit::Find( *m_pDocument, cam.eye, ray, kNearPlane );
+	const SolidLite *solid = map.SolidById( face.solidId );
+	if ( !solid || face.faceIndex < 0 || face.faceIndex >= solid->sides.size() ||
+		!overlay.sides.contains( solid->sides[face.faceIndex].id ) ) return;
+	double origin[3];
+	for ( int axis = 0; axis < 3; ++axis ) origin[axis] = cam.eye[axis] + ray[axis] * face.distance;
+	if ( snap )
+	{
+		double closest = 64.0;
+		for ( const EntityLite &other : map.entities )
+		{
+			HammerOverlay::Data candidate;
+			if ( other.id == entity->id || !m_pDocument->GetViewFilter().EntityVisible( other ) ||
+				!HammerOverlay::Parse( other, candidate ) || !candidate.sides.contains( solid->sides[face.faceIndex].id ) ) continue;
+			for ( int i = 0; i < 4; ++i )
+			{
+				const auto point = HammerOverlay::WorldPoint( candidate, i );
+				QPointF projected;
+				if ( !Project( cam, point.data(), projected ) ) continue;
+				const QPointF delta = position - projected;
+				const double distance = QPointF::dotProduct( delta, delta );
+				if ( distance >= closest ) continue;
+				closest = distance;
+				std::copy( point.begin(), point.end(), origin );
+			}
+		}
+	}
+	m_pDocument->MoveOverlayHandle( m_overlayDragEntity, m_overlayDragCorner, origin );
+	UpdateViews();
+}
+
+void CQtViewport3D::FinishOverlayDrag( bool cancel )
+{
+	if ( m_overlayDragEntity < 0 ) return;
+	m_overlayDragEntity = -1;
+	m_overlayDragCorner = -1;
+	if ( m_pDocument )
+	{
+		if ( cancel ) m_pDocument->CancelEdit();
+		else m_pDocument->EndEdit();
+	}
+	UpdateViews();
+}
+
+bool CQtViewport3D::beginOverlayFacePick( int entityId )
+{
+	if ( !m_pDocument || m_pDocument->SelectedId() != entityId || m_pDocument->SelectedIds().size() != 1 ) return false;
+	const EntityLite *entity = m_pDocument->Map().EntityById( entityId );
+	HammerOverlay::Data overlay;
+	if ( !entity || !HammerOverlay::Parse( *entity, overlay ) ) return false;
+	FinishOverlayFacePick( false );
+	FinishOverlayDrag( true );
+	FinishDisplacementPaint( true );
+	SetMouseLook( false );
+	m_overlayPickEntity = entityId;
+	m_overlayPickPreviousTool = m_pDocument->GetTool();
+	m_selectedFaces.clear();
+	for ( const SolidLite &solid : m_pDocument->Map().solids )
+		if ( HammerBrushEntityView::Visible( m_pDocument->Map(), m_pDocument->GetViewFilter(), solid ) )
+			for ( const SideLite &side : solid.sides )
+				if ( overlay.sides.contains( side.id ) ) m_selectedFaces[solid.id].insert( side.id );
+	setFocus();
+	UpdateViews();
+	return true;
+}
+
+void CQtViewport3D::FinishOverlayFacePick( bool apply )
+{
+	if ( m_overlayPickEntity < 0 ) return;
+	const int entityId = m_overlayPickEntity;
+	m_overlayPickEntity = -1;
+	m_overlayPickPreviousTool = -1;
+	QStringList faces;
+	for ( const QSet<int> &set : m_selectedFaces )
+	{
+		QList<int> ids = set.values();
+		std::sort( ids.begin(), ids.end() );
+		for ( int id : ids ) faces.append( QString::number( id ) );
+	}
+	ClearFaceSelection();
+	if ( apply && m_pDocument && m_pDocument->SelectedId() == entityId &&
+		 m_pDocument->SelectedIds().size() == 1 && !faces.isEmpty() )
+		m_pDocument->SetSelectedEntityKey( QStringLiteral( "sides" ), faces.join( QLatin1Char( ' ' ) ) );
+	UpdateViews();
+}
+
 bool CQtViewport3D::event( QEvent *event )
 {
-	if ( event->type() == QEvent::ShortcutOverride && m_displacementPaintButton != Qt::NoButton )
+	if ( event->type() == QEvent::ShortcutOverride &&
+		( m_displacementPaintButton != Qt::NoButton || m_overlayDragEntity >= 0 ||
+		  ( m_overlayPickEntity >= 0 && ( static_cast<QKeyEvent *>( event )->key() == Qt::Key_Return ||
+			static_cast<QKeyEvent *>( event )->key() == Qt::Key_Enter || static_cast<QKeyEvent *>( event )->key() == Qt::Key_Escape ) ) ) )
 	{
 		event->accept();
 		return true;
@@ -1096,6 +1325,8 @@ bool CQtViewport3D::event( QEvent *event )
 	if ( event->type() == QEvent::UngrabMouse || event->type() == QEvent::FocusOut ||
 		 event->type() == QEvent::WindowDeactivate || event->type() == QEvent::Hide )
 	{
+		FinishOverlayFacePick( false );
+		FinishOverlayDrag( true );
 		FinishDisplacementPaint( true );
 		SetMouseLook( false );
 		CancelMoveEdit();
@@ -1110,6 +1341,69 @@ bool CQtViewport3D::event( QEvent *event )
 void CQtViewport3D::mousePressEvent( QMouseEvent *event )
 {
 	if ( m_mouseLook ) { event->accept(); return; }
+	if ( m_overlayDragEntity >= 0 ) { event->accept(); return; }
+	if ( m_overlayPickEntity >= 0 && event->button() == Qt::LeftButton )
+	{
+		Camera cam;
+		BuildCamera( cam );
+		const double x = ( event->position().x() - width() / 2.0 ) / cam.focal;
+		const double y = ( height() / 2.0 - event->position().y() ) / cam.focal;
+		double ray[3];
+		for ( int axis = 0; axis < 3; ++axis ) ray[axis] = cam.forward[axis] + x * cam.right[axis] + y * cam.up[axis];
+		const auto hit = HammerFaceHit::Find( *m_pDocument, cam.eye, ray, kNearPlane );
+		const SolidLite *solid = m_pDocument->Map().SolidById( hit.solidId );
+		const bool toggle = event->modifiers().testFlag( Qt::ControlModifier );
+		if ( !toggle ) m_selectedFaces.clear();
+		if ( solid && hit.faceIndex >= 0 && hit.faceIndex < solid->sides.size() )
+		{
+			const int faceId = solid->sides[hit.faceIndex].id;
+			QSet<int> &faces = m_selectedFaces[solid->id];
+			if ( !toggle || !faces.remove( faceId ) ) faces.insert( faceId );
+			if ( faces.isEmpty() ) m_selectedFaces.remove( solid->id );
+		}
+		UpdateViews();
+		event->accept();
+		return;
+	}
+	if ( event->button() == Qt::LeftButton && m_pDocument && m_pDocument->GetTool() == TOOL_OVERLAY )
+	{
+		Camera cam;
+		BuildCamera( cam );
+		setFocus();
+		if ( !BeginOverlayDrag( cam, event->position() ) )
+		{
+			const double x = ( event->position().x() - width() / 2.0 ) / cam.focal;
+			const double y = ( height() / 2.0 - event->position().y() ) / cam.focal;
+			double ray[3];
+			for ( int axis = 0; axis < 3; ++axis ) ray[axis] = cam.forward[axis] + x * cam.right[axis] + y * cam.up[axis];
+			const auto face = HammerFaceHit::Find( *m_pDocument, cam.eye, ray, kNearPlane );
+			if ( face.solidId >= 0 )
+			{
+				const auto &map = static_cast<const CHammerDocument &>( *m_pDocument ).Map();
+				const SolidLite *solid = map.SolidById( face.solidId );
+				if ( !solid || face.faceIndex < 0 || face.faceIndex >= solid->sides.size() )
+				{
+					event->accept();
+					return;
+				}
+				const int sideId = solid->sides[face.faceIndex].id;
+				if ( SelectOverlayAt( cam, event->position(), sideId ) )
+				{
+					event->accept();
+					return;
+				}
+				double origin[3];
+				for ( int axis = 0; axis < 3; ++axis ) origin[axis] = cam.eye[axis] + ray[axis] * face.distance;
+				QImage image;
+				const bool loaded = m_materialRenderer.LoadMaterialImage( m_pDocument->ActiveMaterial(), image );
+				const double overlayWidth = loaded ? (std::max)( 1, image.width() / 8 ) * 2.0 : 32.0;
+				const double overlayHeight = loaded ? (std::max)( 1, image.height() / 8 ) * 2.0 : 32.0;
+				m_pDocument->PlaceOverlay( face.solidId, sideId, origin, overlayWidth, overlayHeight );
+			}
+		}
+		event->accept();
+		return;
+	}
 	if ( event->button() == Qt::LeftButton && m_pDocument && m_pDocument->GetTool() == TOOL_DECAL )
 	{
 		Camera cam; BuildCamera( cam );
@@ -1172,6 +1466,13 @@ void CQtViewport3D::mousePressEvent( QMouseEvent *event )
 
 void CQtViewport3D::mouseMoveEvent( QMouseEvent *event )
 {
+	if ( m_overlayDragEntity >= 0 )
+	{
+		if ( !( event->buttons() & Qt::LeftButton ) ) FinishOverlayDrag( true );
+		else UpdateOverlayDrag( event->position(), event->modifiers().testFlag( Qt::ShiftModifier ) );
+		event->accept();
+		return;
+	}
 	if ( DisplacementPaintActive() && !m_mouseLook && !m_bDragging )
 	{
 		if ( m_displacementPaintButton != Qt::NoButton && !( event->buttons() & m_displacementPaintButton ) )
@@ -1248,6 +1549,12 @@ void CQtViewport3D::mouseMoveEvent( QMouseEvent *event )
 
 void CQtViewport3D::mouseReleaseEvent( QMouseEvent *event )
 {
+	if ( m_overlayDragEntity >= 0 && event->button() == Qt::LeftButton )
+	{
+		FinishOverlayDrag( false );
+		event->accept();
+		return;
+	}
 	if ( event->button() == m_displacementPaintButton )
 	{
 		FinishDisplacementPaint( false );
@@ -1316,7 +1623,7 @@ void CQtViewport3D::mouseReleaseEvent( QMouseEvent *event )
 
 void CQtViewport3D::wheelEvent( QWheelEvent *event )
 {
-	if ( m_moveEditActive || m_displacementPaintButton != Qt::NoButton ) { event->accept(); return; }
+	if ( m_moveEditActive || m_displacementPaintButton != Qt::NoButton || m_overlayDragEntity >= 0 ) { event->accept(); return; }
 	const double factor = ( event->angleDelta().y() > 0 ) ? 1.0 / 1.15 : 1.15;
 	m_flDist = qBound( 64.0, m_flDist * factor, 8192.0 );
 	UpdateViews();

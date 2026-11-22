@@ -24,18 +24,22 @@
 #include "gameconfig.h"
 #include "localization.h"
 #include "mapmodel.h"
+#include "overlaydata.h"
 #include "brushwindings.h"
 #include "mapcheck.h"
 #include "mapcheckgoto.h"
 #include "gridsettings.h"
 #include "materialcatalog.h"
 #include "materialpreviewrenderer.h"
+#include "decalprojection.h"
+#include "overlayprojection.h"
 #include "materialbrowserpreview.h"
 #include "mappropertiesdialog.h"
 #include "mainwindow.h"
 #include "pointfilestate.h"
 #include "pastespecialsettings.h"
 #include "portableconfig.h"
+#include "overlaydata.h"
 #include "propertyvaluedelegate.h"
 #include "recovery.h"
 #include "tier1/tokenreader.h"
@@ -957,6 +961,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 		}
 		QAction *cameraToolAction = window.findChild<QAction *>( QStringLiteral( "toolAction_camera" ) );
 		QAction *decalToolAction = window.findChild<QAction *>( QStringLiteral( "toolAction_decal" ) );
+		QAction *overlayToolAction = window.findChild<QAction *>( QStringLiteral( "toolAction_overlay" ) );
 		QAction *undoAction = window.findChild<QAction *>( QStringLiteral( "actionUndo" ) );
 		QAction *redoAction = window.findChild<QAction *>( QStringLiteral( "actionRedo" ) );
 		QAction *tieEntityAction = window.findChild<QAction *>( QStringLiteral( "tieToEntityAction" ) );
@@ -990,7 +995,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 		const bool commandSurfaceOk = mapToolbar && toolbar && undoAction && redoAction && undoButton && redoButton &&
 			mapToolbar->toolButtonStyle() == Qt::ToolButtonTextUnderIcon &&
 			toolbar->toolButtonStyle() == Qt::ToolButtonIconOnly && classicLayoutOk &&
-			mapToolbarFits && namedEditTools == 8 &&
+			mapToolbarFits && namedEditTools == 9 &&
 			undoAction->shortcut() == QKeySequence::Undo && redoAction->shortcut() == QKeySequence::Redo &&
 			!undoButton->text().isEmpty() && !redoButton->text().isEmpty() &&
 			image.rect().contains( undoButtonRect ) && image.rect().contains( redoButtonRect ) &&
@@ -1004,6 +1009,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 			toolsMenu && toolsMenu->actions().contains( tieEntityAction ) &&
 			cameraToolAction && cameraToolAction->shortcuts().contains( QKeySequence( "Shift+C" ) ) &&
 			decalToolAction && decalToolAction->shortcuts().contains( QKeySequence( "Shift+D" ) ) && !decalToolAction->icon().isNull() &&
+			overlayToolAction && overlayToolAction->shortcuts().contains( QKeySequence( "Shift+O" ) ) && !overlayToolAction->icon().isNull() &&
 			!window.findChild<QAction *>( QStringLiteral( "actionAutoCombine" ) );
 		ctx.Step( "ui-command-surface", commandSurfaceOk,
 			QStringLiteral( "classic toolbar layout, tool tips, undo/redo, entity labels and tie-to-entity entry" ) );
@@ -1034,6 +1040,52 @@ int RunHammerSelfTest( const QString &vmfPath )
 			const QString path = dir.filePath( QStringLiteral( "decal.vmf" ) );
 			ok = ok && dir.isValid() && VmfIO::SaveMap( path, save ) && VmfIO::LoadMap( path, reloaded ) && hasDecal( reloaded );
 			ctx.Step( "decal-placement", ok, QStringLiteral( "3D face hit, material binding, undo/redo and VMF round trip" ) );
+		}
+		{
+			CHammerDocument doc;
+			CQtViewport3D view;
+			view.setDocument( &doc );
+			view.resize( 400, 300 );
+			const double mins[3] = { 64, -48, 52 }, maxs[3] = { 96, 48, 148 };
+			const double eye[3] = { 0, 0, 100 }, angles[3] = { 0, 0, 0 };
+			bool ok = doc.CreateBrush( mins, maxs ) > 0 && doc.SetActiveMaterial( QStringLiteral( "decals/test_overlay" ) );
+			doc.SetTool( TOOL_OVERLAY );
+			view.setCameraPositionAngles( eye, angles );
+			const auto event = [&]( QEvent::Type type, const QPointF &point, Qt::MouseButton button, Qt::MouseButtons buttons ) {
+				QMouseEvent mouse( type, point, button, buttons, Qt::NoModifier );
+				QCoreApplication::sendEvent( &view, &mouse );
+			};
+			const QPointF center( 200, 150 );
+			event( QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton );
+			event( QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton );
+			HammerOverlay::Data overlay;
+			ok = ok && doc.Map().entities.size() == 1 && HammerOverlay::Parse( doc.Map().entities.front(), overlay );
+			if ( ok )
+			{
+				const int id = doc.Map().entities.front().id;
+				doc.SelectObject( -1 );
+				event( QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton );
+				event( QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton );
+				ok = doc.IsSelected( id ) && doc.Map().entities.size() == 1;
+				const auto point = HammerOverlay::WorldPoint( overlay, 0 );
+				double cameraEye[3], cameraForward[3], cameraUp[3];
+				view.cameraBasis( cameraEye, cameraForward, cameraUp );
+				const HammerOverlay::Point delta{ point[0] - cameraEye[0], point[1] - cameraEye[1], point[2] - cameraEye[2] };
+				const HammerOverlay::Point forward{ cameraForward[0], cameraForward[1], cameraForward[2] };
+				const HammerOverlay::Point up{ cameraUp[0], cameraUp[1], cameraUp[2] };
+				const auto right = HammerWinding::Cross( forward, up );
+				const double scale = 150.0 / HammerWinding::Dot( delta, forward );
+				const QPointF corner = center + QPointF( scale * HammerWinding::Dot( delta, right ), -scale * HammerWinding::Dot( delta, up ) );
+				const QPointF moved = corner + ( corner - center ) * 0.4;
+				const QString oldUv = HammerOverlay::Value( doc.Map().entities.front(), QStringLiteral( "uv0" ) );
+				event( QEvent::MouseButtonPress, corner, Qt::LeftButton, Qt::LeftButton );
+				event( QEvent::MouseMove, moved, Qt::NoButton, Qt::LeftButton );
+				event( QEvent::MouseButtonRelease, moved, Qt::LeftButton, Qt::NoButton );
+				const QString newUv = HammerOverlay::Value( doc.Map().entities.front(), QStringLiteral( "uv0" ) );
+				ok = ok && oldUv != newUv && doc.Undo() &&
+					HammerOverlay::Value( doc.Map().entities.front(), QStringLiteral( "uv0" ) ) == oldUv;
+			}
+			ctx.Step( "overlay-tool-gesture", ok, QStringLiteral( "3D face placement, overlay pick, corner drag and undo" ) );
 		}
 		{
 			CMainWindow selectionWindow( nullptr, false );
@@ -1771,6 +1823,73 @@ int RunHammerSelfTest( const QString &vmfPath )
 		ok = ok && location && decalFixture.SetActiveMaterial( QStringLiteral( "decals/shot1" ) ) &&
 			decalFixture.PlaceDecal( location->data() ) > 0 && VmfIO::SaveMap( decalCompileOutput, decalFixture.Map(), &decalError );
 		ctx.Step( "decal-compile-fixture", ok, decalError );
+	}
+	const QString overlayCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_OVERLAY_COMPILE_OUTPUT" );
+	{
+		CHammerDocument sample;
+		const double lo[3] = { -64, -64, -32 }, hi[3] = { 64, 64, 0 }, click[3] = {};
+		const int solidId = CreateBoxSolid( sample.Map(), lo, hi );
+		const SolidLite *solid = sample.Map().SolidById( solidId );
+		QList<HammerWinding::Plane> planes;
+		int faceId = 0;
+		if ( solid && HammerWinding::BuildPlanes( *solid, planes ) )
+			for ( int i = 0; i < planes.size(); ++i )
+				if ( planes[i].normal[2] > 0.999 ) faceId = solid->sides[i].id;
+		bool ok = faceId > 0 && sample.SetActiveMaterial( QStringLiteral( "decals/shot1" ) ) &&
+			sample.PlaceOverlay( solidId, -1, click ) < 0;
+		const int id = sample.PlaceOverlay( solidId, faceId, click, 24, 16 );
+		HammerOverlay::Data data;
+		const auto parse = [&] {
+			const EntityLite *entity = sample.Map().EntityById( id );
+			return entity && HammerOverlay::Parse( *entity, data );
+		};
+		ok = ok && id > 0 && parse() && data.sides == QList<int>{ faceId } &&
+			data.material == QLatin1String( "decals/shot1" ) && data.points[0][0] == -12 && data.points[0][1] == -8;
+		const double moved[3] = { -20, -10, 0 }, inverted[3] = { 64, 64, 0 };
+		ok = ok && sample.MoveOverlayHandle( id, 0, moved ) && parse() && data.points[0][0] == -20 &&
+			!sample.MoveOverlayHandle( id, 0, inverted ) && sample.Undo() && parse() && data.points[0][0] == -12 &&
+			sample.Redo() && parse() && data.points[0][0] == -20;
+		QTemporaryDir overlayTemp;
+		QString error;
+		const QString path = overlayTemp.filePath( QStringLiteral( "overlay.vmf" ) );
+		MapDocLite reloaded;
+		ok = ok && overlayTemp.isValid() && VmfIO::SaveMap( path, sample.Map(), &error ) &&
+			VmfIO::LoadMap( path, reloaded, &error );
+		const EntityLite *reopened = reloaded.EntityById( id );
+		ok = ok && reopened && sample.Map().EntityById( id )->keyvalues == reopened->keyvalues;
+		ctx.Step( "overlay-document", ok, error );
+	}
+	if ( !brushCompileInput.isEmpty() && !overlayCompileOutput.isEmpty() )
+	{
+		CHammerDocument fixture;
+		QString error;
+		bool ok = VmfIO::LoadMap( brushCompileInput, fixture.Map(), &error );
+		HammerWinding::Point location{};
+		int solidId = 0, faceId = 0;
+		double lowestTop = (std::numeric_limits<double>::max)();
+		for ( const SolidLite &solid : fixture.Map().solids )
+		{
+			QList<HammerWinding::Polygon> faces;
+			QList<HammerWinding::Plane> planes;
+			if ( solid.ownerEntityId || !HammerWinding::BuildFaces( solid, faces ) ||
+				!HammerWinding::BuildPlanes( solid, planes ) ) continue;
+			for ( int i = 0; i < faces.size(); ++i )
+			{
+				if ( planes[i].normal[2] < 0.999 || solid.sides[i].displacement || faces[i].isEmpty() ) continue;
+				HammerWinding::Point center{};
+				for ( const auto &vertex : faces[i] )
+					for ( int axis = 0; axis < 3; ++axis ) center[axis] += vertex[axis] / faces[i].size();
+				if ( center[2] >= lowestTop ) continue;
+				lowestTop = center[2];
+				location = center;
+				solidId = solid.id;
+				faceId = solid.sides[i].id;
+			}
+		}
+		ok = ok && solidId && fixture.SetActiveMaterial( QStringLiteral( "decals/shot1" ) ) &&
+			fixture.PlaceOverlay( solidId, faceId, location.data(), 24, 24 ) > 0 &&
+			VmfIO::SaveMap( overlayCompileOutput, fixture.Map(), &error );
+		ctx.Step( "overlay-compile-fixture", ok, error );
 	}
 	const QString brushCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_BRUSH_COMPILE_OUTPUT" );
 	const QString displacementCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_DISPLACEMENT_COMPILE_OUTPUT" );
@@ -3455,6 +3574,40 @@ int RunHammerSelfTest( const QString &vmfPath )
 		surface->update();
 		QCoreApplication::processEvents();
 		const QImage fallbackImage = textureView.texturedFramebuffer();
+		const double projectionOrigin[3] = { 96, 0, 0 };
+		const SolidLite &receiver = textureDoc.Map().solids.last();
+		const int receiverId = receiver.id;
+		int receiverSide = -1;
+		for ( const SideLite &side : receiver.sides )
+			if ( side.planePts[0][0] == 96 && side.planePts[1][0] == 96 && side.planePts[2][0] == 96 )
+				receiverSide = side.id;
+		textureDoc.SetActiveMaterial( QStringLiteral( "dev/dev_measuregeneric01" ) );
+		const auto changedProjectionPixels = [&]( const QImage &projection ) {
+			if ( projection.isNull() || projection.size() != fallbackImage.size() ) return 0;
+			int changed = 0;
+			const QPoint center( projection.width() / 2, projection.height() / 2 );
+			const int radius = qRound( 24 * textureView.devicePixelRatioF() );
+			// Exclude the helper marker and text; these are painted above the GL pass.
+			for ( int y = center.y() + radius / 2; y < center.y() + radius; ++y )
+				for ( int x = center.x() - radius; x < center.x() + radius; ++x )
+					if ( projection.pixel( x, y ) != fallbackImage.pixel( x, y ) ) ++changed;
+			return changed;
+		};
+		const int decal = textureDoc.PlaceDecal( projectionOrigin );
+		textureDoc.SelectObjects( {} );
+		const int decalPixels = changedProjectionPixels( textureView.texturedFramebuffer() );
+		ViewFilter projectionFilter;
+		projectionFilter.showEntities = false;
+		textureDoc.SetViewFilter( projectionFilter );
+		const int filteredPixels = changedProjectionPixels( textureView.texturedFramebuffer() );
+		textureDoc.SetViewFilter( {} );
+		textureDoc.Undo();
+		const int overlay = textureDoc.PlaceOverlay( receiverId, receiverSide, projectionOrigin, 96, 96 );
+		textureDoc.SelectObjects( {} );
+		const int overlayPixels = changedProjectionPixels( textureView.texturedFramebuffer() );
+		ctx.Step( "3d-projected-material-framebuffer",
+			decal > 0 && overlay > 0 && decalPixels > 100 && overlayPixels > 100 && filteredPixels == 0,
+			QStringLiteral( "decal pixels=%1; overlay pixels=%2; filtered pixels=%3" ).arg( decalPixels ).arg( overlayPixels ).arg( filteredPixels ) );
 		textureView.setDisplayMode( CQtViewport3D::Flat );
 		QCoreApplication::processEvents();
 		const QImage comparisonImage = textureView.grab().toImage();
@@ -4750,6 +4903,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 		return file.write( contents, length ) == length;
 	};
 	bool patchFilesOk =
+		writePreviewVmt( "decal_modulate.vmt", "DecalModulate { $basetexture local/original $decalscale 0.25 }" ) &&
 		writePreviewVmt( "base.vmt", "LightmappedGeneric { $basetexture local/original }" ) &&
 		writePreviewVmt( "empty.vmt", "LightmappedGeneric { $surfaceprop concrete }" ) &&
 		writePreviewVmt( "insert.vmt", "patch { include materials/local/base.vmt insert { $basetexture local/inserted } }" ) &&
@@ -4803,6 +4957,35 @@ int RunHammerSelfTest( const QString &vmfPath )
 	uvScaleSide.uscale = 0.0f; uvScaleOk = uvScaleOk && !HammerPreviewValidUvScale( uvScaleSide );
 	uvScaleSide.uscale = 0.25f; uvScaleSide.vscale = 0.0f; uvScaleOk = uvScaleOk && !HammerPreviewValidUvScale( uvScaleSide );
 	ctx.Step( "material-preview-invalid-scale", uvScaleOk, QStringLiteral( "zero scale is rejected before texture mapping" ) );
+	{
+		const HammerWinding::Plane plane{ { 0, 0, 1 }, 0 };
+		const HammerWinding::Polygon face{ { 0, 0, 0 }, { 8, 0, 0 }, { 8, 8, 0 }, { 0, 8, 0 } };
+		const auto decal = HammerDecalProjection::Build( face, plane, { 0, 4, 1 }, 4, 4 );
+		bool clipped = decal.size() == 4;
+		for ( const auto &v : decal )
+			clipped = clipped && ( v.position[0] == 0 || v.position[0] == 2 ) &&
+				( v.position[1] == 2 || v.position[1] == 6 ) && v.position[2] == 0 &&
+				v.uv[0] == 0.5 + v.position[0] / 4 && v.uv[1] == 0.5 - ( v.position[1] - 4 ) / 4;
+		ctx.Step( "decal-projection", clipped && resolvesTo( "local/decal_modulate", "local/original" ) &&
+			HammerDecalProjection::Build( face, plane, { 0, 4, -1 }, 4, 4 ).isEmpty() &&
+			HammerDecalProjection::Build( face, plane, { 0, 4, 17 }, 4, 4 ).isEmpty(),
+			QStringLiteral( "stock clipping, floor UVs, face distance and modulating shader support" ) );
+		HammerOverlay::Data overlay;
+		overlay.origin = { 0, 4, 1 };
+		overlay.u = { 1, 0, 0 };
+		overlay.v = { 0, 1, 0 };
+		overlay.normal = { 0, 0, 1 };
+		overlay.points = {{ { -2, -2, 0 }, { -2, 2, 0 }, { 2, 2, 0 }, { 2, -2, 0 } }};
+		overlay.startU = 1; overlay.endU = 3;
+		const auto triangles = HammerOverlay::ProjectTriangles( overlay, face, plane );
+		bool overlayClipped = triangles.size() == 9;
+		for ( const auto &v : triangles )
+			overlayClipped = overlayClipped && v.position[0] >= 0 && v.position[0] <= 2 &&
+				v.position[1] >= 2 && v.position[1] <= 6 && v.position[2] == 0 &&
+				std::abs( v.uv[0] - ( 2 + v.position[0] / 2 ) ) < 1e-9 &&
+				std::abs( v.uv[1] - ( v.position[1] - 2 ) / 4 ) < 1e-9;
+		ctx.Step( "overlay-projection", overlayClipped, QStringLiteral( "receiver clipping, basis projection and tiled UVs" ) );
+	}
 	const QString materialGame = qEnvironmentVariable( "HAMMER_SELFTEST_MATERIAL_GAME" );
 	if ( !materialGame.isEmpty() )
 	{

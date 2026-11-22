@@ -12,6 +12,7 @@
         <file>tool_vertex.svg</file>
         <file>tool_camera.svg</file>
         <file>tool_decal.svg</file>
+        <file>tool_overlay.svg</file>
         <file>tool_apply_material.svg</file>
     </qresource>
 </RCC>
