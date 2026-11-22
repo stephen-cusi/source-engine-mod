@@ -387,6 +387,16 @@ namespace
 		}
 		return true;
 	}
+	bool CanTransformBrush( const SolidLite &solid )
+	{
+		for ( int axis = 0; axis < 3; ++axis )
+			if ( !std::isfinite( solid.mins[axis] ) || !std::isfinite( solid.maxs[axis] ) ||
+				 solid.maxs[axis] - solid.mins[axis] < 0.00001 ) return false;
+		for ( const SideLite &side : solid.sides )
+			if ( side.hasVerticesPlus ) return false;
+		QList<HammerWinding::Polygon> faces;
+		return HammerWinding::BuildFaces( solid, faces );
+	}
 	bool ExpandBoxSelection( const MapDocLite &map, const ViewFilter &filter, const QSet<int> &selected, QSet<int> &brushIds, QList<EntityLite> &owners )
 	{
 		for ( int id : selected )
@@ -428,9 +438,8 @@ bool CHammerDocument::ScaleSelectedBoxes( const double factors[3] )
 		const SolidLite *solid = nullptr;
 		for ( const SolidLite &candidate : static_cast<const QList<SolidLite> &>( m_Map.solids ) )
 			if ( candidate.id == id ) { solid = &candidate; break; }
-		int faces[6];
-		if ( !solid || !BoxFaceOrder( *solid, faces ) ) return false;
-		for ( const SideLite &side : solid->sides ) if ( side.hasVerticesPlus ) return false;
+		if ( !solid || !CanTransformBrush( *solid ) ) return false;
+
 		for ( int axis = 0; axis < 3; ++axis )
 		{
 			mins[axis] = boxes.isEmpty() ? solid->mins[axis] : qMin( mins[axis], solid->mins[axis] );
@@ -459,6 +468,7 @@ bool CHammerDocument::ScaleSelectedBoxes( const double factors[3] )
 				}
 		}
 	}
+	for ( const SolidLite &brush : boxes ) if ( !CanTransformBrush( brush ) ) return false;
 	for ( EntityLite &entity : owners ) if ( entity.hasExplicitOrigin )
 		for ( int axis = 0; axis < 3; ++axis )
 		{
@@ -486,9 +496,8 @@ bool CHammerDocument::RotateSelectedBoxes90( bool clockwise, int axis )
 		const SolidLite *solid = nullptr;
 		for ( const SolidLite &candidate : static_cast<const QList<SolidLite> &>( m_Map.solids ) )
 			if ( candidate.id == id ) { solid = &candidate; break; }
-		int faces[6];
-		if ( !solid || !BoxFaceOrder( *solid, faces ) ) return false;
-		for ( const SideLite &side : solid->sides ) if ( side.hasVerticesPlus ) return false;
+		if ( !solid || !CanTransformBrush( *solid ) ) return false;
+
 		for ( int i = 0; i < 2; ++i )
 		{
 			const int n = i == 0 ? a : b;
@@ -537,6 +546,7 @@ bool CHammerDocument::RotateSelectedBoxes90( bool clockwise, int axis )
 			}
 		}
 	}
+	for ( const SolidLite &brush : boxes ) if ( !CanTransformBrush( brush ) ) return false;
 	for ( EntityLite &entity : owners ) if ( entity.hasExplicitOrigin )
 	{
 		double x, y; rotate( entity.origin[a], entity.origin[b], x, y );
@@ -562,9 +572,8 @@ bool CHammerDocument::FlipSelectedBoxes( int axis )
 		const SolidLite *solid = nullptr;
 		for ( const SolidLite &candidate : static_cast<const QList<SolidLite> &>( m_Map.solids ) )
 			if ( candidate.id == id ) { solid = &candidate; break; }
-		int faces[6];
-		if ( !solid || !BoxFaceOrder( *solid, faces ) ) return false;
-		for ( const SideLite &side : solid->sides ) if ( side.hasVerticesPlus ) return false;
+		if ( !solid || !CanTransformBrush( *solid ) ) return false;
+
 		lo = boxes.isEmpty() ? solid->mins[axis] : qMin( lo, solid->mins[axis] );
 		hi = boxes.isEmpty() ? solid->maxs[axis] : qMax( hi, solid->maxs[axis] );
 		boxes.append( *solid );
@@ -602,6 +611,7 @@ bool CHammerDocument::FlipSelectedBoxes( int axis )
 			}
 		}
 	}
+	for ( const SolidLite &brush : boxes ) if ( !CanTransformBrush( brush ) ) return false;
 	for ( EntityLite &entity : owners ) if ( entity.hasExplicitOrigin )
 	{
 		entity.origin[axis] = mirror( entity.origin[axis] );

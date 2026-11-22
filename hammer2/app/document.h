@@ -33,6 +33,7 @@ enum EHammerTool
 	TOOL_TEXTURE,		// apply the current material to a picked face
 	TOOL_CLIP,		// interactive 2D clipping plane
 	TOOL_VERTEX,	// conservative projected vertex editing
+	TOOL_CAMERA,
 };
 
 class CHammerDocument : public QObject
@@ -57,6 +58,7 @@ public:
 	//--- Model access ---------------------------------------------------------
 	MapDocLite &Map() { return m_Map; }
 	const MapDocLite &Map() const { return m_Map; }
+	quint64 DocumentIdentity() const { return m_nDocumentIdentity; }
 	CFgdData &Fgd() { return m_Fgd; }
 
 	// Purpose: Loads the FGD referenced by the game config. Returns false and

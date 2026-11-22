@@ -999,10 +999,10 @@ void CMainWindow::CreateMenus()
             QMessageBox::warning( this, tr( "Make Hollow" ),
                 tr( "Select axis-aligned box brushes without Hammer++ vertex caches. Thickness must be at least 2 units and fit inside each brush." ) );
     } );
-    QAction *scaleBoxes = m_pMenuTools->addAction( tr( "Scale Box Brushes..." ) );
+    QAction *scaleBoxes = m_pMenuTools->addAction( tr( "Scale Brushes..." ) );
     connect( scaleBoxes, &QAction::triggered, this, [this] {
         QDialog dialog( this );
-        dialog.setWindowTitle( tr( "Scale Box Brushes" ) );
+        dialog.setWindowTitle( tr( "Scale Brushes" ) );
         QVBoxLayout *layout = new QVBoxLayout( &dialog );
         QFormLayout *form = new QFormLayout;
         QDoubleSpinBox *axes[3];
@@ -1025,19 +1025,19 @@ void CMainWindow::CreateMenus()
         const double factors[3] = { axes[0]->value(), axes[1]->value(), axes[2]->value() };
         if ( factors[0] == 1.0 && factors[1] == 1.0 && factors[2] == 1.0 ) return;
         if ( !m_pDocument->ScaleSelectedBoxes( factors ) )
-            QMessageBox::warning( this, tr( "Scale Box Brushes" ),
-                tr( "Select only axis-aligned box brushes without Hammer++ vertex caches. Scale must produce valid map coordinates." ) );
+            QMessageBox::warning( this, tr( "Scale Brushes" ),
+                tr( "Select valid convex brushes without Hammer++ vertex caches. Scale must produce valid map coordinates." ) );
     } );
-    QAction *rotateLeft = m_pMenuTools->addAction( tr( "Rotate Box Brushes 90° Left" ) );
-    QAction *rotateRight = m_pMenuTools->addAction( tr( "Rotate Box Brushes 90° Right" ) );
+    QAction *rotateLeft = m_pMenuTools->addAction( tr( "Rotate Brushes 90° Left" ) );
+    QAction *rotateRight = m_pMenuTools->addAction( tr( "Rotate Brushes 90° Right" ) );
     const auto rotateBoxes = [this]( bool clockwise, int axis ) {
         if ( !m_pDocument->RotateSelectedBoxes90( clockwise, axis ) )
-            QMessageBox::warning( this, tr( "Rotate Box Brushes" ),
-                tr( "Select only valid axis-aligned box brushes without Hammer++ vertex caches. Texture scales must be nonzero." ) );
+            QMessageBox::warning( this, tr( "Rotate Brushes" ),
+                tr( "Select valid convex brushes without Hammer++ vertex caches. Texture scales must be nonzero." ) );
     };
     connect( rotateLeft, &QAction::triggered, this, [rotateBoxes] { rotateBoxes( false, 2 ); } );
     connect( rotateRight, &QAction::triggered, this, [rotateBoxes] { rotateBoxes( true, 2 ); } );
-    QMenu *rotateAxes = m_pMenuTools->addMenu( tr( "Rotate Box Brushes Around Axis" ) );
+    QMenu *rotateAxes = m_pMenuTools->addMenu( tr( "Rotate Brushes Around Axis" ) );
     const char *positiveNames[] = { QT_TR_NOOP( "X axis +90°" ), QT_TR_NOOP( "Y axis +90°" ), QT_TR_NOOP( "Z axis +90°" ) };
     const char *negativeNames[] = { QT_TR_NOOP( "X axis -90°" ), QT_TR_NOOP( "Y axis -90°" ), QT_TR_NOOP( "Z axis -90°" ) };
     for ( int axis = 0; axis < 3; ++axis )
@@ -1045,13 +1045,13 @@ void CMainWindow::CreateMenus()
         connect( rotateAxes->addAction( tr( positiveNames[axis] ) ), &QAction::triggered, this, [rotateBoxes, axis] { rotateBoxes( false, axis ); } );
         connect( rotateAxes->addAction( tr( negativeNames[axis] ) ), &QAction::triggered, this, [rotateBoxes, axis] { rotateBoxes( true, axis ); } );
     }
-    QMenu *flipAxes = m_pMenuTools->addMenu( tr( "Flip Box Brushes" ) );
+    QMenu *flipAxes = m_pMenuTools->addMenu( tr( "Flip Brushes" ) );
     const char *flipNames[] = { QT_TR_NOOP( "Flip X" ), QT_TR_NOOP( "Flip Y" ), QT_TR_NOOP( "Flip Z" ) };
     for ( int axis = 0; axis < 3; ++axis )
         connect( flipAxes->addAction( tr( flipNames[axis] ) ), &QAction::triggered, this, [this, axis] {
             if ( !m_pDocument->FlipSelectedBoxes( axis ) )
-                QMessageBox::warning( this, tr( "Flip Box Brushes" ),
-                    tr( "Select only valid axis-aligned box brushes without Hammer++ vertex caches. Texture scales must be nonzero." ) );
+                QMessageBox::warning( this, tr( "Flip Brushes" ),
+                    tr( "Select valid convex brushes without Hammer++ vertex caches. Texture scales must be nonzero." ) );
         } );
     m_pMenuTools->addSeparator();
 
@@ -1072,6 +1072,9 @@ void CMainWindow::CreateMenus()
         { QT_TR_NOOP( "Selection Tool" ), "select",
             QList<QKeySequence>() << QKeySequence( "1" ) << QKeySequence( "Shift+S" ),
             ":/tool_select.svg" },
+        { QT_TR_NOOP( "Camera Tool" ), "camera",
+            QList<QKeySequence>() << QKeySequence( "Shift+C" ),
+            ":/tool_camera.svg" },
         { QT_TR_NOOP( "Entity Tool" ), "entity",
             QList<QKeySequence>() << QKeySequence( "2" ) << QKeySequence( "Shift+E" ),
             ":/tool_entity.svg" },
@@ -1275,6 +1278,13 @@ void CMainWindow::CreateCentralWidget()
     m_pViewportTop->setDocument( m_pDocument );
     m_pViewportFront->setDocument( m_pDocument );
     m_pViewportSide->setDocument( m_pDocument );
+    for ( CQtViewport2D *viewport : { m_pViewportTop, m_pViewportFront, m_pViewportSide } )
+        connect( viewport, &CQtViewport2D::savedCameraActivated, this, [this]( int index ) {
+            const auto &cameras = m_pDocument->Map().cameras;
+            double eye[3], angles[3];
+            if ( index >= 0 && index < cameras.size() && ReadSavedCamera( cameras[index], eye, angles ) )
+                m_pViewport3D->setCameraPositionAngles( eye, angles );
+        } );
 
     rightSplitter->addWidget( m_pViewportTop );
     m_pViewLeftSplitter->addWidget( m_pViewportFront );
@@ -2463,39 +2473,28 @@ void CMainWindow::OnGridSizeChanged( QAction *action )
 
 void CMainWindow::OnEntityReport()
 {
-    CEntityReportDialog dialog( m_pDocument, this );
-    const int result = dialog.exec();
-    if ( result != QDialog::Accepted && result != CEntityReportDialog::GoToResult &&
-         result != CEntityReportDialog::PropertiesResult )
-        return;
-    const QSet<int> ids = dialog.SelectedEntityIds();
-    m_pDocument->SelectObjects( ids );
-    if ( result == CEntityReportDialog::PropertiesResult && !ids.isEmpty() )
+    if ( !m_pEntityReport )
     {
-        m_pObjectPropertiesDock->show();
-        m_pObjectPropertiesDock->raise();
-    }
-    if ( result == CEntityReportDialog::GoToResult && !ids.isEmpty() )
-    {
-        double mins[3] = { 0, 0, 0 }, maxs[3] = { 0, 0, 0 };
-        bool first = true;
-        for ( const EntityLite &entity : m_pDocument->Map().entities )
-        {
-            if ( !ids.contains( entity.id ) ) continue;
-            for ( int i = 0; i < 3; ++i )
+        m_pEntityReport = new CEntityReportDialog( m_pDocument, this, [this]( int result, const QSet<int> &ids ) {
+            m_pDocument->SelectObjects( ids );
+            if ( result == CEntityReportDialog::PropertiesResult && !m_pDocument->SelectedIds().isEmpty() )
             {
-                if ( first ) mins[i] = maxs[i] = entity.origin[i];
-                else { mins[i] = qMin( mins[i], entity.origin[i] ); maxs[i] = qMax( maxs[i], entity.origin[i] ); }
+                m_pObjectPropertiesDock->show();
+                m_pObjectPropertiesDock->raise();
             }
-            first = false;
-        }
-        if ( !first )
-        {
-            const double center[3] = { ( mins[0] + maxs[0] ) / 2, ( mins[1] + maxs[1] ) / 2, ( mins[2] + maxs[2] ) / 2 };
-            m_pViewportTop->centerOn( center ); m_pViewportFront->centerOn( center );
-            m_pViewportSide->centerOn( center ); m_pViewport3D->centerOn( center );
-        }
+            if ( result == CEntityReportDialog::GoToResult )
+            {
+                double center[3];
+                if ( !SelectionCenter( *m_pDocument, center ) ) return;
+                m_pViewportTop->centerOn( center ); m_pViewportFront->centerOn( center );
+                m_pViewportSide->centerOn( center ); m_pViewport3D->centerOn( center );
+            }
+        } );
+        m_pEntityReport->setObjectName( "entityReportWindow" );
     }
+    m_pEntityReport->show();
+    m_pEntityReport->raise();
+    m_pEntityReport->activateWindow();
 }
 
 void CMainWindow::OnMapProperties()
@@ -2524,6 +2523,8 @@ void CMainWindow::OnToolModeChanged( QAction *action )
 
     if ( id == QLatin1String( "select" ) )
         m_pDocument->SetTool( TOOL_SELECT );
+    else if ( id == QLatin1String( "camera" ) )
+        m_pDocument->SetTool( TOOL_CAMERA );
     else if ( id == QLatin1String( "entity" ) )
         m_pDocument->SetTool( TOOL_ENTITY );
     else if ( id == QLatin1String( "block" ) )

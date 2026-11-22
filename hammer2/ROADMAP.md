@@ -5,17 +5,23 @@ verified steps. Checked items are implemented and covered by an automated test
 or a direct workflow check; partial support stays explicitly unchecked.
 
 ## Approximate Original-Hammer Coverage
-Roughly 25-35% by engineering judgment, not a measured feature count or a
-claim of compatibility. Basic point-entity and box-brush workflows, saving,
-undo and compilation work, and a user-confirmed GMod test map runs in game.
-Recent grid, visibility, diagnostics and basic material-preview work improves
-specific workflows, but does not yet justify counting the missing systems below
-as complete.
-The estimate weights major editing workflows more heavily than individual menu
-commands. It remains below 50% because complete brush-entity editing, displacements, groups,
-visgroups, textured 3D editing, vertex tools and the original document model
-are still missing or substantially incomplete. Reassess against actual
-workflow tests as these capabilities are implemented.
+Static baseline: 9.5 of 20 equally weighted stock workflows (47.5%).
+A usable basic workflow earns one point, an implementation with material
+restrictions earns half a point, and a missing workflow earns zero:
+
+- One point each: box-brush drawing, selection and undo, point-entity placement,
+  basic map checks and leak-path inspection.
+- Half a point each: VMF compatibility, view and camera navigation, brush
+  transforms, clipping and hollowing, vertex editing, brush entities, entity
+  properties and I/O (including Entity Report), materials, groups and visgroups,
+  compilation, game configuration.
+- Zero each: displacement editing, decals and overlays, prefabs, cordon
+  editing, model and sound browsers.
+
+The camera, transform and Entity Report improvements below extend three
+partially supported workflows. Their remaining restrictions keep them in the
+same scoring tier. Reaching 60% under this rubric requires 2.5 additional
+points and direct checks of the workflows being credited.
 
 ## Working Workflows
 - [ ] Qt UI uses a shared dark theme and a 2x2 viewport layout modeled on the
@@ -25,8 +31,8 @@ workflow tests as these capabilities are implemented.
   labels and Undo/Redo, working tool buttons expose their shortcuts, and the
   placement class is distinguished from the selected entity class. Empty entity
   properties explain what to select; material browsing explains scanning and
-  active-material selection. Unimplemented camera-tool and Auto Combine entries
-  are hidden, while Tie to Entity is also exposed in the Selection menu.
+  active-material selection. Tie to Entity is also exposed in the Selection
+  menu, and Shift+C activates the Camera tool.
   Tool-dependent 2D/3D hints prioritize the current mouse action in narrow panes
   and retain full instructions in tooltips. Compact-viewport rendering and
   interaction-hint regression checks cover this presentation. Integrated desktop
@@ -152,16 +158,18 @@ workflow tests as these capabilities are implemented.
   ordered multi-FGD loading and saved paths are covered by selftests. Full game
   configuration, per-game profiles and asset archive selection remain pending.
 
-- [x] Entity Report has a basic modal point/brush-entity list, class and key/value
+- [x] Entity Report has a modeless point/brush-entity list, class and key/value
   filters, multi-selection, delete with undo and view centering. Class completion
   includes FGD and map classes; columns can be sorted and results are counted.
   An optional selected-entities-only filter is a Qt-editor enhancement; empty
   value searches match existing keys, or empty values with exact matching, and
   target names display regardless of key capitalization.
   An entity-type filter narrows results to all, point or brush entities using
-  actual brush ownership, including classes missing from the FGD. Properties
-  opens the selected entity's property panel. Original modeless reporting and
-  hidden-entity filters remain pending; desktop verification remains pending.
+  actual brush ownership, including classes missing from the FGD. Select, Go
+  to and Properties act on the current rows while the report stays open. Go to
+  centers on selection bounds, including brush entities. Changing maps clears
+  the report's row selection. Hidden-entity filters and desktop verification
+  remain pending.
 - [x] Grid visibility and power-of-two size commands (1–512) are implemented;
   selftest covers state and rendering; desktop shortcuts and menu behavior still
   need direct verification.
@@ -300,20 +308,22 @@ workflow tests as these capabilities are implemented.
 - [x] Entity property reset applies an FGD default with undo, including inherited,
   explicit empty and zero defaults; properties without an FGD default remain
   unchanged and custom keys are preserved.
-- [x] Scale selected axis-aligned world boxes and brush-entity boxes around their
-  shared center with positive per-axis factors and undo; mixed point entities, arbitrary geometry and
-  Hammer++ vertex caches are rejected. Scale texture locking remains pending.
-- [x] Rotate selected axis-aligned world boxes and brush-entity boxes by 90 degrees in either direction
+- [x] Scale selected bounded convex world and brush-entity brushes around their
+  shared center with positive per-axis factors and undo. Mixed point entities,
+  invalid geometry and Hammer++ vertex caches are rejected. Scale texture
+  locking remains pending.
+- [x] Rotate selected bounded convex world and brush-entity brushes by 90 degrees in either direction
   around their shared center on the X, Y or Z axis, retaining face IDs and materials and
   locking texture coordinates by rotating UV axes and compensating offsets.
-  This is one undo step. Mixed point entities, non-box brushes, Hammer++
+  This is one undo step. Mixed point entities, invalid geometry, Hammer++
   vertex caches, invalid coordinates and zero texture scales are rejected.
   General arbitrary-angle rotation remains pending; angle conventions have not
   yet been fully compared with original Hammer's Transform dialog.
-- [x] Flip selected axis-aligned world boxes and brush-entity boxes around their shared center on X,
+- [x] Flip selected bounded convex world and brush-entity brushes around their shared center on X,
   Y or Z, preserving texture alignment with one undo step. Point-entity mixtures,
-  non-box brushes and Hammer++ vertex caches are rejected. Automated geometry
-  checks cover the operation; a separate VBSP compile and desktop test are pending.
+  invalid geometry and Hammer++ vertex caches are rejected. Scale, rotate and
+  mirror share a sloped-brush regression covering VMF round trip and undo.
+  A separate VBSP compile and desktop test are pending.
 - [ ] The 2D vertex tool (Shift+V) displays handles for one selected visible
   convex world brush or one visible brush entity containing exactly one brush.
   Dragging moves all vertices sharing the handle's 2D
@@ -381,10 +391,12 @@ workflow tests as these capabilities are implemented.
 - [x] VMF camera blocks preserve camera positions, look targets and active index
   on load/save. View > Saved Cameras lists cameras, saves the current 3D view,
   navigates to a valid entry, and deletes entries with undo/redo. Navigating to
-  a different entry also updates the active camera in the document. The dialog
-  does not implement the original interactive camera tool; saved position and
-  look direction do not preserve camera roll. Round-trip and dialog selftests
-  cover the supported operations; desktop verification remains pending.
+  a different entry also updates the active camera in the document. In the
+  Camera tool (Shift+C), Shift-drag in a 2D view adds a camera, and dragging
+  either handle edits its eye or look target. Clicking an existing handle
+  activates that camera in 3D. Escape cancels a pending drag. Saved position
+  and look direction do not preserve camera roll; desktop verification remains
+  pending.
 - [ ] Full VMF brush-entity semantics, displacements, groups, visgroups, cordon editing, editor
   metadata, and unknown-block preservation. Current loader rejects unsupported
   constructs to protect the source file.

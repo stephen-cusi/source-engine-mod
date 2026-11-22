@@ -984,7 +984,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 		const bool commandSurfaceOk = mapToolbar && toolbar && undoAction && redoAction && undoButton && redoButton &&
 			mapToolbar->toolButtonStyle() == Qt::ToolButtonTextUnderIcon &&
 			toolbar->toolButtonStyle() == Qt::ToolButtonIconOnly && classicLayoutOk &&
-			mapToolbarFits && namedEditTools == 6 &&
+			mapToolbarFits && namedEditTools == 7 &&
 			undoAction->shortcut() == QKeySequence::Undo && redoAction->shortcut() == QKeySequence::Redo &&
 			!undoButton->text().isEmpty() && !redoButton->text().isEmpty() &&
 			image.rect().contains( undoButtonRect ) && image.rect().contains( redoButtonRect ) &&
@@ -996,7 +996,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 			!tieEntityAction->toolTip().isEmpty() && tieEntityAction->toolTip().contains( QStringLiteral( "Ctrl+T" ) ) &&
 			selectionMenu && selectionMenu->actions().contains( tieEntityAction ) &&
 			toolsMenu && toolsMenu->actions().contains( tieEntityAction ) &&
-			!cameraToolAction &&
+			cameraToolAction && cameraToolAction->shortcuts().contains( QKeySequence( "Shift+C" ) ) &&
 			!window.findChild<QAction *>( QStringLiteral( "actionAutoCombine" ) );
 		ctx.Step( "ui-command-surface", commandSurfaceOk,
 			QStringLiteral( "classic toolbar layout, tool tips, undo/redo, entity labels and tie-to-entity entry" ) );
@@ -2746,6 +2746,39 @@ int RunHammerSelfTest( const QString &vmfPath )
 	ctx.Step( "viewport-projection-picking", bProjectionPicking,
 		QStringLiteral( "selection and drag use the switched view axes and undo" ) );
 	{
+		CHammerDocument cameraDoc;
+		cameraDoc.NewDocument();
+		cameraDoc.SetTool( TOOL_CAMERA );
+		CQtViewport2D cameraView( CQtViewport2D::VIEWAXIS_TOP );
+		cameraView.resize( 200, 200 );
+		cameraView.setDocument( &cameraDoc );
+		int activated = -1;
+		QObject::connect( &cameraView, &CQtViewport2D::savedCameraActivated, &cameraView, [&]( int index ) { activated = index; } );
+		const auto drag = [&]( QPointF start, QPointF end, Qt::KeyboardModifiers modifiers, bool cancel = false ) {
+			QMouseEvent press( QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton, modifiers );
+			QCoreApplication::sendEvent( &cameraView, &press );
+			if ( cancel )
+			{
+				QKeyEvent escape( QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier );
+				QCoreApplication::sendEvent( &cameraView, &escape );
+			}
+			QMouseEvent release( QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton, modifiers );
+			QCoreApplication::sendEvent( &cameraView, &release );
+		};
+		drag( QPointF( 100, 100 ), QPointF( 116, 100 ), Qt::ShiftModifier, true );
+		bool ok = cameraDoc.Map().cameras.isEmpty() && activated == -1;
+		drag( QPointF( 100, 100 ), QPointF( 116, 100 ), Qt::ShiftModifier );
+		double eye[3], look[3];
+		ok = ok && cameraDoc.Map().cameras.size() == 1 && activated == 0 &&
+			SavedCameraActiveIndex( cameraDoc.Map() ) == 0 &&
+			ReadSavedCameraPoints( cameraDoc.Map().cameras.first(), eye, look ) && eye[0] == 0 && look[0] == 32;
+		drag( QPointF( 116, 100 ), QPointF( 132, 100 ), Qt::NoModifier );
+		ok = ok && ReadSavedCameraPoints( cameraDoc.Map().cameras.first(), eye, look ) && look[0] == 64 &&
+			cameraDoc.Undo() && ReadSavedCameraPoints( cameraDoc.Map().cameras.first(), eye, look ) && look[0] == 32 &&
+			cameraDoc.Undo() && cameraDoc.Map().cameras.isEmpty();
+		ctx.Step( "viewport-camera-tool", ok, QStringLiteral( "create, edit handle, activate, cancel and undo" ) );
+	}
+	{
 		CHammerDocument doc; doc.NewDocument();
 		const double lo[3] = { 0,0,0 }, hi[3] = { 64,64,64 };
 		const int id = doc.CreateBrush( lo, hi ); doc.SelectObject( id ); doc.SetTool( TOOL_VERTEX );
@@ -3053,6 +3086,30 @@ int RunHammerSelfTest( const QString &vmfPath )
 			reportProperties.SelectedEntityIds() == ( QSet<int>() << reportA.id << reportB.id ) && !reportDoc.IsDirty();
 	}
 	ctx.Step( "entity-report-properties", bReportProperties, QStringLiteral( "selection and property action preserve map" ) );
+	int modelessAction = QDialog::Rejected;
+	QSet<int> modelessIds;
+	CEntityReportDialog modelessReport( &reportDoc, nullptr, [&]( int action, const QSet<int> &ids ) {
+		modelessAction = action;
+		modelessIds = ids;
+	} );
+	modelessReport.show();
+	auto *modelessTable = modelessReport.findChild<QTableWidget *>( QStringLiteral( "entityReportTable" ) );
+	auto *modelessGoTo = modelessReport.findChild<QPushButton *>( QStringLiteral( "entityReportGoTo" ) );
+	auto *modelessProperties = modelessReport.findChild<QPushButton *>( QStringLiteral( "entityReportProperties" ) );
+	bool modelessOk = modelessTable && modelessGoTo && modelessProperties && modelessTable->rowCount() == 2;
+	if ( modelessOk )
+	{
+		modelessTable->selectRow( 0 );
+		const QSet<int> expected = modelessReport.SelectedEntityIds();
+		modelessGoTo->click();
+		modelessOk = modelessReport.isVisible() && !modelessReport.isModal() && !expected.isEmpty() &&
+			modelessAction == CEntityReportDialog::GoToResult && modelessIds == expected;
+		modelessProperties->click();
+		modelessOk = modelessOk && modelessReport.isVisible() &&
+			modelessAction == CEntityReportDialog::PropertiesResult && modelessIds == expected;
+	}
+	modelessReport.close();
+	ctx.Step( "entity-report-modeless", modelessOk, QStringLiteral( "Go To and Properties execute without closing the report" ) );
 	// Go To returns the chosen IDs; deleting uses one undoable document operation.
 	bool bReportActions = false;
 	QString reportDiagnostic;
@@ -4961,6 +5018,27 @@ int RunHammerSelfTest( const QString &vmfPath )
 	clipOk = clipOk && foundValidCut;
 	ctx.Step( "clip-box-brushes", clipOk, QStringLiteral( "box=%1 mixed=%2 wedge=%3 tetra-cut=%4 wedgeBuild=%5 wedgeClip=%6 wedgeCount=%7" )
 		.arg( clipBoxStage ).arg( clipMixedStage ).arg( clipWedgeStage ).arg( foundValidCut ).arg( wedgeBuild ).arg( wedgeClip ).arg( wedgeCount ) );
+
+	// This four-plane tetrahedron exercises the sloped-face path of every
+	// transform. The former box-only guard rejected it before changing anything.
+	bool convexTransform = clipTetra.Undo();
+	const double stretch[3] = { 2, 1, 1 };
+	convexTransform = convexTransform && clipTetra.ScaleSelectedBoxes( stretch ) &&
+		clipTetra.RotateSelectedBoxes90( false, 2 ) && clipTetra.FlipSelectedBoxes( 1 );
+	const SolidLite *transformedTetra = clipTetra.Map().SolidById( tetraId );
+	convexTransform = convexTransform && transformedTetra &&
+		transformedTetra->sides.size() == 4 && HammerWinding::BuildFaces( *transformedTetra, clippedFaces ) &&
+		std::abs( transformedTetra->maxs[0] - transformedTetra->mins[0] - 32 ) < 1e-5 &&
+		std::abs( transformedTetra->maxs[1] - transformedTetra->mins[1] - 64 ) < 1e-5;
+	const QString transformedFile = clipTemp.filePath( QStringLiteral( "transformed_tetra.vmf" ) );
+	MapDocLite transformedReload;
+	convexTransform = convexTransform && VmfIO::SaveMap( transformedFile, clipTetra.Map() ) &&
+		VmfIO::LoadMap( transformedFile, transformedReload ) && transformedReload.SolidById( tetraId ) &&
+		HammerWinding::BuildFaces( *transformedReload.SolidById( tetraId ), clippedFaces ) &&
+		clipTetra.Undo() && clipTetra.Undo() && clipTetra.Undo() &&
+		std::abs( clipTetra.Map().SolidById( tetraId )->mins[0] ) < 1e-5;
+	ctx.Step( "convex-brush-transforms", convexTransform, QStringLiteral( "scale, quarter-turn, mirror, VMF and undo on a sloped brush" ) );
+
 
 	// Three world points cut along x+y=32; orientation is VMF plane normal.
 	const double slantedPoints[3][3] = { {0,32,0}, {32,0,0}, {0,32,32} };

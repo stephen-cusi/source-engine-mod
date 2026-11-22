@@ -15,6 +15,7 @@
 #include "brushentityview.h"
 #include "brushwindings.h"
 #include "theme.h"
+#include "savedcameras.h"
 
 #include <cmath>
 
@@ -97,13 +98,14 @@ void CQtViewport2D::setDocument( CHammerDocument *pDocument )
 	{
 		void (QWidget::*updateFn)() = static_cast<void (QWidget::*)()>( &QWidget::update );
 		connect( pDocument, &CHammerDocument::documentChanged, this, updateFn );
-		connect( pDocument, &CHammerDocument::documentChanged, this, [this] { if ( m_eDragMode == DRAG_VERTEX ) { m_eDragMode = DRAG_NONE; update(); } } );
+		connect( pDocument, &CHammerDocument::documentChanged, this, [this] { if ( m_eDragMode == DRAG_VERTEX || m_eDragMode == DRAG_CAMERA ) { m_eDragMode = DRAG_NONE; update(); } } );
 		connect( pDocument, &CHammerDocument::selectionChanged, this, updateFn );
 		connect( pDocument, &CHammerDocument::stateChanged, this, updateFn );
 		connect( pDocument, &CHammerDocument::selectionChanged, this, [this] { ClearClipPlane(); if ( m_eDragMode == DRAG_VERTEX ) { m_eDragMode = DRAG_NONE; update(); } } );
 		connect( pDocument, &CHammerDocument::stateChanged, this, [this] {
 			if ( m_pDocument && m_pDocument->GetTool() != TOOL_CLIP ) ClearClipPlane();
 			if ( m_pDocument && m_pDocument->GetTool() != TOOL_VERTEX && m_eDragMode == DRAG_VERTEX ) { m_eDragMode = DRAG_NONE; update(); }
+			if ( m_pDocument && m_pDocument->GetTool() != TOOL_CAMERA && m_eDragMode == DRAG_CAMERA ) { m_eDragMode = DRAG_NONE; update(); }
 		} );
 	}
 }
@@ -271,6 +273,7 @@ void CQtViewport2D::paintEvent( QPaintEvent *event )
 	}
 	DrawRubberBand( painter );
 	DrawClipPlane( painter );
+	DrawCameraHandles( painter );
 	DrawVertexHandles( painter );
 
 	HammerTheme::DrawViewportLabel( painter, rect(), GetAxisLabel(), hasFocus() );
@@ -293,6 +296,7 @@ QString CQtViewport2D::interactionHint() const
 		case TOOL_TEXTURE: return tr( "Shift+T: use 3D view" );
 		case TOOL_CLIP: return tr( "Shift+X: draw clip line" );
 		case TOOL_VERTEX: return tr( "Shift+V: drag vertex" );
+		case TOOL_CAMERA: return tr( "Camera: Shift-drag to add" );
 		default: return tr( "1 Select: click / drag" );
 	}
 }
@@ -304,6 +308,9 @@ QString CQtViewport2D::interactionHelp() const
 	{
 		switch ( m_pDocument->GetTool() )
 		{
+			case TOOL_CAMERA:
+				toolHint = tr( "Camera (Shift+C): Shift-drag to add, or drag an existing camera handle" );
+				break;
 			case TOOL_ENTITY:
 				toolHint = tr( "Entity (2): click to place %1 | MMB pan | wheel zoom" ).arg( m_pDocument->EntityClass() );
 				break;
@@ -494,6 +501,28 @@ void CQtViewport2D::DrawVertexHandles( QPainter &painter )
 	painter.restore();
 }
 
+void CQtViewport2D::DrawCameraHandles( QPainter &painter )
+{
+	if ( !m_pDocument || m_pDocument->GetTool() != TOOL_CAMERA ) return;
+	const auto &map = m_pDocument->Map();
+	const int active = SavedCameraActiveIndex( map );
+	auto draw = [&]( const double eye[3], const double look[3], bool highlighted ) {
+		const QPointF a = WorldToScreen( eye[AxisU()], eye[AxisV()] );
+		const QPointF b = WorldToScreen( look[AxisU()], look[AxisV()] );
+		painter.setPen( QPen( highlighted ? QColor( 255, 212, 96 ) : QColor( 107, 188, 209 ), 1 ) );
+		painter.drawLine( a, b );
+		painter.drawEllipse( a, 4, 4 );
+		painter.drawRect( QRectF( b - QPointF( 3, 3 ), QSizeF( 6, 6 ) ) );
+	};
+	for ( int i = 0; i < map.cameras.size(); ++i )
+	{
+		if ( m_eDragMode == DRAG_CAMERA && i == m_cameraIndex ) continue;
+		double eye[3], look[3];
+		if ( ReadSavedCameraPoints( map.cameras[i], eye, look ) ) draw( eye, look, i == active );
+	}
+	if ( m_eDragMode == DRAG_CAMERA ) draw( m_cameraPoints[0], m_cameraPoints[1], true );
+}
+
 void CQtViewport2D::DrawClipPlane( QPainter &painter )
 {
 	if ( !m_pDocument || m_pDocument->GetTool() != TOOL_CLIP ||
@@ -592,6 +621,44 @@ void CQtViewport2D::mousePressEvent( QMouseEvent *event )
 
 	switch ( m_pDocument->GetTool() )
 	{
+		case TOOL_CAMERA:
+		{
+			const auto &map = m_pDocument->Map();
+			m_cameraIndex = -1;
+			m_cameraHandle = 1;
+			m_cameraPress = event->position();
+			if ( map.cameras.isEmpty() || event->modifiers().testFlag( Qt::ShiftModifier ) )
+			{
+				double center[3]; centerCoordinates( center );
+				center[AxisU()] = Snap( u );
+				center[AxisV()] = Snap( v );
+				for ( int k = 0; k < 3; ++k ) m_cameraPoints[0][k] = m_cameraPoints[1][k] = center[k];
+			}
+			else
+			{
+				double best = 64.0;
+				for ( int i = 0; i < map.cameras.size(); ++i )
+				{
+					double points[2][3];
+					if ( !ReadSavedCameraPoints( map.cameras[i], points[0], points[1] ) ) continue;
+					for ( int h = 0; h < 2; ++h )
+					{
+						const QPointF d = event->position() - WorldToScreen( points[h][AxisU()], points[h][AxisV()] );
+						const double distance = QPointF::dotProduct( d, d );
+						if ( distance >= best ) continue;
+						best = distance;
+						m_cameraIndex = i;
+						m_cameraHandle = h;
+						for ( int j = 0; j < 2; ++j )
+							for ( int k = 0; k < 3; ++k ) m_cameraPoints[j][k] = points[j][k];
+					}
+				}
+				if ( m_cameraIndex < 0 ) break;
+			}
+			m_eDragMode = DRAG_CAMERA;
+			update();
+			break;
+		}
 		case TOOL_SELECT:
 		{
 			const int id = HitTest( event->pos() );
@@ -775,6 +842,13 @@ void CQtViewport2D::mouseMoveEvent( QMouseEvent *event )
 	{
 		m_vertexToU = Snap( u ); m_vertexToV = Snap( v ); update();
 	}
+	else if ( m_eDragMode == DRAG_CAMERA && ( event->buttons() & Qt::LeftButton ) &&
+	          ( m_cameraIndex < 0 || event->position() != m_cameraPress ) )
+	{
+		m_cameraPoints[m_cameraHandle][AxisU()] = Snap( u );
+		m_cameraPoints[m_cameraHandle][AxisV()] = Snap( v );
+		update();
+	}
 
 	QWidget::mouseMoveEvent( event );
 }
@@ -794,6 +868,38 @@ void CQtViewport2D::mouseReleaseEvent( QMouseEvent *event )
 	}
 	if ( m_eDragMode == DRAG_MOVE )
 		FinishMoveEdit();
+	if ( m_eDragMode == DRAG_CAMERA && m_pDocument )
+	{
+		double u, v; ScreenToWorld( event->pos(), u, v );
+		const bool moved = event->position() != m_cameraPress;
+		if ( m_cameraIndex < 0 || moved )
+		{
+			m_cameraPoints[m_cameraHandle][AxisU()] = Snap( u );
+			m_cameraPoints[m_cameraHandle][AxisV()] = Snap( v );
+		}
+		QList<CameraLite> cameras = m_pDocument->Map().cameras;
+		const int index = m_cameraIndex < 0 ? cameras.size() : m_cameraIndex;
+		CameraLite camera = index < cameras.size() ? cameras[index] : CameraLite{};
+		const QString keys[] = { QStringLiteral( "position" ), QStringLiteral( "look" ) };
+		for ( int h = 0; h < 2; ++h )
+		{
+			if ( m_cameraIndex >= 0 && ( !moved || h != m_cameraHandle ) ) continue;
+			const QString value = QStringLiteral( "[%1]" ).arg( FormatVec3( m_cameraPoints[h] ) );
+			bool found = false;
+			for ( auto &pair : camera.keyvalues )
+				if ( pair.first.compare( keys[h], Qt::CaseInsensitive ) == 0 ) { pair.second = value; found = true; }
+			if ( !found ) camera.keyvalues.append( qMakePair( keys[h], value ) );
+		}
+		double eye[3], angles[3];
+		if ( ReadSavedCamera( camera, eye, angles ) )
+		{
+			if ( index < cameras.size() ) cameras[index] = camera;
+			else cameras.append( camera );
+			m_eDragMode = DRAG_NONE;
+			m_pDocument->SetSavedCameras( cameras, index );
+			emit savedCameraActivated( index );
+		}
+	}
 	if ( m_eDragMode == DRAG_VERTEX && m_pDocument )
 	{
 		double u, v; ScreenToWorld( event->pos(), u, v );
@@ -883,6 +989,8 @@ void CQtViewport2D::wheelEvent( QWheelEvent *event )
 void CQtViewport2D::keyPressEvent( QKeyEvent *event )
 {
 	if ( event->key() == Qt::Key_Escape && m_eDragMode == DRAG_VERTEX )
+	{ m_eDragMode = DRAG_NONE; update(); event->accept(); return; }
+	if ( event->key() == Qt::Key_Escape && m_eDragMode == DRAG_CAMERA )
 	{ m_eDragMode = DRAG_NONE; update(); event->accept(); return; }
 	if ( m_pDocument && m_pDocument->GetTool() == TOOL_CLIP )
 	{

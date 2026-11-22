@@ -253,6 +253,7 @@
 </context>
 <context>
     <name>CMainWindow</name>
+    <message><source>Camera Tool</source><translation>相机工具</translation></message>
     <message><source>Inspect Displacements in VMF...</source><translation>检查 VMF 中的位移...</translation></message>
     <message><source>Inspect Displacements in VMF</source><translation>检查 VMF 中的位移</translation></message>
     <message><source>Valve Map Files (*.vmf);;All Files (*)</source><translation>Valve 地图文件 (*.vmf);;所有文件 (*)</translation></message>
@@ -317,11 +318,11 @@
     <message><source>Quick Hide Selected</source><translation>快速隐藏所选对象</translation></message>
     <message><source>Quick Hide Unselected</source><translation>快速隐藏未选对象</translation></message>
     <message><source>Quick Unhide All</source><translation>取消全部快速隐藏</translation></message>
-    <message><source>Rotate Box Brushes 90° Left</source><translation>方块画刷向左旋转 90°</translation></message>
-    <message><source>Rotate Box Brushes 90° Right</source><translation>方块画刷向右旋转 90°</translation></message>
-    <message><source>Rotate Box Brushes</source><translation>旋转方块画刷</translation></message>
-    <message><source>Rotate Box Brushes Around Axis</source><translation>绕坐标轴旋转方块画刷</translation></message>
-    <message><source>Flip Box Brushes</source><translation>翻转方块画刷</translation></message>
+    <message><source>Rotate Brushes 90° Left</source><translation>画刷向左旋转 90°</translation></message>
+    <message><source>Rotate Brushes 90° Right</source><translation>画刷向右旋转 90°</translation></message>
+    <message><source>Rotate Brushes</source><translation>旋转画刷</translation></message>
+    <message><source>Rotate Brushes Around Axis</source><translation>绕坐标轴旋转画刷</translation></message>
+    <message><source>Flip Brushes</source><translation>翻转画刷</translation></message>
     <message><source>Flip X</source><translation>沿 X 轴翻转</translation></message>
     <message><source>Flip Y</source><translation>沿 Y 轴翻转</translation></message>
     <message><source>Flip Z</source><translation>沿 Z 轴翻转</translation></message>
@@ -331,7 +332,7 @@
     <message><source>Y axis -90°</source><translation>绕 Y 轴 -90°</translation></message>
     <message><source>Z axis +90°</source><translation>绕 Z 轴 +90°</translation></message>
     <message><source>Z axis -90°</source><translation>绕 Z 轴 -90°</translation></message>
-    <message><source>Select only valid axis-aligned box brushes without Hammer++ vertex caches. Texture scales must be nonzero.</source><translation>请选择有效的轴对齐方块画刷，且不得包含 Hammer++ 顶点缓存；材质缩放不能为零。</translation></message>
+    <message><source>Select valid convex brushes without Hammer++ vertex caches. Texture scales must be nonzero.</source><translation>请选择有效的凸画刷，且不得包含 Hammer++ 顶点缓存；材质缩放不能为零。</translation></message>
     <message><source>Saved Cameras...</source><translation>已保存的相机...</translation></message>
     <message><source>Saved Cameras</source><translation>已保存的相机</translation></message>
     <message><source>Go to Camera</source><translation>转到相机</translation></message>
@@ -437,19 +438,19 @@
     </message>
     <message>
         <location filename="../app/mainwindow.cpp" line="692"/>
-        <source>Scale Box Brushes...</source>
-        <translation>缩放方块笔刷...</translation>
+        <source>Scale Brushes...</source>
+        <translation>缩放画刷...</translation>
     </message>
     <message>
         <location filename="../app/mainwindow.cpp" line="695"/>
         <location filename="../app/mainwindow.cpp" line="718"/>
-        <source>Scale Box Brushes</source>
-        <translation>缩放方块笔刷</translation>
+        <source>Scale Brushes</source>
+        <translation>缩放画刷</translation>
     </message>
     <message>
         <location filename="../app/mainwindow.cpp" line="719"/>
-        <source>Select only axis-aligned box brushes without Hammer++ vertex caches. Scale must produce valid map coordinates.</source>
-        <translation>请选择不含 Hammer++ 顶点缓存的轴对齐方块笔刷，缩放后的地图坐标必须有效。</translation>
+        <source>Select valid convex brushes without Hammer++ vertex caches. Scale must produce valid map coordinates.</source>
+        <translation>请选择不含 Hammer++ 顶点缓存的有效凸画刷，缩放后的地图坐标必须有效。</translation>
     </message>
     <message>
         <location filename="../app/mainwindow.cpp" line="955"/>
@@ -1771,6 +1772,8 @@ Qt %1
 </context>
 <context>
     <name>CQtViewport2D</name>
+    <message><source>Camera: Shift-drag to add</source><translation>相机：按住 Shift 拖动以添加</translation></message>
+    <message><source>Camera (Shift+C): Shift-drag to add, or drag an existing camera handle</source><translation>相机（Shift+C）：按住 Shift 拖动以添加，或拖动现有相机手柄</translation></message>
     <message><source>Shift+V: drag vertex</source><translation>Shift+V：拖动顶点</translation></message>
     <message><source>Vertex (Shift+V): select one world brush or a single-brush entity, then drag a handle; invalid shapes are rejected.</source><translation>顶点（Shift+V）：选择一个世界画刷或单画刷实体后拖动顶点；无效形状将被拒绝。</translation></message>
     <message><source>Vertex move rejected: the brush must remain planar and convex.</source><translation>顶点移动被拒绝：画刷必须保持平面和凸形。</translation></message>

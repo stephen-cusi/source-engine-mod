@@ -62,6 +62,7 @@ public:
 signals:
 	// Carries "U: <x> V: <y>" for the status bar while the mouse moves
 	void cursorWorldChanged( const QString &text );
+	void savedCameraActivated( int index );
 
 protected:
 	bool event( QEvent *event ) override;
@@ -91,6 +92,7 @@ private:
 	void DrawRubberBand( QPainter &painter );
 	void DrawClipPlane( QPainter &painter );
 	void DrawVertexHandles( QPainter &painter );
+	void DrawCameraHandles( QPainter &painter );
 	void ClearClipPlane();
 	int HitTest( const QPoint &pt ) const;
 	QString AxisNameU() const;
@@ -119,7 +121,12 @@ private:
 		DRAG_PAN,       // panning the viewport with the middle mouse button
 		DRAG_CLIP,      // defining a clipping line in this projection
 		DRAG_VERTEX,    // preview a projected vertex group
+		DRAG_CAMERA,
 	};
+	double m_cameraPoints[2][3] = {};
+	int m_cameraIndex = -1;
+	int m_cameraHandle = 1;
+	QPointF m_cameraPress;
 	EDragMode m_eDragMode;
 	bool m_bMoveEditActive;
 	double m_flPressU;

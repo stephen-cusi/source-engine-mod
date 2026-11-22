@@ -21,7 +21,7 @@ namespace
 QString T( const char *text ) { return QCoreApplication::translate( "CEntityReportDialog", text ); }
 }
 
-CEntityReportDialog::CEntityReportDialog( CHammerDocument *document, QWidget *parent )
+CEntityReportDialog::CEntityReportDialog( CHammerDocument *document, QWidget *parent, ActionHandler handleAction )
     : QDialog( parent ), m_document( document )
 {
     setWindowTitle( T( "Entity Report" ) );
@@ -78,8 +78,9 @@ CEntityReportDialog::CEntityReportDialog( CHammerDocument *document, QWidget *pa
     m_count = new QLabel( this );
     m_count->setObjectName( "entityReportCount" );
     layout->addWidget( m_count );
-    QDialogButtonBox *buttons = new QDialogButtonBox( QDialogButtonBox::Cancel, this );
-    QPushButton *select = buttons->addButton( T( "Select" ), QDialogButtonBox::AcceptRole );
+    QDialogButtonBox *buttons = new QDialogButtonBox(
+        handleAction ? QDialogButtonBox::Close : QDialogButtonBox::Cancel, this );
+    QPushButton *select = buttons->addButton( T( "Select" ), QDialogButtonBox::ActionRole );
     QPushButton *goTo = buttons->addButton( T( "Go to" ), QDialogButtonBox::ActionRole );
     QPushButton *properties = buttons->addButton( T( "Properties" ), QDialogButtonBox::ActionRole );
     QPushButton *remove = buttons->addButton( T( "Delete" ), QDialogButtonBox::ActionRole );
@@ -99,9 +100,15 @@ CEntityReportDialog::CEntityReportDialog( CHammerDocument *document, QWidget *pa
         properties->setEnabled( hasSelection );
         remove->setEnabled( hasSelection );
     } );
-    connect( select, &QPushButton::clicked, this, &QDialog::accept );
-    connect( goTo, &QPushButton::clicked, this, [this] { done( GoToResult ); } );
-    connect( properties, &QPushButton::clicked, this, [this] { done( PropertiesResult ); } );
+    const auto applyAction = [this, handleAction]( int result ) {
+        const QSet<int> selected = SelectedEntityIds();
+        if ( selected.isEmpty() ) return;
+        if ( handleAction ) handleAction( result, selected );
+        else done( result );
+    };
+    connect( select, &QPushButton::clicked, this, [applyAction] { applyAction( QDialog::Accepted ); } );
+    connect( goTo, &QPushButton::clicked, this, [applyAction] { applyAction( GoToResult ); } );
+    connect( properties, &QPushButton::clicked, this, [applyAction] { applyAction( PropertiesResult ); } );
     connect( remove, &QPushButton::clicked, this, [this] {
         const QSet<int> selected = SelectedEntityIds();
         if ( selected.isEmpty() || QMessageBox::question( this, T( "Delete Objects" ),
@@ -110,7 +117,7 @@ CEntityReportDialog::CEntityReportDialog( CHammerDocument *document, QWidget *pa
         m_document->SelectObjects( selected );
         if ( m_document->DeleteSelection() ) Refresh();
     } );
-    connect( m_table, &QTableWidget::cellDoubleClicked, this, [this]( int, int ) { accept(); } );
+    connect( m_table, &QTableWidget::cellDoubleClicked, this, [applyAction]( int, int ) { applyAction( QDialog::Accepted ); } );
     connect( m_classFilter, &QLineEdit::textChanged, this, [this] { Refresh(); } );
     connect( m_entityType, &QComboBox::currentIndexChanged, this, [this] { Refresh(); } );
     connect( m_key, &QLineEdit::textChanged, this, [this] { Refresh(); } );
@@ -130,7 +137,9 @@ CEntityReportDialog::CEntityReportDialog( CHammerDocument *document, QWidget *pa
 
 void CEntityReportDialog::Refresh()
 {
-    const QSet<int> previous = SelectedEntityIds();
+    const quint64 identity = m_document->DocumentIdentity();
+    const QSet<int> previous = identity == m_documentIdentity ? SelectedEntityIds() : QSet<int>();
+    m_documentIdentity = identity;
     const bool sorting = m_table->isSortingEnabled();
     m_table->setSortingEnabled( false );
     m_table->setRowCount( 0 );

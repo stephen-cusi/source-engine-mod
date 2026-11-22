@@ -17,7 +17,7 @@ inline int SavedCameraActiveIndex( const MapDocLite &map )
 }
 
 // Hammer's VMF cameras contain position and look-at points, not angles.
-inline bool ReadSavedCamera( const CameraLite &camera, double eye[3], double angles[3] )
+inline bool ReadSavedCameraPoints( const CameraLite &camera, double eye[3], double target[3] )
 {
 	QString position, look;
 	for ( const auto &key : camera.keyvalues )
@@ -30,8 +30,13 @@ inline bool ReadSavedCamera( const CameraLite &camera, double eye[3], double ang
 		if ( value.startsWith( QLatin1Char( '[' ) ) && value.endsWith( QLatin1Char( ']' ) ) ) value = value.mid( 1, value.size() - 2 );
 		return ParseVec3( value, result );
 	};
+	return parse( position, eye ) && parse( look, target );
+}
+
+inline bool ReadSavedCamera( const CameraLite &camera, double eye[3], double angles[3] )
+{
 	double target[3];
-	if ( !parse( position, eye ) || !parse( look, target ) ) return false;
+	if ( !ReadSavedCameraPoints( camera, eye, target ) ) return false;
 	const double dx = target[0] - eye[0], dy = target[1] - eye[1], dz = target[2] - eye[2];
 	const double xy = std::hypot( dx, dy ), length = std::hypot( xy, dz );
 	if ( !std::isfinite( length ) || length < 1e-9 ) return false;

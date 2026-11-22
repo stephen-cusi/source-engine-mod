@@ -2,6 +2,7 @@
 
 #include <QDialog>
 #include <QSet>
+#include <functional>
 
 class CHammerDocument;
 class QCheckBox;
@@ -14,7 +15,8 @@ class CEntityReportDialog : public QDialog
 {
 public:
     enum { GoToResult = QDialog::Accepted + 1, PropertiesResult };
-    explicit CEntityReportDialog( CHammerDocument *document, QWidget *parent = nullptr );
+    using ActionHandler = std::function<void( int, const QSet<int> & )>;
+    explicit CEntityReportDialog( CHammerDocument *document, QWidget *parent = nullptr, ActionHandler handleAction = {} );
     void Refresh();
     QSet<int> SelectedEntityIds() const;
 private:
@@ -28,4 +30,5 @@ private:
     QCheckBox *m_selectedOnly;
     QTableWidget *m_table;
     QLabel *m_count;
+    quint64 m_documentIdentity = 0;
 };

@@ -35,6 +35,7 @@ class QTreeWidgetItem;
 class QTimer;
 
 class CHammerDocument;
+class CEntityReportDialog;
 class CQtViewport2D;
 class CQtViewport3D;
 
@@ -133,6 +134,7 @@ private:
     bool ConfirmDiscardChanges();
 
     CHammerDocument *m_pDocument;
+    CEntityReportDialog *m_pEntityReport = nullptr;
     QTimer *m_pRecoveryTimer;
     CHammerRecoveryStore m_recoveryStore;
 
