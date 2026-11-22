@@ -1,6 +1,7 @@
 #pragma once
 
 #include "brushwindings.h"
+#include "displacementmesh.h"
 #include "document.h"
 #include "brushentityview.h"
 #include <algorithm>
@@ -48,9 +49,10 @@ inline Result Find( CHammerDocument &document, const double eye[3], const double
 			continue;
 		}
 		for ( int face = 0; face < faces.size(); ++face )
-			for ( int i = 1; i + 1 < faces[face].size(); ++i )
+			HammerDisplacementMesh::ForEachPolygon( solid.sides[face], faces[face], [&]( const Polygon &polygon ) {
+			for ( int i = 1; i + 1 < polygon.size(); ++i )
 			{
-				const auto &a = faces[face][0], &b = faces[face][i], &c = faces[face][i + 1];
+				const auto &a = polygon[0], &b = polygon[i], &c = polygon[i + 1];
 				Point e1, e2, offset;
 				for ( int k = 0; k < 3; ++k ) { e1[k] = b[k] - a[k]; e2[k] = c[k] - a[k]; offset[k] = origin[k] - a[k]; }
 				const Point h = Cross( direction, e2 ); const double determinant = Dot( e1, h );
@@ -62,6 +64,7 @@ inline Result Find( CHammerDocument &document, const double eye[3], const double
 				const double distance = inverse * Dot( e2, q );
 				if ( distance >= nearPlane && distance < result.distance ) result = { solid.id, face, distance };
 			}
+			} );
 	}
 	for ( const EntityLite &entity : document.Map().entities )
 	{

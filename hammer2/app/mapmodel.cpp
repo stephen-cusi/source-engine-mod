@@ -94,6 +94,13 @@ SolidLite *MapDocLite::SolidById( int id )
 	return nullptr;
 }
 
+const SolidLite *MapDocLite::SolidById( int id ) const
+{
+	for ( const SolidLite &solid : solids )
+		if ( solid.id == id ) return &solid;
+	return nullptr;
+}
+
 bool MapDocLite::RemoveById( int id )
 {
 	for ( int i = 0; i < entities.count(); ++i )
@@ -260,6 +267,21 @@ void TranslateSolid( SolidLite &solid, const double delta[3] )
 {
 	for ( SideLite &side : solid.sides )
 	{
+		if ( side.displacement )
+			for ( auto &key : side.displacement->keys )
+			{
+				if ( key.first.compare( QLatin1String( "startposition" ), Qt::CaseInsensitive ) != 0 ) continue;
+				QString text = key.second.trimmed();
+				if ( text.startsWith( QLatin1Char( '[' ) ) && text.endsWith( QLatin1Char( ']' ) ) )
+					text = text.mid( 1, text.size() - 2 );
+				double start[3];
+				if ( ParseVec3( text, start ) )
+				{
+					for ( int axis = 0; axis < 3; ++axis ) start[axis] += delta[axis];
+					key.second = QStringLiteral( "[%1]" ).arg( FormatVec3( start ) );
+				}
+				break;
+			}
 		for ( QString &vertex : side.verticesPlus )
 		{
 			double pos[3];

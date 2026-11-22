@@ -12,6 +12,7 @@
 #include "brushwindings.h"
 #include "brushentityview.h"
 #include "vertexedit.h"
+#include "displacementedit.h"
 
 #include <QFile>
 #include <QFileDialog>
@@ -194,6 +195,7 @@ bool CHammerDocument::MoveSelectedProjectedVertices( int u, int v, double fromU,
 {
 	const SolidLite *solid = SelectedVertexEditableSolid();
 	if ( !solid ) return false;
+	for ( const SideLite &side : solid->sides ) if ( side.displacement ) return false;
 	const int id = solid->id;
 	SolidLite edited;
 	if ( !HammerVertexEdit::MoveProjected( *solid, u, v, fromU, fromV, toU, toV, edited ) ) return false;
@@ -317,6 +319,7 @@ bool CHammerDocument::TieSelectionToEntity( const QString &className )
 	{
 		const SolidLite *solid = m_Map.SolidById( id );
 		if ( !solid || solid->ownerEntityId != 0 || HasProtectedVisgroupState( solid->hiddenWrapper, solid->editorProperties ) ) return false;
+		for ( const SideLite &side : solid->sides ) if ( side.displacement ) return false;
 	}
 	BeginEdit();
 	EntityLite entity;
@@ -393,7 +396,7 @@ namespace
 			if ( !std::isfinite( solid.mins[axis] ) || !std::isfinite( solid.maxs[axis] ) ||
 				 solid.maxs[axis] - solid.mins[axis] < 0.00001 ) return false;
 		for ( const SideLite &side : solid.sides )
-			if ( side.hasVerticesPlus ) return false;
+			if ( side.hasVerticesPlus || side.displacement ) return false;
 		QList<HammerWinding::Polygon> faces;
 		return HammerWinding::BuildFaces( solid, faces );
 	}
@@ -637,7 +640,7 @@ bool CHammerDocument::ClipSelectedBoxes( int axis, double coordinate, int keep )
 		for ( const SolidLite &candidate : static_cast<const QList<SolidLite> &>( m_Map.solids ) )
 			if ( candidate.id == id ) { solid = &candidate; break; }
 		if ( !solid ) return false;
-		for ( const SideLite &side : solid->sides ) if ( side.hasVerticesPlus ) return false;
+		for ( const SideLite &side : solid->sides ) if ( side.hasVerticesPlus || side.displacement ) return false;
 		QList<HammerWinding::Polygon> faces;
 		if ( !HammerWinding::BuildFaces( *solid, faces ) ) return false;
 		QList<HammerWinding::Plane> planes;
@@ -729,7 +732,7 @@ bool CHammerDocument::ClipSelectedByPlane( const double points[3][3], int keep )
 	{
 		const SolidLite *solid = m_Map.SolidById( id );
 		if ( !solid ) return false;
-		for ( const SideLite &side : solid->sides ) if ( side.hasVerticesPlus ) return false;
+		for ( const SideLite &side : solid->sides ) if ( side.hasVerticesPlus || side.displacement ) return false;
 		QList<HammerWinding::Polygon> faces;
 		QList<HammerWinding::Plane> planes;
 		if ( !HammerWinding::BuildFaces( *solid, faces ) || !HammerWinding::BuildPlanes( *solid, planes ) ) return false;
@@ -807,7 +810,7 @@ bool CHammerDocument::HollowSelection( int thickness )
 		int faces[6];
 		if ( !BoxFaceOrder( solid, faces ) ) return false;
 		// Do not discard imported Hammer++ geometry caches while replacing faces.
-		for ( const SideLite &side : solid.sides ) if ( side.hasVerticesPlus ) return false;
+		for ( const SideLite &side : solid.sides ) if ( side.hasVerticesPlus || side.displacement ) return false;
 		for ( int axis = 0; axis < 3; ++axis )
 		{
 			const double lo = solid.mins[axis], hi = solid.maxs[axis];
@@ -1779,6 +1782,101 @@ bool CHammerDocument::SetVisibleFaceProperties( const QMap<int, QList<SideLite>>
 			}
 	}
 	TouchContent(); EndEdit();
+	return true;
+}
+
+bool CHammerDocument::CreateDisplacements( const QMap<int, QSet<int>> &facesBySolid, int power )
+{
+	return power >= 2 && power <= 4 && ReplaceDisplacements( facesBySolid, power );
+}
+
+bool CHammerDocument::RemoveDisplacements( const QMap<int, QSet<int>> &facesBySolid )
+{
+	return ReplaceDisplacements( facesBySolid, 0 );
+}
+
+bool CHammerDocument::ReplaceDisplacements( const QMap<int, QSet<int>> &facesBySolid, int power )
+{
+	if ( facesBySolid.isEmpty() ) return false;
+	QMap<int, QList<QPair<int, std::optional<HammerDisplacementEdit::Chunk>>>> changes;
+	for ( auto it = facesBySolid.cbegin(); it != facesBySolid.cend(); ++it )
+	{
+		const SolidLite *solid = static_cast<const MapDocLite &>( m_Map ).SolidById( it.key() );
+		if ( !solid || it.value().isEmpty() || !HammerBrushEntityView::Visible( m_Map, m_ViewFilter, *solid ) ) return false;
+		QList<HammerWinding::Polygon> polygons;
+		QList<HammerWinding::Plane> planes;
+		if ( power && ( solid->ownerEntityId ||
+			 !HammerWinding::BuildFaces( *solid, polygons ) || !HammerWinding::BuildPlanes( *solid, planes ) ) ) return false;
+		QSet<int> found;
+		for ( int i = 0; i < solid->sides.size(); ++i )
+		{
+			const SideLite &side = solid->sides[i];
+			if ( !it.value().contains( side.id ) ) continue;
+			if ( found.contains( side.id ) ) return false;
+			found.insert( side.id );
+			if ( power )
+			{
+				if ( side.displacement || side.hasVerticesPlus || polygons[i].size() != 4 ) return false;
+				changes[it.key()].append( qMakePair( i, std::optional<HammerDisplacementEdit::Chunk>{
+					HammerDisplacementEdit::CreateFlat( power, polygons[i].first().data(), planes[i].normal.data() ) } ) );
+			}
+			else
+			{
+				if ( !side.displacement ) return false;
+				changes[it.key()].append( qMakePair( i, std::optional<HammerDisplacementEdit::Chunk>{} ) );
+			}
+		}
+		if ( found != it.value() ) return false;
+	}
+	BeginEdit();
+	for ( auto it = changes.cbegin(); it != changes.cend(); ++it )
+	{
+		SolidLite *solid = m_Map.SolidById( it.key() );
+		for ( const auto &change : it.value() ) solid->sides[change.first].displacement = change.second;
+	}
+	TouchContent();
+	EndEdit();
+	return true;
+}
+
+bool CHammerDocument::SetDisplacementDistances( int solidId, int sideId, const QList<double> &distances )
+{
+	const SolidLite *solid = static_cast<const MapDocLite &>( m_Map ).SolidById( solidId );
+	if ( !solid || !HammerBrushEntityView::Visible( m_Map, m_ViewFilter, *solid ) ) return false;
+	int index = -1;
+	for ( int i = 0; i < solid->sides.size(); ++i )
+		if ( solid->sides[i].id == sideId )
+		{
+			if ( index >= 0 ) return false;
+			index = i;
+		}
+	if ( index < 0 || !solid->sides[index].displacement ) return false;
+	auto updated = *solid->sides[index].displacement;
+	QList<double> original;
+	if ( !HammerDisplacementEdit::ReadDistances( updated, original ) || distances.size() != original.size() ) return false;
+	for ( int i = 0; i < distances.size(); ++i )
+		if ( distances[i] != original[i] && ( !std::isfinite( distances[i] ) || std::abs( distances[i] ) > 32768 ) ) return false;
+	if ( original == distances ) return true;
+	const int size = HammerDisplacementEdit::GridSize( updated );
+	for ( auto &section : updated.children )
+		if ( section.name.compare( QLatin1String( "distances" ), Qt::CaseInsensitive ) == 0 )
+			for ( auto &row : section.keys )
+			{
+				const int offset = row.first.mid( 3 ).toInt() * size;
+				QStringList tokens = row.second.split( QRegularExpression( QStringLiteral( "\\s+" ) ), Qt::SkipEmptyParts );
+				bool changed = false;
+				for ( int column = 0; column < size; ++column )
+					if ( distances[offset + column] != original[offset + column] )
+					{
+						tokens[column] = QString::number( distances[offset + column], 'g', 16 );
+						changed = true;
+					}
+				if ( changed ) row.second = tokens.join( QLatin1Char( ' ' ) );
+			}
+	BeginEdit();
+	m_Map.SolidById( solidId )->sides[index].displacement = updated;
+	TouchContent();
+	EndEdit();
 	return true;
 }
 

@@ -14,6 +14,7 @@
 #include "viewpick.h"
 #include "brushentityview.h"
 #include "brushwindings.h"
+#include "displacementmesh.h"
 #include "theme.h"
 #include "savedcameras.h"
 
@@ -426,6 +427,25 @@ void CQtViewport2D::DrawSolids( QPainter &painter )
 		const QPointF tl = WorldToScreen( solid.mins[u], solid.maxs[v] );
 		const QPointF br = WorldToScreen( solid.maxs[u], solid.mins[v] );
 		painter.drawRect( QRectF( tl, br ).normalized() );
+		if ( !HammerDisplacementMesh::HasTerrain( solid ) ) continue;
+		QList<HammerWinding::Polygon> faces;
+		if ( !HammerWinding::BuildFaces( solid, faces ) ) continue;
+		for ( int face = 0; face < faces.size(); ++face )
+		{
+			HammerDisplacementMesh::Mesh terrain;
+			if ( !HammerDisplacementMesh::Build( solid.sides[face], faces[face], terrain ) ) continue;
+			const auto edge = [&]( int a, int b ) {
+				const auto &start = terrain.vertices[a], &end = terrain.vertices[b];
+				painter.drawLine( WorldToScreen( start[u], start[v] ), WorldToScreen( end[u], end[v] ) );
+			};
+			for ( int row = 0; row < terrain.width; ++row )
+				for ( int col = 0; col < terrain.width; ++col )
+				{
+					const int index = row * terrain.width + col;
+					if ( col + 1 < terrain.width && ( bSelected || row == 0 || row == terrain.width - 1 ) ) edge( index, index + 1 );
+					if ( row + 1 < terrain.width && ( bSelected || col == 0 || col == terrain.width - 1 ) ) edge( index, index + terrain.width );
+				}
+		}
 	}
 }
 

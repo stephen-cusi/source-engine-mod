@@ -38,6 +38,15 @@ namespace
 		bool hiddenWrapper = false;
 	};
 
+	HammerDisplacementInspect::Chunk DisplacementChunk( const VmfChunk &source )
+	{
+		HammerDisplacementInspect::Chunk result;
+		result.name = source.name;
+		result.keys = source.keys;
+		for ( const VmfChunk &child : source.children ) result.children.append( DisplacementChunk( child ) );
+		return result;
+	}
+
 	// Expand only the exact hidden wrapper forms understood by original Hammer.
 	// Preserve the wrapper bit, since VBSP treats hidden chunks differently.
 	bool ExpandHiddenChildren( VmfChunk &parent, const char *childName, QString *errorOut )
@@ -361,8 +370,18 @@ namespace
 					else if ( is( child.name, "side" ) )
 					{
 						bool seenVertices = false;
+						bool seenDisplacement = false;
 						for ( const VmfChunk &vertices : child.children )
 						{
+							if ( is( vertices.name, "dispinfo" ) )
+							{
+								QString reason;
+								if ( seenDisplacement || !HammerDisplacementInspect::InspectCanonical( DisplacementChunk( vertices ), &reason ) )
+									return fail( QStringLiteral( "world/solid/side/dispinfo: %1" ).arg(
+										seenDisplacement ? QStringLiteral( "duplicate block" ) : reason ) );
+								seenDisplacement = true;
+								continue;
+							}
 							if ( !is( vertices.name, "vertices_plus" ) || seenVertices || !vertices.children.isEmpty() )
 								return fail( QStringLiteral( "world/solid/side/%1" ).arg( vertices.name ) );
 							seenVertices = true;
@@ -461,11 +480,15 @@ namespace
 	bool LoadSide( const VmfChunk &chunk, SideLite &side )
 	{
 		for ( const VmfChunk &child : chunk.children )
+		{
 			if ( child.name.compare( QLatin1String( "vertices_plus" ), Qt::CaseInsensitive ) == 0 )
 			{
 				side.hasVerticesPlus = true;
 				for ( const auto &key : child.keys ) side.verticesPlus.append( key.second );
 			}
+			else if ( child.name.compare( QLatin1String( "dispinfo" ), Qt::CaseInsensitive ) == 0 )
+				side.displacement = DisplacementChunk( child );
+		}
 		const QString plane = GetChunkValue( chunk, "plane" );
 		if ( plane.isEmpty() )
 			return false;
@@ -633,11 +656,6 @@ namespace VmfIO
 			if ( errorOut ) *errorOut = QCoreApplication::translate( "VmfIO", "VMF syntax error: empty file." );
 			return false;
 		}
-		std::function<HammerDisplacementInspect::Chunk( const VmfChunk & )> convert = [&]( const VmfChunk &source ) {
-			HammerDisplacementInspect::Chunk result; result.name = source.name; result.keys = source.keys;
-			for ( const VmfChunk &child : source.children ) result.children.append( convert( child ) );
-			return result;
-		};
 		std::function<void( const VmfChunk &, const QString &, const QString &, bool, bool )> visit =
 			[&]( const VmfChunk &chunk, const QString &solidId, const QString &sideId, bool parentIsSide, bool duplicate ) {
 			const bool isSolid = chunk.name.compare( QLatin1String( "solid" ), Qt::CaseInsensitive ) == 0;
@@ -649,7 +667,7 @@ namespace VmfIO
 				++report.count;
 				QString why;
 				const bool ok = !duplicate && parentIsSide && !currentSolid.isEmpty() && !currentSide.isEmpty() &&
-					HammerDisplacementInspect::InspectCanonical( convert( chunk ), &why );
+					HammerDisplacementInspect::InspectCanonical( DisplacementChunk( chunk ), &why );
 				if ( !ok ) ++report.nonCanonical;
 				if ( report.details.size() < 100 )
 					report.details.append( QCoreApplication::translate( "VmfIO", "Solid %1, face %2: %3" )
@@ -742,6 +760,15 @@ namespace VmfIO
 				return failText( QCoreApplication::translate( "VmfIO", "brush %1 editor metadata" ).arg( solid.id ) );
 			for ( const SideLite &side : solid.sides )
 			{
+				if ( side.displacement )
+				{
+					if ( !HammerDisplacementInspect::InspectCanonical( *side.displacement ) )
+						return fail( "Cannot save: invalid displacement data." );
+					if ( !pairsOk( side.displacement->keys ) )
+						return failText( QStringLiteral( "dispinfo" ) );
+					for ( const auto &section : side.displacement->children )
+						if ( !pairsOk( section.keys ) ) return failText( QStringLiteral( "dispinfo" ) );
+				}
 				if ( !textOk( side.texture ) )
 					return failText( QCoreApplication::translate( "VmfIO", "brush %1 material" ).arg( solid.id ) );
 				if ( side.hasVerticesPlus ) for ( const QString &vertex : side.verticesPlus ) if ( !textOk( vertex ) )
@@ -857,6 +884,21 @@ namespace VmfIO
 					stream << "\t\t\tvertices_plus\n\t\t\t{\n";
 					for ( const QString &vertex : side.verticesPlus )
 						stream << "\t\t\t\t\"v\" " << QuoteKeyValue( vertex ) << "\n";
+					stream << "\t\t\t}\n";
+				}
+				if ( side.displacement )
+				{
+					const auto &disp = *side.displacement;
+					stream << "\t\t\t" << disp.name << "\n\t\t\t{\n";
+					for ( const auto &key : disp.keys )
+						stream << "\t\t\t\t" << QuoteKeyValue( key.first ) << " " << QuoteKeyValue( key.second ) << "\n";
+					for ( const auto &section : disp.children )
+					{
+						stream << "\t\t\t\t" << section.name << "\n\t\t\t\t{\n";
+						for ( const auto &key : section.keys )
+							stream << "\t\t\t\t\t" << QuoteKeyValue( key.first ) << " " << QuoteKeyValue( key.second ) << "\n";
+						stream << "\t\t\t\t}\n";
+					}
 					stream << "\t\t\t}\n";
 				}
 				stream << "\t\t}\n";

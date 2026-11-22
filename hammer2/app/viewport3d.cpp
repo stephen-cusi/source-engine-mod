@@ -758,9 +758,8 @@ void CQtViewport3D::DrawSolids( QPainter &painter, const Camera &cam )
 		QList<HammerWinding::Polygon> windings;
 		if ( !HammerWinding::BuildFaces( solid, windings ) ) { fallback.append( &solid ); continue; }
 		for ( int face = 0; face < windings.size(); ++face )
-		{
+		HammerDisplacementMesh::ForEachPolygon( solid.sides[face], windings[face], [&]( const HammerWinding::Polygon &poly ) {
 			using Vec = HammerWinding::Point;
-			const auto &poly = windings[face];
 			QList<Vec> clipped;
 			for ( int i = 0; i < poly.size(); ++i )
 			{
@@ -775,7 +774,7 @@ void CQtViewport3D::DrawSolids( QPainter &painter, const Camera &cam )
 					clipped.append( point );
 				}
 			}
-			if ( clipped.size() < 3 ) continue;
+			if ( clipped.size() < 3 ) return;
 			Face result; result.depth = 0; result.selected = m_pDocument->IsSelected( HammerBrushEntityView::SelectionId( solid ) );
 			result.faceSelected = face < solid.sides.size() && m_selectedFaces.value( solid.id ).contains( solid.sides[face].id );
 			double a[3], b[3], normal[3];
@@ -790,7 +789,7 @@ void CQtViewport3D::DrawSolids( QPainter &painter, const Camera &cam )
 				double rel[3]; VecSub( point.data(), cam.eye, rel ); result.depth += VecDot( rel, cam.forward );
 			}
 			if ( result.polygon.size() >= 3 ) { result.depth /= result.polygon.size(); faces.append( result ); }
-		}
+		} );
 	}
 	std::sort( faces.begin(), faces.end(), []( const Face &a, const Face &b ) { return a.depth > b.depth; } );
 	for ( const Face &face : faces )
@@ -831,7 +830,8 @@ int CQtViewport3D::HitTest( const QPoint &position, double *depth ) const
 				{ closest = distance; hit = -1; }
 			continue;
 		}
-		for ( const auto &poly : windings )
+		for ( int face = 0; face < windings.size(); ++face )
+		HammerDisplacementMesh::ForEachPolygon( solid.sides[face], windings[face], [&]( const HammerWinding::Polygon &poly ) {
 			for ( int i = 1; i + 1 < poly.size(); ++i )
 			{
 				double edge1[3], edge2[3], h[3], s[3], q[3];
@@ -846,6 +846,7 @@ int CQtViewport3D::HitTest( const QPoint &position, double *depth ) const
 				const double distance=inv*VecDot(edge2,q);
 				if (distance >= kNearPlane && distance < closest) { closest=distance; hit=HammerBrushEntityView::SelectionId( solid ); }
 			}
+		} );
 	}
 	for ( const EntityLite &entity : m_pDocument->Map().entities )
 	{

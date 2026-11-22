@@ -253,6 +253,20 @@
 </context>
 <context>
     <name>CMainWindow</name>
+    <message><source>Displacements</source><translation>位移地形</translation></message>
+    <message><source>Select faces in the 3D view with the Material tool first.</source><translation>请先用材质工具在 3D 视图中选择面。</translation></message>
+    <message><source>Create Displacements...</source><translation>创建位移地形...</translation></message>
+    <message><source>Create Displacements</source><translation>创建位移地形</translation></message>
+    <message><source>Power (2: 5×5, 3: 9×9, 4: 17×17):</source><translation>细分级别（2：5×5，3：9×9，4：17×17）：</translation></message>
+    <message><source>Create requires visible, unmodified quadrilateral world faces without a displacement.</source><translation>只能在可见、尚无位移且未保存额外顶点数据的世界画刷四边形面上创建。</translation></message>
+    <message><source>Remove Displacements</source><translation>移除位移地形</translation></message>
+    <message><source>Every selected face must contain a displacement.</source><translation>每个选中的面都必须包含位移地形。</translation></message>
+    <message><source>Edit Displacement Distances...</source><translation>编辑位移距离...</translation></message>
+    <message><source>Edit Displacement Distances</source><translation>编辑位移距离</translation></message>
+    <message><source>Select exactly one displacement face to edit its distances.</source><translation>请只选择一个位移面来编辑其位移距离。</translation></message>
+    <message><source>Distances are in map units along each vertex's displacement normal. Select cells to smooth them.</source><translation>距离以地图单位计，方向沿各顶点的位移法线。可选中网格单元进行平滑。</translation></message>
+    <message><source>Smooth Selected</source><translation>平滑选中点</translation></message>
+    <message><source>Distances must be valid numbers between -32768 and 32768 for edited vertices.</source><translation>已修改顶点的位移距离必须是 −32768 至 32768 之间的有效数字。</translation></message>
     <message><source>Camera Tool</source><translation>相机工具</translation></message>
     <message><source>Inspect Displacements in VMF...</source><translation>检查 VMF 中的位移...</translation></message>
     <message><source>Inspect Displacements in VMF</source><translation>检查 VMF 中的位移</translation></message>
@@ -2067,6 +2081,7 @@ Qt %1
 </context>
 <context>
     <name>VmfIO</name>
+    <message><source>Cannot save: invalid displacement data.</source><translation>无法保存：位移地形数据无效。</translation></message>
     <message><source>Unsupported VMF data: invalid or duplicate object id.</source><translation>不支持的 VMF 数据：对象 ID 无效或重复。</translation></message>
     <message><source>Unsupported VMF data: invalid hidden block.</source><translation>不支持的 VMF 数据：隐藏数据块无效。</translation></message>
     <message><source>solid %1 has no sides</source><translation>画刷 %1 没有面</translation></message>

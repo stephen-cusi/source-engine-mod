@@ -1,6 +1,7 @@
 #include "materialpreviewrenderer.h"
 
 #include "brushwindings.h"
+#include "displacementmesh.h"
 #include "materialcatalog.h"
 
 #include "tier1/utlbuffer.h"
@@ -556,18 +557,21 @@ void CMaterialPreviewRenderer::DrawSolid( const SolidLite &solid, const QMatrix4
 		if ( texture ) { glActiveTexture( GL_TEXTURE0 ); glBindTexture( GL_TEXTURE_2D, texture ); }
 		m_program.setUniformValue( "uTexture", 0 );
 		QVector<Vertex> vertices;
-		vertices.reserve( ( faces[i].size() - 2 ) * 3 );
-		for ( int tri = 1; tri + 1 < faces[i].size(); ++tri )
+		const auto append = [&]( const HammerWinding::Point &position, const HammerWinding::Point &base ) {
+			// Terrain texture coordinates are interpolated on the base quad.
+			const float u = validUv ? static_cast<float>( ( base[0] * side.uaxis[0] + base[1] * side.uaxis[1] + base[2] * side.uaxis[2] ) / side.uscale + side.uaxis[3] ) : 0.0f;
+			const float v = validUv ? static_cast<float>( ( base[0] * side.vaxis[0] + base[1] * side.vaxis[1] + base[2] * side.vaxis[2] ) / side.vscale + side.vaxis[3] ) : 0.0f;
+			vertices.append( { QVector3D( position[0], position[1], position[2] ), QVector2D( u, v ) } );
+		};
+		HammerDisplacementMesh::Mesh terrain;
+		if ( HammerDisplacementMesh::Build( side, faces[i], terrain ) )
 		{
-			const int indices[3] = { 0, tri, tri + 1 };
-			for ( int index : indices )
-			{
-				const auto &p = faces[i][index];
-				const float u = validUv ? static_cast<float>( ( p[0] * side.uaxis[0] + p[1] * side.uaxis[1] + p[2] * side.uaxis[2] ) / side.uscale + side.uaxis[3] ) : 0.0f;
-				const float v = validUv ? static_cast<float>( ( p[0] * side.vaxis[0] + p[1] * side.vaxis[1] + p[2] * side.vaxis[2] ) / side.vscale + side.vaxis[3] ) : 0.0f;
-				vertices.append( { QVector3D( p[0], p[1], p[2] ), QVector2D( u, v ) } );
-			}
+			vertices.reserve( terrain.triangles.size() * 3 );
+			for ( const auto &triangle : terrain.triangles )
+				for ( int index : triangle ) append( terrain.vertices[index], terrain.base[index] );
 		}
+		else for ( int tri = 1; tri + 1 < faces[i].size(); ++tri )
+			for ( int index : { 0, tri, tri + 1 } ) append( faces[i][index], faces[i][index] );
 		glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( Vertex ), &vertices[0].position );
 		glVertexAttribPointer( 1, 2, GL_FLOAT, GL_FALSE, sizeof( Vertex ), &vertices[0].uv );
 		glDrawArrays( GL_TRIANGLES, 0, vertices.size() );

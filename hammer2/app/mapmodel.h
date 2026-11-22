@@ -22,6 +22,8 @@
 #include <QList>
 #include <QPair>
 #include <cstdlib>
+#include <optional>
+#include "displacementinspect.h"
 
 //-----------------------------------------------------------------------------
 // Purpose: One face of a lightweight solid. The plane is stored as three
@@ -44,6 +46,7 @@ struct SideLite
 	int smoothing;				// smoothing group bitmask
 	bool hasVerticesPlus = false;
 	QStringList verticesPlus;	// Hammer++ vertex cache in its original order
+	std::optional<HammerDisplacementInspect::Chunk> displacement;
 };
 
 //-----------------------------------------------------------------------------
@@ -120,6 +123,7 @@ public:
 	// Lookup helpers; return NULL when the id is unknown
 	EntityLite *EntityById( int id );
 	SolidLite *SolidById( int id );
+	const SolidLite *SolidById( int id ) const;
 
 	// Removes an entity or a solid by id; returns true if something was removed
 	bool RemoveById( int id );

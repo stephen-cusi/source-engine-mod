@@ -21,6 +21,7 @@
 #include "materialcatalog.h"
 #include "materialbrowserpreview.h"
 #include "facepropertiesdialog.h"
+#include "displacementedit.h"
 #include "navigation.h"
 #include "selectioncenter.h"
 #include "savedcameras.h"
@@ -61,6 +62,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressDialog>
@@ -73,9 +75,11 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QStyledItemDelegate>
+#include <QTableWidget>
 #include <QTime>
 #include <QTimer>
 #include <QThread>
+#include <cmath>
 #include <memory>
 #include <QToolBar>
 #include <QTreeWidget>
@@ -910,6 +914,107 @@ void CMainWindow::CreateMenus()
     //--- Tools ----------------------------------------------------------------
     m_pMenuTools = menuBar()->addMenu( tr( "T&ools" ) );
     m_pMenuTools->setObjectName( "ToolsMenu" );
+
+    QMenu *displacementMenu = m_pMenuTools->addMenu( tr( "Displacements" ) );
+    displacementMenu->setStatusTip( tr( "Select faces in the 3D view with the Material tool first." ) );
+    const auto displacementFaces = [this] {
+        const auto faces = m_pDocument->GetTool() == TOOL_TEXTURE
+            ? m_pViewport3D->selectedFaces() : QMap<int, QSet<int>>{};
+        if ( faces.isEmpty() )
+            QMessageBox::information( this, tr( "Displacements" ), tr( "Select faces in the 3D view with the Material tool first." ) );
+        return faces;
+    };
+    QAction *createDisplacement = displacementMenu->addAction( tr( "Create Displacements..." ) );
+    connect( createDisplacement, &QAction::triggered, this, [this, displacementFaces] {
+        const auto faces = displacementFaces();
+        if ( faces.isEmpty() ) return;
+        bool accepted = false;
+        const int power = QInputDialog::getInt( this, tr( "Create Displacements" ),
+            tr( "Power (2: 5×5, 3: 9×9, 4: 17×17):" ), 3, 2, 4, 1, &accepted );
+        if ( accepted && !m_pDocument->CreateDisplacements( faces, power ) )
+            QMessageBox::warning( this, tr( "Displacements" ), tr( "Create requires visible, unmodified quadrilateral world faces without a displacement." ) );
+    } );
+    QAction *removeDisplacement = displacementMenu->addAction( tr( "Remove Displacements" ) );
+    connect( removeDisplacement, &QAction::triggered, this, [this, displacementFaces] {
+        const auto faces = displacementFaces();
+        if ( !faces.isEmpty() && !m_pDocument->RemoveDisplacements( faces ) )
+            QMessageBox::warning( this, tr( "Displacements" ), tr( "Every selected face must contain a displacement." ) );
+    } );
+    QAction *editDisplacement = displacementMenu->addAction( tr( "Edit Displacement Distances..." ) );
+    connect( editDisplacement, &QAction::triggered, this, [this, displacementFaces] {
+        const auto faces = displacementFaces();
+        if ( faces.isEmpty() ) return;
+        if ( faces.size() != 1 || faces.first().size() != 1 )
+        {
+            QMessageBox::information( this, tr( "Displacements" ), tr( "Select exactly one displacement face to edit its distances." ) );
+            return;
+        }
+        const int solidId = faces.firstKey();
+        const int sideId = *faces.first().constBegin();
+        const SolidLite *solid = m_pDocument->Map().SolidById( solidId );
+        int size = 0;
+        QList<double> distances;
+        if ( solid )
+            for ( const SideLite &side : solid->sides )
+                if ( side.id == sideId && side.displacement && HammerDisplacementEdit::ReadDistances( *side.displacement, distances ) )
+                    size = HammerDisplacementEdit::GridSize( *side.displacement );
+        if ( size == 0 )
+        {
+            QMessageBox::information( this, tr( "Displacements" ), tr( "Select exactly one displacement face to edit its distances." ) );
+            return;
+        }
+        QDialog dialog( this );
+        dialog.setWindowTitle( tr( "Edit Displacement Distances" ) );
+        QVBoxLayout layout( &dialog );
+        QLabel hint( tr( "Distances are in map units along each vertex's displacement normal. Select cells to smooth them." ), &dialog );
+        hint.setWordWrap( true );
+        layout.addWidget( &hint );
+        QTableWidget grid( size, size, &dialog );
+        grid.horizontalHeader()->setDefaultSectionSize( 72 );
+        for ( int row = 0; row < size; ++row )
+            for ( int column = 0; column < size; ++column )
+                grid.setItem( row, column, new QTableWidgetItem( QString::number( distances[row * size + column], 'g', 17 ) ) );
+        layout.addWidget( &grid );
+        const auto readGrid = [&grid, size]( QList<double> &values ) {
+            values.clear();
+            for ( int row = 0; row < size; ++row )
+                for ( int column = 0; column < size; ++column )
+                {
+                    bool ok = false;
+                    const double value = grid.item( row, column )->text().toDouble( &ok );
+                    if ( !ok || !std::isfinite( value ) ) return false;
+                    values.append( value );
+                }
+            return true;
+        };
+        QDialogButtonBox buttons( QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog );
+        QPushButton *smooth = buttons.addButton( tr( "Smooth Selected" ), QDialogButtonBox::ActionRole );
+        connect( smooth, &QPushButton::clicked, &dialog, [&] {
+            QList<double> source;
+            if ( !readGrid( source ) ) return;
+            for ( const QModelIndex &cell : grid.selectionModel()->selectedIndexes() )
+            {
+                // Leave the perimeter alone so smoothing cannot open a seam
+                // along an edge the author already aligned to a neighbor.
+                const int row = cell.row(), column = cell.column();
+                if ( row == 0 || row == size - 1 || column == 0 || column == size - 1 ) continue;
+                const int center = row * size + column;
+                const double average = source[center] * 0.5 + source[center - 1] * 0.125 +
+                    source[center + 1] * 0.125 + source[center - size] * 0.125 + source[center + size] * 0.125;
+                grid.item( row, column )->setText( QString::number( average, 'g', 17 ) );
+            }
+        } );
+        connect( &buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject );
+        connect( &buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+            if ( readGrid( distances ) && m_pDocument->SetDisplacementDistances( solidId, sideId, distances ) )
+                dialog.accept();
+            else
+                QMessageBox::warning( &dialog, tr( "Displacements" ), tr( "Distances must be valid numbers between -32768 and 32768 for edited vertices." ) );
+        } );
+        layout.addWidget( &buttons );
+        dialog.resize( 720, 440 );
+        dialog.exec();
+    } );
 
     QAction *snapSelection = m_pMenuTools->addAction( tr( "Snap Selected to Grid" ) );
     snapSelection->setShortcut( QKeySequence( "Ctrl+B" ) );

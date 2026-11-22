@@ -1,9 +1,8 @@
 #pragma once
 
-// Read-only structural inspector for the canonical displacement shape emitted
-// by this repository's original Hammer (hammer/mapdisp.cpp, CMapDisp::SaveVMF).
-// This is deliberately NOT connected to the VMF loader: successful inspection
-// does not imply safe editing, rendering, serialization, or Source branch parity.
+// Structural validation for displacement blocks emitted or read by original
+// Hammer. Preserve ordered key/value data without treating structural
+// validity as a guarantee that the base brush can generate terrain.
 
 #include <QList>
 #include <QPair>
@@ -34,10 +33,11 @@ inline bool InspectCanonical( const Chunk &root, QString *errorOut = nullptr )
 	int power = -1;
 	bool hasStart = false;
 	const QRegularExpression whitespace( QStringLiteral( "\\s+" ) );
+	const QRegularExpression nonRowCharacter( QStringLiteral( "[^0-9eE+ .-]" ) );
 	const auto numbers = [&whitespace]( const QString &s, int count ) {
 		const QStringList tokens = s.trimmed().split( whitespace, Qt::SkipEmptyParts );
 		if ( tokens.size() != count ) return false;
-		for ( const QString &token : tokens ) { bool ok = false; const double n = token.toDouble( &ok ); if ( !ok || !std::isfinite( n ) ) return false; }
+		for ( const QString &token : tokens ) { bool ok = false; const float n = token.toFloat( &ok ); if ( !ok || !std::isfinite( n ) ) return false; }
 		return true;
 	};
 	for ( const auto &key : root.keys )
@@ -61,11 +61,11 @@ inline bool InspectCanonical( const Chunk &root, QString *errorOut = nullptr )
 		{
 			if ( !numbers( key.second, 3 ) ) return fail( QStringLiteral( "invalid mapping axis" ) );
 		}
-		else if ( name == QLatin1String( "elevation" ) )
+		else if ( name == QLatin1String( "elevation" ) || name == QLatin1String( "smooth" ) )
 		{
-			if ( !numbers( key.second, 1 ) ) return fail( QStringLiteral( "invalid elevation" ) );
+			if ( !numbers( key.second, 1 ) ) return fail( QStringLiteral( "invalid scalar: %1" ).arg( name ) );
 		}
-		else if ( name == QLatin1String( "flags" ) || name == QLatin1String( "subdiv" ) )
+		else if ( name == QLatin1String( "flags" ) || name == QLatin1String( "subdiv" ) || name == QLatin1String( "mintess" ) )
 		{
 			bool ok = false; key.second.toInt( &ok ); if ( !ok ) return fail( QStringLiteral( "invalid integer: %1" ).arg( name ) );
 		}
@@ -82,6 +82,7 @@ inline bool InspectCanonical( const Chunk &root, QString *errorOut = nullptr )
 		if ( name == QLatin1String( "allowed_verts" ) )
 		{
 			if ( section.keys.size() != 1 || section.keys.first().first != QLatin1String( "10" ) ) return fail( QStringLiteral( "invalid allowed_verts key" ) );
+			if ( section.keys.first().second.size() >= 1024 ) return fail( QStringLiteral( "allowed_verts exceeds VMF keyvalue length" ) );
 			const QStringList values = section.keys.first().second.trimmed().split( whitespace, Qt::SkipEmptyParts );
 			if ( values.size() != 10 ) return fail( QStringLiteral( "invalid allowed_verts length" ) );
 			for ( const auto &value : values ) { bool ok = false; const qlonglong n = value.toLongLong( &ok ); if ( !ok || n < -2147483648LL || n > 4294967295LL ) return fail( QStringLiteral( "invalid allowed_verts value" ) ); }
@@ -102,6 +103,10 @@ inline bool InspectCanonical( const Chunk &root, QString *errorOut = nullptr )
 			bool ok = false; const int index = match.hasMatch() ? match.captured( 1 ).toInt( &ok ) : -1;
 			if ( !ok || index < 0 || index >= rows || rowIds.contains( index ) ) return fail( QStringLiteral( "invalid row: %1" ).arg( name ) );
 			rowIds.insert( index );
+			// Source's row readers split on ASCII spaces and use the
+			// CChunkFile 1024-byte keyvalue buffer.
+			if ( row.second.size() >= 1024 || row.second.contains( nonRowCharacter ) )
+				return fail( QStringLiteral( "unsupported row text: %1" ).arg( name ) );
 			if ( !numbers( row.second, columns ) ) return fail( QStringLiteral( "invalid values: %1" ).arg( name ) );
 			if ( triangles ) for ( const auto &value : row.second.trimmed().split( whitespace, Qt::SkipEmptyParts ) )
 			{ bool integer = false; const uint tag = value.toUInt( &integer ); if ( !integer || tag > 65535 ) return fail( QStringLiteral( "invalid triangle tag" ) ); }

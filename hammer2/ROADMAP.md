@@ -5,7 +5,8 @@ verified steps. Checked items are implemented and covered by an automated test
 or a direct workflow check; partial support stays explicitly unchecked.
 
 ## Approximate Original-Hammer Coverage
-Static baseline: 9.5 of 20 equally weighted stock workflows (47.5%).
+With the displacement regressions passing, static coverage is 10 of 20 equally
+weighted stock workflows (50%).
 A usable basic workflow earns one point, an implementation with material
 restrictions earns half a point, and a missing workflow earns zero:
 
@@ -14,14 +15,13 @@ restrictions earns half a point, and a missing workflow earns zero:
 - Half a point each: VMF compatibility, view and camera navigation, brush
   transforms, clipping and hollowing, vertex editing, brush entities, entity
   properties and I/O (including Entity Report), materials, groups and visgroups,
-  compilation, game configuration.
-- Zero each: displacement editing, decals and overlays, prefabs, cordon
+  compilation, game configuration, displacement editing.
+- Zero each: decals and overlays, prefabs, cordon
   editing, model and sound browsers.
 
-The camera, transform and Entity Report improvements below extend three
-partially supported workflows. Their remaining restrictions keep them in the
-same scoring tier. Reaching 60% under this rubric requires 2.5 additional
-points and direct checks of the workflows being credited.
+Displacement support raises the previous 9.5/20 baseline by half a point.
+Reaching 60% under this rubric requires two additional points and direct
+checks of the workflows being credited.
 
 ## Working Workflows
 - [ ] Qt UI uses a shared dark theme and a 2x2 viewport layout modeled on the
@@ -125,7 +125,8 @@ points and direct checks of the workflows being credited.
   for static base-texture preview; dynamic proxies are not executed. Conditional
   directives, other nested sections, unsupported shaders and malformed VMTs
   fall back to flat color. Lightmaps,
-  transparency and displacement/model rendering remain unsupported. Validate
+  transparency and model rendering remain limited or unsupported. Displacement
+  surfaces render with base texture coordinates; blend alpha is not previewed. Validate
   real maps, per-game search-path behavior and original-Hammer parity.
 - [x] 3D camera navigation supports D/C and arrow keys, with Shift+arrows for
   camera-relative movement. Z toggles mouse-look with a center crosshair and
@@ -411,11 +412,14 @@ points and direct checks of the workflows being credited.
   entities, entity report, model/sound browsers, and target navigation.
 - [ ] Displacement create/edit/paint/sew/subdivide; overlays, decals, paths,
   prefab library, groups, visgroups, and map-check/pointfile workflows.
-- [ ] A read-only displacement structure inspector checks canonical
-  `dispinfo` data from the original Hammer for powers 2–4, matrix dimensions
-  and finite values, with malformed-input regression fixtures. It is not wired
-  to VMF loading, saving, rendering or editing; maps containing displacement
-  data continue to be rejected rather than silently altered.
+- [ ] Basic displacement workflow supports validated Source `dispinfo`
+  load/save for powers 2–4, retaining the stored rows for unedited fields.
+  The 3D view renders the same grid for face picking and textured preview;
+  orthographic views show the terrain outline and selected grid. Select faces
+  with the Material tool and use Tools > Displacements to create on eligible
+  quadrilateral world faces, remove terrain, or edit and smooth the per-vertex
+  distance grid. Map edits support undo. Interactive painting, sewing,
+  subdivision, power changes and complete material blending remain pending.
 - [ ] Grid settings, view filters, auto-combine, and remaining
   menu commands that are still placeholders.
 - [ ] Full game configuration UI with multiple games, FGDs, search paths and

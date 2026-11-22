@@ -4,6 +4,7 @@
 #include "document.h"
 #include "viewfilter.h"
 #include "brushentityview.h"
+#include "displacementmesh.h"
 #include <QSet>
 
 // Picking helpers shared by the 2D viewport and the self-test. Hidden objects
@@ -34,7 +35,9 @@ inline int Pick2D( CHammerDocument &document, int u, int v, double wu, double wv
 	{
 		const SolidLite &solid = map.solids[i];
 		if ( !HammerBrushEntityView::Visible( map, filter, solid ) ) continue;
-		if ( wu >= solid.mins[u] && wu <= solid.maxs[u] && wv >= solid.mins[v] && wv <= solid.maxs[v] )
+		double mins[2] = { solid.mins[u], solid.mins[v] }, maxs[2] = { solid.maxs[u], solid.maxs[v] };
+		HammerDisplacementMesh::ExpandProjectedBounds( solid, u, v, mins, maxs );
+		if ( wu >= mins[0] && wu <= maxs[0] && wv >= mins[1] && wv <= maxs[1] )
 			return HammerBrushEntityView::SelectionId( solid );
 	}
 	return -1;
@@ -57,6 +60,7 @@ inline QSet<int> Region2D( CHammerDocument &document, int u, int v, const double
 	{
 		if ( !HammerBrushEntityView::Visible( document.Map(), filter, solid ) ) continue;
 		double mins[2] = { solid.mins[u], solid.mins[v] }, maxs[2] = { solid.maxs[u], solid.maxs[v] };
+		HammerDisplacementMesh::ExpandProjectedBounds( solid, u, v, mins, maxs );
 		if ( solid.ownerEntityId > 0 )
 		{
 			if ( processedOwners.contains( solid.ownerEntityId ) ) continue;
@@ -66,6 +70,7 @@ inline QSet<int> Region2D( CHammerDocument &document, int u, int v, const double
 				{
 					mins[0] = qMin( mins[0], part.mins[u] ); mins[1] = qMin( mins[1], part.mins[v] );
 					maxs[0] = qMax( maxs[0], part.maxs[u] ); maxs[1] = qMax( maxs[1], part.maxs[v] );
+					if ( part.id != solid.id ) HammerDisplacementMesh::ExpandProjectedBounds( part, u, v, mins, maxs );
 				}
 		}
 		add( HammerBrushEntityView::SelectionId( solid ), mins, maxs );

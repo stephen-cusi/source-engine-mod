@@ -10,6 +10,8 @@
 
 #include "document.h"
 #include "displacementinspect.h"
+#include "displacementedit.h"
+#include "displacementmeshtest.h"
 #include "groupinspect.h"
 #include "corebounds.h"
 #include "entityreportdialog.h"
@@ -1709,6 +1711,32 @@ int RunHammerSelfTest( const QString &vmfPath )
 	// two real brush entities to a caller-selected independent VMF path.
 	const QString brushCompileInput = qEnvironmentVariable( "HAMMER_SELFTEST_BRUSH_COMPILE_INPUT" );
 	const QString brushCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_BRUSH_COMPILE_OUTPUT" );
+	const QString displacementCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_DISPLACEMENT_COMPILE_OUTPUT" );
+	if ( !brushCompileInput.isEmpty() && !displacementCompileOutput.isEmpty() )
+	{
+		CHammerDocument terrain;
+		QString error;
+		bool ok = VmfIO::LoadMap( brushCompileInput, terrain.Map(), &error );
+		if ( ok )
+		{
+			const double lo[3] = { 60, 60, -48 }, hi[3] = { 96, 96, -40 };
+			const int solidId = CreateBoxSolid( terrain.Map(), lo, hi, QStringLiteral( "concrete/concretewall001a" ) );
+			const SolidLite *solid = terrain.Map().SolidById( solidId );
+			int topId = 0;
+			if ( solid ) for ( const SideLite &side : solid->sides )
+				if ( side.planePts[0][2] == hi[2] && side.planePts[1][2] == hi[2] && side.planePts[2][2] == hi[2] )
+					topId = side.id;
+			QMap<int, QSet<int>> faces;
+			faces.insert( solidId, QSet<int>() << topId );
+			terrain.SelectObject( solidId );
+			QList<double> heights( 25, 0.0 );
+			heights[12] = 12.0;
+			ok = topId > 0 && terrain.CreateDisplacements( faces, 2 ) &&
+				terrain.SetDisplacementDistances( solidId, topId, heights ) &&
+				VmfIO::SaveMap( displacementCompileOutput, terrain.Map(), &error );
+		}
+		ctx.Step( "displacement-compile-fixture", ok, error );
+	}
 	if ( !brushCompileInput.isEmpty() && !brushCompileOutput.isEmpty() )
 	{
 		MapDocLite compileMap;
@@ -5738,8 +5766,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 			!doc.Map().SolidById( later ) && !doc.GetViewFilter().visgroupForceHiddenIds.contains( later );
 		ctx.Step( "visgroup-session-visibility", ok, QStringLiteral( "nested groups, overlapping members, brush entity, Quick Hide and unchanged VMF" ) );
 	}
-	// A strict, read-only structural inspector for canonical original-Hammer
-	// displacement grids. It is intentionally not wired into VMF map loading.
+	// Structural validation and VMF round trips for original-Hammer grids.
 	{
 		using namespace HammerDisplacementInspect;
 		auto fixture = []( int power ) {
@@ -5783,7 +5810,40 @@ int RunHammerSelfTest( const QString &vmfPath )
 		ok = ok && !InspectCanonical( malformed, &error );
 		malformed = fixture( 2 ); malformed.keys[0].second = QStringLiteral( "5" );
 		ok = ok && !InspectCanonical( malformed, &error );
-		ctx.Step( "displacement-inspector", ok, QStringLiteral( "canonical powers 2-4, matrix shapes, finite values and malformed rejection; not connected to VMF load" ) );
+		ctx.Step( "displacement-inspector", ok, QStringLiteral( "canonical powers 2-4, matrix shapes, finite values and malformed rejection" ) );
+		for ( int power = 2; power <= 4; ++power )
+		{
+			QTemporaryDir dir;
+			const QString path = dir.filePath( QStringLiteral( "terrain.vmf" ) );
+			MapDocLite source, loaded;
+			const double lower[3] = { 0, 0, 0 }, upper[3] = { 64, 64, 64 };
+			const int solidId = CreateBoxSolid( source, lower, upper );
+			SolidLite *solid = source.SolidById( solidId );
+			Chunk disp = fixture( power );
+			disp.keys.append( { QStringLiteral( "mintess" ), QStringLiteral( "0" ) } );
+			disp.keys.append( { QStringLiteral( "smooth" ), QStringLiteral( "12.5" ) } );
+			SideLite &side = solid->sides.first();
+			side.displacement = disp;
+			const double delta[3] = { 16, -32, 64 };
+			TranslateSolid( *solid, delta );
+			disp.keys[1].second = QStringLiteral( "[16 -32 64]" );
+			bool roundtrip = dir.isValid() && VmfIO::SaveMap( path, source, &error ) && VmfIO::LoadMap( path, loaded, &error );
+			const SolidLite *restored = loaded.SolidById( solidId );
+			roundtrip = roundtrip && restored && restored->sides.first().displacement.has_value();
+			if ( roundtrip )
+			{
+				const auto &actual = *restored->sides.first().displacement;
+				roundtrip = actual.name == disp.name && actual.keys == disp.keys && actual.children.size() == disp.children.size();
+				for ( int i = 0; roundtrip && i < disp.children.size(); ++i )
+					roundtrip = actual.children[i].name == disp.children[i].name && actual.children[i].keys == disp.children[i].keys;
+			}
+			side.displacement->children.append( side.displacement->children.first() );
+			MapDocLite preserved;
+			roundtrip = roundtrip && !VmfIO::SaveMap( path, source, &error ) && !error.isEmpty() &&
+				VmfIO::LoadMap( path, preserved, &error ) &&
+				preserved.SolidById( solidId ) && preserved.SolidById( solidId )->sides.first().displacement.has_value();
+			ctx.Step( "displacement-vmf-roundtrip", roundtrip, QStringLiteral( "power %1, translated start, metadata and atomic invalid-save guard" ).arg( power ) );
+		}
 	}
 	// A separate VMF diagnostic must never load or modify the active document.
 	{
@@ -5817,10 +5877,53 @@ int RunHammerSelfTest( const QString &vmfPath )
 		ok = ok && write( nonstandard ) && VmfIO::InspectDisplacements( path, report, &error ) && report.count == 1 && report.nonCanonical == 1;
 		ok = ok && write( "world { \"id\" \"unterminated" ) && !VmfIO::InspectDisplacements( path, report, &error ) && !error.isEmpty();
 		ok = ok && write( "world { solid {" ) && !VmfIO::InspectDisplacements( path, report, &error ) && !error.isEmpty();
-		// The normal editor must still reject a map with displacement data.
-		ok = ok && write( map ) && !active.LoadFromFile( path ) && active.IsSelected( activeId ) && read() == map;
+		// Duplicate terrain blocks must not replace the active map.
+		ok = ok && write( duplicate ) && !active.LoadFromFile( path ) && active.IsSelected( activeId ) && read() == duplicate;
 		ctx.Step( "displacement-vmf-diagnostic", ok, QStringLiteral( "read-only file diagnostic; canonical, absent, noncanonical, malformed and active document preservation" ) );
 	}
+	{
+		CHammerDocument terrain;
+		const double mins[3] = { 0, 0, -32 }, maxs[3] = { 128, 128, 0 };
+		const int solidId = terrain.CreateBrush( mins, maxs );
+		const auto solid = [&terrain, solidId] { return static_cast<const CHammerDocument &>( terrain ).Map().SolidById( solidId ); };
+		const auto side = [&solid] { return solid() ? &solid()->sides.first() : nullptr; };
+		bool ok = solidId > 0 && side();
+		if ( ok )
+		{
+			const int faceId = side()->id;
+			const QMap<int, QSet<int>> selection{ { solidId, { faceId } } };
+			const QMap<int, QSet<int>> invalidSelection{ { solidId, { faceId, -1 } } };
+			ok = !terrain.CreateDisplacements( invalidSelection, 2 ) && !side()->displacement &&
+				!terrain.CreateDisplacements( selection, 5 ) && terrain.CreateDisplacements( selection, 2 ) &&
+				side()->displacement && !terrain.CreateDisplacements( selection, 2 );
+			QList<double> distances;
+			ok = ok && HammerDisplacementEdit::ReadDistances( *side()->displacement, distances ) &&
+				distances.size() == 25 && distances[12] == 0;
+			if ( ok )
+			{
+				distances[12] = 32;
+				QList<double> invalid = distances;
+				invalid[13] = std::numeric_limits<double>::infinity();
+				const double factors[3] = { 2, 2, 2 };
+				ok = !terrain.SetDisplacementDistances( solidId, faceId, invalid ) &&
+					terrain.SetDisplacementDistances( solidId, faceId, distances ) &&
+					!terrain.ScaleSelectedBoxes( factors ) &&
+					!terrain.RotateSelectedBoxes90( false, 2 ) && !terrain.FlipSelectedBoxes( 0 ) &&
+					!terrain.ClipSelectedBoxes( 0, 64, 0 ) && !terrain.HollowSelection( 8 );
+				QList<double> actual;
+				ok = ok && HammerDisplacementEdit::ReadDistances( *side()->displacement, actual ) && actual == distances &&
+					!terrain.RemoveDisplacements( invalidSelection ) && terrain.RemoveDisplacements( selection ) && !side()->displacement &&
+					terrain.Undo() && side()->displacement &&
+					HammerDisplacementEdit::ReadDistances( *side()->displacement, actual ) && actual == distances &&
+					terrain.Undo() && side()->displacement &&
+					HammerDisplacementEdit::ReadDistances( *side()->displacement, actual ) && actual[12] == 0 &&
+					terrain.Redo() && side()->displacement &&
+					HammerDisplacementEdit::ReadDistances( *side()->displacement, actual ) && actual == distances;
+			}
+		}
+		ctx.Step( "displacement-edit", ok, QStringLiteral( "create, distance edits, destruction, atomic rejection and undo/redo" ) );
+	}
+	ctx.Step( "displacement-mesh", TestHammerDisplacementMesh(), QStringLiteral( "mesh construction, deformation and picking" ) );
 	//--- Summary --------------------------------------------------------------------
 	const bool bAllPassed = ( ctx.nFailed == 0 );
 	ctx.Step( "summary", bAllPassed,
