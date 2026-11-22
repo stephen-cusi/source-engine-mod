@@ -605,8 +605,54 @@ static int CBasePlayer_GetVehicle (lua_State *L) {
 // Mask: GMod's Lua GetEyeTrace/GetEyeTraceNoCursor traces through
 // util.GetPlayerTrace, whose table carries no "mask" key, so the engine
 // default MASK_SOLID applies (reference behaviour, not MASK_SHOT).
+#ifdef CLIENT_DLL
+struct EyeTraceCacheEntry {
+  int frame = -1;
+  CBaseHandle player;
+  CBaseHandle hitEntity;
+  trace_t trace;
+};
+
+static EyeTraceCacheEntry *GetEyeTraceCacheEntry (lua_State *L, CBasePlayer *player, bool cursor) {
+  static int s_cacheKey;
+  // The registry is separate for each Lua state and recreated on map change.
+  lua_pushlightuserdata(L, &s_cacheKey);
+  lua_rawget(L, LUA_REGISTRYINDEX);
+  if (lua_isnil(L, -1)) {
+    lua_pop(L, 1);
+    lua_newtable(L);
+    lua_pushlightuserdata(L, &s_cacheKey);
+    lua_pushvalue(L, -2);
+    lua_rawset(L, LUA_REGISTRYINDEX);
+  }
+
+  const int slot = player->entindex() * 2 + (cursor ? 1 : 0);
+  lua_rawgeti(L, -1, slot);
+  EyeTraceCacheEntry *entry = static_cast<EyeTraceCacheEntry *>(lua_touserdata(L, -1));
+  lua_pop(L, 1);
+  if (!entry) {
+    void *storage = lua_newuserdata(L, sizeof(EyeTraceCacheEntry));
+    entry = new (storage) EyeTraceCacheEntry;
+    lua_rawseti(L, -2, slot);
+  }
+  lua_pop(L, 1);
+  return entry;
+}
+#endif
+
 static int CBasePlayer_EyeTraceInternal (lua_State *L, bool cursor) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  EyeTraceCacheEntry *entry = GetEyeTraceCacheEntry(L, pPlayer, cursor);
+  if (entry->player == pPlayer->GetRefEHandle() && entry->frame == gpGlobals->framecount) {
+    // Keep the existing per-call trace userdata. Caller writes should not
+    // change the cached ray, and a removed hit entity must resolve to NULL.
+    trace_t tr = entry->trace;
+    tr.m_pEnt = static_cast<CBaseEntity *>(entry->hitEntity.Get());
+    lua_pushtrace(L, tr);
+    return 1;
+  }
+#endif
   Vector vForward;
   pPlayer->EyeVectors(&vForward, NULL, NULL);
 #ifdef CLIENT_DLL
@@ -618,6 +664,13 @@ static int CBasePlayer_EyeTraceInternal (lua_State *L, bool cursor) {
 
   trace_t tr;
   UTIL_TraceLine(vecEye, vecEnd, MASK_SOLID, pPlayer, COLLISION_GROUP_NONE, &tr);
+#ifdef CLIENT_DLL
+  entry->frame = gpGlobals->framecount;
+  entry->player = pPlayer->GetRefEHandle();
+  entry->hitEntity.Set(tr.m_pEnt);
+  entry->trace = tr;
+  entry->trace.m_pEnt = NULL;
+#endif
   lua_pushtrace(L, tr);
   return 1;
 }

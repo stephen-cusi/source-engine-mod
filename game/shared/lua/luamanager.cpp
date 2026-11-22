@@ -2066,6 +2066,7 @@ static void HL2SB_PushErrorStackLua( lua_State *L, const char *pszTraceback )
 // Declared here so the registrar below can publish it; defined next to the
 // other Lua entry points further down.
 static int HL2SB_LuaRunString( lua_State *L );
+static int HL2SB_LuaCompileString( lua_State *L );
 
 void HL2SB_LuaRegisterErrorCollector( lua_State *L )
 {
@@ -2097,6 +2098,8 @@ void HL2SB_LuaRegisterErrorCollector( lua_State *L )
 	lua_setglobal( L, "RunString" );
 	lua_pushcfunction( L, HL2SB_LuaRunString );
 	lua_setglobal( L, "RunStringEx" );
+	lua_pushcfunction( L, HL2SB_LuaCompileString );
+	lua_setglobal( L, "CompileString" );
 }
 
 // HL2SB: dispatch errors and feed the collector. Shared by the C error
@@ -2243,7 +2246,7 @@ static bool HL2SB_RewriteGLuaSource( const char *pIn, int nLen, char **ppOut, si
 		}
 		case LINE_COMMENT:
 			pOut[o++] = c;
-			if ( c == '\n' ) state = CODE;
+			if ( c == '\n' || c == '\r' ) state = CODE;
 			i2++;
 			break;
 		case BLOCK_COMMENT:
@@ -2317,6 +2320,39 @@ static bool HL2SB_RewriteGLuaSource( const char *pIn, int nLen, char **ppOut, si
 	*ppOut = pOut;
 	*pnOut = o;
 	return true;
+}
+
+// Compile a named GLua chunk without executing it. Keep the error object
+// available to callers that request quiet compilation.
+static int HL2SB_LuaCompileString( lua_State *L )
+{
+	size_t length = 0;
+	const char *source = luaL_checklstring( L, 1, &length );
+	const char *identifier = luaL_checkstring( L, 2 );
+	const bool reportError = lua_isnoneornil( L, 3 ) || lua_toboolean( L, 3 );
+	const char *chunkName = lua_pushfstring( L, "@%s", identifier );
+
+	char *translated = NULL;
+	size_t translatedLength = 0;
+	// The shared rewriter uses int indices and looks ahead up to 16 bytes.
+	if ( length > 2147483647u - 16u )
+		lua_pushfstring( L, "%s: source is too long", identifier );
+	else if ( !HL2SB_RewriteGLuaSource( source, (int)length, &translated, &translatedLength ) )
+		lua_pushfstring( L, "%s: out of memory translating source", identifier );
+	else
+	{
+		const int status = luaL_loadbufferx( L, translated, translatedLength, chunkName, "t" );
+		free( translated );
+		if ( status == 0 )
+			return 1;
+	}
+
+	if ( reportError )
+	{
+		luasrc_report_error( L, lua_tostring( L, -1 ) );
+		lua_pushnil( L );
+	}
+	return 1;
 }
 
 // HL2SB: the shared core behind GMod's RunString / RunStringEx globals AND the
