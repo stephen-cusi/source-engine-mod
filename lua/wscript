@@ -153,6 +153,8 @@ def _strip_tp(tg):
 		tg.env.CFLAGS = [f for f in tg.env.CFLAGS if f != '/TP'] + ['/TC']
 
 def _lj_arch(bld):
+	if bld.env.DEST_CPU in ('x86', 'i386', 'i486', 'i586', 'i686'):
+		return 'x86'
 	if bld.env.DEST_CPU in ('aarch64', 'arm64'):
 		return 'arm64'
 	if bld.env.DEST_CPU in ('amd64', 'x86_64', 'x64'):
@@ -189,6 +191,7 @@ def build(bld):
 			source=LJ_SRC + '/host/minilua.c',
 			target='minilua_host',
 			includes=LJ_SRC,
+			lib=[] if is_win else ['m'],
 			install_path=None,
 			idx=bld.get_taskgen_count(),
 		)
@@ -201,6 +204,12 @@ def build(bld):
 		# consumed by buildvm_arch.h's C-level guards and by the core itself.
 		dasc = src_dir.make_node('vm_x64.dasc')
 		dasm_flags = ['-LN', '-D', 'JIT', '-D', 'P64', '-D', 'FFI', '-D', 'FPU', '-D', 'ENDIAN_LE', '-D', 'HFABI']
+		if is_win:
+			dasm_flags += ['-D', 'WIN']
+	elif lj_arch == 'x86':
+		# The 32-bit VM uses the native x86 ABI and single-number mode.
+		dasc = src_dir.make_node('vm_x86.dasc')
+		dasm_flags = ['-LN', '-D', 'JIT', '-D', 'FFI', '-D', 'FPU', '-D', 'ENDIAN_LE', '-D', 'HFABI']
 		if is_win:
 			dasm_flags += ['-D', 'WIN']
 	else:
