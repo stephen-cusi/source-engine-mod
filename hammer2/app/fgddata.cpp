@@ -180,6 +180,21 @@ QList<QPair<QString, QString> > CFgdData::PropertyFlags( const QString &classNam
 	return flags;
 }
 
+CFgdData::ResourceType CFgdData::PropertyResourceType( const QString &className, const QString &key ) const
+{
+	GDclass *pClass = m_pGameData ? m_pGameData->ClassForName( className.toUtf8().constData() ) : nullptr;
+	if ( !pClass ) return ResourceType::None;
+	for ( int i = 0; i < pClass->GetVariableCount(); ++i )
+	{
+		GDinputvariable *pVar = pClass->GetVariableAt( i );
+		if ( !pVar || key.compare( QString::fromUtf8( pVar->GetName() ), Qt::CaseInsensitive ) != 0 ) continue;
+		if ( pVar->GetType() == ivStudioModel ) return ResourceType::StudioModel;
+		if ( pVar->GetType() == ivSound ) return ResourceType::Sound;
+		break;
+	}
+	return ResourceType::None;
+}
+
 bool CFgdData::PropertyDefault( const QString &className, const QString &key, QString &value ) const
 {
 	if ( !m_pGameData ) return false;

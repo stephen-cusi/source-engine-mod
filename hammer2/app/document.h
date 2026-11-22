@@ -34,6 +34,7 @@ enum EHammerTool
 	TOOL_CLIP,		// interactive 2D clipping plane
 	TOOL_VERTEX,	// conservative projected vertex editing
 	TOOL_CAMERA,
+	TOOL_DECAL,
 };
 
 class CHammerDocument : public QObject
@@ -135,6 +136,7 @@ public:
 	//          Key/values are prefilled from the FGD defaults. Returns the new
 	//          entity id or -1 when the class is unknown.
 	int PlaceEntity( const QString &className, const double origin[3] );
+	int PlaceDecal( const double origin[3] );
 
 	// Purpose: Creates a box solid from snapped bounds. Returns the solid id
 	//          or -1 for a degenerate box.
@@ -166,6 +168,8 @@ public:
 	// Purpose: Deletes the selected object. Returns true if something was deleted.
 	bool DeleteSelection();
 	bool CopySelection();
+	bool SaveSelectionAsPrefab( const QString &path, QString *error = nullptr ) const;
+	bool InsertOriginalPrefab( const QString &path, QString *error = nullptr );
 	bool CutSelection();
 	int PasteSelection();
 	bool HasClipboardObjects() const { return !m_ClipboardEntities.isEmpty() || !m_ClipboardSolids.isEmpty(); }
@@ -189,6 +193,7 @@ public:
 	bool SetSelectedEntityOutputs( const QList<QPair<QString, QString> > &outputs );
 	bool SetWorldProperties( const QMap<QString, QString> &properties );
 	bool SetSavedCameras( const QList<CameraLite> &cameras, int activeIndex );
+	bool SetCordon( const double mins[3], const double maxs[3], bool active );
 	// Manual visgroup definitions and membership; parentId 0 creates a root.
 	int CreateVisgroup( const QString &name, int parentId = 0 );
 	bool RenameVisgroup( int groupId, const QString &name );

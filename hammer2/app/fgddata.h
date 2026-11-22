@@ -20,6 +20,7 @@ class GameData;
 class CFgdData
 {
 public:
+	enum class ResourceType { None, StudioModel, Sound };
 	CFgdData();
 	~CFgdData();
 
@@ -50,6 +51,7 @@ public:
 	//          for unknown classes.
 	QMap<QString, QString> DefaultKeyValues( const QString &className ) const;
 	bool PropertyDefault( const QString &className, const QString &key, QString &value ) const;
+	ResourceType PropertyResourceType( const QString &className, const QString &key ) const;
 	// Internal key -> FGD display name, including keys without defaults.
 	QMap<QString, QString> ClassPropertyNames( const QString &className ) const;
 	QList<QPair<QString, QString> > PropertyChoices( const QString &className, const QString &key ) const;

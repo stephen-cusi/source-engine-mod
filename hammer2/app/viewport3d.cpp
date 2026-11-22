@@ -643,6 +643,7 @@ QString CQtViewport3D::interactionHint() const
 		case TOOL_ENTITY: return tr( "2 Entity: place in 2D" );
 		case TOOL_BLOCK: return tr( "3 Block: draw in 2D" );
 		case TOOL_TEXTURE: return tr( "Face: click / Enter apply" );
+		case TOOL_DECAL: return tr( "Decal: click a brush face" );
 		case TOOL_CLIP: return tr( "Shift+X: clip in 2D" );
 		default: return tr( "1 Select: click / drag" );
 	}
@@ -668,6 +669,9 @@ QString CQtViewport3D::interactionHelp() const
 				break;
 			case TOOL_CLIP:
 				toolHint = tr( "Clip (Shift+X): define the clipping line in a 2D view | drag orbits | wheel zooms" );
+				break;
+			case TOOL_DECAL:
+				toolHint = tr( "Decal (Shift+D): click a brush face to place the current material" );
 				break;
 			case TOOL_SELECT:
 			default:
@@ -910,6 +914,20 @@ void CQtViewport3D::DrawEntities( QPainter &painter, const Camera &cam )
 		const bool bSelected = m_pDocument->IsSelected( entity.id );
 		painter.setPen( bSelected ? QPen( HammerTheme::Colors().selection, 2 ) : QPen( HammerTheme::Colors().view3dEntity, 1 ) );
 		painter.setBrush( Qt::NoBrush );
+		if ( entity.classname.compare( QLatin1String( "infodecal" ), Qt::CaseInsensitive ) == 0 )
+		{
+			QPointF position;
+			if ( Project( cam, entity.origin, position ) )
+			{
+				QPolygonF pin;
+				pin << position + QPointF( 0, -5 ) << position + QPointF( 5, 0 )
+					<< position + QPointF( 0, 5 ) << position + QPointF( -5, 0 );
+				painter.drawPolygon( pin );
+				if ( filter.showEntityNames )
+					painter.drawText( position + QPointF( 8, -5 ), entity.keyvalues.value( QStringLiteral( "texture" ), entity.classname ) );
+			}
+			continue;
+		}
 		DrawBoxWireframe( painter, cam, boxMins, boxMaxs );
 
 		QPointF org;
@@ -1092,6 +1110,23 @@ bool CQtViewport3D::event( QEvent *event )
 void CQtViewport3D::mousePressEvent( QMouseEvent *event )
 {
 	if ( m_mouseLook ) { event->accept(); return; }
+	if ( event->button() == Qt::LeftButton && m_pDocument && m_pDocument->GetTool() == TOOL_DECAL )
+	{
+		Camera cam; BuildCamera( cam );
+		const double x = ( event->position().x() - width() / 2.0 ) / cam.focal;
+		const double y = ( height() / 2.0 - event->position().y() ) / cam.focal;
+		double ray[3];
+		for ( int axis = 0; axis < 3; ++axis ) ray[axis] = cam.forward[axis] + x * cam.right[axis] + y * cam.up[axis];
+		const auto face = HammerFaceHit::Find( *m_pDocument, cam.eye, ray, kNearPlane );
+		if ( face.solidId >= 0 )
+		{
+			double origin[3];
+			for ( int axis = 0; axis < 3; ++axis ) origin[axis] = cam.eye[axis] + ray[axis] * face.distance;
+			m_pDocument->PlaceDecal( origin );
+		}
+		event->accept();
+		return;
+	}
 	if ( DisplacementPaintActive() && ( event->button() == Qt::LeftButton || event->button() == Qt::RightButton ) &&
 		( m_displacementPaintButton != Qt::NoButton || !event->modifiers().testFlag( Qt::ControlModifier ) ) )
 	{

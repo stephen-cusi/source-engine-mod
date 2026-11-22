@@ -5,7 +5,8 @@ verified steps. Checked items are implemented and covered by an automated test
 or a direct workflow check; partial support stays explicitly unchecked.
 
 ## Approximate Original-Hammer Coverage
-Static coverage is 10 of 20 equally weighted stock workflows (50%).
+Static coverage is 12 of 20 equally weighted stock workflows (60%). The
+GMod Hammer2 build and regression suite passed for this snapshot.
 A usable basic workflow earns one point, an implementation with material
 restrictions earns half a point, and a missing workflow earns zero:
 
@@ -14,14 +15,13 @@ restrictions earns half a point, and a missing workflow earns zero:
 - Half a point each: VMF compatibility, view and camera navigation, brush
   transforms, clipping and hollowing, vertex editing, brush entities, entity
   properties and I/O (including Entity Report), materials, groups and visgroups,
-  compilation, game configuration, displacement editing.
-- Zero each: decals and overlays, prefabs, cordon
-  editing, model and sound browsers.
+  compilation, game configuration, displacement editing, decals and overlays,
+  prefabs, cordon editing, model and sound browsers.
 
 The 3D geometry brush and sewing extend the displacement workflow. It
 continues to earn half a point while major parts of original Hammer's
-displacement workflow remain missing. Reaching 60% under this rubric
-requires two additional points and direct checks of the workflows being credited.
+displacement workflow remain missing. The four newly usable but limited
+workflows each add half a point under this rubric.
 Prioritize original Hammer parity and fixes to its behavior before adding
 features outside the original editor.
 
@@ -375,8 +375,10 @@ features outside the original editor.
   complete original I/O browser or validation. Desktop verification is pending.
 - [x] VMF versioninfo key/value metadata is preserved during round trips; desktop
   verification remains pending.
-- [x] VMF cordon key/value data is preserved on load/save; active cordons block
-  compilation because clipping and the cordon editing UI are not yet supported.
+- [ ] Legacy single-box cordon bounds and state can be edited and preserved in
+  the VMF. The cordon compile path uses a temporary VMF and supports a limited
+  geometry subset. General brush clipping and newer multi-cordon formats
+  remain incomplete.
 - [x] VMF viewsettings grid spacing, snapping and visibility load into the UI and
   persist on save; unsupported values and other settings are retained. Supported
   flat Hammer++ metadata and vertices_plus face caches are preserved; unsupported
@@ -414,6 +416,18 @@ features outside the original editor.
   entities, entity report, model/sound browsers, and target navigation.
 - [ ] Displacement create/edit/paint/sew/subdivide; overlays, decals, paths,
   prefab library, groups, visgroups, and map-check/pointfile workflows.
+- [ ] Apply Decals places an undoable `infodecal` using the selected material
+  at the 3D hit location. Overlay editing and a projected decal preview remain
+  incomplete.
+- [ ] Create Prefab saves selected objects as a VMF prefab; Insert Original
+  Prefab browses the remembered folder and inserts at the saved coordinates.
+  Brush-entity ownership, object and face IDs, and entity outputs are preserved
+  or remapped as appropriate. Insertion is undoable. Visgroup-bound objects,
+  legacy prefab libraries and placement via a 2D bounding box remain unsupported.
+- [ ] Browse on an entity's FGD studio or sound property filters loose and
+  VPK-indexed model or sound files from the configured game. Choosing a hit
+  writes the corresponding property through the editor's undo history. The
+  model preview, sound playback, and scripted sound names remain unsupported.
 - [ ] Basic displacement workflow supports validated Source `dispinfo`
   load/save for powers 2–4, retaining the stored rows for unedited fields.
   The 3D view renders the same grid for face picking and textured preview;

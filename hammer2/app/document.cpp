@@ -9,6 +9,7 @@
 #include "document.h"
 
 #include "vmfio.h"
+#include "cordon.h"
 #include "brushwindings.h"
 #include "brushentityview.h"
 #include "vertexedit.h"
@@ -133,6 +134,26 @@ bool CHammerDocument::LoadFgds( const QStringList &paths, QString *errorOut )
 //-----------------------------------------------------------------------------
 // Purpose: Places a point entity with FGD default key/values.
 //-----------------------------------------------------------------------------
+int CHammerDocument::PlaceDecal( const double origin[3] )
+{
+	for ( int axis = 0; axis < 3; ++axis )
+		if ( !std::isfinite( origin[axis] ) ) return -1;
+	if ( m_strActiveMaterial.isEmpty() ) return -1;
+
+	BeginEdit();
+	EntityLite entity;
+	entity.classname = QStringLiteral( "infodecal" );
+	entity.id = m_Map.AllocId();
+	entity.keyvalues = m_Fgd.DefaultKeyValues( entity.classname );
+	entity.keyvalues.insert( QStringLiteral( "texture" ), m_strActiveMaterial );
+	for ( int axis = 0; axis < 3; ++axis ) entity.origin[axis] = origin[axis];
+	m_Map.entities.append( entity );
+	SetSelection( QSet<int>() << entity.id, entity.id );
+	TouchContent();
+	EndEdit();
+	return entity.id;
+}
+
 int CHammerDocument::PlaceEntity( const QString &className, const double origin[3] )
 {
 	BeginEdit();
@@ -971,6 +992,62 @@ bool CHammerDocument::CopySelection()
 	return true;
 }
 
+bool CHammerDocument::SaveSelectionAsPrefab( const QString &path, QString *error ) const
+{
+	MapDocLite prefab;
+	const auto canExport = [&]( const auto &object ) {
+		if ( !HasProtectedVisgroupState( object.hiddenWrapper, object.editorProperties ) ) return true;
+		if ( error ) *error = tr( "Prefabs cannot include hidden objects or visgroup memberships." );
+		return false;
+	};
+	for ( const EntityLite &entity : m_Map.entities )
+		if ( m_SelectedIds.contains( entity.id ) )
+		{
+			if ( !canExport( entity ) ) return false;
+			prefab.entities.append( entity );
+		}
+	for ( const SolidLite &solid : m_Map.solids )
+		if ( m_SelectedIds.contains( solid.ownerEntityId ) || m_SelectedIds.contains( solid.id ) )
+		{
+			if ( !canExport( solid ) ) return false;
+			prefab.solids.append( solid );
+		}
+	if ( prefab.entities.isEmpty() && prefab.solids.isEmpty() )
+	{
+		if ( error ) *error = tr( "Select objects to create a prefab." );
+		return false;
+	}
+	prefab.SetNextId( m_Map.PeekNextId() );
+	prefab.hasVersionInfo = true;
+	prefab.versionProperties = {
+		{ QStringLiteral( "editorversion" ), QStringLiteral( "400" ) },
+		{ QStringLiteral( "editorbuild" ), QStringLiteral( "8864" ) },
+		{ QStringLiteral( "mapversion" ), QStringLiteral( "0" ) },
+		{ QStringLiteral( "formatversion" ), QStringLiteral( "100" ) },
+		{ QStringLiteral( "prefab" ), QStringLiteral( "1" ) } };
+	return VmfIO::SaveMap( path, prefab, error );
+}
+
+bool CHammerDocument::InsertOriginalPrefab( const QString &path, QString *error )
+{
+	MapDocLite prefab;
+	if ( !VmfIO::LoadMap( path, prefab, error ) ) return false;
+	const quint64 clipboardDocument = m_nClipboardDocumentIdentity;
+	const int clipboardPrimary = m_nClipboardPrimaryId;
+	m_ClipboardEntities.swap( prefab.entities );
+	m_ClipboardSolids.swap( prefab.solids );
+	m_nClipboardPrimaryId = -1;
+	m_nClipboardDocumentIdentity = m_nDocumentIdentity == 0 ? 1 : 0;
+	const double noOffset[3] = {};
+	const bool inserted = PasteSpecial( 1, noOffset ) >= 0;
+	m_ClipboardEntities.swap( prefab.entities );
+	m_ClipboardSolids.swap( prefab.solids );
+	m_nClipboardPrimaryId = clipboardPrimary;
+	m_nClipboardDocumentIdentity = clipboardDocument;
+	if ( !inserted && error ) *error = tr( "The prefab contains no insertable objects or references unsupported editor data." );
+	return inserted;
+}
+
 bool CHammerDocument::CutSelection()
 {
 	if ( !CopySelection() )
@@ -1382,6 +1459,29 @@ bool CHammerDocument::SetSelectedEntityOutputs( const QList<QPair<QString, QStri
 	// BeginEdit snapshots the implicitly shared map. Reacquire through the
 	// mutable container so it detaches before the entity is modified.
 	m_Map.EntityById( m_nSelectedId )->connections = outputs;
+	TouchContent();
+	EndEdit();
+	return true;
+}
+
+bool CHammerDocument::SetCordon( const double mins[3], const double maxs[3], bool active )
+{
+	const HammerCordon::Bounds bounds{ { mins[0], mins[1], mins[2] }, { maxs[0], maxs[1], maxs[2] } };
+	if ( !HammerCordon::Valid( bounds ) || HammerCordon::HasOtherCordonFormat( m_Map ) ) return false;
+	auto properties = m_Map.cordonProperties;
+	for ( auto it = properties.begin(); it != properties.end(); )
+	{
+		const QString key = it->first.toLower();
+		if ( key == QLatin1String( "mins" ) || key == QLatin1String( "maxs" ) || key == QLatin1String( "active" ) )
+			it = properties.erase( it );
+		else ++it;
+	}
+	properties.append( { QStringLiteral( "mins" ), QStringLiteral( "(%1)" ).arg( FormatVec3( mins ) ) } );
+	properties.append( { QStringLiteral( "maxs" ), QStringLiteral( "(%1)" ).arg( FormatVec3( maxs ) ) } );
+	properties.append( { QStringLiteral( "active" ), active ? QStringLiteral( "1" ) : QStringLiteral( "0" ) } );
+	if ( properties == m_Map.cordonProperties ) return true;
+	BeginEdit();
+	m_Map.cordonProperties = properties;
 	TouchContent();
 	EndEdit();
 	return true;

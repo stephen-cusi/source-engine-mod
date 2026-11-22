@@ -12,6 +12,8 @@
 #include "document.h"
 #include "gameconfig.h"
 #include "vmfio.h"
+#include "cordon.h"
+#include <QTemporaryDir>
 #include "localization.h"
 #include "mapmodel.h"
 #include "mappropertiesdialog.h"
@@ -774,6 +776,48 @@ void CMainWindow::CreateMenus()
     connect( actionMapProperties, &QAction::triggered, this, &CMainWindow::OnMapProperties );
     m_pMenuMap->addAction( actionMapProperties );
 
+    QAction *cordonEdit = m_pMenuMap->addAction( tr( "Edit Cordon Bounds..." ) );
+    QAction *cordonToggle = m_pMenuMap->addAction( tr( "Toggle Cordon" ) );
+    cordonToggle->setCheckable( true );
+    connect( m_pMenuMap, &QMenu::aboutToShow, this, [this, cordonEdit, cordonToggle] {
+        const MapDocLite &map = m_pDocument->Map();
+        const bool supported = !HammerCordon::HasOtherCordonFormat( map );
+        cordonEdit->setEnabled( supported );
+        cordonToggle->setEnabled( supported );
+        cordonToggle->setChecked( map.IsCordonActive() );
+    } );
+    connect( cordonToggle, &QAction::triggered, this, [this, cordonToggle]( bool active ) {
+        HammerCordon::Bounds bounds;
+        if ( HammerCordon::ReadBounds( m_pDocument->Map(), bounds ) &&
+             m_pDocument->SetCordon( bounds.mins, bounds.maxs, active ) ) return;
+        cordonToggle->setChecked( m_pDocument->Map().IsCordonActive() );
+        QMessageBox::warning( this, tr( "Cordon" ), tr( "Edit the invalid cordon bounds first." ) );
+    } );
+    connect( cordonEdit, &QAction::triggered, this, [this] {
+        HammerCordon::Bounds bounds;
+        if ( !HammerCordon::ReadBounds( m_pDocument->Map(), bounds ) ) bounds = HammerCordon::Bounds();
+        QDialog dialog( this );
+        dialog.setWindowTitle( tr( "Edit Cordon Bounds" ) );
+        QFormLayout *form = new QFormLayout( &dialog );
+        QLineEdit *mins = new QLineEdit( FormatVec3( bounds.mins ), &dialog );
+        QLineEdit *maxs = new QLineEdit( FormatVec3( bounds.maxs ), &dialog );
+        QCheckBox *active = new QCheckBox( tr( "Active" ), &dialog );
+        active->setChecked( m_pDocument->Map().IsCordonActive() );
+        form->addRow( tr( "Minimum (X Y Z):" ), mins );
+        form->addRow( tr( "Maximum (X Y Z):" ), maxs );
+        form->addRow( active );
+        auto *buttons = new QDialogButtonBox( QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog );
+        connect( buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject );
+        connect( buttons, &QDialogButtonBox::accepted, &dialog, [this, &dialog, mins, maxs, active] {
+            HammerCordon::Bounds edited;
+            if ( ParseVec3( mins->text(), edited.mins ) && ParseVec3( maxs->text(), edited.maxs ) &&
+                 m_pDocument->SetCordon( edited.mins, edited.maxs, active->isChecked() ) ) dialog.accept();
+            else QMessageBox::warning( &dialog, tr( "Cordon" ), tr( "Enter valid minimum and maximum coordinates within the map limits." ) );
+        } );
+        form->addRow( buttons );
+        dialog.exec();
+    } );
+
     QAction *inspectDisplacement = m_pMenuMap->addAction( tr( "Inspect Displacements in VMF..." ) );
     inspectDisplacement->setObjectName( "inspectDisplacementsAction" );
     connect( inspectDisplacement, &QAction::triggered, this, [this] {
@@ -914,6 +958,47 @@ void CMainWindow::CreateMenus()
     //--- Tools ----------------------------------------------------------------
     m_pMenuTools = menuBar()->addMenu( tr( "T&ools" ) );
     m_pMenuTools->setObjectName( "ToolsMenu" );
+
+    const auto prefabDirectory = [] {
+        return QSettings().value( QStringLiteral( "prefabs/directory" ),
+            QDir( QCoreApplication::applicationDirPath() ).filePath( QStringLiteral( "prefabs" ) ) ).toString();
+    };
+    QAction *createPrefab = m_pMenuTools->addAction( tr( "Create Prefab..." ) );
+    createPrefab->setShortcut( QKeySequence( "Ctrl+R" ) );
+    connect( createPrefab, &QAction::triggered, this, [this, prefabDirectory] {
+        if ( m_pDocument->SelectedIds().isEmpty() )
+        {
+            QMessageBox::information( this, tr( "Create Prefab" ), tr( "Select objects to create a prefab." ) );
+            return;
+        }
+        const QString directory = prefabDirectory();
+        QString path = QFileDialog::getSaveFileName( this, tr( "Create Prefab" ),
+            QDir( QFileInfo( directory ).isDir() ? directory : QDir::homePath() ).filePath( QStringLiteral( "prefab.vmf" ) ),
+            tr( "Valve Map Files (*.vmf)" ) );
+        if ( path.isEmpty() ) return;
+        if ( !path.endsWith( QLatin1String( ".vmf" ), Qt::CaseInsensitive ) )
+        {
+            path += QLatin1String( ".vmf" );
+            if ( QFileInfo::exists( path ) &&
+                 QMessageBox::question( this, tr( "Create Prefab" ), tr( "Replace the existing prefab?" ) ) != QMessageBox::Yes ) return;
+        }
+        QString error;
+        if ( !m_pDocument->SaveSelectionAsPrefab( path, &error ) )
+            QMessageBox::warning( this, tr( "Create Prefab" ), error );
+        else QSettings().setValue( QStringLiteral( "prefabs/directory" ), QFileInfo( path ).absolutePath() );
+    } );
+    QAction *insertPrefab = m_pMenuTools->addAction( tr( "Insert Original Prefab..." ) );
+    insertPrefab->setShortcut( QKeySequence( "Alt+Shift+C" ) );
+    connect( insertPrefab, &QAction::triggered, this, [this, prefabDirectory] {
+        const QString directory = prefabDirectory();
+        const QString path = QFileDialog::getOpenFileName( this, tr( "Insert Original Prefab" ),
+            QFileInfo( directory ).isDir() ? directory : QDir::homePath(), tr( "Valve Map Files (*.vmf)" ) );
+        if ( path.isEmpty() ) return;
+        QString error;
+        if ( !m_pDocument->InsertOriginalPrefab( path, &error ) )
+            QMessageBox::warning( this, tr( "Insert Original Prefab" ), error );
+        else QSettings().setValue( QStringLiteral( "prefabs/directory" ), QFileInfo( path ).absolutePath() );
+    } );
 
     QMenu *displacementMenu = m_pMenuTools->addMenu( tr( "Displacements" ) );
     displacementMenu->setStatusTip( tr( "Select faces in the 3D view with the Material tool first." ) );
@@ -1260,6 +1345,9 @@ void CMainWindow::CreateMenus()
         { QT_TR_NOOP( "Apply Texture Tool" ), "texture",
             QList<QKeySequence>() << QKeySequence( "Shift+T" ),
             ":/tool_apply_material.svg" },
+        { QT_TR_NOOP( "Apply Decals" ), "decal",
+            QList<QKeySequence>() << QKeySequence( "Shift+D" ),
+            ":/tool_decal.svg" },
         { QT_TR_NOOP( "Clipping Tool" ), "clip",
             QList<QKeySequence>() << QKeySequence( "Shift+X" ),
             ":/tool_clip.svg" },
@@ -1725,6 +1813,76 @@ void CMainWindow::CreateDockWidgets()
     propertiesLayout->addWidget( selectedClassLabel );
     propertiesLayout->addWidget( m_pEntityClassCombo );
     propertiesLayout->addWidget( m_pPropertyTree, 1 );
+    QPushButton *browseResource = new QPushButton( tr( "Browse..." ), propertiesPanel );
+    browseResource->setObjectName( "BrowseEntityResource" );
+    browseResource->setEnabled( false );
+    propertiesLayout->addWidget( browseResource );
+    const auto resourceType = [this]( const QTreeWidgetItem *item ) {
+        if ( !item || m_pDocument->SelectedIds().size() != 1 ) return CFgdData::ResourceType::None;
+        const EntityLite *entity = m_pDocument->Map().EntityById( m_pDocument->SelectedId() );
+        if ( !entity ) return CFgdData::ResourceType::None;
+        return m_pDocument->Fgd().PropertyResourceType( entity->classname, item->data( 0, Qt::UserRole ).toString() );
+    };
+    connect( m_pPropertyTree, &QTreeWidget::currentItemChanged, browseResource, [browseResource, resourceType]( QTreeWidgetItem *item ) {
+        browseResource->setEnabled( resourceType( item ) != CFgdData::ResourceType::None );
+    } );
+    connect( browseResource, &QPushButton::clicked, this, [this, resourceType] {
+        const QTreeWidgetItem *item = m_pPropertyTree->currentItem();
+        const auto type = resourceType( item );
+        if ( type == CFgdData::ResourceType::None ) return;
+        const bool model = type == CFgdData::ResourceType::StudioModel;
+        const QString key = item->data( 0, Qt::UserRole ).toString();
+        const QString current = item->text( 1 );
+        const int entityId = m_pDocument->SelectedId();
+        const quint64 identity = m_pDocument->DocumentIdentity();
+        const QString gameDir = QSettings().value( QStringLiteral( "compile/gameDir" ),
+            PortableDefault( QCoreApplication::applicationDirPath(), QStringLiteral( "compile/gameDir" ) ) ).toString();
+        const QString title = model ? tr( "Browse Models" ) : tr( "Browse Sounds" );
+        if ( gameDir.isEmpty() || !QFileInfo( gameDir ).isDir() )
+        {
+            QMessageBox::information( this, title, tr( "Select a game directory first." ) );
+            return;
+        }
+        const auto catalog = ScanGameResources( gameDir, MaterialSearchPaths( gameDir ),
+            model ? QStringLiteral( "models" ) : QStringLiteral( "sound" ),
+            model ? QStringList{ QStringLiteral( "mdl" ) } : QStringList{ QStringLiteral( "wav" ), QStringLiteral( "mp3" ) },
+            model, true );
+        QDialog dialog( this );
+        dialog.setWindowTitle( title );
+        dialog.resize( 620, 500 );
+        QVBoxLayout *layout = new QVBoxLayout( &dialog );
+        QLineEdit *filter = new QLineEdit( &dialog );
+        filter->setPlaceholderText( tr( "Filter by name" ) );
+        layout->addWidget( filter );
+        QListWidget *items = new QListWidget( &dialog );
+        items->setUniformItemSizes( true );
+        items->addItems( catalog.names );
+        const auto selected = items->findItems( current, Qt::MatchFixedString );
+        if ( !selected.isEmpty() ) items->setCurrentItem( selected.first() );
+        layout->addWidget( items );
+        if ( !catalog.failedArchives.isEmpty() )
+            layout->addWidget( new QLabel( tr( "%1 archive(s) could not be indexed." ).arg( catalog.failedArchives.size() ), &dialog ) );
+        QDialogButtonBox *buttons = new QDialogButtonBox( QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog );
+        layout->addWidget( buttons );
+        QPushButton *accept = buttons->button( QDialogButtonBox::Ok );
+        const auto updateAccept = [items, accept] {
+            accept->setEnabled( items->currentItem() && !items->currentItem()->isHidden() );
+        };
+        updateAccept();
+        connect( items, &QListWidget::currentItemChanged, &dialog, updateAccept );
+        connect( filter, &QLineEdit::textChanged, &dialog, [items, updateAccept]( const QString &query ) {
+            for ( int i = 0; i < items->count(); ++i )
+                items->item( i )->setHidden( !items->item( i )->text().contains( query, Qt::CaseInsensitive ) );
+            updateAccept();
+        } );
+        connect( buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept );
+        connect( buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject );
+        connect( items, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept );
+        if ( dialog.exec() == QDialog::Accepted && items->currentItem() && !items->currentItem()->isHidden() &&
+             m_pDocument->DocumentIdentity() == identity && m_pDocument->SelectedIds().size() == 1 &&
+             m_pDocument->SelectedId() == entityId && m_pDocument->SetSelectedEntityKey( key, items->currentItem()->text() ) )
+            PopulatePropertyTree();
+    } );
     QPushButton *outputsButton = new QPushButton( CEntityOutputsDialog::T( "Edit Outputs..." ), propertiesPanel );
     outputsButton->setEnabled( false );
     connect( m_pDocument, &CHammerDocument::selectionChanged, outputsButton, [this, outputsButton]( int id ) {
@@ -2235,10 +2393,12 @@ void CMainWindow::OnSaveDocumentAs()
 
 void CMainWindow::OnRunMap()
 {
-    if ( m_pDocument->Map().IsCordonActive() )
+    const bool cordoned = m_pDocument->Map().IsCordonActive();
+    MapDocLite compileMap;
+    if ( cordoned && !HammerCordon::BuildCompileMap( m_pDocument->Map(), compileMap ) )
     {
         QMessageBox::warning( this, tr( "Compile Map" ),
-            tr( "This map has an active cordon. Cordon compilation is not yet supported; disable the cordon in Hammer before compiling." ) );
+            tr( "This map has invalid or unsupported cordon bounds." ) );
         return;
     }
     if ( !m_pDocument->SaveDocument() )
@@ -2263,8 +2423,34 @@ void CMainWindow::OnRunMap()
     m_pViewport3D->setMaterialGameDirectory( gameDir );
 
     const QFileInfo mapInfo( m_pDocument->GetFileName() );
-    const QString bspPath = mapInfo.dir().filePath( mapInfo.completeBaseName() + ".bsp" );
-    const QString leakPath = mapInfo.dir().filePath( mapInfo.completeBaseName() + ".lin" );
+    std::unique_ptr<QTemporaryDir> cordonDirectory;
+    QString inputPath = mapInfo.absoluteFilePath();
+    if ( cordoned )
+    {
+        cordonDirectory = std::make_unique<QTemporaryDir>( mapInfo.dir().filePath( QStringLiteral( ".hammer-cordon-XXXXXX" ) ) );
+        QString error;
+        if ( cordonDirectory->isValid() ) inputPath = cordonDirectory->filePath( mapInfo.fileName() );
+        // VBSP first resolves an instance relative to the input VMF. The
+        // cordon copy lives one level deeper, so preserve that first lookup.
+        for ( EntityLite &entity : compileMap.entities )
+        {
+            if ( entity.classname.compare( QLatin1String( "func_instance" ), Qt::CaseInsensitive ) != 0 ) continue;
+            auto file = entity.keyvalues.find( QStringLiteral( "file" ) );
+            if ( file == entity.keyvalues.end() || file.value().isEmpty() || QDir::isAbsolutePath( file.value() ) ) continue;
+            const QFileInfo relative( QDir::fromNativeSeparators( file.value() ) );
+            const QString instanceVmf = relative.path() + QLatin1Char( '/' ) + relative.completeBaseName() + QStringLiteral( ".vmf" );
+            if ( QFileInfo( mapInfo.dir().filePath( instanceVmf ) ).isFile() )
+                file.value() = QStringLiteral( "../" ) + QDir::fromNativeSeparators( file.value() );
+        }
+        if ( !cordonDirectory->isValid() || !VmfIO::SaveMap( inputPath, compileMap, &error ) )
+        {
+            QMessageBox::warning( this, tr( "Compile Map" ), tr( "Could not write the temporary cordon map. %1" ).arg( error ) );
+            return;
+        }
+    }
+    const QFileInfo compileInfo( inputPath );
+    const QString bspPath = compileInfo.dir().filePath( mapInfo.completeBaseName() + ".bsp" );
+    const QString leakPath = compileInfo.dir().filePath( mapInfo.completeBaseName() + ".lin" );
     const QString destination = QDir( gameDir ).filePath( "maps/" + mapInfo.completeBaseName() + ".bsp" );
     if ( QFileInfo::exists( destination ) && QFileInfo( bspPath ).absoluteFilePath() != QFileInfo( destination ).absoluteFilePath() &&
          QMessageBox::question( this, tr( "Compile Map" ), tr( "Replace the existing map at %1?" ).arg( destination ) ) != QMessageBox::Yes )
@@ -2291,7 +2477,7 @@ void CMainWindow::OnRunMap()
         QProcess process;
         process.setWorkingDirectory( binDir );
         process.setProcessChannelMode( QProcess::MergedChannels );
-        process.start( executable, QStringList() << "-game" << gameDir << ( i == 0 ? mapInfo.absoluteFilePath() : bspPath ) );
+        process.start( executable, QStringList() << "-game" << gameDir << ( i == 0 ? inputPath : bspPath ) );
         if ( !process.waitForStarted() )
         {
             QMessageBox::warning( this, tr( "Compile Map" ), tr( "Could not start %1: %2" ).arg( executable, process.errorString() ) );
@@ -2707,6 +2893,8 @@ void CMainWindow::OnToolModeChanged( QAction *action )
         m_pDocument->SetTool( TOOL_BLOCK );
     else if ( id == QLatin1String( "texture" ) )
         m_pDocument->SetTool( TOOL_TEXTURE );
+    else if ( id == QLatin1String( "decal" ) )
+        m_pDocument->SetTool( TOOL_DECAL );
     else if ( id == QLatin1String( "vertex" ) )
         m_pDocument->SetTool( TOOL_VERTEX );
     else if ( id == QLatin1String( "clip" ) )

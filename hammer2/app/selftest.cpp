@@ -47,6 +47,7 @@
 #include "viewport2d.h"
 #include "viewport3d.h"
 #include "vmfio.h"
+#include "cordon.h"
 #include "visgroupdialog.h"
 
 #include <QCoreApplication>
@@ -90,6 +91,7 @@
 
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <cstring>
 #include <cstdio>
 #include <vector>
@@ -954,6 +956,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 				window.toolBarArea( mapToolbar ) == Qt::TopToolBarArea;
 		}
 		QAction *cameraToolAction = window.findChild<QAction *>( QStringLiteral( "toolAction_camera" ) );
+		QAction *decalToolAction = window.findChild<QAction *>( QStringLiteral( "toolAction_decal" ) );
 		QAction *undoAction = window.findChild<QAction *>( QStringLiteral( "actionUndo" ) );
 		QAction *redoAction = window.findChild<QAction *>( QStringLiteral( "actionRedo" ) );
 		QAction *tieEntityAction = window.findChild<QAction *>( QStringLiteral( "tieToEntityAction" ) );
@@ -987,7 +990,7 @@ int RunHammerSelfTest( const QString &vmfPath )
 		const bool commandSurfaceOk = mapToolbar && toolbar && undoAction && redoAction && undoButton && redoButton &&
 			mapToolbar->toolButtonStyle() == Qt::ToolButtonTextUnderIcon &&
 			toolbar->toolButtonStyle() == Qt::ToolButtonIconOnly && classicLayoutOk &&
-			mapToolbarFits && namedEditTools == 7 &&
+			mapToolbarFits && namedEditTools == 8 &&
 			undoAction->shortcut() == QKeySequence::Undo && redoAction->shortcut() == QKeySequence::Redo &&
 			!undoButton->text().isEmpty() && !redoButton->text().isEmpty() &&
 			image.rect().contains( undoButtonRect ) && image.rect().contains( redoButtonRect ) &&
@@ -1000,9 +1003,38 @@ int RunHammerSelfTest( const QString &vmfPath )
 			selectionMenu && selectionMenu->actions().contains( tieEntityAction ) &&
 			toolsMenu && toolsMenu->actions().contains( tieEntityAction ) &&
 			cameraToolAction && cameraToolAction->shortcuts().contains( QKeySequence( "Shift+C" ) ) &&
+			decalToolAction && decalToolAction->shortcuts().contains( QKeySequence( "Shift+D" ) ) && !decalToolAction->icon().isNull() &&
 			!window.findChild<QAction *>( QStringLiteral( "actionAutoCombine" ) );
 		ctx.Step( "ui-command-surface", commandSurfaceOk,
 			QStringLiteral( "classic toolbar layout, tool tips, undo/redo, entity labels and tie-to-entity entry" ) );
+		{
+			CHammerDocument decalDoc;
+			CQtViewport3D decalView;
+			decalView.setDocument( &decalDoc );
+			decalView.resize( 400, 300 );
+			const double mins[3] = { 64, -32, 68 }, maxs[3] = { 96, 32, 132 };
+			const double eye[3] = { 0, 0, 100 }, angles[3] = { 0, 0, 0 };
+			const QString texture = QStringLiteral( "decals/stock_decal" );
+			bool ok = decalDoc.CreateBrush( mins, maxs ) > 0 && decalDoc.SetActiveMaterial( texture );
+			decalDoc.SetTool( TOOL_DECAL );
+			decalView.setCameraPositionAngles( eye, angles );
+			QMouseEvent press( QEvent::MouseButtonPress, QPointF( 200, 150 ), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier );
+			QCoreApplication::sendEvent( &decalView, &press );
+			const auto hasDecal = [&]( const MapDocLite &map ) {
+				if ( map.entities.size() != 1 ) return false;
+				const EntityLite &entity = map.entities.front();
+				return entity.classname == QLatin1String( "infodecal" ) &&
+					entity.keyvalues.value( QStringLiteral( "texture" ) ) == texture &&
+					std::abs( entity.origin[0] - 64 ) < 0.01 && std::abs( entity.origin[2] - 100 ) < 0.01;
+			};
+			ok = ok && hasDecal( decalDoc.Map() ) && decalDoc.Undo() && decalDoc.Map().entities.isEmpty() &&
+				decalDoc.Redo() && hasDecal( decalDoc.Map() );
+			QTemporaryDir dir;
+			MapDocLite save = decalDoc.Map(), reloaded;
+			const QString path = dir.filePath( QStringLiteral( "decal.vmf" ) );
+			ok = ok && dir.isValid() && VmfIO::SaveMap( path, save ) && VmfIO::LoadMap( path, reloaded ) && hasDecal( reloaded );
+			ctx.Step( "decal-placement", ok, QStringLiteral( "3D face hit, material binding, undo/redo and VMF round trip" ) );
+		}
 		{
 			CMainWindow selectionWindow( nullptr, false );
 			CHammerDocument *doc = selectionWindow.findChild<CHammerDocument *>();
@@ -1711,6 +1743,35 @@ int RunHammerSelfTest( const QString &vmfPath )
 	// Optional end-to-end fixture: retain an existing sealed world and write
 	// two real brush entities to a caller-selected independent VMF path.
 	const QString brushCompileInput = qEnvironmentVariable( "HAMMER_SELFTEST_BRUSH_COMPILE_INPUT" );
+	const QString decalCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_DECAL_COMPILE_OUTPUT" );
+	if ( !brushCompileInput.isEmpty() && !decalCompileOutput.isEmpty() )
+	{
+		CHammerDocument decalFixture;
+		QString decalError;
+		bool ok = VmfIO::LoadMap( brushCompileInput, decalFixture.Map(), &decalError );
+		std::optional<HammerWinding::Point> location;
+		double lowestTop = std::numeric_limits<double>::infinity();
+		for ( const SolidLite &solid : decalFixture.Map().solids )
+		{
+			QList<HammerWinding::Polygon> faces;
+			QList<HammerWinding::Plane> planes;
+			if ( solid.ownerEntityId || !HammerWinding::BuildFaces( solid, faces ) ||
+				!HammerWinding::BuildPlanes( solid, planes ) ) continue;
+			for ( int i = 0; i < faces.size(); ++i )
+			{
+				if ( planes[i].normal[2] < 0.999 || solid.sides[i].displacement || faces[i].isEmpty() ) continue;
+				HammerWinding::Point center{};
+				for ( const auto &vertex : faces[i] )
+					for ( int axis = 0; axis < 3; ++axis ) center[axis] += vertex[axis] / faces[i].size();
+				if ( center[2] >= lowestTop ) continue;
+				lowestTop = center[2];
+				location = center;
+			}
+		}
+		ok = ok && location && decalFixture.SetActiveMaterial( QStringLiteral( "decals/shot1" ) ) &&
+			decalFixture.PlaceDecal( location->data() ) > 0 && VmfIO::SaveMap( decalCompileOutput, decalFixture.Map(), &decalError );
+		ctx.Step( "decal-compile-fixture", ok, decalError );
+	}
 	const QString brushCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_BRUSH_COMPILE_OUTPUT" );
 	const QString displacementCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_DISPLACEMENT_COMPILE_OUTPUT" );
 	if ( !brushCompileInput.isEmpty() && !displacementCompileOutput.isEmpty() )
@@ -1937,6 +1998,36 @@ int RunHammerSelfTest( const QString &vmfPath )
 	cordonRoundTrip.cordonProperties.append( qMakePair( QStringLiteral( "ACTIVE" ), QStringLiteral( "0" ) ) );
 	bCordon = bCordon && !cordonRoundTrip.IsCordonActive();
 	ctx.Step( "cordon-vmf-roundtrip", bCordon, cordonError );
+
+	HammerCordon::Bounds cordonBounds;
+	const double insideMin[3] = { -64, -16, -32 }, insideMax[3] = { 64, 16, -24 };
+	const double outsideMin[3] = { 500, 500, 500 }, outsideMax[3] = { 516, 516, 516 };
+	MapDocLite cordonCompile;
+	const int insideSolid = CreateBoxSolid( cordonLoaded, insideMin, insideMax );
+	const int outsideSolid = CreateBoxSolid( cordonLoaded, outsideMin, outsideMax );
+	EntityLite cordonSpawn;
+	cordonSpawn.id = cordonLoaded.AllocId();
+	cordonSpawn.classname = QStringLiteral( "info_player_start" );
+	for ( int axis = 0; axis < 3; ++axis ) cordonSpawn.origin[axis] = cordonEntityOrigin[axis];
+	cordonLoaded.entities.append( cordonSpawn );
+	EntityLite outsideEntity = cordonSpawn;
+	outsideEntity.id = cordonLoaded.AllocId();
+	outsideEntity.origin[0] = 500;
+	cordonLoaded.entities.append( outsideEntity );
+	bool bCordonCompile = insideSolid > 0 && outsideSolid > 0 &&
+		HammerCordon::ReadBounds( cordonLoaded, cordonBounds ) &&
+		cordonDocument.SetCordon( cordonBounds.mins, cordonBounds.maxs, false ) &&
+		!cordonDocument.Map().IsCordonActive() && cordonDocument.Undo() &&
+		cordonDocument.Map().cordonProperties == cordonLoaded.cordonProperties &&
+		HammerCordon::BuildCompileMap( cordonLoaded, cordonCompile ) &&
+		cordonCompile.SolidById( insideSolid ) && !cordonCompile.SolidById( outsideSolid ) &&
+		cordonCompile.solids.size() == 7 && cordonCompile.entities.size() == 1 &&
+		cordonCompile.entities.first().id == cordonSpawn.id && !cordonCompile.IsCordonActive() &&
+		cordonLoaded.IsCordonActive() && cordonLoaded.solids.size() == 2;
+	const QString cordonCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_CORDON_COMPILE_OUTPUT" );
+	const QString cordonCompilePath = cordonCompileOutput.isEmpty() ? guardDir.filePath( "cordon_compile.vmf" ) : cordonCompileOutput;
+	bCordonCompile = bCordonCompile && VmfIO::SaveMap( cordonCompilePath, cordonCompile, &cordonError );
+	ctx.Step( "cordon-compile-map", bCordonCompile, cordonError );
 
 	// Keep prefab, version and extension keys, including duplicates and quoting.
 	const char *versionFixture =
@@ -4467,6 +4558,38 @@ int RunHammerSelfTest( const QString &vmfPath )
 	QSet<QString> unchanged; unchanged.insert( QStringLiteral( "existing" ) );
 	bMaterialCatalog = bMaterialCatalog && !IndexVpkMaterials( malformed.fileName(), unchanged ) && unchanged.size() == 1;
 	ctx.Step( "material-catalog", bMaterialCatalog, QStringLiteral( "loose and VPK indexes; malformed archive is atomic" ) );
+	{
+		QTemporaryDir resources;
+		const QString modelsDir = resources.filePath( QStringLiteral( "models/props" ) );
+		bool ok = resources.isValid() && QDir().mkpath( modelsDir );
+		QFile modelFile( modelsDir + QStringLiteral( "/loose.mdl" ) );
+		ok = ok && modelFile.open( QIODevice::WriteOnly );
+		modelFile.close();
+		QByteArray sounds;
+		for ( const QByteArray &token : { QByteArray( "wav" ), QByteArray( "sound/ambient" ), QByteArray( "wind" ) } )
+			sounds.append( token ).append( '\0' );
+		sounds.append( entry ).append( QByteArray( 3, '\0' ) );
+		QByteArray soundHeader = header;
+		qToLittleEndian<quint32>( static_cast<quint32>( sounds.size() ), reinterpret_cast<uchar *>( soundHeader.data() + 8 ) );
+		QFile soundArchive( resources.filePath( QStringLiteral( "sounds_dir.vpk" ) ) );
+		ok = ok && soundArchive.open( QIODevice::WriteOnly ) &&
+			soundArchive.write( soundHeader ) == soundHeader.size() && soundArchive.write( sounds ) == sounds.size();
+		soundArchive.close();
+		const auto models = ScanGameResources( resources.path(), {}, QStringLiteral( "models" ), { QStringLiteral( "mdl" ) }, true, true );
+		const auto audio = ScanGameResources( resources.path(), {}, QStringLiteral( "sound" ), { QStringLiteral( "wav" ) }, false, true );
+		QFile fgdFile( resources.filePath( QStringLiteral( "resource.fgd" ) ) );
+		ok = ok && fgdFile.open( QIODevice::WriteOnly ) && fgdFile.write(
+			"@PointClass = resource_probe : \"Probe\" [ model(studio) : \"Model\" message(sound) : \"Sound\" ]\n" ) > 0;
+		fgdFile.close();
+		CFgdData resourceFgd;
+		ok = ok && resourceFgd.Load( fgdFile.fileName() ) &&
+			resourceFgd.PropertyResourceType( QStringLiteral( "resource_probe" ), QStringLiteral( "MODEL" ) ) == CFgdData::ResourceType::StudioModel &&
+			resourceFgd.PropertyResourceType( QStringLiteral( "resource_probe" ), QStringLiteral( "message" ) ) == CFgdData::ResourceType::Sound &&
+			models.names == QStringList{ QStringLiteral( "models/props/loose.mdl" ) } &&
+			audio.names == QStringList{ QStringLiteral( "ambient/wind.wav" ) } &&
+			models.failedArchives.isEmpty() && audio.failedArchives.isEmpty();
+		ctx.Step( "entity-resource-catalog", ok, QStringLiteral( "FGD studio/sound types, loose model and packed sound relative paths" ) );
+	}
 	const QString mountedGame = fixtureRoot + QStringLiteral( "/game" );
 	QDir().mkpath( mountedGame + QStringLiteral( "/materials/local" ) );
 	QDir().mkpath( fixtureRoot + QStringLiteral( "/mounted/addon/materials/shared" ) );
@@ -5067,6 +5190,38 @@ int RunHammerSelfTest( const QString &vmfPath )
 		clipTetra.Undo() && clipTetra.Undo() && clipTetra.Undo() &&
 		std::abs( clipTetra.Map().SolidById( tetraId )->mins[0] ) < 1e-5;
 	ctx.Step( "convex-brush-transforms", convexTransform, QStringLiteral( "scale, quarter-turn, mirror, VMF and undo on a sloped brush" ) );
+
+	{
+		QTemporaryDir dir;
+		CHammerDocument doc;
+		EntityLite owner;
+		owner.id = doc.Map().AllocId();
+		owner.classname = QStringLiteral( "func_door" );
+		owner.keyvalues.insert( QStringLiteral( "targetname" ), QStringLiteral( "prefab_door" ) );
+		owner.connections.append( { QStringLiteral( "OnOpen" ), QStringLiteral( "prefab_door,Close,,1,-1" ) } );
+		doc.Map().entities.append( owner );
+		const double mins[3] = { 32, 64, 16 }, maxs[3] = { 48, 96, 24 };
+		const int brushId = CreateBoxSolid( doc.Map(), mins, maxs );
+		doc.Map().SolidById( brushId )->ownerEntityId = owner.id;
+		doc.SelectObject( owner.id );
+		QString error;
+		const QString path = dir.filePath( QStringLiteral( "prefab.vmf" ) );
+		bool ok = dir.isValid() && doc.SaveSelectionAsPrefab( path, &error ) && !doc.HasClipboardObjects();
+		MapDocLite reloaded;
+		ok = ok && VmfIO::LoadMap( path, reloaded, &error ) && reloaded.entities.size() == 1 && reloaded.solids.size() == 1 &&
+			reloaded.solids.first().ownerEntityId == owner.id &&
+			reloaded.versionProperties.contains( { QStringLiteral( "prefab" ), QStringLiteral( "1" ) } );
+		ok = ok && doc.InsertOriginalPrefab( path, &error ) && doc.Map().entities.size() == 2 && doc.Map().solids.size() == 2 &&
+			doc.Map().entities.last().id != owner.id && doc.Map().solids.last().id != brushId &&
+			doc.Map().solids.last().ownerEntityId == doc.Map().entities.last().id &&
+			doc.Map().solids.last().mins[0] == mins[0] &&
+			doc.Map().entities.last().connections == owner.connections &&
+			!doc.HasClipboardObjects();
+		ok = ok && doc.Undo() && doc.Map().solids.size() == 1 && doc.Redo() && doc.Map().solids.size() == 2 &&
+			!doc.InsertOriginalPrefab( dir.filePath( QStringLiteral( "missing.vmf" ) ), &error ) &&
+			doc.Map().solids.size() == 2;
+		ctx.Step( "prefab-roundtrip", ok, error );
+	}
 
 
 	// Three world points cut along x+y=32; orientation is VMF plane normal.

@@ -11,6 +11,7 @@
 #include "document.h"
 #include "mapmodel.h"
 #include "corebounds.h"
+#include "cordon.h"
 #include "viewpick.h"
 #include "brushentityview.h"
 #include "brushwindings.h"
@@ -266,6 +267,16 @@ void CQtViewport2D::paintEvent( QPaintEvent *event )
 	DrawEntities( painter );
 	if ( m_pDocument )
 	{
+		HammerCordon::Bounds cordon;
+		if ( m_pDocument->Map().IsCordonActive() &&
+			!HammerCordon::HasOtherCordonFormat( m_pDocument->Map() ) &&
+			HammerCordon::ReadBounds( m_pDocument->Map(), cordon ) )
+		{
+			painter.setPen( QPen( QColor( 255, 185, 80 ), 2, Qt::DashLine ) );
+			const QPointF a = WorldToScreen( cordon.mins[AxisU()], cordon.mins[AxisV()] );
+			const QPointF b = WorldToScreen( cordon.maxs[AxisU()], cordon.maxs[AxisV()] );
+			painter.drawRect( QRectF( a, b ).normalized() );
+		}
 		const auto &points = m_pDocument->PointFilePoints();
 		painter.setPen( QPen( HammerTheme::Colors().pointFile, 2 ) );
 		for ( int i = 1; i < points.size(); ++i )

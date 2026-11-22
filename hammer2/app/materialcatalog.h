@@ -12,7 +12,8 @@
 #include "tier1/KeyValues.h"
 
 // Index VPK directory trees only. No archive payloads are read or modified.
-inline bool IndexVpkMaterials( const QString &filename, QSet<QString> &materials )
+inline bool IndexVpkResources( const QString &filename, QSet<QString> &resources,
+	const QString &directory, const QStringList &extensions, bool keepDirectory, bool keepExtension )
 {
 	QFile file( filename );
 	if ( !file.open( QIODevice::ReadOnly ) ) return false;
@@ -50,19 +51,26 @@ inline bool IndexVpkMaterials( const QString &filename, QSet<QString> &materials
 				const quint16 preload = qFromLittleEndian<quint16>( entry + 4 );
 				if ( qFromLittleEndian<quint16>( entry + 16 ) != 0xffff || preload > tree.size() - pos - 18 ) return false;
 				pos += 18 + preload;
-				if ( ext.compare( "vmt", Qt::CaseInsensitive ) != 0 ) continue;
+				const QString suffix = QString::fromUtf8( ext ).toLower();
+				if ( !extensions.contains( suffix ) ) continue;
 				QString rel = QString::fromUtf8( path ) + QLatin1Char( '/' ) + QString::fromUtf8( name );
 				rel.replace( QLatin1Char( '\\' ), QLatin1Char( '/' ) );
-				if ( !rel.startsWith( QLatin1String( "materials/" ), Qt::CaseInsensitive ) ) continue;
-				rel.remove( 0, 10 );
+				if ( !rel.startsWith( directory + QLatin1Char( '/' ), Qt::CaseInsensitive ) ) continue;
 				const QStringList parts = rel.split( QLatin1Char( '/' ) );
 				if ( rel.contains( QLatin1Char( ':' ) ) || parts.contains( QString() ) || parts.contains( QLatin1String( "." ) ) || parts.contains( QLatin1String( ".." ) ) ) continue;
+				if ( !keepDirectory ) rel.remove( 0, directory.size() + 1 );
+				if ( keepExtension ) rel += QLatin1Char( '.' ) + suffix;
 				found.insert( rel.toLower() );
 			}
 		}
 	}
-	materials.unite( found );
+	resources.unite( found );
 	return true;
+}
+
+inline bool IndexVpkMaterials( const QString &filename, QSet<QString> &materials )
+{
+	return IndexVpkResources( filename, materials, QStringLiteral( "materials" ), { QStringLiteral( "vmt" ) }, false, false );
 }
 
 struct MaterialCatalogResult { QStringList names; QStringList failedArchives; };
@@ -110,8 +118,11 @@ inline QStringList MaterialSearchPaths( const QString &gameDir )
 	return result;
 }
 
-inline MaterialCatalogResult ScanGameMaterials( const QString &gameDir, const QStringList &searchPaths )
+inline MaterialCatalogResult ScanGameResources( const QString &gameDir, const QStringList &searchPaths,
+	const QString &directory, const QStringList &extensions, bool keepDirectory, bool keepExtension )
 {
+	QStringList filters;
+	for ( const QString &extension : extensions ) filters.append( QStringLiteral( "*." ) + extension );
 	MaterialCatalogResult result;
 	QSet<QString> names;
 	QStringList paths = QStringList() << QDir( gameDir ).absolutePath();
@@ -131,17 +142,19 @@ inline MaterialCatalogResult ScanGameMaterials( const QString &gameDir, const QS
 		visited.insert( identity );
 		if ( path.endsWith( QLatin1String( ".vpk" ), Qt::CaseInsensitive ) )
 		{
-			if ( QFile::exists( path ) && !IndexVpkMaterials( path, names ) ) result.failedArchives.append( path );
+			if ( QFile::exists( path ) && !IndexVpkResources( path, names, directory, extensions, keepDirectory, keepExtension ) ) result.failedArchives.append( path );
 			continue;
 		}
 		const QDir root( path );
-		const QString materialsDir = root.filePath( QStringLiteral( "materials" ) );
-		QDirIterator it( materialsDir, QStringList() << QStringLiteral( "*.vmt" ), QDir::Files, QDirIterator::Subdirectories );
-		const QDir base( materialsDir );
+		const QString resourceDir = root.filePath( directory );
+		QDirIterator it( resourceDir, filters, QDir::Files, QDirIterator::Subdirectories );
+		const QDir base( resourceDir );
 		while ( it.hasNext() )
 		{
 			QString rel = base.relativeFilePath( it.next() );
-			rel.chop( 4 ); names.insert( rel.toLower() );
+			if ( !keepExtension ) rel.truncate( rel.lastIndexOf( QLatin1Char( '.' ) ) );
+			if ( keepDirectory ) rel.prepend( directory + QLatin1Char( '/' ) );
+			names.insert( rel.toLower() );
 		}
 		// Preserve the original catalog's compatibility scan for the chosen game
 		// directory only. Other directory search paths do not mount nested VPKs.
@@ -152,11 +165,16 @@ inline MaterialCatalogResult ScanGameMaterials( const QString &gameDir, const QS
 			const QString archiveIdentity = QDir::cleanPath( archive ).toLower();
 			if ( visited.contains( archiveIdentity ) ) continue;
 			visited.insert( archiveIdentity );
-			if ( !IndexVpkMaterials( archive, names ) ) result.failedArchives.append( archive );
+			if ( !IndexVpkResources( archive, names, directory, extensions, keepDirectory, keepExtension ) ) result.failedArchives.append( archive );
 		}
 	}
 	result.names = names.values(); result.names.sort( Qt::CaseInsensitive );
 	return result;
+}
+
+inline MaterialCatalogResult ScanGameMaterials( const QString &gameDir, const QStringList &searchPaths )
+{
+	return ScanGameResources( gameDir, searchPaths, QStringLiteral( "materials" ), { QStringLiteral( "vmt" ) }, false, false );
 }
 
 // Call on the UI thread: Source KeyValues has a process-wide parser error stack.

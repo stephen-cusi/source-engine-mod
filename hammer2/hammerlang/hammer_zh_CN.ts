@@ -212,6 +212,9 @@
 </context>
 <context>
     <name>CHammerDocument</name>
+    <message><source>Prefabs cannot include hidden objects or visgroup memberships.</source><translation>预制件不能包含隐藏对象或可见性组成员。</translation></message>
+    <message><source>Select objects to create a prefab.</source><translation>请先选择要保存为预制件的对象。</translation></message>
+    <message><source>The prefab contains no insertable objects or references unsupported editor data.</source><translation>预制件中没有可插入的对象，或引用了不支持的编辑器数据。</translation></message>
     <message>
         <location filename="../app/document.cpp" line="1096"/>
         <source>Open Map</source>
@@ -253,6 +256,31 @@
 </context>
 <context>
     <name>CMainWindow</name>
+    <message><source>Edit Cordon Bounds...</source><translation>编辑封锁区范围...</translation></message>
+    <message><source>Toggle Cordon</source><translation>切换封锁区</translation></message>
+    <message><source>Cordon</source><translation>封锁区</translation></message>
+    <message><source>Edit the invalid cordon bounds first.</source><translation>请先修正无效的封锁区范围。</translation></message>
+    <message><source>Edit Cordon Bounds</source><translation>编辑封锁区范围</translation></message>
+    <message><source>Active</source><translation>启用</translation></message>
+    <message><source>Minimum (X Y Z):</source><translation>最小坐标 (X Y Z)：</translation></message>
+    <message><source>Maximum (X Y Z):</source><translation>最大坐标 (X Y Z)：</translation></message>
+    <message><source>Enter valid minimum and maximum coordinates within the map limits.</source><translation>请输入地图范围内有效的最小和最大坐标。</translation></message>
+    <message><source>This map has invalid or unsupported cordon bounds.</source><translation>此地图的封锁区范围无效或暂不支持。</translation></message>
+    <message><source>Could not write the temporary cordon map. %1</source><translation>无法写入临时封锁区地图。%1</translation></message>
+    <message><source>Browse...</source><translation>浏览...</translation></message>
+    <message><source>Browse Models</source><translation>浏览模型</translation></message>
+    <message><source>Browse Sounds</source><translation>浏览声音</translation></message>
+    <message><source>Select a game directory first.</source><translation>请先选择游戏目录。</translation></message>
+    <message><source>Filter by name</source><translation>按名称筛选</translation></message>
+    <message><source>%1 archive(s) could not be indexed.</source><translation>无法索引 %1 个资源包。</translation></message>
+    <message><source>Apply Decals</source><translation>应用贴花</translation></message>
+    <message><source>Create Prefab...</source><translation>创建预制件...</translation></message>
+    <message><source>Create Prefab</source><translation>创建预制件</translation></message>
+    <message><source>Select objects to create a prefab.</source><translation>请先选择要保存为预制件的对象。</translation></message>
+    <message><source>Valve Map Files (*.vmf)</source><translation>Valve 地图文件 (*.vmf)</translation></message>
+    <message><source>Replace the existing prefab?</source><translation>是否替换现有预制件？</translation></message>
+    <message><source>Insert Original Prefab...</source><translation>按原坐标插入预制件...</translation></message>
+    <message><source>Insert Original Prefab</source><translation>按原坐标插入预制件</translation></message>
     <message><source>Displacements</source><translation>位移地形</translation></message>
     <message><source>Select faces in the 3D view with the Material tool first.</source><translation>请先用材质工具在 3D 视图中选择面。</translation></message>
     <message><source>Create Displacements...</source><translation>创建位移地形...</translation></message>
@@ -1861,6 +1889,8 @@ Qt %1
 </context>
 <context>
     <name>CQtViewport3D</name>
+    <message><source>Decal: click a brush face</source><translation>贴花：点击画刷面</translation></message>
+    <message><source>Decal (Shift+D): click a brush face to place the current material</source><translation>贴花（Shift+D）：点击画刷面放置当前材质</translation></message>
     <message><source>Paint Geometry: drag | Esc cancels stroke</source><translation>绘制几何：拖动绘制｜Esc 取消当前笔画</translation></message>
     <message><source>Shift+X: clip in 2D</source><translation>Shift+X：在二维视图裁切</translation></message>
     <message><source>Clip (Shift+X): define the clipping line in a 2D view | drag orbits | wheel zooms</source><translation>裁切（Shift+X）：在二维视图绘制裁切线；拖动旋转；滚轮缩放</translation></message>
