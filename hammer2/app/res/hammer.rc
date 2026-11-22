@@ -1,0 +1,4 @@
+// Purpose: embeds the application icon into the Windows executable.
+// Windows-only build artifact; other platforms carry no exe icon.
+
+1 ICON "hammer.ico"

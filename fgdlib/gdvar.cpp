@@ -3,8 +3,8 @@
 //=============================================================================
 
 #include "fgdlib/fgdlib.h"
-#include "fgdlib/GameData.h"
-#include "fgdlib/WCKeyValues.h"
+#include "fgdlib/gamedata.h"
+#include "fgdlib/wckeyvalues.h"
 #include "fgdlib/gdvar.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -67,6 +67,7 @@ GDinputvariable::GDinputvariable(void)
 {
 	m_szDefault[0] = 0;
 	m_nDefault = 0;
+	m_bHasDefault = false;
 	m_szValue[0] = 0;
 	m_bReportable = FALSE;
 	m_bReadOnly = false;
@@ -83,6 +84,7 @@ GDinputvariable::GDinputvariable( const char *szType, const char *szName )
 {
 	m_szDefault[0] = 0;
 	m_nDefault = 0;
+	m_bHasDefault = false;
 	m_szValue[0] = 0;
 	m_bReportable = FALSE;
 	m_bReadOnly = false;
@@ -128,6 +130,7 @@ GDinputvariable &GDinputvariable::operator =(GDinputvariable &Other)
 	}
 
 	m_nDefault = Other.m_nDefault;
+	m_bHasDefault = Other.m_bHasDefault;
 	m_bReportable = Other.m_bReportable;
 	m_bReadOnly = Other.m_bReadOnly;
 
@@ -348,6 +351,7 @@ BOOL GDinputvariable::InitFromTokens(TokenReader& tr)
 
 					m_nDefault = atoi(szToken);
 				}
+				m_bHasDefault = true;
 
 				//
 				// Look ahead at the next token.
@@ -483,6 +487,7 @@ BOOL GDinputvariable::InitFromTokens(TokenReader& tr)
 				nDefault |= m_Items[i].iValue;
 		}
 		m_nDefault = (int)nDefault;
+		m_bHasDefault = true;
 		Q_snprintf( m_szDefault, sizeof( m_szDefault ), "%d", m_nDefault );
 	}
 	else if (m_eType == ivChoices)
@@ -579,15 +584,18 @@ void GDinputvariable::Merge(GDinputvariable &Other)
 	// Add Other's items to this ONLY if there is no same-value entry
 	// for a specific item.
 	//
-	bool bFound = false;
 	int nOurItems = m_Items.Count();
 	for (int i = 0; i < Other.m_Items.Count(); i++)
 	{
+		bool bFound = false;
 		GDIVITEM &TheirItem = Other.m_Items[i];
 		for (int j = 0; j < nOurItems; j++)
 		{
 			GDIVITEM &OurItem = m_Items[j];
-			if (TheirItem.iValue == OurItem.iValue)
+			// Choice identity is the stored string value; iValue is only used
+			// by flags (choices initialise it to zero).
+			if ((m_eType == ivFlags && TheirItem.iValue == OurItem.iValue) ||
+				(m_eType == ivChoices && strcmp(TheirItem.szValue, OurItem.szValue) == 0))
 			{
 				bFound = true;
 				break;
@@ -601,6 +609,15 @@ void GDinputvariable::Merge(GDinputvariable &Other)
 			//
 			m_Items.AddToTail(TheirItem);
 		}
+	}
+	// The merged flag entries define the effective default as a bit mask.
+	if (m_eType == ivFlags)
+	{
+		unsigned long nDefault = 0;
+		for (int i = 0; i < m_Items.Count(); ++i)
+			if (m_Items[i].bDefault) nDefault |= m_Items[i].iValue;
+		m_nDefault = (int)nDefault;
+		Q_snprintf(m_szDefault, sizeof(m_szDefault), "%d", m_nDefault);
 	}
 }
 
@@ -669,7 +686,7 @@ void GDinputvariable::ToKeyValue(MDkeyvalue *pkv)
 	}
 	else if (eStoreAs == INTEGER)
 	{
-		itoa(m_nValue, pkv->szValue, 10);
+		Q_snprintf(pkv->szValue, sizeof(pkv->szValue), "%d", m_nValue);
 	}
 }
 

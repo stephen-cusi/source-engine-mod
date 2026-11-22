@@ -1,0 +1,221 @@
+#! /usr/bin/env python
+# encoding: utf-8
+#
+# Hammer Qt6 editor main window skeleton (hammer2/app).
+#
+# Uses the Qt6-capable qt tool from scripts/waifulib/qt6.py (upstream waflib
+# extras qt5.py). That tool is found because the repository waf bootstrap
+# puts scripts/waifulib on sys.path and load_tool() falls back to a plain
+# module import; the bundled waflib.Tools.qt5 only supports Qt5.
+#
+# Qt discovery follows the upstream tool docs: set the QT6_ROOT environment
+# variable (or pass --qtdir) pointing at the Qt installation root, e.g.
+#   QT6_ROOT=D:/Qt/6.8.3/msvc2022_64 python waf configure -T release
+# On win32 a default install path is used as a last resort so the build works
+# out of the box on this machine.
+#
+# NOTE: stand-alone configure (outside the top-level wscript) must pass a
+# build type, e.g. "python waf configure -T release".
+
+VERSION = '0.0.1'
+APPNAME = 'hammer_qt'
+top = '.'
+PROJECT_NAME = 'hammer_qt'
+
+import os
+import shutil
+
+from waflib import Utils
+
+def options(opt):
+	# Standalone runs (not driven by the top-level wscript) need the
+	# build-type and compiler options registered; when the top-level wscript
+	# drives the build they already exist, so skip to avoid duplicate
+	# registration. Qt discovery itself needs no options (QT6_ROOT/QTDIR
+	# environment variables or --qtdir are enough).
+	if opt.parser.get_option('--build-type') is None:
+		opt.load('compiler_optimizations compiler_cxx qt6')
+	if opt.parser.get_option('--hammer-gmod-compat') is None:
+		opt.add_option('--hammer-gmod-compat', action='store_true', dest='HAMMER_GMOD_COMPAT', default=False,
+			help='build Hammer against the Garry\'s Mod runtime compatibility layer')
+	return
+
+def configure(conf):
+	conf.env.HAMMER_GMOD_COMPAT = bool(conf.options.HAMMER_GMOD_COMPAT)
+	# Qt6 presence probe: skip hammer_qt entirely when Qt is not available so
+	# that configure stays green on machines/CI without Qt. Discovery mirrors
+	# the qt6 tool order: QT6_ROOT/QTDIR environment variables, a win32
+	# default install path, then qmake6/qmake from PATH.
+	qt6_root = os.environ.get('QT6_ROOT') or os.environ.get('QTDIR')
+	if not qt6_root and conf.env.DEST_OS == 'win32':
+		default_qt = 'D:/Qt/6.8.3/msvc2022_64'
+		if os.path.isdir(default_qt):
+			qt6_root = default_qt
+			os.environ['QT6_ROOT'] = default_qt
+			# conf.environ is an os.environ snapshot taken at configure
+			# start; the qt6 tool reads QT6_ROOT from it
+			conf.environ['QT6_ROOT'] = default_qt
+	if not qt6_root and not shutil.which('qmake6') and not shutil.which('qmake'):
+		conf.env.HAMMER_QT = False
+		conf.msg('hammer_qt', 'Qt6 not found; skipping (set QT6_ROOT to enable)', 'YELLOW')
+		return
+
+	# Standalone configure (not driven by the top-level wscript): set up the
+	# compiler first. The qt tool requires COMPILER_CXX to be defined.
+	if 'COMPILER_CXX' not in conf.env:
+		if conf.env.DEST_OS == 'win32':
+			# Qt 6.8.3 msvc2022_64 ships x64 libraries only
+			conf.env.MSVC_TARGETS = ['x64']
+			conf.load('compiler_optimizations msvc compiler_cxx')
+		else:
+			conf.load('compiler_optimizations compiler_cxx')
+
+	conf.want_qt6 = True
+	conf.env.HAMMER_QT = True
+
+	# Pin the Qt modules we need instead of scanning every library in QTLIBS
+	conf.qt6_vars = ['Qt6Core', 'Qt6Gui', 'Qt6Widgets', 'Qt6OpenGL']
+
+	if conf.env.COMPILER_CXX == 'msvc':
+		# Qt6 requires a real C++17 toolchain report on MSVC
+		# (qcompilerdetection.h errors out without /Zc:__cplusplus).
+		# These flags are only needed by the qt sanity check during configure
+		# and by our own taskgen during build, so remove them from the shared
+		# environment afterwards to keep other subprojects unaffected.
+		msvc_qt_cxxflags = ['/std:c++17', '/Zc:__cplusplus', '/permissive-']
+		conf.env.append_value('CXXFLAGS', msvc_qt_cxxflags)
+		conf.load('qt6')
+		conf.env['CXXFLAGS'] = [f for f in conf.env['CXXFLAGS'] if f not in msvc_qt_cxxflags]
+	else:
+		conf.load('qt6')
+
+def build(bld):
+	# Skipped during configure when Qt6 was not found
+	if not bld.env.HAMMER_QT:
+		return
+
+	source = [
+		'main.cpp',
+		'mainwindow.cpp',
+		'viewport2d.cpp',
+		'viewport3d.cpp',
+		'materialpreviewrenderer.cpp',
+		'document.cpp',
+		'mappropertiesdialog.cpp',
+		'entityreportdialog.cpp',
+		# Lightweight map model + VMF serialization + FGD/GameConfig glue
+		'mapmodel.cpp',
+		'vmfio.cpp',
+		'gameconfig.cpp',
+		'localization.cpp',
+		'theme.cpp',
+		'fgddata.cpp',
+		'selftest.cpp',
+		'core_smoketest.cpp',
+		# Qt resource bundle (app icon); the qt6 tool runs rcc on it
+		'res/hammer.qrc',
+	]
+
+	# Headers containing Q_OBJECT (moc-ed automatically, output appended to source)
+	moc_headers = [
+		'mainwindow.h',
+		'viewport2d.h',
+		'viewport3d.h',
+		'document.h',
+		'mappropertiesdialog.h',
+		'localization.h',
+	]
+
+	includes = [
+		'.',
+		# Original Hammer data-model library.
+		'../core',
+		'../../public',
+		# fgdlib headers include tier0/tier1 headers (tokenreader.h etc.)
+		'../../public/tier0',
+		'../../public/tier1',
+	]
+
+	defines = []
+	if bld.env.HAMMER_GMOD_COMPAT:
+		if bld.env.DEST_OS != 'win32' or bld.env.DEST_CPU not in ('amd64', 'x86_64'):
+			bld.fatal('Hammer GMod compatibility mode requires 64-bit Windows')
+		source.extend(['gmod_tier0_compat.cpp', 'gmod_keyvalues_bridge.cpp'])
+		defines.append('HAMMER_GMOD_COMPAT')
+
+	# fgdlib provides the FGD parser (GameData/GDclass); its declared 'use'
+	# dependencies (tier0/tier1/tier2/tier3/vstdlib/mathlib) are propagated
+	# automatically by waf. Only symbols actually referenced are pulled in
+	# from those static libraries.
+	libs = []
+
+	# Qt's entry point shim (WinMain -> main) is required on win32 when the
+	# linker uses the WINDOWS subsystem; it depends on shell32
+	# (CommandLineToArgvW). Other platforms need no shim.
+	if bld.env.DEST_OS == 'win32':
+		libs += ['Qt6EntryPoint', 'Qt6OpenGLWidgets', 'shell32']
+
+	# Platform-specific bits; identical source set everywhere (pure Qt).
+	if bld.env.DEST_OS == 'win32':
+		pass # no win32-specific sources/libraries yet
+	elif bld.env.DEST_OS == 'linux':
+		pass # no linux-specific sources/libraries yet
+	elif bld.env.DEST_OS == 'darwin':
+		pass # no macOS-specific sources/libraries yet
+
+	# Qt module uselibs provided by the qt6 tool; fgdlib is referenced by
+	# target name through the 'use' list below
+	uselib = 'QT6CORE QT6GUI QT6WIDGETS QT6OPENGL'
+
+	# Language flags: Qt6 needs C++17 on every toolchain
+	if bld.env.COMPILER_CXX == 'msvc':
+		# /fp:precise overrides the project-wide /fp:fast for this target only:
+		# under fast-math the compiler may assume NaN/Inf never occur, which
+		# silently disables the std::isfinite() input validation in the VMF
+		# loader and geometry code.
+		cxxflags = ['/std:c++17', '/Zc:__cplusplus', '/permissive-', '/utf-8', '/fp:precise']
+	else:
+		cxxflags = ['-std=c++17']
+
+	kwargs = {}
+	if bld.env.DEST_OS == 'win32' and 'MSVC_SUBSYSTEM' in bld.env:
+		kwargs['subsystem'] = bld.env['MSVC_SUBSYSTEM']
+
+	# get_taskgen_count() is defined by the top-level wscript; stand-alone
+	# builds fall back to a fixed index (fine for a single target)
+	if hasattr(bld, 'get_taskgen_count'):
+		kwargs['idx'] = bld.get_taskgen_count()
+
+	# Windows executables carry the icon as a compiled resource; other
+	# platforms have no exe icon concept and skip the .rc entirely.
+	features = 'qt6 cxx cxxprogram'
+	if bld.env.DEST_OS == 'win32':
+		source = source + ['res/hammer.rc']
+		features += ' winrc'
+
+	bld.program(
+		source    = source,
+		moc       = moc_headers,
+		target    = PROJECT_NAME,
+		name      = PROJECT_NAME,
+		features  = features,
+		includes  = includes,
+		defines   = defines,
+		lib       = libs,
+		use       = Utils.to_list(uselib) + ['fgdlib', 'hammer_core', 'vtf', 'bitmap'],
+		cxxflags  = cxxflags,
+		**kwargs
+	)
+
+	# Keep optional runtime catalogs beside the executable in hammerlang/.
+	lang_dir = os.path.normpath( os.path.join( bld.path.abspath(), '..', 'hammerlang' ) )
+	if os.path.isdir( lang_dir ):
+		for catalog in sorted( os.listdir( lang_dir ) ):
+			if catalog.endswith( '.ts' ):
+				locale_name = catalog[:-3]
+				bld(
+					rule   = '${QT_LRELEASE} ${QT_LRELEASE_FLAGS} ${SRC} -qm ${TGT}',
+				source = '../hammerlang/' + catalog,
+				target = 'hammerlang/' + locale_name + '.qm',
+				name   = 'hammerlang_' + locale_name,
+				)

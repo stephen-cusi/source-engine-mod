@@ -10,7 +10,7 @@
 #pragma once
 
 #include <utlvector.h>
-#include <TokenReader.h> // dvs: for MAX_STRING. Fix.
+#include "tokenreader.h" // dvs: for MAX_STRING. Fix.
 
 
 class MDkeyvalue;
@@ -89,8 +89,12 @@ class GDinputvariable
 		
 		inline int GetChoiceCount() { return m_Items.Count(); }
 		inline const char *GetChoiceCaption(int nChoice);
+		inline const char *GetChoiceValue(int nChoice);
 
 		inline GDIV_TYPE GetType() { return m_eType; }
+		// A missing FGD default differs from an explicitly specified zero or
+		// empty string. Flag definitions also specify their defaults per bit.
+		inline bool HasDefault() const { return m_bHasDefault; }
 		const char *GetTypeText(void);
 		
 		inline void GetDefault(int *pnStore)
@@ -146,6 +150,7 @@ class GDinputvariable
 
 		bool m_bReportable;
 		bool m_bReadOnly;
+		bool m_bHasDefault;
 
 		friend class GDclass;
 };
@@ -213,6 +218,12 @@ const char *GDinputvariable::GetChoiceCaption(int nChoice)
 {
 	Assert(m_eType == ivChoices);
 	return m_Items.Element(nChoice).szCaption;
+}
+
+const char *GDinputvariable::GetChoiceValue(int nChoice)
+{
+	Assert(m_eType == ivChoices);
+	return m_Items.Element(nChoice).szValue;
 }
 
 

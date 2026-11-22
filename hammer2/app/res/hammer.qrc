@@ -1,0 +1,16 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file>hammer-256.png</file>
+        <file>hammer-64.png</file>
+        <file>hammer-32.png</file>
+        <file>hammer-16.png</file>
+        <file>tool_select.svg</file>
+        <file>tool_entity.svg</file>
+        <file>tool_block.svg</file>
+        <file>tool_clip.svg</file>
+        <file>tool_vertex.svg</file>
+        <file>tool_camera.svg</file>
+        <file>tool_apply_material.svg</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,96 @@
+#! /usr/bin/env python
+# encoding: utf-8
+# vim: noexpandtab
+
+# hammer2/core: MFC-free data model library for the Hammer editor port.
+# Sources are copies of the hammer/ model tier with the MFC/Win32 shell
+# replaced by portable equivalents (see hc_stdafx.h, IDocNotify.h,
+# hc_options.h). No Qt, no MFC, no user32 dependency.
+
+from waflib import Logs
+import os
+
+top = '.'
+PROJECT_NAME = 'hammer_core'
+
+def options(opt):
+	# stub
+	return
+
+def configure(conf):
+	return
+
+def build(bld):
+	# Data model core: geometry, faces, solids, entities, world, visgroups,
+	# chunk serialization.
+	#
+	# NOTE: commented-out files are copies kept on disk for the next phases;
+	# they still reference the MFC editor shell (CMapView2D, CMapDoc, texture
+	# system, ...) and are listed with the exact reason they are excluded.
+	source = [
+		'boundbox.cpp',
+		'hammer_mathlib.cpp',
+		'axes2.cpp',
+		'mappoint.cpp',
+		'culltreenode.cpp',
+		'mapalignedbox.cpp',
+		'mapclass.cpp',
+		'ssolid.cpp',
+		'visgroup.cpp',
+		'mapgroup.cpp',
+		'hc_options.cpp',
+		'hc_docnotify.cpp',
+
+		# TODO(hammer-port): isolate these against IDocNotify / the Qt view
+		# layer, then move them into the source list above:
+		# 'box3d.cpp',      # Box3D::RenderTool2D reads CMapView2D (MFC CView) members axHorz/axVert; Tool3D::m_pDocument is a CMapDoc*
+		# 'anglebox.cpp',   # CAngleBox/CAngleCombo are CWnd-derived dialog controls (pure UI widget)
+		# 'mapsolid.cpp',   # HitTest2D/Render2D read CMapView2D members (axThird, CheckDistance) and CMapDoc
+		# 'mapface.cpp',    # needs CTextureSystem/IEditorTexture and materialsystem mesh rendering, calls CMapDoc
+		# 'mapworld.cpp',   # includes MapOverlay.h/Manifest.h/MainFrm.h, uses IEditorTexture and CMapDoc
+		# 'mapentity.cpp',  # needs HelperFactory/MapAnimator/MapSprite/MapViewLogical/IEditorTexture and CMapDoc
+		# 'blockarray.cpp', # standalone test harness (defines main()); the real BlockArray template lives in blockarray.h
+	]
+
+	includes = [
+		'.',
+		'../../public',
+		'../../public/tier0',
+		'../../public/tier1',
+	]
+
+	defines = [
+		'PROTECTED_THINGS_DISABLE',
+		'VERSION_SAFE_STEAM_API_INTERFACES',
+	]
+
+	libs = ['tier0', 'tier1', 'mathlib']
+
+	if bld.env.DEST_OS == 'win32':
+		# Windows: plain Win32 base types via hc_stdafx.h (windows.h with
+		# WIN32_LEAN_AND_MEAN), no MFC, no user32/gdi32 link dependency.
+		pass
+	elif bld.env.DEST_OS == 'darwin':
+		# macOS: hc_stdafx.h takes its POSIX branch and defines the Win32
+		# base types (COLORREF/RGB/GetRValue, LPCTSTR, UINT) itself;
+		# tier0/platform.h maps stricmp -> strcasecmp. The engine libs used
+		# here (tier0, tier1, mathlib) all build on macOS, nothing extra
+		# needs to be linked.
+		pass
+	else:
+		# Linux/BSD: same POSIX branch of hc_stdafx.h as macOS. No extra
+		# system libraries are required by the data model; libdl/libm come
+		# in transitively through tier0/mathlib.
+		pass
+
+	bld.stlib(
+		source   = source,
+		target   = PROJECT_NAME,
+		name     = PROJECT_NAME,
+		features = 'c cxx',
+		includes = includes,
+		defines  = defines,
+		use      = libs,
+		subsystem = bld.env.MSVC_SUBSYSTEM,
+		idx      = bld.get_taskgen_count()
+	)

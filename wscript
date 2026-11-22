@@ -151,6 +151,11 @@ projects={
 	]
 }
 
+qt_tool_projects = {
+	'hammer': ['fgdlib', 'hammer2/core', 'hammer2/app'],
+	'hlmv': ['hlmv2'],
+}
+
 @Configure.conf
 def check_pkg(conf, package, uselib_store, fragment, *k, **kw):
 	errormsg = '{0} not available! Install {0} development package. Also you may need to set PKG_CONFIG_PATH environment variable'.format(package)
@@ -336,6 +341,7 @@ def options(opt):
 	if sys.platform == 'win32':
 		opt.load('msvc msdev msvs')
 	opt.load('reconfigure')
+	opt.recurse('hammer2/app')
 
 def check_deps(conf):
 	if conf.env.DEST_OS != 'win32':
@@ -646,6 +652,8 @@ def configure(conf):
 		conf.add_subproject(projects['dedicated'])
 	else:
 		conf.add_subproject(projects['game'])
+		for tool_projects in qt_tool_projects.values():
+			conf.add_subproject(tool_projects)
 
 def build(bld):
 	os.environ["CCACHE_DIR"] = os.path.abspath('.ccache/'+bld.env.COMPILER_CC+'/'+bld.env.DEST_OS+'/'+bld.env.DEST_CPU)
@@ -677,3 +685,12 @@ def build(bld):
 			projects['game'] += ['togl']
 
 		bld.add_subproject(projects['game'])
+
+		# Register the optional editors only when the command names their targets.
+		requested = {target.strip() for target in bld.targets.split(',')}
+		if requested.intersection(('hammer_qt', 'hammer_core', 'fgdlib')) or any(
+			target.startswith('hammerlang_') for target in requested
+		):
+			bld.add_subproject(qt_tool_projects['hammer'])
+		if 'hlmv2' in requested or any(target.startswith('hlmvlang_') for target in requested):
+			bld.add_subproject(qt_tool_projects['hlmv'])

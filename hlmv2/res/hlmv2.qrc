@@ -1,0 +1,52 @@
+<RCC>
+  <!-- Every icon here is drawn by gen_icon.py; no Win32 resource or system
+       theme icon is used. Embedded in the executable on all three platforms. -->
+  <qresource prefix="/icons">
+    <file>hlmv-16.png</file>
+    <file>hlmv-24.png</file>
+    <file>hlmv-32.png</file>
+    <file>hlmv-48.png</file>
+    <file>hlmv-64.png</file>
+    <file>hlmv-128.png</file>
+    <file>hlmv-256.png</file>
+    <file>open-16.png</file>
+    <file>open-24.png</file>
+    <file>open-32.png</file>
+    <file>refresh-16.png</file>
+    <file>refresh-24.png</file>
+    <file>refresh-32.png</file>
+    <file>weapon-16.png</file>
+    <file>weapon-24.png</file>
+    <file>weapon-32.png</file>
+    <file>center-16.png</file>
+    <file>center-24.png</file>
+    <file>center-32.png</file>
+    <file>viewmodel-16.png</file>
+    <file>viewmodel-24.png</file>
+    <file>viewmodel-32.png</file>
+    <file>screenshot-16.png</file>
+    <file>screenshot-24.png</file>
+    <file>screenshot-32.png</file>
+    <file>wireframe-16.png</file>
+    <file>wireframe-24.png</file>
+    <file>wireframe-32.png</file>
+    <file>bones-16.png</file>
+    <file>bones-24.png</file>
+    <file>bones-32.png</file>
+    <file>attachments-16.png</file>
+    <file>attachments-24.png</file>
+    <file>attachments-32.png</file>
+    <file>ground-16.png</file>
+    <file>ground-24.png</file>
+    <file>ground-32.png</file>
+    <file>textured-16.png</file>
+    <file>textured-24.png</file>
+    <file>textured-32.png</file>
+    <file>normals-16.png</file>
+    <file>normals-24.png</file>
+    <file>normals-32.png</file>
+    <file>hitboxes-16.png</file>
+    <file>hitboxes-24.png</file>
+    <file>hitboxes-32.png</file>
+  </qresource>
+</RCC>

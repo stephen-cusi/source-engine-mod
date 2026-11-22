@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <defs>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <path d="M5.5 3.21V20.8l4.43-4.43h6.86L5.5 3.21z" fill="url(#blueGrad)" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+  <circle cx="16" cy="18" r="2" fill="#60a5fa" stroke="#1e293b" stroke-width="1"/>
+</svg>
