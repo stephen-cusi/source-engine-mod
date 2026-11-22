@@ -1310,10 +1310,10 @@ inline void CVertexBuilder::Fast4VerticesSSE(
 
 	}
 #elif defined(__arm__) || defined(PLATFORM_WINDOWS_PC64)
-	const void *pReadA = &vtx_a;
-	const void *pReadB = &vtx_b;
-	const void *pReadC = &vtx_c;
-	const void *pReadD = &vtx_d;
+	const void *pReadA = vtx_a;
+	const void *pReadB = vtx_b;
+	const void *pReadC = vtx_c;
+	const void *pReadD = vtx_d;
 
 	void *pCurrPos = m_pCurrPosition;
 
