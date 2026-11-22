@@ -1668,15 +1668,13 @@ void CBasePlayer::PlayerUse ( void )
 	// player-only on every tick, before the use system had even picked a
 	// target).  Returning false vetoes the use, anything else lets the
 	// engine's FCAP_* handling run.
+	if ( pUseEntity )
 	{
 		bool bVetoUse = false;
 
 		BEGIN_LUA_CALL_HOOK( "PlayerUse" );
 			lua_pushplayer( L, this );
-			if ( pUseEntity )
-				lua_pushentity( L, pUseEntity );
-			else
-				lua_pushnil( L );
+			lua_pushentity( L, pUseEntity );
 			END_LUA_CALL_HOOK( 2, 1 );
 		if ( L != NULL && lua_isnil( L, -1 ) == 0 && lua_type( L, -1 ) == LUA_TBOOLEAN )
 			bVetoUse = ( lua_toboolean( L, -1 ) == 0 );
@@ -1687,6 +1685,10 @@ void CBasePlayer::PlayerUse ( void )
 			return;
 	}
 #endif
+
+	// The vehicle exit path consumes the use press separately.
+	if ( IsInAVehicle() && pUseEntity == GetVehicleEntity() )
+		return;
 
 	// Found an object
 	if ( pUseEntity )
@@ -1718,7 +1720,7 @@ void CBasePlayer::PlayerUse ( void )
 			pUseEntity->AcceptInput( "Use", this, this, emptyVariant, USE_OFF );
 		}
 	}
-	else if ( m_afButtonPressed & IN_USE )
+	else if ( ( m_afButtonPressed & IN_USE ) && !IsInAVehicle() )
 	{
 		PlayUseDenySound();
 	}

@@ -45,6 +45,7 @@ $Project "Client (HL2SB)"
 
 	$Folder "Client Lua"
 	{
+		$File "episodic/c_prop_scalable.cpp"
 		$File "$SRCDIR/game/shared/lua/luamanager.cpp"
 		$File "$SRCDIR/game/shared/lua/lhl2sb.cpp"
 
@@ -114,12 +115,14 @@ $Project "Client (HL2SB)"
 		$File "lua/scripted_controls/scriptedclientluapanel.cpp"
 		$File "lua/scripted_controls/scriptedhudviewport.cpp"
 		$File "lua/scripted_controls/lPanel.cpp"
+		$File "lua/servo/servo_backend.cpp"
 			$File "lua/scripted_controls/lModelPanel.cpp"
 		$File "lua/scripted_controls/lModelImage.cpp"
 
 		// HL2SB: the main-menu (GameUI) realm's own library - HL2SB_MenuLayout /
 		// HL2SB_MenuDumpLayout (the layout pass that realm never runs).
 		$File "lua/lua_gameui_menu.cpp"
+		$File "lua/lua_workshop_info.cpp"
 		
 		$File "$SRCDIR/game/shared/lua/lsrcinit.cpp"
 		$File "$SRCDIR/game/shared/lua/hl2sb_playerbuttons.cpp"

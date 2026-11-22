@@ -9,9 +9,13 @@
 #include "filesystem.h"
 #include "tier1/utlmap.h"
 #include "hl2sb_framestats_cat.h"
+#include <climits>
 #ifdef CLIENT_DLL
 #include "rendertexture.h"
 #include "view_scene.h"
+#include "igamesystem.h"
+#include "vtf/vtf.h"
+#include "bitmap/imageformat.h"
 #include <materialsystem/imaterialsystem.h>
 #include "texture_group_names.h"
 #include <vgui/ISurface.h>
@@ -78,8 +82,21 @@ LUA_API lua_ITexture *lua_toitexture( lua_State *L, int idx )
 LUA_API void lua_pushitexture( lua_State *L, lua_ITexture *pTexture )
 {
     lua_ITexture **ppTexture = ( lua_ITexture ** )lua_newuserdata( L, sizeof( pTexture ) );
+    if ( pTexture )
+        pTexture->AddRef();
     *ppTexture = pTexture;
     LUA_SAFE_SET_METATABLE( L, LUA_ITEXTUREMETANAME );
+}
+
+static int HL2SB_ITexture_GC( lua_State *L )
+{
+    lua_ITexture **ppTexture = ( lua_ITexture ** )luaL_checkudata( L, 1, LUA_ITEXTUREMETANAME );
+    if ( *ppTexture )
+    {
+        (*ppTexture)->Release();
+        *ppTexture = NULL;
+    }
+    return 0;
 }
 
 LUALIB_API lua_ITexture *luaL_checkitexture( lua_State *L, int narg )
@@ -210,8 +227,12 @@ LUA_BINDING_END( "boolean", "true if the texture is an error texture, false othe
 
 LUA_BINDING_BEGIN( Texture, Release, "class", "Release the texture." )
 {
-    lua_ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
-    pTexture->Release();
+    lua_ITexture **ppTexture = ( lua_ITexture ** )luaL_checkudata( L, 1, LUA_ITEXTUREMETANAME );
+    if ( *ppTexture )
+    {
+        (*ppTexture)->Release();
+        *ppTexture = NULL;
+    }
     return 0;
 }
 LUA_BINDING_END()
@@ -418,6 +439,217 @@ static bool HL2SB_ImagePathValid( const char *pName )
     if ( Q_strstr( pName, ":" ) || Q_strstr( pName, "../" ) || Q_strstr( pName, "..\\" ) )
         return false;
     return true;
+}
+
+static bool HL2SB_DynamicImagePath( const char *input, char *output, size_t size )
+{
+    if ( !input || !input[0] || !output || size == 0 )
+        return false;
+    // The stock menu addresses the game-root backgrounds through materials/../backgrounds/.
+    if ( !Q_strnicmp( input, "../backgrounds/", 15 ) || !Q_strnicmp( input, "..\\backgrounds\\", 15 ) )
+        input += 3;
+    if ( !HL2SB_ImagePathValid( input ) || input[0] == '/' || input[0] == '\\' || Q_strlen( input ) >= size )
+        return false;
+    Q_strncpy( output, input, static_cast<int>( size ) );
+    Q_FixSlashes( output, '/' );
+    return true;
+}
+
+static bool HL2SB_ReadDynamicImage( const char *name, CUtlVector<unsigned char> &pixels, int &width, int &height )
+{
+    char path[MAX_PATH];
+    if ( !HL2SB_DynamicImagePath( name, path, sizeof(path) ) )
+        return false;
+    char materialPath[MAX_PATH];
+    Q_snprintf( materialPath, sizeof(materialPath), "materials/%s", path );
+    const bool spawnicon = !Q_strnicmp( path, "spawnicons/", 11 );
+    const char *paths[] = { materialPath, materialPath, path, path };
+    const char *ids[] = { spawnicon ? "MOD" : "GAME", spawnicon ? "GAME" : "MOD",
+                          spawnicon ? "MOD" : "GAME", spawnicon ? "GAME" : "MOD" };
+    for ( int i = 0; i < ARRAYSIZE(paths); ++i ) {
+        CUtlBuffer file;
+        if ( !g_pFullFileSystem->ReadFile( paths[i], ids[i], file ) || file.TellPut() <= 0 )
+            continue;
+        int channels = 0, w = 0, h = 0;
+        AUTO_LOCK( s_ImageColorCacheMutex );
+        if ( !stbi_info_from_memory( static_cast<const stbi_uc *>(file.Base()), file.TellPut(), &w, &h, &channels ) ||
+             w <= 0 || h <= 0 || static_cast<int64>(w) * h * 4 > 0x7fffffff )
+            continue;
+        unsigned char *rgba = stbi_load_from_memory( static_cast<const stbi_uc *>(file.Base()), file.TellPut(), &w, &h, &channels, 4 );
+        if ( !rgba ) continue;
+        pixels.SetCount( w * h * 4 );
+        Q_memcpy( pixels.Base(), rgba, static_cast<size_t>(w) * h * 4 );
+        stbi_image_free( rgba );
+        width = w;
+        height = h;
+        return true;
+    }
+    return false;
+}
+
+class CHL2SBDynamicImage : public ITextureRegenerator
+{
+public:
+    explicit CHL2SBDynamicImage( const char *path ) { Q_strncpy( m_Path, path, sizeof(m_Path) ); }
+
+    bool SetPath( const char *path )
+    {
+        char normalized[MAX_PATH];
+        if ( !HL2SB_DynamicImagePath( path, normalized, sizeof(normalized) ) ) return false;
+        AUTO_LOCK( m_Mutex );
+        Q_strncpy( m_Path, normalized, sizeof(m_Path) );
+        return true;
+    }
+
+    virtual void RegenerateTextureBits( ITexture *, IVTFTexture *texture, Rect_t * )
+    {
+        if ( !texture ) return;
+        char path[MAX_PATH];
+        {
+            AUTO_LOCK( m_Mutex );
+            Q_strncpy( path, m_Path, sizeof(path) );
+        }
+        CUtlVector<unsigned char> pixels;
+        int sourceWidth = 0, sourceHeight = 0;
+        const bool loaded = HL2SB_ReadDynamicImage( path, pixels, sourceWidth, sourceHeight );
+        for ( int frame = 0; frame < texture->FrameCount(); ++frame ) {
+            for ( int face = 0; face < texture->FaceCount(); ++face ) {
+                for ( int mip = 0; mip < texture->MipCount(); ++mip ) {
+                    int width = 0, height = 0, depth = 0;
+                    texture->ComputeMipLevelDimensions( mip, &width, &height, &depth );
+                    if ( width <= 0 || height <= 0 || depth != 1 || static_cast<int64>(width) * height * 4 > 0x7fffffff )
+                        continue;
+                    unsigned char *dest = texture->ImageData( frame, face, mip );
+                    if ( !dest ) continue;
+                    CUtlVector<unsigned char> scaled;
+                    scaled.SetCount( width * height * 4 );
+                    if ( loaded && width == sourceWidth && height == sourceHeight ) {
+                        Q_memcpy( scaled.Base(), pixels.Base(), scaled.Count() );
+                    } else if ( loaded ) {
+                        ImageLoader::ResampleInfo_t info;
+                        info.m_pSrc = pixels.Base();
+                        info.m_pDest = scaled.Base();
+                        info.m_nSrcWidth = sourceWidth;
+                        info.m_nSrcHeight = sourceHeight;
+                        info.m_nDestWidth = width;
+                        info.m_nDestHeight = height;
+                        info.m_flSrcGamma = 1.0f;
+                        info.m_flDestGamma = 1.0f;
+                        info.m_nFlags = ImageLoader::RESAMPLE_NICE_FILTER | ImageLoader::RESAMPLE_CLAMPS | ImageLoader::RESAMPLE_CLAMPT;
+                        if ( !ImageLoader::ResampleRGBA8888( info ) )
+                            Q_memset( scaled.Base(), 0xff, scaled.Count() );
+                    } else {
+                        Q_memset( scaled.Base(), 0xff, scaled.Count() );
+                    }
+                    ImageLoader::ConvertImageFormat( scaled.Base(), IMAGE_FORMAT_RGBA8888,
+                        dest, texture->Format(), width, height );
+                }
+            }
+        }
+    }
+
+    virtual void Release() { delete this; }
+
+private:
+    char m_Path[MAX_PATH];
+    CThreadFastMutex m_Mutex;
+};
+
+struct HL2SBDynamicMaterialRecord
+{
+    IMaterial *material;
+    ITexture *texture;
+    CHL2SBDynamicImage *image;
+};
+
+static CUtlVector<HL2SBDynamicMaterialRecord> s_DynamicMaterials;
+
+class CHL2SBDynamicImageSystem : public CAutoGameSystem
+{
+public:
+    CHL2SBDynamicImageSystem() : CAutoGameSystem( "HL2SBDynamicImage" ) {}
+    virtual void Shutdown()
+    {
+        if ( !materials ) return;
+        MaterialLock_t lock = materials->Lock();
+        for ( int i = 0; i < s_DynamicMaterials.Count(); ++i ) {
+            HL2SBDynamicMaterialRecord &entry = s_DynamicMaterials[i];
+            entry.texture->SetTextureRegenerator( NULL );
+        }
+        materials->Unlock( lock );
+        // Queued draws may still hold these materials and textures while the
+        // client DLL is unloading. The material system owns them until teardown.
+        s_DynamicMaterials.Purge();
+    }
+};
+static CHL2SBDynamicImageSystem s_DynamicImageSystem;
+
+static int HL2SB_DynamicMaterial( lua_State *L )
+{
+    const char *path = luaL_checkstring( L, 1 );
+    const char *digits = luaL_optstring( L, 2, "0000000" );
+    if ( Q_strlen( digits ) < 7 ) digits = "0000000";
+    char normalized[MAX_PATH];
+    CUtlVector<unsigned char> pixels;
+    int width = 0, height = 0;
+    if ( !HL2SB_DynamicImagePath( path, normalized, sizeof(normalized) ) ||
+         !HL2SB_ReadDynamicImage( normalized, pixels, width, height ) )
+        return 0;
+
+    static unsigned int serial = 0;
+    char name[80];
+    Q_snprintf( name, sizeof(name), "__hl2sb_dynamic_%u", ++serial );
+    int flags = TEXTUREFLAGS_SINGLECOPY | TEXTUREFLAGS_PROCEDURAL | TEXTUREFLAGS_NOLOD |
+                TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | TEXTUREFLAGS_POINTSAMPLE;
+    if ( digits[3] != '0' ) flags &= ~(TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD);
+    if ( digits[4] != '0' ) flags &= ~(TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT);
+    if ( digits[5] != '0' ) flags &= ~(TEXTUREFLAGS_POINTSAMPLE | TEXTUREFLAGS_NOLOD);
+    ITexture *texture = materials->CreateProceduralTexture( name, TEXTURE_GROUP_VGUI, width, height, IMAGE_FORMAT_RGBA8888, flags );
+    if ( !texture || IsErrorTexture(texture) ) return 0;
+    texture->IncrementReferenceCount();
+    CHL2SBDynamicImage *image = new CHL2SBDynamicImage( normalized );
+    texture->SetTextureRegenerator( image );
+    texture->Download();
+
+    KeyValues *params = new KeyValues( digits[0] == '1' ? "VertexLitGeneric" : "UnlitGeneric" );
+    params->SetString( "$basetexture", name );
+    params->SetInt( "$vertexcolor", 1 );
+    params->SetInt( "$realwidth", width );
+    params->SetInt( "$realheight", height );
+    if ( digits[1] == '1' ) params->SetInt( "$nocull", 1 );
+    if ( digits[2] == '1' ) params->SetInt( "$alphatest", 1 );
+    else if ( digits[2] == '0' && digits[0] != '1' ) params->SetInt( "$vertexalpha", 1 );
+    if ( digits[6] == '1' ) params->SetInt( "$ignorez", 1 );
+    IMaterial *material = materials->CreateMaterial( name, params );
+    if ( !material || material->IsErrorMaterial() ) {
+        texture->SetTextureRegenerator( NULL );
+        texture->DecrementReferenceCount();
+        if ( material ) material->DecrementReferenceCount();
+        return 0;
+    }
+    bool found = false;
+    IMaterialVar *base = material->FindVar( "$basetexture", &found, false );
+    if ( found && base ) base->SetTextureValue( texture );
+    HL2SBDynamicMaterialRecord entry = { material, texture, image };
+    s_DynamicMaterials.AddToTail( entry );
+    lua_pushmaterial( L, material );
+    return 1;
+}
+
+static int HL2SB_IMaterial_SetDynamicImage( lua_State *L )
+{
+    IMaterial *material = luaL_checkmaterial( L, 1 );
+    const char *path = luaL_checkstring( L, 2 );
+    ITexture *texture = HL2SB_MaterialBaseTexture( material );
+    if ( !texture || IsErrorTexture(texture) ) return 0;
+    for ( int i = 0; i < s_DynamicMaterials.Count(); ++i ) {
+        if ( s_DynamicMaterials[i].texture == texture ) {
+            if ( !s_DynamicMaterials[i].image->SetPath( path ) ) return 0;
+            texture->Download();
+            return 0;
+        }
+    }
+    return 0;
 }
 
 // Strips GMod's "!<7 digits>" image-parameter prefix so GetColor's cache can
@@ -641,21 +873,25 @@ IMaterial *HL2SB_FindImageMaterial( const char *pMaterialName, const char *pDigi
     return pMaterial;
 }
 
-// HL2SB GMod compat: IMaterial:SetInt( name, value ) / GetInt( name )
-// / SetFloat / GetFloat (wiki: IMaterial).  The Nuke Pack's nukestrike cl_init
-// opens with matTargetLight:SetInt("$spriterendermode", 9) and the whole client
-// file failed to load without it.  Implemented over IMaterial::FindVar, which
-// creates the var when missing (same as the material system's own users).
+// Material variables are looked up without creating missing parameters.
 static int HL2SB_IMaterial_SetInt( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-    const int iValue = luaL_checkint( L, 3 );
-
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    if ( pVar != NULL )
-        pVar->SetIntValue( iValue );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar != NULL && bFound )
+    {
+        const double value = luaL_checknumber( L, 3 );
+        // Match the reference's signed truncation, including its out-of-range result.
+        const int iValue = value > static_cast<double>( INT_MIN ) - 1.0 &&
+            value < static_cast<double>( INT_MAX ) + 1.0 ? static_cast<int>( value ) : INT_MIN;
+        if ( pVar->GetIntValue() != iValue )
+        {
+            pVar->SetIntValue( iValue );
+            pMaterial->RecomputeStateSnapshots();
+        }
+    }
     return 0;
 }
 
@@ -665,8 +901,10 @@ static int HL2SB_IMaterial_GetInt( lua_State *L )
     const char *pszVar = luaL_checkstring( L, 2 );
 
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    lua_pushinteger( L, ( pVar != NULL ) ? pVar->GetIntValue() : 0 );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar == NULL || !bFound )
+        return 0;
+    lua_pushinteger( L, pVar->GetIntValue() );
     return 1;
 }
 
@@ -674,12 +912,10 @@ static int HL2SB_IMaterial_SetFloat( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-    const float flValue = (float)luaL_checknumber( L, 3 );
-
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    if ( pVar != NULL )
-        pVar->SetFloatValue( flValue );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar != NULL && bFound )
+        pVar->SetFloatValue( (float)luaL_checknumber( L, 3 ) );
     return 0;
 }
 
@@ -738,21 +974,28 @@ static int HL2SB_IMaterial_SetTexture( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar == NULL || !bFound )
+        return 0;
     ITexture *pTexture = NULL;
-    if ( lua_isstring( L, 3 ) )
+    if ( lua_type( L, 3 ) == LUA_TSTRING )
     {
-        pTexture = materials->FindTexture( lua_tostring( L, 3 ), TEXTURE_GROUP_SKYBOX );
+        pTexture = materials->FindTexture( lua_tostring( L, 3 ), "" );
     }
     else
     {
         pTexture = luaL_checkitexture( L, 3 );
     }
 
-    bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    if ( pVar != NULL && pTexture != NULL )
+    CMatRenderContextPtr pRenderContext( materials );
+    ITexture *pCurrent = ( pVar->GetType() == MATERIAL_VAR_TYPE_TEXTURE || pRenderContext->GetCallQueue() )
+        ? pVar->GetTextureValue() : materials->FindTexture( "error", TEXTURE_GROUP_OTHER, true );
+    if ( pTexture != NULL && pTexture != pCurrent )
+    {
         pVar->SetTextureValue( pTexture );
+        pMaterial->RecomputeStateSnapshots();
+    }
     return 0;
 }
 
@@ -762,12 +1005,10 @@ static int HL2SB_IMaterial_SetString( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pszVar = luaL_checkstring( L, 2 );
-    const char *pszValue = luaL_checkstring( L, 3 );
-
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    if ( pVar != NULL )
-        pVar->SetStringValue( pszValue );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar != NULL && bFound )
+        pVar->SetStringValue( luaL_checkstring( L, 3 ) );
     return 0;
 }
 
@@ -777,8 +1018,10 @@ static int HL2SB_IMaterial_GetFloat( lua_State *L )
     const char *pszVar = luaL_checkstring( L, 2 );
 
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound );
-    lua_pushnumber( L, ( pVar != NULL ) ? pVar->GetFloatValue() : 0.0f );
+    IMaterialVar *pVar = pMaterial->FindVar( pszVar, &bFound, false );
+    if ( pVar == NULL || !bFound )
+        return 0;
+    lua_pushnumber( L, pVar->GetFloatValue() );
     return 1;
 }
 
@@ -1001,6 +1244,9 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
 {
     LUA_PUSH_NEW_METATABLE( L, LUA_ITEXTUREMETANAME );
 
+    lua_pushcfunction( L, HL2SB_ITexture_GC );
+    lua_setfield( L, -2, "__gc" );
+
     LUA_REGISTRATION_COMMIT( Texture );
 
     lua_pushvalue( L, -1 );           /* push metatable */
@@ -1033,6 +1279,10 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
         lua_setfield( L, -2, "SetInt" );
         lua_pushcfunction( L, HL2SB_IMaterial_GetInt );
         lua_setfield( L, -2, "GetInt" );
+        if ( L == LGameUI ) {
+            lua_pushcfunction( L, HL2SB_IMaterial_SetDynamicImage );
+            lua_setfield( L, -2, "SetDynamicImage" );
+        }
         lua_pushcfunction( L, HL2SB_IMaterial_SetFloat );
         lua_setfield( L, -2, "SetFloat" );
         lua_pushcfunction( L, HL2SB_IMaterial_GetFloat );
@@ -1065,6 +1315,11 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
     lua_setglobal( L, "C_Material" );
     lua_pushcfunction( L, HL2SB_Material );
     lua_setglobal( L, "Material" );
+
+    if ( L == LGameUI ) {
+        lua_pushcfunction( L, HL2SB_DynamicMaterial );
+        lua_setglobal( L, "DynamicMaterial" );
+    }
 
     /* HL2SB: GMod's CreateMaterial( name, paramsTable ).
     **

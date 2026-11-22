@@ -12,6 +12,8 @@
 
 #include <vgui/IClientPanel.h>
 #include <vgui/IPanel.h>
+#include <vgui/IPanelFocusExt.h>
+#include <vgui/IVGui.h>
 #include <vgui/ISurface.h>
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -22,7 +24,7 @@ using namespace vgui;
 //-----------------------------------------------------------------------------
 // Purpose: Protects internal VPanel through the versionable interface IPanel
 //-----------------------------------------------------------------------------
-class VPanelWrapper : public vgui::IPanel
+class VPanelWrapper : public vgui::IPanelFocusExt
 {
 public:
 	virtual void Init(VPANEL vguiPanel, IClientPanel *panel)
@@ -355,6 +357,30 @@ public:
 	{
 		return ((VPanel *)vguiPanel)->SetSiblingPin( (VPanel *)newSibling, iMyCornerToPin, iSiblingCornerToPinTo );
 	}
+
+	virtual bool IsPopupFocusRaiseEnabled( VPANEL panel )
+	{
+		if ( !panel ) return true;
+		const HPanel handle = ((VPanel *)panel)->GetHPanel();
+		return m_BackPopups.Find( handle ) == m_BackPopups.InvalidIndex();
+	}
+
+	virtual void SetPopupFocusRaiseEnabled( VPANEL panel, bool enabled )
+	{
+		for ( int i = m_BackPopups.Count() - 1; i >= 0; --i )
+			if ( !g_pIVgui->HandleToPanel( m_BackPopups[i] ) ) m_BackPopups.FastRemove( i );
+		if ( !panel ) return;
+		const HPanel handle = ((VPanel *)panel)->GetHPanel();
+		const int index = m_BackPopups.Find( handle );
+		if ( enabled ) {
+			if ( index != m_BackPopups.InvalidIndex() ) m_BackPopups.FastRemove( index );
+		} else if ( index == m_BackPopups.InvalidIndex() ) {
+			m_BackPopups.AddToTail( handle );
+		}
+	}
+
+private:
+	CUtlVector<HPanel> m_BackPopups;
 
 };
 

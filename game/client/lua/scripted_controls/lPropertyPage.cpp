@@ -249,11 +249,6 @@ static int PropertyPage_SetVisible (lua_State *L) {
 static int PropertyPage___index (lua_State *L) {
   PropertyPage *pPage = lua_topropertypage(L, 1);
   if (pPage == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
 	/* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves.
       GMod's own IsValid() (lua/includes/util.lua:314-322) is
       `local isvalid = object.IsValid` -- and a panel that has been marked for
@@ -316,11 +311,6 @@ static int PropertyPage___index (lua_State *L) {
 static int PropertyPage___newindex (lua_State *L) {
   PropertyPage *pPage = lua_topropertypage(L, 1);
   if (pPage == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
     /* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves.
       GMod's own IsValid() (lua/includes/util.lua:314-322) is
       `local isvalid = object.IsValid` -- and a panel that has been marked for
@@ -346,13 +336,7 @@ static int PropertyPage___newindex (lua_State *L) {
 	lua_pop(L, 1);
     return 0;
   } else {
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-    lua_pushfstring(L, "%s:%d: attempt to index a non-scripted panel", ar2.short_src, ar1.currentline);
-    return lua_error(L);
+    return luaL_error( L, "attempt to index a non-scripted panel" );
   }
 }
 

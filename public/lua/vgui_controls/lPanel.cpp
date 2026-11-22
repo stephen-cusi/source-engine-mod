@@ -8,6 +8,7 @@
 #define lpanel_cpp
 
 #include "cbase.h"
+#include "icvar.h"
 #include <vgui_controls/Panel.h>
 #include "c_vguiscreen.h"
 #include "iclientmode.h"
@@ -16,11 +17,13 @@
 #include <vgui/IInput.h>
 #include <vgui/ISurface.h>
 #include <vgui/IPanel.h>
+#include <vgui/IPanelFocusExt.h>
 #include <Color.h>
 #include <vgui/Cursor.h>
 #include <vgui_controls/Label.h>
 #include <vgui_controls/TextImage.h>
 #include <vgui_controls/TextEntry.h>
+#include <vgui_controls/RichText.h>
 #include <vgui_controls/Frame.h>
 #include <vgui_controls/FocusNavGroup.h>
 #include "panelmetaclassmgr.h"
@@ -46,8 +49,18 @@
 #include "filesystem.h"
 #include "iviewrender.h"
 #include "view_shared.h"
+#include <climits>
 #include <string>
 #include <vector>
+#include <utility>
+#include "../../../game/client/lua/servo/servo_backend.h"
+#include "../../../game/client/lua/servo/servo_ime_menu.h"
+#include "html_backend_abi.h"
+
+#if defined(_WIN32)
+#include <windows.h>
+#undef GetClassName
+#endif
 
 extern ConVar hl2sb_dev_msgs;
 
@@ -55,6 +68,11 @@ using namespace vgui;
 
 extern FocusNavGroup *HL2SB_LuaPanelFocusGroup(Panel *panel);
 extern void HL2SB_SetLuaLabelShadow( Label *label, int offset, Color color );
+
+// Address notifications arrive during VGUI's panel traversal.  Keep a handle
+// for each active callback so Lua cannot synchronously destroy that panel or
+// one of its ancestors while the traversal still has them on its call stack.
+static std::vector<PHandle> s_htmlAddressCallbacks;
 
 /*
 ** access functions (stack -> C)
@@ -151,7 +169,16 @@ static int Panel_ChainToMap (lua_State *L) {
 }
 
 static int Panel_DeletePanel (lua_State *L) {
-  luaL_checkpanel(L, 1)->DeletePanel();
+  Panel *target = luaL_checkpanel(L, 1);
+  for (size_t i = 0; i < s_htmlAddressCallbacks.size(); ++i) {
+    for (Panel *active = s_htmlAddressCallbacks[i].Get(); active; active = active->GetParent()) {
+      if (active == target) {
+        target->MarkForDeletion();
+        return 0;
+      }
+    }
+  }
+  target->DeletePanel();
   return 0;
 }
 
@@ -677,7 +704,8 @@ static int Panel_IsDropEnabled (lua_State *L) {
 }
 
 static int Panel_IsEnabled (lua_State *L) {
-  lua_pushboolean(L, luaL_checkpanel(L, 1)->IsEnabled());
+  Panel *p = lua_topanel(L, 1);
+  lua_pushboolean(L, p ? p->IsEnabled() : true);
   return 1;
 }
 
@@ -726,6 +754,12 @@ static int Panel_IsPopup (lua_State *L) {
   return 1;
 }
 
+static int Panel_SetPopupStayAtBack (lua_State *L) {
+  vgui::Panel *panel = luaL_checkpanel(L, 1);
+  static_cast<vgui::IPanelFocusExt *>(ipanel())->SetPopupFocusRaiseEnabled(panel->GetVPanel(), !lua_toboolean(L, 2));
+  return 0;
+}
+
 static int Panel_IsProportional (lua_State *L) {
   lua_pushboolean(L, luaL_checkpanel(L, 1)->IsProportional());
   return 1;
@@ -752,7 +786,8 @@ static int Panel_IsValidKeyBindingsContext (lua_State *L) {
 }
 
 static int Panel_IsVisible (lua_State *L) {
-  lua_pushboolean(L, luaL_checkpanel(L, 1)->IsVisible());
+  Panel *p = lua_topanel(L, 1);
+  lua_pushboolean(L, p ? p->IsVisible() : false);
   return 1;
 }
 
@@ -884,8 +919,8 @@ static int Panel_LocalToScreen (lua_State *L) {
   // HL2SB: x/y were declared uninitialised and passed to the in/out method, so
   // the function always returned stack junk.  Take the input coordinates (they
   // default to 0, which yields the panel's own position).
-  int x = luaL_optint(L, 2, 0);
-  int y = luaL_optint(L, 3, 0);
+  int x = (int)luaL_optnumber(L, 2, 0);
+  int y = (int)luaL_optnumber(L, 3, 0);
   luaL_checkpanel(L, 1)->LocalToScreen(x, y);
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
@@ -893,7 +928,10 @@ static int Panel_LocalToScreen (lua_State *L) {
 }
 
 static int Panel_MakePopup (lua_State *L) {
-  luaL_checkpanel(L, 1)->MakePopup(luaL_optboolean(L, 2, 1), luaL_optboolean(L, 3, 0));
+  Panel *panel = luaL_checkpanel(L, 1);
+  panel->MakePopup(true, false);
+  panel->SetMouseInputEnabled(true);
+  panel->SetKeyBoardInputEnabled(true);
   return 0;
 }
 
@@ -934,8 +972,12 @@ static int Panel_MoveToFront (lua_State *L) {
 //-----------------------------------------------------------------------------
 static int Panel_MoveToBack (lua_State *L) {
   vgui::Panel *pPanel = luaL_checkpanel(L, 1);
-  if (pPanel != NULL)
-    vgui::ipanel()->MoveToBack(pPanel->GetVPanel());
+  if (pPanel != NULL) {
+    if (pPanel->IsPopup())
+      vgui::surface()->MovePopupToBack(pPanel->GetVPanel());
+    else
+      vgui::ipanel()->MoveToBack(pPanel->GetVPanel());
+  }
   return 0;
 }
 
@@ -1088,8 +1130,8 @@ static int Panel_ParentLocalToScreen (lua_State *L) {
   // HL2SB: x/y were declared uninitialised and passed to the in/out method, so
   // the function always returned stack junk.  Take the input coordinates (they
   // default to 0, which yields the panel's own position).
-  int x = luaL_optint(L, 2, 0);
-  int y = luaL_optint(L, 3, 0);
+  int x = (int)luaL_optnumber(L, 2, 0);
+  int y = (int)luaL_optnumber(L, 3, 0);
   luaL_checkpanel(L, 1)->ParentLocalToScreen(x, y);
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
@@ -1154,7 +1196,7 @@ static int Panel_SetAllowKeyBindingChainToParent (lua_State *L) {
 }
 
 static int Panel_SetAlpha (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetAlpha(luaL_checkint(L, 2));
+  luaL_checkpanel(L, 1)->SetAlpha((int)luaL_checknumber(L, 2));
   return 0;
 }
 
@@ -1303,10 +1345,21 @@ static void Panel_SyncLuaGeometry (lua_State *L, Panel *pPanel) {
   lua_pop(L, 1);
 }
 
+static int Panel_CheckPixel(lua_State *L, int arg) {
+  // VPanel stores positions as signed shorts. Keep fractional pixel input,
+  // and reject coordinates that would wrap or fail Panel::SetPos's assertion.
+  const double value = luaL_checknumber(L, arg);
+  if (!(value > -static_cast<double>(SHRT_MAX) - 1.0 &&
+        value < static_cast<double>(SHRT_MAX) + 1.0))
+    return luaL_argerror(L, arg, "panel coordinate out of range");
+  return static_cast<int>(value);
+}
+
 static int Panel_SetPos (lua_State *L) {
   Panel *pPanel = luaL_checkpanel(L, 1);
-
-  pPanel->SetPos(luaL_checkint(L, 2), luaL_checkint(L, 3));
+  const int x = Panel_CheckPixel(L, 2);
+  const int y = Panel_CheckPixel(L, 3);
+  pPanel->SetPos(x, y);
   Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
@@ -1334,7 +1387,9 @@ static int Panel_SetSilentMode (lua_State *L) {
 static int Panel_SetSize (lua_State *L) {
   Panel *pPanel = luaL_checkpanel(L, 1);
 
-  pPanel->SetSize((int)lua_tonumber(L, 2), (int)lua_tonumber(L, 3));
+  int wide = (int)lua_tonumber(L, 2);
+  int tall = (int)lua_tonumber(L, 3);
+  pPanel->SetSize(MIN(wide, 32767), MIN(tall, 32767));
   Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
@@ -1397,6 +1452,55 @@ static int Panel_SetVisible (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB: GMod's Panel metatable carries SetConVar/ConVarChanged natively, and
+** menu dialogs reach them on panels that have no Lua-level override (the
+** crosshair editor's DComboBox path: SetConVar on the combo, ConVarChanged
+** from its OnSelect).  The name is stored on the panel's instance table under
+** the same field GMod's own Lua reads back (DCheckBoxLabel checks
+** pnl.Button.m_strConVar).  The new value is applied straight to the ConVar
+** object -- deliberately NOT through RunConsoleCommand, whose Lua binding
+** blocks exactly these names (GMod keeps them in its binding blocklist while
+** the native path keeps working).
+*/
+static int Panel_SetConVar (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  const char *pszName = luaL_checkstring(L, 2);
+  Panel_PushTable(L, pPanel);
+  if (lua_istable(L, -1)) {
+    lua_pushstring(L, pszName);
+    lua_setfield(L, -2, "m_strConVar");
+  }
+  lua_pop(L, 1);
+  return 0;
+}
+
+static int Panel_ConVarChanged (lua_State *L) {
+  if (!lua_isnoneornil(L, 2)) {
+    // Numbers convert in place; booleans become "1"/"0" like ConVar SetValue does.
+    if (lua_isboolean(L, 2)) {
+      lua_pushfstring(L, "%d", lua_toboolean(L, 2) != 0);
+      lua_replace(L, 2);
+    }
+    const char *pszValue = lua_tostring(L, 2);
+    if (pszValue != NULL && cvar != NULL) {
+      Panel *pPanel = luaL_checkpanel(L, 1);
+      Panel_PushTable(L, pPanel);
+      if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "m_strConVar");
+        const char *pszName = lua_tostring(L, -1);
+        if (pszName != NULL && pszName[0] != '\0') {
+          ConVar *pCVar = cvar->FindVar(pszName);
+          if (pCVar != NULL)
+            pCVar->SetValue(pszValue);
+        }
+      }
+    }
+  }
+  lua_settop(L, 0);
+  return 0;
+}
+
 static int Panel_SetWide (lua_State *L) {
   Panel *pPanel = luaL_checkpanel(L, 1);
   pPanel->SetWide(luaL_checkint(L, 2));
@@ -1439,35 +1543,30 @@ static int Panel_SetFocusTopLevel (lua_State *L) {
 }
 
 // GMod's cursors are named ("arrow", "sizeall", "sizenwse", ...); the engine
-// wants an HCursor.  Unknown names fall back to the normal arrow.
+// wants an HCursor. Unknown names select the default none cursor.
 static HCursor Panel_CursorFromName (const char *pName) {
-  if ( !pName || !pName[0] || !V_stricmp(pName, "arrow") ) return vgui::dc_arrow;
+  if ( !pName ) return vgui::dc_none;
+  if ( !V_stricmp(pName, "arrow") )     return vgui::dc_arrow;
   if ( !V_stricmp(pName, "hand") )      return vgui::dc_hand;
   if ( !V_stricmp(pName, "sizeall") )   return vgui::dc_sizeall;
   if ( !V_stricmp(pName, "sizenwse") )  return vgui::dc_sizenwse;
   if ( !V_stricmp(pName, "sizenesw") )  return vgui::dc_sizenesw;
   if ( !V_stricmp(pName, "sizewe") )    return vgui::dc_sizewe;
   if ( !V_stricmp(pName, "sizens") )    return vgui::dc_sizens;
-  if ( !V_stricmp(pName, "text") )      return vgui::dc_ibeam;
-  if ( !V_stricmp(pName, "ibeam") )     return vgui::dc_ibeam;
   if ( !V_stricmp(pName, "beam") )      return vgui::dc_ibeam;
-  if ( !V_stricmp(pName, "none") )      return vgui::dc_none;
   if ( !V_stricmp(pName, "blank") )     return vgui::dc_blank;
   if ( !V_stricmp(pName, "hourglass") ) return vgui::dc_hourglass;
-  if ( !V_stricmp(pName, "wait") )      return vgui::dc_hourglass;
+  if ( !V_stricmp(pName, "waitarrow") ) return vgui::dc_waitarrow;
   if ( !V_stricmp(pName, "crosshair") ) return vgui::dc_crosshair;
+  if ( !V_stricmp(pName, "up") )        return vgui::dc_up;
   if ( !V_stricmp(pName, "no") )        return vgui::dc_no;
-  return vgui::dc_arrow;
+  return vgui::dc_none;
 }
 
 static int Panel_SetCursor (lua_State *L) {
   Panel *pPanel = luaL_checkpanel(L, 1);
 
-  if ( lua_type(L, 2) == LUA_TNUMBER ) {
-    pPanel->SetCursor((HCursor)lua_tointeger(L, 2));
-  } else {
-    pPanel->SetCursor(Panel_CursorFromName(luaL_checkstring(L, 2)));
-  }
+  pPanel->SetCursor(Panel_CursorFromName(luaL_checkstring(L, 2)));
 
   return 0;
 }
@@ -1475,7 +1574,7 @@ static int Panel_SetCursor (lua_State *L) {
 // Panel:MouseCapture( b ) -- what DFrame uses while dragging/resizing.
 static int Panel_MouseCapture (lua_State *L) {
   Panel *pPanel = luaL_checkpanel(L, 1);
-  bool bCapture = luaL_optboolean(L, 2, 1);
+  bool bCapture = lua_toboolean(L, 2) != 0;
 
   if ( vgui::input() ) {
     vgui::input()->SetMouseCapture(bCapture ? pPanel->GetVPanel() : (VPANEL)0);
@@ -1488,7 +1587,11 @@ static int Panel_MouseCapture (lua_State *L) {
 // which is not safe to run from a Lua callback, so defer it like the engine's
 // own panels do.
 static int Panel_Remove (lua_State *L) {
-  Panel *pPanel = luaL_checkpanel(L, 1);
+  // Removing a handle whose panel has already been destroyed is harmless.
+  // The handle remains a Lua userdata even after its native panel has gone.
+  luaL_checktype(L, 1, LUA_TUSERDATA);
+  Panel *pPanel = lua_topanel(L, 1);
+  if (!pPanel) return 0;
 
   if ( pPanel && vgui::ivgui() ) {
     vgui::ivgui()->MarkPanelForDeletion(pPanel->GetVPanel());
@@ -1590,7 +1693,14 @@ bool HL2SB_LuaPanelGeometryWrite(lua_State *L) {
 
 static int Panel___index (lua_State *L) {
   Panel *p = lua_topanel(L, 1);
-  if (!p) { lua_pushnil(L); return 1; }
+  if (!p) {
+    const char *key = lua_tostring(L, 2);
+    if (key && !Q_strcmp(key, "Remove")) lua_pushcfunction(L, Panel_Remove);
+    else if (key && !Q_strcmp(key, "IsVisible")) lua_pushcfunction(L, Panel_IsVisible);
+    else if (key && !Q_strcmp(key, "IsEnabled")) lua_pushcfunction(L, Panel_IsEnabled);
+    else lua_pushnil(L);
+    return 1;
+  }
   if (HL2SB_LuaPanelGeometryIndex(L)) return 1;
   Panel_GetRefTable(L);
   if (lua_istable(L, -1)) {
@@ -1690,7 +1800,11 @@ static int Panel___tostring (lua_State *L) {
 // the number straight through.
 //=============================================================================
 static int Panel_Dock (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetDock(luaL_checkint(L, 2));
+  Panel *panel = luaL_checkpanel(L, 1);
+  const double dock = luaL_checknumber(L, 2);
+  if (!(dock > Panel::DOCK_NONE - 1.0 && dock < Panel::DOCK_BOTTOM + 1.0))
+    return luaL_argerror(L, 2, "invalid dock direction");
+  panel->SetDock(static_cast<int>(dock));
   return 0;
 }
 
@@ -1700,7 +1814,12 @@ static int Panel_GetDock (lua_State *L) {
 }
 
 static int Panel_DockPadding (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetDockPadding(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5));
+  Panel *panel = luaL_checkpanel(L, 1);
+  const int left = Panel_CheckPixel(L, 2);
+  const int top = Panel_CheckPixel(L, 3);
+  const int right = Panel_CheckPixel(L, 4);
+  const int bottom = Panel_CheckPixel(L, 5);
+  panel->SetDockPadding(left, top, right, bottom);
   return 0;
 }
 
@@ -1712,7 +1831,12 @@ static int Panel_GetDockPadding (lua_State *L) {
 }
 
 static int Panel_DockMargin (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetDockMargin(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5));
+  Panel *panel = luaL_checkpanel(L, 1);
+  const int left = Panel_CheckPixel(L, 2);
+  const int top = Panel_CheckPixel(L, 3);
+  const int right = Panel_CheckPixel(L, 4);
+  const int bottom = Panel_CheckPixel(L, 5);
+  panel->SetDockMargin(left, top, right, bottom);
   return 0;
 }
 
@@ -1746,7 +1870,20 @@ static int Panel_GetDockMargin (lua_State *L) {
 // the day it gets switched on.
 //=============================================================================
 static int Panel_SizeToChildren (lua_State *L) {
-  luaL_checkpanel(L, 1)->SizeToChildren(lua_toboolean(L, 2) != 0, lua_toboolean(L, 3) != 0);
+  Panel *panel = luaL_checkpanel(L, 1);
+  int wide = 0, tall = 0;
+  for (int i = 0; i < panel->GetChildCount(); ++i) {
+    Panel *child = panel->GetChild(i);
+    if (!child || !child->IsVisible() || child->IsMarkedForDeletion()) continue;
+    int x, y, childWide, childTall;
+    child->GetBounds(x, y, childWide, childTall);
+    wide = MAX(wide, x + childWide);
+    tall = MAX(tall, y + childTall);
+  }
+  int left, top, right, bottom;
+  panel->GetDockPadding(left, top, right, bottom);
+  if (lua_toboolean(L, 2)) panel->SetWide(wide + right);
+  if (lua_toboolean(L, 3)) panel->SetTall(tall + bottom);
   return 0;
 }
 
@@ -1796,8 +1933,8 @@ static int Panel_SetDockPadding (lua_State *L) {
 // ScreenToLocal per control.)
 static int Panel_CursorPos (lua_State *L) {
   vgui::Panel *pPanel = luaL_checkpanel(L, 1);
-  int x, y;
-  vgui::input()->GetCursorPos( x, y );
+  int x = 0, y = 0;
+  if (!engine || engine->IsActiveApp()) vgui::input()->GetCursorPos( x, y );
   pPanel->ScreenToLocal( x, y );
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
@@ -1811,30 +1948,11 @@ static int Panel_IsModal (lua_State *L) {
   return 1;
 }
 
-// Register non-popup controls in the surface's ordered paint list without
-// changing keyboard or mouse input. A topmost flag alone does not paint them.
+extern void HL2SB_PanelSetDrawOnTop(vgui::Panel *panel, bool onTop);
+
 static int Panel_SetDrawOnTop (lua_State *L) {
   Panel *panel = luaL_checkpanel(L, 1);
-  const bool onTop = luaL_checkboolean(L, 2) != 0;
-  Panel_PushTable(L, panel);
-  lua_pushliteral(L, "__hl2sb_DrawOnTopPopup");
-  lua_rawget(L, -2);
-  const bool promoted = lua_toboolean(L, -1) != 0;
-  lua_pop(L, 1);
-  if (onTop && !panel->IsPopup()) {
-    vgui::surface()->CreatePopup(panel->GetVPanel(), false, false, false,
-        panel->IsMouseInputEnabled(), panel->IsKeyBoardInputEnabled());
-    lua_pushboolean(L, true);
-    lua_setfield(L, -2, "__hl2sb_DrawOnTopPopup");
-  } else if (!onTop && promoted) {
-    vgui::surface()->ReleasePanel(panel->GetVPanel());
-    vgui::ipanel()->SetPopup(panel->GetVPanel(), false);
-    lua_pushnil(L);
-    lua_setfield(L, -2, "__hl2sb_DrawOnTopPopup");
-  }
-  lua_pop(L, 1);
-  vgui::ipanel()->SetTopmostPopup(panel->GetVPanel(), onTop);
-  if (onTop) vgui::surface()->MovePopupToFront(panel->GetVPanel());
+  HL2SB_PanelSetDrawOnTop(panel, lua_toboolean(L, 2) != 0);
   return 0;
 }
 
@@ -2087,13 +2205,19 @@ int HL2SB_LuaLabelAlignment(int alignment, bool toNative) {
   return (2 - alignment / 3) * 3 + alignment % 3 + 1;
 }
 
-static int Panel_SetContentAlignment (lua_State *L) {
-  vgui::Panel *pPanel = luaL_checkpanel(L, 1);
-  int alignment = HL2SB_LuaLabelAlignment(luaL_checkint(L, 2), true);
+int HL2SB_LuaCheckLabelAlignment(lua_State *L, int arg) {
+  const double value = luaL_checknumber(L, arg);
+  if (!(value >= 1.0 && value < 10.0))
+    return -1;
+  return HL2SB_LuaLabelAlignment(static_cast<int>(value), true);
+}
 
-  if (alignment >= 0)
-    if (Label *pLabel = dynamic_cast<Label *>(pPanel))
-      pLabel->SetContentAlignment((Label::Alignment)alignment);
+static int Panel_SetContentAlignment (lua_State *L) {
+  if (Label *label = dynamic_cast<Label *>(luaL_checkpanel(L, 1))) {
+    const int alignment = HL2SB_LuaCheckLabelAlignment(L, 2);
+    if (alignment >= 0)
+      label->SetContentAlignment(static_cast<Label::Alignment>(alignment));
+  }
   return 0;
 }
 
@@ -2261,26 +2385,503 @@ static std::string HL2SB_HTMLQuote(const char *text)
   return result + "\"";
 }
 
+#if !defined(_WIN32) && !defined(__ANDROID__)
+static ConVar hl2sb_html_servo("hl2sb_html_servo", "0", FCVAR_ARCHIVE,
+  "Use the experimental Servo HTML backend for new HTML panels.");
+#endif
+static HLSBServoRuntime *s_htmlServoRuntime = NULL;
+static int s_htmlServoViews = 0;
+
+#if defined(_WIN32)
+class CHL2SBLuaHTML;
+static std::vector<CHL2SBLuaHTML *> s_htmlCefPanels;
+static ConVar hl2sb_html_cef("hl2sb_html_cef", "1", FCVAR_ARCHIVE,
+  "Use the CEF HTML backend for new HTML panels.");
+static const HtmlBackendVTable *s_htmlCefAPI = NULL;
+static HtmlBackend *s_htmlCefRuntime = NULL;
+static HMODULE s_htmlCefModule = NULL;
+static HMODULE s_htmlCefLibrary = NULL;
+
+static void HL2SB_ReleaseCEFModules()
+{
+  s_htmlCefAPI = NULL;
+  if (s_htmlCefModule) {
+    FreeLibrary(s_htmlCefModule);
+    s_htmlCefModule = NULL;
+  }
+  if (s_htmlCefLibrary) {
+    FreeLibrary(s_htmlCefLibrary);
+    s_htmlCefLibrary = NULL;
+  }
+}
+
+static bool HL2SB_InitializeCEF()
+{
+  if (s_htmlCefRuntime) return true;
+  if (!filesystem->FileExists("bin/cef/html_cef_helper.exe", "MOD")) {
+    Warning("CEF HTML: bin/cef/html_cef_helper.exe is missing.\n");
+    return false;
+  }
+  HMODULE loadedCEF = GetModuleHandleA("libcef.dll");
+  if (loadedCEF) {
+    char actual[MAX_PATH], expected[MAX_PATH], fullExpected[MAX_PATH];
+    const DWORD actualLength = GetModuleFileNameA(loadedCEF, actual, sizeof(actual));
+    if (!actualLength || actualLength >= sizeof(actual) ||
+        !filesystem->RelativePathToFullPath("bin/cef/libcef.dll", "MOD", expected, sizeof(expected))) {
+      Warning("CEF HTML: cannot verify the loaded libcef.dll path.\n");
+      return false;
+    }
+    const DWORD expectedLength = GetFullPathNameA(expected, sizeof(fullExpected), fullExpected, NULL);
+    if (!expectedLength || expectedLength >= sizeof(fullExpected)) {
+      Warning("CEF HTML: cannot verify the loaded libcef.dll path.\n");
+      return false;
+    }
+    V_FixSlashes(actual, '/');
+    V_FixSlashes(fullExpected, '/');
+    if (Q_stricmp(actual, fullExpected)) {
+      Warning("CEF HTML: another libcef.dll is already loaded from %s; expected %s.\n", actual, fullExpected);
+      return false;
+    }
+  }
+  if (!s_htmlCefModule) {
+    char library[MAX_PATH];
+    if (!filesystem->RelativePathToFullPath("bin/cef/html_cef.dll", "MOD", library, sizeof(library)))
+      return false;
+    s_htmlCefModule = LoadLibraryExA(library, NULL,
+      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    if (!s_htmlCefModule) {
+      Warning("CEF HTML: failed to load %s (Windows error %lu).\n", library, GetLastError());
+      return false;
+    }
+    HtmlGetBackendFn getBackend = reinterpret_cast<HtmlGetBackendFn>(
+      GetProcAddress(s_htmlCefModule, "hl2sb_html_get_backend"));
+    s_htmlCefAPI = getBackend ? getBackend() : NULL;
+    if (!s_htmlCefAPI || s_htmlCefAPI->abi_version != HL2SB_HTML_ABI_VERSION ||
+        s_htmlCefAPI->struct_size < sizeof(HtmlBackendVTable) || !s_htmlCefAPI->create || !s_htmlCefAPI->destroy ||
+        !s_htmlCefAPI->pump || !s_htmlCefAPI->view_create || !s_htmlCefAPI->view_destroy ||
+        !s_htmlCefAPI->view_resize || !s_htmlCefAPI->navigate || !s_htmlCefAPI->back ||
+        !s_htmlCefAPI->forward || !s_htmlCefAPI->reload || !s_htmlCefAPI->stop ||
+        !s_htmlCefAPI->eval_js || !s_htmlCefAPI->register_js || !s_htmlCefAPI->reply ||
+        !s_htmlCefAPI->asset_reply || !s_htmlCefAPI->poll || !s_htmlCefAPI->mouse ||
+        !s_htmlCefAPI->key || !s_htmlCefAPI->ime || !s_htmlCefAPI->lock_frame ||
+        !s_htmlCefAPI->unlock_frame) {
+      Warning("CEF HTML: incompatible backend ABI.\n");
+      HL2SB_ReleaseCEFModules();
+      return false;
+    }
+  }
+  if (!s_htmlCefLibrary) {
+    char library[MAX_PATH];
+    if (!filesystem->RelativePathToFullPath("bin/cef/libcef.dll", "MOD", library, sizeof(library))) {
+      Warning("CEF HTML: cannot resolve bin/cef/libcef.dll.\n");
+      HL2SB_ReleaseCEFModules();
+      return false;
+    }
+    s_htmlCefLibrary = LoadLibraryExA(library, NULL,
+      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    if (!s_htmlCefLibrary) {
+      Warning("CEF HTML: failed to load %s (Windows error %lu).\n", library, GetLastError());
+      HL2SB_ReleaseCEFModules();
+      return false;
+    }
+  }
+  char cache[MAX_PATH], helper[MAX_PATH];
+  filesystem->CreateDirHierarchy("cef_config", "MOD");
+  const char *cacheArg = filesystem->RelativePathToFullPath("cef_config", "MOD", cache, sizeof(cache)) ? cache : NULL;
+  const char *helperArg = filesystem->RelativePathToFullPath("bin/cef/html_cef_helper.exe", "MOD", helper, sizeof(helper)) ? helper : NULL;
+  s_htmlCefRuntime = s_htmlCefAPI->create(cacheArg, helperArg);
+  if (!s_htmlCefRuntime) {
+    Warning("CEF HTML: backend initialization failed.\n");
+    HL2SB_ReleaseCEFModules();
+  }
+  return s_htmlCefRuntime != NULL;
+}
+#endif
+
+static bool HL2SB_UseCEF()
+{
+#if defined(_WIN32)
+  return hl2sb_html_cef.GetBool();
+#else
+  return false;
+#endif
+}
+
+static bool HL2SB_UseServo()
+{
+#if defined(_WIN32) || defined(__ANDROID__)
+  return false;
+#else
+  return hl2sb_html_servo.GetBool();
+#endif
+}
+
+static bool HL2SB_SuppressSteamHTML(lua_State *state)
+{
+#if defined(__ANDROID__)
+  (void)state;
+  return true;
+#else
+  return state == LGameUI || HL2SB_UseServo() || HL2SB_UseCEF();
+#endif
+}
+
+static std::string HL2SB_HTMLDataURL(const char *text)
+{
+  static const char hex[] = "0123456789ABCDEF";
+  std::string result("data:text/html;charset=utf-8,");
+  for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+    if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+        (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.' || *p == '~') {
+      result += (char)*p;
+    } else {
+      result += '%'; result += hex[*p >> 4]; result += hex[*p & 15];
+    }
+  }
+  return result;
+}
+
+static int HL2SB_AssetHex(char c)
+{
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+static bool HL2SB_AssetPath(const char *url, std::string &path)
+{
+  const char *prefix = "asset://garrysmod/";
+  if (!url || Q_strnicmp(url, prefix, Q_strlen(prefix))) return false;
+  path.clear();
+  for (const char *p = url + Q_strlen(prefix); *p && *p != '?' && *p != '#'; ++p) {
+    unsigned char c = static_cast<unsigned char>(*p);
+    if (c == '%') {
+      if (!p[1] || !p[2]) return false;
+      const int high = HL2SB_AssetHex(p[1]), low = HL2SB_AssetHex(p[2]);
+      if (high < 0 || low < 0) return false;
+      c = static_cast<unsigned char>((high << 4) | low);
+      p += 2;
+    }
+    if (c < 32 || c == 127 || c == '\\' || c == ':') return false;
+    path += static_cast<char>(c);
+  }
+  if (path.empty() || path[0] == '/') return false;
+  size_t start = 0;
+  while (start < path.size()) {
+    const size_t end = path.find('/', start);
+    const size_t length = (end == std::string::npos ? path.size() : end) - start;
+    if (!length || (length == 1 && path[start] == '.') ||
+        (length == 2 && path[start] == '.' && path[start + 1] == '.')) return false;
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return path[path.size() - 1] != '/';
+}
+
+static const char *HL2SB_AssetMime(const std::string &path)
+{
+  const char *ext = strrchr(path.c_str(), '.');
+  if (!ext) return "application/octet-stream";
+  if (!Q_stricmp(ext, ".html") || !Q_stricmp(ext, ".htm")) return "text/html; charset=utf-8";
+  if (!Q_stricmp(ext, ".css")) return "text/css; charset=utf-8";
+  if (!Q_stricmp(ext, ".js")) return "text/javascript; charset=utf-8";
+  if (!Q_stricmp(ext, ".json")) return "application/json; charset=utf-8";
+  if (!Q_stricmp(ext, ".png")) return "image/png";
+  if (!Q_stricmp(ext, ".jpg") || !Q_stricmp(ext, ".jpeg")) return "image/jpeg";
+  if (!Q_stricmp(ext, ".gif")) return "image/gif";
+  if (!Q_stricmp(ext, ".svg")) return "image/svg+xml";
+  if (!Q_stricmp(ext, ".webp")) return "image/webp";
+  if (!Q_stricmp(ext, ".woff")) return "font/woff";
+  if (!Q_stricmp(ext, ".woff2")) return "font/woff2";
+  if (!Q_stricmp(ext, ".ttf")) return "font/ttf";
+  return "application/octet-stream";
+}
+
+// GMod's menu pages were written against Chromium's legacy flexbox syntax
+// (display: -webkit-box and friends).  Servo implements modern flex, so
+// rewrite the legacy declarations to their modern equivalents while the
+// stylesheet streams past.  The mapping covers the whole dialect GMod's own
+// CSS uses (34 declarations across 6 stylesheets: display, orient, direction,
+// pack, align, flex); values pass through untouched, so this stays correct
+// for addon pages written in the same style.  box-pack maps to
+// justify-content and box-align to align-items with flex-start/flex-end for
+// start/end, matching the CSS working group's own legacy-to-modern notes.
+static char HL2SB_AsciiLower(char c)
+{
+  return (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c;
+}
+
+static size_t HL2SB_FindCaseInsensitive(const std::string &s, const char *needle, size_t from)
+{
+  const size_t needleLen = Q_strlen(needle);
+  if (needleLen == 0 || s.size() < needleLen) return std::string::npos;
+  for (size_t i = from; i + needleLen <= s.size(); ++i) {
+    size_t j = 0;
+    while (j < needleLen &&
+           HL2SB_AsciiLower(s[i + j]) == HL2SB_AsciiLower(needle[j]))
+      ++j;
+    if (j == needleLen) return i;
+  }
+  return std::string::npos;
+}
+
+static void HL2SB_ReplaceAllCaseInsensitive(std::string &s, const char *from, const char *to)
+{
+  const size_t fromLen = Q_strlen(from);
+  size_t pos = 0;
+  while ((pos = HL2SB_FindCaseInsensitive(s, from, pos)) != std::string::npos) {
+    s.replace(pos, fromLen, to);
+    pos += Q_strlen(to);
+  }
+}
+
+static std::string HL2SB_TranslateLegacyFlexCSS(const char *data, size_t length)
+{
+  std::string css(data, length);
+  if (css.find("-webkit-box") == std::string::npos) return css;
+
+  // direction first: "normal" is dropped entirely (it must not override the
+  // flex-direction a box-orient mapping produced in the same rule); a
+  // reverse + vertical pair has no occurrence in GMod's CSS and would need
+  // column-reverse.
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-direction: reverse", "flex-direction: row-reverse");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-direction:reverse", "flex-direction: row-reverse");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-direction: normal", "");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-direction:normal", "");
+  HL2SB_ReplaceAllCaseInsensitive(css, "display: -webkit-box", "display: flex");
+  HL2SB_ReplaceAllCaseInsensitive(css, "display:-webkit-box", "display:flex");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-orient: vertical", "flex-direction: column");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-orient:vertical", "flex-direction: column");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-orient: horizontal", "flex-direction: row");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-orient:horizontal", "flex-direction: row");
+  // box-flex: N passes through as flex: N (grow N, shrink 1, basis 0).
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-flex:", "flex:");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-pack: start", "justify-content: flex-start");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-pack:start", "justify-content: flex-start");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-pack: center", "justify-content: center");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-pack:center", "justify-content: center");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-pack: end", "justify-content: flex-end");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-pack:end", "justify-content: flex-end");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-pack: justify", "justify-content: space-between");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-pack:justify", "justify-content: space-between");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-align: start", "align-items: flex-start");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-align:start", "align-items: flex-start");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-align: center", "align-items: center");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-align:center", "align-items: center");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-align: end", "align-items: flex-end");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-align:end", "align-items: flex-end");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-align: stretch", "align-items: stretch");
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-align: baseline", "align-items: baseline");
+  // Not a layout property, but the prefixed name is the same Chromium
+  // dialect and unprefixed box-shadow is the standard spelling.
+  HL2SB_ReplaceAllCaseInsensitive(css, "-webkit-box-shadow:", "box-shadow:");
+  return css;
+}
+
+static bool HL2SB_MapImagePath(const char *url, std::string &path)
+{
+  const char *prefix = "asset://mapimage/";
+  if (!url || Q_strnicmp(url, prefix, Q_strlen(prefix))) return false;
+  std::string name;
+  for (const char *p = url + Q_strlen(prefix); *p && *p != '?' && *p != '#'; ++p) {
+    unsigned char c = static_cast<unsigned char>(*p);
+    if (c == '%') {
+      if (!p[1] || !p[2]) return false;
+      const int high = HL2SB_AssetHex(p[1]), low = HL2SB_AssetHex(p[2]);
+      if (high < 0 || low < 0) return false;
+      c = static_cast<unsigned char>((high << 4) | low);
+      p += 2;
+    }
+    if (c < 32 || c == 127 || c == '/' || c == '\\' || c == ':') return false;
+    name += static_cast<char>(c);
+  }
+  if (name.empty() || name == "." || name == ".." || name.size() > 200) return false;
+  path = "maps/thumb/" + name + ".png";
+  if (filesystem->FileExists(path.c_str(), "GAME")) return true;
+  path = "maps/" + name + ".png";
+  if (filesystem->FileExists(path.c_str(), "GAME")) return true;
+  path = "maps/thumb/noicon.png";
+  return filesystem->FileExists(path.c_str(), "GAME");
+}
+
+static const char *HL2SB_HTMLKey(KeyCode code)
+{
+  switch (code) {
+    case KEY_ENTER: return "Enter";
+    case KEY_PAD_ENTER: return "Enter";
+    case KEY_BACKSPACE: return "Backspace";
+    case KEY_DELETE: return "Delete";
+    case KEY_TAB: return "Tab";
+    case KEY_ESCAPE: return "Escape";
+    case KEY_UP: return "ArrowUp";
+    case KEY_DOWN: return "ArrowDown";
+    case KEY_LEFT: return "ArrowLeft";
+    case KEY_RIGHT: return "ArrowRight";
+    case KEY_HOME: return "Home";
+    case KEY_END: return "End";
+    case KEY_PAGEUP: return "PageUp";
+    case KEY_PAGEDOWN: return "PageDown";
+    default: return NULL;
+  }
+}
+
+static int HL2SB_HTMLMouseButton(MouseCode code)
+{
+  switch (code) {
+    case MOUSE_LEFT: return 0;
+    case MOUSE_MIDDLE: return 1;
+    case MOUSE_RIGHT: return 2;
+    case MOUSE_4: return 3;
+    case MOUSE_5: return 4;
+    default: return -1;
+  }
+}
+
+#if defined(_WIN32)
+static int HL2SB_HTMLVirtualKey(KeyCode code)
+{
+  if (code >= KEY_A && code <= KEY_Z) return 'A' + code - KEY_A;
+  if (code >= KEY_0 && code <= KEY_9) return '0' + code - KEY_0;
+  if (code >= KEY_PAD_0 && code <= KEY_PAD_9) return VK_NUMPAD0 + code - KEY_PAD_0;
+  if (code >= KEY_F1 && code <= KEY_F12) return VK_F1 + code - KEY_F1;
+  switch (code) {
+    case KEY_ENTER: case KEY_PAD_ENTER: return VK_RETURN;
+    case KEY_BACKSPACE: return VK_BACK; case KEY_DELETE: return VK_DELETE;
+    case KEY_TAB: return VK_TAB; case KEY_ESCAPE: return VK_ESCAPE;
+    case KEY_SPACE: return VK_SPACE; case KEY_INSERT: return VK_INSERT;
+    case KEY_UP: return VK_UP; case KEY_DOWN: return VK_DOWN;
+    case KEY_LEFT: return VK_LEFT; case KEY_RIGHT: return VK_RIGHT;
+    case KEY_HOME: return VK_HOME; case KEY_END: return VK_END;
+    case KEY_PAGEUP: return VK_PRIOR; case KEY_PAGEDOWN: return VK_NEXT;
+    case KEY_LSHIFT: return VK_LSHIFT; case KEY_RSHIFT: return VK_RSHIFT;
+    case KEY_LCONTROL: return VK_LCONTROL; case KEY_RCONTROL: return VK_RCONTROL;
+    case KEY_LALT: return VK_LMENU; case KEY_RALT: return VK_RMENU;
+    case KEY_CAPSLOCK: return VK_CAPITAL; case KEY_NUMLOCK: return VK_NUMLOCK;
+    case KEY_SCROLLLOCK: return VK_SCROLL; case KEY_BREAK: return VK_PAUSE;
+    case KEY_PAD_DIVIDE: return VK_DIVIDE; case KEY_PAD_MULTIPLY: return VK_MULTIPLY;
+    case KEY_PAD_MINUS: return VK_SUBTRACT; case KEY_PAD_PLUS: return VK_ADD;
+    case KEY_PAD_DECIMAL: return VK_DECIMAL;
+    case KEY_LBRACKET: return VK_OEM_4; case KEY_RBRACKET: return VK_OEM_6;
+    case KEY_SEMICOLON: return VK_OEM_1; case KEY_APOSTROPHE: return VK_OEM_7;
+    case KEY_BACKQUOTE: return VK_OEM_3; case KEY_COMMA: return VK_OEM_COMMA;
+    case KEY_PERIOD: return VK_OEM_PERIOD; case KEY_SLASH: return VK_OEM_2;
+    case KEY_BACKSLASH: return VK_OEM_5; case KEY_MINUS: return VK_OEM_MINUS;
+    case KEY_EQUAL: return VK_OEM_PLUS;
+    default: return 0;
+  }
+}
+
+static uint32_t HL2SB_HTMLModifiers()
+{
+  if (!vgui::input()) return 0;
+  uint32_t mods = 0;
+  if (vgui::input()->IsKeyDown(KEY_LSHIFT) || vgui::input()->IsKeyDown(KEY_RSHIFT)) mods |= 1u << 1;
+  if (vgui::input()->IsKeyDown(KEY_LCONTROL) || vgui::input()->IsKeyDown(KEY_RCONTROL)) mods |= 1u << 2;
+  if (vgui::input()->IsKeyDown(KEY_LALT) || vgui::input()->IsKeyDown(KEY_RALT)) mods |= 1u << 3;
+  if (vgui::input()->IsMouseDown(MOUSE_LEFT)) mods |= 1u << 4;
+  if (vgui::input()->IsMouseDown(MOUSE_MIDDLE)) mods |= 1u << 5;
+  if (vgui::input()->IsMouseDown(MOUSE_RIGHT)) mods |= 1u << 6;
+  return mods;
+}
+#endif
+
 class CHL2SBLuaHTML : public vgui::HTML
 {
-  typedef vgui::HTML BaseClass;
+  DECLARE_CLASS_SIMPLE(CHL2SBLuaHTML, HTML);
 public:
   lua_State *m_lua_State;
   int m_nTableReference;
   bool m_loading;
   std::vector<std::string> m_bridges;
   std::string m_tempFile;
+  HLSBServoView *m_servo;
+#if defined(_WIN32)
+  HtmlView *m_cef;
+  std::vector<std::pair<std::string, std::string> > m_cefCallbacks;
+#endif
+  int m_servoTexture;
+  uint64_t m_servoSequence;
+  std::vector<unsigned char> m_servoPixels;
+  std::string m_servoURL;
+  int m_servoMouseX, m_servoMouseY;
+  HLSBServoIMEMenu m_servoIME;
+  bool m_servoComposing;
+  std::wstring m_servoIMECommit;
+  wchar_t m_servoHighSurrogate;
 
   CHL2SBLuaHTML(Panel *parent, const char *name, lua_State *state)
-    : HTML(parent, name, true), m_lua_State(state), m_loading(true)
+    : HTML(parent, name, true, false, HL2SB_SuppressSteamHTML(state)), m_lua_State(state), m_loading(true),
+      m_servo(NULL),
+#if defined(_WIN32)
+      m_cef(NULL),
+#endif
+      m_servoTexture(0), m_servoSequence(0), m_servoMouseX(0), m_servoMouseY(0),
+      m_servoIME(this), m_servoComposing(false), m_servoHighSurrogate(0)
   {
     luaPushPanelRefTable(state, this, true);
     m_nTableReference = luaL_ref(state, LUA_REGISTRYINDEX);
     HL2SB_LuaPanelTrack(this, state);
+#if defined(_WIN32)
+    if (HL2SB_UseCEF()) {
+      if (HL2SB_InitializeCEF()) m_cef = s_htmlCefAPI->view_create(s_htmlCefRuntime, 1, 1);
+      if (m_cef) {
+        s_htmlCefPanels.push_back(this);
+        SetMouseInputEnabled(true);
+        SetKeyBoardInputEnabled(true);
+      }
+      else {
+        Warning("CEF HTML backend unavailable; using the existing HTML backend.\n");
+        InitializeSteamBackend();
+      }
+    } else if (state == LGameUI) {
+      InitializeSteamBackend();
+    }
+#elif !defined(__ANDROID__)
+    if (state == LGameUI || HL2SB_UseServo()) {
+      if (!s_htmlServoRuntime) {
+        char path[MAX_PATH];
+        const char *library = "bin/libservo_capi.so";
+        const bool resolveViaFilesystem = true;
+        if (!resolveViaFilesystem || filesystem->RelativePathToFullPath(library, "MOD", path, sizeof(path))) {
+          // Webstorage persistence: Servo partitions its per-origin SQLite
+          // stores under this directory, so the GMod menu's localStorage
+          // survives a restart.
+          filesystem->CreateDirHierarchy("servo_config", "MOD");
+          char configDir[MAX_PATH];
+          const char *libraryArg = resolveViaFilesystem ? path : library;
+          if (filesystem->RelativePathToFullPath("servo_config", "MOD", configDir, sizeof(configDir)))
+            s_htmlServoRuntime = HLSBServoCreateRuntime(libraryArg, configDir);
+          else
+            s_htmlServoRuntime = HLSBServoCreateRuntime(libraryArg, NULL);
+        }
+      }
+      if (s_htmlServoRuntime) m_servo = HLSBServoCreateView(s_htmlServoRuntime, 1, 1);
+      if (m_servo) { ++s_htmlServoViews; SetMouseInputEnabled(true); SetKeyBoardInputEnabled(true); }
+      else {
+        Warning("Servo HTML backend unavailable; using the existing HTML backend.\n");
+        InitializeSteamBackend();
+      }
+    }
+#endif
   }
 
   virtual ~CHL2SBLuaHTML()
   {
+#if defined(_WIN32)
+    if (m_cef) {
+      for (size_t i = 0; i < s_htmlCefPanels.size(); ++i) {
+        if (s_htmlCefPanels[i] == this) { s_htmlCefPanels.erase(s_htmlCefPanels.begin() + i); break; }
+      }
+      s_htmlCefAPI->view_destroy(m_cef);
+      m_cef = NULL;
+    }
+#endif
+    if (m_servoTexture && surface()) surface()->DeleteTextureByID(m_servoTexture);
+    if (m_servo) {
+      HLSBServoDestroyView(m_servo);
+      --s_htmlServoViews;
+    }
     HL2SB_LuaPanelUntrack(this);
     if (Live()) luaDropPanelRefTable(m_lua_State, this);
     HL2SB_LuaPanelUnref(m_lua_State, m_nTableReference);
@@ -2295,7 +2896,12 @@ public:
       "window.IN_ENGINE=true;window.__hl2sbHTMLCallbacks=window.__hl2sbHTMLCallbacks||{};"
       "window.__hl2sbHTMLNext=window.__hl2sbHTMLNext||0;"
       "window.__hl2sbHTMLReply=function(id,args){var cb=window.__hl2sbHTMLCallbacks[id];"
-      "delete window.__hl2sbHTMLCallbacks[id];if(cb)cb.apply(null,args||[]);};";
+      "delete window.__hl2sbHTMLCallbacks[id];if(cb)cb.apply(null,args||[]);};"
+      // GMod injects the same shim into every CEF page: its embedded
+      // browser has no WebSocket, so pages feature-detect and degrade.
+      // Servo does have one, but GMod web content is written against the
+      // shim, so keep the reference behavior.
+      "window.WebSocket=undefined;";
     for (size_t i = 0; i < m_bridges.size(); ++i) script += m_bridges[i];
     return script;
   }
@@ -2305,11 +2911,53 @@ public:
     std::string key = HL2SB_HTMLQuote(name);
     std::string script = "window[" + key + "]=window[" + key + "]||{};";
     m_bridges.push_back(script);
+#if defined(_WIN32)
+    if (m_cef) {
+      if (!m_loading) s_htmlCefAPI->eval_js(m_cef, script.c_str());
+      return;
+    }
+#endif
+    if (m_servo && !HLSBServoSetDocumentScript(m_servo, BridgeScript().c_str()))
+      Warning("Servo HTML failed to register the document script.\n");
     if (!m_loading) RunJavascript(script.c_str());
   }
 
   void AddCallback(const char *object, const char *function)
   {
+#if defined(_WIN32)
+    if (m_cef) {
+      const std::pair<std::string, std::string> callback(object, function);
+      bool exists = false;
+      for (size_t i = 0; i < m_cefCallbacks.size(); ++i)
+        if (m_cefCallbacks[i] == callback) { exists = true; break; }
+      if (!exists) m_cefCallbacks.push_back(callback);
+      s_htmlCefAPI->register_js(m_cef, object, function);
+      return;
+    }
+#endif
+    if (m_servo) {
+      const std::string obj = HL2SB_HTMLQuote(object);
+      const std::string fn = HL2SB_HTMLQuote(function);
+      // Registered functions call the host through the native
+      // window.hl2sbBridge channel: the JSON payload rides the embedder
+      // message queue in submission order, and the reply resolves the
+      // page-side promise. The promise closure pairs the reply with its
+      // callback - like CEF's frame-scoped callback tasks, a navigation
+      // drops the pending reply and the closure never resumes.
+      std::string script = "window[" + obj + "]=window[" + obj + "]||{};window[" + obj + "][" + fn + "]=function(){"
+        "var a=Array.prototype.slice.call(arguments),cb=null;"
+        "if(typeof a[a.length-1]==='function')cb=a.pop();"
+        "if(!window.hl2sbBridge)return;"
+        "window.hl2sbBridge(JSON.stringify([" + obj + "," + fn + ",a]))"
+        ".then(function(t){if(!cb)return;var v;try{v=JSON.parse(t);}catch(e){return;}"
+        "if(Object.prototype.toString.call(v)==='[object Array]')cb.apply(null,v);})"
+        ".catch(function(){});};";
+      m_bridges.push_back(script);
+      if (!HLSBServoSetDocumentScript(m_servo, BridgeScript().c_str()))
+        Warning("Servo HTML failed to register the document script.\n");
+      if (!m_loading) RunJavascript(script.c_str());
+      return;
+    }
     std::string script = "window[" + HL2SB_HTMLQuote(object) + "][" + HL2SB_HTMLQuote(function) + "]=function(){"
       "var args=Array.prototype.slice.call(arguments),cb=null;"
       "if(typeof args[args.length-1]==='function')cb=args.pop();"
@@ -2383,9 +3031,462 @@ public:
   virtual void OnThink()
   {
     BaseClass::OnThink();
+#if defined(_WIN32)
+    if (m_cef) {
+      int wide, tall; GetSize(wide, tall);
+      if (wide > 0 && tall > 0) s_htmlCefAPI->view_resize(m_cef, wide, tall);
+      s_htmlCefAPI->pump(s_htmlCefRuntime);
+      HtmlEvent event;
+      while (m_cef && s_htmlCefAPI->poll(m_cef, &event)) {
+        const char *value = event.a ? event.a : "";
+        if (event.type == HTML_EVENT_ASSET_REQUEST) {
+          std::string path;
+          CUtlBuffer contents;
+          const bool found = (HL2SB_AssetPath(value, path) || HL2SB_MapImagePath(value, path)) &&
+            filesystem->FileExists(path.c_str(), "GAME") &&
+            filesystem->Size(path.c_str(), "GAME") <= 32u * 1024u * 1024u &&
+            filesystem->ReadFile(path.c_str(), "GAME", contents);
+          s_htmlCefAPI->asset_reply(m_cef, event.id, found ? 200 : 404,
+            found ? HL2SB_AssetMime(path) : "text/plain",
+            found ? static_cast<const uint8_t *>(contents.Base()) : NULL,
+            found ? contents.TellPut() : 0);
+        } else if (event.type == HTML_EVENT_JS_CALL) {
+          const std::string reply = Live() ? ServoBridgeReply(value) : std::string("[]");
+          s_htmlCefAPI->reply(m_cef, event.id, reply.c_str());
+        } else if (event.type == HTML_EVENT_CONSOLE) {
+          // RUNLUA is dispatched without source details so the original DHTML
+          // ConsoleMessage handler can apply its SetAllowLua check.
+          const bool runLua = !Q_strncmp(value, "RUNLUA:", 7);
+          BEGIN_LUA_CALL_PANEL_METHOD("ConsoleMessage");
+            lua_pushstring(m_lua_State, value);
+            if (!runLua) {
+              lua_pushstring(m_lua_State, event.b ? event.b : "");
+              lua_pushinteger(m_lua_State, static_cast<int32_t>(event.id));
+              const char *severity = event.code == 1 ? "debug" :
+                                     event.code == 3 ? "warn" :
+                                     event.code == 4 ? "error" : "log";
+              lua_pushstring(m_lua_State, severity);
+            }
+          END_LUA_CALL_PANEL_METHOD(runLua ? 1 : 4, 0);
+        } else if (event.type == HTML_EVENT_LOAD_START) {
+          m_loading = true;
+          m_servoURL = value;
+          BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
+            lua_pushstring(m_lua_State, value);
+          END_LUA_CALL_PANEL_METHOD(1, 0);
+        } else if (event.type == HTML_EVENT_DOCUMENT_READY) {
+          for (size_t i = 0; i < m_cefCallbacks.size(); ++i)
+            s_htmlCefAPI->register_js(m_cef, m_cefCallbacks[i].first.c_str(), m_cefCallbacks[i].second.c_str());
+          BEGIN_LUA_CALL_PANEL_METHOD("OnDocumentReady");
+            lua_pushstring(m_lua_State, value);
+          END_LUA_CALL_PANEL_METHOD(1, 0);
+        } else if (event.type == HTML_EVENT_LOAD_END) {
+          m_loading = false;
+          BEGIN_LUA_CALL_PANEL_METHOD("OnFinishLoadingDocument");
+            lua_pushstring(m_lua_State, value);
+          END_LUA_CALL_PANEL_METHOD(1, 0);
+        } else if (event.type == HTML_EVENT_LOAD_ERROR) {
+          m_loading = false;
+          Warning("CEF HTML: failed to load %s (%d).\n", value, event.code);
+        } else if (event.type == HTML_EVENT_TITLE) {
+          OnSetHTMLTitle(value);
+        } else if (event.type == HTML_EVENT_ADDRESS_CHANGED) {
+          const vgui::HPanel panelHandle = vgui::ivgui()->PanelToHandle(GetVPanel());
+          PHandle callbackPanel;
+          callbackPanel.Set(this);
+          s_htmlAddressCallbacks.push_back(callbackPanel);
+          OnURLChanged(value, "", false);
+          s_htmlAddressCallbacks.pop_back();
+          // DeletePanel may synchronously destroy this panel inside the Lua hook.
+          if (!vgui::ivgui()->HandleToPanel(panelHandle)) return;
+          // A deferred deletion of this panel or an ancestor makes further
+          // callbacks pointless while the queued VGUI deletion is pending.
+          for (Panel *active = this; active; active = active->GetParent())
+            if (active->IsMarkedForDeletion()) return;
+        } else if (event.type == HTML_EVENT_NAV_REQUEST) {
+          std::string assetPath;
+          const bool allowed = !Q_stricmp(value, "about:blank") ||
+            !Q_strnicmp(value, "http://", 7) || !Q_strnicmp(value, "https://", 8) ||
+            HL2SB_AssetPath(value, assetPath) || HL2SB_MapImagePath(value, assetPath);
+          s_htmlCefAPI->reply(m_cef, event.id, allowed ? "true" : "false");
+        }
+      }
+      HtmlFrame frame = {};
+      if (s_htmlCefAPI->lock_frame(m_cef, &frame)) {
+        if (frame.pixels && frame.width && frame.height && frame.sequence != m_servoSequence &&
+            frame.width <= 16384 && frame.height <= 16384 && frame.stride >= frame.width * 4) {
+          m_servoPixels.resize(static_cast<size_t>(frame.width) * frame.height * 4);
+          for (uint32_t y = 0; y < frame.height; ++y) {
+            const uint8_t *src = frame.pixels + static_cast<size_t>(y) * frame.stride;
+            uint8_t *dst = &m_servoPixels[static_cast<size_t>(y) * frame.width * 4];
+            for (uint32_t x = 0; x < frame.width; ++x) {
+              dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0]; dst[3] = src[3];
+              src += 4; dst += 4;
+            }
+          }
+          if (!m_servoTexture) m_servoTexture = surface()->CreateNewTextureID(true);
+          surface()->DrawSetTextureRGBA(m_servoTexture, &m_servoPixels[0], frame.width, frame.height, 1, true);
+          m_servoSequence = frame.sequence;
+          Repaint();
+        }
+        s_htmlCefAPI->unlock_frame(m_cef);
+      }
+    }
+#endif
+    if (m_servo) {
+      int wide, tall; GetSize(wide, tall);
+      if (wide > 0 && tall > 0) HLSBServoResize(m_servo, wide, tall);
+      HLSBServoPump(s_htmlServoRuntime);
+      uint64_t assetRequest = 0;
+      char assetURL[8192];
+      while (HLSBServoPopAssetEvent(m_servo, &assetRequest, assetURL, sizeof(assetURL))) {
+        std::string path;
+        CUtlBuffer contents;
+        const bool found = (HL2SB_AssetPath(assetURL, path) || HL2SB_MapImagePath(assetURL, path)) &&
+          filesystem->FileExists(path.c_str(), "GAME") &&
+          filesystem->Size(path.c_str(), "GAME") <= 32u * 1024u * 1024u &&
+          filesystem->ReadFile(path.c_str(), "GAME", contents);
+        if (found) {
+          const char *mime = HL2SB_AssetMime(path);
+          if (!Q_stricmp(mime, "text/css; charset=utf-8")) {
+            const std::string css = HL2SB_TranslateLegacyFlexCSS(
+                static_cast<const char *>(contents.Base()), contents.TellPut());
+            if (!HLSBServoAssetReply(m_servo, assetRequest, 200, mime,
+                                     reinterpret_cast<const uint8_t *>(css.data()), css.size()))
+              HLSBServoAssetReply(m_servo, assetRequest, 404, "text/plain", NULL, 0);
+          } else if (!HLSBServoAssetReply(m_servo, assetRequest, 200, mime,
+                                   static_cast<const uint8_t *>(contents.Base()), contents.TellPut()))
+            HLSBServoAssetReply(m_servo, assetRequest, 404, "text/plain", NULL, 0);
+        } else {
+          HLSBServoAssetReply(m_servo, assetRequest, 404, "text/plain", NULL, 0);
+        }
+      }
+      // JS-Lua bridge requests, issued through the native window.hl2sbBridge
+      // channel: payloads arrive in submission order and each reply resolves
+      // the page-side promise; a navigation drops the reply the same way a
+      // frame-scoped callback dies with its frame.
+      uint64_t hl2sbRequest = 0;
+      char hl2sbPayload[65536];
+      while (m_servo && HLSBServoPopHL2SBEvent(m_servo, &hl2sbRequest, hl2sbPayload, sizeof(hl2sbPayload))) {
+        std::string reply = Live() ? ServoBridgeReply(hl2sbPayload) : std::string("[]");
+        if (!HLSBServoHL2SBReply(m_servo, hl2sbRequest, reply.c_str()))
+          HLSBServoHL2SBReply(m_servo, hl2sbRequest, "[]");
+      }
+      char consoleMsg[16384];
+      while (m_servo && HLSBServoPopConsoleEvent(m_servo, consoleMsg, sizeof(consoleMsg))) {
+        BEGIN_LUA_CALL_PANEL_METHOD("ConsoleMessage");
+          lua_pushstring(m_lua_State, consoleMsg);
+        END_LUA_CALL_PANEL_METHOD(1, 0);
+      }
+      int status;
+      while (HLSBServoPopLoadEvent(m_servo, &status)) {
+        if (status == 1) {
+          BEGIN_LUA_CALL_PANEL_METHOD("OnDocumentReady");
+            lua_pushstring(m_lua_State, m_servoURL.c_str());
+          END_LUA_CALL_PANEL_METHOD(1, 0);
+        } else if (status == 2) {
+          m_loading = false;
+          RunJavascript(BridgeScript().c_str());
+          BEGIN_LUA_CALL_PANEL_METHOD("OnFinishLoadingDocument");
+            lua_pushstring(m_lua_State, m_servoURL.c_str());
+          END_LUA_CALL_PANEL_METHOD(1, 0);
+        } else if (status == 3) m_loading = false;
+      }
+      uint32_t width = 0, height = 0; uint64_t sequence = 0;
+      size_t bytes = HLSBServoCopyFrame(m_servo, NULL, 0, &width, &height, &sequence);
+      if (bytes && sequence != m_servoSequence) {
+        m_servoPixels.resize(bytes);
+        if (HLSBServoCopyFrame(m_servo, &m_servoPixels[0], bytes, &width, &height, &sequence) == bytes) {
+          if (!m_servoTexture) m_servoTexture = surface()->CreateNewTextureID(true);
+          surface()->DrawSetTextureRGBA(m_servoTexture, &m_servoPixels[0], width, height, 1, true);
+          m_servoSequence = sequence;
+          Repaint();
+        }
+      }
+    }
     BEGIN_LUA_CALL_PANEL_METHOD("Think");
     END_LUA_CALL_PANEL_METHOD(0, 0);
   }
+
+  std::string ServoBridgeReply(const char *message)
+  {
+    if (!Live()) return "[]";
+    lua_State *state = m_lua_State;
+    const int top = lua_gettop(state);
+    std::string result("[]");
+    lua_checkstack(state, 32);
+    lua_pushcfunction(state, luasrc_UTIL_JSONToTable);
+    lua_pushstring(state, message);
+    if (lua_pcall(state, 1, 1, 0) == LUA_OK && lua_istable(state, -1)) {
+      const int args = lua_gettop(state);
+      lua_getref(state, m_nTableReference);
+      lua_getfield(state, -1, "OnCallback");
+      lua_remove(state, -2);
+      if (lua_isfunction(state, -1)) {
+        lua_pushpanel(state, this);
+        lua_rawgeti(state, args, 1);
+        lua_rawgeti(state, args, 2);
+        lua_rawgeti(state, args, 3);
+        if (lua_pcall(state, 4, LUA_MULTRET, 0) == LUA_OK) {
+          const int count = lua_gettop(state) - args;
+          lua_newtable(state);
+          for (int i = 0; i < count; ++i) { lua_pushvalue(state, args + i + 1); lua_rawseti(state, -2, i + 1); }
+          if (count > 0) {
+            lua_pushcfunction(state, luasrc_UTIL_TableToJSON);
+            lua_insert(state, -2);
+            if (lua_pcall(state, 1, 1, 0) == LUA_OK && lua_isstring(state, -1)) result = lua_tostring(state, -1);
+          }
+        } else {
+          luasrc_LuaWarnMsgF("HTML callback: %s\n", lua_tostring(state, -1));
+        }
+      }
+    }
+    lua_settop(state, top);
+    return result;
+  }
+
+  virtual void Paint()
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      if (!m_servoTexture) return;
+      int wide, tall; GetSize(wide, tall);
+      surface()->DrawSetColor(255, 255, 255, 255);
+      surface()->DrawSetTexture(m_servoTexture);
+      surface()->DrawTexturedRect(0, 0, wide, tall);
+      return;
+    }
+#endif
+    if (!m_servo) { BaseClass::Paint(); return; }
+    if (!m_servoTexture) return;
+    int wide, tall; GetSize(wide, tall);
+    surface()->DrawSetColor(255, 255, 255, 255);
+    surface()->DrawSetTexture(m_servoTexture);
+    surface()->DrawTexturedRect(0, 0, wide, tall);
+  }
+
+  virtual void RunJavascript(const char *script)
+  {
+#if defined(_WIN32)
+    if (m_cef) { s_htmlCefAPI->eval_js(m_cef, script); return; }
+#endif
+    if (!m_servo) { BaseClass::RunJavascript(script); return; }
+    if (!HLSBServoEvalJS(m_servo, script)) Warning("Servo HTML JavaScript interface unavailable.\n");
+  }
+
+  virtual bool Refresh()
+  {
+#if defined(_WIN32)
+    if (m_cef) { s_htmlCefAPI->reload(m_cef); return true; }
+#endif
+    return m_servo ? HLSBServoReload(m_servo) : BaseClass::Refresh();
+  }
+
+  virtual bool StopLoading()
+  {
+#if defined(_WIN32)
+    if (m_cef) { s_htmlCefAPI->stop(m_cef); return true; }
+#endif
+    return BaseClass::StopLoading();
+  }
+
+  virtual void GoBack()
+  {
+#if defined(_WIN32)
+    if (m_cef) { s_htmlCefAPI->back(m_cef); return; }
+#endif
+    if (m_servo) HLSBServoBack(m_servo); else BaseClass::GoBack();
+  }
+
+  virtual void GoForward()
+  {
+#if defined(_WIN32)
+    if (m_cef) { s_htmlCefAPI->forward(m_cef); return; }
+#endif
+    if (m_servo) HLSBServoForward(m_servo); else BaseClass::GoForward();
+  }
+
+  virtual void OnCursorMoved(int x, int y)
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      m_servoMouseX = x; m_servoMouseY = y;
+      s_htmlCefAPI->mouse(m_cef, 0, x, y, 0, HL2SB_HTMLModifiers(), 0, 0);
+      return;
+    }
+#endif
+    if (!m_servo) { BaseClass::OnCursorMoved(x, y); return; }
+    m_servoMouseX = x; m_servoMouseY = y;
+    HLSBServoMouseMove(m_servo, (float)x, (float)y);
+  }
+
+  virtual void OnMousePressed(MouseCode code)
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      const int button = HL2SB_HTMLMouseButton(code);
+      if (button >= 0 && button <= 2)
+        s_htmlCefAPI->mouse(m_cef, 1, m_servoMouseX, m_servoMouseY, button, HL2SB_HTMLModifiers(), 0, 0);
+      RequestFocus();
+      return;
+    }
+#endif
+    if (!m_servo) { BaseClass::OnMousePressed(code); return; }
+    int button = HL2SB_HTMLMouseButton(code);
+    if (button >= 0) HLSBServoMouseButton(m_servo, (float)m_servoMouseX, (float)m_servoMouseY, button, true);
+    RequestFocus();
+  }
+
+  virtual void OnMouseDoublePressed(MouseCode code)
+  {
+#if defined(_WIN32)
+    if (m_cef) { OnMousePressed(code); return; }
+#endif
+    if (!m_servo) { BaseClass::OnMouseDoublePressed(code); return; }
+    OnMousePressed(code);
+  }
+
+  virtual void OnMouseReleased(MouseCode code)
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      const int button = HL2SB_HTMLMouseButton(code);
+      if (button >= 0 && button <= 2)
+        s_htmlCefAPI->mouse(m_cef, 2, m_servoMouseX, m_servoMouseY, button, HL2SB_HTMLModifiers(), 0, 0);
+      return;
+    }
+#endif
+    if (!m_servo) { BaseClass::OnMouseReleased(code); return; }
+    int button = HL2SB_HTMLMouseButton(code);
+    if (button >= 0) HLSBServoMouseButton(m_servo, (float)m_servoMouseX, (float)m_servoMouseY, button, false);
+  }
+
+  virtual void OnMouseWheeled(int delta)
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      s_htmlCefAPI->mouse(m_cef, 3, m_servoMouseX, m_servoMouseY, 0, HL2SB_HTMLModifiers(), 0, delta * 120);
+      return;
+    }
+#endif
+    if (!m_servo) { BaseClass::OnMouseWheeled(delta); return; }
+    HLSBServoMouseWheel(m_servo, (float)m_servoMouseX, (float)m_servoMouseY, 0.0, -40.0 * delta);
+  }
+
+  virtual void OnKeyCodeTyped(KeyCode code)
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      const int key = HL2SB_HTMLVirtualKey(code);
+      if (key) s_htmlCefAPI->key(m_cef, 0, MapVirtualKeyA(key, MAPVK_VK_TO_VSC), key, HL2SB_HTMLModifiers(), 0);
+      return;
+    }
+#endif
+    if (!m_servo) { BaseClass::OnKeyCodeTyped(code); return; }
+    const char *key = HL2SB_HTMLKey(code);
+    if (key) HLSBServoKey(m_servo, key, true);
+  }
+
+  virtual void OnKeyCodeReleased(KeyCode code)
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      const int key = HL2SB_HTMLVirtualKey(code);
+      if (key) s_htmlCefAPI->key(m_cef, 1, MapVirtualKeyA(key, MAPVK_VK_TO_VSC), key, HL2SB_HTMLModifiers(), 0);
+      return;
+    }
+#endif
+    if (!m_servo) { BaseClass::OnKeyCodeReleased(code); return; }
+    const char *key = HL2SB_HTMLKey(code);
+    if (key) HLSBServoKey(m_servo, key, false);
+  }
+
+  virtual void OnKeyTyped(wchar_t unichar)
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      if (m_servoComposing) { m_servoIMECommit += unichar; return; }
+      if (unichar >= 32 && unichar != 127)
+        s_htmlCefAPI->key(m_cef, 2, 0, unichar, HL2SB_HTMLModifiers(), unichar);
+      return;
+    }
+#endif
+    if (!m_servo) { BaseClass::OnKeyTyped(unichar); return; }
+    if (unichar < 32 || unichar == 127) return;
+    if (m_servoComposing) { m_servoIMECommit += unichar; return; }
+    wchar_t input[3] = {0, 0, 0}; char text[8] = {0};
+    if (sizeof(wchar_t) == 2 && unichar >= 0xD800 && unichar <= 0xDBFF) {
+      m_servoHighSurrogate = unichar;
+      return;
+    }
+    if (sizeof(wchar_t) == 2 && unichar >= 0xDC00 && unichar <= 0xDFFF) {
+      if (!m_servoHighSurrogate) return;
+      input[0] = m_servoHighSurrogate;
+      input[1] = unichar;
+    } else {
+      input[0] = unichar;
+    }
+    m_servoHighSurrogate = 0;
+    if (V_UnicodeToUTF8(input, text, sizeof(text))) HLSBServoText(m_servo, text);
+  }
+
+  MESSAGE_FUNC_WCHARPTR(ServoComposition, "DoCompositionString", string)
+  {
+#if defined(_WIN32)
+    if (m_cef) {
+      if (string && *string) {
+        if (!m_servoComposing) {
+          m_servoComposing = true;
+          m_servoIMECommit.clear();
+          s_htmlCefAPI->ime(m_cef, 0, "");
+        }
+        char text[4096] = {0};
+        if (V_UnicodeToUTF8(string, text, sizeof(text))) s_htmlCefAPI->ime(m_cef, 1, text);
+      } else if (m_servoComposing) {
+        char text[4096] = {0};
+        V_UnicodeToUTF8(m_servoIMECommit.c_str(), text, sizeof(text));
+        s_htmlCefAPI->ime(m_cef, 2, text);
+        m_servoIMECommit.clear();
+        m_servoComposing = false;
+        m_servoIME.Hide();
+      }
+      return;
+    }
+#endif
+    if (!m_servo) return;
+    if (string && *string) {
+      if (!m_servoComposing) {
+        m_servoComposing = true;
+        m_servoIMECommit.clear();
+        HLSBServoComposition(m_servo, 0, "");
+      }
+      char text[4096] = {0};
+      if (V_UnicodeToUTF8(string, text, sizeof(text))) HLSBServoComposition(m_servo, 1, text);
+    } else if (m_servoComposing) {
+      char text[4096] = {0};
+      V_UnicodeToUTF8(m_servoIMECommit.c_str(), text, sizeof(text));
+      HLSBServoComposition(m_servo, 1, text);
+      HLSBServoComposition(m_servo, 2, text);
+      m_servoIMECommit.clear();
+      m_servoComposing = false;
+      m_servoIME.Hide();
+    }
+  }
+
+  MESSAGE_FUNC(ServoShowCandidates, "DoShowIMECandidates")
+  { if (m_servo
+#if defined(_WIN32)
+    || m_cef
+#endif
+    ) m_servoIME.Update(m_servoMouseX, m_servoMouseY + 20); }
+  MESSAGE_FUNC(ServoUpdateCandidates, "DoUpdateIMECandidates")
+  { if (m_servo
+#if defined(_WIN32)
+    || m_cef
+#endif
+    ) m_servoIME.Update(m_servoMouseX, m_servoMouseY + 20); }
+  MESSAGE_FUNC(ServoHideCandidates, "DoHideIMECandidates")
+  { m_servoIME.Hide(); }
 
   virtual void OnURLChanged(const char *url, const char *post, bool redirect)
   {
@@ -2403,6 +3504,27 @@ public:
 
   void LoadMarkup(const char *markup)
   {
+#if defined(_WIN32)
+    if (m_cef) {
+      m_loading = true;
+      const std::string url = HL2SB_HTMLDataURL(markup);
+      s_htmlCefAPI->navigate(m_cef, url.c_str());
+      return;
+    }
+#endif
+    if (m_servo) {
+      m_servoURL = "about:blank";
+      const std::string url = HL2SB_HTMLDataURL(markup);
+      m_loading = HLSBServoSetDocumentScript(m_servo, BridgeScript().c_str()) &&
+        HLSBServoNavigate(m_servo, url.c_str());
+      if (!m_loading) Warning("Servo HTML failed to load markup.\n");
+      else {
+        BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
+          lua_pushstring(m_lua_State, m_servoURL.c_str());
+        END_LUA_CALL_PANEL_METHOD(1, 0);
+      }
+      return;
+    }
     m_loading = true;
     std::string document = "<script>" + BridgeScript() + "</script>" + markup;
     char temporary[MAX_PATH], full[MAX_PATH];
@@ -2418,6 +3540,38 @@ public:
 
   void LoadURL(const char *url)
   {
+#if defined(_WIN32)
+    if (m_cef) {
+      std::string assetPath;
+      if (Q_stricmp(url, "about:blank") && Q_strnicmp(url, "http://", 7) &&
+          Q_strnicmp(url, "https://", 8) && !HL2SB_AssetPath(url, assetPath) &&
+          !HL2SB_MapImagePath(url, assetPath)) {
+        Warning("CEF HTML: rejected URL %s.\n", url);
+        return;
+      }
+      m_loading = true;
+      m_servoURL = url;
+      s_htmlCefAPI->navigate(m_cef, url);
+      return;
+    }
+#endif
+    if (m_servo) {
+      std::string assetPath;
+      if (Q_stricmp(url, "about:blank") && !HL2SB_AssetPath(url, assetPath)) {
+        Warning("Servo HTML URL navigation is not available yet.\n");
+        return;
+      }
+      m_servoURL = url;
+      m_loading = HLSBServoSetDocumentScript(m_servo, BridgeScript().c_str()) &&
+        HLSBServoNavigate(m_servo, url);
+      if (!m_loading) Warning("Servo HTML failed to load URL.\n");
+      else {
+        BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
+          lua_pushstring(m_lua_State, m_servoURL.c_str());
+        END_LUA_CALL_PANEL_METHOD(1, 0);
+      }
+      return;
+    }
     m_loading = true;
     BEGIN_LUA_CALL_PANEL_METHOD("OnBeginLoadingDocument");
       lua_pushstring(m_lua_State, url);
@@ -2449,9 +3603,29 @@ public:
   }
 };
 
+void HL2SB_HTMLBackendShutdown()
+{
+#if defined(_WIN32)
+  while (!s_htmlCefPanels.empty()) {
+    CHL2SBLuaHTML *panel = s_htmlCefPanels.back();
+    s_htmlCefPanels.pop_back();
+    if (panel->m_cef) {
+      s_htmlCefAPI->view_destroy(panel->m_cef);
+      panel->m_cef = NULL;
+    }
+  }
+  if (s_htmlCefRuntime) {
+    s_htmlCefAPI->destroy(s_htmlCefRuntime);
+    s_htmlCefRuntime = NULL;
+  }
+  HL2SB_ReleaseCEFModules();
+#endif
+}
+
 int HL2SB_LuaCreateHTML(lua_State *L)
 {
-  CHL2SBLuaHTML *panel = new CHL2SBLuaHTML(luaL_optpanel(L, 1, VGui_GetClientLuaRootPanel()), luaL_optstring(L, 2, "HTML"), L);
+  Panel *root = L == LGameUI ? VGui_GetGameUIPanel() : VGui_GetClientLuaRootPanel();
+  CHL2SBLuaHTML *panel = new CHL2SBLuaHTML(luaL_optpanel(L, 1, root), luaL_optstring(L, 2, "HTML"), L);
   lua_pushpanel(L, panel);
   return 1;
 }
@@ -2505,7 +3679,33 @@ static int Panel_HTMLUpdate(lua_State *L) {
   return 0;
 }
 
+extern void HL2SB_SetTextEntryLanguageVisible(vgui::TextEntry *entry, bool visible);
+
+static int Panel_SetDrawLanguageID(lua_State *L) {
+  vgui::Panel *panel = luaL_checkpanel(L, 1);
+  if (vgui::TextEntry *entry = dynamic_cast<vgui::TextEntry *>(panel))
+    HL2SB_SetTextEntryLanguageVisible(entry, lua_toboolean(L, 2) != 0);
+  return 0;
+}
+
+static int Panel_CopySelected(lua_State *L) {
+  vgui::Panel *panel = luaL_checkpanel(L, 1);
+  if (vgui::TextEntry *entry = dynamic_cast<vgui::TextEntry *>(panel)) entry->CopySelected();
+  if (vgui::RichText *rich = dynamic_cast<vgui::RichText *>(panel)) rich->CopySelected();
+  return 0;
+}
+
+static int Panel_SelectAll(lua_State *L) {
+  vgui::Panel *panel = luaL_checkpanel(L, 1);
+  if (vgui::TextEntry *entry = dynamic_cast<vgui::TextEntry *>(panel)) entry->SelectAllText(false);
+  if (vgui::RichText *rich = dynamic_cast<vgui::RichText *>(panel)) rich->SelectAllText();
+  return 0;
+}
+
 static const luaL_Reg Panelmeta[] = {
+  {"CopySelected", Panel_CopySelected},
+  {"SelectAll", Panel_SelectAll},
+  {"SetDrawLanguageID", Panel_SetDrawLanguageID},
   {"OpenURL", Panel_HTMLOpenURL},
   {"RunJavascript", Panel_HTMLJavascript},
   {"IsLoading", Panel_HTMLIsLoading},
@@ -2673,6 +3873,7 @@ static const luaL_Reg Panelmeta[] = {
   {"IsMouseInputEnabled", Panel_IsMouseInputEnabled},
   {"IsOpaque", Panel_IsOpaque},
   {"IsPopup", Panel_IsPopup},
+  {"SetPopupStayAtBack", Panel_SetPopupStayAtBack},
   {"IsProportional", Panel_IsProportional},
   {"IsRightAligned", Panel_IsRightAligned},
   {"IsStartDragWhenMouseExitsPanel", Panel_IsStartDragWhenMouseExitsPanel},
@@ -2776,6 +3977,9 @@ static const luaL_Reg Panelmeta[] = {
   {"SetTall", Panel_SetTall},
   {"SetTriplePressAllowed", Panel_SetTriplePressAllowed},
   {"SetVisible", Panel_SetVisible},
+  // HL2SB: GMod's Panel-level convar pair (see the comment at Panel_SetConVar).
+  {"SetConVar", Panel_SetConVar},
+  {"ConVarChanged", Panel_ConVarChanged},
   {"SetWide", Panel_SetWide},
   {"SetZPos", Panel_SetZPos},
   // HL2SB: GMod's names for the rest of what Derma controls call.

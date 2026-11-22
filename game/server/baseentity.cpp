@@ -25,6 +25,9 @@
 #include "IEffects.h"
 #include "vstdlib/random.h"
 #include "baseentity.h"
+#ifdef LUA_SDK
+#include "lua/hl2sb_transmit_parent.h"
+#endif
 #include "collisionutils.h"
 #include "coordsize.h"
 #include "animation.h"
@@ -278,11 +281,16 @@ static void SendProxy_SpawnEffect(const SendProp *, const void *entity, const vo
 static void SendProxy_SpawnEffectTime(const SendProp *, const void *entity, const void *, DVariant *out, int, int) {
 	out->m_Float = HL2SB_GetSpawnEffectTime((CBaseEntity *)entity);
 }
+extern bool HL2SB_HasCustomCollisionCheck( CBaseEntity *entity );
+static void SendProxy_CustomCollisionCheck(const SendProp *, const void *entity, const void *, DVariant *out, int, int) {
+	out->m_Int = HL2SB_HasCustomCollisionCheck((CBaseEntity *)entity) ? 1 : 0;
+}
 #endif
 
 // This table encodes the CBaseEntity data.
 IMPLEMENT_SERVERCLASS_ST_NOBASE( CBaseEntity, DT_BaseEntity )
 #ifdef LUA_SDK
+	SendPropInt("m_bLuaCustomCollisionCheck", 0, sizeof(int), 1, SPROP_UNSIGNED, SendProxy_CustomCollisionCheck),
 	SendPropArray3(SENDINFO_ARRAY3(m_GMOD_bool), SendPropInt(SENDINFO_ARRAY(m_GMOD_bool), 1, SPROP_UNSIGNED)),
 	SendPropArray3(SENDINFO_ARRAY3(m_GMOD_float), SendPropFloat(SENDINFO_ARRAY(m_GMOD_float), 0, SPROP_NOSCALE)),
 	SendPropArray3(SENDINFO_ARRAY3(m_GMOD_int), SendPropInt(SENDINFO_ARRAY(m_GMOD_int), 32, 0)),
@@ -308,7 +316,7 @@ IMPLEMENT_SERVERCLASS_ST_NOBASE( CBaseEntity, DT_BaseEntity )
 	SendPropDataTable( SENDINFO_DT( m_Collision ), &REFERENCE_SEND_TABLE(DT_CollisionProperty) ),
 	SendPropInt		(SENDINFO(m_nRenderFX),		8, SPROP_UNSIGNED ),
 	SendPropInt		(SENDINFO(m_nRenderMode),	8, SPROP_UNSIGNED ),
-	SendPropInt		(SENDINFO(m_fEffects),		EF_MAX_BITS, SPROP_UNSIGNED),
+	SendPropInt		(SENDINFO(m_fEffects),		16, SPROP_UNSIGNED),
 #ifdef LUA_SDK
 	SendPropInt("m_bSpawnEffect", 0, sizeof(int), 1, SPROP_UNSIGNED, SendProxy_SpawnEffect),
 	SendPropFloat("m_flSpawnEffectCreationTime", 0, sizeof(float), 0, SPROP_NOSCALE, 0, HIGH_DEFAULT, SendProxy_SpawnEffectTime),
@@ -493,6 +501,9 @@ extern bool g_bDisableEhandleAccess;
 //-----------------------------------------------------------------------------
 CBaseEntity::~CBaseEntity( )
 {
+#ifdef LUA_SDK
+	HL2SB_SetTransmitWithParent( this, false );
+#endif
 	// FIXME: This can't be called from UpdateOnRemove! There's at least one
 	// case where friction sounds are added between the call to UpdateOnRemove + ~CBaseEntity
 	PhysCleanupFrictionSounds( this );
@@ -1580,8 +1591,7 @@ void CBaseEntity::TakeDamage( const CTakeDamageInfo &inputInfo )
 		// traces); the vphysics callback queue re-enters TakeDamage, so deferred
 		// damage fires here too.  Wiki: EntityTakeDamage runs before the damage is
 		// applied and returning true blocks the whole event; PostEntityTakeDamage
-		// runs afterwards and reports whether health actually dropped.
-		int iHealthBefore = m_iHealth;
+		// runs afterwards and reports the result of the damage handler.
 
 		BEGIN_LUA_CALL_HOOK( "EntityTakeDamage" );
 			lua_pushentity( L, this );
@@ -1594,12 +1604,12 @@ void CBaseEntity::TakeDamage( const CTakeDamageInfo &inputInfo )
 		if ( bBlocked )
 			return;
 
-		OnTakeDamage( info );
+		const int iDamageResult = OnTakeDamage( info );
 
 		BEGIN_LUA_CALL_HOOK( "PostEntityTakeDamage" );
 			lua_pushentity( L, this );
 			lua_pushdamageinfo( L, info );
-			lua_pushboolean( L, m_iHealth < iHealthBefore );
+			lua_pushboolean( L, iDamageResult != 0 );
 		END_LUA_CALL_HOOK( 3, 0 );
 #else
 		OnTakeDamage( info );
@@ -3803,13 +3813,15 @@ int CBaseEntity::DispatchUpdateTransmitState()
 //-----------------------------------------------------------------------------
 int CBaseEntity::ShouldTransmit( const CCheckTransmitInfo *pInfo )
 {
-	if ( IsEFlagSet( EFL_TRANSMIT_WITH_PARENT ) )
+#ifdef LUA_SDK
+	if ( HL2SB_GetTransmitWithParent( this ) )
 	{
 		CBaseEntity *pParent = GetMoveParent();
 		if ( !pParent || ( pParent->DispatchUpdateTransmitState() & FL_EDICT_DONTSEND ) )
 			return FL_EDICT_DONTSEND;
 		return pParent->ShouldTransmit( pInfo );
 	}
+#endif
 
 	int fFlags = DispatchUpdateTransmitState();
 

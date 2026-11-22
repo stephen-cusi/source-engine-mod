@@ -15,6 +15,7 @@
 #define lglobalvars_base_cpp
 
 #include "cbase.h"
+#include "debugoverlay_shared.h"
 #include "engine/ivdebugoverlay.h"
 #include "luamanager.h"
 #include "luasrclib.h"
@@ -66,6 +67,19 @@ static int debugoverlay_AddTriangleOverlay (lua_State *L) {
   return 0;
 }
 
+static int debugoverlay_Axis( lua_State *L )
+{
+  const Vector &origin = luaL_checkvector( L, 1 );
+  const QAngle &angles = luaL_checkangle( L, 2 );
+  const float size = luaL_checknumber( L, 3 );
+  const float lifetime = luaL_optnumber( L, 4, 1.0 );
+  const bool ignoreZ = luaL_optboolean( L, 5, false );
+  static ConVarRef developer( "developer" );
+  if ( developer.IsValid() && developer.GetBool() )
+    NDebugOverlay::Axis( origin, angles, size, ignoreZ, lifetime );
+  return 0;
+}
+
 static int debugoverlay_ClearAllOverlays (lua_State *L) {
   debugoverlay->ClearAllOverlays();
   return 0;
@@ -91,6 +105,7 @@ static const luaL_Reg debugoverlaylib[] = {
   {"AddScreenTextOverlay",   debugoverlay_AddScreenTextOverlay},
   {"AddSweptBoxOverlay",   debugoverlay_AddSweptBoxOverlay},
   {"AddTriangleOverlay",   debugoverlay_AddTriangleOverlay},
+  {"Axis", debugoverlay_Axis},
   {"ClearAllOverlays",   debugoverlay_ClearAllOverlays},
   {"ClearDeadOverlays",   debugoverlay_ClearDeadOverlays},
   {"ScreenPosition",   debugoverlay_ScreenPosition},

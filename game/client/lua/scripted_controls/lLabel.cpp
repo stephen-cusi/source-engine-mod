@@ -30,6 +30,7 @@ using namespace vgui;
 
 extern int HL2SB_LuaPanelSetText(lua_State *L);
 extern int HL2SB_LuaLabelAlignment(int alignment, bool toNative);
+extern int HL2SB_LuaCheckLabelAlignment(lua_State *L, int arg);
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
@@ -214,7 +215,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( Label, SetContentAlignment, "class", "Sets the content alignment of the label" )
 {
     lua_Label *label = LUA_BINDING_ARGUMENT( luaL_checklabel, 1, "label" );
-    const int alignment = HL2SB_LuaLabelAlignment(luaL_checkint(L, 2), true);
+    const int alignment = HL2SB_LuaCheckLabelAlignment(L, 2);
     if (alignment >= 0)
         label->SetContentAlignment((vgui::Label::Alignment)alignment);
     return 0;
@@ -436,6 +437,10 @@ LUA_BINDING_BEGIN( Label, __index, "class", "Metamethod that is called when a no
 {
     lua_Label *pLabel = LUA_BINDING_ARGUMENT( lua_tolabel, 1, "label" );
     LUA_METATABLE_INDEX_CHECK_VALID( L, PanelIsValid );
+    if ( !pLabel && !Q_strcmp( luaL_checkstring( L, 2 ), "Remove" ) )
+    {
+        LUA_METATABLE_INDEX_DERIVE_INDEX( L, "Panel" );
+    }
     LUA_METATABLE_INDEX_CHECK( L, pLabel );
     if (HL2SB_LuaPanelGeometryIndex(L)) return 1;
 
@@ -465,11 +470,6 @@ LUA_BINDING_BEGIN( Label, __newindex, "class", "Metamethod that is called when a
 
     if ( pLabel == NULL )
     { /* avoid extra test when d is not 0 */
-        lua_Debug ar1;
-        lua_getstack( L, 1, &ar1 );
-        lua_getinfo( L, "fl", &ar1 );
-        lua_Debug ar2;
-        lua_getinfo( L, ">S", &ar2 );
         /* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves
         (see lua/includes/util.lua:314-322, GMod's IsValid). */
         lua_pushnil( L );

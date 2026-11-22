@@ -118,6 +118,10 @@ public:
 		D3DBLEND			m_SrcBlendAlpha;
 		D3DBLEND			m_DestBlendAlpha;
 		D3DBLENDOP			m_BlendOpAlpha;
+		bool m_OverrideBlendColor, m_OverrideBlendAlpha;
+		bool m_OverrideColorEnabled, m_OverrideAlphaEnabled;
+		D3DBLEND m_OverrideSrcColor, m_OverrideDstColor, m_OverrideSrcAlpha, m_OverrideDstAlpha;
+		D3DBLENDOP m_OverrideOpColor, m_OverrideOpAlpha;
 
 		// Depth testing states
 		D3DZBUFFERTYPE		m_ZEnable;
@@ -183,6 +187,8 @@ public:
 	void ForceDepthFuncEquals( bool bEnable );
 	void OverrideDepthEnable( bool bEnable, bool bDepthEnable );
 	void OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable );
+	void OverrideBlendColor( bool enable, bool blend, D3DBLEND src, D3DBLEND dst, D3DBLENDOP op );
+	void OverrideBlendAlpha( bool enable, bool blend, D3DBLEND src, D3DBLEND dst, D3DBLENDOP op );
 	void OverrideColorWriteEnable( bool bOverrideEnable, bool bColorWriteEnable );
 	void EnableLinearColorSpaceFrameBuffer( bool bEnable );
 

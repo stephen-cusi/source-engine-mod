@@ -36,6 +36,8 @@
 // HL2SB (2026-09-27): builds the GMod-shaped cmd table for GM:CreateMove
 // (lbaseplayer_shared.cpp; same builder Player:GetCurrentCommand uses).
 void HL2SB_PushUserCmdTable( lua_State *L, const CUserCmd *pCmd );
+void HL2SB_BeginUserCmdScope( lua_State *L, CUserCmd *pCmd, int tableIndex );
+void HL2SB_EndUserCmdScope( lua_State *L );
 #endif
 
 #ifdef SIXENSE
@@ -1055,6 +1057,11 @@ void CInput::MakeWeaponSelection( C_BaseCombatWeapon *weapon )
 	m_hSelectedWeapon = weapon;
 }
 
+void HL2SB_SelectWeapon( C_BaseCombatWeapon *weapon )
+{
+	input->MakeWeaponSelection( weapon );
+}
+
 /*
 ================
 CreateMove
@@ -1336,6 +1343,7 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 	if ( L != NULL )
 	{
 		HL2SB_PushUserCmdTable( L, cmd );
+		HL2SB_BeginUserCmdScope( L, cmd, -1 );
 		const int iTableRef = luaL_ref( L, LUA_REGISTRYINDEX );
 
 		BEGIN_LUA_CALL_HOOK( "CreateMove" );
@@ -1358,6 +1366,11 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 				cmd->buttons = (int)lua_tointeger( L, -1 );
 			lua_pop( L, 1 );
 
+			lua_getfield( L, -1, "mousedy" );
+			if ( lua_isnumber( L, -1 ) )
+				cmd->mousedy = (short)lua_tointeger( L, -1 );
+			lua_pop( L, 1 );
+
 			lua_getfield( L, -1, "forwardmove" );
 			if ( lua_isnumber( L, -1 ) )
 				cmd->forwardmove = (float)lua_tonumber( L, -1 );
@@ -1376,6 +1389,7 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 		lua_pop( L, 1 );
 
 		luaL_unref( L, LUA_REGISTRYINDEX, iTableRef );
+		HL2SB_EndUserCmdScope( L );
 	}
 	if ( L != NULL && vgui::surface()->IsCursorVisible() )
 	{

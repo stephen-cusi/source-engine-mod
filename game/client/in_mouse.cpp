@@ -49,6 +49,7 @@ static int s_iHL2SBLastMouseDx = 0;
 // weapon_physgun.cpp; true means "the mouse belongs to the held object this
 // frame, freeze the view and report the raw deltas in the command".
 bool HL2SB_PhysgunMouseRotate( void );
+extern ConVar hl2sb_dev_msgs;
 static int s_iHL2SBLastMouseDy = 0;
 static int s_iHL2SBCmdMouseDx = 0;
 static int s_iHL2SBCmdMouseDy = 0;
@@ -770,7 +771,7 @@ void CInput::MouseMove( CUserCmd *cmd )
 
 			// HL2SB diagnostic: is the E-rotate view intercept active at all?
 			static bool s_bRotInterceptDiag = false;
-			if ( !s_bRotInterceptDiag )
+			if ( hl2sb_dev_msgs.GetBool() && !s_bRotInterceptDiag )
 			{
 				s_bRotInterceptDiag = true;
 				Msg( "[HL2SB physgun] E-rotate view intercept active\n" );
@@ -786,7 +787,7 @@ void CInput::MouseMove( CUserCmd *cmd )
 		// server while the view kept turning -- locate the real mouse path.
 		{
 			static int s_nMmDiag = 0;
-			if ( HL2SB_PhysgunMouseRotate() && s_nMmDiag < 8
+			if ( hl2sb_dev_msgs.GetBool() && HL2SB_PhysgunMouseRotate() && s_nMmDiag < 8
 				&& ( mx != 0.0f || my != 0.0f ) )
 			{
 				++s_nMmDiag;

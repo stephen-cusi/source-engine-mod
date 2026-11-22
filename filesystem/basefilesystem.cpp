@@ -1243,8 +1243,7 @@ void CBaseFileSystem::AddMapPackFile( const char *pPath, const char *pPathID, Se
 	{
 		if ( !GetLocalPath( newPath, fullpath, sizeof(fullpath) ) )
 		{
-			// Couldn't find that .bsp file!!!
-			return;
+			V_strncpy( fullpath, newPath, sizeof( fullpath ) );
 		}
 	}
 
@@ -1254,7 +1253,8 @@ void CBaseFileSystem::AddMapPackFile( const char *pPath, const char *pPathID, Se
 		if ( !( m_SearchPaths[i].GetPackFile() && m_SearchPaths[i].GetPackFile()->m_bIsMapPath ) )
 			continue;
 		
-		if ( V_stricmp( m_SearchPaths[i].GetPackFile()->m_ZipName.Get(), fullpath ) == 0 )
+		if ( V_stricmp( m_SearchPaths[i].GetPackFile()->m_ZipName.Get(), fullpath ) == 0 ||
+			 V_stricmp( m_SearchPaths[i].GetPathString(), newPath ) == 0 )
 		{
 			// Already set as map path
 			return;
@@ -1293,8 +1293,56 @@ void CBaseFileSystem::AddMapPackFile( const char *pPath, const char *pPathID, Se
 		FILE *fp = Trace_FOpen( fullpath, "rb", 0, NULL );
 		if ( !fp )
 		{
-			// Couldn't open it
-			Warning( FILESYSTEM_WARNING, "Couldn't open .bsp %s for embedded pack file check\n", fullpath );
+			// Packed maps need a physical file for their embedded ZIP search path.
+			const char *cachePath = "cache/map_pack.bsp";
+			char normalizedCachePath[MAX_FILEPATH];
+			V_strncpy( normalizedCachePath, cachePath, sizeof( normalizedCachePath ) );
+			V_FixSlashes( normalizedCachePath );
+			FileHandle_t source = V_stricmp( newPath, normalizedCachePath ) ? Open( newPath, "rb", "GAME" ) : FILESYSTEM_INVALID_HANDLE;
+			if ( source == FILESYSTEM_INVALID_HANDLE )
+			{
+				Warning( FILESYSTEM_WARNING, "Couldn't open .bsp %s for embedded pack file check\n", fullpath );
+				return;
+			}
+
+			CreateDirHierarchy( "cache", "MOD" );
+			FileHandle_t target = Open( cachePath, "wb", "MOD" );
+			if ( target == FILESYSTEM_INVALID_HANDLE )
+			{
+				Close( source );
+				Warning( FILESYSTEM_WARNING, "Couldn't create map pack cache\n" );
+				return;
+			}
+
+			const unsigned int expected = Size( source );
+			unsigned int copied = 0;
+			char buffer[4096];
+			while ( copied < expected )
+			{
+				int count = Read( buffer, MIN( (unsigned int)sizeof( buffer ), expected - copied ), source );
+				if ( count <= 0 || Write( buffer, count, target ) != count )
+					break;
+				copied += count;
+			}
+			Close( target );
+			Close( source );
+			if ( copied != expected )
+			{
+				RemoveFile( cachePath, "MOD" );
+				Warning( FILESYSTEM_WARNING, "Couldn't copy complete BSP to map pack cache\n" );
+				return;
+			}
+			AddMapPackFile( cachePath, pPathID, addType );
+			for ( int i = m_SearchPaths.Count() - 1; i >= 0; --i )
+			{
+				CPackFile *pack = m_SearchPaths[i].GetPackFile();
+				if ( pack && pack->m_bIsMapPath && !V_stricmp( m_SearchPaths[i].GetPathString(), normalizedCachePath ) )
+				{
+					m_SearchPaths[i].SetPath( pathSymbol );
+					pack->SetPath( pathSymbol );
+					break;
+				}
+			}
 			return;
 		}
 	

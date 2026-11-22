@@ -15,6 +15,9 @@
 #include "weapon_hl2mpbase_scriptedweapon.h"
 #include "in_buttons.h"
 #include "ammodef.h"
+#ifndef CLIENT_DLL
+#include "npcevent.h"
+#endif
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lbasecombatweapon_shared.h"
@@ -374,7 +377,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	// OnDataChanged retries once it arrives.
 	if ( !m_iScriptedClassname.Get() || !m_iScriptedClassname.Get()[0] )
 	{
-		luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT InitScriptedWeapon DEFERRED (no scripted name yet) ent=%d baseclass='%s'\n",
+		if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT InitScriptedWeapon DEFERRED (no scripted name yet) ent=%d baseclass='%s'\n",
 			entindex(), BaseClass::GetClassname() );
 		return;
 	}
@@ -403,12 +406,13 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 			if ( iExistingReference >= 0 && lua_isrefvalid( L, iExistingReference ) )
 			{
 				lua_getref( L, iExistingReference );
-				if ( lua_istable( L, -1 ) )
-					bReusedInstance = true;
-				else
-					lua_pop( L, 1 );
+				bReusedInstance = lua_istable( L, -1 );
+				lua_pop( L, 1 );
 			}
-			luasrc_pcall( L, bReusedInstance ? 2 : 1, 1, 0 );
+			// Build inheritance in a plain table. Passing an entity instance to
+			// weapons.Get lets its native __index answer inherited script names,
+			// so TableInherit incorrectly skips the corresponding SWEP methods.
+			luasrc_pcall( L, 1, 1, 0 );
 		}
 		else
 		{
@@ -433,7 +437,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	if ( !lua_istable( L, -1 ) )
 	{
 		lua_pop( L, 1 );
-		luasrc_LuaInfoMsgF( "[HL2SB wp] InitScriptedWeapon NO TABLE from weapons.Get('%s') ent=%d\n",
+		if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] InitScriptedWeapon NO TABLE from weapons.Get('%s') ent=%d\n",
 			className, entindex() );
 		return;
 	}
@@ -705,32 +709,6 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 
-	// Primary ammo used.
-	lua_getweaponfield( L, m_nTableReference, "Primary", "Ammo", "" );
-	if ( lua_isstring( L, -1 ) )
-	{
-		const char *pAmmo = lua_tostring( L, -1 );
-		if ( strcmp("None", pAmmo) == 0 )
-			Q_strncpy( m_pLuaWeaponInfo->szAmmo1, "", sizeof( m_pLuaWeaponInfo->szAmmo1 ) );
-		else
-			Q_strncpy( m_pLuaWeaponInfo->szAmmo1, pAmmo, sizeof( m_pLuaWeaponInfo->szAmmo1 )  );
-		m_pLuaWeaponInfo->iAmmoType = GetAmmoDef()->Index( m_pLuaWeaponInfo->szAmmo1 );
-	}
-	lua_pop( L, 1 );
-	
-	// Secondary ammo used
-	lua_getweaponfield( L, m_nTableReference, "Secondary", "Ammo", "" );
-	if ( lua_isstring( L, -1 ) )
-	{
-		const char *pAmmo = lua_tostring( L, -1 );
-		if ( strcmp("None", pAmmo) == 0)
-			Q_strncpy( m_pLuaWeaponInfo->szAmmo2, "", sizeof( m_pLuaWeaponInfo->szAmmo2 ) );
-		else
-			Q_strncpy( m_pLuaWeaponInfo->szAmmo2, pAmmo, sizeof( m_pLuaWeaponInfo->szAmmo2 )  );
-		m_pLuaWeaponInfo->iAmmo2Type = GetAmmoDef()->Index( m_pLuaWeaponInfo->szAmmo2 );
-	}
-	lua_pop( L, 1 );
-
 	// Now read the weapon sounds
 	memset( m_pLuaWeaponInfo->aShootSounds, 0, sizeof( m_pLuaWeaponInfo->aShootSounds ) );
 	lua_pushweaponfield( L, m_nTableReference, "SoundData" );
@@ -764,36 +742,135 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Initialize" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+
+	// Initialize can fill the ammo fields on an instance whose class left
+	// them empty. Precache resolves the engine's ammo indices from this data.
+	lua_getweaponfield( L, m_nTableReference, "Primary", "Ammo", "" );
+	const char *pAmmo = lua_tostring( L, -1 );
+	Q_strncpy( m_pLuaWeaponInfo->szAmmo1, pAmmo && Q_stricmp( pAmmo, "none" ) ? pAmmo : "", sizeof( m_pLuaWeaponInfo->szAmmo1 ) );
+	m_pLuaWeaponInfo->iAmmoType = GetAmmoDef()->Index( m_pLuaWeaponInfo->szAmmo1 );
+	lua_pop( L, 1 );
+
+	lua_getweaponfield( L, m_nTableReference, "Secondary", "Ammo", "" );
+	pAmmo = lua_tostring( L, -1 );
+	Q_strncpy( m_pLuaWeaponInfo->szAmmo2, pAmmo && Q_stricmp( pAmmo, "none" ) ? pAmmo : "", sizeof( m_pLuaWeaponInfo->szAmmo2 ) );
+	m_pLuaWeaponInfo->iAmmo2Type = GetAmmoDef()->Index( m_pLuaWeaponInfo->szAmmo2 );
+	lua_pop( L, 1 );
+
 	UpdateHoldType();
 #endif
 }
 
 #ifdef CLIENT_DLL
-static void HL2SB_EnsureInitialWeaponDeploy( CHL2MPScriptedWeapon *pWeapon )
+static bool HL2SB_IsWeaponViewModelReady( CHL2MPScriptedWeapon *pWeapon, CBasePlayer *pOwner )
+{
+	if ( !pWeapon->GetWpnData().bParsedScript || !pOwner->GetViewModel( pWeapon->m_nViewModelIndex, false ) )
+		return false;
+
+	// The active weapon can arrive before its model string table entry.
+	const char *pszModel = pWeapon->GetViewModel( pWeapon->m_nViewModelIndex );
+	if ( !pszModel || !pszModel[0] )
+		return true;
+	const int nModel = modelinfo->GetModelIndex( pszModel );
+	return nModel != -1 && modelinfo->GetModel( nModel ) != NULL;
+}
+
+#if defined( HL2SB ) && defined( LUA_SDK )
+void HL2SB_ReconcileScriptedViewModel( CBasePlayer *pOwner )
+{
+	if ( !pOwner || !pOwner->IsAlive() )
+		return;
+
+	CBaseCombatWeapon *pSelected = pOwner->GetActiveWeapon();
+	CBaseViewModel *pViewModel = pOwner->GetViewModel( pSelected ? pSelected->m_nViewModelIndex.Get() : 0, false );
+	if ( !pViewModel )
+		return;
+
+	static CHandle<CBaseViewModel> hLastViewModel;
+	static CHandle<CBaseCombatWeapon> hLastSelected;
+	static int nLastModel = -1;
+	static int nDisplacedModel = -1;
+	if ( hLastViewModel.Get() != pViewModel )
+	{
+		hLastViewModel = pViewModel;
+		hLastSelected = NULL;
+		nLastModel = -1;
+		nDisplacedModel = -1;
+	}
+	if ( hLastSelected.Get() != pSelected )
+	{
+		hLastSelected = pSelected;
+		nDisplacedModel = nLastModel;
+	}
+
+	nLastModel = pViewModel->GetModelIndex();
+	if ( !pSelected || pSelected->GetOwner() != pOwner || !pSelected->IsScripted() ||
+		!pSelected->GetWpnData().bParsedScript )
+		return;
+
+	const char *pszModel = pSelected->GetViewModel( pSelected->m_nViewModelIndex );
+	if ( !pszModel || !pszModel[0] )
+		return;
+	const int nExpectedModel = modelinfo->GetModelIndex( pszModel );
+	if ( nExpectedModel == -1 || !modelinfo->GetModel( nExpectedModel ) )
+		return;
+	// A snapshot or prediction restore can change the slot independently of the
+	// active weapon. Keep Lua's custom models unless this is the displaced model.
+	const bool bWrongOwner = pViewModel->GetOwningWeapon() != pSelected;
+	const bool bMissingModel = !pViewModel->GetModel();
+	const bool bDisplacedModel = nDisplacedModel != -1 && nLastModel == nDisplacedModel &&
+		nLastModel != nExpectedModel;
+	if ( !bWrongOwner && !bMissingModel && !bDisplacedModel )
+		return;
+
+	if ( hl2sb_dev_msgs.GetBool() )
+		DevMsg( "[HL2SB wp] CLIENT viewmodel handoff ent=%d class='%s' oldOwner=%d oldModel=%d expected=%d effects=%d seq=%d\n",
+			pSelected->entindex(), pSelected->GetClassname(),
+			pViewModel->GetOwningWeapon() ? pViewModel->GetOwningWeapon()->entindex() : -1,
+			nLastModel, nExpectedModel, pViewModel->GetEffects(), pViewModel->GetSequence() );
+
+	CHandle<CBaseViewModel> hViewModel = pViewModel;
+	CHandle<CBaseCombatWeapon> hSelected = pSelected;
+	pViewModel->SetWeaponModel( pszModel, pSelected );
+	if ( hViewModel.Get() != pViewModel || hSelected.Get() != pSelected )
+		return;
+	if ( bWrongOwner && !pSelected->IsEffectActive( EF_NODRAW ) )
+		pViewModel->RemoveEffects( EF_NODRAW );
+	nLastModel = pViewModel->GetModelIndex();
+}
+#endif
+
+static bool HL2SB_EnsureInitialWeaponDeploy( CHL2MPScriptedWeapon *pWeapon )
 {
 #ifdef LUA_SDK
 	if ( L == NULL || pWeapon->m_nTableReference < 0 )
-		return;
+		return false;
 
 	CBasePlayer *pOwner = ToBasePlayer( pWeapon->GetOwner() );
 	if ( !pOwner || pOwner != CBasePlayer::GetLocalPlayer()
-		|| pOwner->GetActiveWeapon() != pWeapon || !pOwner->IsAlive()
-		|| !pOwner->GetViewModel( pWeapon->m_nViewModelIndex, false ) )
-		return;
+		|| pOwner->GetActiveWeapon() != pWeapon || !pOwner->IsAlive() )
+		return true;
+	if ( !pOwner->GetViewModel( pWeapon->m_nViewModelIndex, false ) )
+		return false;
 
 	lua_getref( L, pWeapon->m_nTableReference );
 	if ( !lua_istable( L, -1 ) )
 	{
 		lua_pop( L, 1 );
-		return;
+		return false;
 	}
 	lua_pushliteral( L, "__hl2sb_client_deploy_attempted" );
 	lua_rawget( L, -2 );
 	const bool bAttempted = lua_toboolean( L, -1 ) != 0;
 	lua_pop( L, 2 );
 	if ( !bAttempted )
+	{
+		if ( !HL2SB_IsWeaponViewModelReady( pWeapon, pOwner ) )
+			return false;
 		pWeapon->Deploy();
+	}
 #endif
+	return true;
 }
 
 void CHL2MPScriptedWeapon::Simulate()
@@ -806,11 +883,7 @@ void CHL2MPScriptedWeapon::Simulate()
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 	if ( !pOwner || !pOwner->IsAlive() || pOwner->GetActiveWeapon() != this )
 		return;
-	if ( pOwner == CBasePlayer::GetLocalPlayer() && !pOwner->GetViewModel( m_nViewModelIndex, false ) )
-		return;
-
-	HL2SB_EnsureInitialWeaponDeploy( this );
-	if ( guard.Get() != this )
+	if ( !HL2SB_EnsureInitialWeaponDeploy( this ) || guard.Get() != this )
 		return;
 	lua_getref( L, m_nTableReference );
 	if ( !lua_istable( L, -1 ) )
@@ -847,7 +920,7 @@ void CHL2MPScriptedWeapon::OnDataChanged( DataUpdateType_t updateType )
 	if ( !m_pLuaWeaponInfo->bParsedScript
 	  && m_iScriptedClassname.Get() && m_iScriptedClassname.Get()[0] )
 	{
-		luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT weapon bind ent=%d update=%d baseclass='%s' scripted='%s' refBefore=%d\n",
+		if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT weapon bind ent=%d update=%d baseclass='%s' scripted='%s' refBefore=%d\n",
 			entindex(), (int)updateType, BaseClass::GetClassname(), m_iScriptedClassname.Get(), (int)m_nTableReference );
 
 		SetClassname( m_iScriptedClassname.Get() );
@@ -865,7 +938,7 @@ void CHL2MPScriptedWeapon::OnDataChanged( DataUpdateType_t updateType )
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 #endif
 
-			luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT weapon bound ent=%d refAfter=%d vmidx=%d\n",
+			if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] CLIENT weapon bound ent=%d refAfter=%d vmidx=%d\n",
 				entindex(), (int)m_nTableReference, (int)m_iViewModelIndex );
 		}
 	}
@@ -967,7 +1040,7 @@ void CHL2MPScriptedWeapon::Precache( void )
 
 	// HL2SB (2026-10-01) probe: server-side bind outcome (this is the ONLY
 	// server bind site). Remove after the fists diagnosis.
-	luasrc_LuaInfoMsgF( "[HL2SB wp] SERVER weapon precache ent=%d class='%s' ref=%d vm='%s' wm='%s'\n",
+	if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] SERVER weapon precache ent=%d class='%s' ref=%d vm='%s' wm='%s'\n",
 		entindex(), GetClassname(), (int)m_nTableReference, GetViewModel(), GetWorldModel() );
 #endif
 }
@@ -1386,7 +1459,7 @@ void CHL2MPScriptedWeapon::PrimaryAttack( void )
 	// HL2SB (2026-10-01) probe: was the fire button ever routed into the Lua
 	// SWEP on the first equip? -2/-1 ref = the script never ran. Remove after
 	// the fists diagnosis.
-	luasrc_LuaInfoMsgF( "[HL2SB wp] %s PrimaryAttack ent=%d class='%s' ref=%d\n",
+	if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] %s PrimaryAttack ent=%d class='%s' ref=%d\n",
 #ifdef CLIENT_DLL
 		"CLIENT",
 #else
@@ -1640,26 +1713,20 @@ static void HL2SB_WeaponUpdateLuaSelfAliases( CHL2MPScriptedWeapon *pWeapon )
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat (wiki): WEAPON:GetTracerOrigin() -> Vector -- "override
 // where the tracer comes from".  Consumed once per shot by CBaseEntity::
-// FireBullets (baseentity_shared.cpp).  On the client only the local
-// player's prediction draws its own tracers, so only that shooter is asked;
-// everyone else's tracers arrive through the HL2MP TE, which carries the
-// server's answer.
+// FireBullets (baseentity_shared.cpp).  GMod exposes this as a client-only
+// hook.  In particular, SWEP implementations may call LocalPlayer(), which
+// does not exist on the server.
 //-----------------------------------------------------------------------------
 bool HL2SB_GetWeaponTracerOrigin( CBaseEntity *pShooter, Vector &vecOut )
 {
-#if defined ( LUA_SDK )
+#if defined ( LUA_SDK ) && defined ( CLIENT_DLL )
 	if ( pShooter == NULL || L == NULL )
 		return false;
 
 	CBaseCombatWeapon *pWeapon = NULL;
-#ifdef CLIENT_DLL
 	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
 	if ( pLocal != NULL && pShooter == pLocal )
 		pWeapon = pLocal->GetActiveWeapon();
-#else
-	if ( CBaseCombatCharacter *pCharacter = pShooter->MyCombatCharacterPointer() )
-		pWeapon = pCharacter->GetActiveWeapon();
-#endif
 	if ( pWeapon == NULL || !pWeapon->IsScripted() )
 		return false;
 
@@ -1786,7 +1853,7 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 #if defined ( LUA_SDK )
 	// HL2SB (2026-10-01) probe: first-equip deploy reached C++? what ref state?
 	// Remove after the fists diagnosis.
-	luasrc_LuaInfoMsgF( "[HL2SB wp] %s Deploy ent=%d class='%s' ref=%d state=%d\n",
+	if ( hl2sb_dev_msgs.GetBool() ) luasrc_LuaInfoMsgF( "[HL2SB wp] %s Deploy ent=%d class='%s' ref=%d state=%d\n",
 #ifdef CLIENT_DLL
 		"CLIENT",
 #else
@@ -1799,6 +1866,10 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 
 #ifdef CLIENT_DLL
+	const bool bLocalOwner = pOwner && pOwner == CBasePlayer::GetLocalPlayer();
+	if ( bLocalOwner && !HL2SB_IsWeaponViewModelReady( this, pOwner ) )
+		return true; // OnDataChanged or Simulate will retry when the model arrives.
+
 	// Record the attempt before callbacks so a veto is not retried every frame.
 	if ( L != NULL && m_nTableReference >= 0 && pOwner != NULL
 		&& pOwner->GetViewModel( m_nViewModelIndex, false ) != NULL )
@@ -1816,7 +1887,18 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 
 	// GMod prepares the model and default draw before the script chooses its
 	// own sequence, playback rate and attack times.
+#ifdef CLIENT_DLL
+	const bool bNativeDeploy = BaseClass::Deploy();
+	if ( !bNativeDeploy && bLocalOwner && pOwner->IsAlive() && pOwner->GetActiveWeapon() == this )
+	{
+		// DefaultDeploy can reject the client's first snapshot before ammo is
+		// synchronized. Lua still deploys, so give it the selected viewmodel.
+		SetViewModel();
+		SetWeaponVisible( true );
+	}
+#else
 	BaseClass::Deploy();
+#endif
 	if ( pOwner != NULL )
 	{
 		CBaseViewModel *pViewModel = pOwner->GetViewModel( m_nViewModelIndex, false );
@@ -1828,6 +1910,7 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
 
 	// Capture the script result before the return-value handler consumes it.
+	if ( hl2sb_dev_msgs.GetBool() )
 	{
 		const int iTop = lua_gettop( L );
 		const bool bIsBool = ( iTop > 0 && lua_isboolean( L, -1 ) ) != 0;
@@ -2292,8 +2375,6 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 		const bool bPrimaryAutomatic = lua_getweaponbool( L, m_nTableReference, "Primary", "Automatic", "", false );
 		const bool bSecondaryAutomatic = lua_getweaponbool( L, m_nTableReference, "Secondary", "Automatic", "", false );
 
-		const bool bPrimaryWants = ( nButtons & IN_ATTACK ) != 0 &&
-								   ( bPrimaryAutomatic || ( nPressed & IN_ATTACK ) != 0 );
 		const bool bSecondaryWants = ( nButtons & IN_ATTACK2 ) != 0 &&
 									 ( bSecondaryAutomatic || ( nPressed & IN_ATTACK2 ) != 0 );
 
@@ -2316,12 +2397,17 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 			BEGIN_LUA_CALL_WEAPON_METHOD( "SecondaryAttack" );
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 		}
-		else if ( bPrimaryWants && flTime >= m_flNextPrimaryAttack )
+		// GMod re-reads the owner's buttons after SecondaryAttack and tests
+		// primary independently.  A held automatic secondary must not block
+		// primary fire (ARC9 uses secondary for sights).
+		const bool bPrimaryWants = ( pOwner->m_nButtons & IN_ATTACK ) != 0 &&
+			( bPrimaryAutomatic || ( pOwner->m_afButtonPressed & IN_ATTACK ) != 0 );
+		if ( bPrimaryWants && flTime >= m_flNextPrimaryAttack )
 		{
 			BEGIN_LUA_CALL_WEAPON_METHOD( "PrimaryAttack" );
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 		}
-		else if ( ( nPressed & IN_RELOAD ) != 0 )
+		if ( ( pOwner->m_nButtons & IN_RELOAD ) != 0 && !m_bInReload )
 		{
 			BEGIN_LUA_CALL_WEAPON_METHOD( "Reload" );
 			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
@@ -2395,6 +2481,24 @@ bool CHL2MPScriptedWeapon::AcceptInput( const char *szInputName, CBaseEntity *pA
 // implement that inline, the scripted one hands the shot to the Lua method
 // (weapon_base's NPCShoot_* route it into PrimaryAttack/SecondaryAttack).
 //-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator )
+{
+	if ( !( pEvent->type & AE_TYPE_NEWEVENTSYSTEM ) )
+	{
+		switch ( pEvent->event )
+		{
+		case EVENT_WEAPON_SMG1:
+		case EVENT_WEAPON_AR1:
+		case EVENT_WEAPON_AR2:
+		case EVENT_WEAPON_PISTOL_FIRE:
+		case EVENT_WEAPON_SHOTGUN_FIRE:
+			Operator_ForceNPCFire( pOperator, false );
+			return;
+		}
+	}
+	BaseClass::Operator_HandleAnimEvent( pEvent, pOperator );
+}
+
 void CHL2MPScriptedWeapon::Operator_ForceNPCFire( CBaseCombatCharacter *pOperator, bool bSecondary )
 {
 #if defined ( LUA_SDK )
@@ -2668,11 +2772,10 @@ bool CHL2MPScriptedWeapon::DispatchDrawWeaponSelection( int x, int y, int wide, 
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat (wiki): WEAPON:CustomAmmoDisplay() -> table with
 // Draw (boolean), PrimaryClip / PrimaryAmmo / SecondaryClip / SecondaryAmmo
-// (numbers, -1 = hide the value).  HL2's ammo HUD is a fixed
-// clip|reserve pair, so only Draw / PrimaryClip / PrimaryAmmo have a slot
-// here (hud_ammo.cpp consumes them).
+// (numbers, -1 = hide the value).
 //-----------------------------------------------------------------------------
-bool CHL2MPScriptedWeapon::DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo )
+bool CHL2MPScriptedWeapon::DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo,
+	int *pnSecondaryClip, int *pnSecondaryAmmo )
 {
 #if defined ( LUA_SDK )
 	BEGIN_LUA_CALL_WEAPON_METHOD( "CustomAmmoDisplay" );
@@ -2706,6 +2809,22 @@ bool CHL2MPScriptedWeapon::DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrima
 		lua_getfield( L, -1, "PrimaryAmmo" );
 		if ( lua_isnumber( L, -1 ) )
 			*pnPrimaryAmmo = (int)lua_tointeger( L, -1 );
+		lua_pop( L, 1 );
+	}
+
+	if ( pnSecondaryClip != NULL )
+	{
+		lua_getfield( L, -1, "SecondaryClip" );
+		if ( lua_isnumber( L, -1 ) )
+			*pnSecondaryClip = (int)lua_tointeger( L, -1 );
+		lua_pop( L, 1 );
+	}
+
+	if ( pnSecondaryAmmo != NULL )
+	{
+		lua_getfield( L, -1, "SecondaryAmmo" );
+		if ( lua_isnumber( L, -1 ) )
+			*pnSecondaryAmmo = (int)lua_tointeger( L, -1 );
 		lua_pop( L, 1 );
 	}
 

@@ -758,7 +758,7 @@ void CPropAPC::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useT
 {
 	BaseClass::Use( pActivator, pCaller, useType, value );
 
-	if ( pActivator->IsPlayer() )
+	if ( pActivator && pActivator->IsPlayer() && m_bLocked )
 	{
 		 EmitSound ( "combine.door_lock" );
 	}

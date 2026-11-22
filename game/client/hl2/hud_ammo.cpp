@@ -24,6 +24,15 @@
 
 using namespace vgui;
 
+static const char *HL2SB_AmmoLayout( bool secondary, bool primaryClip, bool secondaryClip )
+{
+	if ( !secondary )
+		return primaryClip ? "WeaponUsesClips" : "WeaponDoesNotUseClips";
+	if ( primaryClip )
+		return secondaryClip ? "WeaponUsesClipsAndSecondaryClips" : "WeaponUsesClipsAndSecondaryAmmo";
+	return secondaryClip ? "WeaponDoesNotUseClipsAndUsesSecondaryClips" : "WeaponDoesNotUseClipsButUsesSecondaryAmmo";
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: Displays current ammunition level
 //-----------------------------------------------------------------------------
@@ -54,6 +63,7 @@ private:
 	int		m_iAmmo;
 	int		m_iAmmo2;
 	CHudTexture *m_iconPrimaryAmmo;
+	const char *m_pszAmmoLayout;
 };
 
 DECLARE_HUDELEMENT( CHudAmmo );
@@ -63,6 +73,7 @@ DECLARE_HUDELEMENT( CHudAmmo );
 //-----------------------------------------------------------------------------
 CHudAmmo::CHudAmmo( const char *pElementName ) : BaseClass(NULL, "HudAmmo"), CHudElement( pElementName )
 {
+	m_pszAmmoLayout = NULL;
 	SetHiddenBits( HIDEHUD_HEALTH | HIDEHUD_PLAYERDEAD | HIDEHUD_NEEDSUIT | HIDEHUD_WEAPONSELECTION );
 
 	hudlcd->SetGlobalStat( "(ammo_primary)", "0" );
@@ -110,6 +121,7 @@ void CHudAmmo::Reset()
 	m_hCurrentVehicle = NULL;
 	m_iAmmo = 0;
 	m_iAmmo2 = 0;
+	m_pszAmmoLayout = NULL;
 
 	UpdateAmmoDisplays();
 }
@@ -159,6 +171,8 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 	int ammo1 = -1;
 	int ammo2 = -1;
 	bool bCustomDisplay = false;
+	int secondaryClip = -1;
+	int secondaryAmmo = -1;
 
 #ifdef LUA_SDK
 	// A custom display owns its values. Missing fields stay hidden rather
@@ -170,7 +184,7 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 			bool bDraw = true;
 			int nClipOverride = -1;
 			int nReserveOverride = -1;
-			if ( pScripted->DispatchCustomAmmoDisplay( &bDraw, &nClipOverride, &nReserveOverride ) )
+			if ( pScripted->DispatchCustomAmmoDisplay( &bDraw, &nClipOverride, &nReserveOverride, &secondaryClip, &secondaryAmmo ) )
 			{
 				bCustomDisplay = true;
 				if ( !bDraw || ( nClipOverride < 0 && nReserveOverride < 0 ) )
@@ -208,17 +222,23 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 		if ( ammo1 < 0 )
 			ammo1 = nReserve;
 		m_iconPrimaryAmmo = gWR.GetAmmoIconFromWeapon( wpn->GetPrimaryAmmoType() );
+		if ( wpn->UsesSecondaryAmmo() )
+		{
+			secondaryAmmo = player->GetAmmoCount( wpn->GetSecondaryAmmoType() );
+			if ( wpn->UsesClipsForAmmo2() ) secondaryClip = wpn->Clip2();
+		}
 	}
 
 	SetPaintEnabled(true);
 	SetPaintBackgroundEnabled(true);
 	const bool bShowPrimary = ammo1 >= 0;
 	const bool bShowReserve = ammo2 >= 0;
-	if ( wpn != m_hCurrentActiveWeapon || bShowPrimary != ShouldDisplayValue()
-		|| bShowReserve != ShouldDisplaySecondaryValue() )
+	const char *layout = HL2SB_AmmoLayout( secondaryClip >= 0 || secondaryAmmo >= 0,
+		bShowReserve, secondaryClip >= 0 && secondaryAmmo >= 0 );
+	if ( wpn != m_hCurrentActiveWeapon || layout != m_pszAmmoLayout )
 	{
-		g_pClientMode->GetViewportAnimationController()->StartAnimationSequence(
-			bShowReserve ? "WeaponUsesClips" : "WeaponDoesNotUseClips" );
+		g_pClientMode->GetViewportAnimationController()->StartAnimationSequence( layout );
+		m_pszAmmoLayout = layout;
 	}
 	SetShouldDisplayValue( bShowPrimary );
 	SetShouldDisplaySecondaryValue( bShowReserve );
@@ -419,13 +439,15 @@ public:
 	CHudSecondaryAmmo( const char *pElementName ) : BaseClass( NULL, "HudAmmoSecondary" ), CHudElement( pElementName )
 	{
 		m_iAmmo = -1;
+		m_bSecondaryActive = false;
+		m_bSecondaryClip = false;
+		m_iconSecondaryAmmo = NULL;
 
 		SetHiddenBits( HIDEHUD_HEALTH | HIDEHUD_WEAPONSELECTION | HIDEHUD_PLAYERDEAD | HIDEHUD_NEEDSUIT );
 	}
 
 	void Init( void )
 	{
-#ifndef HL2MP
 		wchar_t *tempString = g_pVGuiLocalize->Find("#Valve_Hud_AMMO_ALT");
 		if (tempString)
 		{
@@ -435,7 +457,6 @@ public:
 		{
 			SetLabelText(L"ALT");
 		}
-#endif // HL2MP
 	}
 
 	void VidInit( void )
@@ -472,6 +493,8 @@ public:
 		BaseClass::Reset();
 		m_iAmmo = 0;
 		m_hCurrentActiveWeapon = NULL;
+		m_bSecondaryActive = false;
+		m_bSecondaryClip = false;
 		SetAlpha( 0 );
 		UpdateAmmoState();
 	}
@@ -536,27 +559,37 @@ protected:
 		C_BaseCombatWeapon *wpn = GetActiveWeapon();
 		C_BasePlayer *player = C_BasePlayer::GetLocalPlayer();
 
-		if (player && wpn && wpn->UsesSecondaryAmmo())
+		int clip = -1, reserve = -1;
+		bool custom = false, draw = true;
+#ifdef LUA_SDK
+		CHL2MPScriptedWeapon *scripted = dynamic_cast<CHL2MPScriptedWeapon *>( wpn );
+		if ( scripted )
+			custom = scripted->DispatchCustomAmmoDisplay( &draw, NULL, NULL, &clip, &reserve );
+#endif
+		if ( !custom && player && wpn && wpn->UsesSecondaryAmmo() )
 		{
-			SetAmmo(player->GetAmmoCount(wpn->GetSecondaryAmmoType()));
+			reserve = player->GetAmmoCount( wpn->GetSecondaryAmmoType() );
+			if ( wpn->UsesClipsForAmmo2() ) clip = wpn->Clip2();
 		}
-
-		if ( m_hCurrentActiveWeapon != wpn )
+		const bool active = draw && ( clip >= 0 || reserve >= 0 );
+		const bool hasClip = clip >= 0 && reserve >= 0;
+		if ( m_hCurrentActiveWeapon != wpn || active != m_bSecondaryActive || hasClip != m_bSecondaryClip )
 		{
-			if ( wpn->UsesSecondaryAmmo() )
-			{
-				// we've changed to a weapon that uses secondary ammo
-				g_pClientMode->GetViewportAnimationController()->StartAnimationSequence("WeaponUsesSecondaryAmmo");
-			}
-			else 
-			{
-				// we've changed away from a weapon that uses secondary ammo
-				g_pClientMode->GetViewportAnimationController()->StartAnimationSequence("WeaponDoesNotUseSecondaryAmmo");
-			}
+			g_pClientMode->GetViewportAnimationController()->StartAnimationSequence(
+				active ? "WeaponUsesSecondaryAmmo" : "WeaponDoesNotUseSecondaryAmmo" );
+			g_pClientMode->GetViewportAnimationController()->StartAnimationSequence(
+				hasClip ? "WeaponUsesSecondaryClips" : "WeaponDoesNotUseSecondaryClips" );
 			m_hCurrentActiveWeapon = wpn;
-			
-			// Get the icon we should be displaying
-			m_iconSecondaryAmmo = gWR.GetAmmoIconFromWeapon( m_hCurrentActiveWeapon->GetSecondaryAmmoType() );
+			m_bSecondaryActive = active;
+			m_bSecondaryClip = hasClip;
+			m_iconSecondaryAmmo = wpn ? gWR.GetAmmoIconFromWeapon( wpn->GetSecondaryAmmoType() ) : NULL;
+		}
+		SetShouldDisplayValue( active );
+		SetShouldDisplaySecondaryValue( hasClip );
+		if ( active )
+		{
+			SetAmmo( clip >= 0 ? clip : reserve );
+			if ( hasClip ) SetSecondaryValue( reserve );
 		}
 	}
 	
@@ -564,6 +597,8 @@ private:
 	CHandle< C_BaseCombatWeapon > m_hCurrentActiveWeapon;
 	CHudTexture *m_iconSecondaryAmmo;
 	int		m_iAmmo;
+	bool m_bSecondaryActive;
+	bool m_bSecondaryClip;
 };
 
 DECLARE_HUDELEMENT( CHudSecondaryAmmo );

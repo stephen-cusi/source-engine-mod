@@ -587,6 +587,7 @@ void KeyValuesJSONParser::ParseStringToken()
 			continue;
 
 		// Check table of allowed escape characters
+		c = *(m_cur++);
 		switch (c)
 		{
 			case '\\':
@@ -618,9 +619,9 @@ void KeyValuesJSONParser::ParseStringToken()
 					char chHex = *(m_cur++);
 					if ( chHex >= '0' && chHex <= '9' )
 						nCodePoint += chHex - '0';
-					else if ( chHex >= 'a' && chHex <= 'a' )
+					else if ( chHex >= 'a' && chHex <= 'f' )
 						nCodePoint += chHex + 0x0a - 'a';
-					else if ( chHex >= 'A' && chHex <= 'A' )
+					else if ( chHex >= 'A' && chHex <= 'F' )
 						nCodePoint += chHex + 0x0a - 'A';
 					else
 						Assert( false ); // inconceivable, due to above

@@ -15,6 +15,9 @@
 #include "vgui_controls/lPanel.h"
 #include "inputsystem/iinputsystem.h"
 #include "tier2/tier2.h"
+#include "c_basecombatweapon.h"
+#include "lbasecombatweapon_shared.h"
+#include <climits>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -77,8 +80,8 @@ static int input_GetCurrentIMEHandle (lua_State *L) {
 // appear to do nothing at all.  (RememberCursorPosition is called from
 // spawnmenu.lua:126 and contextmenu.lua:74 in the same way.)
 static int input_GetCursorPos (lua_State *L) {
-  int x, y;
-  input()->GetCursorPos(x, y);
+  int x = 0, y = 0;
+  if (!engine || engine->IsActiveApp()) input()->GetCursorPos(x, y);
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
   return 2;
@@ -133,12 +136,12 @@ static int input_GetShouldInvertCompositionString (lua_State *L) {
 static int input_IsKeyDown (lua_State *L) {
   // HL2SB: GMod only accepts keyboard codes here (an out-of-range code pushes
   // false) -- the vgui key state array must not be indexed with garbage.
-  int iCode = (int)luaL_checkint(L, 1);
-  if ( iCode < 0 || iCode >= KEY_COUNT ) {
+  const double value = luaL_checknumber(L, 1);
+  if ( !(value > -1.0 && value < (double)KEY_COUNT) ) {
     lua_pushboolean(L, 0);
     return 1;
   }
-  lua_pushboolean(L, input()->IsKeyDown((KeyCode)iCode));
+  lua_pushboolean(L, input()->IsKeyDown((KeyCode)(int)value));
   return 1;
 }
 
@@ -153,7 +156,9 @@ static int input_IsControlDown (lua_State *L) {
 }
 
 static int input_IsMouseDown (lua_State *L) {
-  lua_pushboolean(L, input()->IsMouseDown((KeyCode)luaL_checkint(L, 1)));
+  const double value = luaL_checknumber(L, 1);
+  const bool valid = value >= (double)MOUSE_FIRST && value < (double)MOUSE_LAST + 1.0;
+  lua_pushboolean(L, valid && input()->IsMouseDown((MouseCode)(int)value));
   return 1;
 }
 
@@ -261,7 +266,16 @@ static int input_SetCandidateWindowPos (lua_State *L) {
 }
 
 static int input_SetCursorPos (lua_State *L) {
-  input()->SetCursorPos(luaL_checkint(L, 1), luaL_checkint(L, 2));
+  // ARC9 adds frame-scaled gamepad movement to the current cursor position.
+  int position[2];
+  for ( int i = 0; i < 2; ++i ) {
+    const double value = luaL_checknumber(L, i + 1);
+    if ( !( value > static_cast<double>(INT_MIN) - 1.0 &&
+            value < static_cast<double>(INT_MAX) + 1.0 ) )
+      return luaL_argerror(L, i + 1, "cursor coordinate out of range");
+    position[i] = static_cast<int>(value);
+  }
+  input()->SetCursorPos(position[0], position[1]);
   return 0;
 }
 
@@ -301,12 +315,14 @@ static int input_UnregisterKeyCodeUnhandledListener (lua_State *L) {
 }
 
 static int input_WasKeyPressed (lua_State *L) {
-  lua_pushboolean(L, input()->WasKeyPressed((KeyCode)luaL_checkint(L, 1)));
+  const double value = luaL_checknumber(L, 1);
+  lua_pushboolean(L, value > -1.0 && value < (double)KEY_COUNT && input()->WasKeyPressed((KeyCode)(int)value));
   return 1;
 }
 
 static int input_WasKeyReleased (lua_State *L) {
-  lua_pushboolean(L, input()->WasKeyReleased((KeyCode)luaL_checkint(L, 1)));
+  const double value = luaL_checknumber(L, 1);
+  lua_pushboolean(L, value > -1.0 && value < (double)KEY_COUNT && input()->WasKeyReleased((KeyCode)(int)value));
   return 1;
 }
 
@@ -321,7 +337,8 @@ static int input_WasMouseDoublePressed (lua_State *L) {
 }
 
 static int input_WasMousePressed (lua_State *L) {
-  lua_pushboolean(L, input()->WasMousePressed((MouseCode)luaL_checkint(L, 1)));
+  const double value = luaL_checknumber(L, 1);
+  lua_pushboolean(L, value >= (double)MOUSE_FIRST && value < (double)MOUSE_LAST + 1.0 && input()->WasMousePressed((MouseCode)(int)value));
   return 1;
 }
 
@@ -417,20 +434,59 @@ static int input_LookupBinding (lua_State *L) {
   else
     pszKey = engine->Key_LookupBinding(pszBinding);
 
-  if ( pszKey == NULL )
-    lua_pushnil(L);
-  else
-    lua_pushstring(L, pszKey);
+  if ( pszKey == NULL ) return 0;
+  lua_pushstring(L, pszKey);
 
   return 1;
 }
 
+static int input_LookupKeyBinding (lua_State *L) {
+  const double value = luaL_checknumber(L, 1);
+  if (!(value > -1.0 && value < (double)BUTTON_CODE_LAST)) return 0;
+  const char *binding = engine->Key_BindingForKey((ButtonCode_t)(int)value);
+  if (!binding) return 0;
+  lua_pushstring(L, binding);
+  return 1;
+}
+
+
+extern void HL2SB_SelectWeapon( C_BaseCombatWeapon *weapon );
+
+static int input_SelectWeapon( lua_State *L ) {
+  C_BaseCombatWeapon *weapon = lua_toweapon( L, 1 );
+  if ( !weapon ) return luaL_error( L, "Weapon is NULL/Not a Weapon" );
+  HL2SB_SelectWeapon( weapon );
+  return 0;
+}
+
+static int input_GetAnalogValue( lua_State *L ) {
+  const double value = luaL_checknumber( L, 1 );
+  const int code = ( value > -2147483649.0 && value < 2147483648.0 )
+    ? (int)value : (-2147483647 - 1);
+  int localCode = code;
+#if defined( LINUX )
+  if ( code == 7 ) localCode = JOYSTICK_AXIS( 0, JOY_AXIS_R );
+  if ( code == 8 ) localCode = JOYSTICK_AXIS( 0, JOY_AXIS_U );
+#endif
+  lua_pushnumber( L, localCode >= 0 && localCode <= 27 && localCode < ANALOG_CODE_LAST
+    ? g_pInputSystem->GetAnalogValue( (AnalogCode_t)localCode ) : 0 );
+  return 1;
+}
+
+static int input_GetKeyCode( lua_State *L ) {
+  lua_pushnumber( L, g_pInputSystem->StringToButtonCode( luaL_checkstring( L, 1 ) ) );
+  return 1;
+}
 
 static const luaL_Reg inputlib[] = {
+  {"GetAnalogValue", input_GetAnalogValue},
+  {"GetKeyCode", input_GetKeyCode},
+  {"SelectWeapon", input_SelectWeapon},
   {"CandidateListStartsAtOne",   input_CandidateListStartsAtOne},
   {"CheckKeyTrapping",   input_CheckKeyTrapping},
   {"GetKeyName",   input_GetKeyName},
   {"LookupBinding",   input_LookupBinding},
+  {"LookupKeyBinding", input_LookupKeyBinding},
   {"IsKeyTrapping",   input_IsKeyTrapping},
   {"StartKeyTrapping",   input_StartKeyTrapping},
   {"GetAppModalSurface",   input_GetAppModalSurface},
@@ -495,6 +551,15 @@ static const luaL_Reg inputlib[] = {
 */
 LUALIB_API int luaopen_input (lua_State *L) {
   luaL_register(L, LUA_INPUTLIBNAME, inputlib);
+  static const struct { const char *name; int value; } analogCodes[] = {
+    {"ANALOG_MOUSE_X", 0}, {"ANALOG_MOUSE_Y", 1}, {"ANALOG_MOUSE_WHEEL", 3},
+    {"ANALOG_JOY_X", 4}, {"ANALOG_JOY_Y", 5}, {"ANALOG_JOY_Z", 6},
+    {"ANALOG_JOY_R", 7}, {"ANALOG_JOY_U", 8}, {"ANALOG_JOY_V", 9},
+  };
+  for ( unsigned int i = 0; i < sizeof( analogCodes ) / sizeof( analogCodes[0] ); ++i ) {
+    lua_pushinteger( L, analogCodes[i].value );
+    lua_setglobal( L, analogCodes[i].name );
+  }
   lua_pushcfunction( L, input_IsButtonDown );
   lua_setfield( L, -2, "IsButtonDown" );
   return 1;

@@ -398,11 +398,6 @@ static int CBaseEntity_IsTriggered (lua_State *L) {
   return 1;
 }
 
-static int CBaseEntity_GetDelay (lua_State *L) {
-  lua_pushnumber(L, luaL_checkentity(L, 1)->GetDelay());
-  return 1;
-}
-
 static int CBaseEntity_IsMoving (lua_State *L) {
   lua_pushboolean(L, luaL_checkentity(L, 1)->IsMoving());
   return 1;
@@ -631,16 +626,6 @@ static int CBaseEntity_GetDamageType (lua_State *L) {
   return 1;
 }
 
-static int CBaseEntity_GetDamage (lua_State *L) {
-  lua_pushnumber(L, luaL_checkentity(L, 1)->GetDamage());
-  return 1;
-}
-
-static int CBaseEntity_SetDamage (lua_State *L) {
-  luaL_checkentity(L, 1)->SetDamage(luaL_checkinteger(L, 2));
-  return 0;
-}
-
 static int CBaseEntity_BodyTarget (lua_State *L) {
   lua_pushvector(L, luaL_checkentity(L, 1)->BodyTarget(luaL_checkvector(L, 2), luaL_optboolean(L, 3, true)));
   return 1;
@@ -816,25 +801,6 @@ void HL2SB_LuaPostEntityFireBullets( CBaseEntity *pShooter, const FireBulletsInf
     lua_setfield( L, -2, "Attacker" );
     lua_pushentity( L, info.m_pAdditionalIgnoreEnt ); lua_setfield( L, -2, "IgnoreEntity" );
     lua_pushinteger( L, info.m_iAmmoType );         lua_setfield( L, -2, "AmmoType" );
-  END_LUA_CALL_HOOK( 2, 0 );
-}
-
-
-// HL2SB GMod compat (2026-10-13): hook.Run( "EntityEmitSound", ent, name ).
-// GMod fires this from the sound emit path with a full sound table and accepts
-// a replacement table; nothing in this fork's addon set uses the mutation half,
-// so this minimal form fires the two values consumers read.
-void HL2SB_LuaEntityEmitSound( CBaseEntity *pEnt, const char *pszSoundName )
-{
-  if ( L == NULL )
-    return;
-
-  BEGIN_LUA_CALL_HOOK( "EntityEmitSound" );
-    lua_pushentity( L, pEnt );
-    if ( pszSoundName != NULL )
-      lua_pushstring( L, pszSoundName );
-    else
-      lua_pushnil( L );
   END_LUA_CALL_HOOK( 2, 0 );
 }
 
@@ -1041,7 +1007,6 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"Event_Killed", CBaseEntity_Event_Killed},
   {"Event_KilledOther", CBaseEntity_Event_KilledOther},
   {"IsTriggered", CBaseEntity_IsTriggered},
-  {"GetDelay", CBaseEntity_GetDelay},
   {"IsMoving", CBaseEntity_IsMoving},
   {"IsWorld", CBaseEntity_IsWorld},
   {"AddPoints", CBaseEntity_AddPoints},
@@ -1085,8 +1050,6 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"Create", CBaseEntity_Create},
   {"CreateNoSpawn", CBaseEntity_CreateNoSpawn},
   {"GetDamageType", CBaseEntity_GetDamageType},
-  {"GetDamage", CBaseEntity_GetDamage},
-  {"SetDamage", CBaseEntity_SetDamage},
   {"BodyTarget", CBaseEntity_BodyTarget},
   {"HeadTarget", CBaseEntity_HeadTarget},
   {"GetSmoothedVelocity", CBaseEntity_GetSmoothedVelocity},

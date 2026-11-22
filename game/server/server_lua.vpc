@@ -51,6 +51,11 @@ $Project "Server (HL2MP)"
 {
 	$Folder "Server Lua"
 	{
+		$File "hl2/npc_zombine.cpp"
+		$File "hl2/npc_antliongrub.cpp"
+		$File "episodic/prop_scalable.cpp"
+		$File "hl2/weapon_citizenpackage.cpp"
+		$File "episodic/weapon_oldmanharpoon.cpp"
 		$File "$SRCDIR/game/shared/lua/luamanager.cpp"
 		$File "$SRCDIR/game/shared/lua/lhl2sb.cpp"
 
@@ -69,8 +74,8 @@ $Project "Server (HL2MP)"
 		$File "$SRCDIR/public/lenumerations.cpp"
 		// TODO(port): Files/FileHandle need the helper layer above plus a decision on
 		// how they coexist with the Team Sandbox era `filesystem` library.
-		// Lua 5.1 API shims so the Team Sandbox era bindings build against 5.4
 		$File "$SRCDIR/public/lgameevents.cpp"
+		// Registry reference helpers and engine-facing compatibility adapters.
 		$File "$SRCDIR/public/lua_compat.cpp"
 
 		$File "lua/lbaseanimating.cpp"

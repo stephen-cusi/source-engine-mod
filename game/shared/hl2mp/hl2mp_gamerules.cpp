@@ -63,6 +63,7 @@
 #ifdef HL2SB
 	#include "globalstate.h"
 	#include "hl2sb_player_model_manager.h"
+	extern ConVar physcannon_mega_enabled;
 #endif
 	#include "hl2mp_gameinterface.h"
 	#include "hl2mp_cvars.h"
@@ -123,11 +124,13 @@ BEGIN_NETWORK_TABLE_NOBASE( CHL2MPRules, DT_HL2MPRules )
 		RecvPropBool( RECVINFO( m_bTeamPlayEnabled ) ),
 		#ifdef HL2SB
 		RecvPropFloat( RECVINFO( m_fTimeScale ) ),
+		RecvPropBool( RECVINFO( m_bMegaPhysgun ) ),
 		#endif
 	#else
 		SendPropBool( SENDINFO( m_bTeamPlayEnabled ) ),
 		#ifdef HL2SB
 		SendPropFloat( SENDINFO( m_fTimeScale ), 32, 0 ),
+		SendPropBool( SENDINFO( m_bMegaPhysgun ) ),
 		#endif
 	#endif
 
@@ -584,6 +587,7 @@ float CHL2MPRules::FlPlayerSpawnTime( CBasePlayer *pPlayer )
 void CHL2MPRules::Think( void )
 {
 #if defined( HL2SB ) && !defined( CLIENT_DLL )
+	m_bMegaPhysgun = physcannon_mega_enabled.GetBool() || GlobalEntity_GetState( "super_phys_gun" ) == GLOBAL_ON;
 	factorylist_t factories;
 	FactoryList_Retrieve( factories );
 	IEngineGameTimeScale *timeScale = static_cast<IEngineGameTimeScale *>( factories.engineFactory( ENGINE_GAMETIMESCALE_INTERFACE_VERSION, NULL ) );
@@ -1003,11 +1007,11 @@ void CHL2MPRules::PlayerGotItem( CBasePlayer *pPlayer, CItem *pItem )
 //=========================================================
 int CHL2MPRules::ItemShouldRespawn( CItem *pItem )
 {
-	BEGIN_LUA_CALL_HOOK( "ItemShouldRespawn" );
-		lua_pushentity( L, pItem );
-	END_LUA_CALL_HOOK( 1, 1 );
-
-	RETURN_LUA_INTEGER();
+	extern int HL2SB_MapCreationID( CBaseEntity *pEntity );
+	ConVarRef weaponRespawn( "mp_weaponrespawn" );
+	if ( !weaponRespawn.IsValid() || weaponRespawn.GetInt() <= 0 ||
+		 HL2SB_MapCreationID( pItem ) == -1 )
+		return GR_ITEM_RESPAWN_NO;
 
 	return BaseClass::ItemShouldRespawn( pItem );
 }
@@ -1655,25 +1659,17 @@ void CHL2MPRules::Precache( void )
 
 bool CHL2MPRules::ShouldCollide( int collisionGroup0, int collisionGroup1 )
 {
-	// HL2SB (2026-10-19): the native rule set is authoritative for the pairs it
-	// FORBIDS, and the Lua hook may only restrict further.  Reference
-	// behaviour: collision groups are documented as "this group collides with
-	// nothing" style probes, so a hook that answers "true" for every pair must
-	// not re-enable a collision the engine rules turn off.
-	//
-	// This is not theoretical.  The base gamemode ships
-	// GAMEMODE:ShouldCollide => true, and because the hook used to run BEFORE
-	// this function's own rules, every forbidden pair collided again.  A script
-	// measuring the player with a hull trace in COLLISION_GROUP_IN_VEHICLE (the
-	// group defined as colliding with nothing, so the trace is expected to pass
-	// through the player itself) then hit its own collision hull on the very
-	// first step: the trace returns its start point, so the measurement came out
-	// as a fraction of the real one instead of the real one.
+	// Collision groups are not entities. The Lua ShouldCollide hook belongs to
+	// entity-pair collision checks, not this group-rule query.
 	if ( collisionGroup0 > collisionGroup1 )
 	{
 		// swap so that lowest is always first
 		V_swap(collisionGroup0,collisionGroup1);
 	}
+
+	if ( collisionGroup1 == HL2COLLISION_GROUP_SPIT &&
+		( collisionGroup0 == HL2COLLISION_GROUP_SPIT || collisionGroup0 == COLLISION_GROUP_PLAYER_MOVEMENT ) )
+		return false;
 
 	if ( (collisionGroup0 == COLLISION_GROUP_PLAYER || collisionGroup0 == COLLISION_GROUP_PLAYER_MOVEMENT) &&
 		collisionGroup1 == COLLISION_GROUP_WEAPON )
@@ -1683,26 +1679,6 @@ bool CHL2MPRules::ShouldCollide( int collisionGroup0, int collisionGroup1 )
 
 	if ( !BaseClass::ShouldCollide( collisionGroup0, collisionGroup1 ) )
 		return false;
-
-#if defined ( LUA_SDK )
-	// The particle system simulates collections on worker job threads and its
-	// WorldTraceConstraint traces world geometry, which reaches ShouldCollide
-	// through CTraceFilterSimple::ShouldHitEntity. The Lua state is main-thread
-	// only: calling into it from a job thread leaves luaD_throw with no
-	// protection frame (the pcall's errorJmp lives on the main thread's stack),
-	// so any Lua error escalates to common_exit() and takes the process down
-	// ("PANIC: unprotected error in call to Lua API"). Only invoke the hook
-	// from the main thread; a job thread simply keeps the native answer.
-	if ( ThreadInMainThread() )
-	{
-		BEGIN_LUA_CALL_HOOK( "ShouldCollide" );
-			lua_pushinteger( L, collisionGroup0 );
-			lua_pushinteger( L, collisionGroup1 );
-		END_LUA_CALL_HOOK( 2, 1 );
-
-		RETURN_LUA_BOOLEAN();
-	}
-#endif
 
 	return true;
 }

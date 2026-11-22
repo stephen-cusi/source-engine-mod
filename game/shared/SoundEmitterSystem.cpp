@@ -15,6 +15,9 @@
 #include "tier0/vprof.h"
 #include "checksum_crc.h"
 #include "tier0/icommandline.h"
+#if defined( LUA_SDK )
+#include "lua/lua_sound_hook.h"
+#endif
 
 #if defined( TF_CLIENT_DLL ) || defined( TF_DLL )
 #include "tf_shareddefs.h"
@@ -38,6 +41,25 @@
 #include "tier0/memdbgon.h"
 
 static ConVar sv_soundemitter_trace( "sv_soundemitter_trace", "0", FCVAR_REPLICATED, "Show all EmitSound calls including their symbolic name and the actual wave file they resolved to\n" );
+#if defined( LUA_SDK )
+static void HL2SB_InitEmitSoundHook( HL2SB_SoundHookData &sound, int entindex,
+	const char *name, const char *original, int channel, float volume,
+	int level, int flags, int pitch, int dsp, const Vector *origin, float time )
+{
+	sound.entity = CBaseEntity::Instance( entindex );
+	sound.soundName = name ? name : "";
+	sound.originalSoundName = original ? original : "";
+	sound.channel = channel;
+	sound.volume = volume;
+	sound.soundLevel = level;
+	sound.flags = flags;
+	sound.pitch = pitch;
+	sound.dsp = dsp;
+	sound.soundTime = time;
+	sound.hasPosition = origin != NULL;
+	if ( origin ) sound.position = *origin;
+}
+#endif
 #ifdef STAGING_ONLY
 static ConVar sv_snd_filter( "sv_snd_filter", "", FCVAR_REPLICATED, "Filters out all sounds not containing the specified string before being emitted\n" );
 #endif // STAGING_ONLY
@@ -487,6 +509,28 @@ public:
 		{
 			params.volume = ep.m_flVolume;
 		}
+		float st = ep.m_flSoundTime;
+		if ( !st && params.delay_msec != 0 )
+			st = gpGlobals->curtime + (float)params.delay_msec / 1000.f;
+		int soundFlags = ep.m_nFlags;
+		int soundDSP = ep.m_nSpecialDSP;
+		const Vector *soundOrigin = ep.m_pOrigin;
+#if defined( LUA_SDK )
+		HL2SB_SoundHookData hookSound;
+		HL2SB_InitEmitSoundHook( hookSound, entindex, params.soundname, ep.m_pSoundName,
+			params.channel, params.volume, params.soundlevel, soundFlags, params.pitch,
+			soundDSP, soundOrigin, st );
+		if ( !HL2SB_LuaEntityEmitSound( hookSound ) ) return;
+		Q_strncpy( params.soundname, hookSound.soundName.Get(), sizeof( params.soundname ) );
+		params.channel = hookSound.channel;
+		params.volume = hookSound.volume;
+		params.soundlevel = (soundlevel_t)hookSound.soundLevel;
+		params.pitch = hookSound.pitch;
+		soundFlags = hookSound.flags;
+		soundDSP = hookSound.dsp;
+		st = hookSound.soundTime;
+		soundOrigin = hookSound.hasPosition ? &hookSound.position : NULL;
+#endif
 
 #if !defined( CLIENT_DLL )
 		bool bSwallowed = CEnvMicrophone::OnSoundPlayed( 
@@ -494,10 +538,10 @@ public:
 			params.soundname, 
 			params.soundlevel, 
 			params.volume, 
-			ep.m_nFlags, 
+			soundFlags,
 			params.pitch, 
-			ep.m_pOrigin, 
-			ep.m_flSoundTime,
+			soundOrigin,
+			st,
 			ep.m_UtlVecSoundOrigin );
 		if ( bSwallowed )
 			return;
@@ -510,13 +554,6 @@ public:
 		}
 #endif
 
-		float st = ep.m_flSoundTime;
-		if ( !st && 
-			params.delay_msec != 0 )
-		{
-			st = gpGlobals->curtime + (float)params.delay_msec / 1000.f;
-		}
-
 		enginesound->EmitSound( 
 			filter, 
 			entindex, 
@@ -524,10 +561,10 @@ public:
 			params.soundname,
 			params.volume,
 			(soundlevel_t)params.soundlevel,
-			ep.m_nFlags,
+			soundFlags,
 			params.pitch,
-			ep.m_nSpecialDSP,
-			ep.m_pOrigin,
+			soundDSP,
+			soundOrigin,
 			NULL,
 			&ep.m_UtlVecSoundOrigin,
 			true,
@@ -543,7 +580,7 @@ public:
 
 
 		// Don't caption modulations to the sound
-		if ( !( ep.m_nFlags & ( SND_CHANGE_PITCH | SND_CHANGE_VOL ) ) )
+		if ( !( soundFlags & ( SND_CHANGE_PITCH | SND_CHANGE_VOL ) ) )
 		{
 			EmitCloseCaption( filter, entindex, params, ep );
 		}
@@ -569,16 +606,41 @@ public:
 			  Q_stristr( ep.m_pSoundName, ".mp3" ) || 
 			  ep.m_pSoundName[0] == '!' ) )
 		{
+			const char *soundName = ep.m_pSoundName;
+			int soundChannel = ep.m_nChannel;
+			float soundVolume = ep.m_flVolume;
+			soundlevel_t soundLevel = ep.m_SoundLevel;
+			int soundFlags = ep.m_nFlags;
+			int soundPitch = ep.m_nPitch;
+			int soundDSP = ep.m_nSpecialDSP;
+			const Vector *soundOrigin = ep.m_pOrigin;
+			float soundTime = ep.m_flSoundTime;
+#if defined( LUA_SDK )
+			HL2SB_SoundHookData hookSound;
+			HL2SB_InitEmitSoundHook( hookSound, entindex, soundName, soundName,
+				soundChannel, soundVolume, soundLevel, soundFlags, soundPitch,
+				soundDSP, soundOrigin, soundTime );
+			if ( !HL2SB_LuaEntityEmitSound( hookSound ) ) return;
+			soundName = hookSound.soundName.Get();
+			soundChannel = hookSound.channel;
+			soundVolume = hookSound.volume;
+			soundLevel = (soundlevel_t)hookSound.soundLevel;
+			soundFlags = hookSound.flags;
+			soundPitch = hookSound.pitch;
+			soundDSP = hookSound.dsp;
+			soundOrigin = hookSound.hasPosition ? &hookSound.position : NULL;
+			soundTime = hookSound.soundTime;
+#endif
 #if !defined( CLIENT_DLL )
 			bool bSwallowed = CEnvMicrophone::OnSoundPlayed( 
 				entindex, 
-				ep.m_pSoundName, 
-				ep.m_SoundLevel, 
-				ep.m_flVolume, 
-				ep.m_nFlags, 
-				ep.m_nPitch, 
-				ep.m_pOrigin, 
-				ep.m_flSoundTime,
+				soundName,
+				soundLevel,
+				soundVolume,
+				soundFlags,
+				soundPitch,
+				soundOrigin,
+				soundTime,
 				ep.m_UtlVecSoundOrigin );
 			if ( bSwallowed )
 				return;
@@ -599,26 +661,26 @@ public:
 			enginesound->EmitSound( 
 				filter, 
 				entindex, 
-				ep.m_nChannel, 
-				ep.m_pSoundName, 
-				ep.m_flVolume, 
-				ep.m_SoundLevel, 
-				ep.m_nFlags, 
-				ep.m_nPitch, 
-				ep.m_nSpecialDSP,
-				ep.m_pOrigin,
+				soundChannel,
+				soundName,
+				soundVolume,
+				soundLevel,
+				soundFlags,
+				soundPitch,
+				soundDSP,
+				soundOrigin,
 				NULL, 
 				&ep.m_UtlVecSoundOrigin,
 				true, 
-				ep.m_flSoundTime,
+				soundTime,
 				ep.m_nSpeakerEntity );
 			if ( ep.m_pflSoundDuration )
 			{
-				*ep.m_pflSoundDuration = enginesound->GetSoundDuration( ep.m_pSoundName );
+				*ep.m_pflSoundDuration = enginesound->GetSoundDuration( soundName );
 			}
 
 			TraceEmitSound( "EmitSound:  Raw wave emitted '%s' (ent %i)\n",
-				ep.m_pSoundName, entindex );
+				soundName, entindex );
 			return;
 		}
 
@@ -1253,16 +1315,6 @@ void CBaseEntity::EmitSound( IRecipientFilter& filter, int iEntIndex, const Emit
 	{
 		pEntity->ModifyEmitSoundParams( const_cast< EmitSound_t& >( params ) );
 	}
-
-#if defined( GAME_DLL ) && defined( LUA_SDK ) && !defined( CLIENT_DLL )
-	// HL2SB GMod compat (2026-10-13): hook.Run( "EntityEmitSound", ent, name ) -
-	// GMod fires this from the sound emit path.  Minimal form (no table
-	// mutation): fired once per emitted entity sound.
-	{
-		extern void HL2SB_LuaEntityEmitSound( CBaseEntity *pEnt, const char *pszSoundName );
-		HL2SB_LuaEntityEmitSound( pEntity, params.m_pSoundName );
-	}
-#endif
 
 	// VPROF( "CBaseEntity::EmitSound" );
 	// Call into the sound emitter system...

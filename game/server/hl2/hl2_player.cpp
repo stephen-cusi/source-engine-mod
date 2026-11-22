@@ -3177,8 +3177,10 @@ bool CHL2_Player::Weapon_CanSwitchTo( CBaseCombatWeapon *pWeapon )
 	if (pVehicle && !pPlayer->UsingStandardWeaponsInVehicle())
 		return false;
 
+#ifndef HL2SB
 	if ( !pWeapon->HasAnyAmmo() && !GetAmmoCount( pWeapon->m_iPrimaryAmmoType ) )
 		return false;
+#endif
 
 	if ( !pWeapon->CanDeploy() )
 		return false;

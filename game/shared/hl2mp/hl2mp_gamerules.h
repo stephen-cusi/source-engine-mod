@@ -197,12 +197,12 @@ public:
 #endif
 #endif
 #ifdef HL2SB
+	bool	MegaPhyscannonActive( void ) const { return m_bMegaPhysgun; }
 #ifndef CLIENT_DLL
 	bool	NPC_ShouldDropGrenade( CBasePlayer *pRecipient );
 	bool	NPC_ShouldDropHealth( CBasePlayer *pRecipient );
 	void	NPC_DroppedHealth( void );
 	void	NPC_DroppedGrenade( void );
-	bool	MegaPhyscannonActive( void ) { return m_bMegaPhysgun;	}
 	virtual bool IsAlyxInDarknessMode();
 #endif
 #endif

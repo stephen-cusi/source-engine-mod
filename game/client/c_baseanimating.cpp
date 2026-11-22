@@ -8,6 +8,7 @@
 #include "c_baseanimating.h"
 #include "model_types.h"
 #include "materialsystem/imaterial.h"
+#include "materialsystem/imaterialsystem.h"
 #include "materialsystem/imaterialvar.h"	// HL2SB: IMaterialVar for the glow-shell $color tint
 #include "c_sprite.h"
 #include "bone_setup.h"
@@ -1549,6 +1550,15 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 
 	for (int i = 0; i < hdr->numbones(); i++) 
 	{
+		// Bone transforms follow the model's hierarchy. A stale parent-cache
+		// entry must never be used as an index into the bone matrix array.
+		// Prefer the model's own parent whenever the cached value disagrees.
+		const int modelParent = pbones[i].parent;
+		const int cachedParent = hdr->boneParent( i );
+		int parent = cachedParent == modelParent ? cachedParent : modelParent;
+		if ( parent < -1 || parent >= i )
+			parent = -1;
+
 		// Only update bones reference by the bone mask.
 		if ( !( hdr->boneFlags( i ) & boneMask ) )
 		{
@@ -1591,13 +1601,13 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 				// compute desired bone orientation
 				matrix3x4_t goalMX;
 
-				if (pbones[i].parent == -1) 
+				if (parent == -1)
 				{
 					ConcatTransforms( cameraTransform, bonematrix, goalMX );
 				} 
 				else 
 				{
-					ConcatTransforms( GetBone( pbones[i].parent ), bonematrix, goalMX );
+					ConcatTransforms( GetBone( parent ), bonematrix, goalMX );
 				}
 
 				// get jiggle properties from QC data
@@ -1612,17 +1622,17 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 				m_pJiggleBones->BuildJiggleTransformations( i, gpGlobals->realtime, jiggleInfo, goalMX, GetBoneForWrite( i ) );
 
 			}
-			else if (hdr->boneParent(i) == -1) 
+			else if (parent == -1)
 			{
 				ConcatTransforms( cameraTransform, bonematrix, GetBoneForWrite( i ) );
 			} 
 			else 
 			{
-				ConcatTransforms( GetBone( hdr->boneParent(i) ), bonematrix, GetBoneForWrite( i ) );
+				ConcatTransforms( GetBone( parent ), bonematrix, GetBoneForWrite( i ) );
 			}
 		}
 
-		if (hdr->boneParent(i) == -1) 
+		if (parent == -1)
 		{
 			// Apply client-side effects to the transformation matrix
 			ApplyBoneMatrixTransform( GetBoneForWrite( i ) );
@@ -3182,7 +3192,7 @@ IMaterial *HL2SB_PhysgunGlowMaterial( void );
 // master-off switch.
 extern ConVar physgun_halo_shell;
 extern bool HL2SB_PhysgunIsHolding( void );
-Color HL2SB_GetWeaponColor( int iUserID );
+Vector HL2SB_GetWeaponColor( int iUserID );
 
 int C_BaseAnimating::DrawModel( int flags )
 {
@@ -3263,7 +3273,11 @@ int C_BaseAnimating::DrawModel( int flags )
 			BEGIN_LUA_CALL_HOOK( "PrePlayerDraw" );
 				lua_pushentity( L, this );
 				lua_pushinteger( L, flags );
-			END_LUA_CALL_HOOK( 2, 0 );
+			END_LUA_CALL_HOOK( 2, 1 );
+			const bool bSkipPlayerDraw = lua_isboolean( L, -1 ) && lua_toboolean( L, -1 );
+			lua_pop( L, 1 );
+			if ( bSkipPlayerDraw )
+				return 0;
 		}
 #endif
 
@@ -3317,8 +3331,8 @@ int C_BaseAnimating::DrawModel( int flags )
 			if ( pColorVar != NULL )
 			{
 				C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-				Color clrW = pLocal ? HL2SB_GetWeaponColor( pLocal->GetUserID() )
-									: Color( 255, 255, 255, 255 );
+				Vector vW = pLocal ? HL2SB_GetWeaponColor( pLocal->GetUserID() )
+								   : Vector( 1.0f, 1.0f, 1.0f );
 
 				float flGlow;
 				if ( HL2SB_PhysgunIsHolding() )
@@ -3327,9 +3341,9 @@ int C_BaseAnimating::DrawModel( int flags )
 					flGlow = 0.30f;
 
 				pColorVar->SetVecValue(
-					clrW.r() / 255.0f * flGlow,
-					clrW.g() / 255.0f * flGlow,
-					clrW.b() / 255.0f * flGlow );
+					vW.x * flGlow,
+					vW.y * flGlow,
+					vW.z * flGlow );
 
 				modelrender->ForcedMaterialOverride( pGlowMaterial );
 				InternalDrawModel( flags );
@@ -3402,6 +3416,7 @@ bool C_BaseAnimating::OnInternalDrawModel( ClientModelRenderInfo_t *pInfo )
 //-----------------------------------------------------------------------------
 #if defined( LUA_SDK )
 extern IMaterial *HL2SB_EntityMaterialOverride( C_BaseEntity *pEntity );
+extern IMaterial *HL2SB_EntitySubMaterialOverride( C_BaseEntity *pEntity, int nSlot );
 #endif
 
 void C_BaseAnimating::DoInternalDrawModel( ClientModelRenderInfo_t *pInfo, DrawModelState_t *pState, matrix3x4_t *pBoneToWorldArray )
@@ -3420,7 +3435,44 @@ void C_BaseAnimating::DoInternalDrawModel( ClientModelRenderInfo_t *pInfo, DrawM
 		if ( pEntityMaterial )
 			modelrender->ForcedMaterialOverride( pEntityMaterial );
 #endif
-		modelrender->DrawModelExecute( *pState, *pInfo, pBoneToWorldArray );
+#if defined( LUA_SDK )
+		IMaterial *subMaterials[32] = { NULL };
+		bool hasSubMaterials = false;
+		if ( !pForcedMaterial && !pEntityMaterial && overrideType == OVERRIDE_NORMAL &&
+			!( pInfo->flags & ( STUDIO_SHADOWDEPTHTEXTURE | STUDIO_SSAODEPTHTEXTURE ) ) )
+		{
+			for ( int i = 0; i < 32; ++i )
+			{
+				subMaterials[i] = HL2SB_EntitySubMaterialOverride( this, i );
+				hasSubMaterials = hasSubMaterials || subMaterials[i] != NULL;
+			}
+		}
+		studiohwdata_t *hardware = pState->m_pStudioHWData;
+		if ( hasSubMaterials && hardware && hardware->m_pLODs && pState->m_pStudioHdr &&
+			pState->m_lod >= 0 && pState->m_lod < hardware->m_NumLODs &&
+			hardware->m_pLODs[pState->m_lod].ppMaterials && pState->m_pStudioHdr->numtextures > 0 )
+		{
+			CMatRenderContextPtr context( materials );
+			CMatRenderData<studiohwdata_t> copyHardware( context, 1, hardware );
+			CMatRenderData<studioloddata_t> copyLods( context, hardware->m_NumLODs, hardware->m_pLODs );
+			const int nMaterials = pState->m_pStudioHdr->numtextures;
+			CMatRenderData<IMaterial *> copyMaterials( context, nMaterials, hardware->m_pLODs[pState->m_lod].ppMaterials );
+			if ( copyHardware.IsValid() && copyLods.IsValid() && copyMaterials.IsValid() )
+			{
+				for ( int i = 0; i < nMaterials && i < 32; ++i )
+					if ( subMaterials[i] ) copyMaterials[i] = subMaterials[i];
+				copyLods[pState->m_lod].ppMaterials = copyMaterials.Base();
+				copyHardware[0].m_pLODs = copyLods.Base();
+				DrawModelState_t state = *pState;
+				state.m_pStudioHWData = copyHardware.Base();
+				modelrender->DrawModelExecute( state, *pInfo, pBoneToWorldArray );
+			}
+			else
+				modelrender->DrawModelExecute( *pState, *pInfo, pBoneToWorldArray );
+		}
+		else
+#endif
+			modelrender->DrawModelExecute( *pState, *pInfo, pBoneToWorldArray );
 #if defined( LUA_SDK )
 		if ( pEntityMaterial )
 			modelrender->ForcedMaterialOverride( pForcedMaterial, overrideType );

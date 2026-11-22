@@ -5945,21 +5945,9 @@ bool CBasePlayer::GetInVehicle( IServerVehicle *pVehicle, int nRole )
 
 	SetParent( pEnt, iSeatAttachment );
 
-		// HL2SB: anchor onto the attachment when one exists.  SetParent measures the local
-		// offset with its own attachment read, and the entry sequences sweep the
-		// seat bone (jeep enter1's jump-in arc) inside the microseconds between the
-		// seat-point query above and that read - the difference then baked a
-		// several-hundred-unit offset into the rider's local.  When attached to a real
-		// bone (iSeatAttachment > 0), an explicit zero local sits the rider ON the
-		// attachment.  When there is NO attachment (iSeatAttachment == 0, e.g. wooden
-		// chairs and simple seats), SetAbsOrigin( vSeatOrigin ) before SetParent already
-		// placed the rider onto the seat point; zeroing the local origin would crush the
-		// rider down to the floor at (0,0,0) of the chair model.
-		if ( iSeatAttachment > 0 )
-		{
-			SetLocalOrigin( vec3_origin );
-			SetLocalAngles( vec3_angle );
-		}
+	// The reference resets the rider's local position even when the attachment
+	// lookup falls back to the vehicle root, while retaining the parented angles.
+	SetLocalOrigin( vec3_origin );
 
 	SetCollisionGroup( COLLISION_GROUP_IN_VEHICLE );
 	
@@ -7934,8 +7922,6 @@ void CBasePlayer::Weapon_DropSlot( int weaponSlot )
 //-----------------------------------------------------------------------------
 void CBasePlayer::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 {
-	BaseClass::Weapon_Equip( pWeapon );
-
 #if defined( LUA_SDK )
 	// HL2SB GMod compat (2026-10-13): GM:WeaponEquip( weapon, owner ) -- GMod
 	// fires this from the PLAYER-side Weapon_Equip (one call per player weapon),
@@ -7950,6 +7936,8 @@ void CBasePlayer::Weapon_Equip( CBaseCombatWeapon *pWeapon )
 		END_LUA_CALL_HOOK( 2, 0 );
 	}
 #endif
+
+	BaseClass::Weapon_Equip( pWeapon );
 
 	bool bShouldSwitch = g_pGameRules->FShouldSwitchWeapon( this, pWeapon );
 

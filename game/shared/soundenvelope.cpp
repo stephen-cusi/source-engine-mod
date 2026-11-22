@@ -268,6 +268,8 @@ public:
 	void	SetCloseCaptionDuration( float flDuration ) { m_flCloseCaptionDuration = flDuration; }
 
 	void	SetBaseFlags( int iFlags ) { m_baseFlags = iFlags; }
+	void	SetSoundLevel( soundlevel_t soundlevel ) { m_soundlevel = soundlevel; }
+	soundlevel_t GetSoundLevel() const { return m_soundlevel; }
 	
 	// Returns the ent index
 	int		EntIndex() const;
@@ -303,6 +305,22 @@ private:
 
 	DECLARE_FIXEDSIZE_ALLOCATOR(CSoundPatch);
 };
+
+void HL2SB_SoundPatchSetSoundLevel( CSoundPatch *pSound, soundlevel_t soundlevel )
+{
+	if ( pSound )
+		pSound->SetSoundLevel( soundlevel );
+}
+
+soundlevel_t HL2SB_SoundPatchGetSoundLevel( CSoundPatch *pSound )
+{
+	return pSound ? pSound->GetSoundLevel() : SNDLVL_NORM;
+}
+
+bool HL2SB_SoundPatchIsPlaying( CSoundPatch *pSound )
+{
+	return pSound && pSound->IsPlaying();
+}
 #include "tier0/memdbgon.h"
 
 int CSoundPatch::g_SoundPatchCount = 0;

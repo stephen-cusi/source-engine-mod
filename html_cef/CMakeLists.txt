@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.21)
+project(hl2sb_html_cef LANGUAGES CXX)
+
+if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+  message(FATAL_ERROR "This backend currently requires Windows x64")
+endif()
+if(NOT CEF_ROOT)
+  message(FATAL_ERROR "Set CEF_ROOT to the CEF binary distribution")
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
+find_package(CEF REQUIRED)
+add_subdirectory("${CEF_LIBCEF_DLL_WRAPPER_PATH}" libcef_dll_wrapper)
+ADD_LOGICAL_TARGET("libcef_lib" "${CEF_LIB_DEBUG}" "${CEF_LIB_RELEASE}")
+
+add_library(html_cef SHARED cef_backend.cpp)
+SET_LIBRARY_TARGET_PROPERTIES(html_cef)
+target_include_directories(html_cef PRIVATE "${CEF_ROOT}" "${CMAKE_CURRENT_SOURCE_DIR}/../public")
+target_link_libraries(html_cef PRIVATE libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS})
+
+add_executable(html_cef_helper WIN32 helper.cpp)
+SET_EXECUTABLE_TARGET_PROPERTIES(html_cef_helper)
+target_include_directories(html_cef_helper PRIVATE "${CEF_ROOT}")
+target_link_libraries(html_cef_helper PRIVATE libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS})

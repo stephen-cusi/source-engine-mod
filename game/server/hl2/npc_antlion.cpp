@@ -31,7 +31,11 @@
 #include "particle_parse.h"
 #include "ai_tacticalservices.h"
 
-#ifdef HL2_EPISODIC
+#if defined( HL2SB ) && !defined( HL2_EPISODIC )
+enum { BLOOD_COLOR_ANTLION = 4, BLOOD_COLOR_ANTLION_WORKER = 6 };
+#endif
+
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 #include "grenade_spit.h"
 #endif
 
@@ -48,7 +52,7 @@ ConVar	sk_antlion_jump_damage( "sk_antlion_jump_damage", "0" );
 ConVar  sk_antlion_air_attack_dmg( "sk_antlion_air_attack_dmg", "0" );
 
 
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 
 // workers
 #define ANTLION_WORKERS_BURST() (true)
@@ -188,6 +192,9 @@ CNPC_Antlion::CNPC_Antlion( void )
 }
 
 LINK_ENTITY_TO_CLASS( npc_antlion, CNPC_Antlion );
+#ifdef HL2SB
+LINK_ENTITY_TO_CLASS( npc_antlion_worker, CNPC_Antlion );
+#endif
 
 //==================================================
 // CNPC_Antlion::m_DataDesc
@@ -230,7 +237,7 @@ BEGIN_DATADESC( CNPC_Antlion )
 	DEFINE_FIELD( m_flNextJumpPushTime,		FIELD_TIME ),
 	DEFINE_FIELD( m_bForcedStuckJump,		FIELD_BOOLEAN ),
 	DEFINE_FIELD( m_flZapDuration,			FIELD_TIME ),
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	DEFINE_FIELD( m_bHasDoneAirAttack,		FIELD_BOOLEAN ),
 #endif	
 	// DEFINE_FIELD( m_bLoopingStarted, FIELD_BOOLEAN ),
@@ -264,6 +271,10 @@ END_DATADESC()
 //-----------------------------------------------------------------------------
 void CNPC_Antlion::Spawn( void )
 {
+#ifdef HL2SB
+	if ( FClassnameIs( this, "npc_antlion_worker" ) )
+		AddSpawnFlags( SF_ANTLION_WORKER );
+#endif
 	Precache();
 
 #ifdef _XBOX
@@ -271,7 +282,7 @@ void CNPC_Antlion::Spawn( void )
 	AddSpawnFlags( SF_NPC_FADE_CORPSE );
 #endif // _XBOX
 
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	if ( IsWorker() )
 	{
 		SetModel( ANTLION_WORKER_MODEL );
@@ -296,7 +307,7 @@ void CNPC_Antlion::Spawn( void )
 
 	m_NPCState	= NPC_STATE_NONE;
 
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	m_iHealth = ( IsWorker() ) ? sk_antlion_worker_health.GetFloat() : sk_antlion_health.GetFloat();
 #else
 	m_iHealth	= sk_antlion_health.GetFloat();
@@ -424,7 +435,7 @@ const char *pszAntlionGibs_Small[NUM_ANTLION_GIBS_SMALL] = {
 //-----------------------------------------------------------------------------
 void CNPC_Antlion::Precache( void )
 {
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	if ( IsWorker() )
 	{
 		PrecacheModel( ANTLION_WORKER_MODEL );
@@ -473,7 +484,7 @@ void CNPC_Antlion::Precache( void )
 	PrecacheScriptSound( "NPC_Antlion.LoopingAgitated" );
 	PrecacheScriptSound( "NPC_Antlion.Distracted" );
 
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	PrecacheScriptSound( "NPC_Antlion.PoisonBurstScream" );
 	PrecacheScriptSound( "NPC_Antlion.PoisonBurstScreamSubmerged" );
 	PrecacheScriptSound( "NPC_Antlion.PoisonBurstExplode" );
@@ -582,7 +593,7 @@ bool CNPC_Antlion::CanBecomeRagdoll()
 {
 	// This prevents us from dying in the regular way. It forces a schedule selection
 	// that will select SCHED_DIE, where we can do our poison burst thing.
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	if ( IsWorker() && ANTLION_WORKERS_BURST() )
 	{
 		// If we're in a script, we're allowed to ragdoll. This lets the vort's dynamic
@@ -1009,7 +1020,7 @@ Vector VecCheckThrowTolerance( CBaseEntity *pEdict, const Vector &vecSpot1, Vect
 bool CNPC_Antlion::GetSpitVector( const Vector &vecStartPos, const Vector &vecTarget, Vector *vecOut )
 {
 	// antlion workers exist only in episodic.
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	// Try the most direct route
 	Vector vecToss = VecCheckThrowTolerance( this, vecStartPos, vecTarget, sk_antlion_worker_spit_speed.GetFloat(), (10.0f*12.0f) );
 
@@ -1053,7 +1064,7 @@ void CNPC_Antlion::DelaySquadAttack( float flDuration )
 //-----------------------------------------------------------------------------
 void CNPC_Antlion::HandleAnimEvent( animevent_t *pEvent )
 {
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 		// Handle the spit event
 		if ( pEvent->event == AE_ANTLION_WORKER_SPIT )
 		{
@@ -1272,7 +1283,7 @@ void CNPC_Antlion::HandleAnimEvent( animevent_t *pEvent )
 	}
 
 	// antlion worker events
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	if ( pEvent->event == AE_ANTLION_WORKER_EXPLODE_SCREAM )
 	{
 		if ( GetWaterLevel() < 2 )
@@ -1724,7 +1735,7 @@ void CNPC_Antlion::StartTask( const Task_t *pTask )
 void CNPC_Antlion::RunTask( const Task_t *pTask )
 {
 	// some state that needs be set each frame
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	if ( GetFlags() & FL_ONGROUND )
 	{
 		m_bHasDoneAirAttack = false;
@@ -2418,7 +2429,11 @@ int CNPC_Antlion::SelectSchedule( void )
 	case NPC_STATE_COMBAT:
 		{
 			// Worker-only AI
-			if ( hl2_episodic.GetBool() && IsWorker() )
+			if ( IsWorker() && ( hl2_episodic.GetBool()
+#ifdef HL2SB
+				|| FClassnameIs( this, "npc_antlion_worker" )
+#endif
+				) )
 			{
 				// Melee attack if we can
 				if ( HasCondition( COND_CAN_MELEE_ATTACK1 ) )
@@ -2543,7 +2558,7 @@ int CNPC_Antlion::SelectSchedule( void )
 
 void CNPC_Antlion::Ignite ( float flFlameLifetime, bool bNPCOnly, float flSize, bool bCalledByLevelDesigner )
 {
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	float flDamage = m_iHealth + 1;
 
 	CTakeDamageInfo	dmgInfo( this, this, flDamage, DMG_GENERIC );
@@ -2998,7 +3013,7 @@ bool CNPC_Antlion::HandleInteraction( int interactionType, void *data, CBaseComb
 
 	// fixed for episodic: allow interactions to fall through in the base class. ifdefed away
 	// for mainline in case anything depends on this bug.
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	
 	if ( interactionType == g_interactionAntlionFiredAtTarget )
 	{
@@ -3053,7 +3068,7 @@ void CNPC_Antlion::StartJump( void )
 	SetAbsVelocity( m_vecSavedJump );
 
 	m_bForcedStuckJump = false;
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	m_bHasDoneAirAttack = false;
 #endif
 
@@ -3971,7 +3986,7 @@ bool CNPC_Antlion::ShouldGib( const CTakeDamageInfo &info )
 	if ( info.GetDamageType() & (DMG_NEVERGIB|DMG_DISSOLVE) )
 		return false;
 
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	if ( IsWorker() && ANTLION_WORKERS_BURST() )
 		return !m_bDontExplode;
 #endif
@@ -3991,7 +4006,7 @@ bool CNPC_Antlion::ShouldGib( const CTakeDamageInfo &info )
 //-----------------------------------------------------------------------------
 bool CNPC_Antlion::CorpseGib( const CTakeDamageInfo &info )
 {
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 
 	if ( IsWorker() )
 	{
@@ -4098,7 +4113,7 @@ void CNPC_Antlion::Touch( CBaseEntity *pOther )
 
 	// in episodic, an antlion colliding with the player in midair does him damage.
 	// pursuant bugs 58590, 56960, this happens only once per glide.
-#ifdef HL2_EPISODIC 
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	if ( GetActivity() == ACT_GLIDE && IsValidEnemy( pOther ) && !m_bHasDoneAirAttack )
 	{
 		CTakeDamageInfo	dmgInfo( this, this, sk_antlion_air_attack_dmg.GetInt(), DMG_SLASH );
@@ -4354,7 +4369,7 @@ void CNPC_Antlion::InputJumpAtTarget( inputdata_t &inputdata )
 		return;
 	}
 
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 
 	// Try the jump
 	AIMoveTrace_t moveTrace;
@@ -4390,7 +4405,7 @@ void CNPC_Antlion::InputJumpAtTarget( inputdata_t &inputdata )
 	SetCondition( COND_ANTLION_CAN_JUMP_AT_TARGET );
 }
 
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 //-----------------------------------------------------------------------------
 // workers can explode.
 //-----------------------------------------------------------------------------
@@ -5096,7 +5111,7 @@ bool IsAntlion( CBaseEntity *pEntity )
 			 dynamic_cast<CNPC_Antlion *>(pEntity) != NULL );	// Save this as the last step
 }
 
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 //-----------------------------------------------------------------------------
 // Purpose: Used by other entities to judge the antlion worker's radius of damage
 //-----------------------------------------------------------------------------

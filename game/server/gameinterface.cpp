@@ -9,6 +9,7 @@
 #include "cbase.h"
 #ifdef LUA_SDK
 #include "lua/hl2sb_playerbuttons.h"
+#include "lua/hl2sb_transmit_parent.h"
 #endif
 #include "gamestringpool.h"
 #include "mapentities_shared.h"
@@ -670,6 +671,12 @@ bool CServerGameDLL::DLLInit( CreateInterfaceFn appSystemFactory,
 	// save these in case other system inits need them
 	factorylist_t factories;
 	factories.engineFactory = appSystemFactory;
+	#ifdef LUA_SDK
+	{
+		extern void HL2SB_BrushSurfaceConnect( CreateInterfaceFn );
+		HL2SB_BrushSurfaceConnect( appSystemFactory );
+	}
+	#endif
 	factories.fileSystemFactory = fileSystemFactory;
 	factories.physicsFactory = physicsFactory;
 	FactoryList_Store( factories );
@@ -961,28 +968,48 @@ bool CServerGameDLL::IsRestoring()
 	return g_InRestore;
 }
 
-// Called any time a new level is started (after GameInit() also on level transitions within a game)
-// Apply launch values after the gamemode has registered its ConVars. Parse
-// KeyValues natively so empty strings and quoted persistence names survive.
-static void ApplyMenuLaunchSettings()
+#ifdef LUA_SDK
+static bool IsValidGamemodeSettingName( const char *name )
 {
- if(engine->IsDedicatedServer())return;
- KeyValues *saved=new KeyValues("ServerConfig");
- KeyValues *definition=new KeyValues("Gamemode");
- char path[256];Q_snprintf(path,sizeof(path),"gamemodes/%s/%s.txt",gamemode.GetString(),gamemode.GetString());
- if(saved->LoadFromFile(filesystem,"ServerConfig.vdf","GAME")&&definition->LoadFromFile(filesystem,path,"GAME"))
+ if ( !name || Q_strlen( name ) < 2 ) return false;
+ for ( const unsigned char *p = reinterpret_cast<const unsigned char *>( name ); *p; ++p )
  {
-  KeyValues *settings=definition->FindKey("settings");
-  if(settings)FOR_EACH_SUBKEY(settings,setting)
+  const unsigned char c = *p;
+  if ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
+       ( c >= '0' && c <= '9' ) || c == '!' || c == '+' || c == '-' ||
+       c == '.' || c == '^' || c == '_' || c == '~' ) continue;
+  return false;
+ }
+ return true;
+}
+
+static void RegisterGamemodeSettings()
+{
+ KeyValues *definition = new KeyValues( "Gamemode" );
+ char path[256];
+ Q_snprintf( path, sizeof( path ), "gamemodes/%s/%s.txt", gamemode.GetString(), gamemode.GetString() );
+ if ( definition->LoadFromFile( filesystem, path, "GAME" ) )
+ {
+  KeyValues *settings = definition->FindKey( "settings" );
+  if ( settings ) FOR_EACH_SUBKEY( settings, setting )
   {
-   const char *name=setting->GetString("name");
-   if(!name[0]||!saved->FindKey(name))continue;
-   ConVar *cv=g_pCVar->FindVar(name);
-   if(cv&&Q_strcmp(cv->GetString(),saved->GetString(name)))cv->SetValue(saved->GetString(name));
+   if ( setting->GetInt( "dontcreate", 0 ) ) continue;
+   const char *name = setting->GetString( "name", "" );
+   if ( !IsValidGamemodeSettingName( name ) )
+   {
+    Warning( "Invalid gamemode setting name: %s\n", name );
+    continue;
+   }
+   if ( g_pCVar->FindCommandBase( name ) ) continue;
+   int flags = FCVAR_ARCHIVE | FCVAR_NOTIFY | ( 1 << 27 );
+   if ( setting->GetInt( "replicate", 1 ) ) flags |= FCVAR_REPLICATED;
+   new ConVar( V_strdup( name ), V_strdup( setting->GetString( "default", "" ) ),
+               flags, V_strdup( setting->GetString( "help", "" ) ) );
   }
  }
- definition->deleteThis();saved->deleteThis();
+ definition->deleteThis();
 }
+#endif
 
 bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, char const *pOldLevel, char const *pLandmarkName, bool loadGame, bool background )
 {
@@ -1001,6 +1028,7 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 #endif // USES_ECON_ITEMS
 
 #ifdef LUA_SDK
+	RegisterGamemodeSettings();
 	//lcf_recursivedeletefile( LUA_PATH_CACHE );
 
 	// Add Lua environment
@@ -1074,8 +1102,6 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 
 	BEGIN_LUA_CALL_HOOK( "PostGamemodeLoaded" );
 	END_LUA_CALL_HOOK( 0, 0 );
-	ApplyMenuLaunchSettings();
-
 	luasrc_LoadWeapons();
 	luasrc_LoadEntities();
 	luasrc_LoadEffects();
@@ -2846,6 +2872,7 @@ void CServerGameEnts::CheckTransmit( CCheckTransmitInfo *pInfo, const unsigned s
 			continue;
 		}
 
+#ifdef LUA_SDK
 		// HL2SB (2026-10-02): GMod Entity:SetTransmitWithParent - an entity with
 		// this EFlag rides its move-parent's transmit decision even outside the
 		// recipient's PVS (the gmod_hands arms entity parents onto the
@@ -2854,7 +2881,7 @@ void CServerGameEnts::CheckTransmit( CCheckTransmitInfo *pInfo, const unsigned s
 		// priority because this sits below them.
 		{
 			CBaseEntity *pFlagEnt = ( CBaseEntity * )pEdict->GetUnknown();
-			if ( pFlagEnt && ( pFlagEnt->GetEFlags() & EFL_TRANSMIT_WITH_PARENT ) )
+			if ( pFlagEnt && HL2SB_GetTransmitWithParent( pFlagEnt ) )
 			{
 				CServerNetworkProperty *pFlagParent = netProp->GetNetworkParent();
 				if ( pFlagParent && pInfo->m_pTransmitEdict->Get( pFlagParent->entindex() ) )
@@ -2864,6 +2891,7 @@ void CServerGameEnts::CheckTransmit( CCheckTransmitInfo *pInfo, const unsigned s
 				}
 			}
 		}
+#endif
 
 		// If the entity is marked "check PVS" but it's in hierarchy, walk up the hierarchy looking for the
 		//  for any parent which is also in the PVS.  If none are found, then we don't need to worry about sending ourself

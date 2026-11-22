@@ -1,0 +1,74 @@
+#! /usr/bin/env python
+# encoding: utf-8
+
+import os
+import re
+
+CEF_VERSION = '156.0.26+g8ea0c73+chromium-156.0.8078.88'
+
+
+def configure(conf):
+    root = conf.env.CEF_ROOT
+    version_file = os.path.join(root, 'include', 'cef_version.h')
+    wrapper_file = os.path.join(root, 'libcef_dll', 'CMakeLists.txt')
+    library = os.path.join(root, 'Release', 'libcef.lib')
+    for path in (version_file, wrapper_file, library):
+        if not os.path.isfile(path):
+            conf.fatal('CEF SDK file is missing: %s' % path)
+    with open(version_file, 'r', encoding='utf-8') as f:
+        version = re.search(r'^#define CEF_VERSION "([^"]+)"', f.read(), re.M)
+    if not version or version.group(1) != CEF_VERSION:
+        conf.fatal('CEF SDK must be version %s' % CEF_VERSION)
+
+
+def build(bld):
+    root = bld.env.CEF_ROOT
+    wrapper = os.path.join(root, 'libcef_dll')
+    with open(os.path.join(wrapper, 'CMakeLists.txt'), 'r', encoding='utf-8') as f:
+        contents = f.read()
+    sources = []
+    for name, body in re.findall(r'set\((LIBCEF_[A-Z0-9_]+)\s+(.*?)\)', contents, re.S):
+        if name.endswith(('_MAC', '_LINUX')):
+            continue
+        sources.extend(os.path.join(wrapper, item) for item in
+                       re.findall(r'(?m)^\s*([\w/.-]+\.cc)\s*$', body))
+    if not sources or any(not os.path.isfile(path) for path in sources):
+        bld.fatal('CEF wrapper source list is incomplete')
+    sources = [bld.root.find_node(os.path.normpath(path)) for path in sources]
+    if any(node is None for node in sources):
+        bld.fatal('Unable to resolve CEF wrapper source paths')
+
+    env = bld.env.derive()
+    env.append_value('CXXFLAGS', ['/std:c++20', '/MT', '/GR-', '/utf-8'])
+    env.append_value('DEFINES', ['UNICODE', '_UNICODE', 'WINVER=0x0A00',
+        '_WIN32_WINNT=0x0A00', 'NTDDI_VERSION=NTDDI_WIN10_FE', 'NOMINMAX',
+        'WIN32_LEAN_AND_MEAN', '_HAS_EXCEPTIONS=0', 'CEF_USE_BOOTSTRAP',
+        'CEF_API_VERSION=CEF_API_VERSION_LAST', '__STDC_CONSTANT_MACROS',
+        '__STDC_FORMAT_MACROS'])
+    common = dict(includes=[root, '../public'],
+                  libpath=[os.path.join(root, 'Release')],
+                  lib=['libcef', 'comctl32', 'crypt32', 'delayimp', 'gdi32',
+                       'rpcrt4', 'shlwapi', 'wintrust', 'ws2_32'])
+    install_path = bld.env.PREFIX + '/hl2sb/bin/cef'
+    bld.stlib(target='hl2sb_cef_wrapper', name='hl2sb_cef_wrapper',
+              source=sources, env=env.derive(), includes=[root], defines=['WRAPPING_CEF_SHARED'])
+    backend = bld.shlib(target='html_cef', name='html_cef', source=['cef_backend.cpp'],
+                        use=['hl2sb_cef_wrapper'], install_path=install_path, env=env.derive(),
+                        linkflags=['/DELAYLOAD:libcef.dll'], **common)
+    bld.program(target='html_cef_helper', name='html_cef_helper', source=['helper.cpp'],
+                use=['hl2sb_cef_wrapper'], subsystem='WINDOWS,6.00',
+                install_path=install_path, env=env.derive(),
+                linkflags=['/DELAYLOAD:libcef.dll', '/STACK:0x800000'], **common)
+    release = bld.root.find_node(os.path.join(root, 'Release'))
+    resources = bld.root.find_node(os.path.join(root, 'Resources'))
+    if not release or not resources:
+        bld.fatal('CEF SDK Release or Resources directory is missing')
+    backend.add_install_files(install_to=install_path,
+        install_from=release.ant_glob('*.dll *.bin *.json'))
+    backend.add_install_files(install_to=install_path,
+        install_from=resources.ant_glob('*.pak *.dat'))
+    locales = resources.find_node('locales')
+    if not locales:
+        bld.fatal('CEF SDK locales directory is missing')
+    backend.add_install_files(install_to=install_path + '/locales',
+        install_from=locales.ant_glob('*.pak'))

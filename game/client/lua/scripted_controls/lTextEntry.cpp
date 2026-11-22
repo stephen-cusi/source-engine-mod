@@ -70,7 +70,7 @@ void LTextEntry::DrawNativeText(const Color &text, const Color &highlight, const
         lua_pop(m_lua_State, 2);
     } else m_DrawFontTall = surface()->GetFontTall(LuaFont_ResolveByName(m_lua_State, font));
     m_bDrawCustomCursor = true;
-    BaseClass::PaintText(false);
+    BaseClass::PaintText(true);
     m_bDrawCustomCursor = false;
 }
 
@@ -762,11 +762,6 @@ LUA_BINDING_BEGIN( TextEntry, __newindex, "class", "Metamethod called when a new
 
     if ( pTextEntry == NULL )
     { /* avoid extra test when d is not 0 */
-        lua_Debug ar1;
-        lua_getstack( L, 1, &ar1 );
-        lua_getinfo( L, "fl", &ar1 );
-        lua_Debug ar2;
-        lua_getinfo( L, ">S", &ar2 );
         /* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves
         (see lua/includes/util.lua:314-322, GMod's IsValid). */
         lua_pushnil( L );

@@ -17,6 +17,7 @@ class IPhysicsCollision;
 class IPhysicsObject;
 class IPhysicsObjectPairHash;
 class CSoundPatch;
+class CBasePlayer;
 
 
 extern IPhysicsObject		*g_PhysWorldObject;
@@ -137,6 +138,13 @@ IPhysicsObject *PhysSphereCreate( CBaseEntity *pEntity, float radius, const Vect
 
 // Destroy a physics object created using PhysModelCreate...()
 void PhysDestroyObject( IPhysicsObject *pObject, CBaseEntity *pEntity = NULL );
+#ifdef LUA_SDK
+void HL2SB_InvalidateLuaPhysicsObject( IPhysicsObject *object );
+#ifndef CLIENT_DLL
+void HL2SB_SetLuaPhysicsAttacker( CBaseEntity *entity, CBasePlayer *attacker, double duration );
+CBasePlayer *HL2SB_GetPhysicsAttacker( CBaseEntity *entity, float lookback );
+#endif
+#endif
 
 void PhysDisableObjectCollisions( IPhysicsObject *pObject0, IPhysicsObject *pObject1 );
 void PhysDisableEntityCollisions( IPhysicsObject *pObject0, IPhysicsObject *pObject1 );

@@ -42,6 +42,7 @@
 #include "tier0/icommandline.h"
 #include "filesystem.h"
 #include "filesystem_engine.h"
+#include "tier1/utlbuffer.h"
 #include "icliententitylist.h"
 #include "icliententity.h"
 #include "GameEventManager.h"
@@ -78,6 +79,51 @@ extern IXboxSystem *g_pXboxSystem;
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+static ConVar hl2sb_gms_pending( "hl2sb_gms_pending", "", FCVAR_HIDDEN | FCVAR_DONTRECORD, "Pending local save." );
+
+CON_COMMAND_F( gm_load, "Load a local sandbox save.", FCVAR_DONTRECORD )
+{
+	if ( cmd_source != src_command || args.ArgC() != 2 ) return;
+	const char *name = args[1];
+	if ( !Q_strnicmp( name, "saves/", 6 ) ) name += 6;
+	if ( !name[0] || Q_strstr( name, ".." ) || Q_strstr( name, "/" ) ||
+		Q_strstr( name, "\\" ) || Q_strstr( name, ":" ) )
+	{
+		Warning( "gm_load: invalid save name\n" );
+		return;
+	}
+	char path[MAX_PATH];
+	Q_snprintf( path, sizeof(path), "saves/%s", name );
+	CUtlBuffer data( 0, 0, 0 );
+	if ( !g_pFullFileSystem->ReadFile( path, "MOD", data ) || data.TellPut() < 8 ||
+		Q_memcmp( data.Base(), "GMS3", 4 ) != 0 )
+	{
+		Warning( "gm_load: invalid or missing save %s\n", path );
+		return;
+	}
+	const char *bytes = (const char *)data.Base();
+	const int length = data.TellPut();
+	int end = 4;
+	while ( end < length && bytes[end] ) ++end;
+	if ( end == length || end == 4 || end - 4 >= MAX_QPATH ) return;
+	char map[MAX_QPATH];
+	Q_memcpy( map, bytes + 4, end - 4 );
+	map[end - 4] = 0;
+	for ( const char *c = map; *c; ++c )
+		if ( !( (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') ||
+			(*c >= '0' && *c <= '9') || *c == '_' || *c == '-' ) ) return;
+	char mapPath[MAX_PATH];
+	Q_snprintf( mapPath, sizeof(mapPath), "maps/%s.bsp", map );
+	if ( !g_pFullFileSystem->FileExists( mapPath, "GAME" ) )
+	{
+		Warning( "gm_load: map %s not found\n", map );
+		return;
+	}
+	hl2sb_gms_pending.SetValue( path );
+	if ( !sv.IsActive() || Q_stricmp( sv.GetMapName(), map ) )
+		Cbuf_AddText( va( "map %s\n", map ) );
+}
 
 #define STEAM_PREFIX "STEAM_"
 
@@ -1187,6 +1233,9 @@ DWORD __declspec(dllimport) __stdcall GetEnvironmentVariableA( const char *, cha
 }
 #endif // _WIN32
 
+// HL2SB: GMod's gmod_mcore_test - indicates multi-core rendering status
+static ConVar gmod_mcore_test( "gmod_mcore_test", "0", FCVAR_NONE, "Indicates whether multi-core rendering is enabled (set by mat_queue_mode)" );
+
 CON_COMMAND( version, "Print version info string." )
 {
 	ConMsg( "Build Label:          %8d   # Uniquely identifies each build\n", GetSteamInfIDVersionInfo().ServerVersion );
@@ -1202,6 +1251,12 @@ CON_COMMAND( version, "Print version info string." )
 	{
 		ConMsg( "Client version:       %8i\n", GetSteamInfIDVersionInfo().ClientVersion );
 		ConMsg( "Client AppID:         %8i\n", GetSteamInfIDVersionInfo().AppID );
+
+		// HL2SB: GMod prints multicore status if gmod_mcore_test is set
+		if ( gmod_mcore_test.GetBool() )
+		{
+			ConMsg( "Multicore rendering:  enabled\n" );
+		}
 	}
 }
 

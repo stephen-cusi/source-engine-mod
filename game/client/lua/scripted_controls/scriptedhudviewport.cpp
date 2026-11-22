@@ -64,11 +64,6 @@ void CScriptedHudViewport::Paint()
 
 	BEGIN_LUA_CALL_HOOK( "HudViewportPaint" );
 	END_LUA_CALL_HOOK( 0, 0 );
-	BEGIN_LUA_CALL_HOOK( "PreDrawHUD" );
-	END_LUA_CALL_HOOK( 0, 0 );
-	BEGIN_LUA_CALL_HOOK( "HUDPaintBackground" );
-	END_LUA_CALL_HOOK( 0, 0 );
-
 	C_BasePlayer *pPlayer = C_BasePlayer::GetLocalPlayer();
 	CBaseCombatWeapon *pWeapon = pPlayer && pPlayer->IsAlive() ? pPlayer->GetActiveWeapon() : NULL;
 	if ( pWeapon && pWeapon->IsScripted() )

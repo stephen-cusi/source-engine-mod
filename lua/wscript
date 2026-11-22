@@ -378,6 +378,10 @@ def build(bld):
 	if is_win:
 		install_path += '/bin'
 
+	lua_env = bld.env.derive()
+	if is_win:
+		lua_env.CFLAGS = [flag for flag in lua_env.CFLAGS if flag.lower() != '/fp:fast'] + ['/fp:precise']
+
 	shlib_tg = bld.shlib(
 		source   = source,
 		target   = PROJECT_NAME,
@@ -386,6 +390,7 @@ def build(bld):
 		# no prior declaration and is not what upstream supports. Keep this
 		# target C-only.
 		features = 'c',
+		env      = lua_env,
 		includes = [LJ_SRC, LJ_GEN],
 		defines  = defines,
 		use      = libs,

@@ -54,9 +54,9 @@ struct LuaNewParticleUD
 
 static int LuaNewParticle_gc( lua_State *Lstate )
 {
-	LuaNewParticleUD *pUD = (LuaNewParticleUD *)lua_touserdata( Lstate, 1 );
-	if ( pUD )
-		pUD->~LuaNewParticleUD();
+	LuaNewParticleUD *pUD = (LuaNewParticleUD *)luaL_testudata( Lstate, 1, "CNewParticleEffect" );
+	if ( pUD && lua_rawlen( Lstate, 1 ) == sizeof( LuaNewParticleUD ) )
+		pUD->m_pEffect = nullptr;
 	return 0;
 }
 
@@ -76,7 +76,7 @@ void HL2SB_PushNewParticleEffect( lua_State *L, CNewParticleEffect *pEffect )
 static LuaNewParticleUD *LuaNewParticle_checkudata( lua_State *Lstate, int iArg )
 {
 	LuaNewParticleUD *pUD = (LuaNewParticleUD *)luaL_checkudata( Lstate, iArg, "CNewParticleEffect" );
-	if ( pUD == NULL )
+	if ( pUD == NULL || lua_rawlen( Lstate, iArg ) != sizeof( LuaNewParticleUD ) )
 		luaL_argerror( Lstate, iArg, "CNewParticleEffect expected" );
 	return pUD;
 }
@@ -190,11 +190,20 @@ LUA_BINDING_BEGIN( CNewParticleEffectReg, GetOwner, "method", "Returns the entit
 }
 LUA_BINDING_END()
 
+// The engine stores control points in fixed arrays. Its assertions are disabled in Release.
+static int LuaNewParticle_CheckControlPoint( lua_State *L, int argument )
+{
+	const lua_Integer point = luaL_checkinteger( L, argument );
+	luaL_argcheck( L, point >= 0 && point < MAX_PARTICLE_CONTROL_POINTS, argument,
+		"particle control point out of range" );
+	return static_cast<int>( point );
+}
+
 // SetControlPoint( controlPoint, position )
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetControlPoint, "method", "Sets the position of the given control point.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetControlPoint( luaL_checkint( L, 2 ), luaL_checkvector( L, 3 ) );
+	pEffect->SetControlPoint( LuaNewParticle_CheckControlPoint( L, 2 ), luaL_checkvector( L, 3 ) );
 	return 0;
 }
 LUA_BINDING_END()
@@ -203,7 +212,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetControlPointEntity, "method", "Makes the given control point follow the entity's origin.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetControlPointEntity( luaL_checkint( L, 2 ), luaL_checkentity( L, 3 ) );
+	pEffect->SetControlPointEntity( LuaNewParticle_CheckControlPoint( L, 2 ), luaL_checkentity( L, 3 ) );
 	return 0;
 }
 LUA_BINDING_END()
@@ -213,7 +222,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetControlPointOrientation, "method", "Sets the orientation of the given control point, either from a Quaternion or from forward/right/up vectors.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	int nPoint = luaL_checkint( L, 2 );
+	int nPoint = LuaNewParticle_CheckControlPoint( L, 2 );
 	if ( lua_istable( L, 3 ) )
 	{
 		Quaternion q;
@@ -240,7 +249,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetControlPointForwardVector, "method", "Sets the forward vector of the given control point.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetControlPointForwardVector( luaL_checkint( L, 2 ), luaL_checkvector( L, 3 ) );
+	pEffect->SetControlPointForwardVector( LuaNewParticle_CheckControlPoint( L, 2 ), luaL_checkvector( L, 3 ) );
 	return 0;
 }
 LUA_BINDING_END()
@@ -248,7 +257,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetControlPointUpVector, "method", "Sets the up vector of the given control point.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetControlPointUpVector( luaL_checkint( L, 2 ), luaL_checkvector( L, 3 ) );
+	pEffect->SetControlPointUpVector( LuaNewParticle_CheckControlPoint( L, 2 ), luaL_checkvector( L, 3 ) );
 	return 0;
 }
 LUA_BINDING_END()
@@ -256,7 +265,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetControlPointRightVector, "method", "Sets the right vector of the given control point.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetControlPointRightVector( luaL_checkint( L, 2 ), luaL_checkvector( L, 3 ) );
+	pEffect->SetControlPointRightVector( LuaNewParticle_CheckControlPoint( L, 2 ), luaL_checkvector( L, 3 ) );
 	return 0;
 }
 LUA_BINDING_END()
@@ -265,7 +274,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetControlPointParent, "method", "Sets the parent control point of the given control point.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetControlPointParent( luaL_checkint( L, 2 ), luaL_checkint( L, 3 ) );
+	pEffect->SetControlPointParent( LuaNewParticle_CheckControlPoint( L, 2 ), LuaNewParticle_CheckControlPoint( L, 3 ) );
 	return 0;
 }
 LUA_BINDING_END()
@@ -274,7 +283,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, AddControlPoint, "method", "Adds a control point that follows the given entity.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	int nPoint = luaL_checkint( L, 2 );
+	int nPoint = LuaNewParticle_CheckControlPoint( L, 2 );
 	CBaseEntity *pEntity = luaL_checkentity( L, 3 );
 	ParticleAttachment_t iAttachType = (ParticleAttachment_t)luaL_checkint( L, 4 );
 	const char *pszAttachment = lua_isnoneornil( L, 5 ) ? NULL : luaL_checkstring( L, 5 );
@@ -351,7 +360,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetShouldDraw, "method", "Sets whether the particle effect is drawn.", "client" )
 {
 	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetDrawn( luaL_checkboolean( L, 2 ) ? true : false );
+	pEffect->SetShouldDraw( luaL_checkboolean( L, 2 ) ? true : false );
 	return 0;
 }
 LUA_BINDING_END()
@@ -447,19 +456,12 @@ LUA_BINDING_BEGIN( CNewParticleEffectReg, GetRenderBounds, "method", "Returns mi
 }
 LUA_BINDING_END()
 
-// Render() -- GMod can force a particle system into the current render
-// context (vgui panels).  This engine has no out-of-band particle render
-// path: systems only draw through the world renderable list, so this is a
-// reported no-op (same precedent as SetIsViewModelEffect above).
-LUA_BINDING_BEGIN( CNewParticleEffectReg, Render, "method", "HL2SB: no manual render path -- particle systems draw through the world render only.", "client" )
+// Manual rendering remains available when automatic rendering is disabled.
+LUA_BINDING_BEGIN( CNewParticleEffectReg, Render, "method", "Renders the particle system using the current render context.", "client" )
 {
-	LuaNewParticle_checkudata( L, 1 );
-	static bool s_bWarned = false;
-	if ( !s_bWarned )
-	{
-		s_bWarned = true;
-		Warning( "[HL2SB] CNewParticleEffect:Render has no manual render path in this engine; systems auto-draw.\n" );
-	}
+	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
+	CMatRenderContextPtr pRenderContext( materials );
+	pEffect->Render( pRenderContext, pEffect->IsTwoPass(), NULL );
 	return 0;
 }
 LUA_BINDING_END()

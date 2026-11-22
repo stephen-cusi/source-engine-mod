@@ -34,6 +34,7 @@
 
 #if defined( _WIN32 )
 #include <windows.h>
+#include <dbghelp.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
@@ -287,96 +288,293 @@ static void HL2SB_EngineLogCrashBlock( const char *pszKind, unsigned int uExcept
 // enough to walk its own stack and write a dump.
 //-----------------------------------------------------------------------------
 
-// MINIDUMP_TYPE: DataSegs | IndirectlyReferencedMemory | ProcessThreadData.
-// Same shape as the engine's own dumps (~29 MB, enough for a usable stack).
-// HL2SB (2026-10-04): set HL2SB_FULL_DUMP=1 in the environment to add
-// MiniDumpWithFullMemory (0x1) - a 1-2 GB dump with the whole heap, for the
-// cross-thread object-lifetime crashes where the faulting object's content
-// is the diagnosis (the audio mixer use-after-free family).
-#define HL2SB_MINIDUMP_TYPE ( 0x00000001 | 0x00000040 | 0x00000100 )
-static DWORD HL2SB_GetMinidumpType( void )
-{
-	static DWORD s_nType = 0;
-	if ( s_nType == 0 )
-	{
-		s_nType = HL2SB_MINIDUMP_TYPE;
-		char szFull[ 8 ] = { 0 };
-		if ( GetEnvironmentVariableA( "HL2SB_FULL_DUMP", szFull, sizeof( szFull ) ) && szFull[ 0 ] == '1' )
-			s_nType |= 0x1;	// MiniDumpWithFullMemory
-	}
-	return s_nType;
-}
+static const DWORD s_nCompactDump = MiniDumpWithDataSegs |
+	MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithProcessThreadData;
+static const DWORD s_nDetailedDump = s_nCompactDump | MiniDumpWithThreadInfo |
+	MiniDumpWithFullMemoryInfo | MiniDumpWithUnloadedModules | MiniDumpWithHandleData |
+	MiniDumpIgnoreInaccessibleMemory;
 
-// CONTEXT names its instruction pointer per architecture.  32-bit x86 has no
-// Rip at all - that is what the win32 CI job failed on (C2039: 'Rip' is not a
-// member of '_CONTEXT').
+typedef decltype(&MiniDumpWriteDump) HL2SB_MiniDumpWriteFn;
+static HL2SB_MiniDumpWriteFn g_pHL2SBDumpWriter = NULL;
+static HMODULE g_hHL2SBDbgHelp = NULL;
+static DWORD g_nHL2SBDumpType = s_nDetailedDump;
+static wchar_t g_szHL2SBDumpDirectory[MAX_PATH];
+static wchar_t g_szHL2SBGameSymbols[MAX_PATH];
+static wchar_t g_szHL2SBEngineSymbols[MAX_PATH];
+static wchar_t g_szHL2SBExtraSymbols[1024];
+
+static HANDLE g_hHL2SBCrashRequest;
+static HANDLE g_hHL2SBCrashNotify;
+static HANDLE g_hHL2SBCrashDumpReady;
+static HANDLE g_hHL2SBCrashDone;
+static HANDLE g_hHL2SBCrashThread;
+static HANDLE g_hHL2SBCrashNotifyThread;
+static volatile LONG g_bHL2SBCrashPending;
+static volatile LONG g_bHL2SBCrashThreadExit;
+static DWORD g_nHL2SBCrashThreadId;
+static DWORD g_nHL2SBCrashNotifyThreadId;
+static volatile LONG g_bHL2SBWritingDump;
+static wchar_t g_szHL2SBCrashDumpPath[MAX_PATH];
+static const DWORD s_nCrashDumpReportWaitMs = 3000;
+
+static struct
+{
+	EXCEPTION_RECORD record;
+	CONTEXT context;
+	const char *reason;
+	char detail[512];
+	DWORD threadId;
+} g_HL2SBCrash;
+
 #if defined( _M_IX86 )
-	#define HL2SB_CONTEXT_IP( pContext )	( (void *)(uintptr_t)( ( pContext )->Eip ) )
+	#define HL2SB_CONTEXT_IP( pContext ) ( (void *)(uintptr_t)( ( pContext )->Eip ) )
 #elif defined( _M_ARM ) || defined( _M_ARM64 )
-	#define HL2SB_CONTEXT_IP( pContext )	( (void *)(uintptr_t)( ( pContext )->Pc ) )
+	#define HL2SB_CONTEXT_IP( pContext ) ( (void *)(uintptr_t)( ( pContext )->Pc ) )
 #else
-	#define HL2SB_CONTEXT_IP( pContext )	( (void *)(uintptr_t)( ( pContext )->Rip ) )
+	#define HL2SB_CONTEXT_IP( pContext ) ( (void *)(uintptr_t)( ( pContext )->Rip ) )
 #endif
 
-//-----------------------------------------------------------------------------
-// Purpose: Write a crash log entry plus a minidump for a CRT abort path.
-//          Called while the process is still alive, so the stack is real.
-//-----------------------------------------------------------------------------
-static void HL2SB_WriteAbortDump( const char *pszReason, const char *pszDetail )
+static bool HL2SB_TryWriteDump( const wchar_t *directory, const wchar_t *kind,
+	MINIDUMP_EXCEPTION_INFORMATION *exception, wchar_t (&path)[MAX_PATH] )
 {
-	// The faulting context, captured while the stack is still intact.
-	CONTEXT ctx;
-	RtlCaptureContext( &ctx );
+	if ( !directory[0] )
+		return false;
 
-	// engine.log first, and with the raw writer: it must not depend on the CRT
-	// heap or on stdio still being usable.
-	HL2SB_EngineLogCrashBlock( pszReason, 0xC0000409, HL2SB_CONTEXT_IP( &ctx ),
-		pszDetail, 3 );
+	CreateDirectoryW( directory, NULL );
+	SYSTEMTIME now;
+	GetLocalTime( &now );
+	if ( _snwprintf_s( path, _countof( path ), _TRUNCATE,
+			L"%ls\\hl2sb_%ls_%04u%02u%02u_%02u%02u%02u_%lu_%llu.mdmp",
+			directory, kind, (unsigned)now.wYear, (unsigned)now.wMonth, (unsigned)now.wDay,
+			(unsigned)now.wHour, (unsigned)now.wMinute, (unsigned)now.wSecond,
+			GetCurrentProcessId(), GetTickCount64() ) < 0 )
+		return false;
 
-	FILE *fp = fopen( "hl2sb_crash.log", "a" );
-	if ( fp )
+	HANDLE output = CreateFileW( path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+		CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL );
+	if ( output == INVALID_HANDLE_VALUE )
+		return false;
+
+	const DWORD types[] = { g_nHL2SBDumpType, s_nDetailedDump, s_nCompactDump, MiniDumpNormal };
+	bool written = false;
+	for ( size_t i = 0; i < _countof( types ); ++i )
 	{
-		fprintf( fp, "\n=== HL2SB Crash (CRT abort) ===\n" );
-		fprintf( fp, "Reason: %s\n", pszReason );
-		if ( pszDetail )
-			fprintf( fp, "Detail: %s\n", pszDetail );
-
-		void *stack[ 96 ];
-		unsigned short frames = RtlCaptureStackBackTrace( 1, 96, stack, NULL );
-		fprintf( fp, "\nStack Trace (%u frames):\n", frames );
-		for ( unsigned int i = 0; i < frames; i++ )
-			fprintf( fp, "  %02u: 0x%p\n", i, stack[ i ] );
-
-		fprintf( fp, "\n=== End Crash ===\n" );
-		fflush( fp );
-		fclose( fp );
+		if ( i && types[i] == types[i - 1] )
+			continue;
+		if ( g_pHL2SBDumpWriter( GetCurrentProcess(), GetCurrentProcessId(), output,
+				(MINIDUMP_TYPE)types[i], exception, NULL, NULL ) )
+		{
+			written = true;
+			break;
+		}
+		if ( SetFilePointer( output, 0, NULL, FILE_BEGIN ) == INVALID_SET_FILE_POINTER ||
+				!SetEndOfFile( output ) )
+			break;
 	}
-
-	// Minidump: build a synthetic exception record around the current context so
-	// the dump has a walkable stack (the fastfail path gives us none).
-	EXCEPTION_RECORD rec;
-	ZeroMemory( &rec, sizeof( rec ) );
-	rec.ExceptionCode = 0xC0000409;				// STATUS_STACK_BUFFER_OVERRUN
-	rec.ExceptionAddress = HL2SB_CONTEXT_IP( &ctx );
-	rec.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
-
-	EXCEPTION_POINTERS info;
-	info.ExceptionRecord = &rec;
-	info.ContextRecord = &ctx;
-
-	WriteMiniDumpUsingExceptionInfo( 0xC0000409, &info, HL2SB_GetMinidumpType(), "abort" );
-
-	Msg( "\n[HL2SB] CRASH (abort): %s%s%s\n", pszReason,
-		pszDetail ? " - " : "", pszDetail ? pszDetail : "" );
-	Msg( "[HL2SB] Crash log: engine.log + hl2sb_crash.log, minidump: dumps/\n" );
-
-	char szBox[ 512 ];
-	Q_snprintf( szBox, sizeof( szBox ),
-		"HL2SB crashed!\n\nReason: %s\n%s\n\nSee engine.log, hl2sb_crash.log and the dumps/ folder.",
-		pszReason, pszDetail ? pszDetail : "" );
-	MessageBoxA( NULL, szBox, "HL2SB Crash", MB_OK | MB_ICONERROR );
+	CloseHandle( output );
+	if ( !written )
+		DeleteFileW( path );
+	return written;
 }
 
+static bool HL2SB_WriteWindowsDump( const wchar_t *kind,
+	MINIDUMP_EXCEPTION_INFORMATION *exception, wchar_t (&path)[MAX_PATH] )
+{
+	path[0] = 0;
+	if ( !g_pHL2SBDumpWriter || InterlockedCompareExchange( &g_bHL2SBWritingDump, 1, 0 ) )
+		return false;
+
+	bool written = HL2SB_TryWriteDump( g_szHL2SBDumpDirectory, kind, exception, path );
+	if ( !written )
+	{
+		wchar_t temporary[MAX_PATH];
+		const DWORD length = GetTempPathW( _countof( temporary ), temporary );
+		if ( length && length < _countof( temporary ) )
+			written = HL2SB_TryWriteDump( temporary, kind, exception, path );
+	}
+
+	InterlockedExchange( &g_bHL2SBWritingDump, 0 );
+	if ( !written )
+		path[0] = 0;
+	return written;
+}
+
+static void HL2SB_ShowCrashReport( const wchar_t *dumpPath, bool dumpPending = false )
+{
+	const void *address = g_HL2SBCrash.record.ExceptionAddress;
+	MEMORY_BASIC_INFORMATION mapping = {};
+	wchar_t module[MAX_PATH] = L"(unknown)";
+	uintptr_t offset = 0;
+	if ( VirtualQuery( address, &mapping, sizeof( mapping ) ) && mapping.Type == MEM_IMAGE )
+	{
+		offset = (uintptr_t)address - (uintptr_t)mapping.AllocationBase;
+		// If DbgHelp is stalled, it may hold or be waiting on the loader lock.
+		if ( !dumpPending )
+		{
+			const DWORD length = GetModuleFileNameW( (HMODULE)mapping.AllocationBase, module, _countof( module ) );
+			if ( !length || length >= _countof( module ) )
+				wcscpy_s( module, L"(unknown)" );
+		}
+	}
+	wchar_t pending[MAX_PATH + 160];
+	const wchar_t *dumpStatus = dumpPath[0] ? dumpPath : L"Could not write a dump. Check Windows Error Reporting.";
+	if ( dumpPending )
+	{
+		_snwprintf_s( pending, _countof( pending ), _TRUNCATE,
+			L"Writing has not finished. Any dump file may be incomplete.\r\nDump folder: %ls",
+			g_szHL2SBDumpDirectory[0] ? g_szHL2SBDumpDirectory : L"%TEMP%" );
+		dumpStatus = pending;
+	}
+	wchar_t reason[128] = {};
+	wchar_t detail[512] = {};
+	MultiByteToWideChar( CP_ACP, 0, g_HL2SBCrash.reason, -1, reason, _countof( reason ) );
+	MultiByteToWideChar( CP_ACP, 0, g_HL2SBCrash.detail, -1, detail, _countof( detail ) );
+	wchar_t message[3072];
+	_snwprintf_s( message, _countof( message ), _TRUNCATE,
+		L"HL2SB stopped unexpectedly.\r\n\r\n%ls%ls%ls\r\n"
+		L"Exception: 0x%08lX\r\nAddress: 0x%p (module offset 0x%llX)\r\n"
+		L"Module: %ls\r\nThread: %lu\r\n\r\nDump: %ls\r\n\r\n"
+		L"PDB lookup folders:\r\n%ls\r\n%ls%ls%ls",
+		reason, detail[0] ? L"\r\n" : L"", detail,
+		g_HL2SBCrash.record.ExceptionCode, address, (unsigned long long)offset, module,
+		g_HL2SBCrash.threadId, dumpStatus,
+		g_szHL2SBGameSymbols, g_szHL2SBEngineSymbols,
+		g_szHL2SBExtraSymbols[0] ? L"\r\n_NT_SYMBOL_PATH: " : L"", g_szHL2SBExtraSymbols );
+
+	wchar_t crashLog[MAX_PATH];
+	HANDLE log = INVALID_HANDLE_VALUE;
+	if ( g_szHL2SBDumpDirectory[0] && _snwprintf_s( crashLog, _countof( crashLog ), _TRUNCATE,
+			L"%ls\\..\\hl2sb_crash.log", g_szHL2SBDumpDirectory ) >= 0 )
+	{
+		log = CreateFileW( crashLog, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+			NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL );
+	}
+	if ( log != INVALID_HANDLE_VALUE )
+	{
+		char utf8[sizeof( message ) * 2];
+		const int n = WideCharToMultiByte( CP_UTF8, 0, message, -1, utf8, sizeof( utf8 ), NULL, NULL );
+		if ( n > 1 )
+		{
+			DWORD written;
+			WriteFile( log, utf8, (DWORD)n - 1, &written, NULL );
+			WriteFile( log, "\r\n\r\n", 4, &written, NULL );
+		}
+		CloseHandle( log );
+	}
+
+	MessageBoxW( NULL, message, L"HL2SB Crash Report", MB_OK | MB_ICONERROR | MB_SETFOREGROUND );
+}
+
+static void HL2SB_CheckHang();
+
+static DWORD WINAPI HL2SB_CrashReporterThread( LPVOID module )
+{
+	for ( ;; )
+	{
+		const DWORD wait = WaitForSingleObject( g_hHL2SBCrashRequest, 2000 );
+		if ( InterlockedCompareExchange( &g_bHL2SBCrashThreadExit, 0, 0 ) )
+			break;
+		if ( wait == WAIT_TIMEOUT )
+		{
+			HL2SB_CheckHang();
+			continue;
+		}
+		if ( wait != WAIT_OBJECT_0 )
+			break;
+
+		hl2sb_loghandle_t log = HL2SB_EngineLogOpen();
+		HL2SB_EngineLogLine( log, "begin kind=%s code=0x%08lX address=%p thread=%lu",
+			g_HL2SBCrash.reason, g_HL2SBCrash.record.ExceptionCode,
+			g_HL2SBCrash.record.ExceptionAddress, g_HL2SBCrash.threadId );
+		HL2SB_EngineLogClose( log );
+
+		// DbgHelp needs the original thread id and context, not this worker's.
+		EXCEPTION_POINTERS pointers = { &g_HL2SBCrash.record, &g_HL2SBCrash.context };
+		MINIDUMP_EXCEPTION_INFORMATION info = { g_HL2SBCrash.threadId, &pointers, FALSE };
+		HL2SB_WriteWindowsDump( L"crash", &info, g_szHL2SBCrashDumpPath );
+		if ( g_hHL2SBCrashDumpReady )
+			SetEvent( g_hHL2SBCrashDumpReady );
+		log = HL2SB_EngineLogOpen();
+		HL2SB_EngineLogLine( log, "dump=%s", g_szHL2SBCrashDumpPath[0] ? "written (see hl2sb_crash.log)" : "write failed" );
+		HL2SB_EngineLogLine( log, "end" );
+		HL2SB_EngineLogClose( log );
+		break;
+	}
+
+	FreeLibraryAndExitThread( (HMODULE)module, 0 );
+}
+
+static DWORD WINAPI HL2SB_CrashNotifyThread( LPVOID module )
+{
+	if ( WaitForSingleObject( g_hHL2SBCrashNotify, INFINITE ) == WAIT_OBJECT_0 &&
+		!InterlockedCompareExchange( &g_bHL2SBCrashThreadExit, 0, 0 ) )
+	{
+		const DWORD result = WaitForSingleObject( g_hHL2SBCrashDumpReady, s_nCrashDumpReportWaitMs );
+		if ( !InterlockedCompareExchange( &g_bHL2SBCrashThreadExit, 0, 0 ) )
+		{
+			const bool ready = result == WAIT_OBJECT_0;
+			// The writer can still be updating the path when the wait expires.
+			HL2SB_ShowCrashReport( ready ? g_szHL2SBCrashDumpPath : L"", !ready );
+			SetEvent( g_hHL2SBCrashDone );
+		}
+	}
+	FreeLibraryAndExitThread( (HMODULE)module, 0 );
+}
+
+static void HL2SB_ReportCrash( const char *reason, const char *detail, EXCEPTION_POINTERS *exception )
+{
+	if ( !exception || !exception->ExceptionRecord || !exception->ContextRecord )
+		return;
+	const DWORD threadId = GetCurrentThreadId();
+	if ( threadId == g_nHL2SBCrashThreadId || threadId == g_nHL2SBCrashNotifyThreadId )
+		return;
+	if ( InterlockedCompareExchange( &g_bHL2SBCrashPending, 1, 0 ) )
+	{
+		// A second fatal exception should not tear down the process while
+		// the first is still writing. Do not wait on reentry on that thread.
+		if ( g_hHL2SBCrashThread && threadId != g_HL2SBCrash.threadId )
+			WaitForSingleObject( g_hHL2SBCrashDone, 60000 );
+		return;
+	}
+	// Keep this capture valid even if the reporting wait times out.
+	g_HL2SBCrash.record = *exception->ExceptionRecord;
+	g_HL2SBCrash.record.ExceptionRecord = NULL;
+	g_HL2SBCrash.context = *exception->ContextRecord;
+	g_HL2SBCrash.reason = reason;
+	g_HL2SBCrash.threadId = threadId;
+	strncpy_s( g_HL2SBCrash.detail, detail ? detail : "", _TRUNCATE );
+
+	if ( g_hHL2SBCrashThread )
+		SetEvent( g_hHL2SBCrashRequest );
+	if ( g_hHL2SBCrashNotifyThread )
+	{
+		SetEvent( g_hHL2SBCrashNotify );
+		WaitForSingleObject( g_hHL2SBCrashDone, 60000 );
+	}
+	else
+	{
+		// Startup may have failed to create a worker. Never run DbgHelp
+		// synchronously on the exception thread.
+		const bool ready = g_hHL2SBCrashThread && g_hHL2SBCrashDumpReady &&
+			WaitForSingleObject( g_hHL2SBCrashDumpReady, s_nCrashDumpReportWaitMs ) == WAIT_OBJECT_0;
+		if ( g_HL2SBCrash.record.ExceptionCode != EXCEPTION_STACK_OVERFLOW )
+			HL2SB_ShowCrashReport( ready ? g_szHL2SBCrashDumpPath : L"", g_hHL2SBCrashThread && !ready );
+		if ( g_hHL2SBCrashDone )
+			SetEvent( g_hHL2SBCrashDone );
+	}
+}
+
+static void HL2SB_WriteAbortDump( const char *reason, const char *detail )
+{
+	CONTEXT context;
+	RtlCaptureContext( &context );
+	EXCEPTION_RECORD record = {};
+	record.ExceptionCode = 0xC0000409;
+	record.ExceptionAddress = HL2SB_CONTEXT_IP( &context );
+	record.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
+	EXCEPTION_POINTERS pointers = { &record, &context };
+	HL2SB_ReportCrash( reason, detail, &pointers );
+}
 //-----------------------------------------------------------------------------
 // SIGABRT -- the ONLY in-process hook that fires for a bare abort().
 //
@@ -406,7 +604,7 @@ static void __cdecl HL2SB_SigabrtHandler( int )
 static void __cdecl HL2SB_TerminateHandler( void )
 {
 	HL2SB_WriteAbortDump( "std::terminate (unhandled C++ exception)", NULL );
-	abort();
+	_exit( 3 );
 }
 
 //-----------------------------------------------------------------------------
@@ -446,7 +644,7 @@ static void __cdecl HL2SB_PurecallHandler( void )
 		_exit( 3 );
 
 	HL2SB_WriteAbortDump( "pure virtual function call", NULL );
-	abort();
+	_exit( 3 );
 }
 
 //-----------------------------------------------------------------------------
@@ -464,150 +662,46 @@ static void __cdecl HL2SB_PurecallHandler( void )
 //-----------------------------------------------------------------------------
 static FnMiniDump g_pHL2SBInnerMiniDumpFunction = NULL;
 
-// 2026-09-19 gmod_camera crash: a pure virtual call made the engine's VPureCall
-// write a minidump; the dump writer's own printf/malloc path raised ANOTHER
-// purecall, re-entering this chain - 17 x 30MB dumps in 2 seconds (the "freeze"),
-// every engine.log block capturing only the recursion, the original caller lost.
-// Re-entries skip everything so the first entry's capture stays clean and dies fast.
-static volatile LONG g_bHL2SBMiniDumpChainActive = 0;
-
-static void __cdecl HL2SB_MiniDumpChain( unsigned int uStructuredExceptionCode,
-	_EXCEPTION_POINTERS *pExceptionInfo, const char *pszFilenameSuffix )
+static void __cdecl HL2SB_MiniDumpChain( unsigned int code, EXCEPTION_POINTERS *exception,
+	const char *suffix )
 {
-	if ( InterlockedCompareExchange( &g_bHL2SBMiniDumpChainActive, 1, 0 ) != 0 )
+	// WriteMiniDump (diagnostic/assert/long tick) synthesizes a breakpoint.
+	// Preserve that path independently of the terminal exception reports.
+	if ( code == EXCEPTION_BREAKPOINT || !exception || !exception->ContextRecord )
+	{
+		static volatile LONG writingDiagnostic = 0;
+		if ( InterlockedCompareExchange( &writingDiagnostic, 1, 0 ) )
+			return;
+		if ( g_pHL2SBInnerMiniDumpFunction )
+			g_pHL2SBInnerMiniDumpFunction( code, exception, suffix );
+		InterlockedExchange( &writingDiagnostic, 0 );
 		return;
-
-	const void *pAddress = NULL;
-	if ( pExceptionInfo && pExceptionInfo->ExceptionRecord )
-		pAddress = pExceptionInfo->ExceptionRecord->ExceptionAddress;
-
-	HL2SB_EngineLogCrashBlock( "minidump", uStructuredExceptionCode, pAddress,
-		pszFilenameSuffix, 3 );
-
-	if ( g_pHL2SBInnerMiniDumpFunction )
-		g_pHL2SBInnerMiniDumpFunction( uStructuredExceptionCode, pExceptionInfo, pszFilenameSuffix );
-
-	g_bHL2SBMiniDumpChainActive = 0;
+	}
+	if ( !g_pHL2SBDumpWriter && g_pHL2SBInnerMiniDumpFunction )
+		g_pHL2SBInnerMiniDumpFunction( code, exception, suffix );
+	HL2SB_ReportCrash( "Engine exception", suffix, exception );
 }
 
-//-----------------------------------------------------------------------------
-// Purpose: The last net - a vectored (first-chance) handler for the non-continuable
-//		 codes that reach neither the CRT hooks above nor SetUnhandledExceptionFilter.
-//		 ntdll's heap manager reports corruption, and __fastfail(), by raising
-//		 STATUS_STACK_BUFFER_OVERRUN / STATUS_HEAP_CORRUPTION straight through the
-//		 exception dispatch; the process can then be torn down before the unhandled
-//		 filter ever runs.  The field symptom of exactly that is engine.log simply
-//		 stopping mid-sentence with no minidump and no hl2sb_crash.log entry.
-//		 Vectored handlers run before SEH, so this sees it while the stacks are
-//		 still intact and the raw engine.log writer still works.
-//-----------------------------------------------------------------------------
-#ifndef STATUS_HEAP_CORRUPTION
-	#define STATUS_HEAP_CORRUPTION		( (DWORD)0xC0000374 )
-#endif
-#ifndef STATUS_STACK_BUFFER_OVERRUN
-	#define STATUS_STACK_BUFFER_OVERRUN	( (DWORD)0xC0000409 )
-#endif
-#ifndef STATUS_ASSERTION_FAILURE
-	#define STATUS_ASSERTION_FAILURE	( (DWORD)0xC0000420 )
-#endif
-
-static volatile LONG g_bHL2SBVehFired = 0;
-
-static LONG CALLBACK HL2SB_VectoredHandler( PEXCEPTION_POINTERS pExceptionInfo )
+// A direct CPU fast-fail does not enter user-mode handlers. If Windows does
+// dispatch a noncontinuable heap/fast-fail exception, capture it before SEH.
+static LONG CALLBACK HL2SB_VectoredHandler( PEXCEPTION_POINTERS exception )
 {
-	if ( !pExceptionInfo || !pExceptionInfo->ExceptionRecord )
-		return EXCEPTION_CONTINUE_SEARCH;
-
-	const DWORD code = pExceptionInfo->ExceptionRecord->ExceptionCode;
-
-	// First-chance dispatch sees plenty of benign exceptions; only these few are
-	// process-ending and get past the other hooks.
-	if ( code != STATUS_STACK_BUFFER_OVERRUN
-	  && code != STATUS_HEAP_CORRUPTION
-	  && code != STATUS_ASSERTION_FAILURE
-	  && code != EXCEPTION_STACK_OVERFLOW )
+	if ( exception && exception->ExceptionRecord &&
+			( exception->ExceptionRecord->ExceptionFlags & EXCEPTION_NONCONTINUABLE ) )
 	{
-		return EXCEPTION_CONTINUE_SEARCH;
+		const DWORD code = exception->ExceptionRecord->ExceptionCode;
+		if ( code == 0xC0000374 || code == 0xC0000409 )
+			HL2SB_ReportCrash( "Noncontinuable Windows exception", NULL, exception );
 	}
-
-	if ( InterlockedCompareExchange( &g_bHL2SBVehFired, 1, 0 ) != 0 )
-		return EXCEPTION_CONTINUE_SEARCH;	// already reported in this process
-
-	// engine.log only, deliberately: no Msg()/Warning() (they allocate, and the heap
-	// may be the thing that just died) and no MessageBox (it would block teardown).
-	HL2SB_EngineLogCrashBlock( "veh fastfail/heap", (unsigned int)code,
-		pExceptionInfo->ExceptionRecord->ExceptionAddress, NULL, 0 );
-
-	// A stack overflow has no stack left to run a dump writer on; the log block is
-	// all it can get.  For the others, write a real minidump.
-	if ( code != EXCEPTION_STACK_OVERFLOW )
-	{
-		WriteMiniDumpUsingExceptionInfo( (unsigned int)code, pExceptionInfo,
-			HL2SB_GetMinidumpType(), "veh" );
-	}
-
-	return EXCEPTION_CONTINUE_SEARCH;	// let the normal teardown / WER run as well
+	return EXCEPTION_CONTINUE_SEARCH;
 }
 
-static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS lpExceptionInfo )
+static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS exception )
 {
-	// engine.log first (raw append, no CRT): this is the one place that always
-	// has a home, whatever happens to the CRT or to the dumps/ folder.
-	HL2SB_EngineLogCrashBlock( "SEH unhandled exception",
-		(unsigned int)lpExceptionInfo->ExceptionRecord->ExceptionCode,
-		lpExceptionInfo->ExceptionRecord->ExceptionAddress,
-		NULL, 3 );
-
-	char szLogPath[MAX_PATH];
-	Q_snprintf( szLogPath, sizeof(szLogPath), "hl2sb_crash.log" );
-
-	// Write crash info to log
-	FILE *fp = fopen( szLogPath, "a" );
-	if ( fp )
-	{
-		fprintf( fp, "\n=== HL2SB Crash ===\n" );
-		fprintf( fp, "Exception Code: 0x%08X\n", (unsigned int)lpExceptionInfo->ExceptionRecord->ExceptionCode );
-		fprintf( fp, "Exception Address: 0x%p\n", lpExceptionInfo->ExceptionRecord->ExceptionAddress );
-		fprintf( fp, "Exception Flags: %u\n", lpExceptionInfo->ExceptionRecord->ExceptionFlags );
-		fprintf( fp, "Number Parameters: %u\n", lpExceptionInfo->ExceptionRecord->NumberParameters );
-		
-		// Capture stack
-		void *stack[64];
-		unsigned short frames = RtlCaptureStackBackTrace( 1, 64, stack, NULL );
-		
-		fprintf( fp, "\nStack Trace (%u frames):\n", frames );
-		for ( unsigned int i = 0; i < frames; i++ )
-		{
-			fprintf( fp, "  %02u: 0x%p\n", i, stack[i] );
-		}
-		
-		fprintf( fp, "\n=== End Crash ===\n" );
-		fclose( fp );
-	}
-
-	// A real minidump for SEH-reachable exceptions too.
-	WriteMiniDumpUsingExceptionInfo(
-		(unsigned int)lpExceptionInfo->ExceptionRecord->ExceptionCode,
-		lpExceptionInfo, HL2SB_GetMinidumpType(), "hl2sb" );
-
-	// Also write to console
-	Msg( "\n[HL2SB] CRASH DETECTED! Exception 0x%08X at 0x%p\n", 
-		(unsigned int)lpExceptionInfo->ExceptionRecord->ExceptionCode,
-		lpExceptionInfo->ExceptionRecord->ExceptionAddress );
-	Warning( "[HL2SB] Crash written to engine.log (%s) and hl2sb_crash.log\n", HL2SB_ENGINE_LOG_NAME );
-	
-	// Show message box
-#ifdef _WIN32
-	MessageBoxA( NULL, 
-		"HL2SB crashed!\nCheck engine.log / hl2sb_crash.log for details.", 
-		"HL2SB Crash", 
-		MB_OK | MB_ICONERROR );
-#endif
-	
-	// Return EXCEPTION_EXECUTE_HANDLER to terminate gracefully
-	return EXCEPTION_EXECUTE_HANDLER;
+	HL2SB_ReportCrash( "Unhandled Windows exception", NULL, exception );
+	// Allow Windows Error Reporting to recover the report if our writer failed.
+	return EXCEPTION_CONTINUE_SEARCH;
 }
-
 //-----------------------------------------------------------------------------
 // Purpose: Hang watchdog.  Every exception path above needs an exception; a deadlock
 //		 or an infinite loop produces none, and the field symptom is exactly that:
@@ -618,7 +712,6 @@ static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS lpExceptionInfo )
 //-----------------------------------------------------------------------------
 static volatile LONG64 g_llHL2SBAliveTick = 0;
 static volatile LONG	 g_bHL2SBHangDumped = 0;
-static volatile LONG	 g_bHL2SBWatchdogExit = 0;
 
 #define HL2SB_HANG_TIMEOUT_MS ( 30 * 1000 )	// longer than any legitimate level load
 
@@ -627,59 +720,21 @@ void HL2SB_NotifyAlive( void )
 	InterlockedExchange64( &g_llHL2SBAliveTick, (LONG64)GetTickCount64() );
 }
 
-static DWORD WINAPI HL2SB_HangWatchdogThread( LPVOID pArg )
+static void HL2SB_CheckHang()
 {
-	( void )pArg;
+	const LONG64 alive = InterlockedCompareExchange64( &g_llHL2SBAliveTick, 0, 0 );
+	if ( !alive || InterlockedCompareExchange( &g_bHL2SBCrashPending, 0, 0 ) )
+		return;
 
-	for (;;)
-	{
-		Sleep( 2000 );
+	const LONG64 silent = (LONG64)GetTickCount64() - alive;
+	if ( silent < HL2SB_HANG_TIMEOUT_MS || InterlockedCompareExchange( &g_bHL2SBHangDumped, 1, 0 ) )
+		return;
 
-		if ( g_bHL2SBWatchdogExit )
-			return 0;							// DLL is shutting down; never touch freed code
-
-		LONG64 llAlive = InterlockedCompareExchange64( &g_llHL2SBAliveTick, 0, 0 );
-		if ( llAlive == 0 )
-			continue;							// never ticked: still in the first load
-
-		LONG64 llSilent = (LONG64)GetTickCount64() - llAlive;
-		if ( llSilent < HL2SB_HANG_TIMEOUT_MS )
-			continue;
-
-		if ( InterlockedCompareExchange( &g_bHL2SBHangDumped, 1, 0 ) != 0 )
-			continue;							// one report per process
-
-		HL2SB_EngineLogCrashBlock( "hang-watchdog", (unsigned int)llSilent, NULL,
-			"no rendered frame for this long", 0 );
-
-		HMODULE hDbgHelp = LoadLibrary( "dbghelp.dll" );
-		if ( hDbgHelp )
-		{
-			typedef int (WINAPI *MiniDumpWriteDumpFn)( void *, unsigned long, void *,
-				unsigned long, void *, void *, void * );
-			MiniDumpWriteDumpFn pfnWrite = (MiniDumpWriteDumpFn)GetProcAddress( hDbgHelp, "MiniDumpWriteDump" );
-			if ( pfnWrite )
-			{
-				CreateDirectoryA( "dumps", NULL );
-
-				char szPath[ 260 ];
-				Q_snprintf( szPath, sizeof( szPath ), "dumps\\hl2sb_hang_%lu.mdmp", GetTickCount() );
-
-				HANDLE hFile = CreateFileA( szPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-					FILE_ATTRIBUTE_NORMAL, NULL );
-				if ( hFile != INVALID_HANDLE_VALUE )
-				{
-					pfnWrite( GetCurrentProcess(), GetCurrentProcessId(), hFile,
-						HL2SB_GetMinidumpType(), NULL, NULL, NULL );
-					CloseHandle( hFile );
-				}
-			}
-		}
-
-		return 0;
-	}
+	HL2SB_EngineLogCrashBlock( "hang-watchdog", (unsigned int)silent, NULL,
+		"no rendered frame for this long", 0 );
+	wchar_t dumpPath[MAX_PATH];
+	HL2SB_WriteWindowsDump( L"hang", NULL, dumpPath );
 }
-
 // Everything registered below is process-global but lives in this DLL's image.
 // The engine unloads client.dll during shutdown while these hooks stay
 // registered: the next exception - even the benign first-chance thread-exit
@@ -695,25 +750,130 @@ static terminate_handler g_pHL2SBPrevTerminate = NULL;
 static _invalid_parameter_handler g_pHL2SBPrevInvalidParameter = NULL;
 static _purecall_handler g_pHL2SBPrevPurecall = NULL;
 static void ( __cdecl *g_pHL2SBPrevSigabrt )( int ) = NULL;
-static HANDLE g_hHL2SBWatchdogThread = NULL;
 static bool g_bHL2SBCrashHandlerInstalled = false;
 
+static HANDLE HL2SB_StartCrashReporterThread( LPTHREAD_START_ROUTINE start, DWORD *threadId )
+{
+	// Keep the client DLL mapped if DbgHelp or the dialog outlives shutdown.
+	HMODULE module = NULL;
+	if ( !GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)start, &module ) )
+		return NULL;
+	HANDLE thread = CreateThread( NULL, 0, start, module, 0, threadId );
+	if ( !thread )
+		FreeLibrary( module );
+	return thread;
+}
+
+static void HL2SB_InitCrashReporter()
+{
+	if ( g_hHL2SBCrashThread )
+		return;
+	wchar_t rawGameDirectory[MAX_PATH] = {};
+	const char *game = engine ? engine->GetGameDirectory() : NULL;
+	if ( game && MultiByteToWideChar( CP_ACP, 0, game, -1, rawGameDirectory, _countof( rawGameDirectory ) ) )
+	{
+		wchar_t gameDirectory[MAX_PATH];
+		const DWORD length = GetFullPathNameW( rawGameDirectory, _countof( gameDirectory ), gameDirectory, NULL );
+		if ( length && length < _countof( gameDirectory ) )
+		{
+			_snwprintf_s( g_szHL2SBDumpDirectory, _countof( g_szHL2SBDumpDirectory ), _TRUNCATE,
+				L"%ls\\dumps", gameDirectory );
+			_snwprintf_s( g_szHL2SBGameSymbols, _countof( g_szHL2SBGameSymbols ), _TRUNCATE,
+				L"%ls\\bin", gameDirectory );
+		}
+	}
+	const DWORD exeLength = GetModuleFileNameW( NULL, g_szHL2SBEngineSymbols, _countof( g_szHL2SBEngineSymbols ) );
+	if ( exeLength && exeLength < _countof( g_szHL2SBEngineSymbols ) )
+	{
+		wchar_t *separator = wcsrchr( g_szHL2SBEngineSymbols, L'\\' );
+		if ( separator )
+			wcscpy_s( separator, _countof( g_szHL2SBEngineSymbols ) - ( separator - g_szHL2SBEngineSymbols ), L"\\bin" );
+	}
+	else
+		g_szHL2SBEngineSymbols[0] = 0;
+	GetEnvironmentVariableW( L"_NT_SYMBOL_PATH", g_szHL2SBExtraSymbols, _countof( g_szHL2SBExtraSymbols ) );
+	wchar_t full[8] = {};
+	const DWORD fullLength = GetEnvironmentVariableW( L"HL2SB_FULL_DUMP", full, _countof( full ) );
+	g_nHL2SBDumpType = s_nDetailedDump;
+	if ( fullLength == 1 && full[0] == L'1' )
+		g_nHL2SBDumpType |= MiniDumpWithFullMemory;
+
+	// Load outside the fault path, when the process and loader lock are healthy.
+	g_hHL2SBDbgHelp = LoadLibraryExW( L"dbghelp.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32 );
+	if ( g_hHL2SBDbgHelp )
+		g_pHL2SBDumpWriter = (HL2SB_MiniDumpWriteFn)GetProcAddress( g_hHL2SBDbgHelp, "MiniDumpWriteDump" );
+
+	InterlockedExchange( &g_bHL2SBCrashThreadExit, 0 );
+	InterlockedExchange( &g_bHL2SBCrashPending, 0 );
+	g_szHL2SBCrashDumpPath[0] = 0;
+	g_hHL2SBCrashDone = CreateEventW( NULL, TRUE, FALSE, NULL );
+	g_hHL2SBCrashRequest = CreateEventW( NULL, FALSE, FALSE, NULL );
+	g_hHL2SBCrashDumpReady = CreateEventW( NULL, TRUE, FALSE, NULL );
+	g_hHL2SBCrashNotify = CreateEventW( NULL, FALSE, FALSE, NULL );
+	if ( g_hHL2SBCrashDone && g_hHL2SBCrashRequest )
+		g_hHL2SBCrashThread = HL2SB_StartCrashReporterThread( HL2SB_CrashReporterThread, &g_nHL2SBCrashThreadId );
+	if ( g_hHL2SBCrashThread && g_hHL2SBCrashDumpReady && g_hHL2SBCrashNotify )
+		g_hHL2SBCrashNotifyThread = HL2SB_StartCrashReporterThread( HL2SB_CrashNotifyThread, &g_nHL2SBCrashNotifyThreadId );
+
+	// The guarantee is per-thread. The main thread is the one installing us.
+	ULONG stackBytes = 32 * 1024;
+	SetThreadStackGuarantee( &stackBytes );
+}
+
+static void HL2SB_StopCrashReporter()
+{
+	HANDLE workers[2];
+	DWORD count = 0;
+	if ( g_hHL2SBCrashThread )
+		workers[count++] = g_hHL2SBCrashThread;
+	if ( g_hHL2SBCrashNotifyThread )
+		workers[count++] = g_hHL2SBCrashNotifyThread;
+	if ( count )
+	{
+		InterlockedExchange( &g_bHL2SBCrashThreadExit, 1 );
+		SetEvent( g_hHL2SBCrashRequest );
+		SetEvent( g_hHL2SBCrashDone );
+		if ( g_hHL2SBCrashNotifyThread )
+		{
+			SetEvent( g_hHL2SBCrashNotify );
+			SetEvent( g_hHL2SBCrashDumpReady );
+		}
+		if ( WaitForMultipleObjects( count, workers, TRUE, 5000 ) != WAIT_OBJECT_0 )
+			return; // A worker may still need the handles and owns a DLL reference.
+		for ( DWORD i = 0; i < count; ++i )
+			CloseHandle( workers[i] );
+		g_hHL2SBCrashThread = NULL;
+		g_hHL2SBCrashNotifyThread = NULL;
+		g_nHL2SBCrashThreadId = 0;
+		g_nHL2SBCrashNotifyThreadId = 0;
+	}
+	if ( g_hHL2SBCrashRequest )
+		CloseHandle( g_hHL2SBCrashRequest );
+	if ( g_hHL2SBCrashDone )
+		CloseHandle( g_hHL2SBCrashDone );
+	if ( g_hHL2SBCrashDumpReady )
+		CloseHandle( g_hHL2SBCrashDumpReady );
+	if ( g_hHL2SBCrashNotify )
+		CloseHandle( g_hHL2SBCrashNotify );
+	g_hHL2SBCrashRequest = g_hHL2SBCrashDone = NULL;
+	g_hHL2SBCrashDumpReady = g_hHL2SBCrashNotify = NULL;
+	g_pHL2SBDumpWriter = NULL;
+	if ( g_hHL2SBDbgHelp )
+		FreeLibrary( g_hHL2SBDbgHelp );
+	g_hHL2SBDbgHelp = NULL;
+}
 void HL2SB_InstallCrashHandler( void )
 {
 	if ( g_bHL2SBCrashHandlerInstalled )
 		return;
 
+	HL2SB_InitCrashReporter();
 	g_pHL2SBPrevFilter = SetUnhandledExceptionFilter( HL2SB_ExceptionFilter );
 
 	// First-chance net: __fastfail / heap corruption / stack overflow never reach the
 	// filter above, and without this the process just vanishes with engine.log
 	// stopping mid-sentence and no dump anywhere.
 	g_pHL2SBVehHandle = AddVectoredExceptionHandler( 1, HL2SB_VectoredHandler );
-
-	// Hang net: a deadlock or an infinite loop raises no exception, so nothing above
-	// would ever fire - watch the main thread's ticks instead.
-	g_bHL2SBWatchdogExit = 0;
-	g_hHL2SBWatchdogThread = CreateThread( NULL, 0, HL2SB_HangWatchdogThread, NULL, 0, NULL );
 
 	// The abort paths that never reach the filter above.
 	g_pHL2SBPrevTerminate = std::set_terminate( HL2SB_TerminateHandler );
@@ -750,16 +910,6 @@ void HL2SB_UninstallCrashHandler( void )
 	SetUnhandledExceptionFilter( g_pHL2SBPrevFilter );
 	g_pHL2SBPrevFilter = NULL;
 
-	// Stop the watchdog before the unload: it never exits on its own and would
-	// wake up inside freed code on its next two-second tick.
-	if ( g_hHL2SBWatchdogThread )
-	{
-		InterlockedExchange( &g_bHL2SBWatchdogExit, 1 );
-		WaitForSingleObject( g_hHL2SBWatchdogThread, 5000 );
-		CloseHandle( g_hHL2SBWatchdogThread );
-		g_hHL2SBWatchdogThread = NULL;
-	}
-
 	std::set_terminate( g_pHL2SBPrevTerminate );
 	g_pHL2SBPrevTerminate = NULL;
 	_set_invalid_parameter_handler( g_pHL2SBPrevInvalidParameter );
@@ -771,6 +921,7 @@ void HL2SB_UninstallCrashHandler( void )
 
 	SetMiniDumpFunction( g_pHL2SBInnerMiniDumpFunction );
 	g_pHL2SBInnerMiniDumpFunction = NULL;
+	HL2SB_StopCrashReporter();
 
 	Msg( "[HL2SB] Crash handler removed (client.dll unload pending)\n" );
 }

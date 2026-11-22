@@ -535,6 +535,7 @@ void CNPC_RollerMine::Precache( void )
 //-----------------------------------------------------------------------------
 void CNPC_RollerMine::Spawn( void )
 {
+	m_bHackedByAlyx = HasSpawnFlags( 1 << 18 );
 	Precache();
 
 	SetSolid( SOLID_VPHYSICS );
@@ -546,6 +547,8 @@ void CNPC_RollerMine::Spawn( void )
 
 	CapabilitiesClear();
 	CapabilitiesAdd( bits_CAP_MOVE_GROUND | bits_CAP_INNATE_RANGE_ATTACK1 | bits_CAP_SQUAD );
+	if ( m_bHackedByAlyx )
+		GetEnemies()->SetFreeKnowledgeDuration( 30.0f );
 
 	m_pRollSound = NULL;
 

@@ -731,6 +731,9 @@ public:
 	virtual ClientShadowHandle_t CreateFlashlight( const FlashlightState_t &lightState );
 	virtual void UpdateFlashlightState( ClientShadowHandle_t shadowHandle, const FlashlightState_t &lightState );
 	virtual void DestroyFlashlight( ClientShadowHandle_t shadowHandle );
+	void SetProjectedTextureOptions( ClientShadowHandle_t handle, bool ortho, float left, float top,
+		float right, float bottom, bool noCull, bool skipShadowUpdates );
+	void SetProjectedTextureSuppressed( ClientShadowHandle_t handle, bool suppressed );
 
 	// Update a shadow
 	virtual void UpdateProjectedTexture( ClientShadowHandle_t handle, bool force );
@@ -825,6 +828,11 @@ private:
 		CTextureReference		m_ShadowDepthTexture;
 		int						m_nRenderFrame;
 		EHANDLE					m_hTargetEntity;
+		bool					m_bProjectedOrtho;
+		bool					m_bProjectedNoCull;
+		bool					m_bProjectedSkipShadowUpdates;
+		bool					m_bProjectedSuppressed;
+		float				m_flProjectedLeft, m_flProjectedTop, m_flProjectedRight, m_flProjectedBottom;
 	};
 
 private:
@@ -1320,8 +1328,9 @@ bool CClientShadowMgr::Init()
 
 	SetShadowBlobbyCutoffArea( 0.005 );
 
-	bool bTools = CommandLine()->CheckParm( "-tools" ) != NULL;
-	m_nMaxDepthTextureShadows = bTools ? 4 : 1;	// Just one shadow depth texture in games, more in tools
+	m_nMaxDepthTextureShadows = g_pMaterialSystemHardwareConfig->GetDXSupportLevel() <= 80 ? 1 : 8;
+	if ( CommandLine()->CheckParm( "-numshadowtextures" ) )
+		m_nMaxDepthTextureShadows = CommandLine()->ParmValue( "-numshadowtextures", 8 );
 
 	bool bLowEnd = ( g_pMaterialSystemHardwareConfig->GetDXSupportLevel() < 80 );
 
@@ -1847,6 +1856,12 @@ ClientShadowHandle_t CClientShadowMgr::CreateProjectedTexture( ClientEntityHandl
 	shadow.m_ClientLeafShadowHandle = ClientLeafSystem()->AddShadow( h, flags );
 	shadow.m_Flags = flags;
 	shadow.m_nRenderFrame = -1;
+	shadow.m_bProjectedOrtho = false;
+	shadow.m_bProjectedNoCull = false;
+	shadow.m_bProjectedSkipShadowUpdates = false;
+	shadow.m_bProjectedSuppressed = false;
+	shadow.m_flProjectedLeft = shadow.m_flProjectedTop = 0.0f;
+	shadow.m_flProjectedRight = shadow.m_flProjectedBottom = 0.0f;
 	shadow.m_LastOrigin.Init( FLT_MAX, FLT_MAX, FLT_MAX );
 	shadow.m_LastAngles.Init( FLT_MAX, FLT_MAX, FLT_MAX );
 	Assert( ( ( shadow.m_Flags & SHADOW_FLAGS_FLASHLIGHT ) == 0 ) != 
@@ -1937,6 +1952,60 @@ void CClientShadowMgr::UpdateFlashlightState( ClientShadowHandle_t shadowHandle,
 	BuildPerspectiveWorldToFlashlightMatrix( m_Shadows[shadowHandle].m_WorldToShadow, flashlightState );
 											
 	shadowmgr->UpdateFlashlightState( m_Shadows[shadowHandle].m_ShadowHandle, flashlightState );
+}
+
+void CClientShadowMgr::SetProjectedTextureOptions( ClientShadowHandle_t handle, bool ortho,
+	float left, float top, float right, float bottom, bool noCull, bool skipShadowUpdates )
+{
+	if ( handle == CLIENTSHADOW_INVALID_HANDLE || !m_Shadows.IsValidIndex( handle ) )
+		return;
+	ClientShadow_t &shadow = m_Shadows[handle];
+	if ( !( shadow.m_Flags & SHADOW_FLAGS_FLASHLIGHT ) )
+		return;
+	const FlashlightState_t &state = shadowmgr->GetFlashlightState( shadow.m_ShadowHandle );
+	shadow.m_bProjectedOrtho = ortho && left != right && top != bottom && state.m_NearZ != state.m_FarZ;
+	shadow.m_bProjectedNoCull = noCull;
+	shadow.m_bProjectedSkipShadowUpdates = skipShadowUpdates;
+	shadow.m_flProjectedLeft = left;
+	shadow.m_flProjectedTop = top;
+	shadow.m_flProjectedRight = right;
+	shadow.m_flProjectedBottom = bottom;
+	if ( shadow.m_bProjectedOrtho )
+	{
+			VMatrix view, projection;
+			BuildWorldToShadowMatrix( view, state.m_vecLightOrigin, state.m_quatOrientation );
+			projection.Init( 1.0f / ( left - right ), 0, 0, left / ( left - right ),
+				0, 1.0f / ( top - bottom ), 0, top / ( top - bottom ),
+				0, 0, 1.0f / ( state.m_FarZ - state.m_NearZ ), state.m_NearZ / ( state.m_NearZ - state.m_FarZ ),
+				0, 0, 0, 1 );
+			MatrixMultiply( projection, view, shadow.m_WorldToShadow );
+	}
+}
+
+void HL2SB_SetProjectedTextureOptions( ClientShadowHandle_t handle, bool ortho, float left,
+	float top, float right, float bottom, bool noCull, bool skipShadowUpdates )
+{
+	s_ClientShadowMgr.SetProjectedTextureOptions( handle, ortho, left, top, right, bottom, noCull, skipShadowUpdates );
+}
+
+void CClientShadowMgr::SetProjectedTextureSuppressed( ClientShadowHandle_t handle, bool suppressed )
+{
+	if ( handle == CLIENTSHADOW_INVALID_HANDLE || !m_Shadows.IsValidIndex( handle ) )
+		return;
+	ClientShadow_t &shadow = m_Shadows[handle];
+	if ( !( shadow.m_Flags & SHADOW_FLAGS_FLASHLIGHT ) )
+		return;
+	shadow.m_bProjectedSuppressed = suppressed;
+	if ( suppressed )
+	{
+		shadowmgr->EnableShadow( shadow.m_ShadowHandle, false );
+		shadowmgr->SetFlashlightDepthTexture( shadow.m_ShadowHandle, NULL, 0 );
+	}
+}
+
+void HL2SB_SetProjectedTextureSuppressed( ClientShadowHandle_t handle, bool suppressed )
+{
+	s_ClientShadowMgr.SetProjectedTextureSuppressed( handle, suppressed );
 }
 
 void CClientShadowMgr::DestroyFlashlight( ClientShadowHandle_t shadowHandle )
@@ -2653,6 +2722,20 @@ void CClientShadowMgr::BuildFlashlight( ClientShadowHandle_t handle )
 		return;
 	}
 
+	if ( !shadow.m_bProjectedNoCull )
+	{
+		Vector mins, maxs;
+		CalculateAABBFromProjectionMatrix( shadow.m_WorldToShadow, &mins, &maxs );
+		const CViewSetup *pView = view->GetViewSetup();
+		if ( pView )
+		{
+			Frustum_t frustum;
+			GeneratePerspectiveFrustum( pView->origin, pView->angles, pView->zNear, pView->zFar,
+				pView->fov, pView->m_flAspectRatio, frustum );
+			if ( R_CullBox( mins, maxs, frustum ) )
+				return;
+		}
+	}
 	VPROF_BUDGET( "CClientShadowMgr::BuildFlashlight", VPROF_BUDGETGROUP_SHADOW_DEPTH_TEXTURING );
 
 	bool bLightModels = r_flashlightmodels.GetBool();
@@ -3201,6 +3284,8 @@ void CClientShadowMgr::UpdateProjectedTextureInternal( ClientShadowHandle_t hand
 	if( shadow.m_Flags & SHADOW_FLAGS_FLASHLIGHT )
 	{
 		VPROF_BUDGET( "CClientShadowMgr::UpdateProjectedTextureInternal", VPROF_BUDGETGROUP_SHADOW_DEPTH_TEXTURING );
+		if ( shadow.m_bProjectedSuppressed )
+			return;
 
 		Assert( ( shadow.m_Flags & SHADOW_FLAGS_SHADOW ) == 0 );
 		ClientShadow_t& shadow = m_Shadows[handle];
@@ -3869,6 +3954,8 @@ int CClientShadowMgr::BuildActiveShadowDepthList( const CViewSetup &viewSetup, i
 	for ( ClientShadowHandle_t i = m_Shadows.Head(); i != m_Shadows.InvalidIndex(); i = m_Shadows.Next(i) )
 	{
 		ClientShadow_t& shadow = m_Shadows[i];
+		if ( shadow.m_bProjectedSuppressed )
+			continue;
 
 		// If this is not a flashlight which should use a shadow depth texture, skip!
 		if ( ( shadow.m_Flags & SHADOW_FLAGS_USE_DEPTH_TEXTURE ) == 0 )
@@ -3974,13 +4061,22 @@ void CClientShadowMgr::ComputeShadowDepthTextures( const CViewSetup &viewSetup )
 			shadowmgr->SetFlashlightDepthTexture( shadow.m_ShadowHandle, NULL, 0 );
 			continue;
 		}
+		if ( shadow.m_bProjectedSkipShadowUpdates )
+			continue;
 
 		CViewSetup shadowView;
 		shadowView.m_flAspectRatio = 1.0f;
 		shadowView.x = shadowView.y = 0;
 		shadowView.width = shadowDepthTexture->GetActualWidth();
 		shadowView.height = shadowDepthTexture->GetActualHeight();
-		shadowView.m_bOrtho = false;
+		shadowView.m_bOrtho = shadow.m_bProjectedOrtho;
+		if ( shadowView.m_bOrtho )
+		{
+			shadowView.m_OrthoLeft = shadow.m_flProjectedLeft;
+			shadowView.m_OrthoTop = -shadow.m_flProjectedBottom;
+			shadowView.m_OrthoRight = shadow.m_flProjectedRight;
+			shadowView.m_OrthoBottom = -shadow.m_flProjectedTop;
+		}
 		shadowView.m_bDoBloomAndToneMapping = false;
 
 		// Copy flashlight parameters
@@ -4139,7 +4235,7 @@ bool CClientShadowMgr::LockShadowDepthTexture( CTextureReference *shadowDepthTex
 {
 	for ( int i=0; i < m_DepthTextureCache.Count(); i++ )		// Search for cached shadow depth texture
 	{
-		if ( m_DepthTextureCacheLocks[i] == false )				// If a free one is found
+		if ( m_DepthTextureCacheLocks[i] == false )
 		{
 			*shadowDepthTexture = m_DepthTextureCache[i];
 			m_DepthTextureCacheLocks[i] = true;

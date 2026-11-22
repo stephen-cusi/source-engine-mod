@@ -6,6 +6,9 @@
 //===========================================================================//
 #include "cbase.h"
 #include "c_baseentity.h"
+#ifdef LUA_SDK
+#include "lua/hl2sb_transmit_parent.h"
+#endif
 #include "c_baseanimating.h"	// HL2SB: EF_FOLLOWBONE parent transform (GetBoneTransform)
 #include "prediction.h"
 #include "model_types.h"
@@ -431,6 +434,10 @@ void RecvProxy_EffectFlags( const CRecvProxyData *pData, void *pStruct, void *pO
 extern void HL2SB_ReceiveSpawnEffect(C_BaseEntity *entity, bool enabled);
 extern void HL2SB_ReceiveSpawnEffectTime(C_BaseEntity *entity, float created);
 extern void HL2SB_ClearSpawnEffect(C_BaseEntity *entity);
+extern void HL2SB_SetCustomCollisionCheck(C_BaseEntity *entity, bool enabled);
+static void RecvProxy_CustomCollisionCheck(const CRecvProxyData *data, void *entity, void *) {
+	HL2SB_SetCustomCollisionCheck((C_BaseEntity *)entity, data->m_Value.m_Int != 0);
+}
 static void RecvProxy_SpawnEffect(const CRecvProxyData *data, void *entity, void *) {
 	HL2SB_ReceiveSpawnEffect((C_BaseEntity *)entity, data->m_Value.m_Int != 0);
 }
@@ -549,6 +556,7 @@ BEGIN_RECV_TABLE_NOBASE(C_BaseEntity, DT_BaseEntity)
 
 	RecvPropInt(RECVINFO(m_fEffects), 0, RecvProxy_EffectFlags ),
 #ifdef LUA_SDK
+	RecvPropInt("m_bLuaCustomCollisionCheck", 0, sizeof(int), 0, RecvProxy_CustomCollisionCheck),
 	RecvPropInt("m_bSpawnEffect", 0, sizeof(int), 0, RecvProxy_SpawnEffect),
 	RecvPropFloat("m_flSpawnEffectCreationTime", 0, sizeof(float), 0, RecvProxy_SpawnEffectTime),
 #endif
@@ -1120,6 +1128,9 @@ C_BaseEntity::C_BaseEntity() :
 //-----------------------------------------------------------------------------
 C_BaseEntity::~C_BaseEntity()
 {
+#ifdef LUA_SDK
+	HL2SB_SetTransmitWithParent( this, false );
+#endif
 	Term();
 	ClearDataChangedEvent( m_DataChangeEventRef );
 #if !defined( NO_ENTITY_PREDICTION )
@@ -1710,7 +1721,7 @@ bool C_BaseEntity::ShouldReceiveProjectedTextures( int flags )
 {
 	Assert( flags & SHADOW_FLAGS_PROJECTED_TEXTURE_TYPE_MASK );
 
-	if ( IsEffectActive( EF_NODRAW ) )
+	if ( IsEffectActive( EF_NODRAW | (1 << 13) ) )
 		 return false;
 
 	if( flags & SHADOW_FLAGS_FLASHLIGHT )
@@ -2676,7 +2687,11 @@ void C_BaseEntity::UnlinkFromHierarchy()
 			pChild->UnlinkFromHierarchy();
 		}
 		else
+		{
+			// Recalculate the child's transform after detaching it from its parent.
+			pChild->AddEFlags( EFL_DIRTY_ABSTRANSFORM );
 			pChild->UnlinkFromHierarchy();
+		}
 		pChild = FirstMoveChild();
 	}
 }

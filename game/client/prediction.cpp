@@ -37,6 +37,19 @@ IPredictionSystem *IPredictionSystem::g_pPredictionSystems = NULL;
 
 #if !defined( NO_ENTITY_PREDICTION )
 
+// HL2SB: the UnPredictedCurTime global hands Lua the clock from before the
+// prediction frame rewound gpGlobals->curtime.  Reference behavior: freeze the
+// pre-prediction curtime for the duration of the frame and give that value to
+// Lua; outside a prediction frame the global falls back to the plain clock.
+// CPrediction::PerformPrediction keeps the snapshot alive below.
+static double s_flHL2SBPrePredictionCurtime = 0.0;
+
+double HL2SB_ClientPrePredictionCurtime( void )
+{
+	return s_flHL2SBPrePredictionCurtime;
+}
+
+
 ConVar	cl_predictweapons	( "cl_predictweapons","1", FCVAR_USERINFO | FCVAR_NOT_CONNECTED, "Perform client side prediction of weapon effects." );
 ConVar	cl_lagcompensation	( "cl_lagcompensation","1", FCVAR_USERINFO | FCVAR_NOT_CONNECTED, "Perform server side lag compensation of weapon firing events." );
 ConVar	cl_showerror		( "cl_showerror", "0", 0, "Show prediction errors, 2 for above plus detailed field deltas." );
@@ -1533,6 +1546,11 @@ bool CPrediction::PerformPrediction( bool received_new_world_update, C_BasePlaye
 
 	m_bInPrediction = true;
 
+	// HL2SB: freeze the pre-prediction clock for UnPredictedCurTime (restored
+	// when the frame ends, nesting-safe).
+	double flSavedPrePredictionClock = s_flHL2SBPrePredictionCurtime;
+	s_flHL2SBPrePredictionCurtime = gpGlobals->curtime;
+
 	// undo interpolation changes for entities we stand on
 	C_BaseEntity *entity = localPlayer->GetGroundEntity();
 
@@ -1640,7 +1658,9 @@ bool CPrediction::PerformPrediction( bool received_new_world_update, C_BasePlaye
 
 	m_bInPrediction = false;
 
-	
+	// HL2SB: prediction frame over, hand the plain clock back to UnPredictedCurTime.
+	s_flHL2SBPrePredictionCurtime = flSavedPrePredictionClock;
+
 	// Somehow we looped past the end of the list (severe lag), don't predict at all
 	if ( i > MULTIPLAYER_BACKUP )
 	{

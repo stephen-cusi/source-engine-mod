@@ -16,6 +16,7 @@
 #include <vgui/Dar.h>
 #include <vgui/IInputInternal.h>
 #include <vgui/IPanel.h>
+#include <vgui/IPanelFocusExt.h>
 #include <vgui/ISystem.h>
 #include <vgui/ISurface.h>
 #include <vgui/IVGui.h>
@@ -548,6 +549,8 @@ VPANEL CVGui::AllocPanel()
 //-----------------------------------------------------------------------------
 void CVGui::FreePanel(VPANEL ipanel)
 {
+	if ( ipanel && g_pIPanel )
+		static_cast<IPanelFocusExt *>( g_pIPanel )->SetPopupFocusRaiseEnabled( ipanel, true );
 	PanelDeleted((VPanel *)ipanel);
 	delete (VPanel *)ipanel;
 #ifdef DEBUG

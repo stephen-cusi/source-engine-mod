@@ -65,7 +65,7 @@
 // HL2SB GMod compat (2026-09-24): local prototype -- the definition lives in
 // lbaseplayer_shared.cpp; cl_weaponcolor drives the physgun beam/sprites,
 // exactly like GMod13.
-Color HL2SB_GetWeaponColor( int iUserID );
+Vector HL2SB_GetWeaponColor( int iUserID );
 #else
 #include "physics_prop_ragdoll.h"
 #include "props.h"
@@ -92,6 +92,15 @@ Color HL2SB_GetWeaponColor( int iUserID );
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+#ifdef CLIENT_DLL
+CLIENTEFFECT_REGISTER_BEGIN( PrecacheHL2SBPhysgunMaterials )
+    CLIENTEFFECT_MATERIAL( "sprites/physbeam" )
+    CLIENTEFFECT_MATERIAL( "sprites/physbeama" )
+    CLIENTEFFECT_MATERIAL( "sprites/physg_glow1" )
+    CLIENTEFFECT_MATERIAL( "sprites/physg_glow2" )
+CLIENTEFFECT_REGISTER_END()
+#endif
 
 
 // HL2SB GMod compat (ConVars In Garrysmod): the physgun's dynamic feel, same
@@ -901,6 +910,13 @@ static Vector HL2SB_PhysgunGateTarget( CBaseEntity *pObject, const Vector &vecDe
 	const Vector vecFrom = pObject->GetAbsOrigin();
 
 	trace_t tr;
+	UTIL_TraceEntity( pObject, vecFrom, vecFrom, uiGateMask, &tr );
+	if ( tr.fraction < 1.0f || tr.startsolid || tr.allsolid )
+	{
+		UTIL_TraceEntity( pObject, vecDest, vecDest, uiGateMask, &tr );
+		if ( tr.fraction >= 1.0f && !tr.startsolid && !tr.allsolid )
+			return vecDest;
+	}
 	UTIL_TraceEntity( pObject, vecFrom, vecDest, uiGateMask, &tr );
 	if ( tr.fraction >= 1.0f && !tr.startsolid && !tr.allsolid )
 		return vecDest;
@@ -1757,12 +1773,7 @@ static void HL2SB_DrawPhysgunSprites( IMaterial *pMaterial, const Vector &pos, c
 		clr.r = r; clr.g = g; clr.b = b;
 		clr.a = (byte)random->RandomInt( nAlphaMin, nAlphaMax );
 		pRenderContext->Bind( pMaterial );
-		// HL2SB (2026-10-03): every "size" in this file is a HALF extent in
-		// the reference's sprite quad, while DrawSprite takes FULL width and
-		// height -- the same rule the idle claw loop below applies with its
-		// explicit * 2.0f.  Without the doubling the holding sprites drew
-		// half-size and vanished behind the weapon body.
-		DrawSprite( vecPos, flSize * 2.0f, flSize * 2.0f, clr );
+		DrawSprite( vecPos, flSize, flSize, clr );
 		vecPos += fwd * flDrift;
 	}
 }
@@ -1860,9 +1871,13 @@ void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 	if ( bSuppressed )
 		return;
 
-	// Every sprite and the ribbon carry the HOLDER's weapon colour.
-	Color clrW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
-	byte r = clrW.r(), g = clrW.g(), b = clrW.b();
+	// Every sprite and the ribbon carry the HOLDER's weapon colour.  The sprite
+	// path is a byte pipeline (as the reference engine's sprites are), so HDR
+	// components above 1 clamp here - only the material proxies keep the float.
+	Vector vW = HL2SB_GetWeaponColor( pOwner->GetUserID() );
+	byte r = (byte)clamp( vW.x * 255.0f, 0.0f, 255.0f );
+	byte g = (byte)clamp( vW.y * 255.0f, 0.0f, 255.0f );
+	byte b = (byte)clamp( vW.z * 255.0f, 0.0f, 255.0f );
 
 	IMaterial *pGlowClaw = materials->FindMaterial( "sprites/physg_glow2", TEXTURE_GROUP_CLIENT_EFFECTS );
 	IMaterial *pGlowEnd = materials->FindMaterial( "sprites/physg_glow1", TEXTURE_GROUP_CLIENT_EFFECTS );
@@ -1872,9 +1887,8 @@ void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 	// hands the sprite pass the VIEWMODEL MUZZLE attachment angles (it reads
 	// GetAttachment(1) pos AND ang), so the drift rides the barrel and sways
 	// with the view model - the player's eye aim is only the holding-path
-	// direction.  And the reference sprite quad takes HALF extents while
-	// DrawSprite takes full width/height, so every "size" below is a half
-	// extent and goes through DrawSprite doubled.
+	// direction. The reference sprite helper and DrawSprite both take the
+	// full quad width and height.
 	if ( !m_active )
 	{
 		CMatRenderContextPtr pRenderContext( materials );
@@ -1888,7 +1902,7 @@ void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 			clr.r = r; clr.g = g; clr.b = b;
 			clr.a = (byte)random->RandomInt( 120, 255 );
 			pRenderContext->Bind( pGlowClaw );
-			DrawSprite( vecPos, flSize * 2.0f, flSize * 2.0f, clr );
+			DrawSprite( vecPos, flSize, flSize, clr );
 			vecPos += vecDrift * 5.0f;
 		}
 		return;
@@ -1901,22 +1915,17 @@ void CWeaponGravityGun::DrawPhysgunVisuals( C_BaseViewModel *pViewModel )
 	// ACTIVE: claw sprites (2, or 7 with a target) marching along the aim
 	// direction at 2 units each.
 	int nClaw = bBoneTarget ? 7 : 2;
-	// HL2SB (2026-10-03): the reference's hold claw size arguments were
-	// optimized out of the binary, but gameplay footage shows the muzzle glow
-	// keeps the IDLE scale on grab.  The previous RandomFloat(4, 48) shrank
-	// the light on every attack ("muzzle light got smaller") - use the idle
-	// pulsing formula instead.
 	{
 		CMatRenderContextPtr pSpriteContext( materials );
 		Vector vecPos = vecMuzzle;
 		for ( int i = 0; i < nClaw; i++ )
 		{
-			float flSize = sinf( gpGlobals->curtime * 5.0f + (float)i * 15.0f ) * 8.0f + 48.0f;
+			float flSize = random->RandomFloat( 16.0f, 64.0f );
 			color32 clr;
 			clr.r = r; clr.g = g; clr.b = b;
 			clr.a = (byte)random->RandomInt( 100, 255 );
 			pSpriteContext->Bind( pGlowClaw );
-			DrawSprite( vecPos, flSize * 2.0f, flSize * 2.0f, clr );
+			DrawSprite( vecPos, flSize, flSize, clr );
 			vecPos += vecAimDir * 2.0f;
 		}
 	}

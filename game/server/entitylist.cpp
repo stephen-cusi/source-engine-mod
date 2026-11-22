@@ -1303,9 +1303,12 @@ void CNotifyList::LevelShutdownPreEntity( void )
 void CNotifyList::OnEntityCreated( CBaseEntity *pEntity )
 {
 #if defined ( LUA_SDK )
-	BEGIN_LUA_CALL_HOOK( "OnEntityCreated" );
-		lua_pushentity( L, pEntity );
-	END_LUA_CALL_HOOK( 1, 0 );
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "OnEntityCreated" );
+			lua_pushentity( L, pEntity );
+		END_LUA_CALL_HOOK( 1, 0 );
+	}
 #endif
 }
 
@@ -1320,28 +1323,28 @@ void CNotifyList::OnEntityDeleted( CBaseEntity *pEntity )
 	}
 
 #if defined ( LUA_SDK )
-	// HL2SB (2026-10-11, issue #47): the SetNW*/SetNW2* dicts are keyed by bare
-	// entindex, so a recycled slot would inherit the previous occupant's values
-	// (GMod frees its NW table when the entity dies).  Purge before the slot
-	// can be handed out again.  No Lua state involved, runs during shutdown too.
-	HL2SB_NWFreeEntityVars( pEntity->entindex() );
-#endif
-
-#if defined ( LUA_SDK )
 	// HL2SB: GMod's EntityRemoved hook.  Fired before the notify list drops its
 	// reference so Lua can still inspect the entity (that is what GMod does).
 	// undo.lua uses it to prune stale undos, and CallOnRemove is built on it.
 	//
-	// The `L` guard matters here in a way it does not for OnEntityCreated:
-	// level shutdown tears the Lua state down (luasrc_shutdown() sets L = NULL)
-	// while entities are still being deleted, and the macro dereferences L
-	// unconditionally.
+	// Second argument matches the reference: a full-update flag.  Server-side
+	// removals are always real removals, so it is false here.
+	//
+	// Entity deletion can continue after the Lua state has shut down.
 	if ( L )
 	{
 		BEGIN_LUA_CALL_HOOK( "EntityRemoved" );
 			lua_pushentity( L, pEntity );
-		END_LUA_CALL_HOOK( 1, 0 );
+			lua_pushboolean( L, false );
+		END_LUA_CALL_HOOK( 2, 0 );
 	}
+
+	// HL2SB (2026-10-11, issue #47): the SetNW*/SetNW2* dicts are keyed by bare
+	// entindex, so a recycled slot would inherit the previous occupant's values
+	// (GMod frees its NW table when the entity dies).  Reference order: the
+	// EntityRemoved observers still see the entity's NW values, the purge happens
+	// after they ran.  No Lua state involved, runs during shutdown too.
+	HL2SB_NWFreeEntityVars( pEntity->entindex() );
 #endif
 
 	ReportDestroyEvent( pEntity );

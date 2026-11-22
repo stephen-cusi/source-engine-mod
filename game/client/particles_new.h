@@ -57,6 +57,7 @@ public:
 	const char *GetEffectName();
 	void SetDontRemove( bool bSet );
 	void SetDrawn( bool bDrawn );
+	void SetShouldDraw( bool bShouldDraw ) { m_bShouldDraw = bShouldDraw; }
 	void SetFirstFrameFlag( bool bFirst );
 	void SetNeedsBBoxUpdate( bool bNeedsUpdate );
 	void SetAutoUpdateBBox( bool bNeedsUpdate );
@@ -137,6 +138,7 @@ protected:
 	bool		m_bDontRemove : 1;
 	bool		m_bRemove : 1;
 	bool		m_bDrawn : 1;
+	bool		m_bShouldDraw : 1;
 	bool		m_bNeedsBBoxUpdate : 1;
 	bool		m_bIsFirstFrame : 1;
 	bool		m_bAutoUpdateBBox : 1;
@@ -195,7 +197,7 @@ inline const Vector &CNewParticleEffect::GetSortOrigin( void )
 
 inline bool CNewParticleEffect::ShouldDraw( void )
 {
-	return true;
+	return m_bShouldDraw;
 }
 
 inline bool CNewParticleEffect::IsTransparent( void )

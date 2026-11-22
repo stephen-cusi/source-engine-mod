@@ -1690,7 +1690,9 @@ static bool VtxStripLayoutIsSane( OptimizedModel::FileHeader_t *pVtxHdr, int nVt
 					OptimizedModel::MeshHeader_t *pMesh = pLOD->pMesh( l );
 					if ( (byte *)( pMesh + 1 ) > pEnd )
 						return false;
-					if ( pMesh->numStripGroups <= 0 || pMesh->numStripGroups > 65536 )
+					// Some valid models contain empty meshes for unused bodygroups.
+					// They have no strip groups and must not invalidate the other meshes.
+					if ( pMesh->numStripGroups < 0 || pMesh->numStripGroups > 65536 )
 						return false;
 
 					for ( int m = 0; m < pMesh->numStripGroups; ++m )

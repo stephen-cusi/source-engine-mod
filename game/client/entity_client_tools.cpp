@@ -556,11 +556,15 @@ bool CClientTools::IsValidHandle( HTOOLHANDLE handle )
 void CClientTools::OnEntityDeleted( CBaseEntity *pEntity )
 {
 #if defined ( LUA_SDK )
+	// HL2SB: second argument matches the reference full-update flag.  This fork
+	// has no full-update entity recreation path, so removals here are always
+	// real and the flag is false.
 	if ( L != NULL && pEntity != NULL )
 	{
 		BEGIN_LUA_CALL_HOOK( "EntityRemoved" );
 			CBaseEntity::PushLuaInstanceSafe( L, pEntity );
-		END_LUA_CALL_HOOK( 1, 0 );
+			lua_pushboolean( L, false );
+		END_LUA_CALL_HOOK( 2, 0 );
 	}
 #endif
 	HTOOLHANDLE handle = pEntity ? pEntity->GetToolHandle() : (HTOOLHANDLE)0;
@@ -581,9 +585,12 @@ void CClientTools::OnEntityDeleted( CBaseEntity *pEntity )
 void CClientTools::OnEntityCreated( CBaseEntity *pEntity )
 {
 #if defined ( LUA_SDK )
-	BEGIN_LUA_CALL_HOOK( "OnEntityCreated" );
-		lua_pushentity( L, pEntity );
-	END_LUA_CALL_HOOK( 1, 0 );
+	if ( L != NULL )
+	{
+		BEGIN_LUA_CALL_HOOK( "OnEntityCreated" );
+			lua_pushentity( L, pEntity );
+		END_LUA_CALL_HOOK( 1, 0 );
+	}
 #endif
 	
 	if ( !m_bInRecordingMode )

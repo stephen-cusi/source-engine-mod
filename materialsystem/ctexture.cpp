@@ -3106,21 +3106,23 @@ void CTexture::CopyLowResImageToTexture( IVTFTexture *pTexture )
 	m_dimsActual.m_nHeight = m_LowResImageHeight;
 	m_dimsActual.m_nDepth = 1;
 	m_dimsActual.m_nMipCount = 1;
+	m_dimsAllocated = m_dimsActual;
 
 	// Copy the row-res image into the VTF Texture
 	CPixelWriter pixelWriter;
 	pixelWriter.SetPixelMemory( pTexture->Format(), 
 		pTexture->ImageData( 0, 0, 0 ), pTexture->RowSizeInBytes( 0 ) );
+	const unsigned char *pLowResPixel = m_pLowResImage;
 
 	for ( int y = 0; y < m_LowResImageHeight; ++y )
 	{
 		pixelWriter.Seek( 0, y );
 		for ( int x = 0; x < m_LowResImageWidth; ++x )
 		{
-			int red = m_pLowResImage[0];
-			int green = m_pLowResImage[1];
-			int blue = m_pLowResImage[2];
-			m_pLowResImage += 3;
+			int red = pLowResPixel[0];
+			int green = pLowResPixel[1];
+			int blue = pLowResPixel[2];
+			pLowResPixel += 3;
 
 			pixelWriter.WritePixel( red, green, blue, 255 );
 		}

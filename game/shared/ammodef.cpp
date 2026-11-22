@@ -15,10 +15,10 @@
 
 // HL2SB: global ammo cap override.
 // Same convar Garry's Mod ships (server + replicated). When above 0 it
-// replaces the per-ammo-type max carry for every type; when 0 (the default)
+// replaces the per-ammo-type max carry for every type; when 0
 // the per-type values win, and those come from the active gamemode's
 // gamemodes/<name>/gamemode/ammo.lua.
-ConVar gmod_maxammo( "gmod_maxammo", "0", FCVAR_REPLICATED | FCVAR_NOTIFY,
+ConVar gmod_maxammo( "gmod_maxammo", "9999", FCVAR_REPLICATED,
 	"If set to above 0, overrides max ammo carried per player of all ammo types." );
 
 // HL2SB (2026-09-28): GMod's aux-suit-power switch, for the create-server

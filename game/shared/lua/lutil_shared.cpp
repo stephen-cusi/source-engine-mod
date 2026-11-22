@@ -8,6 +8,7 @@
 
 #include "cbase.h"
 #include "luamanager.h"
+#include "luasrclib.h"
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
 #include "lgametrace.h"
@@ -33,6 +34,7 @@
 #include "soundenvelope.h"
 #include "leffect_dispatch_data.h"
 #include <lColor.h>
+#include <climits>
 #include "hl2sb_framestats_cat.h"	// HL2SB frame profiler: per-category buckets
 
 #ifdef CLIENT_DLL
@@ -133,8 +135,63 @@ static void HL2SB_RunNativeCleanup( lua_State *state, bool dontSend )
   s_cleanupRunning = false;
 }
 
+#ifndef CLIENT_DLL
+static void HL2SB_LoadPendingSave()
+{
+  if ( !L || !gpGlobals || !GameRules() ) return;
+  ConVarRef pending( "hl2sb_gms_pending" );
+  if ( !pending.IsValid() || !pending.GetString()[0] ) return;
+
+  const char *path = pending.GetString();
+  if ( Q_strnicmp( path, "saves/", 6 ) || Q_strstr( path, ".." ) ||
+       Q_strstr( path + 6, "/" ) || Q_strstr( path, "\\" ) || Q_strstr( path, ":" ) ) {
+    pending.SetValue( "" );
+    return;
+  }
+  CUtlBuffer data( 0, 0, 0 );
+  if ( !filesystem->ReadFile( path, "MOD", data ) || data.TellPut() < 8 ||
+       Q_memcmp( data.Base(), "GMS3", 4 ) ) {
+    Warning( "gm_load: unable to read save\n" );
+    pending.SetValue( "" );
+    return;
+  }
+  const char *bytes = (const char *)data.Base();
+  const int length = data.TellPut();
+  int end = 4;
+  while ( end < length && bytes[end] ) ++end;
+  if ( end == length || end == 4 ) { pending.SetValue( "" ); return; }
+  if ( Q_stricmp( bytes + 4, STRING( gpGlobals->mapname ) ) ) return;
+  int offset = end + 1;
+  if ( offset + 5 <= length && !Q_memcmp( bytes + offset, "WSID:", 5 ) ) {
+    while ( offset < length && bytes[offset] ) ++offset;
+    if ( offset == length ) { pending.SetValue( "" ); return; }
+    ++offset;
+  }
+  if ( length - offset < 13 ) { pending.SetValue( "" ); return; }
+
+  const int top = lua_gettop( L );
+  lua_checkstack( L, 8 );
+  lua_getglobal( L, "hook" );
+  if ( !lua_istable( L, -1 ) ) { lua_settop( L, top ); return; }
+  lua_getfield( L, -1, "Call" );
+  if ( !lua_isfunction( L, -1 ) ) { lua_settop( L, top ); return; }
+  lua_remove( L, -2 );
+  lua_pushstring( L, "LoadGModSave" );
+  lua_pushnil( L );
+  lua_pushlstring( L, bytes + offset, length - offset );
+  lua_pushstring( L, bytes + 4 );
+  lua_pushnumber( L, 0 );
+  pending.SetValue( "" );
+  luasrc_pcall( L, 5, 0, 0 );
+  lua_settop( L, top );
+}
+#endif
+
 void HL2SB_CleanupTick()
 {
+#ifndef CLIENT_DLL
+  HL2SB_LoadPendingSave();
+#endif
   if ( !s_cleanupPending || s_cleanupRunning || !s_cleanupState ) return;
 #ifndef CLIENT_DLL
   if ( HL2SB_IsEntityDeleteCleanupActive() || PhysIsInCallback() ) return;
@@ -1395,10 +1452,10 @@ static void JSON_EmitEscaped( CUtlString &out, const char *psz )
 static void JSON_EmitNumber( CUtlString &out, lua_Number num )
 {
 	char szNum[ 40 ];
-	if ( num == (double)(long long)num && num > -9.0e15 && num < 9.0e15 )
+	if ( num > -9.0e15 && num < 9.0e15 && num == (double)(long long)num )
 		V_sprintf_safe( szNum, "%lld", (long long)num );
 	else
-		V_sprintf_safe( szNum, "%.14g", num );
+		V_sprintf_safe( szNum, "%.17g", num );
 	out += szNum;
 }
 
@@ -1406,9 +1463,11 @@ static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty,
 
 static bool JSON_IsArray( lua_State *L, int idx, lua_Integer *pnOut )
 {
+	if ( !lua_checkstack( L, 8 ) ) luaL_error( L, "JSON stack overflow" );
 	lua_Integer n = luaL_len( L, idx );
-	if ( n <= 0 )
-		return false;
+	// GMod serializes an empty table as an empty JSON array.  Still inspect
+	// all keys below: a table with only string keys is an object even when
+	// its Lua length is zero.
 
 	// keys 1..n must all be present...
 	for ( lua_Integer k = 1; k <= n; k++ )
@@ -1437,6 +1496,7 @@ static bool JSON_IsArray( lua_State *L, int idx, lua_Integer *pnOut )
 
 static void JSON_EmitTable( lua_State *L, int idx, CUtlString &out, bool pretty, int depth, int indent )
 {
+	if ( !lua_checkstack( L, 8 ) ) luaL_error( L, "JSON stack overflow" );
 	if ( depth > 128 )
 	{
 		// cycle / pathological nesting - drop the value rather than overflowing
@@ -1462,7 +1522,7 @@ static void JSON_EmitTable( lua_State *L, int idx, CUtlString &out, bool pretty,
 			lua_pop( L, 1 );
 			if ( k < n ) out += ",";
 		}
-		if ( pretty ) { out += "\n"; for ( int s = 0; s < indent; s++ ) out += "    "; }
+		if ( pretty && n > 0 ) { out += "\n"; for ( int s = 0; s < indent; s++ ) out += "    "; }
 		out += "]";
 		lua_pop( L, 1 );
 		return;
@@ -1479,7 +1539,8 @@ static void JSON_EmitTable( lua_State *L, int idx, CUtlString &out, bool pretty,
 		int valueType = lua_type( L, -1 );
 
 		bool bSkip = ( valueType == LUA_TNIL || valueType == LUA_TFUNCTION ||
-					   valueType == LUA_TUSERDATA ||
+					   ( valueType == LUA_TUSERDATA && !luaL_testudata( L, -1, LUA_VECTORLIBNAME ) &&
+					     !luaL_testudata( L, -1, LUA_QANGLELIBNAME ) ) ||
 					   ( keyType != LUA_TSTRING && keyType != LUA_TNUMBER ) );
 		if ( bSkip )
 		{
@@ -1508,6 +1569,7 @@ static void JSON_EmitTable( lua_State *L, int idx, CUtlString &out, bool pretty,
 
 static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty, int depth, int indent )
 {
+	if ( !lua_checkstack( L, 8 ) ) luaL_error( L, "JSON stack overflow" );
 	// copy to an absolute index - idx may be relative (lua_rawgeti results etc.)
 	lua_pushvalue( L, idx );
 	int i = lua_gettop( L );
@@ -1517,45 +1579,39 @@ static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty,
 		case LUA_TNIL:		out += "null"; break;
 		case LUA_TBOOLEAN:	out += lua_toboolean( L, i ) ? "true" : "false"; break;
 		case LUA_TNUMBER:	JSON_EmitNumber( out, lua_tonumber( L, i ) ); break;
-		case LUA_TSTRING:	JSON_EmitEscaped( out, lua_tostring( L, i ) ); break;
+		case LUA_TSTRING:
+			out += "\"";
+			JSON_EmitEscaped( out, lua_tostring( L, i ) );
+			out += "\"";
+			break;
 		case LUA_TTABLE:	JSON_EmitTable( L, i, out, pretty, depth, indent ); break;
 		case LUA_TUSERDATA:
 		{
-			// HL2SB (2026-10-05): GMod's encoder serializes Vector / Angle as
-			// plain x/y/z (p/y/r) objects instead of dropping them - without
-			// this a duplicator save loses every position and angle (the first
-			// gm_save produced {"Player":{"MoveType":2}} with Origin silently
-			// gone).  Metatable identity, not luaL_checkudata: the checker
-			// raises on mismatch and the encoder must skip non-serializable
-			// values, not abort.
-			luaL_getmetatable( L, "Vector" );
-			const bool bIsVector = lua_rawequal( L, -1, i ) != 0;
-			lua_pop( L, 1 );
-			luaL_getmetatable( L, "Angle" );
-			const bool bIsAngle = lua_rawequal( L, -1, i ) != 0;
-			lua_pop( L, 1 );
+			// Vectors and angles use the same string representation as saves.
+			const bool bIsVector = luaL_testudata( L, i, LUA_VECTORLIBNAME ) != NULL;
+			const bool bIsAngle = luaL_testudata( L, i, LUA_QANGLELIBNAME ) != NULL;
 
 			if ( bIsVector )
 			{
 				const Vector &v = luaL_checkvector( L, i );
-				out += "{\"x\":";
+				out += "\"[";
 				JSON_EmitNumber( out, v.x );
-				out += ",\"y\":";
+				out += " ";
 				JSON_EmitNumber( out, v.y );
-				out += ",\"z\":";
+				out += " ";
 				JSON_EmitNumber( out, v.z );
-				out += "}";
+				out += "]\"";
 			}
 			else if ( bIsAngle )
 			{
 				const QAngle &a = luaL_checkangle( L, i );
-				out += "{\"p\":";
+				out += "\"{";
 				JSON_EmitNumber( out, a.x );
-				out += ",\"y\":";
+				out += " ";
 				JSON_EmitNumber( out, a.y );
-				out += ",\"r\":";
+				out += " ";
 				JSON_EmitNumber( out, a.z );
-				out += "}";
+				out += "}\"";
 			}
 			else
 			{
@@ -1573,11 +1629,7 @@ static void JSON_EmitValue( lua_State *L, int idx, CUtlString &out, bool pretty,
 // (non-static: net_WriteTable reuses the emitter, lnet.cpp)
 LUA_API int luasrc_UTIL_TableToJSON( lua_State *L )
 {
-	if ( lua_type( L, 1 ) != LUA_TTABLE )
-	{
-		lua_pushnil( L );
-		return 1;
-	}
+	luaL_checktype( L, 1, LUA_TTABLE );
 
 	bool pretty = ( lua_toboolean( L, 2 ) != 0 );
 
@@ -1589,45 +1641,81 @@ LUA_API int luasrc_UTIL_TableToJSON( lua_State *L )
 }
 
 // walk a KeyValues tree (from the JSON parser) back into a Lua value/table
-static void JSON_KVToLua( lua_State *L, KeyValues *pNode )
+static void JSON_SkipWhitespace( const char *&p )
 {
+	for ( ;; )
+	{
+		while ( *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' ) ++p;
+		if ( p[0] != '/' || p[1] != '/' ) return;
+		p += 2;
+		while ( *p && *p != '\r' && *p != '\n' ) ++p;
+	}
+}
+
+static void JSON_SkipString( const char *&p )
+{
+	const char quote = *p;
+	if ( quote != '"' && quote != '\'' ) return;
+	++p;
+	while ( *p && *p != quote )
+	{
+		if ( *p == '\\' && p[1] ) ++p;
+		++p;
+	}
+	if ( *p ) ++p;
+}
+
+static void JSON_KVToLua( lua_State *L, KeyValues *pNode, const char *&pJson, bool ignoreConversions )
+{
+	if ( !lua_checkstack( L, 8 ) ) luaL_error( L, "JSON stack overflow" );
+	JSON_SkipWhitespace( pJson );
+	const char token = *pJson;
+	if ( token == 't' || token == 'f' )
+	{
+		lua_pushboolean( L, token == 't' );
+		pJson += token == 't' ? 4 : 5;
+		return;
+	}
+	if ( token == 'n' )
+	{
+		lua_pushnil( L );
+		pJson += 4;
+		return;
+	}
+	if ( token == '"' || token == '\'' )
+	{
+		const char *value = pNode->GetString();
+		float x, y, z;
+		int end = 0;
+		if ( !ignoreConversions && value[0] == '[' &&
+		     sscanf( value, "[ %f %f %f ]%n", &x, &y, &z, &end ) == 3 && end > 0 && value[end] == '\0' )
+			lua_pushvector( L, Vector( x, y, z ) );
+		else if ( !ignoreConversions && value[0] == '{' &&
+		          sscanf( value, "{ %f %f %f }%n", &x, &y, &z, &end ) == 3 && end > 0 && value[end] == '\0' )
+			lua_pushangle( L, QAngle( x, y, z ) );
+		else
+			lua_pushstring( L, value );
+		JSON_SkipString( pJson );
+		return;
+	}
+	if ( token != '{' && token != '[' )
+	{
+		char *pEnd = NULL;
+		const double number = strtod( pJson, &pEnd );
+		lua_pushnumber( L, number );
+		pJson = pEnd;
+		return;
+	}
+	const bool isArray = token == '[';
+	++pJson;
 	KeyValues *pChild = pNode->GetFirstSubKey();
 
 	if ( pChild == NULL )
 	{
-		// leaf.  NOTE: "{}" parses to a childless TYPE_NONE node - that is an
-		// empty table, not null (null comes through as TYPE_PTR).
-		if ( pNode->GetDataType() == KeyValues::TYPE_NONE )
-		{
-			lua_newtable( L );
-		}
-		else if ( pNode->GetDataType() == KeyValues::TYPE_PTR )
-		{
-			lua_pushnil( L );	// JSON null
-		}
-		else
-		{
-			switch ( pNode->GetDataType() )
-			{
-				case KeyValues::TYPE_INT:     lua_pushinteger( L, pNode->GetInt() ); break;
-				case KeyValues::TYPE_UINT64:  lua_pushnumber( L, (lua_Number)pNode->GetUint64() ); break;
-				case KeyValues::TYPE_FLOAT:   lua_pushnumber( L, pNode->GetFloat() ); break;
-				default:                      lua_pushstring( L, pNode->GetString() ); break;
-			}
-		}
+		JSON_SkipWhitespace( pJson );
+		++pJson;
+		lua_newtable( L );
 		return;
-	}
-
-	// container.  ParseArray names children "0","1",... - sequential numeric
-	// names mean this was a JSON array and comes back as a 1-based Lua array;
-	// otherwise it is a map (GMod converts numeric-looking keys to numbers
-	// "wherever possible").
-	bool isArray = true;
-	int expected = 0;
-	for ( KeyValues *p = pChild; p != NULL; p = p->GetNextKey() )
-	{
-		if ( V_atoi( p->GetName() ) != expected ) { isArray = false; break; }
-		++expected;
 	}
 
 	lua_newtable( L );
@@ -1635,79 +1723,61 @@ static void JSON_KVToLua( lua_State *L, KeyValues *pNode )
 	int arrayIdx = 0;
 	for ( KeyValues *p = pChild; p != NULL; p = p->GetNextKey() )
 	{
+		JSON_SkipWhitespace( pJson );
+		const char *pKeyStart = NULL;
+		const char *pKeyEnd = NULL;
+		if ( !isArray )
+		{
+			pKeyStart = pJson;
+			JSON_SkipString( pJson );
+			pKeyEnd = pJson;
+			JSON_SkipWhitespace( pJson );
+			++pJson; // colon
+		}
 		if ( isArray )
 		{
-			JSON_KVToLua( L, p );
+			JSON_KVToLua( L, p, pJson, ignoreConversions );
 			lua_rawseti( L, -2, ++arrayIdx );
 		}
 		else
 		{
-			const char *pszKey = p->GetName();
-			char *pszEnd = NULL;
-			long lKey = strtol( pszKey, &pszEnd, 10 );
-			if ( pszEnd && *pszEnd == '\0' && pszEnd != pszKey )
-				lua_pushinteger( L, (lua_Integer)lKey );
+			bool bEscaped = false;
+			for ( const char *pKey = pKeyStart + 1; pKey < pKeyEnd - 1; ++pKey )
+				if ( *pKey == '\\' ) { bEscaped = true; break; }
+			if ( bEscaped )
+			{
+				CUtlString keyJson( "{\"value\":" );
+				keyJson.Append( pKeyStart, (int)( pKeyEnd - pKeyStart ) );
+				keyJson += "}";
+				KeyValuesJSONParser keyParser( keyJson.Get() );
+				KeyValues *pKeyRoot = keyParser.ParseFile();
+				KeyValues *pKeyValue = pKeyRoot ? pKeyRoot->GetFirstSubKey() : NULL;
+				lua_pushstring( L, pKeyValue ? pKeyValue->GetString() : "" );
+				if ( pKeyRoot ) pKeyRoot->deleteThis();
+			}
 			else
-				lua_pushstring( L, pszKey );
-			JSON_KVToLua( L, p );
+				lua_pushlstring( L, pKeyStart + 1, pKeyEnd - pKeyStart - 2 );
+			// Use Lua's numeric conversion so Workshop IDs survive on platforms
+			// where long is 32-bit. The opt-out keeps object keys as strings.
+			if ( !ignoreConversions )
+			{
+				int isNumber = 0;
+				const lua_Number numericKey = lua_tonumberx( L, -1, &isNumber );
+				if ( isNumber )
+				{
+					lua_pop( L, 1 );
+					lua_pushnumber( L, numericKey );
+				}
+			}
+			JSON_KVToLua( L, p, pJson, ignoreConversions );
 			lua_settable( L, -3 );
 		}
+		JSON_SkipWhitespace( pJson );
+		if ( *pJson == ',' ) ++pJson;
 	}
+	JSON_SkipWhitespace( pJson );
+	++pJson; // closing bracket or brace
 
-	// HL2SB (2026-10-05): GMod's decoder hands {"x":..,"y":..,"z":..} objects
-	// back as real Vector userdata (the duplicator round-trip feeds them
-	// straight into SetPos / MakeProp - plain tables would error there).  The
-	// p/y/r shape comes back as a QAngle.  A table that merely happens to
-	// carry those three numeric keys is rare enough that GMod accepts the same
-	// ambiguity.
-	if ( !isArray )
-	{
-		bool bX = false, bY = false, bZ = false, bP = false, bR = false;
-		lua_Integer nY = 0;
-
-		lua_pushnil( L );
-		while ( lua_next( L, -2 ) != 0 )
-		{
-			if ( lua_isnumber( L, -1 ) && lua_type( L, -2 ) == LUA_TSTRING )
-			{
-				const char *pszKey = lua_tostring( L, -2 );
-				if ( !V_stricmp( pszKey, "x" ) ) { bX = true; }
-				else if ( !V_stricmp( pszKey, "y" ) ) { bY = true; nY = lua_tointeger( L, -1 ); }
-				else if ( !V_stricmp( pszKey, "z" ) ) { bZ = true; }
-				else if ( !V_stricmp( pszKey, "p" ) ) { bP = true; }
-				else if ( !V_stricmp( pszKey, "r" ) ) { bR = true; }
-			}
-			lua_pop( L, 1 );
-		}
-
-		if ( bX && bY && bZ && !bP && !bR )
-		{
-			lua_getfield( L, -1, "x" );
-			float x = (float)lua_tonumber( L, -1 );
-			lua_getfield( L, -1, "y" );
-			float y = (float)lua_tonumber( L, -1 );
-			lua_getfield( L, -1, "z" );
-			float z = (float)lua_tonumber( L, -1 );
-			lua_pop( L, 3 );
-			lua_pop( L, 1 );
-			lua_pushvector( L, Vector( x, y, z ) );
-			return;
-		}
-
-		if ( bP && bY && bR && !bX && !bZ )
-		{
-			lua_getfield( L, -1, "p" );
-			float p = (float)lua_tonumber( L, -1 );
-			lua_getfield( L, -1, "y" );
-			float y = (float)lua_tonumber( L, -1 );
-			lua_getfield( L, -1, "r" );
-			float r = (float)lua_tonumber( L, -1 );
-			lua_pop( L, 3 );
-			lua_pop( L, 1 );
-			lua_pushangle( L, QAngle( p, y, r ) );
-			return;
-		}
-	}
 }
 
 // util.JSONToTable( json )
@@ -1724,7 +1794,7 @@ LUA_API int luasrc_UTIL_JSONToTable( lua_State *L )
 		return 1;
 	}
 
-	JSON_KVToLua( L, pRoot );
+	JSON_KVToLua( L, pRoot, pszJson, lua_toboolean( L, 3 ) != 0 );
 	pRoot->deleteThis();
 	return 1;
 }
@@ -2066,18 +2136,34 @@ static int luasrc_util_Compress (lua_State *L) {
 static int luasrc_util_Decompress (lua_State *L) {
   size_t nLen = 0;
   const char *pIn = luaL_checklstring( L, 1, &nLen );
-  int nMaxSize = luaL_optint( L, 2, -1 );
-
   if ( nLen == 0 ) {
-    lua_pushnil( L );
+    lua_pushliteral( L, "" );
     return 1;
   }
 
-  // The engine's own "LZMA!"-wrapped blobs (BSP lumps, older data) go through
+  size_t nMaxSize = 0;
+  if ( lua_type( L, 2 ) == LUA_TNUMBER ) {
+    const double limit = lua_tonumber( L, 2 );
+    // A supplied number limits the output to at least one byte. Guard the
+    // conversion and match the x64 binding's fallback for out-of-range input.
+    nMaxSize = limit >= 1.0 && limit < 2147483648.0 ? static_cast<size_t>( limit ) : 1;
+  }
+
+  // The engine's own LZMA-wrapped blobs (BSP lumps, older data) go through
   // tier1's CLZMA directly (the utils/lzma glue is not linked into the game).
-  if ( CLZMA::IsCompressed( (unsigned char *)pIn ) ) {
+  if ( nLen >= sizeof( unsigned int ) && CLZMA::IsCompressed( (unsigned char *)pIn ) ) {
+    if ( nLen < sizeof( lzma_header_t ) ) {
+      lua_pushnil( L );
+      return 1;
+    }
+    lzma_header_t header;
+    memcpy( &header, pIn, sizeof( header ) );
+    if ( static_cast<size_t>( LittleLong( header.lzmaSize ) ) > nLen - sizeof( header ) ) {
+      lua_pushnil( L );
+      return 1;
+    }
     unsigned int nActual = CLZMA::GetActualSize( (unsigned char *)pIn );
-    if ( nActual == 0 || ( nMaxSize > 0 && (int)nActual > nMaxSize ) ) {
+    if ( nActual == 0 || ( nMaxSize > 0 && nActual > nMaxSize ) ) {
       lua_pushnil( L );
       return 1;
     }
@@ -2114,6 +2200,10 @@ static int luasrc_util_Decompress (lua_State *L) {
   // the same battle-tested path the engine uses for BSP lumps (a hand-rolled
   // LzmaDec loop here answered nil for this fork's own output).
   size_t nDataLen = nLen - 8 - LZMA_PROPS_SIZE - 8;
+  if ( nDataLen > UINT_MAX ) {
+    lua_pushnil( L );
+    return 1;
+  }
   size_t nWrapSize = sizeof( lzma_header_t ) + nDataLen;
   unsigned char *pWrap = (unsigned char *)malloc( nWrapSize );
   if ( !pWrap ) {
@@ -2192,7 +2282,19 @@ static int luasrc_util_SteamIDFrom64 (lua_State *L) {
 // util.SharedRandom -- GMod's name for the engine's SharedRandomFloat.
 //-----------------------------------------------------------------------------
 static int luasrc_util_SharedRandom (lua_State *L) {
-  return luasrc_SharedRandomFloat( L );
+  const char *name = luaL_checkstring( L, 1 );
+  const float minimum = (float)luaL_checknumber( L, 2 );
+  const float maximum = (float)luaL_checknumber( L, 3 );
+  int additionalSeed = 0;
+  if ( lua_type( L, 4 ) == LUA_TNUMBER ) {
+    const double value = lua_tonumber( L, 4 );
+    // GMod's x64 binding truncates fractional Lua numbers toward zero.
+    // Guard the conversion to reproduce its out-of-range result safely.
+    additionalSeed = value >= -2147483648.0 && value < 2147483648.0
+      ? static_cast<int>( value ) : (-2147483647 - 1);
+  }
+  lua_pushnumber( L, SharedRandomFloat( name, minimum, maximum, additionalSeed ) );
+  return 1;
 }
 
 //-----------------------------------------------------------------------------
@@ -3078,10 +3180,10 @@ static int luasrc_SysTime (lua_State *L) {
 }
 
 /*
-** HL2SB GMod compat: CreateSound( entity, sound ) -> IGModAudioChannel.
+** HL2SB GMod compat: CreateSound( entity, sound ) -> CSoundPatch.
 **
-** GMod returns a BASS audio stream.  This fork has no BASS and no AudioChannel
-** library at all (see the note in lsrcinit.cpp), so the addon's music --
+** The Lua wrapper uses the engine sound-envelope controller for entity-bound
+** sounds, including the following addon loop:
 **
 **     self.LoopSound = CreateSound( self.Owner, Sound( "weapons/nyan/nyan_loop.wav" ) )
 **     if ( self.LoopSound ) then self.LoopSound:Play() end
@@ -3119,10 +3221,12 @@ static int luasrc_SysTime (lua_State *L) {
 #define HL2SB_CHANNEL_FIELD_ENT      "__hl2sb_ent"
 #define HL2SB_CHANNEL_FIELD_SOUND    "__hl2sb_sound"
 #define HL2SB_CHANNEL_FIELD_VOLUME   "__hl2sb_volume"
+#define HL2SB_CHANNEL_FIELD_PITCH    "__hl2sb_pitch"
 #define HL2SB_CHANNEL_FIELD_CHANNEL  "__hl2sb_channel"
 #define HL2SB_CHANNEL_FIELD_PLAYING  "__hl2sb_playing"
 #define HL2SB_CHANNEL_FIELD_PATCH    "__hl2sb_patch"
 #define HL2SB_CHANNEL_FIELD_PAUSED   "__hl2sb_paused"
+#define HL2SB_CHANNEL_FIELD_LEVEL    "__hl2sb_level"
 
 static CBaseEntity *HL2SB_ChannelEntity( lua_State *L, int nIndex ) {
   lua_getfield( L, nIndex, HL2SB_CHANNEL_FIELD_ENT );
@@ -3238,8 +3342,13 @@ static CSoundPatch *HL2SB_ChannelEnsurePatch( lua_State *L, int nIndex ) {
              soundFilter, pEntity->entindex(), HL2SB_ChannelAudioChannel( L, nIndex ),
              pszSound, SNDLVL_NORM );
 
-  if ( pPatch != NULL )
+  if ( pPatch != NULL ) {
     HL2SB_ChannelSetPatch( L, nIndex, pPatch );
+    lua_getfield( L, nIndex, HL2SB_CHANNEL_FIELD_LEVEL );
+    if ( lua_isnumber( L, -1 ) )
+      HL2SB_SoundPatchSetSoundLevel( pPatch, (soundlevel_t)(int)lua_tonumber( L, -1 ) );
+    lua_pop( L, 1 );
+  }
 
   return pPatch;
 }
@@ -3271,6 +3380,31 @@ static void HL2SB_ChannelShutdown( lua_State *L, int nIndex ) {
   HL2SB_ChannelSetBool( L, nIndex, HL2SB_CHANNEL_FIELD_PLAYING, false );
 }
 
+static int luasrc_Channel_GetSoundLevel (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  CSoundPatch *patch = HL2SB_ChannelEnsurePatch( L, 1 );
+  if ( !patch ) return 0;
+  lua_pushnumber( L, HL2SB_SoundPatchGetSoundLevel( patch ) );
+  return 1;
+}
+
+static int luasrc_Channel_SetSoundLevel (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  const double flLevel = luaL_checknumber( L, 2 );
+  // Match the reference's signed 32-bit truncation, including invalid inputs.
+  const int nSoundLevel = ( flLevel > -2147483649.0 && flLevel < 2147483648.0 )
+    ? (int)flLevel : (-2147483647 - 1);
+
+  lua_pushinteger( L, nSoundLevel );
+  lua_setfield( L, 1, HL2SB_CHANNEL_FIELD_LEVEL );
+
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
+    HL2SB_SoundPatchSetSoundLevel( pPatch, (soundlevel_t)nSoundLevel );
+
+  return 0;
+}
+
 static int luasrc_Channel_Play (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
 
@@ -3280,7 +3414,15 @@ static int luasrc_Channel_Play (lua_State *L) {
     return 1;
   }
 
-  CSoundEnvelopeController::GetController().Play( pPatch, HL2SB_ChannelVolume( L, 1 ), PITCH_NORM );
+  // ARC9 calls Play every Think while a loop is active. The controller's
+  // Play resets the pitch and volume envelopes even for a playing patch.
+  if ( !HL2SB_SoundPatchIsPlaying( pPatch ) ) {
+    lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_PITCH );
+    const float flPitch = lua_isnumber( L, -1 ) ? (float)lua_tonumber( L, -1 ) : PITCH_NORM;
+    lua_pop( L, 1 );
+    const float flStartPitch = IsFinite( flPitch ) ? clamp( flPitch, 0.0f, 255.0f ) : PITCH_NORM;
+    CSoundEnvelopeController::GetController().Play( pPatch, HL2SB_ChannelVolume( L, 1 ), flStartPitch );
+  }
   HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PLAYING, true );
   HL2SB_ChannelSetBool( L, 1, HL2SB_CHANNEL_FIELD_PAUSED, false );
 
@@ -3350,6 +3492,9 @@ static int luasrc_Channel_ChangeVolume (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   const float flVolume = (float)luaL_checknumber( L, 2 );
   const float flDeltaTime = (float)luaL_optnumber( L, 3, 0.0f );
+  if ( !IsFinite( flVolume ) || !IsFinite( flDeltaTime ) )
+    return 0;
+
   HL2SB_ChannelSetVolume( L, 1, flVolume );
 
   CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
@@ -3359,14 +3504,20 @@ static int luasrc_Channel_ChangeVolume (lua_State *L) {
   return 0;
 }
 
+static void HL2SB_ChannelChangePitch( lua_State *L, float flPitch, float flDeltaTime ) {
+  // Retain settings applied before the first Play creates the native patch.
+  lua_pushnumber( L, flPitch );
+  lua_setfield( L, 1, HL2SB_CHANNEL_FIELD_PITCH );
+  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
+  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
+    CSoundEnvelopeController::GetController().SoundChangePitch( pPatch, flPitch, flDeltaTime );
+}
+
 static int luasrc_Channel_SetPitch (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   const float flPitch = (float)luaL_checknumber( L, 2 );
-
-  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
-  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
-    CSoundEnvelopeController::GetController().SoundChangePitch( pPatch, flPitch, 0.0f );
-
+  if ( IsFinite( flPitch ) )
+    HL2SB_ChannelChangePitch( L, clamp( flPitch, 0.0f, 255.0f ), 0.0f );
   return 0;
 }
 
@@ -3388,9 +3539,8 @@ static int luasrc_Channel_ChangePitch (lua_State *L) {
   const float flPitch = (float)luaL_checknumber( L, 2 );
   const float flDeltaTime = (float)luaL_optnumber( L, 3, 0.0f );
 
-  CSoundPatch *pPatch = HL2SB_ChannelPatch( L, 1 );
-  if ( pPatch != NULL && HL2SB_ChannelEntity( L, 1 ) != NULL )
-    CSoundEnvelopeController::GetController().SoundChangePitch( pPatch, flPitch, flDeltaTime );
+  if ( IsFinite( flPitch ) && IsFinite( flDeltaTime ) )
+    HL2SB_ChannelChangePitch( L, clamp( flPitch, 0.0f, 255.0f ), flDeltaTime );
 
   return 0;
 }
@@ -3508,6 +3658,8 @@ static int luasrc_CreateSound (lua_State *L) {
     { "Stop",         luasrc_Channel_Stop },
     { "Pause",        luasrc_Channel_Pause },
     { "SetVolume",    luasrc_Channel_SetVolume },
+    { "SetSoundLevel", luasrc_Channel_SetSoundLevel },
+    { "GetSoundLevel", luasrc_Channel_GetSoundLevel },
     { "ChangeVolume", luasrc_Channel_ChangeVolume },
     { "GetVolume",    luasrc_Channel_GetVolume },
     { "SetPitch",     luasrc_Channel_SetPitch },

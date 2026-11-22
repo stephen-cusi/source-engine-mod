@@ -23,6 +23,9 @@
 #include "fx_water.h"
 #include "positionwatcher.h"
 #include "vphysics/constraints.h"
+#ifdef LUA_SDK
+extern bool HL2SB_CustomCollisionAllows( C_BaseEntity *, C_BaseEntity * );
+#endif
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -298,6 +301,10 @@ int CCollisionEvent::ShouldCollide_2( IPhysicsObject *pObj0, IPhysicsObject *pOb
 	// two objects under shadow control should not collide.  The AI will figure it out
 	if ( pObj0->GetShadowController() && pObj1->GetShadowController() )
 		return 0;
+#ifdef LUA_SDK
+	if ( !HL2SB_CustomCollisionAllows( pEntity0, pEntity1 ) )
+		return 0;
+#endif
 	return 1;
 }
 

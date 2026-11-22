@@ -344,6 +344,8 @@ public:
 	// Allows us to override the depth buffer setting of a material
 	DELEGATE_TO_OBJECT_2V(					OverrideDepthEnable, bool, bool, g_pShaderAPI );
 	DELEGATE_TO_OBJECT_2V(					OverrideAlphaWriteEnable, bool, bool, g_pShaderAPI );
+	DELEGATE_TO_OBJECT_5V( OverrideBlendColor, bool, bool, int, int, int, g_pShaderAPI );
+	DELEGATE_TO_OBJECT_5V( OverrideBlendAlpha, bool, bool, int, int, int, g_pShaderAPI );
 	DELEGATE_TO_OBJECT_2V(					OverrideColorWriteEnable, bool, bool, g_pShaderAPI );
 
 	// FIXME: This is a hack required for NVidia/XBox, can they fix in drivers?

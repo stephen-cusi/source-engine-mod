@@ -70,6 +70,13 @@ static int math_atan (lua_State *L) {
   return 1;
 }
 
+static int math_atan2 (lua_State *L) {
+  lua_Number y = luaL_checknumber(L, 1);
+  lua_Number x = luaL_checknumber(L, 2);
+  lua_pushnumber(L, l_mathop(atan2)(y, x));
+  return 1;
+}
+
 
 static int math_toint (lua_State *L) {
   int valid;
@@ -725,8 +732,6 @@ static void setrandfunc (lua_State *L) {
 ** Deprecated functions (for compatibility only)
 ** ===================================================================
 */
-#if defined(LUA_COMPAT_MATHLIB)
-
 static int math_cosh (lua_State *L) {
   lua_pushnumber(L, l_mathop(cosh)(luaL_checknumber(L, 1)));
   return 1;
@@ -758,7 +763,15 @@ static int math_frexp (lua_State *L) {
 
 static int math_ldexp (lua_State *L) {
   lua_Number x = luaL_checknumber(L, 1);
-  int ep = (int)luaL_checkinteger(L, 2);
+  lua_Number exponent = luaL_checknumber(L, 2);
+  int ep;
+  if (exponent != exponent) {
+    lua_pushnumber(L, exponent);
+    return 1;
+  }
+  if (exponent >= INT_MAX) ep = INT_MAX;
+  else if (exponent <= INT_MIN) ep = INT_MIN;
+  else ep = (int)exponent;
   lua_pushnumber(L, l_mathop(ldexp)(x, ep));
   return 1;
 }
@@ -768,7 +781,6 @@ static int math_log10 (lua_State *L) {
   return 1;
 }
 
-#endif
 /* }================================================================== */
 
 
@@ -785,6 +797,7 @@ static const luaL_Reg mathlib[] = {
   {"tointeger", math_toint},
   {"floor", math_floor},
   {"fmod",   math_fmod},
+  {"mod",    math_fmod},
   {"ult",   math_ult},
   {"log",   math_log},
   {"max",   math_max},
@@ -795,8 +808,7 @@ static const luaL_Reg mathlib[] = {
   {"sqrt",  math_sqrt},
   {"tan",   math_tan},
   {"type", math_type},
-#if defined(LUA_COMPAT_MATHLIB)
-  {"atan2", math_atan},
+  {"atan2", math_atan2},
   {"cosh",   math_cosh},
   {"sinh",   math_sinh},
   {"tanh",   math_tanh},
@@ -804,7 +816,6 @@ static const luaL_Reg mathlib[] = {
   {"frexp", math_frexp},
   {"ldexp", math_ldexp},
   {"log10", math_log10},
-#endif
   /* placeholders */
   {"random", NULL},
   {"randomseed", NULL},

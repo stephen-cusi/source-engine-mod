@@ -356,19 +356,13 @@ public:
 	void SetMainMenuOverride( vgui::VPANEL panel )
 	{
 		m_hMainMenuOverridePanel = panel;
-
-		if ( m_hMainMenuOverridePanel )
-		{
-			// We've got an override panel. Nuke all our menu items.
-			DeleteAllItems();
-		}
+		CGameMenu::BaseClass::SetVisible( panel == NULL );
 	}
 
 	virtual void SetVisible(bool state)
 	{
 		if ( m_hMainMenuOverridePanel )
 		{
-			// force to be always visible
 			ipanel()->SetVisible( m_hMainMenuOverridePanel, true );
 
 			// move us to the back instead of going invisible
@@ -376,6 +370,8 @@ public:
 			{
 				ipanel()->MoveToBack(m_hMainMenuOverridePanel);
 			}
+			CGameMenu::BaseClass::SetVisible( false );
+			return;
 		}
 
 		// force to be always visible
@@ -3833,6 +3829,8 @@ int CBasePanel::GetMenuAlpha( void )
 //-----------------------------------------------------------------------------
 void CBasePanel::SetMainMenuOverride( vgui::VPANEL panel )
 {
+	if ( m_hMainMenuOverridePanel && m_hMainMenuOverridePanel != panel )
+		ipanel()->SetVisible( m_hMainMenuOverridePanel, false );
 	m_hMainMenuOverridePanel = panel;
 
 	if ( m_pGameMenu )
@@ -3845,6 +3843,14 @@ void CBasePanel::SetMainMenuOverride( vgui::VPANEL panel )
 		// Parent it to this panel
 		ipanel()->SetParent( m_hMainMenuOverridePanel, GetVPanel() );
 	}
+
+	for ( int i = 0; i < m_pGameMenuButtons.Count(); ++i )
+		m_pGameMenuButtons[i]->SetVisible( panel == NULL );
+	if ( m_pGameLogo )
+		m_pGameLogo->SetVisible( panel == NULL );
+
+	if ( m_pGameMenu )
+		UpdateGameMenus();
 }
 
 //-----------------------------------------------------------------------------

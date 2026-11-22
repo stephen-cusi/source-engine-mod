@@ -10,11 +10,13 @@
 #include "cbase.h"
 #include "convar.h"
 #include "in_buttons.h"
+#include <climits>
 // HL2SB: Player:SetAmmo resolves GMod's ammo-name string through the shared
 // ammo definition (same lookup lua_tofirebulletsinfo uses for bullet.AmmoType).
 #include "ammodef.h"
 #ifdef CLIENT_DLL
 #include "iinput.h"	// HL2SB: input->GetButtonBits (live-command fallback)
+#include "inetchannelinfo.h"
 // HL2SB: raw per-frame mouse deltas from CInput::MouseMove (in_mouse.cpp)
 void HL2SB_GetLastMouseDeltas( int &dx, int &dy );
 class CViewSetup;
@@ -131,8 +133,12 @@ static void HL2SB_EnsureMoveDataMeta( lua_State *L );
 
 
 LUA_API void lua_pushplayer (lua_State *L, CBasePlayer *pPlayer) {
+  // Lua userdata allocation may run finalizers. Store the entity handle
+  // before it can reenter the engine and invalidate the player pointer.
+  CBaseHandle playerHandle;
+  playerHandle.Set(pPlayer);
   CBaseHandle *phPlayer = (CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle));
-  phPlayer->Set(pPlayer);
+  CopyConstruct(phPlayer, playerHandle);
   luaL_getmetatable(L, "CBasePlayer");
   lua_setmetatable(L, -2);
 }
@@ -197,6 +203,41 @@ static int CBasePlayer_CurrentCommandNumber (lua_State *L) {
 // valid while that player's command is being processed), so this hands back a
 // snapshot table with GMod's field names and the method spellings scripts use.
 //-----------------------------------------------------------------------------
+struct HL2SB_UserCmdScope {
+  lua_State *state;
+  CUserCmd *command;
+  int tableRef;
+};
+
+static CUtlVector<HL2SB_UserCmdScope> s_UserCmdScopes;
+
+void HL2SB_BeginUserCmdScope(lua_State *L, CUserCmd *command, int tableIndex) {
+  lua_pushvalue(L, tableIndex);
+  HL2SB_UserCmdScope scope = { L, command, luaL_ref(L, LUA_REGISTRYINDEX) };
+  s_UserCmdScopes.AddToTail(scope);
+}
+
+void HL2SB_EndUserCmdScope(lua_State *L) {
+  const int index = s_UserCmdScopes.Count() - 1;
+  Assert(index >= 0 && s_UserCmdScopes[index].state == L);
+  if (index < 0 || s_UserCmdScopes[index].state != L) return;
+  luaL_unref(L, LUA_REGISTRYINDEX, s_UserCmdScopes[index].tableRef);
+  s_UserCmdScopes.Remove(index);
+}
+
+static CUserCmd *HL2SB_GetScopedUserCmd(lua_State *L, int tableIndex) {
+  if (tableIndex < 0) tableIndex = lua_gettop(L) + tableIndex + 1;
+  for (int i = s_UserCmdScopes.Count() - 1; i >= 0; --i) {
+    const HL2SB_UserCmdScope &scope = s_UserCmdScopes[i];
+    if (scope.state != L) continue;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, scope.tableRef);
+    const bool match = lua_rawequal(L, tableIndex, -1) != 0;
+    lua_pop(L, 1);
+    if (match) return scope.command;
+  }
+  return NULL;
+}
+
 static int CBasePlayer_CmdKeyDown (lua_State *L) {
   lua_getfield(L, 1, "buttons");
   const int nButtons = lua_tointeger(L, -1);
@@ -289,14 +330,43 @@ static int CBasePlayer_CmdAddKey (lua_State *L) {
   return 0;
 }
 
+static int CBasePlayer_CmdRemoveKey (lua_State *L) {
+  const int key = (int)luaL_checknumber(L, 2);
+  lua_getfield(L, 1, "buttons");
+  const int buttons = (int)lua_tointeger(L, -1);
+  lua_pop(L, 1);
+  lua_pushinteger(L, buttons & ~key);
+  lua_setfield(L, 1, "buttons");
+  CUserCmd *command = HL2SB_GetScopedUserCmd(L, 1);
+  if (command) command->buttons = buttons & ~key;
+  return 0;
+}
+
+static int CBasePlayer_CmdSetMouseY (lua_State *L) {
+  const short mouseY = (short)(int)luaL_checknumber(L, 2);
+  lua_pushinteger(L, mouseY);
+  lua_setfield(L, 1, "mousedy");
+  CUserCmd *command = HL2SB_GetScopedUserCmd(L, 1);
+  if (command) command->mousedy = mouseY;
+  return 0;
+}
+
 static int CBasePlayer_CmdCommandNumber (lua_State *L) {
   lua_getfield(L, 1, "command_number");
   return 1;
 }
 
+static int CBasePlayer_CmdTickCount (lua_State *L) {
+  lua_getfield(L, 1, "tick_count");
+  return 1;
+}
+
 static const luaL_Reg HL2SB_UserCmdMeta[] = {
   {"AddKey",             CBasePlayer_CmdAddKey},
+  {"RemoveKey",          CBasePlayer_CmdRemoveKey},
+  {"SetMouseY",          CBasePlayer_CmdSetMouseY},
   {"CommandNumber",      CBasePlayer_CmdCommandNumber},
+  {"TickCount",          CBasePlayer_CmdTickCount},
   {"KeyDown",            CBasePlayer_CmdKeyDown},
   {"GetMouseX",          CBasePlayer_CmdGetMouseX},
   {"GetMouseY",          CBasePlayer_CmdGetMouseY},
@@ -339,6 +409,12 @@ static void HL2SB_EnsureUserCmdMeta (lua_State *L) {
 // into the real CUserCmd afterwards; ClearButtons/ClearMovement/Set* only
 // mutate the table, so they work through that same copy-back.
 void HL2SB_PushUserCmdTable (lua_State *L, const CUserCmd *pCmd) {
+  for (int i = s_UserCmdScopes.Count() - 1; i >= 0; --i) {
+    if (s_UserCmdScopes[i].state == L && s_UserCmdScopes[i].command == pCmd) {
+      lua_rawgeti(L, LUA_REGISTRYINDEX, s_UserCmdScopes[i].tableRef);
+      return;
+    }
+  }
   lua_newtable(L);
 
   lua_pushinteger(L, pCmd->command_number); lua_setfield(L, -2, "command_number");
@@ -373,6 +449,8 @@ void HL2SB_PushUserCmdTable (lua_State *L, const CUserCmd *pCmd) {
   lua_pushcfunction(L, CBasePlayer_CmdSetSideMove);    lua_setfield(L, -2, "SetSideMove");
   lua_pushcfunction(L, CBasePlayer_CmdSetUpMove);      lua_setfield(L, -2, "SetUpMove");
   lua_pushcfunction(L, CBasePlayer_CmdAddKey);         lua_setfield(L, -2, "AddKey");
+  lua_pushcfunction(L, CBasePlayer_CmdRemoveKey);      lua_setfield(L, -2, "RemoveKey");
+  lua_pushcfunction(L, CBasePlayer_CmdSetMouseY);      lua_setfield(L, -2, "SetMouseY");
   lua_pushcfunction(L, CBasePlayer_CmdCommandNumber);  lua_setfield(L, -2, "CommandNumber");
 
   HL2SB_EnsureUserCmdMeta(L);
@@ -563,6 +641,17 @@ static int CBasePlayer_FindUseEntity (lua_State *L) {
   return 1;
 }
 
+static int CBasePlayer_GetPreviousWeapon (lua_State *L) {
+  CBasePlayer *player = luaL_checkplayer(L, 1);
+#ifdef CLIENT_DLL
+  CBaseCombatWeapon *weapon = player->GetLastWeapon();
+#else
+  CBaseCombatWeapon *weapon = player->Weapon_GetLast();
+#endif
+  lua_pushweapon(L, weapon);
+  return 1;
+}
+
 static int CBasePlayer_GetActiveWeapon (lua_State *L) {
   CBaseCombatWeapon *pWeapon = luaL_checkplayer(L, 1)->GetActiveWeapon();
   lua_pushweapon(L, pWeapon);
@@ -619,7 +708,7 @@ static int CBasePlayer_GetAmmoCount (lua_State *L) {
   switch(lua_type(L, 2)) {
 	case LUA_TNUMBER:
 	default:
-      lua_pushinteger(L, luaL_checkplayer(L, 1)->GetAmmoCount(luaL_checkint(L, 2)));
+	  lua_pushinteger(L, luaL_checkplayer(L, 1)->GetAmmoCount((int)luaL_checknumber(L, 2)));
 	  break;
 	case LUA_TSTRING:
       lua_pushinteger(L, luaL_checkplayer(L, 1)->GetAmmoCount((char *)luaL_checkstring(L, 2)));
@@ -720,6 +809,15 @@ static int CBasePlayer_GetLaggedMovementValue (lua_State *L) {
   lua_pushnumber(L, luaL_checkplayer(L, 1)->GetLaggedMovementValue());
   return 1;
 }
+
+#ifndef CLIENT_DLL
+static int CBasePlayer_SetLaggedMovementValue (lua_State *L) {
+  CBasePlayer *player = luaL_checkplayer(L, 1);
+  const float value = (float)luaL_checknumber(L, 2);
+  if (value >= 0.0f) player->SetLaggedMovementValue(value);
+  return 0;
+}
+#endif
 
 static int CBasePlayer_GetLastKnownPlaceName (lua_State *L) {
   lua_pushstring(L, luaL_checkplayer(L, 1)->GetLastKnownPlaceName());
@@ -937,8 +1035,11 @@ static int CBasePlayer_GetUserID (lua_State *L) {
 // FIXME: push CBaseViewModel instead
 static int CBasePlayer_GetViewModel (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer( L, 1 );
-  const int nIndex = lua_type( L, 2 ) == LUA_TNUMBER
-      ? (int)clamp( lua_tonumber( L, 2 ), (lua_Number)0, (lua_Number)( MAX_VIEWMODELS - 1 ) )
+  const lua_Number requested = lua_type( L, 2 ) == LUA_TNUMBER ? lua_tonumber( L, 2 ) : 0;
+  // An unordered comparison also rejects NaN before converting to an
+  // index for the engine's fixed-size viewmodel array.
+  const int nIndex = requested >= 0
+      ? static_cast<int>( MIN( requested, static_cast<lua_Number>( MAX_VIEWMODELS - 1 ) ) )
       : 0;
   lua_pushanimating( L, pPlayer->GetViewModel( nIndex ) );
   return 1;
@@ -1711,6 +1812,12 @@ static int CBasePlayer_SetCurrentViewOffset (lua_State *L) {
 // the view-entity half of ClientModeShared::ShouldDrawLocalPlayer.
 static int CBasePlayer_ShouldDrawLocalPlayer (lua_State *L) {
   C_BasePlayer *pPlayer = lua_toplayer(L, 1);
+  // Reference behavior / GMod rejects a NULL player instead of dereferencing it.
+  if ( !pPlayer )
+  {
+    lua_pushboolean( L, false );
+    return 1;
+  }
   bool bShouldDraw = true;
   if ( pPlayer->index == render->GetViewEntity() && !C_BasePlayer::ShouldDrawLocalPlayer() )
     bShouldDraw = false;
@@ -1880,8 +1987,14 @@ static int CBasePlayer___eq (lua_State *L) {
 static int CBasePlayer_IsListenServerHost (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
 #ifdef CLIENT_DLL
-  // On a listen server the host's client entity index is always 1.
-  lua_pushboolean(L, pPlayer->entindex() == 1);
+  bool isHost = pPlayer->entindex() == 1;
+  if ( isHost && pPlayer->IsLocalPlayer() )
+  {
+    // A remote server can also assign the local player slot 1.
+    const INetChannelInfo *channel = engine->GetNetChannelInfo();
+    isHost = channel && channel->IsLoopback();
+  }
+  lua_pushboolean(L, isHost);
 #else
   lua_pushboolean(L, !engine->IsDedicatedServer() && pPlayer->entindex() == 1);
 #endif
@@ -1934,26 +2047,31 @@ static int CBasePlayer___tostring (lua_State *L) {
 
 //-----------------------------------------------------------------------------
 // Per-player sleeve colour - GMod player:GetPlayerColor / player:SetPlayerColor.
-// The c_arms "PlayerColor" material proxy (client) reads the LOCAL player's
-// colour via HL2SB_GetPlayerColor and tints the sleeves. Kept keyed by userid in
-// a map so we don't add a member to the shared networked player class.
+// Reference behavior for Player:SetPlayerColor:
+// the Vector argument is written straight into the player's networked colour
+// member with NO clamping, and the Lua-side only ever fills it from
+// player_sandbox.lua's PLAYER:Spawn (GetInfo of the userinfo convars).  The
+// map therefore stores the raw normalized Vector, HDR components (>1) included
+// -- GMod's default cl_weaponcolor "0.30 1.80 2.10" is above 1 by design.  The
+// c_arms "PlayerColor" material proxy (client) reads it; keyed by userid so we
+// don't add a member to the shared networked player class.
 //-----------------------------------------------------------------------------
-static CUtlMap<int, Color> s_PlayerColor;
+static CUtlMap<int, Vector> s_PlayerColor;
 static bool s_PlayerColorInit = false;
 
-Color HL2SB_GetPlayerColor( int iUserID )
+Vector HL2SB_GetPlayerColor( int iUserID )
 {
 	if ( !s_PlayerColorInit ) { s_PlayerColor.SetLessFunc( DefLessFunc( int ) ); s_PlayerColorInit = true; }
 	int idx = s_PlayerColor.Find( iUserID );
 	if ( idx == s_PlayerColor.InvalidIndex() )
-		return Color( 62, 88, 106, 255 );	// GMod teal fallback
+		return Vector( 62.0f / 255.0f, 88.0f / 255.0f, 106.0f / 255.0f );	// GMod teal fallback (matproxy player_color.lua)
 	return s_PlayerColor[ idx ];
 }
 
-void HL2SB_SetPlayerColor( int iUserID, const Color &clr )
+void HL2SB_SetPlayerColor( int iUserID, const Vector &v )
 {
 	if ( !s_PlayerColorInit ) { s_PlayerColor.SetLessFunc( DefLessFunc( int ) ); s_PlayerColorInit = true; }
-	s_PlayerColor.InsertOrReplace( iUserID, clr );
+	s_PlayerColor.InsertOrReplace( iUserID, v );
 }
 
 // GMod's weapon colour, the other half of the pair (Player:SetWeaponColor /
@@ -1961,57 +2079,29 @@ void HL2SB_SetPlayerColor( int iUserID, const Color &clr )
 // "PlayerWeaponColor" material proxy reads it; HL2SB's arms already follow the client's
 // cl_weaponcolor directly (c_viewmodel_attachment.cpp), so this is storage + API
 // compatibility - but GMod's player class calls it on every spawn, so it has to exist.
-static CUtlMap<int, Color> s_WeaponColor;
+static CUtlMap<int, Vector> s_WeaponColor;
 static bool s_WeaponColorInit = false;
 
-Color HL2SB_GetWeaponColor( int iUserID )
+Vector HL2SB_GetWeaponColor( int iUserID )
 {
 	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
-
-#ifdef CLIENT_DLL
-	// 2026-09-26: the LOCAL player's colour is the live cl_weaponcolor convar
-	// -- the map below only fills when Lua calls SetWeaponColor (at spawn), so
-	// a weapon colour picked in the menu mid-session left every map reader on
-	// the OLD colour while the convar readers showed the new one (the "beam
-	// colour never changes" report).  The convar IS the source of truth for
-	// the local player; the map keeps serving remote players.
-	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-	if ( pLocal != NULL && pLocal->GetUserID() == iUserID )
-	{
-		static ConVarRef s_cl_weaponcolor_live( "cl_weaponcolor" );
-		if ( s_cl_weaponcolor_live.IsValid() )
-		{
-			float r = 0.0f, g = 0.0f, b = 0.0f;
-			if ( sscanf( s_cl_weaponcolor_live.GetString(), "%f %f %f", &r, &g, &b ) == 3 )
-			{
-				return Color(
-					clamp( (int)( r * 255.0f ), 0, 255 ),
-					clamp( (int)( g * 255.0f ), 0, 255 ),
-					clamp( (int)( b * 255.0f ), 0, 255 ), 255 );
-			}
-		}
-	}
-#endif
 
 	int idx = s_WeaponColor.Find( iUserID );
 	if ( idx != s_WeaponColor.InvalidIndex() )
 		return s_WeaponColor[ idx ];
 
-	// 2026-09-24: this used to fall back to the cl_weaponcolor CONVAR for any
-	// unknown userid.  The convar is the LOCAL player's value, so on the client
-	// every remote player whose entry had not arrived yet was tinted with the
-	// local player's colour (cross-player colour bleed on beams, claw sprites
-	// and muzzle glows).  The server now broadcasts the whole colour table
-	// (hl2sb_setplayercolor) and replays it on ClientActive, so a miss here
-	// only happens before that snapshot lands.  GMod's cl_weaponcolor default
-	// "0.30 1.80 2.10" clamped.
-	return Color( 76, 255, 255, 255 );
+	// Reference behavior: the colour lives in the player's networked member and
+	// player_sandbox.lua's PLAYER:Spawn fills it from the userinfo convar on
+	// every spawn, so GMod's default ("0.30 1.80 2.10", deliberately above 1)
+	// is what an unstyled player wears.  A miss here only happens before the
+	// snapshot lands (ClientActive replays the table).
+	return Vector( 0.30f, 1.80f, 2.10f );
 }
 
-void HL2SB_SetWeaponColor( int iUserID, const Color &clr )
+void HL2SB_SetWeaponColor( int iUserID, const Vector &v )
 {
 	if ( !s_WeaponColorInit ) { s_WeaponColor.SetLessFunc( DefLessFunc( int ) ); s_WeaponColorInit = true; }
-	s_WeaponColor.InsertOrReplace( iUserID, clr );
+	s_WeaponColor.InsertOrReplace( iUserID, v );
 }
 
 #ifndef CLIENT_DLL
@@ -2034,35 +2124,35 @@ void HL2SB_SendPlayerColors( CBasePlayer *pOnlyTo )
 
 		for ( int idx = s_PlayerColor.FirstInorder(); idx != s_PlayerColor.InvalidIndex(); idx = s_PlayerColor.NextInorder( idx ) )
 		{
-			const Color &c = s_PlayerColor[ idx ];
-			char szCmd[ 64 ];
-			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 0 %d %d %d %d\n",
-				s_PlayerColor.Key( idx ), c.r(), c.g(), c.b(), c.a() );
+			const Vector &v = s_PlayerColor[ idx ];
+			char szCmd[ 96 ];
+			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 0 %.4f %.4f %.4f\n",
+				s_PlayerColor.Key( idx ), v.x, v.y, v.z );
 			engine->ClientCommand( pPlayer->edict(), szCmd );
 		}
 
 		for ( int idx = s_WeaponColor.FirstInorder(); idx != s_WeaponColor.InvalidIndex(); idx = s_WeaponColor.NextInorder( idx ) )
 		{
-			const Color &c = s_WeaponColor[ idx ];
-			char szCmd[ 64 ];
-			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 1 %d %d %d %d\n",
-				s_WeaponColor.Key( idx ), c.r(), c.g(), c.b(), c.a() );
+			const Vector &v = s_WeaponColor[ idx ];
+			char szCmd[ 96 ];
+			Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d 1 %.4f %.4f %.4f\n",
+				s_WeaponColor.Key( idx ), v.x, v.y, v.z );
 			engine->ClientCommand( pPlayer->edict(), szCmd );
 		}
 	}
 }
 #endif
 
-// GMod's Player:SetPlayerColor / SetWeaponColor take a NORMALIZED Vector:
+// GMod's Player:SetPlayerColor / SetWeaponColor take a NORMALIZED Vector and
+// store it in the networked member with NO clamping:
 //   sandbox/gamemode/player_class/player_sandbox.lua:108-115
 //       self.Player:SetPlayerColor( Vector( plyclr ) )      -- plyclr = cl_playercolor
 //   terrortown/gamemode/player.lua:270
 //       ply:SetPlayerColor( Vector( clr.r/255.0, clr.g/255.0, clr.b/255.0 ) )
-// while this fork's original binding took a 0-255 Color table.  Both are accepted now
-// (the "r g b" 0-1 string the convars carry works too), so GMod gamemode/addon code
-// that passes a Vector works unchanged.  Values are clamped: GMod's default
-// cl_weaponcolor is "0.30 1.80 2.10", i.e. deliberately above 1.
-static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
+// This fork's binding additionally accepts the "r g b" convar string and a
+// 0-255 Color table (converted /255) so older fork code keeps working; the
+// Vector path passes through untouched, HDR components included.
+static bool HL2SB_LuaColorVector( lua_State *L, int narg, Vector &out )
 {
   switch ( lua_type( L, narg ) )
   {
@@ -2072,9 +2162,7 @@ static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
       if ( sscanf( lua_tostring( L, narg ), "%f %f %f", &r, &g, &b ) < 3 )
         return false;
 
-      out = Color( (int)clamp( r * 255.0f, 0.0f, 255.0f ),
-                   (int)clamp( g * 255.0f, 0.0f, 255.0f ),
-                   (int)clamp( b * 255.0f, 0.0f, 255.0f ), 255 );
+      out = Vector( r, g, b );
       return true;
     }
 
@@ -2083,17 +2171,14 @@ static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
       if ( !lua_iscolor( L, narg ) )
         return false;
 
-      out = luaL_checkcolor( L, narg );
+      Color c = luaL_checkcolor( L, narg );
+      out = Vector( c.r() / 255.0f, c.g() / 255.0f, c.b() / 255.0f );
       return true;
     }
 
     case LUA_TUSERDATA:
     {
-      Vector v = luaL_checkvector( L, narg );
-
-      out = Color( (int)clamp( v.x * 255.0f, 0.0f, 255.0f ),
-                   (int)clamp( v.y * 255.0f, 0.0f, 255.0f ),
-                   (int)clamp( v.z * 255.0f, 0.0f, 255.0f ), 255 );
+      out = luaL_checkvector( L, narg );
       return true;
     }
 
@@ -2104,23 +2189,23 @@ static bool HL2SB_LuaColorArg( lua_State *L, int narg, Color &out )
 
 static int CBasePlayer_GetPlayerColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr = HL2SB_GetPlayerColor( pPlayer->GetUserID() );
+  Vector v = HL2SB_GetPlayerColor( pPlayer->GetUserID() );
 
   // GMod answers a NORMALIZED Vector, not a Color: lua/matproxy/player_color.lua only
   // accepts a vector ("if ( isvector( col ) ) then mat:SetVector(...)"), and the sandbox
   // / TTT player classes feed the result straight back into SetPlayerColor.
-  lua_pushvector(L, Vector( clr.r() / 255.0f, clr.g() / 255.0f, clr.b() / 255.0f ));
+  lua_pushvector(L, v);
   return 1;
 }
 
 static int CBasePlayer_SetPlayerColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr;
+  Vector v;
 
-  if ( !HL2SB_LuaColorArg( L, 2, clr ) )
+  if ( !HL2SB_LuaColorVector( L, 2, v ) )
     return 0;
 
-  HL2SB_SetPlayerColor( pPlayer->GetUserID(), clr );
+  HL2SB_SetPlayerColor( pPlayer->GetUserID(), v );
 #ifndef CLIENT_DLL
   // GMod networks the colour to everyone; push the updated table to all
   // clients (this player's own client included) so the PlayerColor proxy
@@ -2135,19 +2220,17 @@ static int CBasePlayer_SetPlayerColor (lua_State *L) {
 // as SetPlayerColor, and likewise answered as a normalized Vector.
 static int CBasePlayer_GetWeaponColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr = HL2SB_GetWeaponColor( pPlayer->GetUserID() );
-
-  lua_pushvector(L, Vector( clr.r() / 255.0f, clr.g() / 255.0f, clr.b() / 255.0f ));
+  lua_pushvector(L, HL2SB_GetWeaponColor( pPlayer->GetUserID() ));
   return 1;
 }
 
 static int CBasePlayer_SetWeaponColor (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  Color clr;
+  Vector v;
 
-  if ( HL2SB_LuaColorArg( L, 2, clr ) )
+  if ( HL2SB_LuaColorVector( L, 2, v ) )
   {
-    HL2SB_SetWeaponColor( pPlayer->GetUserID(), clr );
+    HL2SB_SetWeaponColor( pPlayer->GetUserID(), v );
 #ifndef CLIENT_DLL
     // Broadcast like SetPlayerColor - GMod networks m_WeaponColor to everyone.
     HL2SB_SendPlayerColors( NULL );
@@ -2615,21 +2698,24 @@ static int CBasePlayer_GetAllowFullRotation (lua_State *L) {
 */
 static int CBasePlayer_KeyDown (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  const int nKey = luaL_checkint(L, 2);
+  const double key = luaL_checknumber(L, 2);
+  // The reference truncates to a signed 32-bit mask.
+  const int nKey = key > static_cast<double>( INT_MIN ) - 1.0 &&
+    key < static_cast<double>( INT_MAX ) + 1.0 ? static_cast<int>( key ) : INT_MIN;
   lua_pushboolean(L, (pPlayer->m_nButtons & nKey) != 0);
   return 1;
 }
 
 static int CBasePlayer_KeyPressed (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  const int nKey = luaL_checkint(L, 2);
+  const int nKey = (int)luaL_checknumber(L, 2);
   lua_pushboolean(L, (pPlayer->m_afButtonPressed & nKey) != 0);
   return 1;
 }
 
 static int CBasePlayer_KeyReleased (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
-  const int nKey = luaL_checkint(L, 2);
+  const int nKey = (int)luaL_checknumber(L, 2);
   lua_pushboolean(L, (pPlayer->m_afButtonReleased & nKey) != 0);
   return 1;
 }
@@ -3305,6 +3391,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"EyeVectors", CBasePlayer_EyeVectors},
   {"FindUseEntity", CBasePlayer_FindUseEntity},
   {"GetActiveWeapon", CBasePlayer_GetActiveWeapon},
+  {"GetPreviousWeapon", CBasePlayer_GetPreviousWeapon},
   {"GetWeapons", CBasePlayer_GetWeapons},
   {"GetAmmoCount", CBasePlayer_GetAmmoCount},
   {"GetAmmo", CBasePlayer_GetAmmo},
@@ -3347,6 +3434,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SetMaxArmor", CBasePlayer_SetMaxArmor},
   {"GetImpulse", CBasePlayer_GetImpulse},
   {"GetLaggedMovementValue", CBasePlayer_GetLaggedMovementValue},
+#ifndef CLIENT_DLL
+  {"SetLaggedMovementValue", CBasePlayer_SetLaggedMovementValue},
+#endif
   {"GetLastKnownPlaceName", CBasePlayer_GetLastKnownPlaceName},
   {"GetNextAttack", CBasePlayer_GetNextAttack},
   {"GetObserverMode", CBasePlayer_GetObserverMode},
@@ -3750,7 +3840,9 @@ static const luaL_Reg HL2SB_MoveDatameta[] = {
   {"GetMaxSpeed",         MoveData_GetMaxSpeed},
   {"SetMaxSpeed",         MoveData_SetMaxSpeed},
   {"GetClientMaxSpeed",   MoveData_GetClientMaxSpeed},
+  {"GetMaxClientSpeed",   MoveData_GetClientMaxSpeed},
   {"SetClientMaxSpeed",   MoveData_SetClientMaxSpeed},
+  {"SetMaxClientSpeed",   MoveData_SetClientMaxSpeed},
   {"GetOrigin",           MoveData_GetOrigin},
   {"SetOrigin",           MoveData_SetOrigin},
   {"GetVelocity",         MoveData_GetVelocity},
@@ -3856,6 +3948,7 @@ int HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *pszH
 		lua_pushplayer( L, pPlayer );
 		HL2SB_PushMoveData_Internal( L, pMove );
 		HL2SB_PushUserCmdTable( L, pCmd );
+		HL2SB_BeginUserCmdScope( L, const_cast<CUserCmd *>( pCmd ), -1 );
 		lua_pushvalue( L, -1 );
 		iTableRef = luaL_ref( L, LUA_REGISTRYINDEX );
 	END_LUA_CALL_HOOK( 3, 1 );
@@ -3891,6 +3984,11 @@ int HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *pszH
 			}
 			lua_pop( L, 1 );
 
+			lua_getfield( L, -1, "mousedy" );
+			if ( pMutCmd != NULL && lua_isnumber( L, -1 ) )
+				pMutCmd->mousedy = (short)lua_tointeger( L, -1 );
+			lua_pop( L, 1 );
+
 			lua_getfield( L, -1, "forwardmove" );
 			if ( lua_isnumber( L, -1 ) )
 			{
@@ -3920,6 +4018,7 @@ int HL2SB_LuaMoveHooks( CBasePlayer *pPlayer, CMoveData *pMove, const char *pszH
 		}
 		lua_pop( L, 1 );
 		luaL_unref( L, LUA_REGISTRYINDEX, iTableRef );
+		HL2SB_EndUserCmdScope( L );
 	}
 
 	return iTakesOver;
@@ -3933,6 +4032,7 @@ void HL2SB_LuaStartCommand( CBasePlayer *pPlayer, CUserCmd *pCmd )
 		return;
 
 	HL2SB_PushUserCmdTable( L, pCmd );
+	HL2SB_BeginUserCmdScope( L, pCmd, -1 );
 	const int iTableRef = luaL_ref( L, LUA_REGISTRYINDEX );
 
 	BEGIN_LUA_CALL_HOOK( "StartCommand" );
@@ -3946,6 +4046,11 @@ void HL2SB_LuaStartCommand( CBasePlayer *pPlayer, CUserCmd *pCmd )
 		lua_getfield( L, -1, "buttons" );
 		if ( lua_isnumber( L, -1 ) )
 			pCmd->buttons = (int)lua_tointeger( L, -1 );
+		lua_pop( L, 1 );
+
+		lua_getfield( L, -1, "mousedy" );
+		if ( lua_isnumber( L, -1 ) )
+			pCmd->mousedy = (short)lua_tointeger( L, -1 );
 		lua_pop( L, 1 );
 
 		lua_getfield( L, -1, "viewangles" );
@@ -3970,6 +4075,7 @@ void HL2SB_LuaStartCommand( CBasePlayer *pPlayer, CUserCmd *pCmd )
 	}
 	lua_pop( L, 1 );
 	luaL_unref( L, LUA_REGISTRYINDEX, iTableRef );
+	HL2SB_EndUserCmdScope( L );
 }
 
 // HL2SB (2026-10-08): the two landing/jump gamemode hooks.  gamemovement.cpp

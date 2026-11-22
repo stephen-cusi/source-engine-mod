@@ -807,6 +807,10 @@ static int CBaseAnimating_GetAnimTimeInterval (lua_State *L) {
 }
 
 static int CBaseAnimating_GetAttachment (lua_State *L) {
+  if (lua_type(L, 2) == LUA_TNUMBER) {
+    extern int CBaseEntity_GetAttachment(lua_State *L);
+    return CBaseEntity_GetAttachment(L);
+  }
   // HL2SB (2026-09-22): GMod signature GetAttachment( id|name ) -> a table
   // { Pos = Vector, Ang = Angle }, nil when the attachment doesn't exist.
   // cf_beast's shell eject reads vm:GetAttachment(att) this way; the old
@@ -1090,7 +1094,8 @@ static int CBaseAnimating_GetCollideType (lua_State *L) {
 }
 
 static int CBaseAnimating_GetCycle (lua_State *L) {
-  lua_pushnumber(L, luaL_checkanimating(L, 1)->GetCycle());
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  lua_pushnumber(L, pEntity->IsMarkedForDeletion() ? 0 : pEntity->GetCycle());
   return 1;
 }
 
@@ -1379,7 +1384,8 @@ static int CBaseAnimating_GetRenderOrigin (lua_State *L) {
 }
 
 static int CBaseAnimating_GetSequence (lua_State *L) {
-  lua_pushinteger(L, luaL_checkanimating(L, 1)->GetSequence());
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  lua_pushinteger(L, pEntity->IsMarkedForDeletion() ? 0 : pEntity->GetSequence());
   return 1;
 }
 
@@ -1417,7 +1423,8 @@ static int CBaseAnimating_GetSequenceLinearMotion (lua_State *L) {
 }
 
 static int CBaseAnimating_GetSequenceName (lua_State *L) {
-  lua_pushstring(L, luaL_checkanimating(L, 1)->GetSequenceName(luaL_checkint(L, 2)));
+  C_BaseAnimating *pEntity = luaL_checkanimating(L, 1);
+  lua_pushstring(L, pEntity->IsMarkedForDeletion() ? "" : pEntity->GetSequenceName(luaL_checkint(L, 2)));
   return 1;
 }
 
@@ -1627,18 +1634,31 @@ static int CBaseAnimating_ResetLatched (lua_State *L) {
   return 0;
 }
 
+static bool ReadNumericSequence( lua_State *L, int index, int &sequence ) {
+  const double value = lua_tonumber(L, index);
+  // GMod truncates numeric IDs. Guard the C++ conversion for non-finite
+  // and out-of-range values before passing an ID to the engine.
+  if (!(value > -2147483649.0 && value < 2147483648.0))
+    return false;
+  sequence = static_cast<int>(value);
+  return true;
+}
+
 static int CBaseAnimating_ResetSequence (lua_State *L) {
-  // HL2SB: GMod's Entity:ResetSequence takes number OR string -- a string is
-  // the sequence NAME and is resolved through LookupSequence first (the
-  // documented contract).  The nvg addon plays named sequences on
-  // ClientsideModels ("idleoff", "equip", ...); number-only checking aborted
-  // its model creation block on the first frame and left the night-vision
-  // camera entity permanently unset.
-  C_BaseAnimating *pAnimating = luaL_checkanimating(L, 1);
-  if ( lua_type(L, 2) == LUA_TSTRING )
-    pAnimating->ResetSequence(pAnimating->LookupSequence(luaL_checkstring(L, 2)));
-  else
-    pAnimating->ResetSequence(luaL_checkint(L, 2));
+  CBaseAnimating *entity = luaL_checkentity(L, 1)->GetBaseAnimating();
+  if (!entity)
+    return 0;
+
+  if (lua_type(L, 2) == LUA_TSTRING) {
+    const int sequence = entity->LookupSequence(luaL_checkstring(L, 2));
+    entity->ResetSequence(sequence);
+  } else if (lua_type(L, 2) == LUA_TNUMBER) {
+    int sequence;
+    if (ReadNumericSequence(L, 2, sequence))
+      entity->ResetSequence(sequence);
+  } else {
+    return luaL_argerror(L, 2, "number or string expected");
+  }
   return 0;
 }
 
@@ -1659,22 +1679,22 @@ static int CBaseAnimating_RetrieveRagdollInfo (lua_State *L) {
 
 static int CBaseAnimating_SelectWeightedSequence (lua_State *L) {
   CBaseAnimating *entity = luaL_checkanimating(L, 1);
+  if ( !entity->GetModelPtr() ) return 0;
   const int activity = luaL_checkint(L, 2);
-  const char *name = NULL;
-  if ( activity == ACT_GMOD_SIT_ROLLERCOASTER ) name = "sit_rollercoaster";
-  else if ( activity == ACT_HL2MP_SIT ) name = "sit";
-  else if ( activity == ActivityList_IndexForName("ACT_DRIVE_JEEP") ) name = "drive_jeep";
-  else if ( activity == ActivityList_IndexForName("ACT_DRIVE_AIRBOAT") ) name = "drive_airboat";
-  int sequence = name ? entity->LookupSequence(name) : -1;
-  lua_pushinteger(L, sequence >= 0 ? sequence : entity->SelectWeightedSequence((Activity)activity));
+  if ( activity < 0 ) return luaL_argerror(L, 2, "invalid activity");
+  lua_pushinteger(L, entity->SelectWeightedSequence((Activity)activity));
   return 1;
 }
 
 static int CBaseAnimating_SequenceDuration (lua_State *L) {
-  if (lua_isnoneornil(L, 2))
-    lua_pushnumber(L, luaL_checkanimating(L, 1)->SequenceDuration());
-  else
-	lua_pushnumber(L, luaL_checkanimating(L, 1)->SequenceDuration(luaL_checkint(L, 2)));
+  CBaseAnimating *entity = luaL_checkentity(L, 1)->GetBaseAnimating();
+  if (!entity)
+    return 0;
+
+  int sequence = entity->GetSequence();
+  if (lua_type(L, 2) == LUA_TNUMBER && !ReadNumericSequence(L, 2, sequence))
+    sequence = -1;
+  lua_pushnumber(L, entity->SequenceDuration(sequence));
   return 1;
 }
 

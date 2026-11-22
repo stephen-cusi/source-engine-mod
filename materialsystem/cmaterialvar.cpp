@@ -84,6 +84,7 @@ public:
 		m_intVal = 0;
 		m_nTempIndex = 0xFF;
 		m_bFakeMaterialVar = false;
+		m_pQueueMirror = NULL;
 		m_Type = MATERIAL_VAR_TYPE_INT;
 	}
 
@@ -105,6 +106,14 @@ private:
 	// Cleans up material var data
 	CMaterialVar *AllocThreadVar();
 	void CleanUpData();
+	void InvalidateQueueMirrorForSynchronousWrite( CMatCallQueue *queue )
+	{
+		if ( !m_bFakeMaterialVar && !queue && ThreadInMainThread() )
+		{
+			delete m_pQueueMirror;
+			m_pQueueMirror = NULL;
+		}
+	}
 
 	// NOTE: Dummy vars have no backlink so we have to check the pointer here
 	void VarChanged() { if ( m_pMaterial ) m_pMaterial->ReportVarChanged(this); }
@@ -120,6 +129,7 @@ private:
 
 	// Owning material....
 	IMaterialInternal* m_pMaterial;
+	CMaterialVar *m_pQueueMirror;
 
 	// Only using one of these at a time...
 	struct FourCC_t
@@ -197,22 +207,12 @@ void EnableThreadedMaterialVarAccess( bool bEnable, IMaterialVar **ppParams, int
 
 CMaterialVar *CMaterialVar::AllocThreadVar()
 {
-	if ( s_bEnableThreadedAccess )
-	{
-		if ( m_nTempIndex == 0xFF )
-		{
-			if ( s_nTempVarsUsed >= Q_ARRAYSIZE(s_pTempMaterialVar) )
-			{
-				s_nOverflowTempVars++;
-				return NULL;
-			}
-			m_nTempIndex = s_nTempVarsUsed++;
-		}
-
-		return &s_pTempMaterialVar[m_nTempIndex];
-	}
-
-	return NULL;
+	// Queued writes must be observable immediately by callers on the queueing
+	// thread, while the render thread applies them in order to the real value.
+	// Keep the mirror per variable, including outside material proxy callbacks.
+	if ( !m_pQueueMirror )
+		m_pQueueMirror = new CMaterialVar();
+	return m_pQueueMirror;
 }
 
 //-----------------------------------------------------------------------------
@@ -409,6 +409,7 @@ CMaterialVar::CMaterialVar( IMaterial* pMaterial, const char *pKey )
 CMaterialVar::~CMaterialVar()
 {
 	CleanUpData();
+	delete m_pQueueMirror;
 }
 
 
@@ -496,8 +497,8 @@ int	CMaterialVar::GetIntValueInternal( void ) const
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetIntValueInternal();
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetIntValueInternal();
 	}
 
 	// Set methods for float and vector update this
@@ -514,8 +515,8 @@ float CMaterialVar::GetFloatValueInternal( void ) const
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetFloatValueInternal();
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetFloatValueInternal();
 	}
 
 	return m_VecVal[0];
@@ -531,8 +532,8 @@ float const* CMaterialVar::GetVecValueInternal( ) const
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetVecValueInternal();
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetVecValueInternal();
 	}
 
 	return m_VecVal.Base();
@@ -548,9 +549,9 @@ void CMaterialVar::GetVecValueInternal( float *val, int numcomps ) const
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
+		if ( m_pQueueMirror )
 		{
-			s_pTempMaterialVar[m_nTempIndex].GetVecValueInternal( val, numcomps );
+			m_pQueueMirror->GetVecValueInternal( val, numcomps );
 			return;
 		}
 	}
@@ -572,8 +573,8 @@ int	CMaterialVar::VectorSizeInternal() const
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].VectorSizeInternal( );
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->VectorSizeInternal( );
 	}
 
 	return m_nNumVectorComps;
@@ -589,6 +590,7 @@ void CMaterialVar::SetFloatValue( float val )
 {
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		CMaterialVar *pThreadVar = AllocThreadVar();
@@ -623,6 +625,7 @@ void CMaterialVar::SetIntValue( int val )
 {
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		CMaterialVar *pThreadVar = AllocThreadVar();
@@ -663,8 +666,8 @@ const char *CMaterialVar::GetStringValue( void ) const
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetStringValue();
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetStringValue();
 	}
 
 	switch( m_Type )
@@ -750,6 +753,7 @@ void CMaterialVar::SetStringValue( const char *val )
 {
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		CMaterialVar *pThreadVar = AllocThreadVar();
@@ -779,6 +783,7 @@ void CMaterialVar::SetFourCCValue( FourCC type, void *pData )
 {
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		CMaterialVar *pThreadVar = AllocThreadVar();
@@ -819,8 +824,8 @@ void CMaterialVar::GetFourCCValue( FourCC *type, void **ppData )
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetFourCCValue( type, ppData );
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetFourCCValue( type, ppData );
 	}
 
 	if( m_Type == MATERIAL_VAR_TYPE_FOURCC )
@@ -857,8 +862,8 @@ ITexture *CMaterialVar::GetTextureValue( void )
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetTextureValue( );
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetTextureValue( );
 	}
 
 	ITexture *retVal = NULL;
@@ -942,6 +947,7 @@ void CMaterialVar::SetTextureValue( ITexture *texture )
 
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		// FIXME (toml): deal with reference count
@@ -1008,8 +1014,8 @@ IMaterial *CMaterialVar::GetMaterialValue( void )
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetMaterialValue( );
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetMaterialValue( );
 	}
 
 	IMaterial *retVal = NULL;
@@ -1041,6 +1047,7 @@ void CMaterialVar::SetMaterialValue( IMaterial *pMaterial )
 {
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		// FIXME (toml): deal with reference count
@@ -1096,8 +1103,8 @@ void CMaterialVar::GetLinearVecValue( float *pVal, int numComps ) const
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetLinearVecValue( pVal, numComps );
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetLinearVecValue( pVal, numComps );
 	}
 
 	Assert( numComps <= 4 );
@@ -1152,6 +1159,7 @@ void CMaterialVar::SetVecValueInternal( const Vector4D &vec, int nComps )
 {
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		CMaterialVar *pThreadVar = AllocThreadVar();
@@ -1227,20 +1235,16 @@ void CMaterialVar::SetVecComponentValue( float fVal, int nComponent )
 #endif
 
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
-		if ( s_bEnableThreadedAccess )
+		const bool bInit = ( m_pQueueMirror == NULL );
+		CMaterialVar *pThreadVar = AllocThreadVar();
+		if ( pThreadVar )
 		{
-			bool bInit = ( m_nTempIndex == 0xFF ) ? true : false;
-			CMaterialVar *pThreadVar = AllocThreadVar();
-			if ( pThreadVar )
-			{
-				if ( bInit )
-				{
-					pThreadVar->SetVecValue( m_VecVal.Base(), m_nNumVectorComps );
-				}
-				pThreadVar->SetVecComponentValue( fVal, nComponent );
-			}
+			if ( bInit )
+				pThreadVar->SetVecValue( m_VecVal.Base(), m_nNumVectorComps );
+			pThreadVar->SetVecComponentValue( fVal, nComponent );
 		}
 		pCallQueue->QueueCall( this, &CMaterialVar::SetVecComponentValue, fVal, nComponent );
 		return;
@@ -1293,8 +1297,8 @@ VMatrix const& CMaterialVar::GetMatrixValue( )
 			//DevMsg( 2, "Non-thread safe call to CMaterialVar %s!\n", GetName() );
 		}
 
-		if ( m_nTempIndex != 0xFF )
-			return s_pTempMaterialVar[m_nTempIndex].GetMatrixValue();
+		if ( m_pQueueMirror )
+			return m_pQueueMirror->GetMatrixValue();
 	}
 
 	if (m_Type == MATERIAL_VAR_TYPE_MATRIX)
@@ -1308,6 +1312,7 @@ void CMaterialVar::SetMatrixValue( VMatrix const& matrix )
 {
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		CMaterialVar *pThreadVar = AllocThreadVar();
@@ -1357,6 +1362,7 @@ void CMaterialVar::SetUndefined()
 {
 	ASSERT_NOT_DUMMY_VAR();
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		CMaterialVar *pThreadVar = AllocThreadVar();
@@ -1387,6 +1393,7 @@ void CMaterialVar::SetUndefined()
 void CMaterialVar::CopyFrom( IMaterialVar *pMaterialVar )
 {
 	CMatCallQueue *pCallQueue = MaterialSystem()->GetRenderCallQueue();
+	InvalidateQueueMirrorForSynchronousWrite( pCallQueue );
 	if ( !m_bFakeMaterialVar && pCallQueue )
 	{
 		CMaterialVar *pThreadVar = AllocThreadVar();

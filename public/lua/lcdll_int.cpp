@@ -11,8 +11,57 @@
 #include "luasrclib.h"
 #include "mathlib/lvector.h"
 #include "filesystem.h"
+#include "hl2sb_gma.h"
+#include "KeyValues.h"
+#include "tier0/icommandline.h"
+#include "tier1/utlbuffer.h"
 #include <string>
 #include <vector>
+
+// Register mode settings before the menu Lua state reads its ConVars.
+// Reference behavior scans all installed modes and leaves existing commands
+// and variables untouched.
+void HL2SB_RegisterMenuGamemodeSettings()
+{
+  FileFindHandle_t handle = FILESYSTEM_INVALID_FIND_HANDLE;
+  const char *mode = filesystem->FindFirstEx( "gamemodes/*", "GAME", &handle );
+  while ( mode ) {
+    if ( mode[0] != '.' && filesystem->FindIsDirectory( handle ) ) {
+      char path[MAX_PATH];
+      const int length = Q_snprintf( path, sizeof( path ), "gamemodes/%s/%s.txt", mode, mode );
+      if ( length >= 0 && length < (int)sizeof( path ) ) {
+        KeyValues *definition = new KeyValues( "Gamemode" );
+        if ( definition->LoadFromFile( filesystem, path, "GAME" ) ) {
+          KeyValues *settings = definition->FindKey( "settings" );
+          if ( settings ) FOR_EACH_SUBKEY( settings, setting ) {
+            if ( setting->GetInt( "dontcreate", 0 ) ) continue;
+            const char *name = setting->GetString( "name", "" );
+            bool valid = Q_strlen( name ) >= 2;
+            for ( const unsigned char *p = reinterpret_cast<const unsigned char *>( name ); valid && *p; ++p ) {
+              const unsigned char c = *p;
+              valid = ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
+                      ( c >= '0' && c <= '9' ) || c == '!' || c == '+' || c == '-' ||
+                      c == '.' || c == '^' || c == '_' || c == '~';
+            }
+            if ( !valid || g_pCVar->FindCommandBase( name ) ) continue;
+            int flags = FCVAR_ARCHIVE | FCVAR_NOTIFY | ( 1 << 27 );
+            if ( setting->GetInt( "replicate", 1 ) ) flags |= FCVAR_REPLICATED;
+            new ConVar( V_strdup( name ), V_strdup( setting->GetString( "default", "" ) ),
+                        flags, V_strdup( setting->GetString( "help", "" ) ) );
+          }
+        }
+        definition->deleteThis();
+      }
+    }
+    mode = filesystem->FindNext( handle );
+  }
+  if ( handle != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( handle );
+}
+
+static int engine_GetDemoPlaybackTimeScale (lua_State *L) {
+  lua_pushnumber( L, engine->GetDemoPlaybackTimeScale() );
+  return 1;
+}
 
 static int engine_ActiveGamemode (lua_State *L) {
   ConVarRef mode( "gamemode" );
@@ -20,8 +69,80 @@ static int engine_ActiveGamemode (lua_State *L) {
   return 1;
 }
 
+static int engine_GetGamemodes (lua_State *L) {
+  lua_newtable( L );
+  int index = 1;
+  FileFindHandle_t handle = FILESYSTEM_INVALID_FIND_HANDLE;
+  const char *name = filesystem->FindFirstEx( "gamemodes/*", "GAME", &handle );
+  while ( name ) {
+    if ( name[0] != '.' && filesystem->FindIsDirectory( handle ) ) {
+      char path[MAX_PATH];
+      Q_snprintf( path, sizeof(path), "gamemodes/%s/%s.txt", name, name );
+      KeyValues *details = new KeyValues( name );
+      if ( details->LoadFromFile( filesystem, path, "GAME" ) ) {
+        lua_newtable( L );
+        lua_pushstring( L, name ); lua_setfield( L, -2, "name" );
+        lua_pushstring( L, details->GetString( "title", name ) ); lua_setfield( L, -2, "title" );
+        lua_pushstring( L, details->GetString( "maps", "" ) ); lua_setfield( L, -2, "maps" );
+        lua_pushboolean( L, details->GetInt( "menusystem", 0 ) != 0 ); lua_setfield( L, -2, "menusystem" );
+        lua_pushstring( L, "0" ); lua_setfield( L, -2, "workshopid" );
+        lua_rawseti( L, -2, index++ );
+      }
+      details->deleteThis();
+    }
+    name = filesystem->FindNext( handle );
+  }
+  if ( handle != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( handle );
+  return 1;
+}
+
+static int engine_GetUserContent (lua_State *L) {
+  lua_newtable( L );
+  return 1;
+}
+
+static int menu_GetAddonStatus (lua_State *L) {
+  lua_pushboolean( L, CommandLine()->FindParm( "-noaddons" ) != 0 );
+  lua_pushboolean( L, CommandLine()->FindParm( "-noworkshop" ) != 0 );
+  return 2;
+}
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+static int engine_WriteSave (lua_State *L) {
+  size_t length = 0;
+  const char *payload = luaL_checklstring( L, 1, &length );
+  const char *name = luaL_checkstring( L, 2 );
+  if ( length < 3 || length > 0x7fffffff || !name[0] ||
+       Q_strstr( name, ".." ) || Q_strstr( name, "/" ) || Q_strstr( name, "\\" ) ||
+       Q_strstr( name, ":" ) )
+    return 0;
+
+  char map[MAX_PATH];
+  Q_FileBase( engine->GetLevelName(), map, sizeof( map ) );
+  if ( !map[0] ) return 0;
+
+  char path[MAX_PATH];
+  Q_snprintf( path, sizeof( path ), "saves/%s.gms", name );
+  filesystem->CreateDirHierarchy( "saves", "MOD" );
+  if ( filesystem->FileExists( path, "MOD" ) ) return 0;
+
+  CUtlBuffer data( 0, 0, 0 );
+  data.Put( "GMS3", 4 );
+  data.PutString( map );
+  data.PutString( "WSID:" );
+  data.Put( payload, (int)length );
+  if ( !filesystem->WriteFile( path, "MOD", data ) )
+    Warning( "Unable to write save %s\n", path );
+  else {
+    char preview[MAX_PATH];
+    Q_snprintf( preview, sizeof(preview), "saves/%s.jpg", name );
+    extern void HL2SB_QueueSavePreview( const char *path );
+    HL2SB_QueueSavePreview( preview );
+  }
+  return 0;
+}
 
 
 
@@ -170,17 +291,31 @@ static int engine_GetAddons (lua_State *L) {
   for (size_t i = 0; i < addons.size(); ++i) {
     lua_newtable(L);
     lua_pushstring(L, addons[i].title.c_str()); lua_setfield(L, -2, "title");
+    std::string file = "addons/" + addons[i].title;
+    lua_pushstring(L, file.c_str()); lua_setfield(L, -2, "file");
+    lua_pushstring(L, ""); lua_setfield(L, -2, "tags");
     lua_pushstring(L, "0"); lua_setfield(L, -2, "wsid");
     lua_pushboolean(L, true); lua_setfield(L, -2, "mounted");
     lua_pushboolean(L, true); lua_setfield(L, -2, "downloaded");
     lua_pushinteger(L, addons[i].models); lua_setfield(L, -2, "models");
     lua_pushinteger(L, 0); lua_setfield(L, -2, "timeadded");
+    lua_pushinteger(L, 0); lua_setfield(L, -2, "updated");
+    lua_pushinteger(L, 0); lua_setfield(L, -2, "size");
     lua_rawseti(L, -2, i + 1);
   }
+  HL2SB_AppendMountedWorkshopAddons( L, addons.size() + 1 );
   return 1;
 }
 
 extern int HL2SB_EngineGetGames( lua_State *L );
+extern int HL2SB_EngineGetContentSources( lua_State *L );
+extern int HL2SB_EngineMountContentSource( lua_State *L );
+extern int HL2SB_EngineSetContentMounted( lua_State *L );
+
+static int engine_GetLocalWorkshopContent (lua_State *L) {
+  HL2SB_PushLocalWorkshopContent( L, engine ? engine->GetGameDirectory() : NULL );
+  return 1;
+}
 
 static int engine_GetEngineBuildNumber (lua_State *L) {
   lua_pushinteger(L, engine->GetEngineBuildNumber());
@@ -538,6 +673,7 @@ static int engine_TickCount( lua_State *L ) {
 }
 
 static const luaL_Reg enginelib[] = {
+  {"WriteSave", engine_WriteSave},
   {"TickCount", engine_TickCount},
   {"ActivateOccluder",   engine_ActivateOccluder},
   {"ChangeTeam",  engine_ChangeTeam},
@@ -557,9 +693,15 @@ static const luaL_Reg enginelib[] = {
   {"GetDXSupportLevel", engine_GetDXSupportLevel},
   {"GetAddons", engine_GetAddons},
   {"GetGames", HL2SB_EngineGetGames},
+  {"GetGamemodes", engine_GetGamemodes},
+  {"GetUserContent", engine_GetUserContent},
+  {"GetContentSources", HL2SB_EngineGetContentSources},
+  {"MountContentSource", HL2SB_EngineMountContentSource},
+  {"SetContentMounted", HL2SB_EngineSetContentMounted},
   {"GetEngineBuildNumber",   engine_GetEngineBuildNumber},
   {"GetGameDirectory", engine_GetGameDirectory},
   {"ActiveGamemode", engine_ActiveGamemode},
+  {"GetDemoPlaybackTimeScale", engine_GetDemoPlaybackTimeScale},
   {"GetLastTimeStamp", engine_GetLastTimeStamp},
   {"TickInterval",     engine_TickInterval},
   {"GetLevelName",   engine_GetLevelName},
@@ -628,6 +770,12 @@ static const luaL_Reg enginelib[] = {
 */
 LUALIB_API int luaopen_engine (lua_State *L) {
   luaL_register(L, LUA_ENGINELIBNAME, enginelib);
+  if ( L == LGameUI ) {
+    lua_pushcfunction( L, engine_GetLocalWorkshopContent );
+    lua_setfield( L, -2, "GetLocalWorkshopContent" );
+    lua_pushcfunction( L, menu_GetAddonStatus );
+    lua_setglobal( L, "GetAddonStatus" );
+  }
   return 1;
 }
 

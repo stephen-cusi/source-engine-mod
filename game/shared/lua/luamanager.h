@@ -512,28 +512,17 @@ inline bool HL2SB_LuaPanelHasMethod( lua_State *pState, int iTableReference, con
         return 1;                                                 \
     }
 
-#define LUA_METATABLE_INDEX_CHECK( L, Target )                                                                                       \
-    /* Invalid panels fail all checks */                                                                                             \
-    if ( Target == NULL )                                                                                                            \
-    {                                                                                                                                \
-        lua_Debug ar1;                                                                                                               \
-        lua_getstack( L, 1, &ar1 );                                                                                                  \
-        lua_getinfo( L, "fl", &ar1 );                                                                                                \
-        lua_Debug ar2;                                                                                                               \
-        lua_getinfo( L, ">S", &ar2 );                                                                                                \
-        if ( lua_getmetatable( L, 1 ) )                                                                                              \
-        {                                                                                                                            \
-            luaL_getmetafield( L, -1, "__name" );                                                                                    \
-            const char *__metatableName = lua_tostring( L, -1 );                                                                     \
-            lua_pop( L, 2 ); /* Pop the metatable name and the metatable */                                                          \
-            lua_pushfstring( L, "%s:%d: attempt to index an invalid %s", ar2.short_src, ar1.currentline, __metatableName );          \
-        }                                                                                                                            \
-        else                                                                                                                         \
-        {                                                                                                                            \
-            lua_pushfstring( L, "%s:%d: attempt to index an unknown type (that has no metatable)", ar2.short_src, ar1.currentline ); \
-        }                                                                                                                            \
-                                                                                                                                    \
-        return lua_error( L );                                                                                                       \
+#define LUA_METATABLE_INDEX_CHECK( L, Target )                                      \
+    if ( Target == NULL )                                                          \
+    {                                                                              \
+        const char *pMetatableName = "Panel";                                        \
+        if ( luaL_getmetafield( L, 1, "MetaName" ) )                                \
+        {                                                                          \
+            const char *pName = lua_tostring( L, -1 );                              \
+            if ( pName )                                                           \
+                pMetatableName = pName;                                            \
+        }                                                                          \
+        return luaL_error( L, "attempt to index an invalid %s", pMetatableName );   \
     }
 
 // Helper macro to check table on top of the stack for __index

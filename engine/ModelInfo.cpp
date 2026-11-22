@@ -6,6 +6,7 @@
 // $NoKeywords: $
 //===========================================================================//
 #include "engine/ivmodelinfo.h"
+#include "engine/ibrushsurfaceinfo.h"
 #include "filesystem.h"
 #include "gl_model_private.h"
 #include "modelloader.h"
@@ -34,6 +35,59 @@
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+class CHL2SBBrushSurfaceInfo : public IHL2SBBrushSurfaceInfo
+{
+public:
+    int GetSurfaceCount( const model_t *model ) const
+    {
+        if ( !model || model->type != mod_brush ) return -1;
+        return host_state.worldbrush && model->brush.pShared == host_state.worldbrush
+            ? model->brush.nummodelsurfaces : 0;
+    }
+    int GetSurfaceIndex( const model_t *model, int index ) const
+    {
+        const int count = GetSurfaceCount( model );
+        if ( index < 0 || index >= count ) return -1;
+        const int surface = model->brush.firstmodelsurface + index;
+        return IsValid( surface ) ? surface : -1;
+    }
+    IMaterial *GetMaterial( int surface ) const
+    {
+        if ( !IsValid( surface ) ) return NULL;
+        mtexinfo_t *info = MSurf_TexInfo( SurfaceHandleFromIndex( surface ) );
+        return info ? info->material : NULL;
+    }
+    int GetVertexCount( int surface ) const
+    {
+        if ( !IsValid( surface ) ) return 0;
+        const SurfaceHandle_t handle = SurfaceHandleFromIndex( surface );
+        return SurfaceHasDispInfo( handle ) ? 0 : MSurf_VertCount( handle );
+    }
+    bool GetVertex( int surface, int index, Vector &position ) const
+    {
+        if ( !IsValid( surface ) || index < 0 || index >= GetVertexCount( surface ) ) return false;
+        worldbrushdata_t *data = host_state.worldbrush;
+        SurfaceHandle_t handle = SurfaceHandleFromIndex( surface );
+        const int offset = MSurf_FirstVertIndex( handle ) + index;
+        if ( !data->vertindices || !data->vertexes || offset < 0 || offset >= data->numvertindices ) return false;
+        const int vertex = data->vertindices[offset];
+        if ( vertex < 0 || vertex >= data->numvertexes ) return false;
+        position = data->vertexes[vertex].position;
+        return true;
+    }
+    unsigned int GetFlags( int surface ) const
+    {
+        return IsValid( surface ) ? MSurf_Flags( SurfaceHandleFromIndex( surface ) ) : 0;
+    }
+private:
+    bool IsValid( int surface ) const
+    {
+        return host_state.worldbrush && host_state.worldbrush->surfaces2 && surface >= 0 && surface < host_state.worldbrush->numsurfaces;
+    }
+};
+
+EXPOSE_SINGLE_INTERFACE( CHL2SBBrushSurfaceInfo, IHL2SBBrushSurfaceInfo, HL2SB_BRUSH_SURFACE_INFO_VERSION );
 
 //-----------------------------------------------------------------------------
 // Gets the lighting center

@@ -26,6 +26,7 @@
 #include "IEffects.h"
 #include "iservervehicle.h"
 #include "igamesystem.h"
+#include "physics_shared.h"
 #include "globals.h"
 #include "physics_prop_ragdoll.h"
 #include "physics_impact_damage.h"
@@ -3265,7 +3266,11 @@ void CBaseCombatCharacter::VPhysicsShadowCollision( int index, gamevcollisioneve
 	CTakeDamageInfo dmgInfo( pOther, pOther, damageForce, damagePos, damage, damageType );
 
 	// FIXME: is there a better way for physics objects to keep track of what root entity responsible for them moving?
-	CBasePlayer *pPlayer = pOther->HasPhysicsAttacker( 1.0 );
+#ifdef LUA_SDK
+	CBasePlayer *pPlayer = HL2SB_GetPhysicsAttacker( pOther, 1.0f );
+#else
+	CBasePlayer *pPlayer = pOther->HasPhysicsAttacker( 1.0f );
+#endif
 	if (pPlayer)
 	{
 		dmgInfo.SetAttacker( pPlayer );

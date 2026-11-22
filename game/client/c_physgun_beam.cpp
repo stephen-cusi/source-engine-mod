@@ -39,7 +39,7 @@ extern bool HL2SB_PhysgunGetPhysicsBoneMatrix( C_BaseEntity *pEntity, int physic
 extern ConVar physgun_drawbeams;
 extern ConVar physgun_maxrange;
 extern ConVar hl2sb_physgun_beamdebug;	// HL2SB (2026-10-03): defined in weapon_physgun.cpp
-Color HL2SB_GetWeaponColor( int iUserID );
+Vector HL2SB_GetWeaponColor( int iUserID );
 
 class C_PhysBeam : public C_BaseEntity
 {
@@ -286,9 +286,13 @@ int C_PhysBeam::DrawModel( int flags )
 	// draw path only (weapon_physgun.cpp).  Firing it here as well would
 	// double-feed the halo chain while both paths run.
 
-	// Every sprite and the ribbon carry the HOLDER's weapon colour.
-	Color clrW = HL2SB_GetWeaponColor( pPlayer->GetUserID() );
-	byte r = clrW.r(), g = clrW.g(), b = clrW.b();
+	// Every sprite and the ribbon carry the HOLDER's weapon colour.  The sprite
+	// path is a byte pipeline (as the reference engine's sprites are), so HDR
+	// components above 1 clamp here - only the material proxies keep the float.
+	Vector vW = HL2SB_GetWeaponColor( pPlayer->GetUserID() );
+	byte r = (byte)clamp( vW.x * 255.0f, 0.0f, 255.0f );
+	byte g = (byte)clamp( vW.y * 255.0f, 0.0f, 255.0f );
+	byte b = (byte)clamp( vW.z * 255.0f, 0.0f, 255.0f );
 
 	// Idle: claw sprites only.
 	DrawClawSprites( vecMuzzle, vecAimDir, bBoneTarget, r, g, b );

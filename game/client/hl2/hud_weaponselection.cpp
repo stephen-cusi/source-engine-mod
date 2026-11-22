@@ -166,6 +166,7 @@ private:
 	CPanelAnimationVarAliasType( float, m_flSmallBoxSize, "SmallBoxSize", "32", "proportional_float" );
 	CPanelAnimationVarAliasType( float, m_flLargeBoxWide, "LargeBoxWide", "108", "proportional_float" );
 	CPanelAnimationVarAliasType( float, m_flLargeBoxTall, "LargeBoxTall", "72", "proportional_float" );
+	CPanelAnimationVarAliasType( float, m_flUnselectedBoxTall, "LargeBoxUnselectedTall", "24", "proportional_float" );
 
 	CPanelAnimationVarAliasType( float, m_flMediumBoxWide, "MediumBoxWide", "75", "proportional_float" );
 	CPanelAnimationVarAliasType( float, m_flMediumBoxTall, "MediumBoxTall", "50", "proportional_float" );
@@ -807,9 +808,7 @@ void CHudWeaponSelection::Paint()
 									if ( bSelected )
 										bDrawBucketNumber = false;
 
-									// move down to the next bucket -- non-selected
-									// weapons draw as flat name-only bars (tall/3)
-									ypos += ( ( bSelected ? largeBoxTall : largeBoxTall / 3 ) + m_flBoxGap );
+									ypos += ( ( bSelected ? largeBoxTall : m_flUnselectedBoxTall ) + m_flBoxGap );
 								}
 							}
 						}
@@ -1039,11 +1038,10 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 			// gets the large icon box -- every other weapon in the slot draws
 			// as a flat name-only bar (GMod reference: the CF pack shows one
 			// big "AK47 - Iron Beast" box with "M4A1-S-Beast" / "AK-47 Vulcan"
-			// flat bars underneath).  The caller advanced ypos by the bar
-			// height, which is boxTall/3.
+			// flat bars underneath).
 			if ( !bSelected )
 			{
-				int flatTall = boxTall / 3;
+				int flatTall = m_flUnselectedBoxTall;
 				DrawBox( xpos, ypos, boxWide, flatTall, selectedColor, alpha * 0.75f, number );
 
 				wchar_t text[128];

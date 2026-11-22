@@ -780,6 +780,8 @@ void CMatQueuedRenderContext::BeginQueue( CMatRenderContextBase *pInitialState )
 		pInitialState = m_pHardwareContext;
 	}
 	CMatRenderContextBase::InitializeFrom( pInitialState );
+	for ( int i = 0; i < MAX_INT_RENDER_PARMS; ++i )
+		m_IntRenderingParameters[i] = pInitialState->GetIntRenderingParameter( i );
 	g_pShaderAPI->GetBackBufferDimensions( m_WidthBackBuffer, m_HeightBackBuffer );
 	m_FogMode = pInitialState->GetFogMode();
 	m_nBoneCount = pInitialState->GetCurrentNumBones();
@@ -1447,6 +1449,16 @@ void CMatQueuedRenderContext::PushMatrix()
 
 void CMatQueuedRenderContext::PopMatrix()
 {
+	if ( m_MatrixStacks[m_MatrixMode].Count() <= 1 )
+	{
+		static bool s_bWarnedMatrixUnderflow = false;
+		if ( !s_bWarnedMatrixUnderflow )
+		{
+			s_bWarnedMatrixUnderflow = true;
+			Warning( "CMatQueuedRenderContext::PopMatrix: matrix stack underflow (mode %d)\n", (int)m_MatrixMode );
+		}
+		return;
+	}
 	CMatRenderContextBase::PopMatrix();
 	m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::PopMatrix );
 }
@@ -1733,21 +1745,25 @@ void CMatQueuedRenderContext::UnlockLookup( ColorCorrectionHandle_t handle )
 // NOTE: We should also have a queued read pixels in the API for doing mid frame reads (as opposed to screenshots)
 void CMatQueuedRenderContext::ReadPixels( int x, int y, int width, int height, unsigned char *data, ImageFormat dstFormat )
 {
-	EndRender();
+	if ( m_iRenderDepth > 0 )
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::EndRender );
 	MaterialLock_t hLock = m_pMaterialSystem->Lock();
 	this->CallQueued(false);
 	g_pShaderAPI->ReadPixels( x, y, width, height, data, dstFormat );
 	m_pMaterialSystem->Unlock( hLock );
-	BeginRender();
+	if ( m_iRenderDepth > 0 )
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::BeginRender );
 }
 
 void CMatQueuedRenderContext::ReadPixelsAndStretch( Rect_t *pSrcRect, Rect_t *pDstRect, unsigned char *pBuffer, ImageFormat dstFormat, int nDstStride )
 {
-	EndRender();
+	if ( m_iRenderDepth > 0 )
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::EndRender );
 	MaterialLock_t hLock = m_pMaterialSystem->Lock();
 	this->CallQueued(false);
 	g_pShaderAPI->ReadPixels( pSrcRect, pDstRect, pBuffer, dstFormat, nDstStride );
 	m_pMaterialSystem->Unlock( hLock );
-	BeginRender();
+	if ( m_iRenderDepth > 0 )
+		m_queue.QueueCall( m_pHardwareContext, &IMatRenderContext::BeginRender );
 }
 

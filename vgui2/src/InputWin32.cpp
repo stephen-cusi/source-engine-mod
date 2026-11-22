@@ -2750,10 +2750,8 @@ void CInputSystem::OnIMEComposition( int flags )
 			wchar_t tempstr[ 32 ];
 
 			int len = ImmGetCompositionStringW( hIMC, GCS_RESULTSTR, (LPVOID)tempstr, sizeof( tempstr ) );
-			if ( len > 0 )
+			if ( len > 0 && len <= static_cast<int>( sizeof( tempstr ) ) && len % sizeof( wchar_t ) == 0 )
 			{
-				if ((len % 2) != 0)
-					len++;
 				int numchars = len / sizeof( wchar_t );
 
 				for ( int i = 0; i < numchars; ++i )
@@ -2764,13 +2762,12 @@ void CInputSystem::OnIMEComposition( int flags )
 		}
 		if ( flags & VGUI_GCS_COMPSTR )
 		{
-			wchar_t tempstr[ 256 ];
+			wchar_t tempstr[ 257 ];
+			const int maxBytes = sizeof( tempstr ) - sizeof( wchar_t );
 
-			int len = ImmGetCompositionStringW( hIMC, GCS_COMPSTR, (LPVOID)tempstr, sizeof( tempstr ) );
-			if ( len > 0 )
+			int len = ImmGetCompositionStringW( hIMC, GCS_COMPSTR, (LPVOID)tempstr, maxBytes );
+			if ( len > 0 && len <= maxBytes && len % sizeof( wchar_t ) == 0 )
 			{
-				if ((len % 2) != 0)
-					len++;
 				int numchars = len / sizeof( wchar_t );
 				tempstr[ numchars ] = L'\0';
 

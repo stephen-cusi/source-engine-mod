@@ -657,29 +657,22 @@ END_PREDICTION_DATA()
 void RecvProxy_SequenceNum( const CRecvProxyData *pData, void *pStruct, void *pOut )
 {
 	CBaseViewModel *model = (CBaseViewModel *)pStruct;
-	if (pData->m_Value.m_Int != model->GetSequence())
+	MDLCACHE_CRITICAL_SECTION();
+
+	// The incoming model index is decoded before the sequence, but the
+	// entity's model pointer still refers to the old model until PostDataUpdate.
+	int nSeq = pData->m_Value.m_Int;
+	const model_t *pIncomingModel = modelinfo->GetModel( model->GetModelIndex() );
+	const studiohdr_t *pStudio = pIncomingModel ? modelinfo->GetStudiomodel( pIncomingModel ) : NULL;
+	const int nSequenceCount = pStudio && pStudio->SequencesAvailable() ? pStudio->GetNumSeq() : 0;
+	if ( nSequenceCount > 0 && ( nSeq < 0 || nSeq >= nSequenceCount ) )
+		nSeq = 0;
+
+	if ( nSeq != model->GetSequence() )
 	{
-		MDLCACHE_CRITICAL_SECTION();
-
-		// HL2SB: clamp to a valid sequence for the *currently loaded* client
-		// model. The server picks sequences on its own viewmodel model, which
-		// is not guaranteed to be the same .mdl the client resolved from the
-		// search path (GMod c_* replacements). An out-of-range value here used
-		// to feed C_BaseAnimating::FrameAdvance an invalid index and spam
-		// "Bad sequence (N out of M max) in GetSequenceLinearMotion()".
-		int nSeq = pData->m_Value.m_Int;
-		CStudioHdr *pHdr = model->GetModelPtr();
-		if ( pHdr && pHdr->GetNumSeq() > 0 )
-		{
-			if ( nSeq < 0 || nSeq >= pHdr->GetNumSeq() )
-			{
-				nSeq = 0;
-			}
-		}
-
-		model->SetSequence(nSeq);
+		model->SetSequence( nSeq );
 		model->m_flAnimTime = gpGlobals->curtime;
-		model->SetCycle(0);
+		model->SetCycle( 0 );
 	}
 }
 

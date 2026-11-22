@@ -230,7 +230,7 @@ private:
 	bool SeenEnemyWithinTime( float flTime );
 	void DelaySquadAttack( float flDuration );
 
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	void DoPoisonBurst();
 #endif
 
@@ -278,7 +278,7 @@ private:
 	bool		m_bDontExplode;			// Suppresses worker poison burst when drowning, failing to unburrow, etc.
 	bool		m_bLoopingStarted;
 	bool		m_bSuppressUnburrowEffects;	// Don't kick up dust when spawning
-#if HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 	bool		m_bHasDoneAirAttack;  ///< only allowed to apply this damage once per glide
 #endif
 
@@ -411,7 +411,7 @@ private:
 extern bool IsAntlion( CBaseEntity *pEntity );
 extern bool IsAntlionWorker( CBaseEntity *pEntity );
 
-#ifdef HL2_EPISODIC
+#if defined( HL2_EPISODIC ) || defined( HL2SB )
 extern float AntlionWorkerBurstRadius( void );
 #endif // HL2_EPISODIC
 

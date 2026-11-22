@@ -619,10 +619,14 @@ bool CBaseCombatWeapon::IsAllowedToSwitch( void )
 //-----------------------------------------------------------------------------
 bool CBaseCombatWeapon::CanBeSelected( void )
 {
+#ifdef HL2SB
+	return true;
+#else
 	if ( !VisibleInWeaponSelection() )
 		return false;
 
 	return HasAmmo();
+#endif
 }
 
 //-----------------------------------------------------------------------------

@@ -734,6 +734,8 @@ public:
 	void OverrideDepthEnable( bool bEnable, bool bDepthEnable );
 
 	void OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable );
+	void OverrideBlendColor( bool enable, bool blend, int src, int dst, int op );
+	void OverrideBlendAlpha( bool enable, bool blend, int src, int dst, int op );
 	void OverrideColorWriteEnable( bool bOverrideEnable, bool bColorWriteEnable );
 
 	void SetHeightClipZ( float z );
@@ -5352,6 +5354,26 @@ void CShaderAPIDx8::OverrideDepthEnable( bool bEnable, bool bDepthEnable )
 	}
 }
 
+static D3DBLEND HL2SB_BlendFactor( int value )
+{
+	static const D3DBLEND factors[] = { D3DBLEND_ZERO, D3DBLEND_ONE, D3DBLEND_DESTCOLOR, D3DBLEND_INVDESTCOLOR, D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA, D3DBLEND_DESTALPHA, D3DBLEND_INVDESTALPHA, D3DBLEND_SRCALPHASAT, D3DBLEND_SRCCOLOR, D3DBLEND_INVSRCCOLOR };
+	return value >= 0 && value < ARRAYSIZE( factors ) ? factors[value] : D3DBLEND_ONE;
+}
+
+void CShaderAPIDx8::OverrideBlendColor( bool enable, bool blend, int src, int dst, int op )
+{
+	LOCK_SHADERAPI();
+	if ( !g_pShaderDeviceDx8->IsDeactivated() )
+		m_TransitionTable.OverrideBlendColor( enable, blend, HL2SB_BlendFactor( src ), HL2SB_BlendFactor( dst ), (D3DBLENDOP)( op >= 0 && op <= 4 ? op + 1 : 1 ) );
+}
+
+void CShaderAPIDx8::OverrideBlendAlpha( bool enable, bool blend, int src, int dst, int op )
+{
+	LOCK_SHADERAPI();
+	if ( !g_pShaderDeviceDx8->IsDeactivated() )
+		m_TransitionTable.OverrideBlendAlpha( enable, blend, HL2SB_BlendFactor( src ), HL2SB_BlendFactor( dst ), (D3DBLENDOP)( op >= 0 && op <= 4 ? op + 1 : 1 ) );
+}
+
 void CShaderAPIDx8::OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable )
 {
 	LOCK_SHADERAPI();
@@ -6869,6 +6891,17 @@ void CShaderAPIDx8::SetTextureState( Sampler_t sampler, ShaderAPITextureHandle_t
 		minFilter = D3DTEXF_NONE;
 		magFilter = D3DTEXF_NONE;
 		mipFilter = D3DTEXF_POINT;
+	}
+
+	const int overrideMin = IntRenderingParameters[INT_RENDERPARM_TEXTURE_FILTER_MIN];
+	const int overrideMag = IntRenderingParameters[INT_RENDERPARM_TEXTURE_FILTER_MAG];
+	if ( overrideMag != 0 )
+		magFilter = static_cast<D3DTEXTUREFILTERTYPE>( overrideMag );
+	if ( overrideMin != 0 )
+	{
+		minFilter = static_cast<D3DTEXTUREFILTERTYPE>( overrideMin );
+		if ( tex.m_NumLevels > 1 )
+			mipFilter = static_cast<D3DTEXTUREFILTERTYPE>( overrideMin );
 	}
 
 	D3DTEXTUREADDRESS uTexWrap = tex.m_UTexWrap;
@@ -13247,8 +13280,23 @@ void CShaderAPIDx8::SetFloatRenderingParameter( int parm_number, float value )
 void CShaderAPIDx8::SetIntRenderingParameter( int parm_number, int value )
 {
 	LOCK_SHADERAPI();
-	if ( parm_number < ARRAYSIZE( IntRenderingParameters ))
-		IntRenderingParameters[parm_number] = value;
+	if ( parm_number < 0 || parm_number >= ARRAYSIZE( IntRenderingParameters ) )
+		return;
+	const bool textureFilter = parm_number == INT_RENDERPARM_TEXTURE_FILTER_MIN ||
+		parm_number == INT_RENDERPARM_TEXTURE_FILTER_MAG;
+	if ( textureFilter && IntRenderingParameters[parm_number] != value )
+		FlushBufferedPrimitives();
+	const bool changed = IntRenderingParameters[parm_number] != value;
+	IntRenderingParameters[parm_number] = value;
+	if ( textureFilter && changed )
+	{
+		for ( int i = 0; i < g_pHardwareConfig->ActualCaps().m_NumSamplers && i < MAX_SAMPLERS; ++i )
+		{
+			SamplerState_t &state = SamplerState( i );
+			if ( state.m_TextureEnable && state.m_BoundTexture != INVALID_SHADERAPI_TEXTURE_HANDLE )
+				SetTextureState( (Sampler_t)i, state.m_BoundTexture, true );
+		}
+	}
 }
 
 void CShaderAPIDx8::SetVectorRenderingParameter( int parm_number, Vector const & value )

@@ -16,6 +16,21 @@
 // cdll_client_int.h -- neither header is shared, so restate the (identical)
 // prototype here.  Compatible with both existing declarations.
 void PrecacheParticleSystem( const char *pParticleSystemName );
+class INetworkStringTable;
+extern INetworkStringTable *g_pStringTableParticleEffectNames;
+
+// The native string table and particle definitions already deduplicate. The
+// shared Lua cache can fill with sound or material names and drop valid effects.
+static void LuaPrecacheParticleSystem( const char *name )
+{
+    if ( !name[0] || !g_pStringTableParticleEffectNames )
+        return;
+#ifdef CLIENT_DLL
+    if ( !g_pParticleSystemMgr )
+        return;
+#endif
+    PrecacheParticleSystem( name );
+}
 
 // From particle_property.h, restated: particle_property.h drags in the
 // client-only particles_new.h, so a shared file cannot include it.  Argh:
@@ -32,14 +47,7 @@ LUA_BINDING_BEGIN( ParticleSystems, Precache, "library", "Precache a particle sy
 {
     const char *systemName = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "systemName" );
 
-    // HL2SB: GMod addons precache their particle systems from Initialize, which
-    // runs again for every re-created entity / every map reload.  Asking the
-    // engine once per name per session keeps the (synchronous, disk-touching)
-    // PrecacheParticleSystem() off the live throw, not just off the second one.
-    if ( !HL2SB_PrecacheOnce( systemName ) )
-        return 0;
-
-    PrecacheParticleSystem( systemName );
+    LuaPrecacheParticleSystem( systemName );
     return 0;
 }
 LUA_BINDING_END()
@@ -76,16 +84,7 @@ LUA_BINDING_END()
 // ---------------------------------------------------------------------------
 static int LuaGlobal_PrecacheParticleSystem( lua_State *Lstate )
 {
-	const char *pszSystemName = luaL_checkstring( Lstate, 1 );
-
-	// Same once-per-name-per-session guard as game.Precache above: addons
-	// precache from Initialize, which runs again for every re-created entity /
-	// every map reload, and the underlying call is a synchronous string-table
-	// insert.
-	if ( !HL2SB_PrecacheOnce( pszSystemName ) )
-		return 0;
-
-	PrecacheParticleSystem( pszSystemName );
+	LuaPrecacheParticleSystem( luaL_checkstring( Lstate, 1 ) );
 	return 0;
 }
 

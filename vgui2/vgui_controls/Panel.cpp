@@ -1149,6 +1149,62 @@ void Panel::OnChildSettingsApplied( KeyValues *pInResourceData, Panel *pChild  )
 // Weak panel handles avoid retaining windows or reusing state after deletion.
 static CUtlVector<PHandle> s_ManualPaintPanels;
 static Panel *s_ManualPaintRoot = NULL;
+struct HL2SBDrawOnTopEntry
+{
+	PHandle panel;
+};
+static CUtlVector<HL2SBDrawOnTopEntry> s_DrawOnTopPanels;
+static Panel *s_DrawOnTopRoot = NULL;
+
+void HL2SB_PanelSetDrawOnTop(Panel *panel, bool onTop)
+{
+	if (!panel) return;
+	bool found = false;
+	for (int i = s_DrawOnTopPanels.Count() - 1; i >= 0; --i)
+	{
+		Panel *entry = s_DrawOnTopPanels[i].panel.Get();
+		if (!entry || (entry == panel && !onTop)) s_DrawOnTopPanels.Remove(i);
+		else if (entry == panel) found = true;
+	}
+	if (onTop && !found)
+	{
+		int index = s_DrawOnTopPanels.AddToTail();
+		s_DrawOnTopPanels[index].panel.Set(panel);
+	}
+}
+
+static int HL2SB_PanelDrawOnTopIndex(Panel *panel)
+{
+	for (int i = s_DrawOnTopPanels.Count() - 1; i >= 0; --i)
+	{
+		Panel *entry = s_DrawOnTopPanels[i].panel.Get();
+		if (!entry) s_DrawOnTopPanels.Remove(i);
+		else if (entry == panel) return i;
+	}
+	return -1;
+}
+
+void HL2SB_PanelPaintDrawOnTop()
+{
+	if (s_DrawOnTopRoot) return;
+	CUtlVector<PHandle> panels;
+	for (int i = s_DrawOnTopPanels.Count() - 1; i >= 0; --i)
+	{
+		Panel *panel = s_DrawOnTopPanels[i].panel.Get();
+		if (!panel) s_DrawOnTopPanels.Remove(i);
+		else panels[panels.AddToHead()].Set(panel);
+	}
+	for (int i = 0; i < panels.Count(); ++i)
+	{
+		Panel *panel = panels[i].Get();
+		if (!panel || !panel->IsVisible() || HL2SB_PanelDrawOnTopIndex(panel) < 0) continue;
+		// Popup children are not painted by their parent's surface traversal.
+		// Paint each registered panel at its own position in the overlay list.
+		s_DrawOnTopRoot = panel;
+		surface()->PaintTraverseEx(panel->GetVPanel(), false);
+		s_DrawOnTopRoot = NULL;
+	}
+}
 
 void HL2SB_PanelSetPaintedManually(Panel *panel, bool manual)
 {
@@ -1200,6 +1256,10 @@ void Panel::PaintTraverse( bool repaint, bool allowForce )
 	{
 		return;
 	}
+
+	// A registered descendant gets its own pass, even when the current root
+	// is also marked DrawOnTop. This keeps it from drawing twice.
+	if (this != s_DrawOnTopRoot && HL2SB_PanelDrawOnTopIndex(this) >= 0) return;
 
 	float oldAlphaMultiplier = surface()->DrawGetAlphaMultiplier();
 	float newAlphaMultiplier = oldAlphaMultiplier * m_flAlpha * 1.0f/255.0f;

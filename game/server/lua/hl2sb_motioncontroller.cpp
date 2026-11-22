@@ -26,8 +26,8 @@ public:
 		angular.Init();
 		CBaseEntity *entity = owner.Get();
 		if (!L || !entity || entity->m_nTableReference < 0) return SIM_NOTHING;
+		if (!lua_checkstack(L, 32)) return SIM_NOTHING;
 		int top = lua_gettop(L);
-		lua_checkstack(L, 32);
 		lua_getref(L, entity->m_nTableReference);
 		if (!lua_istable(L, -1)) { lua_settop(L, top); return SIM_NOTHING; }
 		luasrc_PushScriptField(L, -1, "PhysicsSimulate");

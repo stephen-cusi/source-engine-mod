@@ -8,6 +8,7 @@
 
 #include "cbase.h"
 #include "basescripted.h"
+#include "hl2sb_transmit_parent.h"
 #include "luamanager.h"
 #ifdef CLIENT_DLL
 #include "lc_baseanimating.h"
@@ -126,8 +127,26 @@ CBaseScripted::CBaseScripted( void )
 #endif
 }
 
+#ifndef CLIENT_DLL
+static CUtlMap<CBaseScripted *, int> s_ScriptedUseCaps( DefLessFunc(CBaseScripted *) );
+
+void HL2SB_SetScriptedUseCaps( CBaseScripted *entity, int caps )
+{
+	unsigned short index = s_ScriptedUseCaps.Find( entity );
+	if ( index == s_ScriptedUseCaps.InvalidIndex() )
+		s_ScriptedUseCaps.Insert( entity, caps );
+	else
+		s_ScriptedUseCaps[index] = caps;
+}
+#endif
+
 CBaseScripted::~CBaseScripted( void )
 {
+#ifndef CLIENT_DLL
+	unsigned short index = s_ScriptedUseCaps.Find( this );
+	if ( index != s_ScriptedUseCaps.InvalidIndex() )
+		s_ScriptedUseCaps.RemoveAt( index );
+#endif
 	// Andrew; This is actually done in CBaseEntity. I'm doing it here because
 	// this is the class that initialized the reference.
 	//
@@ -208,6 +227,7 @@ static void HL2SB_MergeScriptedBaseChain( lua_State *L, int destination )
 
 void CBaseScripted::LoadScriptedEntity( void )
 {
+  const int stackBase = lua_gettop( L );
   const char *pszScriptClass = NULL;
 #ifdef CLIENT_DLL
   pszScriptClass = GetScriptedClassname();
@@ -238,9 +258,10 @@ void CBaseScripted::LoadScriptedEntity( void )
     lua_pop( L, 1 );
   }
 
-  // Replace the leaf table with the GMod scripted_ents.Get copy so Base
-  // methods are inherited without changing the entity initialization order.
-  if ( lua_istable( L, -1 ) )
+  // Runtime registrations need not have a legacy file-backed entity table.
+  // Keep one stack slot for that optional table while resolving the class.
+  if ( lua_gettop( L ) == stackBase )
+    lua_pushnil( L );
   {
     const int leaf = lua_gettop( L );
 
@@ -258,7 +279,8 @@ void CBaseScripted::LoadScriptedEntity( void )
         {
           // Keep runtime scripted_ents overrides while filling any missing
           // methods from the file-backed entity table and its base chain.
-          HL2SB_MergeMissingEntityFields( L, -1, leaf );
+          if ( lua_istable( L, leaf ) )
+            HL2SB_MergeMissingEntityFields( L, -1, leaf );
           HL2SB_MergeScriptedBaseChain( L, -1 );
           lua_remove( L, leaf );
         }
@@ -570,6 +592,11 @@ RenderGroup_t CBaseScripted::GetRenderGroup( void )
 			m_bLuaRenderGroupRead = true;
 			m_nLuaRenderGroup = -1;
 
+			luasrc_PushScriptField( L, -1, "WantsTranslucency" );
+			if ( lua_toboolean( L, -1 ) )
+				m_nLuaRenderGroup = -2;
+			lua_pop( L, 1 );
+
 			// Protected read: the table can answer through an __index metamethod,
 			// and an error raised there from C is not protected by anything.
 			luasrc_PushScriptField( L, -1, "RenderGroup" );
@@ -590,6 +617,11 @@ RenderGroup_t CBaseScripted::GetRenderGroup( void )
 
 	if ( m_nLuaRenderGroup >= 0 )
 		return (RenderGroup_t)m_nLuaRenderGroup;
+	if ( m_nLuaRenderGroup == -2 )
+	{
+		RenderGroup_t group = BaseClass::GetRenderGroup();
+		return group == RENDER_GROUP_OPAQUE_ENTITY ? RENDER_GROUP_TWOPASS : group;
+	}
 #endif
 
 	return BaseClass::GetRenderGroup();
@@ -750,7 +782,8 @@ int CBaseScripted::DrawModel( int flags )
 
 	if ( bHasOverride )
 		pszFunc = "RenderOverride";
-	else if ( CBaseScripted_IsTranslucentGroup( GetRenderGroup() ) && bHasTranslucent )
+	else if ( CBaseScripted_IsTranslucentGroup( GetRenderGroup() ) && bHasTranslucent &&
+		( GetRenderGroup() != RENDER_GROUP_TWOPASS || ( flags & STUDIO_TRANSPARENCY ) != 0 ) )
 		pszFunc = "DrawTranslucent";
 	else if ( bHasDraw )
 		pszFunc = "Draw";
@@ -1036,7 +1069,7 @@ int CBaseScripted::UpdateTransmitState( void )
 	// Parent visibility and recipient ownership must be checked together.
 	// Keep this entity eligible while its parent is hidden so it can resume
 	// transmission without requiring a new model or parent assignment.
-	if ( IsEFlagSet( EFL_TRANSMIT_WITH_PARENT ) )
+	if ( HL2SB_GetTransmitWithParent( this ) )
 		return SetTransmitState( FL_EDICT_FULLCHECK );
 
 #ifdef LUA_SDK
@@ -1208,7 +1241,8 @@ static ConVar hl2sb_physicscollide_debug(
 //-----------------------------------------------------------------------------
 int CBaseScripted::ObjectCaps( void )
 {
-	return BaseClass::ObjectCaps() | FCAP_IMPULSE_USE;
+	unsigned short index = s_ScriptedUseCaps.Find( this );
+	return BaseClass::ObjectCaps() | ( index == s_ScriptedUseCaps.InvalidIndex() ? FCAP_CONTINUOUS_USE : s_ScriptedUseCaps[index] );
 }
 
 void CBaseScripted::UseHandler( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )

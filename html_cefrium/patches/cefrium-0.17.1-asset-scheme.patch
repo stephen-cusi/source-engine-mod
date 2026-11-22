@@ -1,0 +1,68 @@
+diff --git a/libcef/browser/android/cefrium_app.cc b/libcef/browser/android/cefrium_app.cc
+index 2204fad..688a393 100644
+--- a/libcef/browser/android/cefrium_app.cc
++++ b/libcef/browser/android/cefrium_app.cc
+@@ -6,11 +6,18 @@
+ #include "base/strings/string_util.h"
+ #include "cef/include/cef_dom.h"
+ #include "cef/include/cef_process_message.h"
++#include "cef/include/cef_scheme.h"
+ #include "cef/include/cef_values.h"
+ #include "cef/libcef/browser/android/cefrium_bridge_constants.h"
+ 
+ CefriumApp::CefriumApp() = default;
+ 
++void CefriumApp::OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) {
++  registrar->AddCustomScheme("asset", CEF_SCHEME_OPTION_STANDARD |
++      CEF_SCHEME_OPTION_SECURE | CEF_SCHEME_OPTION_CORS_ENABLED |
++      CEF_SCHEME_OPTION_FETCH_ENABLED);
++}
++
+ CefRefPtr<CefRenderProcessHandler> CefriumApp::GetRenderProcessHandler() {
+   return this;
+ }
+diff --git a/libcef/browser/android/cefrium_app.h b/libcef/browser/android/cefrium_app.h
+index 210d194..1166bd5 100644
+--- a/libcef/browser/android/cefrium_app.h
++++ b/libcef/browser/android/cefrium_app.h
+@@ -16,8 +16,8 @@
+ // CefAppManager then drives this CefRenderProcessHandler in the renderer.
+ //
+ // The browser-side router (CefMessageRouterBrowserSide) lives on the SDK's
+-// CefClient, NOT here — and no CefApp is registered in the browser process
+-// (see FEATURE-023 / ROADMAP known issues).
++// CefClient, NOT here. This app also registers the game asset scheme in the
++// browser and renderer processes.
+ class CefriumApp : public CefApp, public CefRenderProcessHandler {
+  public:
+   CefriumApp();
+@@ -26,6 +26,7 @@ class CefriumApp : public CefApp, public CefRenderProcessHandler {
+   CefriumApp& operator=(const CefriumApp&) = delete;
+ 
+   // CefApp:
++  void OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) override;
+   CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override;
+ 
+   // CefRenderProcessHandler:
+diff --git a/libcef/browser/android/cefrium_sdk_jni.cc b/libcef/browser/android/cefrium_sdk_jni.cc
+index b0e03ef..ed09a01 100644
+--- a/libcef/browser/android/cefrium_sdk_jni.cc
++++ b/libcef/browser/android/cefrium_sdk_jni.cc
+@@ -16,6 +16,7 @@
+ #include "base/base64.h"
+ #include "cef/include/cef_app.h"
+ #include "cef/libcef/browser/android/cef_autofill_client_android.h"
++#include "cef/libcef/browser/android/cefrium_app.h"
+ #include "components/android_autofill/browser/autofill_provider.h"
+ #include "cef/include/cef_browser.h"
+ #include "cef/include/cef_client.h"
+@@ -4187,7 +4188,8 @@ Java_com_cefrium_Cefrium_nativeInitialize(
+   std::string locales_dir = std::string(data_dir) + "/locales";
+   CefString(&settings.locales_dir_path).FromASCII(locales_dir.c_str());
+ 
+-  bool result = CefInitialize(main_args, settings, nullptr, nullptr);
++  CefRefPtr<CefApp> app = new CefriumApp();
++  bool result = CefInitialize(main_args, settings, app, nullptr);
+   if (result) {
+     cef_android::SetPickerHost(SdkPickerHost::Get());
+   }

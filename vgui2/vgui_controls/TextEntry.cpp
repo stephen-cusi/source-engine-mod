@@ -38,6 +38,24 @@ enum
 
 using namespace vgui;
 
+// Text entries draw the language indicator by default. Keep the optional
+// per-entry override outside the class layout shared by VGUI modules.
+static CUtlVector<TextEntry *> s_HiddenLanguageIndicators;
+
+void HL2SB_SetTextEntryLanguageVisible(TextEntry *entry, bool visible)
+{
+	const int index = s_HiddenLanguageIndicators.Find(entry);
+	if (visible)
+	{
+		if (index != s_HiddenLanguageIndicators.InvalidIndex())
+			s_HiddenLanguageIndicators.Remove(index);
+	}
+	else if (index == s_HiddenLanguageIndicators.InvalidIndex())
+	{
+		s_HiddenLanguageIndicators.AddToTail(entry);
+	}
+}
+
 static const int DRAW_OFFSET_X = 3,DRAW_OFFSET_Y = 1; 
 
 DECLARE_BUILD_FACTORY( TextEntry );
@@ -121,6 +139,7 @@ TextEntry::TextEntry(Panel *parent, const char *panelName) : BaseClass(parent, p
 
 TextEntry::~TextEntry()
 {
+	HL2SB_SetTextEntryLanguageVisible(this, true);
 	delete m_pEditMenu;
 	delete m_pIMECandidates;
 }
@@ -643,6 +662,7 @@ void TextEntry::PaintBackground()
 
 void TextEntry::PaintText(bool drawLanguageID)
 {
+	drawLanguageID = drawLanguageID && s_HiddenLanguageIndicators.Find(this) == s_HiddenLanguageIndicators.InvalidIndex();
 
 	// draw background
 	Color col;

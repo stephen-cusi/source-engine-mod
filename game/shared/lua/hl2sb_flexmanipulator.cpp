@@ -1,5 +1,6 @@
 #include "cbase.h"
 #include "hl2sb_flexmanipulator.h"
+#include "hl2sb_transmit_parent.h"
 #ifdef CLIENT_DLL
 #include "c_baseflex.h"
 #endif
@@ -122,7 +123,7 @@ static CHL2SBFlexManipulator *Controller(CBaseEntity *entity, bool create = fals
             controller->SetSolid(SOLID_NONE);
             controller->SetMoveType(MOVETYPE_NONE);
             controller->AddEffects(EF_NODRAW);
-            controller->AddEFlags(EFL_TRANSMIT_WITH_PARENT);
+            HL2SB_SetTransmitWithParent(controller, true);
             DispatchSpawn(controller);
         }
         return controller;

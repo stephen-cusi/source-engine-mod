@@ -1559,6 +1559,8 @@ public:
 	// The texture will be created using the destination format, and will optionally have mipmaps generated.
 	// In case of error, the provided callback function will be called with the error texture.
 	virtual void AsyncCreateTextureFromRenderTarget( ITexture* pSrcRt, const char* pDstName, ImageFormat dstFmt, bool bGenMips, int nAdditionalCreationFlags, IAsyncTextureOperationReceiver* pRecipient, void* pExtraArgs ) = 0;
+	virtual void OverrideBlendColor( bool enable, bool blend, int src, int dst, int op ) {}
+	virtual void OverrideBlendAlpha( bool enable, bool blend, int src, int dst, int op ) {}
 };
 
 template< class E > inline E* IMatRenderContext::LockRenderDataTyped( int nCount, const E* pSrcData )

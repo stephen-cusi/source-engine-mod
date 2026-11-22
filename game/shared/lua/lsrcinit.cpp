@@ -92,6 +92,7 @@ static ConVar cl_drawownshadow("cl_drawownshadow", "0", FCVAR_ARCHIVE, "Render t
 #include <string>
 #include <vector>
 #include <utility>
+#include <algorithm>
 #include "tier1/KeyValues.h"
 #if !defined(NO_STEAM) && !defined(DISABLE_STEAM)
 #include "steam/steam_api.h"
@@ -275,6 +276,224 @@ int HL2SB_EngineGetGames( lua_State *L ) {
     lua_pushboolean(L, owned); lua_setfield(L, -2, "owned");
     lua_rawseti(L, -2, i + 1);
   }
+  return 1;
+}
+
+struct HL2SB_ContentSource {
+  int appID;
+  std::string title, folder, path;
+};
+
+struct HL2SB_ManagedContentPath {
+  std::string folder, path;
+};
+static std::vector<HL2SB_ManagedContentPath> s_ManagedContentPaths;
+
+static bool HL2SB_ContentPathMounted( const std::string &path ) {
+  const std::vector<std::string> mounted = HL2SB_GameSearchPaths( "GAME" );
+  for ( size_t i = 0; i < mounted.size(); ++i )
+    if ( !Q_stricmp( mounted[i].c_str(), path.c_str() ) ) return true;
+  return false;
+}
+
+static bool HL2SB_ContentSourceMounted( const std::string &path ) {
+  const std::vector<std::string> mounted = HL2SB_GameSearchPaths( "GAME" );
+  for ( size_t i = 0; i < mounted.size(); ++i )
+    if ( !Q_stricmp( mounted[i].c_str(), path.c_str() ) ||
+         ( !Q_strnicmp( mounted[i].c_str(), path.c_str(), path.size() ) && mounted[i].size() > path.size() && mounted[i][path.size()] == '/' ) ) return true;
+  return false;
+}
+
+static void HL2SB_AddContentSource( std::vector<HL2SB_ContentSource> &sources,
+                                  int appID, const char *title, const char *folder,
+                                  const std::string &root ) {
+  std::string path = root + "/" + folder;
+  V_FixSlashes( &path[0], '/' );
+  if ( !filesystem->FileExists( (path + "/gameinfo.txt").c_str(), NULL ) ) return;
+  for ( size_t i = 0; i < sources.size(); ++i )
+    if ( !Q_stricmp( sources[i].path.c_str(), path.c_str() ) ) return;
+  HL2SB_ContentSource source = { appID, title, folder, path };
+  sources.push_back( source );
+}
+
+static std::vector<HL2SB_ContentSource> HL2SB_ContentSources() {
+  std::vector<HL2SB_ContentSource> sources;
+  const std::vector<std::string> bases = HL2SB_GameSearchPaths( "BASE_PATH" );
+  for ( int i = 0; i < ARRAYSIZE(s_GameDepots); ++i ) {
+    const HL2SB_GameDepot &game = s_GameDepots[i];
+    for ( size_t j = 0; j < bases.size(); ++j )
+      HL2SB_AddContentSource( sources, game.appID, game.title, game.folder, bases[j] );
+#if !defined(NO_STEAM) && !defined(DISABLE_STEAM)
+    if ( steamapicontext && steamapicontext->SteamApps() ) {
+      ISteamApps *apps = steamapicontext->SteamApps();
+      char root[MAX_PATH] = { 0 };
+      if ( apps->BIsAppInstalled( game.appID ) && apps->GetAppInstallDir( game.appID, root, sizeof(root) ) )
+        HL2SB_AddContentSource( sources, game.appID, game.title, game.folder, root );
+    }
+#endif
+  }
+  static const struct { int id; const char *title; const char *folder; } episodes[] = {
+    { 380, "Half-Life 2: Episode One", "episodic" },
+    { 420, "Half-Life 2: Episode Two", "ep2" },
+    { 340, "Half-Life 2: Lost Coast", "lostcoast" },
+    { 220, "Half-Life 2", "hl2base" },
+    { 280, "Half-Life: Source", "hls" },
+    { 440, "Team Fortress 2", "tf2" }
+  };
+  for ( int i = 0; i < ARRAYSIZE(episodes); ++i ) {
+    for ( size_t j = 0; j < bases.size(); ++j )
+      HL2SB_AddContentSource( sources, episodes[i].id, episodes[i].title, episodes[i].folder, bases[j] );
+#if !defined(NO_STEAM) && !defined(DISABLE_STEAM)
+    if ( episodes[i].id != 220 && episodes[i].id != 280 && episodes[i].id != 440 &&
+         steamapicontext && steamapicontext->SteamApps() ) {
+      char root[MAX_PATH] = { 0 };
+      ISteamApps *apps = steamapicontext->SteamApps();
+      if ( apps->GetAppInstallDir( 220, root, sizeof(root) ) )
+        HL2SB_AddContentSource( sources, episodes[i].id, episodes[i].title, episodes[i].folder, root );
+    }
+#endif
+  }
+  for ( size_t i = 0; i < bases.size(); ++i ) {
+    FileFindHandle_t handle;
+    const char *name = filesystem->FindFirstEx( (bases[i] + "/*").c_str(), NULL, &handle );
+    while ( name ) {
+      if ( name[0] != '.' && filesystem->FindIsDirectory( handle ) && Q_stricmp( name, "hl2sb" ) )
+        HL2SB_AddContentSource( sources, 0, name, name, bases[i] );
+      name = filesystem->FindNext( handle );
+    }
+    if ( handle != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( handle );
+  }
+  return sources;
+}
+
+int HL2SB_EngineGetContentSources( lua_State *L ) {
+  const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+  lua_newtable( L );
+  for ( size_t i = 0; i < sources.size(); ++i ) {
+    lua_newtable( L );
+    lua_pushinteger( L, sources[i].appID ); lua_setfield( L, -2, "appId" );
+    lua_pushstring( L, sources[i].title.c_str() ); lua_setfield( L, -2, "name" );
+    lua_pushstring( L, sources[i].folder.c_str() ); lua_setfield( L, -2, "folder" );
+    lua_pushstring( L, sources[i].path.c_str() ); lua_setfield( L, -2, "path" );
+    lua_pushboolean( L, HL2SB_ContentSourceMounted( sources[i].path ) ); lua_setfield( L, -2, "mounted" );
+    lua_rawseti( L, -2, (int)i + 1 );
+  }
+  return 1;
+}
+
+static void HL2SB_AddManagedContentPath( const HL2SB_ContentSource &source, const std::string &path ) {
+    if ( HL2SB_ContentPathMounted( path ) ) return;
+    filesystem->AddSearchPath( path.c_str(), "GAME", PATH_ADD_TO_TAIL );
+    if ( !HL2SB_ContentPathMounted( path ) ) {
+      Warning( "[HL2SB] Could not mount game content path: %s\n", path.c_str() );
+      return;
+    }
+    filesystem->AddSearchPath( path.c_str(), "HL2SB_CONTENT", PATH_ADD_TO_TAIL );
+    filesystem->MarkPathIDByRequestOnly( "HL2SB_CONTENT", true );
+    HL2SB_ManagedContentPath entry = { source.folder, path };
+    s_ManagedContentPaths.push_back( entry );
+}
+
+static void HL2SB_MountContentSource( const HL2SB_ContentSource &source ) {
+    const std::string pattern = source.path + "/*.vpk";
+    FileFindHandle_t handle;
+    const char *name = filesystem->FindFirstEx( pattern.c_str(), NULL, &handle );
+    std::vector<std::string> packs;
+    while ( name ) {
+      const std::string pack = name;
+      const size_t n = pack.size();
+      if ( !filesystem->FindIsDirectory( handle ) && n >= 4 &&
+           !( n >= 8 && pack[n-8] == '_' && V_isdigit(pack[n-7]) && V_isdigit(pack[n-6]) && V_isdigit(pack[n-5]) ) )
+        packs.push_back( pack );
+      name = filesystem->FindNext( handle );
+    }
+    if ( handle != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( handle );
+    std::sort( packs.begin(), packs.end() );
+    for ( size_t j = 0; j < packs.size(); ++j ) {
+      std::string pack = packs[j];
+      if ( pack.size() > 8 && !Q_stricmp( pack.c_str() + pack.size() - 8, "_dir.vpk" ) )
+        pack.erase( pack.size() - 8, 4 );
+      HL2SB_AddManagedContentPath( source, source.path + "/" + pack );
+    }
+    HL2SB_AddManagedContentPath( source, source.path );
+    HL2SB_RefreshGameContentPaths();
+}
+
+void HL2SB_MountSelectedGameContent() {
+  FileHandle_t file = filesystem->Open( "gamecontent.txt", "r", "MOD" );
+  if ( file == FILESYSTEM_INVALID_HANDLE ) return;
+  std::vector<std::string> selected;
+  char line[128];
+  while ( filesystem->ReadLine( line, sizeof(line), file ) ) {
+    char *end = NULL;
+    const long id = strtol( line, &end, 10 );
+    if ( end != line && id > 0 ) {
+      const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+      for ( size_t i = 0; i < sources.size(); ++i )
+        if ( sources[i].appID == id ) selected.push_back( sources[i].folder );
+    } else {
+      Q_StripPrecedingAndTrailingWhitespace( line );
+      if ( line[0] && line[0] != '#' ) selected.push_back( line );
+    }
+  }
+  filesystem->Close( file );
+  const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+  for ( size_t i = 0; i < sources.size(); ++i )
+    for ( size_t j = 0; j < selected.size(); ++j )
+      if ( !Q_stricmp( selected[j].c_str(), sources[i].folder.c_str() ) ) {
+        HL2SB_MountContentSource( sources[i] );
+        break;
+      }
+}
+
+int HL2SB_EngineSetContentMounted( lua_State *L ) {
+  const char *folder = luaL_checkstring( L, 1 );
+  const bool enabled = lua_toboolean( L, 2 ) != 0;
+  const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+  bool found = false;
+  if ( enabled ) {
+    for ( size_t i = 0; i < sources.size(); ++i )
+      if ( !Q_stricmp( folder, sources[i].folder.c_str() ) ) {
+        HL2SB_MountContentSource( sources[i] );
+        found = HL2SB_ContentSourceMounted( sources[i].path ) || found;
+      }
+  } else {
+    for ( size_t i = 0; i < sources.size(); ++i )
+      if ( !Q_stricmp( folder, sources[i].folder.c_str() ) ) found = true;
+    const std::vector<std::string> managed = HL2SB_GameSearchPaths( "HL2SB_CONTENT" );
+    for ( size_t i = 0; i < sources.size(); ++i ) {
+      if ( Q_stricmp( folder, sources[i].folder.c_str() ) ) continue;
+      const std::string &root = sources[i].path;
+      for ( size_t j = 0; j < managed.size(); ++j ) {
+        const std::string &path = managed[j];
+        if ( Q_stricmp( path.c_str(), root.c_str() ) &&
+             ( path.size() <= root.size() || Q_strnicmp( path.c_str(), root.c_str(), root.size() ) || path[root.size()] != '/' ) ) continue;
+        filesystem->RemoveSearchPath( path.c_str(), "GAME" );
+        filesystem->RemoveSearchPath( path.c_str(), "HL2SB_CONTENT" );
+      }
+    }
+    for ( size_t i = s_ManagedContentPaths.size(); i > 0; --i ) {
+      if ( Q_stricmp( folder, s_ManagedContentPaths[i-1].folder.c_str() ) ) continue;
+      s_ManagedContentPaths.erase( s_ManagedContentPaths.begin() + i - 1 );
+    }
+    HL2SB_RefreshGameContentPaths();
+    for ( size_t i = 0; i < sources.size(); ++i )
+      if ( !Q_stricmp( folder, sources[i].folder.c_str() ) && HL2SB_ContentSourceMounted( sources[i].path ) ) found = false;
+  }
+  lua_pushboolean( L, found );
+  return 1;
+}
+
+int HL2SB_EngineMountContentSource( lua_State *L ) {
+  const char *requested = luaL_checkstring( L, 1 );
+  const std::vector<HL2SB_ContentSource> sources = HL2SB_ContentSources();
+  for ( size_t i = 0; i < sources.size(); ++i ) {
+    if ( Q_stricmp( requested, sources[i].path.c_str() ) ) continue;
+    HL2SB_MountContentSource( sources[i] );
+    lua_pushboolean( L, true );
+    return 1;
+  }
+  lua_pushboolean( L, false );
   return 1;
 }
 
@@ -793,7 +1012,7 @@ static const LuaMetatableAlias_t s_LuaMetatableAliases[] = {
   { "CheckButton",       "CheckButton" },
   { "EditablePanel",     "EditablePanel" },
   { "ModelPanel",        "ModelPanel" },
-  { "ProjectedTexture",  "ProjectedTexture" },  // TODO(port): lc_projected_texture
+  { "ProjectedTexture",  "ProjectedTexture" },
   { "AudioChannel",      "AudioChannel" },      // TODO(port): needs BASS
   { "MoveData",          "MoveData" },          // HL2SB: native CMoveData metatable
   { "CMoveData",         "MoveData" },          // GMod spelling used by FindMetaTable
@@ -842,16 +1061,13 @@ static const char *LuaNativeMetatableName (const char *pszName) {
 ** GMod returns nil for a metatable that is not registered yet, which is what
 ** Derma relies on while it is still defining its controls.
 **
-** It has to be an explicit nil and not "no results": in Lua a call that returns
-** zero values vanishes when it is the last argument of another call, so
-** `print( FindMetaTable( "Label" ) )` collapsed to a bare `print()` and printed
-** an empty line instead of "nil".
+** A missing metatable returns no values.
 */
 static int lua_FindMetaTable (lua_State *L) {
   const char *pszName = luaL_checkstring(L, 1);
   luaL_getmetatable(L, LuaNativeMetatableName(pszName));
   if (lua_isnil(L, -1))
-    lua_pushnil(L);  /* leave exactly one value: nil */
+    return 0;
   return 1;
 }
 
@@ -1032,6 +1248,7 @@ static const LuaTypeInfo_t s_LuaTypeInfo[] = {
   { LUA_PASFILTERLIBNAME,       "CRecipientFilter",LUA_TYPE_RECIPFILTER,LUA_RECIPIENTFILTERLIBNAME },
   { LUA_MATERIALLIBNAME,        "IMaterial",       LUA_TYPE_MATERIAL,   NULL },
   { LUA_ITEXTUREMETANAME,       "ITexture",        LUA_TYPE_TEXTURE,    NULL },
+  { "ProjectedTexture",        "ProjectedTexture",LUA_TYPE_PROJTEX,    NULL },
   { LUA_CONVARLIBNAME,          "ConVar",          LUA_TYPE_CONVAR,     NULL },
   { LUA_CONCOMMANDLIBNAME,      "ConCommand",      LUA_TYPE_CONVAR,     NULL },
   { LUA_PHYSICSOBJECTLIBNAME,   "PhysObj",         LUA_TYPE_PHYSOBJ,    NULL },
@@ -1228,17 +1445,16 @@ static int lua_game_AddParticles (lua_State *L) {
   const char *pszParticleFile = luaL_checkstring( L, 1 );
   bool bLoaded = false;
 
-  // GMod's game.AddParticles( file ) loads a .pcf so that the particle systems
-  // inside it can be precached by name afterwards.  That is what GMod SWEPs rely
-  // on: the ported flechette gun runs
-  //     game.AddParticles( "particles/hunter_flechette.pcf" )
-  // and the weapon then precaches "hunter_muzzle_flash", "flechette_halo", ...
-  //
-  // This used to hand the *file name* to PrecacheParticleSystem(), which takes a
-  // system name, so every call produced
-  //     Attemped to precache unknown particle system "particles/....pcf"!
-  // and the weapon had no effects at all.  ReadParticleConfigFile() is the same
-  // entry the engine's own particles_manifest.txt loader uses.
+  // On the server, the addon's explicit PrecacheParticleSystem calls register
+  // names in the network table. Marking the whole PCF for eager precache also
+  // puts its unused definitions in the table at world spawn.
+  // The client loads materials here because the corresponding network names
+  // can arrive before the client runs the addon's particle setup script.
+#ifdef CLIENT_DLL
+  const bool bPrecache = true;
+#else
+  const bool bPrecache = false;
+#endif
   if ( pszParticleFile[0] == '\0' ) {
     lua_pushboolean( L, false );
     return 1;
@@ -1251,11 +1467,17 @@ static int lua_game_AddParticles (lua_State *L) {
     luasrc_LuaWarnMsgF( "[HL2SB] game.AddParticles: '%s' is not in the search paths - its particle systems stay unknown\n", pszParticleFile );
   }
   else {
-    bLoaded = g_pParticleSystemMgr->ReadParticleConfigFile( pszParticleFile, true, false );
+    bLoaded = g_pParticleSystemMgr->ReadParticleConfigFile( pszParticleFile, bPrecache, false );
 
     if ( !bLoaded ) {
       luasrc_LuaWarnMsgF( "[HL2SB] game.AddParticles: '%s' exists but could not be parsed\n", pszParticleFile );
     }
+#ifdef CLIENT_DLL
+    else {
+      extern void RequestCacheUsedMaterials();
+      RequestCacheUsedMaterials();
+    }
+#endif
   }
 
   lua_pushboolean( L, bLoaded );
@@ -1371,6 +1593,27 @@ static int lua_game_GetAmmoID (lua_State *L) {
   return 1;
 }
 
+static int lua_game_GetAmmoMax (lua_State *L) {
+  const lua_Number value = lua_tonumber( L, 1 );
+  CAmmoDef *definition = GetAmmoDef();
+  int limit = 0;
+  if ( definition && value >= 1 && value < definition->m_nAmmoIndex ) {
+    Ammo_t *ammo = definition->GetAmmoOfIndex( (int)value );
+    if ( ammo ) {
+      if ( ammo->pMaxCarry != USE_CVAR ) {
+        limit = ammo->pMaxCarry;
+      } else if ( ammo->pMaxCarryCVar ) {
+        limit = (int)ammo->pMaxCarryCVar->GetFloat();
+      } else if ( ammo->pMaxCarryCVarName ) {
+        ConVarRef ref( ammo->pMaxCarryCVarName, true );
+        if ( ref.IsValid() ) limit = (int)ref.GetFloat();
+      }
+    }
+  }
+  lua_pushnumber( L, limit );
+  return 1;
+}
+
 extern bool HL2SB_GetGameTimeScale( float &scale );
 #ifndef CLIENT_DLL
 extern void HL2SB_SetGameTimeScale( float scale );
@@ -1378,7 +1621,9 @@ extern void HL2SB_SetGameTimeScale( float scale );
 
 static int lua_game_GetTimeScale( lua_State *L ) {
   float scale;
-  if ( !HL2SB_GetGameTimeScale( scale ) ) return 0;
+  // Sound hooks can query the scale before the rules exist.
+  if ( !HL2SB_GetGameTimeScale( scale ) )
+    scale = 1.0f;
   lua_pushnumber( L, scale );
   return 1;
 }
@@ -1452,9 +1697,32 @@ static int lua_MsgN (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB: UnPredictedCurTime() -- the clock prediction must not touch.
+// Reference behavior: on the server it is the plain curtime; on the client it
+// is the pre-prediction clock while a prediction frame is running (the frame
+// rewinds gpGlobals->curtime to drive the simulated commands), and the plain
+// curtime otherwise.  The client snapshot lives in prediction.cpp.
+//-----------------------------------------------------------------------------
+#ifdef CLIENT_DLL
+double HL2SB_ClientPrePredictionCurtime( void );
+#endif
+
+static int lua_UnPredictedCurTime (lua_State *L) {
+#ifdef CLIENT_DLL
+  double flPrePrediction = HL2SB_ClientPrePredictionCurtime();
+  if ( flPrePrediction != 0.0 ) {
+    lua_pushnumber( L, flPrePrediction );
+    return 1;
+  }
+#endif
+  lua_pushnumber( L, gpGlobals ? gpGlobals->curtime : 0.0 );
+  return 1;
+}
+
 // HL2SB (sbrust): implemented in luamanager.cpp (local prototype, no header
 // churn -- same pattern as HL2SB_CollectLuaError below).
-void luasrc_LuaConsoleMsgColor( const char *pszText, const Color &clr, bool bNewline );
+void luasrc_LuaConsoleMsgColor( const char *pszText, const Color &clr, bool bLog );
 
 //-----------------------------------------------------------------------------
 // HL2SB (sbrust): GMod 的 MsgC( Color, ... )。契约（wiki + GMod 行为）：
@@ -1463,7 +1731,7 @@ void luasrc_LuaConsoleMsgColor( const char *pszText, const Color &clr, bool bNew
 //     r/g/b 至少存在即按 Color 处理；
 //   * 其余参数按 tostring 直接连拼（无分隔符 -- 与 print 的 \t 不同，
 //     `MsgC( c, "HP: ", hp )` 输出 "HP: 100"）；
-//   * 结尾补换行（MsgC 是整行语义；半行续行走 Msg/MsgN）；
+//   * 保留调用方提供的换行，支持多次 MsgC 调用拼成同一行；
 //   * 颜色经 luasrc_LuaConsoleMsgColor 直达控制台，整行照旧进 hl2sb_lua.log。
 // 首 Color 之前的文本用白色。缓冲写满时按当前颜色提前分片续行，视觉不变。
 //-----------------------------------------------------------------------------
@@ -1487,9 +1755,10 @@ static int lua_MsgC (lua_State *L) {
         }
         curColor = Color( (int)lua_tointeger( L, -4 ), (int)lua_tointeger( L, -3 ),
                           (int)lua_tointeger( L, -2 ), (int)lua_tointeger( L, -1 ) );
+        lua_pop( L, 4 );
+        continue;
       }
       lua_pop( L, 4 );
-      continue;
     }
 
     size_t nLength = 0;
@@ -1505,7 +1774,7 @@ static int lua_MsgC (lua_State *L) {
     lua_pop( L, 1 );
   }
 
-  if ( nSeg > 0 || nArgs == 0 )
+  if ( nSeg > 0 )
     luasrc_LuaConsoleMsgColor( szSegment, curColor, true );
   return 0;
 }
@@ -2109,7 +2378,23 @@ static bool HL2SB_GlobalSend(lua_State *state, const char *name, int value, CBas
     default: return false;
   }
   unsigned char payload[512];
-  int len = HL2SB_NWSerialize(state, value, tag, payload, sizeof(payload));
+  int len;
+  if (tag == HL2SB_NWTAG_ENTITY) {
+    CBaseEntity *entity = lua_toentity(state, value);
+    unsigned int encoded = INVALID_NETWORKED_EHANDLE_VALUE;
+    if (entity && entity->GetRefEHandle().IsValid() &&
+        entity->entindex() >= 0 && entity->entindex() < MAX_EDICTS) {
+      const unsigned int serial = entity->GetRefEHandle().GetSerialNumber() &
+          ((1u << NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS) - 1);
+      encoded = (serial << MAX_EDICT_BITS) | (unsigned int)entity->entindex();
+    }
+    tag = 'H';
+    bf_write writer("HL2SB_GlobalEntity", payload, sizeof(payload));
+    writer.WriteLong((int)encoded);
+    len = writer.GetNumBytesWritten();
+  } else {
+    len = HL2SB_NWSerialize(state, value, tag, payload, sizeof(payload));
+  }
   if (len < 0 || len + (int)Q_strlen(name) + 7 > MAX_USER_MSG_DATA) return false;
   CRecipientFilter filter;
   filter.MakeReliable();
@@ -2368,7 +2653,12 @@ static void __MsgFunc_HL2SB_NW( bf_read &read )
 		if (lua_istable(L, -1)) {
 			HL2SB_NWReplicatedStore(iFamily, 0, szName, tag, payload, len);
 			lua_pushstring(L, szName);
-			if (tag == 'N' || !HL2SB_NWReplicatedPushFamily(L, iFamily, 0, szName)) lua_pushnil(L);
+			if (tag == 'H' && len == 4) {
+				bf_read entityRead("HL2SB_GlobalEntity", payload, len);
+				lua_newtable(L);
+				lua_pushinteger(L, (unsigned int)entityRead.ReadLong());
+				lua_setfield(L, -2, "__hl2sb_global_entity_handle");
+			} else if (tag == 'N' || !HL2SB_NWReplicatedPushFamily(L, iFamily, 0, szName)) lua_pushnil(L);
 			lua_rawset(L, -3);
 		}
 		lua_settop(L, top);
@@ -3269,13 +3559,23 @@ int lua_IsConCommandBlocked (lua_State *L) {
   buffer.AddText(pszText);
   buffer.BeginProcessingCommands(1);
   bool bBlocked = false;
+#ifdef CLIENT_DLL
+  const bool bMenuState = L == LGameUI;
+#else
+  const bool bMenuState = false;
+#endif
+  int firstBlocked = 0;
+  if ( bMenuState ) {
+    while ( firstBlocked < ARRAYSIZE(blocked) && Q_stricmp( blocked[firstBlocked], "exec" ) )
+      ++firstBlocked;
+  }
   while ( buffer.DequeueNextCommand() ) {
     const CCommand &args = buffer.GetCommand();
     if ( args.ArgC() == 0 )
       continue;
     if ( (!gpGlobals || gpGlobals->maxClients < 2) && !Q_stricmp(args[0], "retry") )
       bBlocked = true;
-    for ( int i = 0; i < ARRAYSIZE(blocked) && !bBlocked; ++i )
+    for ( int i = firstBlocked; i < ARRAYSIZE(blocked) && !bBlocked; ++i )
       if ( !Q_stricmp(args[0], blocked[i]) )
         bBlocked = true;
     for ( int i = 1; i < args.ArgC() && !bBlocked; ++i )
@@ -3367,12 +3667,20 @@ static int HL2SB_Lua_RunConsoleCommand( lua_State *L )
   if ( blocked )
     return luaL_error( L, "RunConsoleCommand: Command is blocked! (%s)", name );
 #ifdef CLIENT_DLL
-  engine->ClientCmd( command );
+  if ( L == LGameUI )
+    engine->ClientCmd_Unrestricted( command );
+  else
+    engine->ClientCmd( command );
 #else
   engine->ServerCommand( command );
 #endif
   return 0;
 }
+
+// Defined below, next to the client-Lua-file registration helpers.  The menu
+// state never runs luasrc_openlibs, so its copy of this global must be
+// registered here as well.
+static int luasrc_AddCSLuaFile( lua_State *pL );
 
 void HL2SB_RegisterConsoleGlobals( lua_State *state )
 {
@@ -3380,6 +3688,14 @@ void HL2SB_RegisterConsoleGlobals( lua_State *state )
   lua_setglobal( state, "Msg" );
   lua_pushcfunction( state, lua_MsgN );
   lua_setglobal( state, "MsgN" );
+  lua_pushcfunction( state, lua_MsgC );
+  lua_setglobal( state, "MsgC" );
+  lua_pushcfunction( state, lua_Warning );
+  lua_setglobal( state, "Warning" );
+  lua_pushcfunction( state, lua_UnPredictedCurTime );
+  lua_setglobal( state, "UnPredictedCurTime" );
+  lua_pushcfunction( state, luasrc_AddCSLuaFile );
+  lua_setglobal( state, "AddCSLuaFile" );
   lua_pushcfunction( state, lua_ErrorNoHalt );
   lua_setglobal( state, "ErrorNoHalt" );
   lua_pushcfunction( state, lua_ErrorNoHaltWithStack );
@@ -3571,8 +3887,8 @@ static void HL2SB_UIPushKV(lua_State *L, KeyValues *pKV, int depth = 0)
   for (KeyValues *p = pKV->GetFirstSubKey(); p; p = p->GetNextKey()) {
     const char *name = p->GetName();
     char *end = NULL;
-    long index = strtol(name, &end, 10);
-    if (*name && end && !*end && index > 0) lua_pushinteger(L, index);
+    double index = strtod(name, &end);
+    if (end != name && !*end) lua_pushnumber(L, (float)index);
     else lua_pushstring(L, name);
     if (p->GetDataType() == KeyValues::TYPE_NONE) HL2SB_UIPushKV(L, p, depth + 1);
     else {
@@ -3825,6 +4141,21 @@ static int HL2SB_KeyValuesToTablePreserveOrder(lua_State *L)
   return HL2SB_ReadUtilityKV(L, true);
 }
 
+extern int luasrc_UTIL_TableToJSON(lua_State *L);
+extern int luasrc_UTIL_JSONToTable(lua_State *L);
+
+void HL2SB_InstallMenuUtilBindings(lua_State *state)
+{
+  lua_getglobal(state, "util");
+  if (lua_istable(state, -1)) {
+    lua_pushcfunction(state, luasrc_UTIL_TableToJSON); lua_setfield(state, -2, "TableToJSON");
+    lua_pushcfunction(state, luasrc_UTIL_JSONToTable); lua_setfield(state, -2, "JSONToTable");
+    lua_pushcfunction(state, HL2SB_UIKeyValuesToTable); lua_setfield(state, -2, "KeyValuesToTable");
+    lua_pushcfunction(state, HL2SB_UITableToKeyValues); lua_setfield(state, -2, "TableToKeyValues");
+  }
+  lua_pop(state, 1);
+}
+
 static int lua_ProtectedCall(lua_State *L)
 {
   luaL_checktype(L, 1, LUA_TFUNCTION);
@@ -4063,6 +4394,26 @@ static int HL2SB_GetGlobalValue(lua_State *L) {
   HL2SB_PushGlobalValues(L);
   lua_pushstring(L, name);
   lua_rawget(L, -2);
+#ifdef CLIENT_DLL
+  if (lua_istable(L, -1)) {
+    lua_getfield(L, -1, "__hl2sb_global_entity_handle");
+    if (lua_isinteger(L, -1)) {
+      const unsigned int encoded = (unsigned int)lua_tointeger(L, -1);
+      C_BaseEntity *entity = NULL;
+      if (encoded != INVALID_NETWORKED_EHANDLE_VALUE) {
+        const int index = encoded & ((1u << MAX_EDICT_BITS) - 1);
+        const unsigned int serial = encoded >> MAX_EDICT_BITS;
+        C_BaseEntity *candidate = cl_entitylist->GetBaseEntity(index);
+        if (candidate && (candidate->GetRefEHandle().GetSerialNumber() &
+            ((1u << NUM_NETWORKED_EHANDLE_SERIAL_NUMBER_BITS) - 1)) == serial)
+          entity = candidate;
+      }
+      lua_pushentity(L, entity);
+      return 1;
+    }
+    lua_pop(L, 1);
+  }
+#endif
   if (!lua_isnil(L, -1)) return 1;
   lua_pop(L, 1);
   if (!lua_isnoneornil(L, 2)) { lua_pushvalue(L, 2); return 1; }
@@ -4207,6 +4558,30 @@ static int luasrc_LocalToWorld (lua_State *L) {
   return 2;
 }
 
+static int luasrc_WorldToLocal (lua_State *L) {
+  const Vector position = luaL_checkvector(L, 1);
+  const QAngle angles = luaL_checkangle(L, 2);
+  const Vector origin = luaL_checkvector(L, 3);
+  const QAngle originAngles = luaL_checkangle(L, 4);
+  matrix3x4_t parent;
+  AngleMatrix(originAngles, origin, parent);
+  Vector localPosition;
+  VectorITransform(position, parent, localPosition);
+  const QAngle localAngles = TransformAnglesToLocalSpace(angles, parent);
+  lua_pushvector(L, localPosition);
+  lua_pushangle(L, localAngles);
+  return 2;
+}
+
+#ifndef CLIENT_DLL
+static int luasrc_PrintMessage (lua_State *L) {
+  const char *message = luaL_checkstring(L, 2);
+  const int destination = (int)luaL_checknumber(L, 1);
+  UTIL_ClientPrintAll(destination, "%s1", message);
+  return 0;
+}
+#endif
+
 static int luasrc_MsgAll (lua_State *L) {
   const int count = lua_gettop(L);
   char text[4096] = { 0 };
@@ -4234,6 +4609,142 @@ static int luasrc_MsgAll (lua_State *L) {
 #endif
   return 0;
 }
+
+//-----------------------------------------------------------------------------
+// HL2SB: GMod's AddCSLuaFile( file = "current file" ).  Registered for the
+// game realms inside luasrc_openlibs and for the menu state through
+// HL2SB_RegisterConsoleGlobals (the menu state never runs luasrc_openlibs).
+// The client/menu copy only re-syncs the Lua state and returns 0 values, so
+// "does nothing outside the server" is exact.
+//-----------------------------------------------------------------------------
+static int luasrc_AddCSLuaFile( lua_State *pL ) {
+  // The download list is server state.  The realm is read from the SERVER
+  // global instead of a preprocessor branch: this tree's compiler rejects
+  // #ifdef inside a lambda body (C2146/C2065).
+  bool bServerRealm = false;
+  lua_getglobal( pL, "SERVER" );
+  bServerRealm = lua_toboolean( pL, -1 ) != 0;
+  lua_pop( pL, 1 );
+  if ( !bServerRealm )
+    return 0;
+
+  char szName[ MAX_PATH ] = { 0 };
+  const bool bExplicit = ( lua_type( pL, 1 ) != LUA_TNONE );
+  if ( bExplicit )
+  {
+    const char *pszArg = luaL_checkstring( pL, 1 );
+    Q_strncpy( szName, pszArg, sizeof( szName ) );
+  }
+  else
+  {
+    HL2SB_LuaCurrentFile( pL, szName, sizeof( szName ) );
+  }
+
+  // Validation, in the reference order: a leading dodgy symbol, then ':', ' '
+  // and ".." anywhere, then the .lua extension.
+  if ( szName[0] == '\\' || szName[0] == '/' || szName[0] == '.' ||
+       szName[0] == '~' || szName[0] == '@' )
+    return HL2SB_CSRaise( pL, "Refusing to AddCSLuaFile '%s' because its name contains dodgy symbols", szName );
+  for ( const char *p = szName; *p; ++p )
+  {
+    if ( *p == ':' || *p == ' ' || ( p[0] == '.' && p[1] == '.' ) )
+      return HL2SB_CSRaise( pL, "Refusing to AddCSLuaFile '%s' because its name contains dodgy symbols", szName );
+  }
+  const char *pszExt = strrchr( szName, '.' );
+  if ( pszExt == NULL || Q_stricmp( pszExt, ".lua" ) != 0 )
+    return HL2SB_CSRaise( pL, "AddCSLuaFile: Invalid filename '%s'", szName );
+
+  // The reference rewrites '\\' to '/' before it resolves and reports the name.
+  for ( char *p = szName; *p; ++p )
+  {
+    if ( *p == '\\' )
+      *p = '/';
+  }
+
+  char szCaller[ MAX_PATH ] = { 0 };
+  HL2SB_LuaCurrentFile( pL, szCaller, sizeof( szCaller ) );
+
+  char szResolved[ MAX_PATH ] = { 0 };
+  char szCandidate[ MAX_PATH ];
+  char szNorm[ MAX_PATH ];
+
+  // 1. Relative to the calling script (the reference asks for the current
+  //    script's directory first).  Chunk names are MOD-relative and already
+  //    carry "lua/" or the addon tree prefix, so they need no rewriting.
+  if ( szCaller[0] != '\0' )
+  {
+    char szDir[ MAX_PATH ];
+    Q_strncpy( szDir, szCaller, sizeof( szDir ) );
+    char *pszSlash = strrchr( szDir, '/' );
+    if ( pszSlash != NULL )
+    {
+      pszSlash[1] = '\0';
+      Q_snprintf( szCandidate, sizeof( szCandidate ), "%s%s", szDir, szName );
+      HL2SB_CSNormalizeDots( szCandidate, szNorm, sizeof( szNorm ) );
+      if ( g_pFullFileSystem != NULL && g_pFullFileSystem->FileExists( szNorm, "MOD" ) )
+        Q_strncpy( szResolved, szNorm, sizeof( szResolved ) );
+    }
+  }
+
+  // Gamemode send manifests name files relative to the gamemodes root.
+  if ( szResolved[0] == '\0' )
+  {
+    Q_snprintf( szCandidate, sizeof( szCandidate ), "gamemodes/%s", szName );
+    HL2SB_CSNormalizeDots( szCandidate, szNorm, sizeof( szNorm ) );
+    if ( g_pFullFileSystem != NULL && g_pFullFileSystem->FileExists( szNorm, "MOD" ) )
+      Q_strncpy( szResolved, szNorm, sizeof( szResolved ) );
+  }
+
+  // 2. The lua search root, then 3. the game root.
+  if ( szResolved[0] == '\0' )
+  {
+    Q_snprintf( szCandidate, sizeof( szCandidate ), "lua/%s", szName );
+    HL2SB_CSNormalizeDots( szCandidate, szNorm, sizeof( szNorm ) );
+    if ( g_pFullFileSystem != NULL && g_pFullFileSystem->FileExists( szNorm, "MOD" ) )
+      Q_strncpy( szResolved, szNorm, sizeof( szResolved ) );
+  }
+  if ( szResolved[0] == '\0' && g_pFullFileSystem != NULL &&
+       g_pFullFileSystem->FileExists( szName, "MOD" ) )
+  {
+    Q_strncpy( szResolved, szName, sizeof( szResolved ) );
+  }
+
+  if ( szResolved[0] == '\0' )
+  {
+    // A no-argument call names the chunk that is running, so the file is known
+    // to exist even when the composed candidates miss (a file inside a mounted
+    // pack is not addressable from the MOD root).  An explicit name has no such
+    // guarantee and gets the reference error.
+    if ( !bExplicit && szCaller[0] != '\0' )
+      Q_strncpy( szResolved, szCaller, sizeof( szResolved ) );
+    else
+      return HL2SB_CSRaise( pL, "AddCSLuaFile: Couldn't find '%s'", szName );
+  }
+
+  if ( g_pFullFileSystem != NULL )
+  {
+    FileHandle_t hFile = g_pFullFileSystem->Open( szResolved, "rb", "MOD" );
+    if ( hFile )
+    {
+      const int nSize = g_pFullFileSystem->Size( hFile );
+      g_pFullFileSystem->Close( hFile );
+      if ( nSize == 0 )
+        return HL2SB_CSRaise( pL, "AddCSLuaFile: Empty file '%s'", szResolved );
+    }
+  }
+
+  if ( !HL2SB_RegisterClientLuaFile( pL, szResolved ) )
+    Warning( "AddCSLuaFile: unable to register '%s'\n", szResolved );
+  return 0;
+}
+
+#ifdef CLIENT_DLL
+static int luasrc_MotionSensorIsAvailable( lua_State *L )
+{
+  lua_pushboolean( L, 0 );
+  return 1;
+}
+#endif
 
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   HL2SB_RefreshGameContentPaths();
@@ -4264,6 +4775,13 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
       lua_pop(L, 1);
     }
   }
+
+#ifdef CLIENT_DLL
+  lua_newtable( L );
+  lua_pushcfunction( L, luasrc_MotionSensorIsAvailable );
+  lua_setfield( L, -2, "IsAvailable" );
+  lua_setglobal( L, "motionsensor" );
+#endif
 
 /* HL2SB GMod compat: the DEFINE_BASECLASS( name ) global (wiki: it is a
  * PREPROCESSOR keyword in GMod -- the loader's own GLua rewrite pass expands
@@ -4337,7 +4855,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   // Player hands and other animating entity families use the same inherited
   // CBaseAnimating methods as GMod's Entity metatable.
   luasrc_install_animation_methods(L, LUA_BASEENTITYLIBNAME);
-  lua_pushinteger(L, ActivityList_RegisterPrivateActivity("ACT_MP_SWIM_IDLE"));
+  lua_pushinteger(L, ACT_MP_SWIM_IDLE);
   lua_setglobal(L, "ACT_MP_SWIM_IDLE");
 
   /* ...and the library tables themselves can be reachable under GMod's names. */
@@ -4366,10 +4884,6 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_pushcfunction(L, HL2SB_TimerCycle); lua_setfield(L, -2, "TimerCycle");
   lua_pushcfunction(L, lua_ProtectedCall); lua_setglobal(L, "ProtectedCall");
   lua_pop(L, 1);
-
-  lua_pushinteger(L, 0); lua_setglobal(L, "TEAM_CONNECTING");
-  lua_pushinteger(L, 1001); lua_setglobal(L, "TEAM_UNASSIGNED");
-  lua_pushinteger(L, 1002); lua_setglobal(L, "TEAM_SPECTATOR");
 
   /* HL2SB: re-assert the realm globals LAST.
   **
@@ -4450,15 +4964,19 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   **                         client download; this engine has no download list, so
   **                         it records nothing and returns the path like GMod.
   **   IncludeCS( path )     the client-side twin of the above; same reasoning.
-  **   jit                   LuaJIT provides this table through its own library;
-  **                         the older Lua 5.4 build needs a version fallback.
   **   LoadPresets()         lua/includes/modules/presets.lua:6 calls it at load.
   **   SENSORBONE            lua/includes/modules/motionsensor.lua:16 indexes it.
   */
   lua_pushcfunction(L, luasrc_MsgAll);
   lua_setglobal(L, "MsgAll");
+#ifndef CLIENT_DLL
+  lua_pushcfunction(L, luasrc_PrintMessage);
+  lua_setglobal(L, "PrintMessage");
+#endif
   lua_pushcfunction(L, luasrc_LocalToWorld);
   lua_setglobal(L, "LocalToWorld");
+  lua_pushcfunction(L, luasrc_WorldToLocal);
+  lua_setglobal(L, "WorldToLocal");
 
   /* AddCSLuaFile( file = "current file" ) -- wiki Global.AddCSLuaFile.
   **
@@ -4479,142 +4997,12 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   **     shows, and it is why the call never returns a value.
   ** The delivery half is still being implemented; the server registers the file
   ** name and content hash in the client Lua file table. */
-  lua_pushcfunction( L, []( lua_State *pL ) -> int {
-    // The download list is server state.  The realm is read from the SERVER
-    // global instead of a preprocessor branch: this tree's compiler rejects
-    // #ifdef inside a lambda body (C2146/C2065).
-    bool bServerRealm = false;
-    lua_getglobal( pL, "SERVER" );
-    bServerRealm = lua_toboolean( pL, -1 ) != 0;
-    lua_pop( pL, 1 );
-    if ( !bServerRealm )
-      return 0;
-
-    char szName[ MAX_PATH ] = { 0 };
-    const bool bExplicit = ( lua_type( pL, 1 ) != LUA_TNONE );
-    if ( bExplicit )
-    {
-      const char *pszArg = luaL_checkstring( pL, 1 );
-      Q_strncpy( szName, pszArg, sizeof( szName ) );
-    }
-    else
-    {
-      HL2SB_LuaCurrentFile( pL, szName, sizeof( szName ) );
-    }
-
-    // Validation, in the reference order: a leading dodgy symbol, then ':', ' '
-    // and ".." anywhere, then the .lua extension.
-    if ( szName[0] == '\\' || szName[0] == '/' || szName[0] == '.' ||
-         szName[0] == '~' || szName[0] == '@' )
-      return HL2SB_CSRaise( pL, "Refusing to AddCSLuaFile '%s' because its name contains dodgy symbols", szName );
-    for ( const char *p = szName; *p; ++p )
-    {
-      if ( *p == ':' || *p == ' ' || ( p[0] == '.' && p[1] == '.' ) )
-        return HL2SB_CSRaise( pL, "Refusing to AddCSLuaFile '%s' because its name contains dodgy symbols", szName );
-    }
-    const char *pszExt = strrchr( szName, '.' );
-    if ( pszExt == NULL || Q_stricmp( pszExt, ".lua" ) != 0 )
-      return HL2SB_CSRaise( pL, "AddCSLuaFile: Invalid filename '%s'", szName );
-
-    // The reference rewrites '\\' to '/' before it resolves and reports the name.
-    for ( char *p = szName; *p; ++p )
-    {
-      if ( *p == '\\' )
-        *p = '/';
-    }
-
-    char szCaller[ MAX_PATH ] = { 0 };
-    HL2SB_LuaCurrentFile( pL, szCaller, sizeof( szCaller ) );
-
-    char szResolved[ MAX_PATH ] = { 0 };
-    char szCandidate[ MAX_PATH ];
-    char szNorm[ MAX_PATH ];
-
-    // 1. Relative to the calling script (the reference asks for the current
-    //    script's directory first).  Chunk names are MOD-relative and already
-    //    carry "lua/" or the addon tree prefix, so they need no rewriting.
-    if ( szCaller[0] != '\0' )
-    {
-      char szDir[ MAX_PATH ];
-      Q_strncpy( szDir, szCaller, sizeof( szDir ) );
-      char *pszSlash = strrchr( szDir, '/' );
-      if ( pszSlash != NULL )
-      {
-        pszSlash[1] = '\0';
-        Q_snprintf( szCandidate, sizeof( szCandidate ), "%s%s", szDir, szName );
-        HL2SB_CSNormalizeDots( szCandidate, szNorm, sizeof( szNorm ) );
-        if ( g_pFullFileSystem != NULL && g_pFullFileSystem->FileExists( szNorm, "MOD" ) )
-          Q_strncpy( szResolved, szNorm, sizeof( szResolved ) );
-      }
-    }
-
-    // Gamemode send manifests name files relative to the gamemodes root.
-    if ( szResolved[0] == '\0' )
-    {
-      Q_snprintf( szCandidate, sizeof( szCandidate ), "gamemodes/%s", szName );
-      HL2SB_CSNormalizeDots( szCandidate, szNorm, sizeof( szNorm ) );
-      if ( g_pFullFileSystem != NULL && g_pFullFileSystem->FileExists( szNorm, "MOD" ) )
-        Q_strncpy( szResolved, szNorm, sizeof( szResolved ) );
-    }
-
-    // 2. The lua search root, then 3. the game root.
-    if ( szResolved[0] == '\0' )
-    {
-      Q_snprintf( szCandidate, sizeof( szCandidate ), "lua/%s", szName );
-      HL2SB_CSNormalizeDots( szCandidate, szNorm, sizeof( szNorm ) );
-      if ( g_pFullFileSystem != NULL && g_pFullFileSystem->FileExists( szNorm, "MOD" ) )
-        Q_strncpy( szResolved, szNorm, sizeof( szResolved ) );
-    }
-    if ( szResolved[0] == '\0' && g_pFullFileSystem != NULL &&
-         g_pFullFileSystem->FileExists( szName, "MOD" ) )
-    {
-      Q_strncpy( szResolved, szName, sizeof( szResolved ) );
-    }
-
-    if ( szResolved[0] == '\0' )
-    {
-      // A no-argument call names the chunk that is running, so the file is known
-      // to exist even when the composed candidates miss (a file inside a mounted
-      // pack is not addressable from the MOD root).  An explicit name has no such
-      // guarantee and gets the reference error.
-      if ( !bExplicit && szCaller[0] != '\0' )
-        Q_strncpy( szResolved, szCaller, sizeof( szResolved ) );
-      else
-        return HL2SB_CSRaise( pL, "AddCSLuaFile: Couldn't find '%s'", szName );
-    }
-
-    if ( g_pFullFileSystem != NULL )
-    {
-      FileHandle_t hFile = g_pFullFileSystem->Open( szResolved, "rb", "MOD" );
-      if ( hFile )
-      {
-        const int nSize = g_pFullFileSystem->Size( hFile );
-        g_pFullFileSystem->Close( hFile );
-        if ( nSize == 0 )
-          return HL2SB_CSRaise( pL, "AddCSLuaFile: Empty file '%s'", szResolved );
-      }
-    }
-
-    if ( !HL2SB_RegisterClientLuaFile( pL, szResolved ) )
-      Warning( "AddCSLuaFile: unable to register '%s'\n", szResolved );
-    return 0;
-  } );
+  lua_pushcfunction( L, luasrc_AddCSLuaFile );
   lua_setglobal( L, "AddCSLuaFile" );
 
   if ( luaL_loadstring( L,
     "AddCSLuaFile = AddCSLuaFile or function( path ) return path end\n"
     "IncludeCS = IncludeCS or function( path ) return path end\n"
-#if LUA_VERSION_NUM >= 502
-#if defined( __aarch64__ ) || defined( _M_ARM64 ) || defined( _M_ARM64EC )
-    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'arm64' }\n"
-#elif defined( _WIN64 ) || defined( __x86_64__ )
-    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'x64' }\n"
-#elif defined( __arm__ )
-    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'arm' }\n"
-#else
-    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400, arch = 'x86' }\n"
-#endif
-#endif
     //---------------------------------------------------------------------
     // NPC_STATE_*: GMod exposes Source's own NPC_STATE enum as globals
     // (wiki NPC:GetNPCState "see the NPC_STATE enum").  scp173 compares
@@ -4724,6 +5112,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pushcfunction( L, lua_game_IsDedicated );  lua_setfield( L, -2, "IsDedicated" );
     lua_pushcfunction( L, lua_game_GetAmmoName );  lua_setfield( L, -2, "GetAmmoName" );
     lua_pushcfunction( L, lua_game_GetAmmoID );    lua_setfield( L, -2, "GetAmmoID" );
+    lua_pushcfunction( L, lua_game_GetAmmoMax );   lua_setfield( L, -2, "GetAmmoMax" );
     lua_pushcfunction( L, lua_game_GetTimeScale ); lua_setfield( L, -2, "GetTimeScale" );
 #ifndef CLIENT_DLL
     lua_pushcfunction( L, lua_game_SetTimeScale ); lua_setfield( L, -2, "SetTimeScale" );

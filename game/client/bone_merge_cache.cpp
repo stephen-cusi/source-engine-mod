@@ -169,7 +169,16 @@ void CBoneMergeCache::MergeMatchingBones( int boneMask )
 		return;
 
 	// Have the entity we're following setup its bones.
-	bool bWorked = m_pFollow->SetupBones( NULL, -1, m_nFollowBoneSetupMask, gpGlobals->curtime );
+	CHandle<C_BaseAnimating> ownerHandle = m_pOwner;
+	CHandle<C_BaseAnimating> followHandle = m_pFollow;
+	C_BaseAnimating *pFollow = followHandle.Get();
+	bool bWorked = pFollow->SetupBones( NULL, -1, m_nFollowBoneSetupMask, gpGlobals->curtime );
+	C_BaseAnimating *pOwner = ownerHandle.Get();
+	if ( !pOwner || !pOwner->OwnsBoneMergeCache( this ) || followHandle.Get() != pFollow )
+		return;
+	UpdateCache();
+	if ( !m_pOwnerHdr || m_pFollow != pFollow || m_MergedBones.Count() == 0 )
+		return;
 	// We suspect there's some cases where SetupBones couldn't do its thing, and then this causes Captain Canteen.
 	Assert ( bWorked );
 	if ( !bWorked )
@@ -214,8 +223,10 @@ void CBoneMergeCache::MergeMatchingBones( int boneMask )
 			// Only update bones reference by the bone mask.
 			if ( !( m_pOwnerHdr->boneFlags( iOwnerBone ) & boneMask ) )
 				continue;
+			if ( !pFollow->IsBoneMatrixAvailable( iParentBone, false ) )
+				continue;
 
-			MatrixCopy( m_pFollow->GetBone( iParentBone ), m_pOwner->GetBoneForWrite( iOwnerBone ) );
+			MatrixCopy( pFollow->GetBone( iParentBone ), m_pOwner->GetBoneForWrite( iOwnerBone ) );
 		}
 	}
 }
@@ -293,8 +304,21 @@ bool CBoneMergeCache::GetAimEntOrigin( Vector *pAbsOrigin, QAngle *pAbsAngles )
 	// all over the place, then this won't get the right results.
 	
 	// Get mFollowBone.
-	m_pFollow->SetupBones( NULL, -1, m_nFollowBoneSetupMask, gpGlobals->curtime );
-	const matrix3x4_t &mFollowBone = m_pFollow->GetBone( m_MergedBones[0].m_iParentBone );
+	CHandle<C_BaseAnimating> ownerHandle = m_pOwner;
+	CHandle<C_BaseAnimating> followHandle = m_pFollow;
+	C_BaseAnimating *pFollow = followHandle.Get();
+	if ( !pFollow->SetupBones( NULL, -1, m_nFollowBoneSetupMask, gpGlobals->curtime ) )
+		return false;
+	C_BaseAnimating *pOwner = ownerHandle.Get();
+	if ( !pOwner || !pOwner->OwnsBoneMergeCache( this ) || followHandle.Get() != pFollow )
+		return false;
+	// Bone setup can invoke Lua callbacks which change the followed model.
+	// Rebuild the mapping before taking a reference into its bone array.
+	UpdateCache();
+	if ( !m_pOwnerHdr || m_pFollow != pFollow || m_MergedBones.Count() == 0 ||
+		 !pFollow->IsBoneMatrixAvailable( m_MergedBones[0].m_iParentBone, false ) )
+		return false;
+	const matrix3x4_t &mFollowBone = pFollow->GetBone( m_MergedBones[0].m_iParentBone );
 
 	// Get Inverse( mBoneLocal )
 	matrix3x4_t mBoneLocal, mBoneLocalInv;
@@ -318,8 +342,19 @@ bool CBoneMergeCache::GetRootBone( matrix3x4_t &rootBone )
 		return false;
 
 	// Get mFollowBone.
-	m_pFollow->SetupBones( NULL, -1, m_nFollowBoneSetupMask, gpGlobals->curtime );
-	rootBone = m_pFollow->GetBone( m_MergedBones[0].m_iParentBone );
+	CHandle<C_BaseAnimating> ownerHandle = m_pOwner;
+	CHandle<C_BaseAnimating> followHandle = m_pFollow;
+	C_BaseAnimating *pFollow = followHandle.Get();
+	if ( !pFollow->SetupBones( NULL, -1, m_nFollowBoneSetupMask, gpGlobals->curtime ) )
+		return false;
+	C_BaseAnimating *pOwner = ownerHandle.Get();
+	if ( !pOwner || !pOwner->OwnsBoneMergeCache( this ) || followHandle.Get() != pFollow )
+		return false;
+	UpdateCache();
+	if ( !m_pOwnerHdr || m_pFollow != pFollow || m_MergedBones.Count() == 0 ||
+		 !pFollow->IsBoneMatrixAvailable( m_MergedBones[0].m_iParentBone, false ) )
+		return false;
+	rootBone = pFollow->GetBone( m_MergedBones[0].m_iParentBone );
 	return true;
 }
 

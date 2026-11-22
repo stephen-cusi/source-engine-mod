@@ -54,7 +54,7 @@ extern "C" __declspec( dllimport ) unsigned short __stdcall
 bool HL2SB_IsAddonDisabled( const char *pszAddonName );
 
 // HL2SB (sbrust): GMod 式第三方二进制模块加载（lua/bin/gm{sv,cl}_*_*.dll，
-// gmod13_open/gmod13_close 入口）。实现在 lua_shared.dll（lua/src/hl2sb_binmod.c）。
+// gmod13_open/gmod13_close 入口）。实现在 lua_shared.dll（lua/luajit/src/hl2sb/hl2sb_binmod.c）。
 // 调用点：luasrc_setmodulepaths 末尾装 searcher；两个 lua_close 之前跑 close。
 // 只写 extern "C" 不写 LUA_API：非 Windows 的 LUA_API 展开是 extern，
 // "extern "C" extern" 被 gcc 拒收（invalid use of 'extern' in linkage
@@ -76,6 +76,7 @@ static bool luasrc_PathInDisabledAddon (const char *fullpath);
 #include "licvar.h"
 #include "lgameevents.h"
 #include "activitylist.h"
+#include "lsql.h"
 // HL2SB: the scripted control factories (luaopen_vgui_Panel/Frame/Button) that
 // luasrc_init_gameui opens for the main menu state.
 #include "lua/vgui_controls/lControls.h"
@@ -98,6 +99,11 @@ static void HL2SB_DispatchLuaErrorHooks( lua_State *L, const char *pszError, con
 // so referencing it here is safe for the server twin too).
 #include <vgui_controls/Controls.h>
 #include <vgui/ISystem.h>
+#ifdef CLIENT_DLL
+#include <vgui_controls/Panel.h>
+#include <vgui/ISurface.h>
+#include "inputsystem/ButtonCode.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 ConVar hl2sb_dev_msgs( "hl2sb_dev_msgs", "0", FCVAR_ARCHIVE,
@@ -629,33 +635,10 @@ static void base_open (lua_State *L) {
   luaL_register(L, "_G", base_funcs);
   lua_pop(L, 1);
 
-  /*
-  ** Lua 5.1 standard-library compatibility.
-  **
-  ** HL2SB moved from Lua 5.1 to 5.4 (taken from Experiment: Source, which also
-  ** carries the GLua syntax extensions).  GMod runs Lua 5.1, so every GMod addon
-  ** -- and every script in this mod -- assumes the 5.1 library.  Lua 5.4 moved
-  ** or removed several of those functions, which broke the hook dispatcher
-  ** (hook.lua does `local unpack = unpack`, and unpack is gone -> every hook.call
-  ** failed with "attempt to call a nil value (upvalue 'unpack')").
-  **
-  ** Installing the aliases here fixes every script at once, including addons,
-  ** instead of patching each file.  module() and package.seeall are restored by
-  ** loadlib.c itself.
-  */
+  // Retain the legacy APIs that LuaJIT's standard libraries omit.
   luasrc_dostring( L,
-    "table.getn = table.getn or function( t ) return #t end\n"
     "table.setn = table.setn or function( t, n ) return t end\n"
-    "table.foreach = table.foreach or function( t, f ) for k, v in pairs( t ) do local r = f( k, v ) if r ~= nil then return r end end end\n"
-    "table.foreachi = table.foreachi or function( t, f ) for i, v in ipairs( t ) do local r = f( i, v ) if r ~= nil then return r end end end\n"
-    "string.gfind = string.gfind or string.gmatch\n"
-    "math.pow = math.pow or function( a, b ) return a ^ b end\n"
-    "math.atan2 = math.atan2 or function( y, x ) return math.atan( y, x ) end\n"
-    "math.ldexp = math.ldexp or function( m, e ) return m * 2.0 ^ e end\n"
-    "math.log10 = math.log10 or function( x ) return math.log( x, 10 ) end\n"
-    "math.cosh = math.cosh or function( x ) return ( math.exp( x ) + math.exp( -x ) ) / 2 end\n"
-    "math.sinh = math.sinh or function( x ) return ( math.exp( x ) - math.exp( -x ) ) / 2 end\n"
-    "math.tanh = math.tanh or function( x ) local e = math.exp( 2 * x ) return ( e - 1 ) / ( e + 1 ) end\n" );
+    "string.gfind = string.gfind or string.gmatch\n" );
 
   /* set global _E */
   lua_newtable(L);
@@ -736,6 +719,7 @@ void luasrc_setmodulepaths(lua_State *L) {
 // unprotected error in a GameUI script aborts the process the same way.
 static int HL2SB_LuaPanic( lua_State *pL );
 extern void HL2SB_RegisterConsoleGlobals( lua_State *state );
+extern void HL2SB_RegisterLegacyGlobalEnums( lua_State *state );
 
 static int HL2SB_GlobalSetClipboardText( lua_State *state )
 {
@@ -764,19 +748,35 @@ void luasrc_init_gameui (void) {
   luaL_openlibs(LGameUI);
   base_open(LGameUI);
   HL2SB_RegisterConsoleGlobals( LGameUI );
+  HL2SB_RegisterLegacyGlobalEnums( LGameUI );
   HL2SB_RegisterClipboardGlobal( LGameUI );
   lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "_GAMEUI");  /* set global _GAMEUI */
 
-  /* GMod's menu-state marker (wiki: States) -- menu code detects its realm with
-     MENU_DLL, not with CLIENT/SERVER.  The menu state is neither client nor
-     server, so both of those globals are explicitly false here. */
+  /* The menu state is client-side and has its own menu marker. */
   lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "MENU_DLL");
-  lua_pushboolean(LGameUI, 0);
+  lua_pushboolean(LGameUI, 1);
   lua_setglobal(LGameUI, "CLIENT");
   lua_pushboolean(LGameUI, 0);
   lua_setglobal(LGameUI, "SERVER");
+
+  struct MenuEnumValue { const char *name; int value; };
+  static const MenuEnumValue menuEnums[] = {
+    { "NODOCK", vgui::Panel::DOCK_NONE },
+    { "FILL", vgui::Panel::DOCK_FILL },
+    { "LEFT", vgui::Panel::DOCK_LEFT },
+    { "RIGHT", vgui::Panel::DOCK_RIGHT },
+    { "TOP", vgui::Panel::DOCK_TOP },
+    { "BOTTOM", vgui::Panel::DOCK_BOTTOM },
+    { "MOUSE_LEFT", MOUSE_LEFT },
+    { "MOUSE_RIGHT", MOUSE_RIGHT },
+    { "MOUSE_MIDDLE", MOUSE_MIDDLE },
+  };
+  for ( unsigned int i = 0; i < sizeof(menuEnums) / sizeof(menuEnums[0]); ++i ) {
+    lua_pushinteger( LGameUI, menuEnums[i].value );
+    lua_setglobal( LGameUI, menuEnums[i].name );
+  }
 
   /* HL2SB: this function opens every library straight from its own C frame -
      no lua_CFunction LUA_MINSTACK guarantee backs it - and luaL_register
@@ -854,6 +854,7 @@ void luasrc_init_gameui (void) {
   // this one (path ID "BASE_PATH").  GMod opens file.* in its menu realm too;
   // that is what its "LuaMenu" path ID is for.
   luaopen_Files(LGameUI);
+  luaopen_Sql(LGameUI);
 
   // HL2SB: platform facts for the menu realm (system.IsAndroid() picks the
   // touch layout in the Addons dialog, the same switch the derma skin's
@@ -899,8 +900,8 @@ void luasrc_init_gameui (void) {
   }
   else
     lua_pop( LGameUI, 1 );
-  if ( luasrc_dofile( LGameUI, LUA_PATH_EXTENSIONS "/util.lua" ) != 0 )
-    luasrc_LuaWarnMsgF( "HL2SB: menu util extension failed to load\n" );
+  extern void HL2SB_InstallMenuUtilBindings( lua_State *state );
+  HL2SB_InstallMenuUtilBindings( LGameUI );
 #ifndef _WIN32
   if ( luasrc_dofile( LGameUI, LUA_ROOT "/hl2sb/compat/binary_modules.lua" ) != 0 )
     luasrc_LuaWarnMsgF( "HL2SB: menu binary module paths failed to load\n" );
@@ -912,15 +913,21 @@ void luasrc_init_gameui (void) {
   static const char *const menuFiles[] = {
     LUA_PATH_EXTENSIONS "/table.lua",     // table.merge, used by vgui.register
     LUA_PATH_EXTENSIONS "/string.lua",
+    LUA_PATH_EXTENSIONS "/math.lua",      // math.Round etc. -- the crosshair editor's preview draws with it
     LUA_PATH_EXTENSIONS "/vgui.lua",      // vgui.register
     // HL2SB: the panel extension defines the GMod global ToPanel, which
     // lua/gameui/basepanel.lua calls (basepanel.lua:29) and the derma controls
     // rely on.  Without it the Content dialog died on
     // "attempt to call a nil value (global 'ToPanel')".
     LUA_PATH_EXTENSIONS "/panel.lua",
-    LUA_PATH_EXTENSIONS "/gmod_globals.lua",  // CurTime, ScrW, ScrH, GetConVar, ...
     LUA_PATH_MODULES "/hook.lua",         // hook.add("LuaError", ...)
     LUA_PATH_MODULES "/concommand.lua",   // concommand.Create
+    LUA_PATH_EXTENSIONS "/util.lua",
+    LUA_ROOT "/includes/util/sql.lua",
+    LUA_PATH_MODULES "/language.lua",
+    // HL2SB: the reference menu init requires the draw module; DNumberScratch
+    // (inside every DNumSlider) paints itself with draw.RoundedBoxEx.
+    LUA_PATH_MODULES "/draw.lua",
     LUA_PATH_MODULES "/gmod_vgui.lua",    // vgui.Create / vgui.Register
     NULL
   };
@@ -931,6 +938,13 @@ void luasrc_init_gameui (void) {
     if (luasrc_dofile(LGameUI, menuFiles[i]) != 0)
       luasrc_LuaWarnMsgF("HL2SB: main menu module failed to load: %s\n", menuFiles[i]);
   }
+
+  if (luasrc_dofile(LGameUI, LUA_ROOT "/hl2sb/compat/menu_timer.lua") != 0)
+    luasrc_LuaWarnMsgF("HL2SB: menu timer initialization failed\n");
+  extern void HL2SB_MenuInstallTimer( lua_State *state );
+  HL2SB_MenuInstallTimer( LGameUI );
+  if (luasrc_dofile(LGameUI, LUA_PATH_MODULES "/cookie.lua") != 0)
+    luasrc_LuaWarnMsgF("HL2SB: menu cookie initialization failed\n");
 
   // Surface aliases such as SetDrawColor and DrawRect are shared by GMod's
   // menu Lua and client Lua. The menu realm has no CLIENT flag, so load the
@@ -973,28 +987,30 @@ void luasrc_init_gameui (void) {
   if (luasrc_dofile(LGameUI, LUA_ROOT "/includes/modules/baseclass.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu realm: baseclass module failed to load\n");
 
-  // The GMod menu realm uses the same scripted panel registry as the client
-  // realm. Load it before Derma so menu-only controls such as DNumSlider and
-  // DColorMixer can inherit from the native Panel classes.
-  if (luasrc_dofile(LGameUI, LUA_PATH_EXTENSIONS "/client/panel/scriptedpanels.lua") != 0)
-    luasrc_LuaWarnMsgF("HL2SB: menu realm: scripted panel registry failed to load\n");
+  // The GMod menu realm pulls in the full panel extension, not just the
+  // scripted-panel registry: Panel:GetSkin lives in it (the crosshair editor
+  // died in DLabel's ApplySchemeSettings on the missing method), and it is the
+  // file that includes the registry itself.  Same order as the client realm's
+  // compat chain: panel extension, then Derma, then the default skin, then
+  // the control library.
+  if (luasrc_dofile(LGameUI, LUA_PATH_EXTENSIONS "/client/panel.lua") != 0)
+    luasrc_LuaWarnMsgF("HL2SB: menu realm: panel extension failed to load\n");
 
   if (luasrc_dofile(LGameUI, LUA_ROOT "/derma/init.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu realm: Derma initialization failed\n");
+  if (luasrc_dofile(LGameUI, LUA_ROOT "/skins/default.lua") != 0)
+    luasrc_LuaWarnMsgF("HL2SB: menu realm: default skin failed to load\n");
   if (luasrc_dofile(LGameUI, LUA_ROOT "/includes/vgui_base.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu realm: VGUI control library failed to load\n");
   if (luasrc_dofile(LGameUI, LUA_ROOT "/menu/crosshair_setup.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu realm: crosshair setup failed to load\n");
 
-  // NOTE: the full derma stack (lua/derma + lua/includes/vgui_base.lua) is NOT
-  // loaded here any more.  It registered nothing in this realm -- every control
-  // died in vgui.Register with
-  //     base class 'Panel' is not an engine class and not a registered control
-  // -- which produced a wall of load failures on every start, and the menu UI
-  // (the Addons dialog's default front end, the Content page) is built from the
-  // engine controls and never asks for a DFrame.  derma stays a client-realm
-  // feature; the addons dialog's derma front end is opt-in and simply falls
-  // back when the stack is absent.
+  // NOTE: the derma stack above is exactly the set the reference menu loader
+  // pulls (panel extension, derma core, default skin, control library).  An
+  // earlier attempt at loading MORE of lua/derma here registered nothing --
+  // every control died in vgui.Register with "base class 'Panel' is not an
+  // engine class and not a registered control" -- so the list stays at these
+  // four steps; anything beyond them still belongs to the client realm.
 
   // ---------------------------------------------------------------------------
   // HL2SB: menu-realm self check.  Every UI bug in this realm so far had the
@@ -1031,6 +1047,7 @@ void luasrc_init_gameui (void) {
 }
 
 void luasrc_shutdown_gameui (void) {
+  luasrc_dostring( LGameUI, "if hook and hook.Run then hook.Run('ShutDown') end" );
   ResetGameUIConCommandDatabase();
   extern void ResetGameUIConVarDatabase( void );
   ResetGameUIConVarDatabase();
@@ -1369,17 +1386,16 @@ LUA_API void luasrc_LuaConsoleMsg (const char *pszText, char cSeverity, bool bNe
 //-----------------------------------------------------------------------------
 // HL2SB (sbrust): MsgC 的颜色直通形态。GMod 的 MsgC( Color, ... ) 按 Color 参数
 // 切换控制台颜色，文本分片不带换行地续在同行（与 Msg 半行机制同一通路）；
-// hl2sb_lua.log 仍然只在整行（bNewline=true）时落盘，与 luasrc_LuaConsoleMsg
-// 的契约一致。调用方是 lsrcinit.cpp 的 lua_MsgC。
+// 调用方 lua_MsgC 只把最后一段交给 hl2sb_lua.log，不额外插入控制台换行。
 //-----------------------------------------------------------------------------
-LUA_API void luasrc_LuaConsoleMsgColor (const char *pszText, const Color &clr, bool bNewline)
+LUA_API void luasrc_LuaConsoleMsgColor (const char *pszText, const Color &clr, bool bLog)
 {
 	if ( pszText == NULL )
 		return;
 
-	ConColorMsg( 0, clr, "%s%s", pszText, bNewline ? "\n" : "" );
+	ConColorMsg( 0, clr, "%s", pszText );
 
-	if ( bNewline )
+	if ( bLog )
 		luasrc_LuaLogToFile( pszText, 'I' );
 }
 
@@ -1680,6 +1696,10 @@ void luasrc_shutdown (void) {
 
   filesystem->RemoveSearchPath( contentSearchPath, "MOD" );
   filesystem->RemoveSearchPath( baseContentSearchPath, "MOD" );
+  filesystem->RemoveSearchPath( contentSearchPath, "GAME" );
+  filesystem->RemoveSearchPath( baseContentSearchPath, "GAME" );
+  contentSearchPath[0] = '\0';
+  baseContentSearchPath[0] = '\0';
 
   ResetConCommandDatabase();
 
@@ -1711,6 +1731,9 @@ void luasrc_shutdown (void) {
   // ("SV_StartSound: weapons/nyan/nyan_loop.wav not precached" on every later
   // map, the nyan gun silent for the rest of the process).
   HL2SB_PrecacheOnceFlushForNewLevel();
+
+  extern void HL2SB_ClearCustomCollisionChecks();
+  HL2SB_ClearCustomCollisionChecks();
 
 //  lcf_close(L);
   // HL2SB (sbrust): GMod 的 gmod13_close 生命周期 -- 同菜单态。
@@ -2159,10 +2182,8 @@ LUA_API void luasrc_report_error (lua_State *L, const char *pszError) {
 
 // HL2SB: the GLua source rewrite, factored out of luasrc_dofile so RunString /
 // RunStringEx (GMod's string runners) get exactly the same dialect handling:
-// C-style `//` comments become `--`, `!=` becomes `~=`, and the GMod preprocessor
-// keyword DEFINE_BASECLASS expands to its documented `local BaseClass =
-// baseclass.Get`.  String literals and comments are tracked so their contents
-// are left untouched.
+// LuaJIT handles GLua operators and comments. The engine expands
+// DEFINE_BASECLASS to `local BaseClass = baseclass.Get` in source code.
 //
 // pIn must already be CRLF-normalised.  On success *ppOut is a malloc'd buffer
 // (caller frees) and *pnOut its length; on OOM it returns false with *ppOut NULL.
@@ -2180,7 +2201,8 @@ static bool HL2SB_RewriteGLuaSource( const char *pIn, int nLen, char **ppOut, si
 	}
 
 	size_t o = 0;
-	enum EState { CODE, SQ_STR, DQ_STR, LONG_STR, LINE_COMMENT, LONG_COMMENT } state = CODE;
+	enum EState { CODE, SQ_STR, DQ_STR, LONG_STR, LINE_COMMENT, LONG_COMMENT, BLOCK_COMMENT } state = CODE;
+	int longEquals = 0;
 	int i2 = 0;
 	while ( i2 < nLen )
 	{
@@ -2200,33 +2222,76 @@ static bool HL2SB_RewriteGLuaSource( const char *pIn, int nLen, char **ppOut, si
 			i2++;
 			break;
 		case LONG_STR:
+		case LONG_COMMENT:
+		{
+			// Lua long delimiters may contain any number of '=' characters.
+			// Only the matching closing delimiter ends this string or comment.
+			if ( c == ']' )
+			{
+				int end = i2 + 1;
+				while ( end < nLen && pIn[end] == '=' ) ++end;
+				if ( end < nLen && pIn[end] == ']' && end - i2 - 1 == longEquals )
+				{
+					while ( i2 <= end ) pOut[o++] = pIn[i2++];
+					state = CODE;
+					break;
+				}
+			}
 			pOut[o++] = c;
-			if ( c == ']' && i2 + 1 < nLen && pIn[i2+1] == ']' ) { pOut[o++] = pIn[++i2]; state = CODE; }
 			i2++;
 			break;
+		}
 		case LINE_COMMENT:
 			pOut[o++] = c;
 			if ( c == '\n' ) state = CODE;
 			i2++;
 			break;
-		case LONG_COMMENT:
-			pOut[o++] = c;
-			if ( c == ']' && i2 + 1 < nLen && pIn[i2+1] == ']' ) { pOut[o++] = pIn[++i2]; state = CODE; }
-			i2++;
+		case BLOCK_COMMENT:
+			pOut[o++] = pIn[i2++];
+			if ( c == '*' && i2 < nLen && pIn[i2] == '/' )
+			{
+				pOut[o++] = pIn[i2++];
+				state = CODE;
+			}
 			break;
 		default: // CODE
 			if ( c == '\'' ) { pOut[o++] = c; state = SQ_STR; i2++; }
 			else if ( c == '"' ) { pOut[o++] = c; state = DQ_STR; i2++; }
-			else if ( c == '[' && i2 + 1 < nLen && pIn[i2+1] == '[' ) { pOut[o++] = c; pOut[o++] = pIn[++i2]; state = LONG_STR; i2++; }
+			else if ( c == '[' )
+			{
+				int end = i2 + 1;
+				while ( end < nLen && pIn[end] == '=' ) ++end;
+				if ( end < nLen && pIn[end] == '[' )
+				{
+					longEquals = end - i2 - 1;
+					while ( i2 <= end ) pOut[o++] = pIn[i2++];
+					state = LONG_STR;
+				}
+				else pOut[o++] = pIn[i2++];
+			}
 			else if ( c == '-' && i2 + 1 < nLen && pIn[i2+1] == '-' )
 			{
 				pOut[o++] = c; pOut[o++] = pIn[++i2]; i2++;
-				if ( i2 < nLen && pIn[i2] == '[' && i2 + 1 < nLen && pIn[i2+1] == '[' )
-				{ pOut[o++] = pIn[i2++]; pOut[o++] = pIn[i2++]; state = LONG_COMMENT; }
+				if ( i2 < nLen && pIn[i2] == '[' )
+				{
+					int end = i2 + 1;
+					while ( end < nLen && pIn[end] == '=' ) ++end;
+					if ( end < nLen && pIn[end] == '[' )
+					{
+						longEquals = end - i2 - 1;
+						while ( i2 <= end ) pOut[o++] = pIn[i2++];
+						state = LONG_COMMENT;
+					}
+					else state = LINE_COMMENT;
+				}
 				else state = LINE_COMMENT;
 			}
-			else if ( c == '/' && i2 + 1 < nLen && pIn[i2+1] == '/' ) { pOut[o++] = '-'; pOut[o++] = '-'; i2 += 2; state = LINE_COMMENT; }
-			else if ( c == '!' && i2 + 1 < nLen && pIn[i2+1] == '=' ) { pOut[o++] = '~'; pOut[o++] = '='; i2 += 2; }
+			else if ( c == '/' && i2 + 1 < nLen && ( pIn[i2+1] == '/' || pIn[i2+1] == '*' ) )
+			{
+				pOut[o++] = pIn[i2++];
+				state = pIn[i2] == '/' ? LINE_COMMENT : BLOCK_COMMENT;
+				pOut[o++] = pIn[i2++];
+			}
 			else if ( ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) || c == '_' ) &&
 			          ( i2 == 0 || !( ( pIn[i2-1] >= 'a' && pIn[i2-1] <= 'z' ) ||
 			                          ( pIn[i2-1] >= 'A' && pIn[i2-1] <= 'Z' ) ||
@@ -2912,6 +2977,11 @@ static int luasrc_traceback (lua_State *L) {
 }
 
 LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
+#ifdef CLIENT_DLL
+  extern int HL2SB_LuaCameraScopeDepth();
+  extern void HL2SB_UnwindLuaCameraScopes( lua_State *L, int depth );
+  const int cameraDepth = HL2SB_LuaCameraScopeDepth();
+#endif
   bool bInjectedHandler = false;
 
   if (errfunc == 0) {
@@ -2933,6 +3003,7 @@ LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
 #ifdef CLIENT_DLL
     extern void HL2SB_AbortLuaMesh();
     HL2SB_AbortLuaMesh();
+    HL2SB_UnwindLuaCameraScopes( L, cameraDepth );
 #endif
     luasrc_LuaErrorMsg( lua_tostring(L, -1) );
     lua_pop(L, 1);
@@ -3768,6 +3839,33 @@ void luasrc_RunEntsOnLoaded ( void )
 			lua_pop( L, 1 );
 		}
 	}
+	const int top = lua_gettop( L );
+	lua_getglobal( L, "weapons" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "GetList" );
+		if ( lua_isfunction( L, -1 ) && luasrc_pcall( L, 0, 1, 0 ) == 0 && lua_istable( L, -1 ) )
+		{
+			const int list = lua_gettop( L );
+			lua_pushnil( L );
+			while ( lua_next( L, list ) != 0 )
+			{
+				if ( lua_istable( L, -1 ) )
+				{
+					lua_getfield( L, -1, "ClassName" );
+					if ( lua_type( L, -1 ) == LUA_TSTRING )
+					{
+						const char *name = lua_tostring( L, -1 );
+						if ( name[0] && Q_strlen( name ) < MAX_WEAPON_STRING )
+							RegisterScriptedWeapon( name );
+					}
+					lua_pop( L, 1 );
+				}
+				lua_pop( L, 1 );
+			}
+		}
+	}
+	lua_settop( L, top );
 }
 
 /*
@@ -4140,6 +4238,33 @@ void luasrc_LoadEffects (const char *path)
 }
 
 bool luasrc_LoadGamemode (const char *gamemode) {
+  char *contentPath = !Q_stricmp( gamemode, LUA_BASE_GAMEMODE ) ? baseContentSearchPath : contentSearchPath;
+  if ( !contentPath[0] ) {
+#ifdef CLIENT_DLL
+    const char *gamePath = engine->GetGameDirectory();
+#else
+    char gamePath[ MAX_PATH ];
+    engine->GetGameDir( gamePath, sizeof( gamePath ) );
+#endif
+    Q_snprintf( contentPath, MAX_PATH, "%s/gamemodes/%s/content", gamePath, gamemode );
+    filesystem->AddSearchPath( contentPath, "MOD" );
+    filesystem->AddSearchPath( contentPath, "GAME" );
+  }
+#ifdef CLIENT_DLL
+  if ( vgui::surface() && !Q_stricmp( gamemode, ::gamemode.GetString() ) ) {
+    FileFindHandle_t find;
+    const char *font = filesystem->FindFirstEx( "resource/fonts/*.ttf", "GAME", &find );
+    while ( font ) {
+      if ( font[0] != '.' && !filesystem->FindIsDirectory( find ) ) {
+        char name[ MAX_PATH ];
+        Q_snprintf( name, sizeof( name ), "resource/fonts/%s", font );
+        vgui::surface()->AddCustomFontFile( NULL, name );
+      }
+      font = filesystem->FindNext( find );
+    }
+    if ( find != FILESYSTEM_INVALID_FIND_HANDLE ) filesystem->FindClose( find );
+  }
+#endif
   lua_newtable(L);
   lua_pushstring(L, "__folder");
   char gamemodepath[MAX_PATH];
@@ -4211,20 +4336,16 @@ bool luasrc_SetGamemode (const char *gamemode) {
 	  // HL2SB: the base gamemode's content directory is shared by every
 	  // gamemode (GMod keeps its base entities in gamemodes/base/entities), so
 	  // mount and scan it first - the active gamemode still wins on collisions.
-	  Q_snprintf( baseContentSearchPath, sizeof( baseContentSearchPath ), "gamemodes/%s/content", LUA_BASE_GAMEMODE );
-	  filesystem->AddSearchPath( baseContentSearchPath, "MOD" );
 	  {
 	    char baseLoadPath[MAX_PATH];
-	    Q_snprintf( baseLoadPath, sizeof( baseLoadPath ), "%s/", baseContentSearchPath );
+	    Q_snprintf( baseLoadPath, sizeof( baseLoadPath ), "gamemodes/%s/content/", LUA_BASE_GAMEMODE );
 	    luasrc_LoadWeapons( baseLoadPath );
 	    luasrc_LoadEntities( baseLoadPath );
 	    luasrc_LoadEffects( baseLoadPath );
 	  }
 
-	  Q_snprintf( contentSearchPath, sizeof( contentSearchPath ), "gamemodes/%s/content", gamemode );
-	  filesystem->AddSearchPath( contentSearchPath, "MOD" );
 	  char loadPath[MAX_PATH];
-	  Q_snprintf( loadPath, sizeof( loadPath ), "%s/", contentSearchPath );
+	  Q_snprintf( loadPath, sizeof( loadPath ), "gamemodes/%s/content/", gamemode );
 	  luasrc_LoadWeapons( loadPath );
 	  luasrc_LoadEntities( loadPath );
 	  luasrc_LoadEffects( loadPath );

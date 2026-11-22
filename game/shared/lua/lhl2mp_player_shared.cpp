@@ -124,7 +124,7 @@ static int CHL2MP_Player_AnimRestartMainSequence (lua_State *L) {
 
 static int CHL2MP_Player_AnimRestartGesture (lua_State *L) {
 #ifndef CLIENT_DLL
-  luaL_checkhl2mpplayer(L, 1)->HL2SB_AnimRestartGesture(
+  luaL_checkhl2mpplayer(L, 1)->HL2SB_AnimRestartGestureLocal(
       luaL_checkint(L, 2), (Activity)luaL_checkint(L, 3), luaL_optboolean(L, 4, false) );
 #else
   // HL2SB (2026-10-02): GMod architecture - the binding is LIVE on the client
@@ -177,32 +177,31 @@ static int CHL2MP_Player_AnimSetGestureSequence (lua_State *L) {
   return 0;
 }
 
-// GMod: AddVCDSequenceToGestureSlot( slot, sequence, weight = 1 ) - a looping
-// layer (taunts use it).  Approximated with a non-autokill overlay that holds
-// its last frame (the client CAnimationLayer has no looping flag; the Lua
-// weight fade drives visibility, see AnimSetGestureWeight above).
 static int CHL2MP_Player_AddVCDSequenceToGestureSlot (lua_State *L) {
   CHL2MP_Player *pPlayer = luaL_checkhl2mpplayer(L, 1);
   int iSlot = luaL_checkint(L, 2);
+  if ( iSlot < 0 ) return 0;
   int iSequence = luaL_checkint(L, 3);
-  float flWeight = luaL_optnumber(L, 4, 1.0f);
-  if ( iSlot < 0 || iSlot >= GESTURE_SLOT_COUNT || iSequence <= 0 )
+  if ( iSequence < 0 ) return 0;
+  float flCycle = luaL_checknumber(L, 4);
+  bool bAutoKill = luaL_optboolean(L, 5, false);
+  if ( iSlot >= GESTURE_SLOT_COUNT )
     return 0;
 #ifndef CLIENT_DLL
   pPlayer->HL2SB_AnimResetGestureSlot( iSlot );
-  int iLayer = pPlayer->AddGestureSequence( iSequence, false );
+  int iLayer = pPlayer->AddGestureSequence( iSequence, bAutoKill );
   if ( iLayer >= 0 )
   {
-    pPlayer->SetLayerLooping( iLayer, true );
-    pPlayer->SetLayerWeight( iLayer, clamp( flWeight, 0.0f, 1.0f ) );
+    pPlayer->SetLayerCycle( iLayer, flCycle, flCycle );
+    pPlayer->SetLayerWeight( iLayer, 1.0f );
     pPlayer->m_iHL2SBSlotLayer[iSlot] = iLayer;
     pPlayer->m_iHL2SBSlotActivity[iSlot] = ACT_INVALID;
   }
 #else
   pPlayer->HL2SB_ClientResetGestureSlot( iSlot );
-  pPlayer->HL2SB_ClientSetLayerSequence( iSlot, iSequence, ACT_MP_VCD, false, 1.0f );
+  pPlayer->HL2SB_ClientSetLayerSequence( iSlot, iSequence, ACT_MP_VCD, bAutoKill, 1.0f );
   if ( iSlot < pPlayer->GetNumAnimOverlays() )
-    pPlayer->GetAnimOverlay( iSlot )->m_flWeight = clamp( flWeight, 0.0f, 1.0f );
+    pPlayer->GetAnimOverlay( iSlot )->m_flCycle = flCycle;
 #endif
   return 0;
 }

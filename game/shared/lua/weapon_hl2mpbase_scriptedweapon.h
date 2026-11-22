@@ -57,6 +57,7 @@ public:
 	// Override of the EXISTING CBaseCombatWeapon::Operator_ForceNPCFire
 	// virtual, same vtable slot.  NPC fire is server-only.
 #ifndef CLIENT_DLL
+	void Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator ) override;
 	virtual void			Operator_ForceNPCFire( CBaseCombatCharacter *pOperator, bool bSecondary );
 #endif
 
@@ -200,7 +201,8 @@ public:
 	// wiki: WEAPON:CustomAmmoDisplay() -> table { Draw, PrimaryClip,
 	// PrimaryAmmo, ... }.  Writes back only the fields present; returns true
 	// when the hook supplied a table at all.
-	bool	DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo );
+	bool	DispatchCustomAmmoDisplay( bool *pbDraw, int *pnPrimaryClip, int *pnPrimaryAmmo,
+		int *pnSecondaryClip = NULL, int *pnSecondaryAmmo = NULL );
 #endif
 
 public:

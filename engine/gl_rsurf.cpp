@@ -26,6 +26,7 @@
 #include "cdll_int.h"
 #include "cdll_engine_int.h"
 #include "hl2sb_skybox_callback.h"
+#include "engine/ibrushmaterialoverride.h"
 #include "utllinkedlist.h"
 #include "r_areaportal.h"
 #include "bsptreedata.h"
@@ -59,6 +60,21 @@
 #define BACKFACE_EPSILON	-0.01f
 
 #define BRUSHMODEL_DECAL_SORT_GROUP		MAX_MAT_SORT_GROUPS
+static IMaterial *s_pBrushMaterialOverride = NULL;
+
+class CHL2SBBrushMaterialOverride : public IHL2SBBrushMaterialOverride
+{
+public:
+	void SetBrushMaterialOverride( IMaterial *material )
+	{
+		MaterialLock_t lock = materials->Lock();
+		if ( material ) material->IncrementReferenceCount();
+		if ( s_pBrushMaterialOverride ) s_pBrushMaterialOverride->DecrementReferenceCount();
+		s_pBrushMaterialOverride = material;
+		materials->Unlock( lock );
+	}
+};
+EXPOSE_SINGLE_INTERFACE( CHL2SBBrushMaterialOverride, IHL2SBBrushMaterialOverride, HL2SB_BRUSH_MATERIAL_OVERRIDE_VERSION );
 const int MAX_VERTEX_FORMAT_CHANGES = 128;
 int g_MaxLeavesVisible = 512;
 
@@ -742,7 +758,7 @@ void Shader_SetChainTextureState( IMatRenderContext *pRenderContext, SurfaceHand
 	}
 	else
 	{
-		pRenderContext->Bind( MSurf_TexInfo( surfID )->material, pBaseEntity ? pBaseEntity->GetClientRenderable() : NULL );
+		pRenderContext->Bind( s_pBrushMaterialOverride ? s_pBrushMaterialOverride : MSurf_TexInfo( surfID )->material, pBaseEntity ? pBaseEntity->GetClientRenderable() : NULL );
 		Shader_SetChainLightmapState( pRenderContext, surfID );
 	}
 }
@@ -989,7 +1005,7 @@ void Shader_DrawChainsStatic( const CMSurfaceSortList &sortList, int nSortGroup,
 			for ( int b = 0; b < mesh.numbatches; b++ )
 			{
 				batchlist_t &batch = batchList[b+mesh.firstbatch];
-				IMaterial *pDrawMaterial = materialSortInfoArray[MSurf_MaterialSortID( batch.surfID )].material;
+				IMaterial *pDrawMaterial = !bShadowDepth && s_pBrushMaterialOverride ? s_pBrushMaterialOverride : materialSortInfoArray[MSurf_MaterialSortID( batch.surfID )].material;
 
 				if ( bShadowDepth )
 				{
@@ -3566,7 +3582,7 @@ void Shader_BrushSurface( SurfaceHandle_t surfID, model_t *model, IClientEntity 
 	{
 		drawDecals = true;
 
-		IMaterial *pMaterial = MSurf_TexInfo( surfID )->material;
+		IMaterial *pMaterial = s_pBrushMaterialOverride ? s_pBrushMaterialOverride : MSurf_TexInfo( surfID )->material;
 
 		ModulateMaterial( pMaterial, pOldColor );
 		Shader_SetChainTextureState( pRenderContext, surfID, baseentity, false );
@@ -3907,7 +3923,7 @@ public:
 #else
 				CMeshBuilder meshBuilder;
 #endif
-				IMaterial *pMaterial = batch.pMaterial;
+				IMaterial *pMaterial = s_pBrushMaterialOverride ? s_pBrushMaterialOverride : batch.pMaterial;
 
 				ModulateMaterial( pMaterial, pOldColor );
 
@@ -4291,7 +4307,7 @@ void CBrushBatchRender::DrawOpaqueBrushModel( IClientEntity *baseentity, model_t
 			}
 			else
 			{
-				pMaterial = batch.pMaterial;
+				pMaterial = s_pBrushMaterialOverride ? s_pBrushMaterialOverride : batch.pMaterial;
 
 				// Store off the old color + alpha
 				ModulateMaterial( pMaterial, pOldColor );

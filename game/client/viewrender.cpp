@@ -2238,6 +2238,8 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 			extern bool g_bRenderingReflection;
 			if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
 			{
+				extern void HL2SB_CaptureSavePreview();
+				HL2SB_CaptureSavePreview();
 				bool bFrameStats = HL2SB_FrameStats_Enabled();
 				double flHookStart = 0.0;
 				if ( bFrameStats )
@@ -2437,6 +2439,14 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 		// maybe paint the main menu and cursor too if we're in stereo hud mode
 		if( bPaintMainMenu )
 			render->VGui_Paint( PAINT_UIPANELS | PAINT_CURSOR );
+
+#if defined( LUA_SDK )
+		if ( UseVR() && bPaintMainMenu && engine->IsInGame() )
+		{
+			extern void HL2SB_PanelPaintDrawOnTop();
+			HL2SB_PanelPaintDrawOnTop();
+		}
+#endif
 
 		AllowCurrentViewAccess( false );
 

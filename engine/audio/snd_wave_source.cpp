@@ -16,6 +16,12 @@
 #include "tier1/lzmaDecoder.h"
 #include "tier2/fileutils.h"
 
+// Decode ordinary Ogg Vorbis SFX through the same PCM mixer as WAV sounds.
+// This is independent of Lua's streaming audio decoder and uses GAME search paths.
+#define STB_VORBIS_NO_STDIO
+#define STB_VORBIS_NO_PUSHDATA_API
+#include "../../vendor/stb/stb_vorbis.c"
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -1755,6 +1761,92 @@ int CAudioSourceStreamWave::GetCacheStatus( void )
 }
 
 
+// Decoded samples remain owned by the source until all mixers release it.
+// Stream-marked OGG uses this bounded in-memory source as well; compressed
+// packets and PCM both have explicit caps to avoid unbounded allocations.
+class CAudioSourceOgg : public CAudioSourceWave
+{
+public:
+	CAudioSourceOgg( CSfxTable *sfx ) : CAudioSourceWave( sfx ), m_samples( NULL ) {}
+	~CAudioSourceOgg() { free( m_samples ); }
+
+	bool Load()
+	{
+		char path[MAX_PATH];
+		Q_snprintf( path, sizeof(path), "sound/%s", m_pSfx->GetFileName() );
+		FileHandle_t file = g_pFullFileSystem->Open( path, "rb", "GAME" );
+		if ( file == FILESYSTEM_INVALID_HANDLE ) return false;
+		const unsigned int bytes = g_pFullFileSystem->Size( file );
+		if ( bytes == 0 || bytes > 32u * 1024u * 1024u ) { g_pFullFileSystem->Close( file ); return false; }
+		unsigned char *encoded = (unsigned char *)malloc( bytes );
+		if ( !encoded ) { g_pFullFileSystem->Close( file ); return false; }
+		const int read = g_pFullFileSystem->Read( encoded, bytes, file );
+		g_pFullFileSystem->Close( file );
+		if ( read != (int)bytes ) { free( encoded ); return false; }
+		int error = 0;
+		stb_vorbis *decoder = stb_vorbis_open_memory( encoded, bytes, &error, NULL );
+		if ( !decoder ) { free( encoded ); return false; }
+		stb_vorbis_info info = stb_vorbis_get_info( decoder );
+		unsigned int frames = stb_vorbis_stream_length_in_samples( decoder );
+		if ( info.channels < 1 || info.channels > 2 || !info.sample_rate || !frames ||
+			frames > ( 128u * 1024u * 1024u ) / ( sizeof(short) * info.channels ) )
+		{
+			stb_vorbis_close( decoder ); free( encoded ); return false;
+		}
+		m_samples = (short *)malloc( (size_t)frames * info.channels * sizeof(short) );
+		if ( !m_samples ) { stb_vorbis_close( decoder ); free( encoded ); return false; }
+		const int decoded = stb_vorbis_get_samples_short_interleaved( decoder, info.channels,
+			m_samples, frames * info.channels );
+		stb_vorbis_close( decoder );
+		free( encoded );
+		if ( decoded <= 0 ) return false;
+		m_channels = info.channels;
+		m_rate = info.sample_rate;
+		m_bits = 16;
+		m_format = WAVE_FORMAT_PCM;
+		m_sampleSize = sizeof(short) * m_channels;
+		m_sampleCount = decoded;
+		m_numDecodedSamples = decoded;
+		m_dataSize = m_sampleCount * m_sampleSize;
+		return true;
+	}
+	virtual CAudioMixer *CreateMixer( int initialStreamPosition = 0 )
+	{
+		return CreateWaveMixer( CreateWaveDataMemory(*this), m_format, m_channels, m_bits, initialStreamPosition );
+	}
+	virtual int GetOutputData( void **data, int pos, int count, char copyBuf[AUDIOSOURCE_COPYBUF_SIZE] )
+	{
+		if ( pos < 0 || pos >= m_sampleCount ) { *data = NULL; return 0; }
+		count = MIN( count, m_sampleCount - pos );
+		*data = (char *)m_samples + pos * m_sampleSize;
+		return count;
+	}
+	virtual int GetCacheStatus() { return AUDIO_IS_LOADED; }
+	virtual void CacheLoad() {}
+	virtual void CacheUnload() {}
+	virtual bool IsAsyncLoad() { return false; }
+	virtual void CheckAudioSourceCache() {}
+	virtual void Prefetch() {}
+	virtual int ZeroCrossingBefore( int sample ) { return sample; }
+	virtual int ZeroCrossingAfter( int sample ) { return sample; }
+private:
+	short *m_samples;
+};
+
+static CAudioSource *Audio_CreateMemoryOgg( CSfxTable *sfx )
+{
+	CAudioSourceOgg *source = new CAudioSourceOgg( sfx );
+	if ( source->Load() ) return source;
+	delete source;
+	return NULL;
+}
+
+static bool Audio_IsOgg( const char *name )
+{
+	const char *ext = name ? Q_GetFileExtension( name ) : NULL;
+	return ext && !Q_stricmp( ext, "ogg" );
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: Create a wave audio source (streaming or in memory)
 // Input  : *pName - file name (NOTE: CAUDIOSOURCE KEEPS A POINTER TO pSfx)
@@ -1823,6 +1915,7 @@ CAudioSource *CreateWave( CSfxTable *pSfx, bool bStreaming )
 //-----------------------------------------------------------------------------
 CAudioSource *Audio_CreateStreamedWave( CSfxTable *pSfx )
 {
+	if ( Audio_IsOgg( pSfx->GetFileName() ) ) return Audio_CreateMemoryOgg( pSfx );
 #if defined( MP3_SUPPORT )
 	if ( Audio_IsMP3( pSfx->GetFileName() ) )
 	{
@@ -1839,6 +1932,7 @@ CAudioSource *Audio_CreateStreamedWave( CSfxTable *pSfx )
 //-----------------------------------------------------------------------------
 CAudioSource *Audio_CreateMemoryWave( CSfxTable *pSfx )
 {
+	if ( Audio_IsOgg( pSfx->GetFileName() ) ) return Audio_CreateMemoryOgg( pSfx );
 #if defined( MP3_SUPPORT )
 	if ( Audio_IsMP3( pSfx->GetFileName() ) )
 	{

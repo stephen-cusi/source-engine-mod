@@ -308,6 +308,12 @@ def options(opt):
 	grp.add_option('--build-games', action = 'store', dest = 'GAMES', type = 'string', default = 'hl2',
 		help = 'build games [default: %default]')
 
+	grp.add_option('--cef-root', action = 'store', dest = 'CEF_ROOT', default = '',
+		help = 'path to the external Windows x64 CEF SDK (enables the CEF backend)')
+
+	grp.add_option('--enable-cefrium', action = 'store_true', dest = 'CEFRIUM', default = False,
+		help = 'build the experimental Android arm64 Cefrium frame bridge')
+
 	grp.add_option('--use-ccache', action = 'store_true', dest = 'CCACHE', default = False,
 		help = 'build using ccache [default: %default]')
 
@@ -460,6 +466,18 @@ def configure(conf):
 		conf.load('force_32bit')
 
 	define_platform(conf)
+
+	conf.env.CEF_ROOT = os.path.abspath(conf.options.CEF_ROOT) if conf.options.CEF_ROOT else ''
+	if conf.env.CEF_ROOT:
+		if conf.env.DEST_OS != 'win32' or conf.env.DEST_CPU not in ('amd64', 'x86_64') or conf.options.DEDICATED or conf.options.TESTS:
+			conf.fatal('--cef-root requires a Windows x64 client build')
+		projects['game'] += ['html_cef']
+
+	conf.env.CEFRIUM = conf.options.CEFRIUM
+	if conf.env.CEFRIUM:
+		if conf.env.DEST_OS != 'android' or conf.env.DEST_CPU not in ('aarch64', 'arm64') or conf.options.DEDICATED or conf.options.TESTS:
+			conf.fatal('--enable-cefrium requires an Android arm64 client build')
+		projects['game'] += ['html_cefrium']
 
 	if conf.env.TOGLES:
 		projects['game'] += ['togles']
@@ -649,6 +667,10 @@ def build(bld):
 	elif bld.env.DEDICATED:
 		bld.add_subproject(projects['dedicated'])
 	else:
+		if bld.env.CEF_ROOT:
+			projects['game'] += ['html_cef']
+		if bld.env.CEFRIUM:
+			projects['game'] += ['html_cefrium']
 		if bld.env.TOGLES:
 			projects['game'] += ['togles']
 		elif bld.env.GL:

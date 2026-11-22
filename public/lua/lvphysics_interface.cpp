@@ -14,8 +14,14 @@
 #include "inputsystem/ButtonCode.h"
 #include "luasrclib.h"
 #include "lvphysics_interface.h"
+#include "lbaseentity_shared.h"
 #include "vphysics/lperformance.h"
 #include "mathlib/lvector.h"
+#include "mathlib/vmatrix.h"
+#include "igamesystem.h"
+#include "physics_shared.h"
+#include "tier1/utlmap.h"
+#include <climits>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -25,9 +31,50 @@
 */
 
 
+struct LuaPhysicsObject {
+  IPhysicsObject *object;
+  uint64 generation;
+};
+
+static CUtlMap<IPhysicsObject *, uint64, int> s_LuaPhysicsObjects( DefLessFunc( IPhysicsObject * ) );
+static uint64 s_NextLuaPhysicsGeneration = 0;
+
+class CLuaPhysicsObjectSystem : public CAutoGameSystem {
+public:
+  CLuaPhysicsObjectSystem() : CAutoGameSystem( "LuaPhysicsObjects" ) {}
+  void LevelShutdownPostEntity() override { s_LuaPhysicsObjects.RemoveAll(); }
+};
+static CLuaPhysicsObjectSystem s_LuaPhysicsObjectSystem;
+
+void HL2SB_InvalidateLuaPhysicsObject( IPhysicsObject *object ) {
+  if (object)
+    s_LuaPhysicsObjects.Remove(object);
+}
+
+static bool LuaPhysicsObjectIsLive( IPhysicsObject *object ) {
+  for (int i = 0; physics && object; ++i) {
+    IPhysicsEnvironment *environment = physics->GetActiveEnvironmentByIndex(i);
+    if (!environment)
+      return false;
+    int count = 0;
+    const IPhysicsObject **objects = environment->GetObjectList(&count);
+    for (int n = count - 1; n >= 0; --n) {
+      if (objects[n] == object)
+        return true;
+    }
+  }
+  return false;
+}
+
 LUA_API lua_IPhysicsObject *lua_tophysicsobject (lua_State *L, int idx) {
-  lua_IPhysicsObject **ppPhysicsObject = (lua_IPhysicsObject **)lua_touserdata(L, idx);
-  return *ppPhysicsObject;
+  if (lua_rawlen(L, idx) != sizeof(LuaPhysicsObject))
+    return NULL;
+  const LuaPhysicsObject *handle = static_cast<LuaPhysicsObject *>(luaL_testudata(L, idx, "IPhysicsObject"));
+  if (!handle || !handle->object)
+    return NULL;
+  const int index = s_LuaPhysicsObjects.Find(handle->object);
+  return s_LuaPhysicsObjects.IsValidIndex(index) &&
+      s_LuaPhysicsObjects[index] == handle->generation ? handle->object : NULL;
 }
 
 
@@ -336,21 +383,6 @@ LUA_API lua_IPhysicsSurfaceProps *lua_tophysicssurfaceprops (lua_State *L, int i
 */
 
 
-// FIXME?: So here's the deal folks; in the Source SDK storing physics objects
-// long-term is not done frequently. This is because physics objects are, for
-// the majority of the time, tied to plain physics props or other similar
-// movable entities.
-// 
-// In the Lau SDK, we want to promote the storage of the entity in variables in
-// Lua instead, which mirrors internal code storing entities in handles. There
-// are no handles for IPhysicsObjects in the Source SDK, so here we use a
-// pointer to a pointer.
-// 
-// This means this object is unsafe in Lua, since the entity which this physics
-// object is tied to could be gone when you attempt to use it.
-// 
-// Henry wrote up a handle system for this, so if we need to end up using that
-// due to unforeseen logical issues, we will.
 LUA_API void lua_pushphysicsobject (lua_State *L, lua_IPhysicsObject *pPhysicsObject) {
   // HL2SB GMod compat (2026-09-20, Nuke Pack): a physics-less entity's
   // GetPhysicsObject() used to push NIL, so the stock addon idiom
@@ -359,8 +391,18 @@ LUA_API void lua_pushphysicsobject (lua_State *L, lua_IPhysicsObject *pPhysicsOb
   // died on "attempt to index a nil value (local 'phys')".  GMod hands back a
   // NULL physics object whose IsValid() is false and whose other methods throw
   // the classic "Tried to use a NULL physics object!" -- mirror that here.
-  lua_IPhysicsObject **ppPhysicsObject = (lua_IPhysicsObject **)lua_newuserdata(L, sizeof(pPhysicsObject));
-  *ppPhysicsObject = pPhysicsObject;
+  LuaPhysicsObject *handle = static_cast<LuaPhysicsObject *>(lua_newuserdata(L, sizeof(LuaPhysicsObject)));
+  handle->object = NULL;
+  handle->generation = 0;
+  if (pPhysicsObject) {
+    int index = s_LuaPhysicsObjects.Find(pPhysicsObject);
+    if (!s_LuaPhysicsObjects.IsValidIndex(index) && LuaPhysicsObjectIsLive(pPhysicsObject))
+      index = s_LuaPhysicsObjects.Insert(pPhysicsObject, ++s_NextLuaPhysicsGeneration);
+    if (s_LuaPhysicsObjects.IsValidIndex(index)) {
+      handle->object = pPhysicsObject;
+      handle->generation = s_LuaPhysicsObjects[index];
+    }
+  }
   luaL_getmetatable(L, "IPhysicsObject");
   lua_setmetatable(L, -2);
 }
@@ -503,8 +545,7 @@ LUA_API void lua_pushphysicssurfaceprops (lua_State *L, lua_IPhysicsSurfaceProps
 
 
 LUALIB_API lua_IPhysicsObject *luaL_checkphysicsobject (lua_State *L, int narg) {
-  if (lua_type(L, narg) != LUA_TUSERDATA)
-    luaL_argerror(L, narg, "IPhysicsObject expected");
+  luaL_checkudata(L, narg, "IPhysicsObject");
   lua_IPhysicsObject *d = lua_tophysicsobject(L, narg);
   // HL2SB GMod compat: a NULL physics OBJECT (physics-less entity) is a real
   // sentinel since lua_pushphysicsobject stopped pushing nil -- anything but
@@ -558,10 +599,43 @@ static int physenv_GetNextFrameTime (lua_State *L) {
   return 1;
 }
 
+static const struct {
+  const char *name;
+  int physics_performanceparams_t::*member;
+} s_PhysPerformanceInts[] = {
+  {"MaxCollisionsPerObjectPerTimestep", &physics_performanceparams_t::maxCollisionsPerObjectPerTimestep},
+  {"MaxCollisionChecksPerTimestep", &physics_performanceparams_t::maxCollisionChecksPerTimestep},
+};
+
+static const struct {
+  const char *name;
+  float physics_performanceparams_t::*member;
+} s_PhysPerformanceFloats[] = {
+  {"MaxVelocity", &physics_performanceparams_t::maxVelocity},
+  {"MaxAngularVelocity", &physics_performanceparams_t::maxAngularVelocity},
+  {"LookAheadTimeObjectsVsWorld", &physics_performanceparams_t::lookAheadTimeObjectsVsWorld},
+  {"LookAheadTimeObjectsVsObject", &physics_performanceparams_t::lookAheadTimeObjectsVsObject},
+  {"MinFrictionMass", &physics_performanceparams_t::minFrictionMass},
+  {"MaxFrictionMass", &physics_performanceparams_t::maxFrictionMass},
+};
+
 static int physenv_GetPerformanceSettings (lua_State *L) {
-  physics_performanceparams_t pOutput;
-  physenv->GetPerformanceSettings(&pOutput);
-  lua_pushperformanceparams(L, &pOutput);
+  if (!physenv)
+    return 0;
+  physics_performanceparams_t settings;
+  physenv->GetPerformanceSettings(&settings);
+  lua_pushperformanceparams(L, &settings);
+  // Keep lowercase keys exposed by Box and return GMod's documented keys.
+  lua_pushinteger(L, settings.maxCollisionsPerObjectPerTimestep);
+  lua_setfield(L, -2, "maxCollisionsPerObjectPerTimestep");
+  for (const auto &field : s_PhysPerformanceInts) {
+    lua_pushnumber(L, static_cast<float>(settings.*field.member));
+    lua_setfield(L, -2, field.name);
+  }
+  for (const auto &field : s_PhysPerformanceFloats) {
+    lua_pushnumber(L, settings.*field.member);
+    lua_setfield(L, -2, field.name);
+  }
   return 1;
 }
 
@@ -601,7 +675,31 @@ static int physenv_SetGravity (lua_State *L) {
 }
 
 static int physenv_SetPerformanceSettings (lua_State *L) {
- // physenv->SetPerformanceSettings(&lua_toperformanceparams(L, 1));
+  IPhysicsEnvironment *environment = physenv;
+  if (!environment)
+    return 0;
+  luaL_checktype(L, 1, LUA_TTABLE);
+  physics_performanceparams_t settings;
+  environment->GetPerformanceSettings(&settings);
+  for (const auto &field : s_PhysPerformanceInts) {
+    lua_getfield(L, 1, field.name);
+    if (lua_type(L, -1) == LUA_TNUMBER) {
+      const double value = lua_tonumber(L, -1);
+      // Match x64 truncation without invoking undefined C++ conversion.
+      settings.*field.member = value > static_cast<double>(INT_MIN) - 1.0 &&
+                                value < static_cast<double>(INT_MAX) + 1.0
+                                ? static_cast<int>(value) : INT_MIN;
+    }
+    lua_pop(L, 1);
+  }
+  for (const auto &field : s_PhysPerformanceFloats) {
+    lua_getfield(L, 1, field.name);
+    if (lua_type(L, -1) == LUA_TNUMBER)
+      settings.*field.member = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+  }
+  if (physenv == environment)
+    environment->SetPerformanceSettings(&settings);
   return 0;
 }
 
@@ -681,15 +779,12 @@ LUALIB_API int luaopen_physenv (lua_State *L) {
 ** SpriteTrail from the same Initialize), so it just dropped out of the throw
 ** position.
 **
-** Reaching this method means the userdata exists, i.e. the pointer is non-NULL
-** (lua_pushphysicsobject pushes nil for a NULL object).  A physics object whose
-** entity has been removed is still a dangling pointer, exactly as in GMod.
+** Compare the Lua handle with the tracked generation without dereferencing an
+** object that may have been destroyed.
 */
 static int IPhysicsObject_IsValid (lua_State *L) {
-  // NULL sentinel: IsValid() is the one call that must NOT throw (GMod).  The
-  // raw userdata read here bypasses luaL_checkphysicsobject's throw.
-  lua_IPhysicsObject **pp = (lua_IPhysicsObject **)luaL_checkudata(L, 1, "IPhysicsObject");
-  lua_pushboolean(L, pp != NULL && *pp != NULL);
+  luaL_checkudata(L, 1, "IPhysicsObject");
+  lua_pushboolean(L, lua_tophysicsobject(L, 1) != NULL);
   return 1;
 }
 
@@ -703,11 +798,9 @@ static int IPhysicsObject_IsValid (lua_State *L) {
 ** very next line would have raised "bad argument #3 to 'AddVelocity'".
 */
 static int IPhysicsObject_AddVelocity (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   Vector velocity = luaL_checkvector(L, 2);
-  AngularImpulse angularVelocity = vec3_origin;
-  if (!lua_isnoneornil(L, 3))
-    angularVelocity = luaL_checkvector(L, 3);
-  luaL_checkphysicsobject(L, 1)->AddVelocity(&velocity, &angularVelocity);
+  if (velocity.IsValid()) object->AddVelocity(&velocity, NULL);
   return 0;
 }
 
@@ -883,6 +976,13 @@ static int IPhysicsObject_GetMass (lua_State *L) {
   return 1;
 }
 
+static int IPhysicsObject_GetVolume (lua_State *L) {
+  const CPhysCollide *shape = luaL_checkphysicsobject(L, 1)->GetCollide();
+  if ( !shape ) return 0;
+  lua_pushnumber(L, physcollision->CollideVolume(const_cast<CPhysCollide *>(shape)));
+  return 1;
+}
+
 static int IPhysicsObject_GetMassCenterLocalSpace (lua_State *L) {
   lua_pushvector(L, luaL_checkphysicsobject(L, 1)->GetMassCenterLocalSpace());
   return 1;
@@ -926,6 +1026,21 @@ static int IPhysicsObject_GetAngles (lua_State *L) {
   return 1;
 }
 
+static int IPhysicsObject_RotateAroundAxis (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
+  Vector axis = luaL_checkvector(L, 2);
+  float degrees = (float)luaL_checknumber(L, 3);
+  QAngle angles;
+  object->GetPosition(NULL, &angles);
+  Vector forward, right, up;
+  AngleVectors(angles, &forward, &right, &up);
+  VMatrix rotation;
+  MatrixBuildRotationAboutAxis(rotation, axis, degrees);
+  VectorAngles(rotation * forward, rotation * up, angles);
+  lua_pushangle(L, angles);
+  return 1;
+}
+
 static int IPhysicsObject_GetPosition (lua_State *L) {
   Vector worldPosition;
   QAngle angles;
@@ -965,9 +1080,10 @@ static int IPhysicsObject_GetPos (lua_State *L) {
 static int IPhysicsObject_SetPos (lua_State *L) {
   IPhysicsObject *pPhysics = luaL_checkphysicsobject(L, 1);
   Vector worldPosition = luaL_checkvector(L, 2);
+  const bool teleport = luaL_optboolean(L, 3, 0) != 0;
   QAngle angles;
   pPhysics->GetPosition(NULL, &angles);
-  pPhysics->SetPosition(worldPosition, angles, true);
+  pPhysics->SetPosition(worldPosition, angles, teleport);
   return 0;
 }
 
@@ -989,8 +1105,7 @@ static int IPhysicsObject_GetVelocity (lua_State *L) {
   Vector velocity, angularVelocity;
   luaL_checkphysicsobject(L, 1)->GetVelocity(&velocity, &angularVelocity);
   lua_pushvector(L, velocity);
-  lua_pushvector(L, angularVelocity);
-  return 2;
+  return 1;
 }
 
 static int IPhysicsObject_GetVelocityAtPoint (lua_State *L) {
@@ -1114,10 +1229,18 @@ static int IPhysicsObject_SetContents (lua_State *L) {
   return 0;
 }
 
+static int IPhysicsObject_SetDamping (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
+  float linear = (float)luaL_checknumber(L, 2);
+  float angular = (float)luaL_checknumber(L, 3);
+  object->SetDamping(&linear, &angular);
+  return 0;
+}
+
 static int IPhysicsObject_SetDragCoefficient (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   float pDrag = luaL_checknumber(L, 2);
-  float pAngularDrag = luaL_checknumber(L, 3);
-  luaL_checkphysicsobject(L, 1)->SetDragCoefficient(&pDrag, &pAngularDrag);
+  object->SetDragCoefficient(&pDrag, NULL);
   return 0;
 }
 
@@ -1132,7 +1255,21 @@ static int IPhysicsObject_SetGameIndex (lua_State *L) {
 }
 
 static int IPhysicsObject_SetMass (lua_State *L) {
-  luaL_checkphysicsobject(L, 1)->SetMass(luaL_checknumber(L, 2));
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
+  float mass = (float)luaL_checknumber(L, 2);
+  // GMod compares the float-converted value with the double constant 0.1;
+  // values at or below that threshold (including NaN) become 1 kg.
+  if (!((double)mass > 0.1)) mass = 1.0f;
+  if (mass > VPHYSICS_MAX_MASS) mass = VPHYSICS_MAX_MASS;
+  object->SetMass(mass);
+  return 0;
+}
+
+static int IPhysicsObject_SetMaterial (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
+  const char *name = luaL_checkstring(L, 2);
+  const int index = physprops ? physprops->GetSurfaceIndex(name) : -1;
+  if (index > 0) object->SetMaterialIndex(index);
   return 0;
 }
 
@@ -1146,13 +1283,15 @@ static int IPhysicsObject_SetShadow (lua_State *L) {
   return 0;
 }
 
-/* HL2SB: same GMod one-argument shape as AddVelocity above. */
+/* Preserve the current angular velocity when setting linear velocity. */
 static int IPhysicsObject_SetVelocity (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   Vector velocity = luaL_checkvector(L, 2);
-  AngularImpulse angularVelocity = vec3_origin;
-  if (!lua_isnoneornil(L, 3))
-    angularVelocity = luaL_checkvector(L, 3);
-  luaL_checkphysicsobject(L, 1)->SetVelocity(&velocity, &angularVelocity);
+  if (velocity.IsValid()) {
+    Vector oldVelocity, angularVelocity;
+    object->GetVelocity(&oldVelocity, &angularVelocity);
+    object->SetVelocity(&velocity, &angularVelocity);
+  }
   return 0;
 }
 
@@ -1240,13 +1379,15 @@ static int IPhysicsObject_ComputeShadowControl (lua_State *L) {
   return 0;
 }
 
-/* HL2SB: same GMod one-argument shape as AddVelocity above. */
+/* Preserve the current angular velocity when setting linear velocity. */
 static int IPhysicsObject_SetVelocityInstantaneous (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   Vector velocity = luaL_checkvector(L, 2);
-  AngularImpulse angularVelocity = vec3_origin;
-  if (!lua_isnoneornil(L, 3))
-    angularVelocity = luaL_checkvector(L, 3);
-  luaL_checkphysicsobject(L, 1)->SetVelocityInstantaneous(&velocity, &angularVelocity);
+  if (velocity.IsValid()) {
+    Vector oldVelocity, angularVelocity;
+    object->GetVelocity(&oldVelocity, &angularVelocity);
+    object->SetVelocityInstantaneous(&velocity, &angularVelocity);
+  }
   return 0;
 }
 
@@ -1264,24 +1405,23 @@ static int IPhysicsObject_SetVelocityInstantaneous (lua_State *L) {
 ** (addons/cod_c4/lua/weapons/seal6-c4/shared.lua:252 "phys:SetAngleVelocity(Vector(...))"),
 ** where the nil method aborted the throw before ents.Create() ran.
 **
-** The NULL-safety of the vphysics side is not documented, so the linear half is always
-** passed a real (zero) vector.
+** AddVelocity supports null pointers for components that are not being changed.
 */
 static int IPhysicsObject_SetAngleVelocity (lua_State *L) {
   IPhysicsObject *pObject = luaL_checkphysicsobject(L, 1);
   AngularImpulse angularVelocity = luaL_checkvector(L, 2);
-  Vector velocity, ignoredAngular;
-
-  pObject->GetVelocity(&velocity, &ignoredAngular);
-  pObject->SetVelocity(&velocity, &angularVelocity);
+  if (angularVelocity.IsValid()) {
+    Vector velocity, ignoredAngular;
+    pObject->GetVelocity(&velocity, &ignoredAngular);
+    pObject->SetVelocity(&velocity, &angularVelocity);
+  }
   return 0;
 }
 
 static int IPhysicsObject_AddAngleVelocity (lua_State *L) {
+  IPhysicsObject *object = luaL_checkphysicsobject(L, 1);
   AngularImpulse angularVelocity = luaL_checkvector(L, 2);
-  Vector noVelocity = vec3_origin;
-
-  luaL_checkphysicsobject(L, 1)->AddVelocity(&noVelocity, &angularVelocity);
+  if (angularVelocity.IsValid()) object->AddVelocity(NULL, &angularVelocity);
   return 0;
 }
 
@@ -1323,7 +1463,14 @@ static int IPhysicsObject___tostring (lua_State *L) {
 }
 
 
+static int IPhysicsObject_GetEntity( lua_State *L ) {
+  IPhysicsObject *physics = luaL_checkphysicsobject( L, 1 );
+  CBaseEntity::PushLuaInstanceSafe( L, static_cast<CBaseEntity *>( physics->GetGameData() ) );
+  return 1;
+}
+
 static const luaL_Reg IPhysicsObjectmeta[] = {
+  {"GetEntity", IPhysicsObject_GetEntity},
   {"AlignAngles", IPhysicsObject_AlignAngles},
   {"AddVelocity", IPhysicsObject_AddVelocity},
   {"AddAngleVelocity", IPhysicsObject_AddAngleVelocity},
@@ -1342,6 +1489,7 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"EnableMotion", IPhysicsObject_EnableMotion},
   {"GetAngleVelocity", IPhysicsObject_GetAngleVelocity},
   {"GetAngles", IPhysicsObject_GetAngles},
+  {"RotateAroundAxis", IPhysicsObject_RotateAroundAxis},
   {"GetCallbackFlags", IPhysicsObject_GetCallbackFlags},
   {"GetContactPoint", IPhysicsObject_GetContactPoint},
   {"GetContents", IPhysicsObject_GetContents},
@@ -1355,6 +1503,7 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"GetInvMass", IPhysicsObject_GetInvMass},
   {"GetAABB", IPhysicsObject_GetAABB},
   {"GetMass", IPhysicsObject_GetMass},
+  {"GetVolume", IPhysicsObject_GetVolume},
   {"GetMassCenterLocalSpace", IPhysicsObject_GetMassCenterLocalSpace},
   {"GetMassCenter", IPhysicsObject_GetMassCenterLocalSpace},  /* HL2SB: GMod's name (local-space center of mass) */
   {"GetMaterialIndex", IPhysicsObject_GetMaterialIndex},
@@ -1392,10 +1541,12 @@ static const luaL_Reg IPhysicsObjectmeta[] = {
   {"SetBuoyancyRatio", IPhysicsObject_SetBuoyancyRatio},
   {"SetCallbackFlags", IPhysicsObject_SetCallbackFlags},
   {"SetContents", IPhysicsObject_SetContents},
+  {"SetDamping", IPhysicsObject_SetDamping},
   {"SetDragCoefficient", IPhysicsObject_SetDragCoefficient},
   {"SetGameFlags", IPhysicsObject_SetGameFlags},
   {"SetGameIndex", IPhysicsObject_SetGameIndex},
   {"SetMass", IPhysicsObject_SetMass},
+  {"SetMaterial", IPhysicsObject_SetMaterial},
   {"SetMaterialIndex", IPhysicsObject_SetMaterialIndex},
   {"SetShadow", IPhysicsObject_SetShadow},
   {"UpdateShadow", IPhysicsObject_UpdateShadow},
