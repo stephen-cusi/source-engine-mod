@@ -1299,9 +1299,17 @@ static void luasrc_install_type_names (lua_State *L) {
 
     if (s_LuaTypeInfo[i].pszBaseMetatable) {
       luaL_getmetatable(L, s_LuaTypeInfo[i].pszBaseMetatable);
-      if (lua_istable(L, -1))
+      if (lua_istable(L, -1)) {
+        if (s_LuaTypeInfo[i].iTypeID == LUA_TYPE_ENTITY) {
+          // LuaJIT only compares distinct userdata through __eq when both
+          // metatables refer to the same function object. All entity wrappers
+          // hold a CBaseHandle, so share the base Entity's comparison.
+          lua_pushliteral(L, "__eq");
+          lua_rawget(L, -2);
+          lua_setfield(L, -3, "__eq");
+        }
         lua_setfield(L, -2, "MetaBaseClass");
-      else
+      } else
         lua_pop(L, 1);
     }
 

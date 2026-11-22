@@ -2326,8 +2326,7 @@ static bool HL2SB_RewriteGLuaSource( const char *pIn, int nLen, char **ppOut, si
 // and in a console one-liner).
 //
 // bReportError true  = report through luasrc_report_error and return non-zero.
-// bReportError false = leave the error object on the stack and lua_error() it,
-//                      so it propagates as a normal Lua error.
+// bReportError false = leave an error message on the stack for the Lua caller.
 static int HL2SB_RunStringCore( lua_State *L, const char *pszCode, const char *pszIdentifier, bool bReportError )
 {
 	if ( !pszCode || pszCode[0] == '\0' )
@@ -2336,7 +2335,7 @@ static int HL2SB_RunStringCore( lua_State *L, const char *pszCode, const char *p
 		if ( !bReportError )
 		{
 			lua_pushstring( L, "Invalid script - or too short." );
-			return lua_error( L );
+			return 1;
 		}
 		return 1;
 	}
@@ -2348,7 +2347,7 @@ static int HL2SB_RunStringCore( lua_State *L, const char *pszCode, const char *p
 		if ( !bReportError )
 		{
 			lua_pushstring( L, "Cannot run byte code!" );
-			return lua_error( L );
+			return 1;
 		}
 		return 1;
 	}
@@ -2387,7 +2386,15 @@ static int HL2SB_RunStringCore( lua_State *L, const char *pszCode, const char *p
 	if ( iError != 0 )
 	{
 		if ( !bReportError )
-			return lua_error( L );   // error object is on top
+		{
+			if ( !lua_tostring( L, -1 ) )
+			{
+				const char *pszType = luaL_typename( L, -1 );
+				lua_pop( L, 1 );
+				lua_pushfstring( L, "Lua error (%s)", pszType );
+			}
+			return 1;
+		}
 		luasrc_report_error( L, lua_tostring( L, -1 ) );
 		lua_pop( L, 1 );
 		return 1;
@@ -2397,16 +2404,16 @@ static int HL2SB_RunStringCore( lua_State *L, const char *pszCode, const char *p
 
 // HL2SB: GMod's RunString / RunStringEx Lua globals.  Reference signature:
 //     RunString( code, identifier = "RunString(Ex)", handleError = true )
-// It runs a source string as a chunk named "@<identifier>" and returns nothing.
-// handleError=false re-raises the failure as a normal Lua error.
+// It runs a source string as a chunk named "@<identifier>".
+// handleError=false returns an error string on failure.
 static int HL2SB_LuaRunString( lua_State *L )
 {
 	const char *pszCode = luaL_checkstring( L, 1 );
 	const char *pszIdentifier = luaL_optstring( L, 2, "RunString(Ex)" );
 	bool bHandleError = lua_isnoneornil( L, 3 ) ? true : ( lua_toboolean( L, 3 ) != 0 );
 
-	HL2SB_RunStringCore( L, pszCode, pszIdentifier, bHandleError );
-	return 0;
+	const int result = HL2SB_RunStringCore( L, pszCode, pszIdentifier, bHandleError );
+	return bHandleError ? 0 : result;
 }
 
 LUA_API int luasrc_dostring (lua_State *L, const char *string) {

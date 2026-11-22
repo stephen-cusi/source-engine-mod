@@ -5278,7 +5278,10 @@ static int CBaseEntity___newindex (lua_State *L) {
 }
 
 static int CBaseEntity___eq (lua_State *L) {
-  lua_pushboolean(L, lua_toentity(L, 1) == lua_toentity(L, 2));
+  const bool equal = HL2SB_IsEntityUserdata(L, 1) &&
+                     HL2SB_IsEntityUserdata(L, 2) &&
+                     lua_toentity(L, 1) == lua_toentity(L, 2);
+  lua_pushboolean(L, equal);
   return 1;
 }
 

@@ -121,8 +121,10 @@ static int CGameTrace___index (lua_State *L) {
     lua_pushinteger(L, tr.hitbox);
   else if (Q_strcmp(field, "hitgroup") == 0)
     lua_pushinteger(L, tr.hitgroup);
-  else if (Q_strcmp(field, "m_pEnt") == 0)
-    lua_pushentity(L, tr.m_pEnt);
+  else if (Q_strcmp(field, "m_pEnt") == 0 || Q_strcmp(field, "HitEntity") == 0 || Q_strcmp(field, "Entity") == 0)
+    // Use the hit entity's native Lua type, as scripted callbacks do. LuaJIT
+    // requires distinct userdata to use the same __eq metamethod for equality.
+    CBaseEntity::PushLuaInstanceSafe(L, tr.m_pEnt);
   else if (Q_strcmp(field, "physicsbone") == 0 || Q_strcmp(field, "PhysicsBone") == 0)
     lua_pushinteger(L, tr.physicsbone);
   else if (Q_strcmp(field, "startpos") == 0)
@@ -136,23 +138,12 @@ static int CGameTrace___index (lua_State *L) {
     lua_pushvector(L, tr.endpos);
   else if (Q_strcmp(field, "StartPos") == 0)
     lua_pushvector(L, tr.startpos);
-  else if (Q_strcmp(field, "HitEntity") == 0)
-    lua_pushentity(L, tr.m_pEnt);
   else if (Q_strcmp(field, "HitNormal") == 0)
     lua_pushvector(L, tr.plane.normal);
   else if (Q_strcmp(field, "Fraction") == 0)
     lua_pushnumber(L, tr.fraction);
   else if (Q_strcmp(field, "HitWorld") == 0)
     lua_pushboolean(L, tr.DidHitWorld());
-  // HL2SB GMod compat: GMod's two most used trace fields were missing under their
-  // own names - tr.Entity (the hit entity) and tr.Hit (did the trace hit), while
-  // this fork only answered HitEntity and fraction.  GMod weapon scripts branch on
-  // them, and a nil answer is silent: weapon_fists does
-  //     if ( !IsValid( tr.Entity ) ) then tr = util.TraceHull( ... ) end
-  //     if ( SERVER && IsValid( tr.Entity ) && ... ) then
-  //         tr.Entity:TakeDamageInfo( dmginfo )      -- never ran => no damage
-  else if (Q_strcmp(field, "Entity") == 0)
-    lua_pushentity(L, tr.m_pEnt);
   // GMod's "Hit" also covers traces that never got out of the solid they
   // started in: the reference table builder answers true for
   // fraction < 1 OR AllSolid OR StartSolid (a fully-swallowed trace has
