@@ -301,9 +301,21 @@ def build(bld):
 		lj_vm_node = ctx.find_or_declare(LJ_GEN + '/lj_vm.obj')
 		bvm_run('peobj', lj_vm_node, [])
 	else:
-		# GNU as source; assembled by the target compiler like any other TU.
-		lj_vm_node = ctx.find_or_declare(LJ_GEN + '/lj_vm.S')
-		bvm_run('elfasm', lj_vm_node, [])
+		# Use the target C compiler driver for preprocessed assembly. Waf's
+		# generic assembler task has no AS configured on the Android path.
+		vm_asm = ctx.find_or_declare(LJ_GEN + '/lj_vm.S')
+		bvm_run('elfasm', vm_asm, [])
+		lj_vm_node = ctx.find_or_declare(LJ_GEN + '/lj_vm.o')
+		vm_tg = bld(
+			rule='${CC} ${CFLAGS} -c ${SRC} -o ${TGT}',
+			source=vm_asm,
+			target=lj_vm_node,
+			install_path=None,
+			idx=bld.get_taskgen_count(),
+		)
+		vm_tg.features = Utils.to_list(vm_tg.features) + ['lj_dependencies']
+		vm_tg.lj_after = [gen_tgs[-1]]
+		gen_tgs.append(vm_tg)
 
 	gen_headers = []
 	for mode, name in [
@@ -357,7 +369,7 @@ def build(bld):
 	# manual dependency on each of them, which both orders the compile after
 	# the generators and re-runs the TU when a generated header changes
 	# (waf does no header-dependency scanning of its own).
-	source = LJ_CORE + LJ_LIB_UNITS + LJ_GLUE_C + ([] if is_win else [lj_vm_node])
+	source = LJ_CORE + LJ_LIB_UNITS + LJ_GLUE_C
 	defines = []
 	if is_win:
 		defines += ['LUA_BUILD_AS_DLL']
@@ -410,9 +422,8 @@ def build(bld):
 	shlib_tg.features = Utils.to_list(shlib_tg.features) + ['lj_dependencies']
 	shlib_tg.lj_after = gen_tgs
 	shlib_tg.lj_headers = gen_headers
-	if is_win:
-		shlib_tg.linkflags = Utils.to_list(getattr(shlib_tg, 'linkflags', [])) + [lj_vm_node.abspath()]
-		shlib_tg.lj_object = lj_vm_node
+	shlib_tg.linkflags = Utils.to_list(getattr(shlib_tg, 'linkflags', [])) + [lj_vm_node.abspath()]
+	shlib_tg.lj_object = lj_vm_node
 	shlib_tg.use = Utils.to_list(shlib_tg.use) + ['lua_shared_glue_cpp']
 	if not is_win:
 		# LuaJIT's generated VM assembly has no .note.GNU-stack marker; without
