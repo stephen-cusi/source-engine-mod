@@ -1,5 +1,4 @@
 #include "servo_backend.h"
-#include "tier0/dbg.h"
 
 #include <algorithm>
 #include <atomic>
@@ -16,6 +15,8 @@
 #else
 #include <dlfcn.h>
 #endif
+
+#include "tier0/dbg.h"
 
 namespace {
 std::atomic<bool> s_runtimeExists(false);
