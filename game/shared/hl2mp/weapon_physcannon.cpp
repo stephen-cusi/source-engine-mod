@@ -16,6 +16,7 @@
 	#include "model_types.h"
 	#include "clienteffectprecachesystem.h"
 	#include "fx_interpvalue.h"
+	#include "tier1/KeyValues.h"
 #else
 	#include "hl2mp_player.h"
 	#include "soundent.h"
@@ -24,12 +25,14 @@
 	#include "player_pickup.h"
 	#include "physics_prop_ragdoll.h"
 	#include "globalstate.h"
+	#include "eventqueue.h"
 	#include "props.h"
 	#include "te_effect_dispatch.h"
 	#include "util.h"
 #endif
 
 #include "gamerules.h"
+#include "hl2mp_gamerules.h"
 #include "soundenvelope.h"
 #include "engine/IEngineSound.h"
 #include "physics.h"
@@ -93,6 +96,18 @@ extern ConVar hl2_walkspeed;
 #define PHYSCANNON_ENDCAP_SPRITE "sprites/orangeflare1"
 #define PHYSCANNON_CENTER_GLOW "sprites/orangecore1"
 #define PHYSCANNON_BLAST_SPRITE "sprites/orangecore2"
+#ifdef HL2SB
+#define MEGACANNON_VIEWMODEL "models/weapons/c_superphyscannon.mdl"
+#define MEGACANNON_BEAM_SPRITE "sprites/lgtning.vmt"
+#define MEGACANNON_BEAM_SPRITE_NOZ "sprites/lgtning_noz.vmt"
+
+enum { PHYSCANNON_IMPACT_MEGA = 1 };
+
+static bool IsMegaPhysCannonActive()
+{
+	return HL2MPRules() && HL2MPRules()->MegaPhyscannonActive();
+}
+#endif
 
 #ifdef CLIENT_DLL
 
@@ -112,13 +127,67 @@ extern ConVar hl2_walkspeed;
 
 void PhysCannonBeginUpgrade( CBaseAnimating *pAnim )
 {
+#ifdef HL2SB
+	if ( !pAnim || !FClassnameIs( pAnim, "weapon_physcannon" ) ||
+		 GlobalEntity_GetState( "super_phys_gun" ) == GLOBAL_ON )
+		return;
 
+	const string_t name = MAKE_STRING( "super_phys_gun" );
+	if ( GlobalEntity_IsInTable( name ) )
+		GlobalEntity_SetState( name, GLOBAL_ON );
+	else
+		GlobalEntity_Add( name, gpGlobals->mapname, GLOBAL_ON );
+
+	g_EventQueue.AddEvent( "script_physcannon_upgrade", "Trigger", variant_t(), 0.0f, pAnim, pAnim );
+#endif
 }
+#endif
 
 bool PlayerHasMegaPhysCannon( void )
 {
+#ifdef HL2SB
+	return IsMegaPhysCannonActive();
+#else
 	return false;
+#endif
 }
+
+#ifndef CLIENT_DLL
+#ifdef HL2SB
+static bool CanMegaPhysCannonRagdoll( CBaseEntity *pTarget )
+{
+	CAI_BaseNPC *pNPC = pTarget->MyNPCPointer();
+	return IsMegaPhysCannonActive() && pNPC && pNPC->IsAlive() &&
+		pNPC->m_takedamage == DAMAGE_YES && pNPC->Classify() != CLASS_PLAYER_ALLY_VITAL &&
+		!pNPC->IsEFlagSet( EFL_NO_MEGAPHYSCANNON_RAGDOLL ) && pNPC->CanBecomeRagdoll();
+}
+
+static CBaseEntity *RagdollMegaPhysCannonTarget( CBaseEntity *pWeapon, CBaseEntity *pOwner, CBaseEntity *pTarget )
+{
+	CTakeDamageInfo info( pWeapon, pOwner, 1.0f, DMG_GENERIC );
+	CBaseEntity *pRagdoll = CreateServerRagdoll( pTarget->MyNPCPointer(), 0, info, COLLISION_GROUP_INTERACTIVE_DEBRIS, true );
+	if ( !pRagdoll || !pRagdoll->VPhysicsGetObject() )
+	{
+		if ( pRagdoll )
+			UTIL_Remove( pRagdoll );
+		return NULL;
+	}
+
+	PhysSetEntityGameFlags( pRagdoll, FVPHYSICS_NO_SELF_COLLISIONS );
+	pRagdoll->SetCollisionBounds( pTarget->CollisionProp()->OBBMins(), pTarget->CollisionProp()->OBBMaxs() );
+	EHANDLE hTarget = pTarget;
+	EHANDLE hRagdoll = pRagdoll;
+	CTakeDamageInfo kill( pWeapon, pOwner, 10000.0f, DMG_PHYSGUN | DMG_REMOVENORAGDOLL );
+	pTarget->TakeDamage( kill );
+	if ( hTarget && hTarget->IsAlive() )
+	{
+		if ( hRagdoll )
+			UTIL_Remove( hRagdoll.Get() );
+		return NULL;
+	}
+	return hRagdoll.Get();
+}
+#endif
 
 bool PhysCannonAccountableForObject( CBaseCombatWeapon *pPhysCannon, CBaseEntity *pObject )
 {
@@ -577,7 +646,7 @@ void CGrabController::AttachEntity( CBasePlayer *pPlayer, CBaseEntity *pEntity, 
 	pPhys->SetMass( REDUCED_CARRY_MASS );
 	pPhys->EnableDrag( false );
 
-	m_errorTime = -1.0f; // 1 seconds until error starts accumulating
+	m_errorTime = bIsMegaPhysCannon ? -1.5f : -1.0f;
 	m_error = 0;
 	m_contactAmount = 0;
 
@@ -1027,12 +1096,17 @@ public:
 			m_pBeam->die = gpGlobals->curtime - 1;
 			
 			m_pBeam = NULL;
+			m_hEntity = NULL;
 		}
 	}
 
 	void Init( int startAttachment, int endAttachment, CBaseEntity *pEntity, bool firstPerson )
 	{
+		if ( m_pBeam && m_hEntity.Get() != pEntity )
+			Release();
 		if ( m_pBeam != NULL )
+			return;
+		if ( !pEntity || startAttachment <= 0 || endAttachment <= 0 )
 			return;
 
 		BeamInfo_t beamInfo;
@@ -1045,7 +1119,11 @@ public:
 		beamInfo.m_vecStart = vec3_origin;
 		beamInfo.m_vecEnd = vec3_origin;
 		
-		beamInfo.m_pszModelName = ( firstPerson ) ? PHYSCANNON_BEAM_SPRITE_NOZ : PHYSCANNON_BEAM_SPRITE;
+		beamInfo.m_pszModelName = firstPerson ? PHYSCANNON_BEAM_SPRITE_NOZ : PHYSCANNON_BEAM_SPRITE;
+#ifdef HL2SB
+		if ( IsMegaPhysCannonActive() )
+			beamInfo.m_pszModelName = firstPerson ? MEGACANNON_BEAM_SPRITE_NOZ : MEGACANNON_BEAM_SPRITE;
+#endif
 		
 		beamInfo.m_flHaloScale = 0.0f;
 		beamInfo.m_flLife = 0.0f;
@@ -1075,6 +1153,7 @@ public:
 		beamInfo.m_nFlags = FBEAM_FOREVER;
 	
 		m_pBeam = beams->CreateBeamEntPoint( beamInfo );
+		m_hEntity = m_pBeam ? pEntity : NULL;
 	}
 
 	void SetVisible( bool state = true )
@@ -1087,6 +1166,7 @@ public:
 
 private:
 	Beam_t	*m_pBeam;
+	EHANDLE	m_hEntity;
 };
 
 #endif
@@ -1177,7 +1257,7 @@ protected:
 
 	// Punt objects - this is pointing at an object in the world and applying a force to it.
 	void	PuntNonVPhysics( CBaseEntity *pEntity, const Vector &forward, trace_t &tr );
-	void	PuntVPhysics( CBaseEntity *pEntity, const Vector &forward, trace_t &tr );
+	void	PuntVPhysics( CBaseEntity *pEntity, const Vector &forward, trace_t &tr, bool bCheckLua = true );
 
 	// Velocity-based throw common to punt and launch code.
 #ifndef HL2SB
@@ -1243,11 +1323,15 @@ protected:
 	virtual bool	IsTransparent( void );
 	virtual void	OnDataChanged( DataUpdateType_t type );
 	virtual void	ClientThink( void );
+#ifdef HL2SB
+	int				GetSkin( void ) override;
+#endif
 	
 	void			ManagePredictedObject( void );
 	void			DrawEffects( void );
 	void			GetEffectParameters( EffectType_t effectID, color32 &color, float &scale, IMaterial **pMaterial, Vector &vecAttachment );
 	void			DrawEffectSprite( EffectType_t effectID );
+	void			UpdateHoldingBeams( void );
 	inline bool		IsEffectVisible( EffectType_t effectID );
 	void			UpdateElementPosition( void );
 
@@ -1257,6 +1341,11 @@ protected:
 	CInterpolatedValue		m_ElementParameter;							// Used to interpolate the position of the articulated elements
 	CPhysCannonEffect		m_Parameters[NUM_PHYSCANNON_PARAMETERS];	// Interpolated parameters for the effects
 	CPhysCannonEffectBeam	m_Beams[NUM_PHYSCANNON_BEAMS];				// Beams
+#ifdef HL2SB
+	CMaterialReference		m_MegaGlowMaterial;
+	CMaterialReference		m_MegaCoreMaterial;
+	bool					m_bMegaEffects = false;
+#endif
 
 	int				m_nOldEffectState;	// Used for parity checks
 	bool			m_bOldOpen;			// Used for parity checks
@@ -1269,6 +1358,9 @@ protected:
 	float	m_flCheckSuppressTime;		// Amount of time to suppress the checking for targets
 	bool	m_flLastDenySoundPlayed;	// Debounce for deny sound
 	int		m_nAttack2Debounce;
+#ifdef HL2SB
+	bool	m_bMegaViewModel = false;
+#endif
 
 	CNetworkVar( bool,	m_bActive );
 	CNetworkVar( int,	m_EffectState );		// Current state of the effects on the gun
@@ -1416,6 +1508,11 @@ void CWeaponPhysCannon::Precache( void )
 {
 	PrecacheModel( PHYSCANNON_BEAM_SPRITE );
 	PrecacheModel( PHYSCANNON_BEAM_SPRITE_NOZ );
+#ifdef HL2SB
+	PrecacheModel( MEGACANNON_VIEWMODEL );
+	PrecacheModel( MEGACANNON_BEAM_SPRITE );
+	PrecacheModel( MEGACANNON_BEAM_SPRITE_NOZ );
+#endif
 
 	PrecacheScriptSound( "Weapon_PhysCannon.HoldSound" );
 
@@ -1535,6 +1632,20 @@ bool CWeaponPhysCannon::Deploy( void )
 //-----------------------------------------------------------------------------
 void CWeaponPhysCannon::SetViewModel( void )
 {
+#ifdef HL2SB
+	if ( IsMegaPhysCannonActive() && modelinfo->GetModelIndex( MEGACANNON_VIEWMODEL ) > 0 )
+	{
+		CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		CBaseViewModel *pViewModel = pOwner ? pOwner->GetViewModel( m_nViewModelIndex, false ) : NULL;
+		if ( pViewModel )
+		{
+			pViewModel->SetWeaponModel( MEGACANNON_VIEWMODEL, this );
+			m_bMegaViewModel = true;
+			return;
+		}
+	}
+	m_bMegaViewModel = false;
+#endif
 	BaseClass::SetViewModel();
 }
 
@@ -1654,6 +1765,23 @@ void CWeaponPhysCannon::PuntNonVPhysics( CBaseEntity *pEntity, const Vector &for
 		return;
 
 #ifndef CLIENT_DLL
+#ifdef HL2SB
+	if ( CanMegaPhysCannonRagdoll( pEntity ) )
+	{
+		CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		extern bool HL2SB_LuaGravGunPunt( CBasePlayer *, CBaseEntity * );
+		if ( pOwner && HL2SB_LuaGravGunPunt( pOwner, pEntity ) )
+			return;
+
+		CBaseEntity *pRagdoll = RagdollMegaPhysCannonTarget( this, GetOwner(), pEntity );
+		if ( pRagdoll )
+		{
+			tr.m_pEnt = pRagdoll;
+			PuntVPhysics( pRagdoll, forward, tr, false );
+		}
+		return;
+	}
+#endif
 	CTakeDamageInfo	info;
 	
 	info.SetAttacker( GetOwner() );
@@ -1703,7 +1831,7 @@ void CWeaponPhysCannon::Physgun_OnPhysGunPickup( CBaseEntity *pEntity, CBasePlay
 //-----------------------------------------------------------------------------
 // Punt vphysics
 //-----------------------------------------------------------------------------
-void CWeaponPhysCannon::PuntVPhysics( CBaseEntity *pEntity, const Vector &vecForward, trace_t &tr )
+void CWeaponPhysCannon::PuntVPhysics( CBaseEntity *pEntity, const Vector &vecForward, trace_t &tr, bool bCheckLua )
 {
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 
@@ -1721,7 +1849,7 @@ void CWeaponPhysCannon::PuntVPhysics( CBaseEntity *pEntity, const Vector &vecFor
 
 	// HL2SB GMod compat (2026-10-13): GM:GravGunPunt( ply, ent ) - a truthy
 	// answer vetoes the punt (GMod).  Fired before the object is launched.
-	if ( pOwner != NULL )
+	if ( bCheckLua && pOwner != NULL )
 	{
 		extern bool HL2SB_LuaGravGunPunt( CBasePlayer *pPlayer, CBaseEntity *pEnt );
 		if ( HL2SB_LuaGravGunPunt( pOwner, pEntity ) )
@@ -1931,7 +2059,9 @@ void CWeaponPhysCannon::ApplyVelocityBasedForce( CBaseEntity *pEntity, const Vec
 //-----------------------------------------------------------------------------
 float CWeaponPhysCannon::TraceLength()
 {
-	return physcannon_tracelength.GetFloat();
+	const float flRange = physcannon_tracelength.GetFloat();
+	// GMod scales the configured grab range in mega mode (250 -> 850 by default).
+	return PlayerHasMegaPhysCannon() ? flRange * 3.4f : flRange;
 }
 
 
@@ -2044,7 +2174,7 @@ void CWeaponPhysCannon::PrimaryAttack( void )
 	}
 	else
 	{
-		if ( pEntity->VPhysicsIsFlesh( ) )
+		if ( pEntity->VPhysicsIsFlesh() && !PlayerHasMegaPhysCannon() )
 		{
 			DryFire();
 			return;
@@ -2149,6 +2279,14 @@ bool CWeaponPhysCannon::AttachObject( CBaseEntity *pObject, const Vector &vPosit
 	m_grabController.SetIgnorePitch( false );
 	m_grabController.SetAngleAlignment( 0 );
 
+#ifdef HL2SB
+	if ( CanMegaPhysCannonRagdoll( pObject ) )
+	{
+		pObject = RagdollMegaPhysCannonTarget( this, GetOwner(), pObject );
+		if ( !pObject )
+			return false;
+	}
+#endif
 	IPhysicsObject *pPhysics = pObject->VPhysicsGetObject();
 
 	// Must be valid
@@ -2173,7 +2311,7 @@ bool CWeaponPhysCannon::AttachObject( CBaseEntity *pObject, const Vector &vPosit
 	}
 
 	// NOTE :This must happen after OnPhysGunPickup because that can change the mass
-	m_grabController.AttachEntity( pOwner, pObject, pPhysics, false, vPosition, false );
+	m_grabController.AttachEntity( pOwner, pObject, pPhysics, PlayerHasMegaPhysCannon(), vPosition, false );
 	m_hAttachedObject = pObject;
 	m_attachedPositionObjectSpace = m_grabController.m_attachedPositionObjectSpace;
 	m_attachedAnglesPlayerSpace = m_grabController.m_attachedAnglesPlayerSpace;
@@ -2610,7 +2748,7 @@ void CWeaponPhysCannon::ManagePredictedObject( void )
 				m_grabController.SetIgnorePitch( false );
 				m_grabController.SetAngleAlignment( 0 );
 
-				GetGrabController().AttachEntity( ToBasePlayer( GetOwner() ), pAttachedObject, pPhysics, false, vec3_origin, false );
+				GetGrabController().AttachEntity( ToBasePlayer( GetOwner() ), pAttachedObject, pPhysics, PlayerHasMegaPhysCannon(), vec3_origin, false );
 				GetGrabController().m_attachedPositionObjectSpace = m_attachedPositionObjectSpace;
 				GetGrabController().m_attachedAnglesPlayerSpace = m_attachedAnglesPlayerSpace;
 			}
@@ -2666,6 +2804,18 @@ void CWeaponPhysCannon::UpdateElementPosition( void )
 
 void CWeaponPhysCannon::ClientThink( void )
 {
+#ifdef HL2SB
+	const bool bMega = IsMegaPhysCannonActive();
+	if ( bMega != m_bMegaEffects )
+	{
+		m_bMegaEffects = bMega;
+		for ( int i = 0; i < NUM_PHYSCANNON_BEAMS; ++i )
+			m_Beams[i].Release();
+	}
+#endif
+	if ( m_EffectState == EFFECT_HOLDING )
+		UpdateHoldingBeams();
+
 	// Update our elements visually
 	UpdateElementPosition();
 
@@ -2680,6 +2830,19 @@ void CWeaponPhysCannon::ClientThink( void )
 void CWeaponPhysCannon::ItemPreFrame()
 {
 	BaseClass::ItemPreFrame();
+
+#ifdef HL2SB
+	if ( IsMegaPhysCannonActive() != m_bMegaViewModel )
+	{
+		CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		if ( pOwner && pOwner->GetActiveWeapon() == this )
+		{
+			CBaseViewModel *pViewModel = pOwner->GetViewModel( m_nViewModelIndex, false );
+			if ( pViewModel && pViewModel->GetOwningWeapon() == this )
+				SetViewModel();
+		}
+	}
+#endif
 
 #ifdef CLIENT_DLL
 	C_BasePlayer *localplayer = C_BasePlayer::GetLocalPlayer();
@@ -2824,8 +2987,13 @@ void CWeaponPhysCannon::ItemPostFrame()
 		return;
 	}
 
-	//Check for object in pickup range
-	if ( m_bActive == false )
+	if ( PlayerHasMegaPhysCannon() )
+	{
+		OpenElements();
+		m_nChangeState = ELEMENT_STATE_NONE;
+	}
+	// Check for objects to open the normal cannon's claws.
+	else if ( m_bActive == false )
 	{
 		CheckForTarget();
 
@@ -3015,7 +3183,8 @@ bool CWeaponPhysCannon::CanPickupObject( CBaseEntity *pTarget )
 	}
 #endif
 
-	if ( pTarget->VPhysicsIsFlesh( ) )
+	const bool bMega = PlayerHasMegaPhysCannon();
+	if ( !bMega && pTarget->VPhysicsIsFlesh() )
 		return false;
 
 	IPhysicsObject *pObj = pTarget->VPhysicsGetObject();	
@@ -3023,7 +3192,11 @@ bool CWeaponPhysCannon::CanPickupObject( CBaseEntity *pTarget )
 	if ( pObj && pObj->GetGameFlags() & FVPHYSICS_PLAYER_HELD )
 		return false;
 
-	if ( UTIL_IsCombineBall( pTarget ) )
+#ifdef HL2SB
+	if ( CanMegaPhysCannonRagdoll( pTarget ) )
+		return true;
+#endif
+	if ( bMega || UTIL_IsCombineBall( pTarget ) )
 	{
 		return CBasePlayer::CanPickupObject( pTarget, 0, 0 );
 	}
@@ -3068,7 +3241,7 @@ void CWeaponPhysCannon::OpenElements( void )
 //-----------------------------------------------------------------------------
 void CWeaponPhysCannon::CloseElements( void )
 {
-	if ( m_bOpen == false )
+	if ( !m_bOpen || PlayerHasMegaPhysCannon() )
 		return;
 
 	WeaponSound( MELEE_HIT );
@@ -3401,18 +3574,6 @@ void CWeaponPhysCannon::DoEffectHolding( void )
 		{
 			m_Parameters[i].SetVisible();
 		}
-
-		// Create our beams
-		CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
-		CBaseEntity *pBeamEnt = pOwner->GetViewModel();
-
-		// Setup the beams
-		m_Beams[0].Init( LookupAttachment( "fork1t" ), 1, pBeamEnt, true );
-		m_Beams[1].Init( LookupAttachment( "fork2t" ), 1, pBeamEnt, true );
-
-		// Set them visible
-		m_Beams[0].SetVisible();
-		m_Beams[1].SetVisible();
 	}
 	else
 	{
@@ -3437,22 +3598,41 @@ void CWeaponPhysCannon::DoEffectHolding( void )
 		{
 			m_Parameters[i].SetVisible();
 		}
-
-		// Setup the beams
-		m_Beams[0].Init( LookupAttachment( "fork1t" ), 1, this, false );
-		m_Beams[1].Init( LookupAttachment( "fork2t" ), 1, this, false );
-		m_Beams[2].Init( LookupAttachment( "fork3t" ), 1, this, false );
-
-		// Set them visible
-		m_Beams[0].SetVisible();
-		m_Beams[1].SetVisible();
-		m_Beams[2].SetVisible();
 	}
 
+	UpdateHoldingBeams();
 #endif
 
 }
 
+#ifdef CLIENT_DLL
+void CWeaponPhysCannon::UpdateHoldingBeams( void )
+{
+	const bool bFirstPerson = ShouldDrawUsingViewModel();
+	C_BaseAnimating *pBeamEnt = this;
+	if ( bFirstPerson )
+	{
+		CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		CBaseViewModel *pViewModel = pOwner ? pOwner->GetViewModel( m_nViewModelIndex, false ) : NULL;
+		pBeamEnt = pViewModel && pViewModel->GetOwningWeapon() == this ? pViewModel : NULL;
+	}
+
+	const char *const attachments[] = { "fork1t", "fork2t", "fork3t" };
+	const int nVisibleBeams = pBeamEnt ? ( bFirstPerson ? 2 : NUM_PHYSCANNON_BEAMS ) : 0;
+	for ( int i = 0; i < NUM_PHYSCANNON_BEAMS; ++i )
+	{
+		if ( i < nVisibleBeams )
+		{
+			m_Beams[i].Init( pBeamEnt->LookupAttachment( attachments[i] ), 1, pBeamEnt, bFirstPerson );
+			m_Beams[i].SetVisible();
+		}
+		else
+		{
+			m_Beams[i].Release();
+		}
+	}
+}
+#endif
 
 //-----------------------------------------------------------------------------
 // Launch effects
@@ -3511,6 +3691,10 @@ void CWeaponPhysCannon::DoEffectLaunch( Vector *pos )
 	// Do an impact hit
 	CEffectData	data;
 	data.m_vOrigin = endPos;
+#ifdef HL2SB
+	if ( IsMegaPhysCannonActive() )
+		data.m_fFlags |= PHYSCANNON_IMPACT_MEGA;
+#endif
 #ifdef CLIENT_DLL
 	data.m_hEntity = GetRefEHandle();
 #else
@@ -3628,6 +3812,26 @@ void CWeaponPhysCannon::GetEffectParameters( EffectType_t effectID, color32 &col
 	
 	// Get material
 	*pMaterial = (IMaterial *) m_Parameters[effectID].GetMaterial();
+#ifdef HL2SB
+	if ( IsMegaPhysCannonActive() )
+	{
+		const bool bCore = effectID == PHYSCANNON_CORE || effectID == PHYSCANNON_BLAST;
+		CMaterialReference &megaMaterial = bCore ? m_MegaCoreMaterial : m_MegaGlowMaterial;
+		if ( !megaMaterial.IsValid() )
+		{
+			// These VPK textures are normally drawn through the engine's sprite
+			// renderer. DrawSprite submits a raw quad and needs additive blending.
+			KeyValues *pVMT = new KeyValues( "UnlitGeneric" );
+			pVMT->SetString( "$basetexture", bCore ? "effects/fluttercore" : "sprites/blueflare1" );
+			pVMT->SetInt( "$additive", 1 );
+			pVMT->SetInt( "$vertexalpha", 1 );
+			pVMT->SetInt( "$vertexcolor", 1 );
+			megaMaterial.Init( bCore ? "hl2sb/megacannon_core" : "hl2sb/megacannon_glow", pVMT );
+		}
+		if ( !IsErrorMaterial( megaMaterial ) )
+			*pMaterial = megaMaterial;
+	}
+#endif
 
 	// Setup the color
 	color.r = (int) m_Parameters[effectID].GetColor().x;
@@ -3718,6 +3922,19 @@ void CWeaponPhysCannon::DrawEffects( void )
 //-----------------------------------------------------------------------------
 // Purpose: Third-person function call to render world model
 //-----------------------------------------------------------------------------
+#ifdef HL2SB
+int CWeaponPhysCannon::GetSkin( void )
+{
+	if ( IsMegaPhysCannonActive() )
+	{
+		const CStudioHdr *pStudioHdr = GetModelPtr();
+		if ( pStudioHdr && pStudioHdr->numskinfamilies() > 1 )
+			return MIN( 2, pStudioHdr->numskinfamilies() - 1 );
+	}
+	return BaseClass::GetSkin();
+}
+#endif
+
 int CWeaponPhysCannon::DrawModel( int flags )
 {
 	// Only render these on the transparent pass
@@ -3890,6 +4107,10 @@ void CallbackPhyscannonImpact( const CEffectData &data )
 		beamInfo.m_vecStart = vec3_origin;
 		beamInfo.m_vecEnd = data.m_vOrigin;
 		beamInfo.m_pszModelName = PHYSCANNON_BEAM_SPRITE;
+#ifdef HL2SB
+		if ( data.m_fFlags & PHYSCANNON_IMPACT_MEGA )
+			beamInfo.m_pszModelName = MEGACANNON_BEAM_SPRITE;
+#endif
 		beamInfo.m_flHaloScale = 0.0f;
 		beamInfo.m_flLife = 0.1f;
 		beamInfo.m_flWidth = 12.0f;

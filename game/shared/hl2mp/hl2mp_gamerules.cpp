@@ -63,6 +63,7 @@
 #ifdef HL2SB
 	#include "globalstate.h"
 	#include "hl2sb_player_model_manager.h"
+	extern ConVar physcannon_mega_enabled;
 #endif
 	#include "hl2mp_gameinterface.h"
 	#include "hl2mp_cvars.h"
@@ -123,11 +124,13 @@ BEGIN_NETWORK_TABLE_NOBASE( CHL2MPRules, DT_HL2MPRules )
 		RecvPropBool( RECVINFO( m_bTeamPlayEnabled ) ),
 		#ifdef HL2SB
 		RecvPropFloat( RECVINFO( m_fTimeScale ) ),
+		RecvPropBool( RECVINFO( m_bMegaPhysgun ) ),
 		#endif
 	#else
 		SendPropBool( SENDINFO( m_bTeamPlayEnabled ) ),
 		#ifdef HL2SB
 		SendPropFloat( SENDINFO( m_fTimeScale ), 32, 0 ),
+		SendPropBool( SENDINFO( m_bMegaPhysgun ) ),
 		#endif
 	#endif
 
@@ -584,6 +587,7 @@ float CHL2MPRules::FlPlayerSpawnTime( CBasePlayer *pPlayer )
 void CHL2MPRules::Think( void )
 {
 #if defined( HL2SB ) && !defined( CLIENT_DLL )
+	m_bMegaPhysgun = physcannon_mega_enabled.GetBool() || GlobalEntity_GetState( "super_phys_gun" ) == GLOBAL_ON;
 	factorylist_t factories;
 	FactoryList_Retrieve( factories );
 	IEngineGameTimeScale *timeScale = static_cast<IEngineGameTimeScale *>( factories.engineFactory( ENGINE_GAMETIMESCALE_INTERFACE_VERSION, NULL ) );

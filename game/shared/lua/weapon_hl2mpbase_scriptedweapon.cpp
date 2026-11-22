@@ -762,31 +762,115 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 }
 
 #ifdef CLIENT_DLL
-static void HL2SB_EnsureInitialWeaponDeploy( CHL2MPScriptedWeapon *pWeapon )
+static bool HL2SB_IsWeaponViewModelReady( CHL2MPScriptedWeapon *pWeapon, CBasePlayer *pOwner )
+{
+	if ( !pWeapon->GetWpnData().bParsedScript || !pOwner->GetViewModel( pWeapon->m_nViewModelIndex, false ) )
+		return false;
+
+	// The active weapon can arrive before its model string table entry.
+	const char *pszModel = pWeapon->GetViewModel( pWeapon->m_nViewModelIndex );
+	if ( !pszModel || !pszModel[0] )
+		return true;
+	const int nModel = modelinfo->GetModelIndex( pszModel );
+	return nModel != -1 && modelinfo->GetModel( nModel ) != NULL;
+}
+
+#if defined( HL2SB ) && defined( LUA_SDK )
+void HL2SB_ReconcileScriptedViewModel( CBasePlayer *pOwner )
+{
+	if ( !pOwner || !pOwner->IsAlive() )
+		return;
+
+	CBaseCombatWeapon *pSelected = pOwner->GetActiveWeapon();
+	CBaseViewModel *pViewModel = pOwner->GetViewModel( pSelected ? pSelected->m_nViewModelIndex.Get() : 0, false );
+	if ( !pViewModel )
+		return;
+
+	static CHandle<CBaseViewModel> hLastViewModel;
+	static CHandle<CBaseCombatWeapon> hLastSelected;
+	static int nLastModel = -1;
+	static int nDisplacedModel = -1;
+	if ( hLastViewModel.Get() != pViewModel )
+	{
+		hLastViewModel = pViewModel;
+		hLastSelected = NULL;
+		nLastModel = -1;
+		nDisplacedModel = -1;
+	}
+	if ( hLastSelected.Get() != pSelected )
+	{
+		hLastSelected = pSelected;
+		nDisplacedModel = nLastModel;
+	}
+
+	nLastModel = pViewModel->GetModelIndex();
+	if ( !pSelected || pSelected->GetOwner() != pOwner || !pSelected->IsScripted() ||
+		!pSelected->GetWpnData().bParsedScript )
+		return;
+
+	const char *pszModel = pSelected->GetViewModel( pSelected->m_nViewModelIndex );
+	if ( !pszModel || !pszModel[0] )
+		return;
+	const int nExpectedModel = modelinfo->GetModelIndex( pszModel );
+	if ( nExpectedModel == -1 || !modelinfo->GetModel( nExpectedModel ) )
+		return;
+	// A snapshot or prediction restore can change the slot independently of the
+	// active weapon. Keep Lua's custom models unless this is the displaced model.
+	const bool bWrongOwner = pViewModel->GetOwningWeapon() != pSelected;
+	const bool bMissingModel = !pViewModel->GetModel();
+	const bool bDisplacedModel = nDisplacedModel != -1 && nLastModel == nDisplacedModel &&
+		nLastModel != nExpectedModel;
+	if ( !bWrongOwner && !bMissingModel && !bDisplacedModel )
+		return;
+
+	if ( hl2sb_dev_msgs.GetBool() )
+		DevMsg( "[HL2SB wp] CLIENT viewmodel handoff ent=%d class='%s' oldOwner=%d oldModel=%d expected=%d effects=%d seq=%d\n",
+			pSelected->entindex(), pSelected->GetClassname(),
+			pViewModel->GetOwningWeapon() ? pViewModel->GetOwningWeapon()->entindex() : -1,
+			nLastModel, nExpectedModel, pViewModel->GetEffects(), pViewModel->GetSequence() );
+
+	CHandle<CBaseViewModel> hViewModel = pViewModel;
+	CHandle<CBaseCombatWeapon> hSelected = pSelected;
+	pViewModel->SetWeaponModel( pszModel, pSelected );
+	if ( hViewModel.Get() != pViewModel || hSelected.Get() != pSelected )
+		return;
+	if ( bWrongOwner && !pSelected->IsEffectActive( EF_NODRAW ) )
+		pViewModel->RemoveEffects( EF_NODRAW );
+	nLastModel = pViewModel->GetModelIndex();
+}
+#endif
+
+static bool HL2SB_EnsureInitialWeaponDeploy( CHL2MPScriptedWeapon *pWeapon )
 {
 #ifdef LUA_SDK
 	if ( L == NULL || pWeapon->m_nTableReference < 0 )
-		return;
+		return false;
 
 	CBasePlayer *pOwner = ToBasePlayer( pWeapon->GetOwner() );
 	if ( !pOwner || pOwner != CBasePlayer::GetLocalPlayer()
-		|| pOwner->GetActiveWeapon() != pWeapon || !pOwner->IsAlive()
-		|| !pOwner->GetViewModel( pWeapon->m_nViewModelIndex, false ) )
-		return;
+		|| pOwner->GetActiveWeapon() != pWeapon || !pOwner->IsAlive() )
+		return true;
+	if ( !pOwner->GetViewModel( pWeapon->m_nViewModelIndex, false ) )
+		return false;
 
 	lua_getref( L, pWeapon->m_nTableReference );
 	if ( !lua_istable( L, -1 ) )
 	{
 		lua_pop( L, 1 );
-		return;
+		return false;
 	}
 	lua_pushliteral( L, "__hl2sb_client_deploy_attempted" );
 	lua_rawget( L, -2 );
 	const bool bAttempted = lua_toboolean( L, -1 ) != 0;
 	lua_pop( L, 2 );
 	if ( !bAttempted )
+	{
+		if ( !HL2SB_IsWeaponViewModelReady( pWeapon, pOwner ) )
+			return false;
 		pWeapon->Deploy();
+	}
 #endif
+	return true;
 }
 
 void CHL2MPScriptedWeapon::Simulate()
@@ -799,11 +883,7 @@ void CHL2MPScriptedWeapon::Simulate()
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 	if ( !pOwner || !pOwner->IsAlive() || pOwner->GetActiveWeapon() != this )
 		return;
-	if ( pOwner == CBasePlayer::GetLocalPlayer() && !pOwner->GetViewModel( m_nViewModelIndex, false ) )
-		return;
-
-	HL2SB_EnsureInitialWeaponDeploy( this );
-	if ( guard.Get() != this )
+	if ( !HL2SB_EnsureInitialWeaponDeploy( this ) || guard.Get() != this )
 		return;
 	lua_getref( L, m_nTableReference );
 	if ( !lua_istable( L, -1 ) )
@@ -1786,6 +1866,10 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 
 #ifdef CLIENT_DLL
+	const bool bLocalOwner = pOwner && pOwner == CBasePlayer::GetLocalPlayer();
+	if ( bLocalOwner && !HL2SB_IsWeaponViewModelReady( this, pOwner ) )
+		return true; // OnDataChanged or Simulate will retry when the model arrives.
+
 	// Record the attempt before callbacks so a veto is not retried every frame.
 	if ( L != NULL && m_nTableReference >= 0 && pOwner != NULL
 		&& pOwner->GetViewModel( m_nViewModelIndex, false ) != NULL )
@@ -1803,7 +1887,18 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 
 	// GMod prepares the model and default draw before the script chooses its
 	// own sequence, playback rate and attack times.
+#ifdef CLIENT_DLL
+	const bool bNativeDeploy = BaseClass::Deploy();
+	if ( !bNativeDeploy && bLocalOwner && pOwner->IsAlive() && pOwner->GetActiveWeapon() == this )
+	{
+		// DefaultDeploy can reject the client's first snapshot before ammo is
+		// synchronized. Lua still deploys, so give it the selected viewmodel.
+		SetViewModel();
+		SetWeaponVisible( true );
+	}
+#else
 	BaseClass::Deploy();
+#endif
 	if ( pOwner != NULL )
 	{
 		CBaseViewModel *pViewModel = pOwner->GetViewModel( m_nViewModelIndex, false );

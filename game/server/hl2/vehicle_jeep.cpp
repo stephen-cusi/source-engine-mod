@@ -135,6 +135,9 @@ BEGIN_DATADESC( CPropJeep )
 	DEFINE_INPUTFUNC( FIELD_VOID, "ShowHudHint", InputShowHudHint ),
 	DEFINE_INPUTFUNC( FIELD_VOID, "StartRemoveTauCannon", InputStartRemoveTauCannon ),
 	DEFINE_INPUTFUNC( FIELD_VOID, "FinishRemoveTauCannon", InputFinishRemoveTauCannon ),
+#ifdef HL2SB
+	DEFINE_INPUTFUNC( FIELD_BOOLEAN, "EnableGun", InputEnableGun ),
+#endif
 
 	DEFINE_THINKFUNC( JeepSeagullThink ),
 END_DATADESC()
@@ -154,7 +157,11 @@ LINK_ENTITY_TO_CLASS( prop_vehicle_jeep_old, CPropJeep );
 //-----------------------------------------------------------------------------
 CPropJeep::CPropJeep( void )
 {
+#ifdef HL2SB
+	m_bHasGun = false;
+#else
 	m_bHasGun = true;
+#endif
 	m_bGunHasBeenCutOff = false;
 	m_bCannonCharging = false;
 	m_flCannonChargeStartTime = 0;
@@ -219,10 +226,13 @@ void CPropJeep::Spawn( void )
 	CAmmoDef *pAmmoDef = GetAmmoDef();
 	m_nAmmoType = pAmmoDef->Index("GaussEnergy");
 
+#ifdef HL2SB
+	SetTauCannonEnabled( m_bHasGun );
+#else
+	SetBodygroup( 1, m_bHasGun );
+#endif
 	if ( m_bHasGun )
 	{
-		SetBodygroup( 1, true );
-
 		// Initialize pose parameters
 		SetPoseParameter( JEEP_GUN_YAW, 0 );
 		SetPoseParameter( JEEP_GUN_PITCH, 0 );
@@ -230,10 +240,6 @@ void CPropJeep::Spawn( void )
 		SetPoseParameter( JEEP_GUN_SPIN, m_nSpinPos );
 		m_aimYaw = 0;
 		m_aimPitch = 0;
-	}
-	else
-	{
-		SetBodygroup( 1, false );
 	}
 
 	AddSolidFlags( FSOLID_NOT_STANDABLE );
@@ -679,7 +685,7 @@ void CPropJeep::Think( void )
 	BaseClass::Think();
 
 #ifdef HL2SB
-	CBasePlayer	*pPlayer = UTIL_GetNearestPlayer( GetAbsOrigin() );
+	CBasePlayer	*pPlayer = m_hPlayer.Get();
 #else
 	CBasePlayer	*pPlayer = UTIL_GetLocalPlayer();
 #endif
@@ -1682,10 +1688,35 @@ void CPropJeep::InputStartRemoveTauCannon( inputdata_t &inputdata )
 //-----------------------------------------------------------------------------
 void CPropJeep::InputFinishRemoveTauCannon( inputdata_t &inputdata )
 {
+#ifdef HL2SB
+	SetTauCannonEnabled( false );
+#else
 	// Remove & hide the gun
 	SetBodygroup( 1, false );
 	m_bHasGun = false;
+#endif
 }
+
+#ifdef HL2SB
+void CPropJeep::InputEnableGun( inputdata_t &inputdata )
+{
+	SetTauCannonEnabled( inputdata.value.Bool() );
+}
+
+void CPropJeep::SetTauCannonEnabled( bool bEnable )
+{
+	m_bHasGun = bEnable && m_nAmmoType >= 0 &&
+		LookupAttachment( "gun_ref" ) > 0 && LookupAttachment( "Muzzle" ) > 0;
+	const int iTauCannonGroup = FindBodygroupByName( "tau_cannon" );
+	if ( iTauCannonGroup >= 0 )
+		SetBodygroup( iTauCannonGroup, m_bHasGun );
+	if ( !m_bHasGun && m_bCannonCharging )
+	{
+		StopChargeSound();
+		m_bCannonCharging = false;
+	}
+}
+#endif
 
 //========================================================================================================================================
 // JEEP FOUR WHEEL PHYSICS VEHICLE SERVER VEHICLE

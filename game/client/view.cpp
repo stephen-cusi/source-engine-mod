@@ -689,6 +689,11 @@ void CViewRender::SetUpViews()
 		// FIXME: What happens when there's no player?
 		if (pPlayer)
 		{
+#if defined( HL2SB ) && defined( LUA_SDK )
+			// Camera and viewmodel hooks both need the selected weapon's model.
+			extern void HL2SB_ReconcileScriptedViewModel( C_BasePlayer *pOwner );
+			HL2SB_ReconcileScriptedViewModel( pPlayer );
+#endif
 			pPlayer->CalcView( view.origin, view.angles, view.zNear, view.zFar, view.fov );
 
 			// If we are looking through another entities eyes, then override the angles/origin for view
