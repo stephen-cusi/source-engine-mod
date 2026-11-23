@@ -2584,7 +2584,7 @@ void CFastHeadcrab::Spawn( void )
 
 	BaseClass::Spawn();
 
-	m_iHealth = sk_headcrab_health.GetFloat();
+	m_iHealth = sk_headcrab_fast_health.GetFloat();
 
 	m_iRunMode = HEADCRAB_RUNMODE_IDLE;
 	m_flPauseTime = 999999;

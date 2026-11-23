@@ -13,6 +13,8 @@
 #include "lbaseplayer_shared.h"
 #include "lgametrace.h"
 #include "mathlib/lvector.h"
+#include "cmodel.h"
+#include "collisionutils.h"
 #include "engine/IEngineSound.h"
 #include "tier1/keyvaluesjson.h"	// HL2SB GMod compat: util.JSONToTable decode
 #include "tier1/checksum_crc.h"		// HL2SB GMod compat: util.CRC
@@ -2366,7 +2368,7 @@ static int luasrc_util_DistanceToLine (lua_State *L) {
 
 //-----------------------------------------------------------------------------
 // util.IntersectRayWithPlane( rayOrigin, rayDirection, planePosition,
-// planeNormal ) -> hit position, distance -- or nothing.
+// planeNormal ) -> hit position, parameter along rayDirection -- or nothing.
 //-----------------------------------------------------------------------------
 static int luasrc_util_IntersectRayWithPlane (lua_State *L) {
   Vector vecOrigin = luaL_checkvector( L, 1 );
@@ -2374,16 +2376,12 @@ static int luasrc_util_IntersectRayWithPlane (lua_State *L) {
   Vector vecPlanePos = luaL_checkvector( L, 3 );
   Vector vecPlaneNormal = luaL_checkvector( L, 4 );
 
-  float flDenom = vecPlaneNormal.Dot( vecDir );
-  if ( fabsf( flDenom ) < 1e-6f )
-    return 0;
-
-  float flT = ( vecPlanePos - vecOrigin ).Dot( vecPlaneNormal ) / flDenom;
-  if ( flT < 0.0f )
+  const float flT = IntersectRayWithPlane( vecOrigin, vecDir, vecPlaneNormal, vecPlanePos.Dot( vecPlaneNormal ) );
+  if ( !( flT > 0.0f ) )
     return 0;
 
   lua_pushvector( L, vecOrigin + vecDir * flT );
-  lua_pushnumber( L, flT * vecDir.Length() );
+  lua_pushnumber( L, flT );
   return 2;
 }
 
@@ -2500,7 +2498,7 @@ static int luasrc_util_IntersectRayWithSphere (lua_State *L) {
 
 //-----------------------------------------------------------------------------
 // util.IntersectRayWithTriangle( rayOrigin, rayEnd, triA, triB, triC,
-// oneSided ) -> hit position, fraction -- or nothing.  Moller-Trumbore.
+// oneSided ) -> hit position, fraction -- or nothing.
 //-----------------------------------------------------------------------------
 static int luasrc_util_IntersectRayWithTriangle (lua_State *L) {
   Vector vecOrigin = luaL_checkvector( L, 1 );
@@ -2510,33 +2508,13 @@ static int luasrc_util_IntersectRayWithTriangle (lua_State *L) {
   Vector vecC = luaL_checkvector( L, 5 );
   bool bOneSided = ( lua_toboolean( L, 6 ) != 0 );
 
-  Vector vecDir = vecEnd - vecOrigin;
-  Vector vecE1 = vecB - vecA;
-  Vector vecE2 = vecC - vecA;
-  Vector vecP = vecDir.Cross( vecE2 );
-
-  float flDet = vecE1.Dot( vecP );
-  if ( bOneSided && flDet < 1e-9f )
-    return 0;
-  if ( fabsf( flDet ) < 1e-9f )
+  Ray_t ray;
+  ray.Init( vecOrigin, vecEnd );
+  const float flT = IntersectRayWithTriangle( ray, vecA, vecB, vecC, bOneSided );
+  if ( !( flT > 0.0f ) )
     return 0;
 
-  float flInvDet = 1.0f / flDet;
-  Vector vecT = vecOrigin - vecA;
-  float flU = vecT.Dot( vecP ) * flInvDet;
-  if ( flU < 0.0f || flU > 1.0f )
-    return 0;
-
-  Vector vecQ = vecT.Cross( vecE1 );
-  float flV = vecDir.Dot( vecQ ) * flInvDet;
-  if ( flV < 0.0f || flU + flV > 1.0f )
-    return 0;
-
-  float flT = vecE2.Dot( vecQ ) * flInvDet;
-  if ( flT < 0.0f || flT > 1.0f )
-    return 0;
-
-  lua_pushvector( L, vecOrigin + vecDir * flT );
+  lua_pushvector( L, vecOrigin + ray.m_Delta * flT );
   lua_pushnumber( L, flT );
   return 2;
 }
@@ -3410,6 +3388,12 @@ static int luasrc_Channel_GetSoundLevel (lua_State *L) {
   return 1;
 }
 
+static int luasrc_Channel_GetSoundName (lua_State *L) {
+  luaL_checktype( L, 1, LUA_TTABLE );
+  lua_getfield( L, 1, HL2SB_CHANNEL_FIELD_SOUND );
+  return lua_type( L, -1 ) == LUA_TSTRING ? 1 : 0;
+}
+
 static int luasrc_Channel_SetSoundLevel (lua_State *L) {
   luaL_checktype( L, 1, LUA_TTABLE );
   const double flLevel = luaL_checknumber( L, 2 );
@@ -3682,6 +3666,7 @@ static int luasrc_CreateSound (lua_State *L) {
     { "SetVolume",    luasrc_Channel_SetVolume },
     { "SetSoundLevel", luasrc_Channel_SetSoundLevel },
     { "GetSoundLevel", luasrc_Channel_GetSoundLevel },
+    { "GetSoundName",  luasrc_Channel_GetSoundName },
     { "ChangeVolume", luasrc_Channel_ChangeVolume },
     { "GetVolume",    luasrc_Channel_GetVolume },
     { "SetPitch",     luasrc_Channel_SetPitch },

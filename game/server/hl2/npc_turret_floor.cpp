@@ -1304,10 +1304,13 @@ void CNPC_FloorTurret::TippedThink( void )
 				SetActivity( (Activity) ACT_FLOOR_TURRET_CLOSE );
 				EmitSound( "NPC_FloorTurret.Retract" );
 
-				CTakeDamageInfo	info;
-				info.SetDamage( 1 );
-				info.SetDamageType( DMG_CRUSH );
-				Event_Killed( info );
+				if ( m_lifeState != LIFE_DYING )
+				{
+					CTakeDamageInfo info;
+					info.SetDamage( 1 );
+					info.SetDamageType( DMG_CRUSH );
+					Event_Killed( info );
+				}
 			}
 		}
 		else if ( IsActivityFinished() )

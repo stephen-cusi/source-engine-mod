@@ -138,8 +138,8 @@ IMaterial* CStudioRender::R_StudioSetupSkinAndLighting( IMatRenderContext *pRend
 				// Disable any alpha modulation on the original material that was left over from when it was last rendered
 				ppMaterials[index]->AlphaModulate( 1.0f );
 
-				// Bail if the material is still considered translucent after setting the AlphaModulate to 1.0
-				if ( ppMaterials[index]->IsTranslucent() )
+				// Skip hidden materials and any still translucent after alpha modulation.
+				if ( ppMaterials[index]->IsTranslucent() || ppMaterials[index]->GetMaterialVarFlag( MATERIAL_VAR_NO_DRAW ) )
 				{
 					return NULL;
 				}

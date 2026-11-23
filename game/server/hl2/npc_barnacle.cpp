@@ -2497,7 +2497,7 @@ CBaseEntity *CNPC_Barnacle::TongueTouchEnt ( float *pflLength )
 		if ( pTest->GetMoveType() == MOVETYPE_VPHYSICS )
 		{
 			IPhysicsObject *pObject = pTest->VPhysicsGetObject();
-			if ( pObject && pObject->GetMass() <= BARNACLE_TONGUE_MAX_LIFT_MASS )
+			if ( pObject && pObject->IsMoveable() && pObject->GetMass() <= BARNACLE_TONGUE_MAX_LIFT_MASS )
 			{
 				// If this is an item, make sure it's near the tongue before lifting it.
 				// Weapons and other items have very large bounding boxes.

@@ -1047,6 +1047,13 @@ bool CVTFTexture::UnserializeEx( CUtlBuffer &buf, bool bHeaderOnly, int nForceFl
 	if ( !ReadHeader( buf, header ) )
 		return false;
 
+	// Treat disk textures without mipmaps as full-resolution, single-mip sources.
+	header.flags &= ~TEXTUREFLAGS_VERTEXTEXTURE;
+	if ( header.numMipLevels <= 1 && ( header.width > 1 || header.height > 1 ) )
+	{
+		header.flags |= TEXTUREFLAGS_NOLOD | TEXTUREFLAGS_NOMIP;
+	}
+
 	// Pretend these flags are also set.
 	header.flags |= nForceFlags;
 

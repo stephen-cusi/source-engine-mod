@@ -13,6 +13,7 @@
 #include "c_prop_vehicle.h"
 #include "datacache/imdlcache.h"
 #include "flashlighteffect.h"
+#include "model_types.h"
 #include "movevars_shared.h"
 #include "ammodef.h"
 #include "SpriteTrail.h"
@@ -925,7 +926,7 @@ int C_PropAirboat::DrawModel( int flags )
 	if ( BaseClass::DrawModel( flags ) == false )
 		return 0;
 	
-	if ( !m_bReadyToDraw )
+	if ( !m_bReadyToDraw || ( flags & ( STUDIO_SHADOWDEPTHTEXTURE | STUDIO_SSAODEPTHTEXTURE ) ) )
 		return 0;
 
 	return DrawWake();

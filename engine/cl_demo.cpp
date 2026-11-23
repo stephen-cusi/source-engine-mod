@@ -66,7 +66,7 @@ extern CNetworkStringTableContainer *networkStringTableContainerClient;
 static ConVar demo_interplimit( "demo_interplimit", "4000", 0, "How much origin velocity before it's considered to have 'teleported' causing interpolation to reset." );
 static ConVar demo_avellimit( "demo_avellimit", "2000", 0, "Angular velocity limit before eyes considered snapped for demo playback." );
 
-#define DEMO_HEADER_FILE	"demoheader.tmp"
+#define DEMO_HEADER_FILE	"cache/demoheader.tmp"
 
 // Fast forward convars
 static ConVar demo_fastforwardstartspeed( "demo_fastforwardstartspeed", "2", 0, "Go this fast when starting to hold FF button." );
@@ -515,6 +515,7 @@ void CDemoRecorder::StartupDemoHeader( void )
 	CloseDemoFile();	// make sure it's closed
 
 	// Note: this is replacing tmpfile()
+	g_pFileSystem->CreateDirHierarchy( "cache", "DEFAULT_WRITE_PATH" );
 	if ( !m_DemoFile.Open( DEMO_HEADER_FILE, false ) )
 	{
 		ConDMsg ("ERROR: couldn't open temporary header file.\n");

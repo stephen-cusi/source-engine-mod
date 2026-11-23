@@ -393,10 +393,12 @@ static int timer_UnPause (lua_State *L) {
 	return 0;
 }
 
-// timer.IsPaused( identifier ) -> boolean
+// timer.IsPaused( identifier ) -> boolean, or no value for an unknown timer.
 static int timer_IsPaused (lua_State *L) {
 	UtlHashHandle_t h = g_LuaTimers.Find( HL2SB_TimerKey( L, 1 ) );
-	lua_pushboolean( L, h != g_LuaTimers.InvalidHandle() && g_LuaTimers[ h ].m_bPaused );
+	if ( h == g_LuaTimers.InvalidHandle() )
+		return 0;
+	lua_pushboolean( L, g_LuaTimers[ h ].m_bPaused );
 	return 1;
 }
 

@@ -212,6 +212,9 @@ BEGIN_DATADESC( CBaseAnimating )
 
 	DEFINE_KEYFIELD( m_flModelScale, FIELD_FLOAT, "modelscale" ),
 	DEFINE_INPUTFUNC( FIELD_VECTOR, "SetModelScale", InputSetModelScale ),
+	DEFINE_INPUTFUNC( FIELD_STRING, "SetModel", InputSetModel ),
+	DEFINE_INPUTFUNC( FIELD_FLOAT, "SetCycle", InputSetCycle ),
+	DEFINE_INPUTFUNC( FIELD_FLOAT, "SetPlaybackRate", InputSetPlaybackRate ),
 
 	DEFINE_FIELD( m_fBoneCacheFlags, FIELD_SHORT ),
 
@@ -628,6 +631,37 @@ void CBaseAnimating::InputSetModelScale( inputdata_t &inputdata )
 	inputdata.value.Vector3D( vecScale );
 
 	SetModelScale( vecScale.x, vecScale.y );
+}
+
+void CBaseAnimating::InputSetModel( inputdata_t &inputdata )
+{
+	const char *pszModel = inputdata.value.String();
+	if ( !pszModel || !*pszModel )
+		return;
+
+	const bool bPrecacheAllowed = IsPrecacheAllowed();
+	SetAllowPrecache( true );
+	if ( PrecacheModel( pszModel, false ) != -1 )
+	{
+		// Keep the current activity running if the new model has the same sequence.
+		const char *pszCurrentSequence = GetSequenceName( GetSequence() );
+		SetModelName( AllocPooledString( pszModel ) );
+		SetModel( pszModel );
+		const int nNewSequence = LookupSequence( pszCurrentSequence );
+		if ( nNewSequence != -1 )
+			SetSequence( nNewSequence );
+	}
+	SetAllowPrecache( bPrecacheAllowed );
+}
+
+void CBaseAnimating::InputSetCycle( inputdata_t &inputdata )
+{
+	SetCycle( inputdata.value.Float() );
+}
+
+void CBaseAnimating::InputSetPlaybackRate( inputdata_t &inputdata )
+{
+	SetPlaybackRate( inputdata.value.Float() );
 }
 
 

@@ -2728,7 +2728,8 @@ void CTextureListPanel::PerformLayout()
 
 	if ( bCollapsed )
 	{
-		int xOffset = 85, iWidth;
+		int xOffset = 85;
+		const int spacing = 5;
 
 		struct LayoutHorz_t
 		{
@@ -2749,16 +2750,29 @@ void CTextureListPanel::PerformLayout()
 			{ m_pDiscardChangesButton, 130 },
 		};
 
-		for ( int k = 0; k < ARRAYSIZE( layout ); ++ k )
+		int totalWidth = xOffset + 30;
+		for ( int k = 0; k < ARRAYSIZE( layout ); ++k )
 		{
-			layout[ k ].pPanel->SetPos( xOffset, 2 );
-			iWidth = layout[ k ].iWidth;
-			iWidth = min( w - xOffset - 30, iWidth );
-			layout[ k ].pPanel->SetWide( iWidth );
-			layout[ k ].pPanel->SetVisible( iWidth > 50 );
-			
-			if ( iWidth > 50 )
-				xOffset += iWidth + 5;
+			totalWidth += layout[k].iWidth + spacing;
+		}
+
+		float scale = 1.0f;
+		if ( w < totalWidth )
+		{
+			scale = static_cast<float>( MAX( w, 0 ) ) / totalWidth;
+		}
+		else
+		{
+			layout[0].iWidth += w - totalWidth;
+		}
+
+		for ( int k = 0; k < ARRAYSIZE( layout ); ++k )
+		{
+			const int width = static_cast<int>( layout[k].iWidth * scale );
+			layout[k].pPanel->SetPos( xOffset, 2 );
+			layout[k].pPanel->SetWide( width );
+			layout[k].pPanel->SetVisible( true );
+			xOffset += width + spacing;
 		}
 
 		yOffset = y;

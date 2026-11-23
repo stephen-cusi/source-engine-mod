@@ -872,12 +872,27 @@ float CBounceBomb::FindNearestNPC()
 		}
 	}
 
-	// finally, check the player.
+	// Finally, check players against the closest visible NPC found above.
 #ifdef HL2SB
-	CBasePlayer *pPlayer = UTIL_GetNearestPlayer( GetAbsOrigin() );
+	const ConVarRef aiIgnorePlayers( "ai_ignoreplayers", true );
+	if ( !aiIgnorePlayers.IsValid() || !aiIgnorePlayers.GetBool() )
+	{
+		for ( int iClient = 1; iClient <= gpGlobals->maxClients; ++iClient )
+		{
+			CBasePlayer *pPlayer = UTIL_PlayerByIndex( iClient );
+			if ( !pPlayer || ( pPlayer->GetFlags() & FL_NOTARGET ) || !pPlayer->IsAlive() || pPlayer->IsObserver() )
+				continue;
+
+			const float flDist = ( pPlayer->GetAbsOrigin() - GetAbsOrigin() ).LengthSqr();
+			if ( flDist < flNearest && FVisible( pPlayer, MASK_SOLID_BRUSHONLY ) )
+			{
+				flNearest = flDist;
+				SetNearestNPC( pPlayer );
+			}
+		}
+	}
 #else
 	CBasePlayer *pPlayer = UTIL_GetLocalPlayer();
-#endif
 
 	if( pPlayer && !(pPlayer->GetFlags() & FL_NOTARGET) )
 	{
@@ -889,6 +904,7 @@ float CBounceBomb::FindNearestNPC()
 			SetNearestNPC( pPlayer );
 		}
 	}
+#endif
 
 	if( m_hNearestNPC.Get() )
 	{
