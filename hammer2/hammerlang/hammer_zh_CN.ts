@@ -213,6 +213,7 @@
 <context>
     <name>CHammerDocument</name>
     <message><source>Prefabs cannot include hidden objects or visgroup memberships.</source><translation>预制件不能包含隐藏对象或可见性组成员。</translation></message>
+    <message><source>Prefabs cannot include generated shoreline overlays.</source><translation>预制件不能包含已生成的岸线覆盖层。</translation></message>
     <message><source>Select objects to create a prefab.</source><translation>请先选择要保存为预制件的对象。</translation></message>
     <message><source>The prefab contains no insertable objects or references unsupported editor data.</source><translation>预制件中没有可插入的对象，或引用了不支持的编辑器数据。</translation></message>
     <message>
@@ -379,6 +380,7 @@
     <message><source>Rotate Brushes 90° Left</source><translation>画刷向左旋转 90°</translation></message>
     <message><source>Rotate Brushes 90° Right</source><translation>画刷向右旋转 90°</translation></message>
     <message><source>Rotate Brushes</source><translation>旋转画刷</translation></message>
+    <message><source>Select an overlay with all its receiving brushes to transform it safely.</source><translation>要变换覆盖层，请同时选中它及接收投影的所有画刷。</translation></message>
     <message><source>Rotate Brushes Around Axis</source><translation>绕坐标轴旋转画刷</translation></message>
     <message><source>Flip Brushes</source><translation>翻转画刷</translation></message>
     <message><source>Flip X</source><translation>沿 X 轴翻转</translation></message>

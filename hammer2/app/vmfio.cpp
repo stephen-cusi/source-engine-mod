@@ -416,6 +416,7 @@ namespace
 				seenKeys.append( key.first );
 			}
 			bool seenEditor = false;
+			bool seenShoreline = false;
 			for ( const VmfChunk &child : chunk.children )
 			{
 				if ( is( child.name, "solid" ) )
@@ -435,6 +436,14 @@ namespace
 				else if ( is( child.name, "connections" ) )
 				{
 					if ( !child.children.isEmpty() ) return fail( QStringLiteral( "entity/connections/%1" ).arg( child.children.first().name ) );
+				}
+				else if ( is( child.name, "overlaytransition" ) )
+				{
+					if ( seenShoreline || !child.keys.isEmpty() ) return fail( QStringLiteral( "entity/overlaytransition" ) );
+					seenShoreline = true;
+					for ( const VmfChunk &overlay : child.children )
+						if ( !is( overlay.name, "overlaydata" ) || !overlay.children.isEmpty() )
+							return fail( QStringLiteral( "entity/overlaytransition/%1" ).arg( overlay.name ) );
 				}
 				else return fail( QStringLiteral( "entity/%1" ).arg( child.name ) );
 			}
@@ -741,6 +750,9 @@ namespace VmfIO
 		{
 			if ( !textOk( entity.classname ) || !pairsOk( entity.connections ) || !pairsOk( entity.editorProperties ) )
 				return failText( QCoreApplication::translate( "VmfIO", "entity %1 class, output or editor metadata" ).arg( entity.id ) );
+			if ( entity.shorelineOverlays )
+				for ( const auto &overlay : *entity.shorelineOverlays )
+					if ( !pairsOk( overlay ) ) return failText( QStringLiteral( "entity %1 overlaytransition" ).arg( entity.id ) );
 			for ( auto it = entity.keyvalues.cbegin(); it != entity.keyvalues.cend(); ++it )
 				if ( !textOk( it.key() ) || !textOk( it.value() ) )
 					return failText( QCoreApplication::translate( "VmfIO", "entity %1 key '%2'" ).arg( entity.id ).arg( it.key() ) );
@@ -932,6 +944,18 @@ namespace VmfIO
 				stream << "\t" << QuoteKeyValue( it.key() ) << " " << QuoteKeyValue( it.value() ) << "\n";
 			for ( const SolidLite &solid : map.solids )
 				if ( solid.ownerEntityId == entity.id ) writeSolid( solid );
+			if ( entity.shorelineOverlays )
+			{
+				stream << "\toverlaytransition\n\t{\n";
+				for ( const auto &overlay : *entity.shorelineOverlays )
+				{
+					stream << "\t\toverlaydata\n\t\t{\n";
+					for ( const auto &key : overlay )
+						stream << "\t\t\t" << QuoteKeyValue( key.first ) << " " << QuoteKeyValue( key.second ) << "\n";
+					stream << "\t\t}\n";
+				}
+				stream << "\t}\n";
+			}
 			if ( !entity.connections.isEmpty() )
 			{
 				stream << "\tconnections\n\t{\n";
@@ -1221,6 +1245,12 @@ namespace VmfIO
 					if ( child.name.compare( QLatin1String( "connections" ), Qt::CaseInsensitive ) == 0 )
 						for ( const QPair<QString, QString> &connection : child.keys )
 							entity.connections.append( connection );
+					if ( child.name.compare( QLatin1String( "overlaytransition" ), Qt::CaseInsensitive ) == 0 )
+					{
+						entity.shorelineOverlays.emplace();
+						for ( const VmfChunk &overlay : child.children )
+							entity.shorelineOverlays->append( overlay.keys );
+					}
 				}
 
 				// Mirror the yaw out of "angles" into the entity.angle field

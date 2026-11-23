@@ -647,21 +647,31 @@ void CMaterialPreviewRenderer::DrawProjectedMaterials( const MapDocLite &map )
 			for ( int axis = 0; axis < 3; ++axis )
 				if ( origin[axis] + radius < solid.mins[axis] || origin[axis] - radius > solid.maxs[axis] )
 				{ overlaps = false; break; }
-			if ( !overlaps ) continue;
+			// A displaced surface may extend beyond its underlying brush bounds.
+			if ( !overlaps && std::none_of( solid.sides.cbegin(), solid.sides.cend(),
+				[]( const SideLite &side ) { return side.displacement.has_value(); } ) ) continue;
 			QList<HammerWinding::Plane> planes;
 			QList<HammerWinding::Polygon> faces;
 			if ( !HammerWinding::BuildFaces( solid, faces ) || !HammerWinding::BuildPlanes( solid, planes ) ) continue;
 			for ( int i = 0; i < faces.size(); ++i )
 			{
-				if ( solid.sides[i].displacement ) continue;
+				const auto appendVertex = [&]( const HammerDecalProjection::Vertex &v ) {
+					vertices.append( { QVector3D( v.position[0], v.position[1], v.position[2] ),
+						QVector2D( v.uv[0] * texture.width, v.uv[1] * texture.height ) } );
+				};
+				if ( solid.sides[i].displacement )
+				{
+					HammerDisplacementMesh::Mesh mesh;
+					if ( HammerDisplacementMesh::Build( solid.sides[i], faces[i], mesh ) )
+						for ( const auto &vertex : HammerDecalProjection::BuildDisplacement( mesh, planes[i].normal, origin, width, height ) )
+							appendVertex( vertex );
+					continue;
+				}
+				if ( !overlaps ) continue;
 				const auto clipped = HammerDecalProjection::Build( faces[i], planes[i], origin, width, height );
 				for ( int fan = 1; fan + 1 < clipped.size(); ++fan )
 					for ( const int index : { 0, fan, fan + 1 } )
-					{
-						const auto &v = clipped[index];
-						vertices.append( { QVector3D( v.position[0], v.position[1], v.position[2] ),
-							QVector2D( v.uv[0] * texture.width, v.uv[1] * texture.height ) } );
-					}
+						appendVertex( clipped[index] );
 			}
 		}
 		DrawProjectedTriangles( vertices, texture, true );

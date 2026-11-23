@@ -9,6 +9,7 @@
 #include "document.h"
 
 #include "vmfio.h"
+#include "shorelinerefs.h"
 #include "cordon.h"
 #include "brushwindings.h"
 #include "brushentityview.h"
@@ -42,6 +43,8 @@ namespace
 	}
 	bool CanPasteOverlayFaces( const QList<EntityLite> &entities, const QList<SolidLite> &solids, bool sameDocument )
 	{
+		for ( const EntityLite &entity : entities )
+			if ( entity.shorelineOverlays ) return false;
 		if ( sameDocument ) return true;
 		QSet<int> copiedFaces;
 		for ( const SolidLite &solid : solids )
@@ -346,6 +349,7 @@ const SolidLite *CHammerDocument::SelectedVertexEditableSolid() const
 
 bool CHammerDocument::MoveSelectedProjectedVertices( int u, int v, double fromU, double fromV, double toU, double toV )
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	const SolidLite *solid = SelectedVertexEditableSolid();
 	if ( !solid ) return false;
 	for ( const SideLite &side : solid->sides ) if ( side.displacement ) return false;
@@ -369,8 +373,11 @@ bool CHammerDocument::MoveSelection( const double delta[3] )
 	QSet<int> ids = m_SelectedIds;
 	if ( ids.isEmpty() && m_nSelectedId >= 0 )
 		ids.insert( m_nSelectedId );
-	if ( ids.isEmpty() || !SelectionBrushesVisible( m_Map, m_ViewFilter, ids ) )
+	if ( ids.isEmpty() || !SelectionBrushesVisible( m_Map, m_ViewFilter, ids ) ||
+		 HammerShoreline::SelectionReferencesShoreline( m_Map, ids ) )
 		return false;
+	for ( const EntityLite &entity : std::as_const( m_Map.entities ) )
+		if ( ids.contains( entity.id ) && entity.shorelineOverlays ) return false;
 	BeginEdit();
 	bool moved = false;
 	for ( int id : ids )
@@ -406,7 +413,7 @@ bool CHammerDocument::SetSelectedEntityOrigin( const double origin[3] )
 {
 	if ( !origin || m_SelectedIds.size() != 1 || !SelectionBrushesVisible( m_Map, m_ViewFilter, m_SelectedIds ) ) return false;
 	EntityLite *entity = m_Map.EntityById( m_nSelectedId );
-	if ( !entity ) return false;
+	if ( !entity || entity->shorelineOverlays ) return false;
 	double delta[3];
 	for ( int i = 0; i < 3; ++i ) { if ( !std::isfinite( origin[i] ) ) return false; delta[i] = origin[i] - entity->origin[i]; }
 	if ( delta[0] == 0 && delta[1] == 0 && delta[2] == 0 && entity->hasExplicitOrigin ) return true;
@@ -551,7 +558,7 @@ namespace
 		QList<HammerWinding::Polygon> faces;
 		return HammerWinding::BuildFaces( solid, faces );
 	}
-	bool ExpandBoxSelection( const MapDocLite &map, const ViewFilter &filter, const QSet<int> &selected, QSet<int> &brushIds, QList<EntityLite> &owners )
+	bool ExpandBoxSelection( const MapDocLite &map, const ViewFilter &filter, const QSet<int> &selected, QSet<int> &brushIds, QList<EntityLite> &owners, bool allowOverlays = false )
 	{
 		for ( int id : selected )
 		{
@@ -567,7 +574,13 @@ namespace
 				}
 			for ( const EntityLite &entity : map.entities ) if ( entity.id == id )
 			{
-				if ( !found ) return false;
+				if ( entity.shorelineOverlays ) return false;
+				if ( !found )
+				{
+					HammerOverlay::Data overlay;
+					if ( !allowOverlays || !filter.EntityVisible( entity ) || !HammerOverlay::Parse( entity, overlay ) ) return false;
+					found = true;
+				}
 				owners.append( entity );
 				break;
 			}
@@ -575,10 +588,62 @@ namespace
 		}
 		return !brushIds.isEmpty();
 	}
+
+	// An affine transform must also carry every receiving face, or its
+	// projection can become detached from the referenced brush geometry.
+	template <typename Transform>
+	bool TransformOverlay( EntityLite &entity, const MapDocLite &map, const QSet<int> &brushIds,
+		const Transform &transform )
+	{
+		using namespace HammerOverlay;
+		if ( entity.classname.compare( QLatin1String( "info_overlay" ), Qt::CaseInsensitive ) != 0 ) return true;
+		Data data;
+		if ( !Parse( entity, data ) || !Convex( data ) ) return false;
+		QSet<int> remaining( data.sides.cbegin(), data.sides.cend() );
+		for ( const SolidLite &solid : map.solids )
+			for ( const SideLite &side : solid.sides )
+				if ( data.sides.contains( side.id ) &&
+					( !brushIds.contains( solid.id ) || !remaining.remove( side.id ) ) ) return false;
+		if ( !remaining.isEmpty() ) return false;
+
+		auto normal = transform( data.normal, false );
+		const auto tangentU = transform( data.u, false ), tangentV = transform( data.v, false );
+		auto u = tangentU, v = tangentV;
+		if ( !HammerWinding::Normalize( normal ) || !HammerWinding::Normalize( u ) ||
+			!HammerWinding::Normalize( v ) ||
+			std::abs( HammerWinding::Dot( normal, u ) ) > 0.0001 ||
+			std::abs( HammerWinding::Dot( normal, v ) ) > 0.0001 ) return false;
+		// VMF stores an orthonormal frame. Express the transformed corners in
+		// that frame rather than silently discarding in-plane shear.
+		const double overlap = HammerWinding::Dot( v, u );
+		for ( int axis = 0; axis < 3; ++axis ) v[axis] -= u[axis] * overlap;
+		if ( !HammerWinding::Normalize( v ) ) return false;
+		const Point origin = transform( data.origin, true );
+		for ( double value : origin )
+			if ( !std::isfinite( value ) || std::abs( value ) > 1048576 ) return false;
+		Set( entity, QStringLiteral( "BasisOrigin" ), FormatVec3( origin.data() ) );
+		Set( entity, QStringLiteral( "BasisU" ), FormatVec3( u.data() ) );
+		Set( entity, QStringLiteral( "BasisV" ), FormatVec3( v.data() ) );
+		Set( entity, QStringLiteral( "BasisNormal" ), FormatVec3( normal.data() ) );
+		for ( int corner = 0; corner < 4; ++corner )
+		{
+			Point &point = data.points[corner];
+			Point offset;
+			for ( int axis = 0; axis < 3; ++axis )
+				offset[axis] = tangentU[axis] * point[0] + tangentV[axis] * point[1];
+			point[0] = HammerWinding::Dot( offset, u );
+			point[1] = HammerWinding::Dot( offset, v );
+			if ( !std::isfinite( point[0] ) || !std::isfinite( point[1] ) ||
+				std::abs( point[0] ) > 65536 || std::abs( point[1] ) > 65536 ) return false;
+			Set( entity, QStringLiteral( "uv%1" ).arg( corner ), FormatVec3( point.data() ) );
+		}
+		return Parse( entity, data ) && Convex( data );
+	}
 }
 
 bool CHammerDocument::ScaleSelectedBoxes( const double factors[3] )
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	if ( m_SelectedIds.isEmpty() ) return false;
 	for ( int axis = 0; axis < 3; ++axis )
 		if ( !std::isfinite( factors[axis] ) || factors[axis] < 0.01 || factors[axis] > 100.0 ) return false;
@@ -586,7 +651,7 @@ bool CHammerDocument::ScaleSelectedBoxes( const double factors[3] )
 	double mins[3] = {}, maxs[3] = {};
 	QList<SolidLite> boxes;
 	QSet<int> brushIds; QList<EntityLite> owners;
-	if ( !ExpandBoxSelection( m_Map, m_ViewFilter, m_SelectedIds, brushIds, owners ) ) return false;
+	if ( !ExpandBoxSelection( m_Map, m_ViewFilter, m_SelectedIds, brushIds, owners, true ) ) return false;
 	for ( int id : brushIds )
 	{
 		const SolidLite *solid = nullptr;
@@ -623,6 +688,12 @@ bool CHammerDocument::ScaleSelectedBoxes( const double factors[3] )
 		}
 	}
 	for ( const SolidLite &brush : boxes ) if ( !CanTransformBrush( brush ) ) return false;
+	for ( EntityLite &entity : owners )
+		if ( !TransformOverlay( entity, m_Map, brushIds, [&]( HammerOverlay::Point point, bool position ) {
+			for ( int axis = 0; axis < 3; ++axis )
+				point[axis] = position ? center[axis] + ( point[axis] - center[axis] ) * factors[axis] : point[axis] * factors[axis];
+			return point;
+		} ) ) return false;
 	for ( EntityLite &entity : owners ) if ( entity.hasExplicitOrigin )
 		for ( int axis = 0; axis < 3; ++axis )
 		{
@@ -639,12 +710,13 @@ bool CHammerDocument::ScaleSelectedBoxes( const double factors[3] )
 
 bool CHammerDocument::RotateSelectedBoxes90( bool clockwise, int axis )
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	if ( axis < 0 || axis > 2 || m_SelectedIds.isEmpty() ) return false;
 	const int a = ( axis + 1 ) % 3, b = ( axis + 2 ) % 3;
 	QList<SolidLite> boxes;
 	double lo[2] = {}, hi[2] = {};
 	QSet<int> brushIds; QList<EntityLite> owners;
-	if ( !ExpandBoxSelection( m_Map, m_ViewFilter, m_SelectedIds, brushIds, owners ) ) return false;
+	if ( !ExpandBoxSelection( m_Map, m_ViewFilter, m_SelectedIds, brushIds, owners, true ) ) return false;
 	for ( int id : brushIds )
 	{
 		const SolidLite *solid = nullptr;
@@ -701,6 +773,13 @@ bool CHammerDocument::RotateSelectedBoxes90( bool clockwise, int axis )
 		}
 	}
 	for ( const SolidLite &brush : boxes ) if ( !CanTransformBrush( brush ) ) return false;
+	for ( EntityLite &entity : owners )
+		if ( !TransformOverlay( entity, m_Map, brushIds, [&]( HammerOverlay::Point point, bool position ) {
+			const double x = point[a], y = point[b];
+			if ( position ) rotate( x, y, point[a], point[b] );
+			else { point[a] = -sign * y; point[b] = sign * x; }
+			return point;
+		} ) ) return false;
 	for ( EntityLite &entity : owners ) if ( entity.hasExplicitOrigin )
 	{
 		double x, y; rotate( entity.origin[a], entity.origin[b], x, y );
@@ -716,11 +795,12 @@ bool CHammerDocument::RotateSelectedBoxes90( bool clockwise, int axis )
 
 bool CHammerDocument::FlipSelectedBoxes( int axis )
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	if ( axis < 0 || axis > 2 || m_SelectedIds.isEmpty() ) return false;
 	QList<SolidLite> boxes;
 	double lo = 0, hi = 0;
 	QSet<int> brushIds; QList<EntityLite> owners;
-	if ( !ExpandBoxSelection( m_Map, m_ViewFilter, m_SelectedIds, brushIds, owners ) ) return false;
+	if ( !ExpandBoxSelection( m_Map, m_ViewFilter, m_SelectedIds, brushIds, owners, true ) ) return false;
 	for ( int id : brushIds )
 	{
 		const SolidLite *solid = nullptr;
@@ -766,6 +846,11 @@ bool CHammerDocument::FlipSelectedBoxes( int axis )
 		}
 	}
 	for ( const SolidLite &brush : boxes ) if ( !CanTransformBrush( brush ) ) return false;
+	for ( EntityLite &entity : owners )
+		if ( !TransformOverlay( entity, m_Map, brushIds, [&]( HammerOverlay::Point point, bool position ) {
+			point[axis] = position ? mirror( point[axis] ) : -point[axis];
+			return point;
+		} ) ) return false;
 	for ( EntityLite &entity : owners ) if ( entity.hasExplicitOrigin )
 	{
 		entity.origin[axis] = mirror( entity.origin[axis] );
@@ -780,6 +865,7 @@ bool CHammerDocument::FlipSelectedBoxes( int axis )
 
 bool CHammerDocument::ClipSelectedBoxes( int axis, double coordinate, int keep )
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	if ( axis < 0 || axis > 2 || !std::isfinite( coordinate ) || keep < -1 || keep > 1 || m_SelectedIds.isEmpty() ) return false;
 	struct ClipResult { int sourceId; QList<SolidLite> halves; };
 	QList<ClipResult> results;
@@ -864,6 +950,7 @@ bool CHammerDocument::ClipSelectedBoxes( int axis, double coordinate, int keep )
 
 bool CHammerDocument::ClipSelectedByPlane( const double points[3][3], int keep )
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	if ( !points || keep < -1 || keep > 1 || m_SelectedIds.isEmpty() ) return false;
 	HammerWinding::Point p, a, b;
 	for ( int k = 0; k < 3; ++k )
@@ -950,6 +1037,7 @@ bool CHammerDocument::ClipSelectedByPlane( const double points[3][3], int keep )
 
 bool CHammerDocument::HollowSelection( int thickness )
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	if ( thickness > 1024 || thickness < -1024 || std::abs( thickness ) < 2 ) return false;
 	const double width = std::abs( thickness );
 	QList<SolidLite> originals;
@@ -1015,9 +1103,12 @@ bool CHammerDocument::HollowSelection( int thickness )
 // Point entities use their origin; brushes use their minimum corner and only move.
 bool CHammerDocument::SnapSelectionToGrid( bool individually )
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	const QSet<int> ids = m_SelectedIds;
 	if ( ids.isEmpty() || m_nGridSize <= 0 || !SelectionBrushesVisible( m_Map, m_ViewFilter, ids ) )
 		return false;
+	for ( const EntityLite &entity : std::as_const( m_Map.entities ) )
+		if ( ids.contains( entity.id ) && entity.shorelineOverlays ) return false;
 	const auto anchor = [this]( int id, double point[3] ) {
 		const EntityLite *entity = m_Map.EntityById( id );
 		const SolidLite *solid = m_Map.SolidById( id );
@@ -1081,6 +1172,7 @@ bool CHammerDocument::SnapSelectionToGrid( bool individually )
 //-----------------------------------------------------------------------------
 bool CHammerDocument::DeleteSelection()
 {
+	if ( HammerShoreline::SelectionReferencesShoreline( m_Map, m_SelectedIds ) ) return false;
 	QSet<int> ids = m_SelectedIds;
 	if ( ids.isEmpty() && m_nSelectedId >= 0 )
 		ids.insert( m_nSelectedId );
@@ -1108,7 +1200,11 @@ bool CHammerDocument::CopySelection()
 	QList<EntityLite> entities;
 	QList<SolidLite> solids;
 	for ( const EntityLite &entity : m_Map.entities )
-		if ( m_SelectedIds.contains( entity.id ) ) entities.append( entity );
+		if ( m_SelectedIds.contains( entity.id ) )
+		{
+			if ( entity.shorelineOverlays ) return false;
+			entities.append( entity );
+		}
 	for ( const SolidLite &solid : m_Map.solids )
 		if ( m_SelectedIds.contains( solid.id ) || ( solid.ownerEntityId && m_SelectedIds.contains( solid.ownerEntityId ) ) ) solids.append( solid );
 	if ( entities.isEmpty() && solids.isEmpty() )
@@ -1132,6 +1228,11 @@ bool CHammerDocument::SaveSelectionAsPrefab( const QString &path, QString *error
 	for ( const EntityLite &entity : m_Map.entities )
 		if ( m_SelectedIds.contains( entity.id ) )
 		{
+			if ( entity.shorelineOverlays )
+			{
+				if ( error ) *error = tr( "Prefabs cannot include generated shoreline overlays." );
+				return false;
+			}
 			if ( !canExport( entity ) ) return false;
 			prefab.entities.append( entity );
 		}
@@ -1516,7 +1617,7 @@ bool CHammerDocument::SetSelectedEntityClass( const QString &className )
 	if ( !brushEntity && m_Fgd.SolidClassNames().contains( className, Qt::CaseInsensitive ) ) return false;
 	BeginEdit();
 	EntityLite *entity = m_Map.EntityById( m_nSelectedId );
-	if ( !entity || entity->classname == className )
+	if ( !entity || entity->shorelineOverlays || entity->classname == className )
 	{
 		EndEdit();
 		return false;
@@ -1533,7 +1634,7 @@ bool CHammerDocument::SetSelectedEntityKey( const QString &key, const QString &v
 {
 	BeginEdit();
 	EntityLite *entity = m_Map.EntityById( m_nSelectedId );
-	if ( !entity || ( entity->keyvalues.contains( key ) && entity->keyvalues.value( key ) == value ) )
+	if ( !entity || entity->shorelineOverlays || ( entity->keyvalues.contains( key ) && entity->keyvalues.value( key ) == value ) )
 	{
 		EndEdit();
 		return false;
@@ -1579,7 +1680,7 @@ bool CHammerDocument::SetSelectedEntitiesKey( const QString &key, const QString 
 	for ( int id : m_SelectedIds )
 	{
 		const EntityLite *entity = m_Map.EntityById( id );
-		if ( !entity || entity->classname.isEmpty() ) return false;
+		if ( !entity || entity->shorelineOverlays || entity->classname.isEmpty() ) return false;
 		if ( className.isEmpty() ) className = entity->classname;
 		else if ( className.compare( entity->classname, Qt::CaseInsensitive ) != 0 ) return false;
 		QString actualKey;
@@ -2067,6 +2168,7 @@ bool CHammerDocument::RemoveDisplacements( const QMap<int, QSet<int>> &facesBySo
 bool CHammerDocument::ReplaceDisplacements( const QMap<int, QSet<int>> &facesBySolid, int power )
 {
 	if ( facesBySolid.isEmpty() ) return false;
+	const QSet<int> shorelineFaces = HammerShoreline::ReferencedFaces( m_Map );
 	QMap<int, QList<QPair<int, std::optional<HammerDisplacementEdit::Chunk>>>> changes;
 	for ( auto it = facesBySolid.cbegin(); it != facesBySolid.cend(); ++it )
 	{
@@ -2081,6 +2183,7 @@ bool CHammerDocument::ReplaceDisplacements( const QMap<int, QSet<int>> &facesByS
 		{
 			const SideLite &side = solid->sides[i];
 			if ( !it.value().contains( side.id ) ) continue;
+			if ( shorelineFaces.contains( side.id ) ) return false;
 			if ( found.contains( side.id ) ) return false;
 			found.insert( side.id );
 			if ( power )
@@ -2110,6 +2213,7 @@ bool CHammerDocument::ReplaceDisplacements( const QMap<int, QSet<int>> &facesByS
 
 bool CHammerDocument::SetDisplacementDistances( int solidId, int sideId, const QList<double> &distances )
 {
+	if ( HammerShoreline::ReferencedFaces( m_Map ).contains( sideId ) ) return false;
 	const SolidLite *solid = static_cast<const MapDocLite &>( m_Map ).SolidById( solidId );
 	if ( !solid || !HammerBrushEntityView::Visible( m_Map, m_ViewFilter, *solid ) ) return false;
 	int index = -1;
@@ -2151,6 +2255,9 @@ bool CHammerDocument::SetDisplacementDistances( int solidId, int sideId, const Q
 
 bool CHammerDocument::SewDisplacements( const QMap<int, QSet<int>> &facesBySolid )
 {
+	const QSet<int> shorelineFaces = HammerShoreline::ReferencedFaces( m_Map );
+	for ( const QSet<int> &faces : facesBySolid )
+		if ( faces.intersects( shorelineFaces ) ) return false;
 	using namespace HammerDisplacementSew;
 	QList<Face> faces;
 	for ( auto it = facesBySolid.cbegin(); it != facesBySolid.cend(); ++it )

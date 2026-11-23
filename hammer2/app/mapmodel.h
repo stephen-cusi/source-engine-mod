@@ -80,6 +80,8 @@ struct EntityLite
 	QString classname;
 	QMap<QString, QString> keyvalues;
 	QList<QPair<QString, QString> > connections;	// VMF output name/value pairs; names may repeat
+	// Generated Source shoreline data is stored in a nested entity block.
+	std::optional<QList<QList<QPair<QString, QString>>>> shorelineOverlays;
 	bool hasEditor = false;
 	QList<QPair<QString, QString> > editorProperties;
 	double origin[3];

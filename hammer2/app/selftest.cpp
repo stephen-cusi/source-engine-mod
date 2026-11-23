@@ -1858,8 +1858,51 @@ int RunHammerSelfTest( const QString &vmfPath )
 		const EntityLite *reopened = reloaded.EntityById( id );
 		ok = ok && reopened && sample.Map().EntityById( id )->keyvalues == reopened->keyvalues;
 		ctx.Step( "overlay-document", ok, error );
+
+		const double scale[3] = { 2, 1, 1 };
+		ok = ok && !sample.ScaleSelectedBoxes( scale ) && parse() &&
+			HammerOverlay::WorldPoint( data, 0 ) == HammerOverlay::Point{ -20, -10, 0 };
+		sample.SelectObjects( { solidId, id } );
+		ok = ok && sample.ScaleSelectedBoxes( scale ) && parse() &&
+			HammerOverlay::WorldPoint( data, 0 ) == HammerOverlay::Point{ -40, -10, 0 } &&
+			sample.RotateSelectedBoxes90( false, 2 ) && parse() &&
+			HammerOverlay::WorldPoint( data, 0 ) == HammerOverlay::Point{ 10, -40, 0 } &&
+			sample.FlipSelectedBoxes( 0 ) && parse() &&
+			HammerOverlay::WorldPoint( data, 0 ) == HammerOverlay::Point{ -10, -40, 0 } &&
+			data.sides == QList<int>{ faceId } && sample.Undo() && parse() &&
+			HammerOverlay::WorldPoint( data, 0 ) == HammerOverlay::Point{ 10, -40, 0 } &&
+			sample.Redo() && parse() && HammerOverlay::WorldPoint( data, 0 ) == HammerOverlay::Point{ -10, -40, 0 };
+		ctx.Step( "overlay-brush-transform", ok, QStringLiteral( "receiving brush selection, scale, quarter turn, mirror and undo/redo" ) );
 	}
-	if ( !brushCompileInput.isEmpty() && !overlayCompileOutput.isEmpty() )
+	const QString shorelineOutput = qEnvironmentVariable( "HAMMER_SELFTEST_SHORELINE_COMPILE_OUTPUT" );
+	{
+		CHammerDocument sample;
+		const double mins[3] = { -32, -32, -16 }, maxs[3] = { 32, 32, 0 };
+		const int brush = sample.CreateBrush( mins, maxs );
+		const SolidLite *solid = sample.Map().SolidById( brush );
+		bool ok = solid && !solid->sides.isEmpty();
+		const QString face = ok ? QString::number( solid->sides.first().id ) : QString();
+		EntityLite transition;
+		transition.id = sample.Map().AllocId();
+		transition.classname = QStringLiteral( "info_overlay_transition" );
+		transition.keyvalues.insert( QStringLiteral( "sides2" ), face );
+		transition.shorelineOverlays.emplace().append( { { QStringLiteral( "sides" ), face },
+			{ QStringLiteral( "material" ), QStringLiteral( "decals/shot1" ) } } );
+		sample.Map().entities.append( transition );
+		sample.SelectObjects( { brush } );
+		const double delta[3] = { 16, 0, 0 };
+		ok = ok && !sample.MoveSelection( delta ) && !sample.DeleteSelection();
+		sample.SelectObjects( { transition.id } );
+		ok = ok && !sample.CopySelection() && !sample.SetSelectedEntityKey( QStringLiteral( "sides2" ), QStringLiteral( "0" ) );
+		QTemporaryDir temp;
+		QString error;
+		MapDocLite reopened;
+		const QString path = temp.filePath( QStringLiteral( "shoreline.vmf" ) );
+		ok = ok && temp.isValid() && VmfIO::SaveMap( path, sample.Map(), &error ) && VmfIO::LoadMap( path, reopened, &error );
+		const EntityLite *loaded = ok ? reopened.EntityById( transition.id ) : nullptr;
+		ctx.Step( "shoreline-preservation", loaded && loaded->shorelineOverlays == transition.shorelineOverlays, error );
+	}
+	if ( !brushCompileInput.isEmpty() && ( !overlayCompileOutput.isEmpty() || !shorelineOutput.isEmpty() ) )
 	{
 		CHammerDocument fixture;
 		QString error;
@@ -1886,10 +1929,29 @@ int RunHammerSelfTest( const QString &vmfPath )
 				faceId = solid.sides[i].id;
 			}
 		}
-		ok = ok && solidId && fixture.SetActiveMaterial( QStringLiteral( "decals/shot1" ) ) &&
-			fixture.PlaceOverlay( solidId, faceId, location.data(), 24, 24 ) > 0 &&
-			VmfIO::SaveMap( overlayCompileOutput, fixture.Map(), &error );
-		ctx.Step( "overlay-compile-fixture", ok, error );
+		const int id = ok && solidId && fixture.SetActiveMaterial( QStringLiteral( "decals/shot1" ) )
+			? fixture.PlaceOverlay( solidId, faceId, location.data(), 24, 24 ) : -1;
+		if ( !overlayCompileOutput.isEmpty() )
+			ctx.Step( "overlay-compile-fixture", id > 0 && VmfIO::SaveMap( overlayCompileOutput, fixture.Map(), &error ), error );
+		if ( !shorelineOutput.isEmpty() )
+		{
+			EntityLite *transition = fixture.Map().EntityById( id );
+			if ( transition )
+			{
+				transition->classname = QStringLiteral( "info_overlay_transition" );
+				auto &overlay = transition->shorelineOverlays.emplace().emplaceBack();
+				for ( auto it = transition->keyvalues.cbegin(); it != transition->keyvalues.cend(); ++it )
+					if ( it.key().compare( QLatin1String( "RenderOrder" ), Qt::CaseInsensitive ) != 0 )
+						overlay.append( { it.key(), it.value() } );
+				transition->keyvalues.clear();
+				transition->keyvalues.insert( QStringLiteral( "sides" ), QString::number( faceId ) );
+			}
+			MapDocLite reloaded;
+			ok = transition && VmfIO::SaveMap( shorelineOutput, fixture.Map(), &error ) &&
+				VmfIO::LoadMap( shorelineOutput, reloaded, &error );
+			const EntityLite *reopened = ok ? reloaded.EntityById( id ) : nullptr;
+			ctx.Step( "shoreline-compile-fixture", reopened && reopened->shorelineOverlays == transition->shorelineOverlays, error );
+		}
 	}
 	const QString brushCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_BRUSH_COMPILE_OUTPUT" );
 	const QString displacementCompileOutput = qEnvironmentVariable( "HAMMER_SELFTEST_DISPLACEMENT_COMPILE_OUTPUT" );
@@ -3582,15 +3644,16 @@ int RunHammerSelfTest( const QString &vmfPath )
 			if ( side.planePts[0][0] == 96 && side.planePts[1][0] == 96 && side.planePts[2][0] == 96 )
 				receiverSide = side.id;
 		textureDoc.SetActiveMaterial( QStringLiteral( "dev/dev_measuregeneric01" ) );
+		QImage projectionBaseline = fallbackImage;
 		const auto changedProjectionPixels = [&]( const QImage &projection ) {
-			if ( projection.isNull() || projection.size() != fallbackImage.size() ) return 0;
+			if ( projection.isNull() || projection.size() != projectionBaseline.size() ) return 0;
 			int changed = 0;
 			const QPoint center( projection.width() / 2, projection.height() / 2 );
 			const int radius = qRound( 24 * textureView.devicePixelRatioF() );
 			// Exclude the helper marker and text; these are painted above the GL pass.
 			for ( int y = center.y() + radius / 2; y < center.y() + radius; ++y )
 				for ( int x = center.x() - radius; x < center.x() + radius; ++x )
-					if ( projection.pixel( x, y ) != fallbackImage.pixel( x, y ) ) ++changed;
+					if ( projection.pixel( x, y ) != projectionBaseline.pixel( x, y ) ) ++changed;
 			return changed;
 		};
 		const int decal = textureDoc.PlaceDecal( projectionOrigin );
@@ -3608,6 +3671,19 @@ int RunHammerSelfTest( const QString &vmfPath )
 		ctx.Step( "3d-projected-material-framebuffer",
 			decal > 0 && overlay > 0 && decalPixels > 100 && overlayPixels > 100 && filteredPixels == 0,
 			QStringLiteral( "decal pixels=%1; overlay pixels=%2; filtered pixels=%3" ).arg( decalPixels ).arg( overlayPixels ).arg( filteredPixels ) );
+		const double terrainDecalOrigin[3] = { 136, 0, 0 };
+		const bool raisedTerrain = textureDoc.Undo() &&
+			textureDoc.CreateDisplacements( { { receiverId, { receiverSide } } }, 2 ) &&
+			textureDoc.SetDisplacementDistances( receiverId, receiverSide, QList<double>( 25, 40.0 ) );
+		textureDoc.SelectObjects( {} );
+		projectionBaseline = textureView.texturedFramebuffer();
+		const int terrainDecal = textureDoc.PlaceDecal( terrainDecalOrigin );
+		textureDoc.SelectObjects( {} );
+		const int terrainPixels = changedProjectionPixels( textureView.texturedFramebuffer() );
+		ctx.Step( "3d-displacement-decal-framebuffer", raisedTerrain && terrainDecal > 0 && terrainPixels > 100,
+			QStringLiteral( "raised terrain decal pixels=%1" ).arg( terrainPixels ) );
+		if ( terrainDecal > 0 ) textureDoc.Undo();
+		if ( raisedTerrain ) { textureDoc.Undo(); textureDoc.Undo(); }
 		textureView.setDisplayMode( CQtViewport3D::Flat );
 		QCoreApplication::processEvents();
 		const QImage comparisonImage = textureView.grab().toImage();
@@ -4970,6 +5046,19 @@ int RunHammerSelfTest( const QString &vmfPath )
 			HammerDecalProjection::Build( face, plane, { 0, 4, -1 }, 4, 4 ).isEmpty() &&
 			HammerDecalProjection::Build( face, plane, { 0, 4, 17 }, 4, 4 ).isEmpty(),
 			QStringLiteral( "stock clipping, floor UVs, face distance and modulating shader support" ) );
+		HammerDisplacementMesh::Mesh terrain;
+		terrain.vertices = { { 0, 0, 40 }, { 8, 0, 44 }, { 8, 8, 48 }, { 0, 8, 44 } };
+		terrain.triangles = { { 0, 1, 2 }, { 0, 2, 3 } };
+		const auto projected = HammerDecalProjection::BuildDisplacement( terrain, plane.normal, { 4, 4, 44 }, 4, 4 );
+		bool terrainClipped = projected.size() == 6;
+		for ( const auto &v : projected )
+			terrainClipped = terrainClipped && v.position[0] >= 2 && v.position[0] <= 6 &&
+				v.position[1] >= 2 && v.position[1] <= 6 &&
+				v.position[2] == 40 + ( v.position[0] + v.position[1] ) / 2 &&
+				v.uv[0] == ( v.position[0] - 2 ) / 4 && v.uv[1] == ( 6 - v.position[1] ) / 4;
+		ctx.Step( "decal-displacement-projection", terrainClipped &&
+			HammerDecalProjection::BuildDisplacement( terrain, plane.normal, { 4, 4, 0 }, 4, 4 ).isEmpty(),
+			QStringLiteral( "clip raised terrain triangles in a shared texture frame and reject remote surfaces" ) );
 		HammerOverlay::Data overlay;
 		overlay.origin = { 0, 4, 1 };
 		overlay.u = { 1, 0, 0 };

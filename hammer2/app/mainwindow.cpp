@@ -1287,14 +1287,16 @@ void CMainWindow::CreateMenus()
         if ( factors[0] == 1.0 && factors[1] == 1.0 && factors[2] == 1.0 ) return;
         if ( !m_pDocument->ScaleSelectedBoxes( factors ) )
             QMessageBox::warning( this, tr( "Scale Brushes" ),
-                tr( "Select valid convex brushes without Hammer++ vertex caches. Scale must produce valid map coordinates." ) );
+                tr( "Select valid convex brushes without Hammer++ vertex caches. Scale must produce valid map coordinates." ) +
+                QLatin1Char( '\n' ) + tr( "Select an overlay with all its receiving brushes to transform it safely." ) );
     } );
     QAction *rotateLeft = m_pMenuTools->addAction( tr( "Rotate Brushes 90° Left" ) );
     QAction *rotateRight = m_pMenuTools->addAction( tr( "Rotate Brushes 90° Right" ) );
     const auto rotateBoxes = [this]( bool clockwise, int axis ) {
         if ( !m_pDocument->RotateSelectedBoxes90( clockwise, axis ) )
             QMessageBox::warning( this, tr( "Rotate Brushes" ),
-                tr( "Select valid convex brushes without Hammer++ vertex caches. Texture scales must be nonzero." ) );
+                tr( "Select valid convex brushes without Hammer++ vertex caches. Texture scales must be nonzero." ) +
+                QLatin1Char( '\n' ) + tr( "Select an overlay with all its receiving brushes to transform it safely." ) );
     };
     connect( rotateLeft, &QAction::triggered, this, [rotateBoxes] { rotateBoxes( false, 2 ); } );
     connect( rotateRight, &QAction::triggered, this, [rotateBoxes] { rotateBoxes( true, 2 ); } );
@@ -1312,7 +1314,8 @@ void CMainWindow::CreateMenus()
         connect( flipAxes->addAction( tr( flipNames[axis] ) ), &QAction::triggered, this, [this, axis] {
             if ( !m_pDocument->FlipSelectedBoxes( axis ) )
                 QMessageBox::warning( this, tr( "Flip Brushes" ),
-                    tr( "Select valid convex brushes without Hammer++ vertex caches. Texture scales must be nonzero." ) );
+                    tr( "Select valid convex brushes without Hammer++ vertex caches. Texture scales must be nonzero." ) +
+                    QLatin1Char( '\n' ) + tr( "Select an overlay with all its receiving brushes to transform it safely." ) );
         } );
     m_pMenuTools->addSeparator();
 

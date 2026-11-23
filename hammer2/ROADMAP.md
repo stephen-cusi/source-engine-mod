@@ -427,8 +427,11 @@ features outside the original editor.
   The overlay tool selects existing overlays and drags corners on linked faces;
   the Object Properties Faces field has a Pick Faces action to rebind geometry.
   VMF stores face references, basis, handles, texture coordinates, and render
-  order. Rotating overlays with the generalized selection transform, original
-  handle reset, shoreline overlays and full Source material rendering remain pending.
+  order. Overlay and receiving brushes can be scaled, quarter-turned or
+  mirrored as a selection. Transform rejects incomplete face sets and scaling
+  that cannot retain an orthogonal projection frame. The original internal
+  handle reset ends hit tracking without changing the saved corners. Full
+  Source material rendering remains pending.
 - [ ] Create Prefab saves selected objects as a VMF prefab; Insert Original
   Prefab browses the remembered folder and inserts at the saved coordinates.
   Brush-entity ownership, object and face IDs, and entity outputs are preserved

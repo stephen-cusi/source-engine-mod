@@ -1,6 +1,6 @@
 #pragma once
 
-#include "brushwindings.h"
+#include "displacementmesh.h"
 
 namespace HammerDecalProjection
 {
@@ -9,13 +9,10 @@ struct Vertex { Point position; std::array<double, 2> uv; };
 
 // Source's CMapDecal accepts nearby front-facing planes and clips the face
 // winding to the decal's unit texture square (hammer/clipcode.cpp).
-inline QList<Vertex> Build( const HammerWinding::Polygon &face, const HammerWinding::Plane &plane,
+inline QList<Vertex> ClipProjection( const HammerWinding::Polygon &face, const Point &normal,
 	const Point &origin, double width, double height )
 {
 	if ( face.size() < 3 || !std::isfinite( width ) || !std::isfinite( height ) || width <= 0 || height <= 0 ) return {};
-	const double distance = HammerWinding::Dot( plane.normal, origin ) - plane.dist;
-	if ( !std::isfinite( distance ) || distance < -0.0001 || distance > 16.0 ) return {};
-	const auto &normal = plane.normal;
 	const Point reference = std::abs( normal[2] ) > std::sqrt( 0.5 ) ? Point{ 1, 0, 0 } : Point{ 0, 0, -1 };
 	Point s = std::abs( normal[2] ) > std::sqrt( 0.5 )
 		? HammerWinding::Cross( normal, HammerWinding::Cross( reference, normal ) )
@@ -59,5 +56,41 @@ inline QList<Vertex> Build( const HammerWinding::Polygon &face, const HammerWind
 			if ( polygon.size() < 3 ) return {};
 		}
 	return polygon;
+}
+
+inline QList<Vertex> Build( const HammerWinding::Polygon &face, const HammerWinding::Plane &plane,
+	const Point &origin, double width, double height )
+{
+	const double distance = HammerWinding::Dot( plane.normal, origin ) - plane.dist;
+	if ( !std::isfinite( distance ) || distance < -0.0001 || distance > 16.0 ) return {};
+	return ClipProjection( face, plane.normal, origin, width, height );
+}
+
+// Keep the base face's texture frame across the whole mesh, as the Source
+// displacement decal renderer does. Clip on the deformed triangles so the
+// result stays on the surface, including at changes in slope.
+inline QList<Vertex> BuildDisplacement( const HammerDisplacementMesh::Mesh &mesh, const Point &normal,
+	const Point &origin, double width, double height )
+{
+	QList<Vertex> vertices;
+	const double depth = std::max( width, height ) * 0.5;
+	for ( const auto &indices : mesh.triangles )
+	{
+		const Point &a = mesh.vertices[indices[0]], &b = mesh.vertices[indices[1]], &c = mesh.vertices[indices[2]];
+		Point ab, ac, relative;
+		for ( int axis = 0; axis < 3; ++axis )
+		{
+			ab[axis] = b[axis] - a[axis];
+			ac[axis] = c[axis] - a[axis];
+			relative[axis] = origin[axis] - a[axis];
+		}
+		Point triangleNormal = HammerWinding::Cross( ab, ac );
+		if ( !HammerWinding::Normalize( triangleNormal ) ||
+			std::abs( HammerWinding::Dot( triangleNormal, relative ) ) > depth ) continue;
+		const auto clipped = ClipProjection( { a, b, c }, normal, origin, width, height );
+		for ( int fan = 1; fan + 1 < clipped.size(); ++fan )
+			for ( int index : { 0, fan, fan + 1 } ) vertices.append( clipped[index] );
+	}
+	return vertices;
 }
 }
