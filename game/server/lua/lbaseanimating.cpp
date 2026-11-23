@@ -454,7 +454,8 @@ static int CBaseAnimating_GetNumFlexControllers (lua_State *L) {
 }
 
 static int CBaseAnimating_GetPlaybackRate (lua_State *L) {
-  lua_pushnumber(L, luaL_checkanimating(L, 1)->GetPlaybackRate());
+  CBaseAnimating *pAnimating = luaL_checkentity( L, 1 )->GetBaseAnimating();
+  lua_pushnumber( L, pAnimating && !pAnimating->IsMarkedForDeletion() ? pAnimating->GetPlaybackRate() : 1.0f );
   return 1;
 }
 
@@ -628,7 +629,9 @@ static int CBaseAnimating_ResetSequence (lua_State *L) {
 }
 
 static int CBaseAnimating_ResetSequenceInfo (lua_State *L) {
-  luaL_checkanimating(L, 1)->ResetSequenceInfo();
+  CBaseAnimating *pAnimating = luaL_checkentity( L, 1 )->GetBaseAnimating();
+  if ( pAnimating && !pAnimating->IsMarkedForDeletion() )
+    pAnimating->ResetSequenceInfo();
   return 0;
 }
 
@@ -664,7 +667,12 @@ static int CBaseAnimating_SetBoneController (lua_State *L) {
 }
 
 static int CBaseAnimating_SetCycle (lua_State *L) {
-  luaL_checkanimating(L, 1)->SetCycle(luaL_checknumber(L, 2));
+  CBaseAnimating *pAnimating = luaL_checkentity( L, 1 )->GetBaseAnimating();
+  if ( pAnimating && !pAnimating->IsMarkedForDeletion() )
+  {
+    const float flCycle = luaL_checknumber( L, 2 );
+    pAnimating->SetCycle( IsFinite( flCycle ) ? flCycle : 0.0f );
+  }
   return 0;
 }
 
@@ -686,7 +694,12 @@ static int CBaseAnimating_SetModelWidthScale (lua_State *L) {
 */
 
 static int CBaseAnimating_SetPlaybackRate (lua_State *L) {
-  luaL_checkanimating(L, 1)->SetPlaybackRate(luaL_checknumber(L, 2));
+  CBaseAnimating *pAnimating = luaL_checkentity( L, 1 )->GetBaseAnimating();
+  if ( pAnimating && !pAnimating->IsMarkedForDeletion() )
+  {
+    const float flRate = luaL_checknumber( L, 2 );
+    pAnimating->SetPlaybackRate( IsFinite( flRate ) ? flRate : 1.0f );
+  }
   return 0;
 }
 
@@ -758,12 +771,15 @@ static int CBaseAnimating_TranslateBoneToPhysBone (lua_State *L) {
 }
 
 static int CBaseAnimating_SetSequence (lua_State *L) {
-  CBaseAnimating *entity = luaL_checkanimating(L, 1);
-  const int sequence = lua_type(L, 2) == LUA_TNUMBER
-    ? (int)luaL_checknumber(L, 2)
-    : entity->LookupSequence(luaL_checkstring(L, 2));
-  entity->SetSequence(sequence);
-  lua_pushnumber(L, entity->SequenceDuration(sequence));
+  CBaseAnimating *pAnimating = luaL_checkentity( L, 1 )->GetBaseAnimating();
+  if ( !pAnimating || pAnimating->IsMarkedForDeletion() )
+    return 0;
+
+  const int nSequence = lua_type( L, 2 ) == LUA_TNUMBER
+    ? static_cast<int>( luaL_checknumber( L, 2 ) )
+    : pAnimating->LookupSequence( luaL_checkstring( L, 2 ) );
+  pAnimating->SetSequence( nSequence );
+  lua_pushnumber( L, pAnimating->SequenceDuration( nSequence ) );
   return 1;
 }
 

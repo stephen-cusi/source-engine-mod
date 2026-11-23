@@ -797,6 +797,7 @@ LUA_PARTICLE_SETTER_END( 0 )
 // CLuaParticle:SetPos( pos ) -- teleports the particle.
 LUA_PARTICLE_SETTER_BEGIN( SetPos )
 	pParticle->m_Pos = luaL_checkvector( L, 2 );
+	pParticle->m_bLightValid = false;
 LUA_PARTICLE_SETTER_END( 0 )
 
 // CLuaParticle:SetAngles( ang ) -- 3D quad orientation.

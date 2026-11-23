@@ -2352,7 +2352,11 @@ int NET_SendPacket ( INetChannel *chan, int sock,  const netadr_t &to, const uns
 		Msg("UDP -> %s: sz=%i OOB '%c'\n", to.ToString(), length, data[4] );
 	}
 
-	if ( (!NET_IsMultiplayer() && sock != NS_CLIENT) || to.type == NA_LOOPBACK || ( to.IsLocalhost() && !net_usesocketsforloopback.GetBool() ) )
+	const bool bMultiplayer = NET_IsMultiplayer();
+	// Single-player has no UDP sockets. A setting left enabled after joining
+	// a local dedicated server must not send the next local map's handshake to UDP.
+	if ( (!bMultiplayer && sock != NS_CLIENT) || to.type == NA_LOOPBACK ||
+		 ( to.IsLocalhost() && ( !bMultiplayer || !net_usesocketsforloopback.GetBool() ) ) )
 	{
 		Assert( !pVoicePayload );
 

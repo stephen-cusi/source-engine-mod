@@ -14,12 +14,6 @@
 
 #include "weapon_hl2mpbasehlmpcombatweapon.h"
 
-#ifdef CLIENT_DLL
-
-#include "iviewrender_beams.h"
-
-#endif
-
 #ifndef CLIENT_DLL
 #include "Sprite.h"
 #include "npcevent.h"
@@ -260,22 +254,11 @@ public:
 
 #ifdef CLIENT_DLL
 
-	// We need to render opaque and translucent pieces
-	virtual RenderGroup_t	GetRenderGroup(void) { return RENDER_GROUP_TWOPASS; }
+	virtual void ViewModelDrawn(C_BaseViewModel *pBaseViewModel);
 
-	virtual void	NotifyShouldTransmit(ShouldTransmitState_t state);
-	virtual int		DrawModel(int flags);
-	virtual void	ViewModelDrawn(C_BaseViewModel *pBaseViewModel);
-	virtual bool	IsTranslucent(void);
+	void DrawLaserGlint(C_BaseViewModel &viewModel);
 
-	void			InitBeam(void);
-	void			GetWeaponAttachment(int attachmentId, Vector &outVector, Vector *dir = NULL);
-	void			DrawEffects(void);
-	//	void			DrawLaserDot( void );
-
-	CMaterialReference	m_hSpriteMaterial;	// Used for the laser glint
-	CMaterialReference	m_hBeamMaterial;	// Used for the laser beam
-	Beam_t				*m_pBeam;			// Laser beam temp entity
+	CMaterialReference m_hSpriteMaterial; // Laser glint
 
 #endif	//CLIENT_DLL
 

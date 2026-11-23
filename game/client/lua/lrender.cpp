@@ -603,12 +603,12 @@ LUA_BINDING_BEGIN( Renders, MaterialSetVar, "library", "Sets a material variable
 }
 LUA_BINDING_END()
 
-// HL2SB GMod compat: render.GetDXLevel() -- wiki: returns the maximum available
-// DirectX version.  This fork is DX9-only (shaderapidx9), so the honest answer
-// is a constant 90.
-LUA_BINDING_BEGIN( Renders, GetDXLevel, "library", "Returns the maximum available DirectX version.", "client" )
+// GMod queries the active shader feature level, which can be restricted by
+// the material system configuration even with the same graphics device.
+LUA_BINDING_BEGIN( Renders, GetDXLevel, "library", "Returns the active DirectX support level.", "client" )
 {
-    lua_pushinteger( L, 90 );
+    const int level = g_pMaterialSystemHardwareConfig ? g_pMaterialSystemHardwareConfig->GetDXSupportLevel() : 90;
+    lua_pushinteger( L, level );
     return 1;
 }
 LUA_BINDING_END()

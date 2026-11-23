@@ -62,13 +62,16 @@ static char s_LuaSyncRoot[MAX_PATH];
 static char s_LuaSyncSearchPath[MAX_PATH];
 static int s_LuaSyncNext = 0;
 static int s_LuaSyncPending = 0;
+static int s_LuaSyncDownloaded = 0;
 static double s_LuaSyncRequestTime = 0.0;
+static double s_LuaSyncDownloadStartTime = 0.0;
 static bool s_LuaSyncStarted = false;
 static bool s_LuaSyncComplete = false;
 static bool s_LuaSyncMounted = false;
 
 static void LuaSyncReset()
 {
+	EngineVGui_SetLuaDownloadStatus( false );
 	if ( s_LuaSyncMounted && s_LuaSyncSearchPath[0] && g_pFileSystem )
 	{
 		g_pFileSystem->RemoveSearchPath( s_LuaSyncSearchPath, "MOD" );
@@ -76,7 +79,9 @@ static void LuaSyncReset()
 	}
 	s_LuaSyncRoot[0] = s_LuaSyncSearchPath[0] = 0;
 	s_LuaSyncNext = s_LuaSyncPending = 0;
+	s_LuaSyncDownloaded = 0;
 	s_LuaSyncRequestTime = 0.0;
+	s_LuaSyncDownloadStartTime = 0.0;
 	s_LuaSyncStarted = s_LuaSyncComplete = s_LuaSyncMounted = false;
 }
 
@@ -150,6 +155,9 @@ static bool LuaSyncRequestNext()
 		s_LuaSyncPending = index;
 		s_LuaSyncRequestTime = Plat_FloatTime();
 		if ( !cl.m_NetChannel || !cl.m_NetChannel->SendNetMsg( message, true ) ) return false;
+		EngineVGui_SetLuaDownloadStatus( true );
+		if ( !s_LuaSyncDownloaded )
+			s_LuaSyncDownloadStartTime = Plat_FloatTime();
 		cl.m_NetChannel->Transmit();
 		return true;
 	}
@@ -158,6 +166,12 @@ static bool LuaSyncRequestNext()
 	g_pFileSystem->AddSearchPath( s_LuaSyncSearchPath, "GAME", PATH_ADD_TO_HEAD );
 	s_LuaSyncMounted = true;
 	s_LuaSyncComplete = true;
+	if ( s_LuaSyncDownloaded )
+	{
+		Msg( "Downloaded %d server Lua file(s) in %.3f s.\n", s_LuaSyncDownloaded,
+			Plat_FloatTime() - s_LuaSyncDownloadStartTime );
+		EngineVGui_CompleteLuaDownloadStatus();
+	}
 	return true;
 }
 
@@ -190,7 +204,7 @@ static bool LuaSyncBegin()
 static void *LuaSyncAlloc( void *, size_t size ) { return malloc( size ); }
 static void LuaSyncFree( void *, void *ptr ) { free( ptr ); }
 
-bool CL_ProcessLuaFileData( bf_read &message )
+static bool LuaSyncProcessFileData( bf_read &message )
 {
 	if ( cl.m_nSignonState != SIGNONSTATE_NEW || !s_LuaSyncStarted || !s_LuaSyncPending || message.GetNumBitsLeft() < 24 ) return false;
 	if ( message.ReadByte() != 4 || message.ReadWord() != s_LuaSyncPending ) return false;
@@ -232,10 +246,19 @@ bool CL_ProcessLuaFileData( bf_read &message )
 	if ( written != static_cast<int>(outSize - 1) ) { g_pFileSystem->RemoveFile( temporary, "DEFAULT_WRITE_PATH" ); return false; }
 	if ( g_pFileSystem->FileExists( path, "DEFAULT_WRITE_PATH" ) ) g_pFileSystem->RemoveFile( path, "DEFAULT_WRITE_PATH" );
 	if ( !g_pFileSystem->RenameFile( temporary, path, "DEFAULT_WRITE_PATH" ) ) { g_pFileSystem->RemoveFile( temporary, "DEFAULT_WRITE_PATH" ); return false; }
+	++s_LuaSyncDownloaded;
 	s_LuaSyncPending = 0;
 	if ( !LuaSyncRequestNext() ) return false;
 	if ( s_LuaSyncComplete ) cl.FinishSignonState_New();
 	return true;
+}
+
+bool CL_ProcessLuaFileData( bf_read &message )
+{
+	const bool success = LuaSyncProcessFileData( message );
+	if ( !success )
+		EngineVGui_SetLuaDownloadStatus( false );
+	return success;
 }
 
 static ConVar cl_timeout( "cl_timeout", "30", FCVAR_ARCHIVE, "After this many seconds without receiving a packet from the server, the client will disconnect itself" );

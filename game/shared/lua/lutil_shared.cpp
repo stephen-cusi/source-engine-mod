@@ -53,6 +53,7 @@ bool HL2SB_CreateLuaEffect( const char *pszName, const CEffectData &data );
 #include "util.h"
 #include "hl2mp/hl2mp_gamerules.h"
 #include "recipientfilter.h"
+#include "lrecipientfilter.h"
 #include "enginecallback.h"
 #include "physics.h"
 #endif
@@ -1148,7 +1149,7 @@ static int luasrc_util_GetModelInfo (lua_State *L) {
 }
 
 /*
-** HL2SB GMod compat: util.Effect( name, effectData [, allowOverride] ).
+** HL2SB GMod compat: util.Effect( name, effectData [, allowOverride [, filter]] ).
 **
 ** GMod's util.Effect is the script-facing way to run an effect by name:
 **
@@ -1158,10 +1159,9 @@ static int luasrc_util_GetModelInfo (lua_State *L) {
 **     non-predicted shooter (an NPC, a scripted entity) gets the effect onto
 **     every client's screen.
 **
-** allowOverride (wiki: default TRUE) -- when false, a Lua effect registered
-** under the same name does NOT shadow the engine callback for this call.
-** The 4th GMod argument (ignorePrediction / CRecipientFilter) is accepted and
-** ignored: this fork dispatches with the default filter either way.
+** The client applies allowOverride locally. The existing server temp entity
+** carries no override flag, but supports the optional prediction or recipient
+** filter argument.
 */
 #ifdef CLIENT_DLL
 static int luasrc_UTIL_GetPixelVisibleHandle(lua_State *L) {
@@ -1195,6 +1195,28 @@ static int luasrc_UTIL_Effect (lua_State *L) {
 #ifdef CLIENT_DLL
   HL2SB_DispatchLocalEffect( pszName, data, bAllowOverride != 0 );
 #else
+  if ( lua_type( L, 4 ) == LUA_TBOOLEAN && lua_toboolean( L, 4 ) ) {
+    CPASFilter filter( data.m_vOrigin );
+    filter.SetIgnorePredictionCull( true );
+    DispatchEffect( pszName, data, filter );
+    return 0;
+  }
+
+  if ( lua_type( L, 4 ) == LUA_TUSERDATA &&
+       ( luaL_testudata( L, 4, "CRecipientFilter" ) || luaL_testudata( L, 4, "CPASFilter" ) ) ) {
+    // Temp entities ride snapshots, so reliable and sign-on flags cannot be
+    // sent. Copy the recipients and prediction settings before dispatch culls
+    // the prediction host, leaving the Lua filter unchanged.
+    class EffectSnapshotFilter : public CRecipientFilter {
+      bool IsReliable() const override { return false; }
+      bool IsInitMessage() const override { return false; }
+    };
+    EffectSnapshotFilter filter;
+    filter.CopyFrom( luaL_checkrecipientfilter( L, 4 ) );
+    DispatchEffect( pszName, data, filter );
+    return 0;
+  }
+
   DispatchEffect( pszName, data );
 #endif
   return 0;

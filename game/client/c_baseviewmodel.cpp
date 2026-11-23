@@ -610,7 +610,9 @@ CStudioHdr *C_BaseViewModel::OnNewModel( void )
 	// lua_shared's registry there -> by-ID dispatch; gmod_hands re-parents onto
 	// the fresh viewmodel through it).  Args mirror GMod's only consumer,
 	// ENT:ViewModelChanged( vm, old, new ).
-	if ( L != NULL )
+	// LevelShutdown releases entities before closing Lua.  Their viewmodel
+	// updates must not call scripts whose instance tables are being removed.
+	if ( g_bLevelInitialized && L != NULL )
 	{
 		BEGIN_LUA_CALL_HOOK( "OnViewModelChanged" );
 			lua_pushentity( L, this );

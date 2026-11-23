@@ -138,6 +138,8 @@ public:
 
 // Purpose: singleton accessor
 extern IEngineVGuiInternal *EngineVGui();
+void EngineVGui_SetLuaDownloadStatus( bool active );
+void EngineVGui_CompleteLuaDownloadStatus();
 
 // Purpose: Play a sound
 void VGui_PlaySound(const char *pFileName);

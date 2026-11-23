@@ -95,11 +95,13 @@ private:
 	bool SaveElement( CUtlBuffer& buf, CDmxSerializationDictionary& dict, CUtlRBTree< const char* > &stringTable, CDmxElement *pElement);
 
 	// Methods related to unserialization
-	CDmxElement* UnserializeElementIndex( CUtlBuffer &buf, CUtlVector<CDmxElement*> &elementList );
-	void UnserializeElementAttribute( CUtlBuffer &buf, CDmxAttribute *pAttribute, CUtlVector<CDmxElement*> &elementList );
-	void UnserializeElementArrayAttribute( CUtlBuffer &buf, CDmxAttribute *pAttribute, CUtlVector<CDmxElement*> &elementList );
-	bool UnserializeAttributes( CUtlBuffer &buf, CDmxElement *pElement, CUtlVector<CDmxElement*> &elementList, int nStrings, int *offsetTable, char *stringTable );
-	int GetStringOffsetTable( CUtlBuffer &buf, int *offsetTable, int nStrings );
+	bool UnserializeElementIndex( CUtlBuffer &buf, const CUtlVector<CDmxElement*> &elementList, CDmxElement *&pElement );
+	bool UnserializeAttribute( CUtlBuffer &buf, CDmxAttribute *pAttribute, DmAttributeType_t type,
+		const CUtlVector<CDmxElement*> &elementList, const CUtlVector<CUtlString> &strings, bool bIndexedValues );
+	bool UnserializeAttributes( CUtlBuffer &buf, CDmxElement *pElement, const CUtlVector<CDmxElement*> &elementList,
+		const CUtlVector<CUtlString> &strings, int nEncodingVersion );
+	bool UnserializeElements( CUtlBuffer &buf, CUtlVector<CDmxElement*> &elementList,
+		const CUtlVector<CUtlString> &strings, int nEncodingVersion );
 };
 
 
@@ -285,221 +287,235 @@ bool CDmxSerializer::Serialize( CUtlBuffer &buf, CDmxElement *pRoot, const char 
 //-----------------------------------------------------------------------------
 // Reads an element index and converts it to a handle (local or external)
 //-----------------------------------------------------------------------------
-CDmxElement* CDmxSerializer::UnserializeElementIndex( CUtlBuffer &buf, CUtlVector<CDmxElement*> &elementList )
+static bool ReadBinaryString( CUtlBuffer &buf, CUtlString &str )
 {
-	int nElementIndex = buf.GetInt();
-	if ( nElementIndex == ELEMENT_INDEX_EXTERNAL )
-	{
-		Warning( "Reading externally referenced elements is not supported!\n" );
-		return NULL;
-	}
-
-	Assert( nElementIndex < elementList.Count() );
-	Assert( nElementIndex >= 0 || nElementIndex == ELEMENT_INDEX_NULL );
-	if ( nElementIndex < 0 || !elementList[ nElementIndex ] )
-		return NULL;
-
-	return elementList[ nElementIndex ];
-}
-
-
-//-----------------------------------------------------------------------------
-// Reads an element attribute
-//-----------------------------------------------------------------------------
-void CDmxSerializer::UnserializeElementAttribute( CUtlBuffer &buf, CDmxAttribute *pAttribute, CUtlVector<CDmxElement*> &elementList )
-{
-	CDmxElement *pElement = UnserializeElementIndex( buf, elementList );
-	pAttribute->SetValue( pElement );
-}
-
-
-//-----------------------------------------------------------------------------
-// Reads an element array attribute
-//-----------------------------------------------------------------------------
-void CDmxSerializer::UnserializeElementArrayAttribute( CUtlBuffer &buf, CDmxAttribute *pAttribute, CUtlVector<CDmxElement*> &elementList )
-{
-	int nElementCount = buf.GetInt();
-	CUtlVector< CDmxElement* >& elementArray = pAttribute->GetArrayForEdit< CDmxElement* >();
-	elementArray.EnsureCapacity( nElementCount );
-
-	for ( int i = 0; i < nElementCount; ++i )
-	{
-		CDmxElement *pElement = UnserializeElementIndex( buf, elementList );
-		elementArray.AddToTail( pElement );
-	}
-}
-
-
-//-----------------------------------------------------------------------------
-// Reads a single element
-//-----------------------------------------------------------------------------
-bool CDmxSerializer::UnserializeAttributes( CUtlBuffer &buf, CDmxElement *pElement, CUtlVector<CDmxElement*> &elementList, int nStrings, int *offsetTable, char *stringTable )
-{
-	CDmxElementModifyScope modify( pElement );
-
-	char nameBuf[ 1024 ];
-	int nAttributeCount = buf.GetInt();
-	for ( int i = 0; i < nAttributeCount; ++i )
-	{
-		const char *pName = NULL;
-		if ( stringTable )
-		{
-			int si = buf.GetShort();
-			if ( si >= nStrings )
-				return false;
-			pName = stringTable + offsetTable[ si ];
-		}
-		else
-		{
-			buf.GetString( nameBuf );
-			pName = nameBuf;
-		}
-		DmAttributeType_t nAttributeType = (DmAttributeType_t)buf.GetChar();
-
-		CDmxAttribute *pAttribute = pElement->AddAttribute( pName );
-		if ( !pAttribute )
-			return false;
-
-		switch( nAttributeType )
-		{
-		default:
-			pAttribute->Unserialize( nAttributeType, buf );
-			break;
-
-		case AT_ELEMENT:
-			UnserializeElementAttribute( buf, pAttribute, elementList );
-			break;
-
-		case AT_ELEMENT_ARRAY:
-			UnserializeElementArrayAttribute( buf, pAttribute, elementList );
-			break;
-		}
-	}
-
+	const int nSize = buf.PeekStringLength();
+	if ( nSize <= 0 || nSize > buf.GetBytesRemaining() )
+		return false;
+	const char *pString = static_cast<const char *>( buf.PeekGet( nSize, 0 ) );
+	if ( !pString || pString[nSize - 1] != '\0' )
+		return false;
+	str.SetDirect( pString, nSize - 1 );
+	buf.SeekGet( CUtlBuffer::SEEK_CURRENT, nSize );
 	return buf.IsValid();
 }
 
-
-int CDmxSerializer::GetStringOffsetTable( CUtlBuffer &buf, int *offsetTable, int nStrings )
+static const char *ReadStringIndex( CUtlBuffer &buf, const CUtlVector<CUtlString> &strings )
 {
-	int nBytes = buf.GetBytesRemaining();
-	char *pBegin = ( char* )buf.PeekGet();
-	char *pBytes = pBegin;
-	for ( int i = 0; i < nStrings; ++i )
-	{
-		offsetTable[ i ] = pBytes - pBegin;
-
-		do
-		{
-			// grow/shift utlbuffer if it hasn't loaded the entire string table into memory
-			if ( pBytes - pBegin >= nBytes )
-			{
-				pBegin = ( char* )buf.PeekGet( nBytes + 1, 0 );
-				if ( !pBegin )
-					return false;
-				pBytes = pBegin + nBytes;
-				nBytes = buf.GetBytesRemaining();
-			}
-		}
-		while ( *pBytes++ );
-	}
-
-	return pBytes - pBegin;
+	const int nIndex = buf.GetShort();
+	return buf.IsValid() && strings.IsValidIndex( nIndex ) ? strings[nIndex].Get() : NULL;
 }
 
-//-----------------------------------------------------------------------------
-// Main entry point for the unserialization
-//-----------------------------------------------------------------------------
-bool CDmxSerializer::Unserialize( CUtlBuffer &buf, int nEncodingVersion, CDmxElement **ppRoot )
+bool CDmxSerializer::UnserializeElementIndex( CUtlBuffer &buf, const CUtlVector<CDmxElement*> &elementList, CDmxElement *&pElement )
 {
-	if ( nEncodingVersion < 0 || nEncodingVersion > 2 )
+	pElement = NULL;
+	const int nElementIndex = buf.GetInt();
+	if ( !buf.IsValid() )
 		return false;
-
-	bool bReadStringTable = nEncodingVersion >= 2;
-
-	// Keep reading until we read a NULL terminator
-	while( buf.GetChar() != 0 )
+	if ( nElementIndex == ELEMENT_INDEX_NULL )
+		return true;
+	if ( nElementIndex == ELEMENT_INDEX_EXTERNAL )
 	{
-		if ( !buf.IsValid() )
+		CUtlString id;
+		return ReadBinaryString( buf, id ); // The lightweight model cannot resolve external elements.
+	}
+	if ( !elementList.IsValidIndex( nElementIndex ) )
+		return false;
+	pElement = elementList[nElementIndex];
+	return true;
+}
+
+static bool CheckBinaryBlock( CUtlBuffer &buf )
+{
+	const int nSize = buf.GetInt();
+	if ( !buf.IsValid() || nSize < 0 || nSize > buf.GetBytesRemaining() )
+		return false;
+	buf.SeekGet( CUtlBuffer::SEEK_CURRENT, nSize );
+	return buf.IsValid();
+}
+
+static int GetMinimumBinaryValueBytes( DmAttributeType_t type )
+{
+	switch ( type )
+	{
+	case AT_BOOL:
+	case AT_STRING:
+		return 1;
+	case AT_ELEMENT:
+	case AT_INT:
+	case AT_VOID:
+		return sizeof( int );
+	case AT_OBJECTID:
+		return sizeof( DmObjectId_t );
+	case AT_COLOR:
+		return 4;
+	default:
+		return NumComponents( type ) * sizeof( float );
+	}
+}
+
+bool CDmxSerializer::UnserializeAttribute( CUtlBuffer &buf, CDmxAttribute *pAttribute, DmAttributeType_t type,
+	const CUtlVector<CDmxElement*> &elementList, const CUtlVector<CUtlString> &strings, bool bIndexedValues )
+{
+	if ( type == AT_ELEMENT )
+	{
+		CDmxElement *pValue;
+		if ( !UnserializeElementIndex( buf, elementList, pValue ) )
 			return false;
+		pAttribute->SetValue( pValue );
+		return true;
 	}
-
-	// Read string table
-	int nStrings = 0;
-	int *offsetTable = NULL;
-	char *stringTable = NULL;
-	if ( bReadStringTable )
+	if ( type == AT_STRING )
 	{
-		nStrings = buf.GetShort();
-		if ( nStrings > 0 )
-		{
-			offsetTable = ( int* )stackalloc( nStrings * sizeof( int ) );
-
-			// this causes entire string table to be mapped in memory at once
-			int nStringMemoryUsage = GetStringOffsetTable( buf, offsetTable, nStrings );
-			stringTable = ( char* )stackalloc( nStringMemoryUsage * sizeof( char ) );
-			buf.Get( stringTable, nStringMemoryUsage );
-		}
-	}
-
-	// Read in the element count.
-	int nElementCount = buf.GetInt();
-	if ( !nElementCount )
-	{
-		// Empty (but valid) file
+		CUtlString str;
+		const char *pValue = bIndexedValues ? ReadStringIndex( buf, strings ) :
+			( ReadBinaryString( buf, str ) ? str.Get() : NULL );
+		if ( !pValue )
+			return false;
+		pAttribute->SetValue( pValue );
 		return true;
 	}
 
-	if ( nElementCount < 0 || ( bReadStringTable && !stringTable ) )
+	const int nStart = buf.TellGet();
+	if ( IsArrayType( type ) )
 	{
-		// Invalid file. Non-empty files with a string table need at least one to associate with elements.
+		const int nCount = buf.GetInt();
+		const int nMinValueBytes = GetMinimumBinaryValueBytes( ArrayTypeToValueType( type ) );
+		if ( !buf.IsValid() || nCount < 0 || nCount > buf.GetBytesRemaining() / nMinValueBytes )
+			return false;
+		if ( type == AT_ELEMENT_ARRAY )
+		{
+			CUtlVector<CDmxElement*> &elements = pAttribute->GetArrayForEdit<CDmxElement*>();
+			for ( int i = 0; i < nCount; ++i )
+			{
+				CDmxElement *pValue;
+				if ( !UnserializeElementIndex( buf, elementList, pValue ) )
+					return false;
+				elements.AddToTail( pValue );
+			}
+			return true;
+		}
+		if ( type == AT_STRING_ARRAY )
+		{
+			CUtlVector<CUtlString> &values = pAttribute->GetArrayForEdit<CUtlString>();
+			values.RemoveAll();
+			for ( int i = 0; i < nCount; ++i )
+			{
+				if ( !ReadBinaryString( buf, values[values.AddToTail()] ) )
+					return false;
+			}
+			return true;
+		}
+		if ( type == AT_VOID_ARRAY )
+		{
+			for ( int i = 0; i < nCount; ++i )
+			{
+				if ( !CheckBinaryBlock( buf ) )
+					return false;
+			}
+		}
+	}
+	else if ( type == AT_VOID && !CheckBinaryBlock( buf ) )
+	{
 		return false;
 	}
+	if ( buf.TellGet() != nStart )
+		buf.SeekGet( CUtlBuffer::SEEK_HEAD, nStart );
+	return pAttribute->Unserialize( type, buf );
+}
 
-	char pTypeBuf[256];
-	char pName[2048];
-	DmObjectId_t id;
+bool CDmxSerializer::UnserializeAttributes( CUtlBuffer &buf, CDmxElement *pElement,
+	const CUtlVector<CDmxElement*> &elementList, const CUtlVector<CUtlString> &strings, int nEncodingVersion )
+{
+	CDmxElementModifyScope modify( pElement );
+	const int nAttributeCount = buf.GetInt();
+	if ( !buf.IsValid() || nAttributeCount < 0 || nAttributeCount > buf.GetBytesRemaining() )
+		return false;
+	for ( int i = 0; i < nAttributeCount; ++i )
+	{
+		CUtlString name;
+		const char *pName = nEncodingVersion >= 2 ? ReadStringIndex( buf, strings ) :
+			( ReadBinaryString( buf, name ) ? name.Get() : NULL );
+		if ( !pName )
+			return false;
+		const DmAttributeType_t type = static_cast<DmAttributeType_t>( buf.GetUnsignedChar() );
+		if ( !buf.IsValid() || type < AT_FIRST_VALUE_TYPE || type >= AT_TYPE_COUNT )
+			return false;
+		CDmxAttribute *pAttribute = pElement->AddAttribute( pName );
+		if ( !pAttribute || !UnserializeAttribute( buf, pAttribute, type, elementList, strings, nEncodingVersion == 4 ) )
+			return false;
+	}
+	return buf.IsValid();
+}
 
-	// Read + create all elements
-	CUtlVector<CDmxElement*> elementList( 0, nElementCount );
+bool CDmxSerializer::UnserializeElements( CUtlBuffer &buf, CUtlVector<CDmxElement*> &elementList,
+	const CUtlVector<CUtlString> &strings, int nEncodingVersion )
+{
+	const int nElementCount = buf.GetInt();
+	const int nMinElementBytes = sizeof( DmObjectId_t ) + sizeof( int ) + ( nEncodingVersion == 4 ? 4 : 2 );
+	if ( !buf.IsValid() || nElementCount < 0 || nElementCount > buf.GetBytesRemaining() / nMinElementBytes )
+		return false;
 	for ( int i = 0; i < nElementCount; ++i )
 	{
-		const char *pType = NULL;
-		if ( stringTable )
-		{
-			int si = buf.GetShort();
-			if ( si >= nStrings )
-				return false;
-			pType = stringTable + offsetTable[ si ];
-		}
-		else
-		{
-			buf.GetString( pTypeBuf );
-			pType = pTypeBuf;
-		}
-		buf.GetString( pName );
-		buf.Get( &id, sizeof(DmObjectId_t) );
-
+		CUtlString type, name;
+		const char *pType = nEncodingVersion >= 2 ? ReadStringIndex( buf, strings ) :
+			( ReadBinaryString( buf, type ) ? type.Get() : NULL );
+		const char *pName = nEncodingVersion == 4 ? ReadStringIndex( buf, strings ) :
+			( ReadBinaryString( buf, name ) ? name.Get() : NULL );
+		DmObjectId_t id;
+		buf.Get( &id, sizeof( id ) );
+		if ( !pType || !pName || !buf.IsValid() )
+			return false;
 		CDmxElement *pElement = new CDmxElement( pType );
 		{
 			CDmxElementModifyScope modify( pElement );
-			CDmxAttribute *pAttribute = pElement->AddAttribute( "name" );
-			pAttribute->SetValue( (char const *) pName );
+			pElement->AddAttribute( "name" )->SetValue( pName );
 			pElement->SetId( id );
 		}
 		elementList.AddToTail( pElement );
 	}
-
-	// The root is the 0th element
-	*ppRoot = elementList[ 0 ];
-
-	// Now read all attributes
-	for ( int i = 0; i < nElementCount; ++i )
+	for ( int i = 0; i < elementList.Count(); ++i )
 	{
-		UnserializeAttributes( buf, elementList[ i ], elementList, nStrings, offsetTable, stringTable );
+		if ( !UnserializeAttributes( buf, elementList[i], elementList, strings, nEncodingVersion ) )
+			return false;
+	}
+	return true;
+}
+
+bool CDmxSerializer::Unserialize( CUtlBuffer &buf, int nEncodingVersion, CDmxElement **ppRoot )
+{
+	if ( nEncodingVersion < 0 || ( nEncodingVersion > 2 && nEncodingVersion != 4 ) )
+		return false;
+
+	// Skip the rest of the binary header, including its NUL terminator.
+	while ( buf.GetChar() != 0 && buf.IsValid() ) {}
+	if ( !buf.IsValid() )
+		return false;
+
+	CUtlVector<CUtlString> strings;
+	if ( nEncodingVersion >= 2 )
+	{
+		const int nStrings = nEncodingVersion == 4 ? buf.GetInt() : buf.GetShort();
+		if ( !buf.IsValid() || nStrings < 0 || nStrings > buf.GetBytesRemaining() )
+			return false;
+		for ( int i = 0; i < nStrings; ++i )
+		{
+			CUtlString &str = strings[strings.AddToTail()];
+			if ( !ReadBinaryString( buf, str ) )
+				return false;
+		}
 	}
 
-	return buf.IsValid();
+	CUtlVector<CDmxElement*> elementList;
+	if ( !UnserializeElements( buf, elementList, strings, nEncodingVersion ) )
+	{
+		for ( int i = 0; i < elementList.Count(); ++i )
+			delete elementList[i];
+		return false;
+	}
+	if ( !elementList.IsEmpty() )
+		*ppRoot = elementList[0];
+	return true;
 }
 
 
@@ -644,6 +660,8 @@ bool UnserializeDMX( CUtlBuffer &buf, CDmxElement **ppRoot, const char *pFileNam
 	bool bIsBinary = ( buf.GetFlags() & CUtlBuffer::TEXT_BUFFER ) == 0;
 	if ( bIsBinary )
 	{
+		if ( nEncodingVersion == 4 && V_stricmp( pFormatName, "pcf" ) )
+			return false;
 		CDmxSerializer dmxUnserializer;
 		return dmxUnserializer.Unserialize( buf, nEncodingVersion, ppRoot );
 	}

@@ -11,9 +11,7 @@
 
 #ifdef CLIENT_DLL
 #include "c_hl2mp_player.h"
-#include "model_types.h"
 #include "beamdraw.h"
-#include "fx_line.h"
 #include "view.h"
 #else
 #include "basecombatcharacter.h"
@@ -1978,15 +1976,6 @@ void CWeaponRPG::StopGuiding(void)
 		UTIL_Remove(m_hLaserDot);
 		m_hLaserDot = NULL;
 	}
-#else
-	if (m_pBeam)
-	{
-		//Tell it to die right away and let the beam code free it.
-		m_pBeam->brightness = 0.0f;
-		m_pBeam->flags &= ~FBEAM_FOREVER;
-		m_pBeam->die = gpGlobals->curtime - 0.1;
-		m_pBeam = NULL;
-	}
 #endif
 
 }
@@ -2214,234 +2203,40 @@ int CWeaponRPG::WeaponRangeAttack1Condition(float flDot, float flDist)
 
 #ifdef CLIENT_DLL
 
-#define	RPG_MUZZLE_ATTACHMENT		1
-#define	RPG_GUIDE_ATTACHMENT		2
-#define	RPG_GUIDE_TARGET_ATTACHMENT	3
-
-#define	RPG_GUIDE_ATTACHMENT_3RD		4
-#define	RPG_GUIDE_TARGET_ATTACHMENT_3RD	5
-
-#define	RPG_LASER_BEAM_LENGTH	128
-
-extern void FormatViewModelAttachment(Vector &vOrigin, bool bInverse);
-
-//-----------------------------------------------------------------------------
-// Purpose: Returns the attachment point on either the world or viewmodel
-//			This should really be worked into the CBaseCombatWeapon class!
-//-----------------------------------------------------------------------------
-void CWeaponRPG::GetWeaponAttachment(int attachmentId, Vector &outVector, Vector *dir /*= NULL*/)
+void CWeaponRPG::DrawLaserGlint(C_BaseViewModel &viewModel)
 {
-	QAngle	angles;
-
-	if (ShouldDrawUsingViewModel())
-	{
-		CBasePlayer *pOwner = ToBasePlayer(GetOwner());
-
-		if (pOwner != NULL)
-		{
-			pOwner->GetViewModel()->GetAttachment(attachmentId, outVector, angles);
-			::FormatViewModelAttachment(outVector, true);
-		}
-	}
-	else
-	{
-		// We offset the IDs to make them correct for our world model
-		BaseClass::GetAttachment(attachmentId, outVector, angles);
-	}
-
-	// Supply the direction, if requested
-	if (dir != NULL)
-	{
-		AngleVectors(angles, dir, NULL, NULL);
-	}
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Setup our laser beam
-//-----------------------------------------------------------------------------
-void CWeaponRPG::InitBeam(void)
-{
-	if (m_pBeam != NULL)
+	Vector vecOrigin;
+	QAngle angles;
+	const int iAttachment = viewModel.LookupAttachment("laser");
+	if (!viewModel.GetAttachment(iAttachment, vecOrigin, angles))
 		return;
 
-	CBaseCombatCharacter *pOwner = GetOwner();
+	// GetAttachment returns a world-FOV position, but this callback draws
+	// with the viewmodel projection.
+	viewModel.UncorrectViewModelAttachment(vecOrigin);
 
-	if (pOwner == NULL)
-		return;
-
-	if (pOwner->GetAmmoCount(m_iPrimaryAmmoType) <= 0)
-		return;
-
-
-	BeamInfo_t beamInfo;
-
-	CBaseEntity *pEntity = NULL;
-
-	if (ShouldDrawUsingViewModel())
-	{
-		CBasePlayer *pOwner = ToBasePlayer(GetOwner());
-
-		if (pOwner != NULL)
-		{
-			pEntity = pOwner->GetViewModel();
-		}
-	}
-	else
-	{
-		pEntity = this;
-	}
-
-	beamInfo.m_pStartEnt = pEntity;
-	beamInfo.m_pEndEnt = pEntity;
-	beamInfo.m_nType = TE_BEAMPOINTS;
-	beamInfo.m_vecStart = vec3_origin;
-	beamInfo.m_vecEnd = vec3_origin;
-
-	beamInfo.m_pszModelName = (ShouldDrawUsingViewModel()) ? RPG_BEAM_SPRITE_NOZ : RPG_BEAM_SPRITE;
-
-	beamInfo.m_flHaloScale = 0.0f;
-	beamInfo.m_flLife = 0.0f;
-
-	if (ShouldDrawUsingViewModel())
-	{
-		beamInfo.m_flWidth = 2.0f;
-		beamInfo.m_flEndWidth = 2.0f;
-		beamInfo.m_nStartAttachment = RPG_GUIDE_ATTACHMENT;
-		beamInfo.m_nEndAttachment = RPG_GUIDE_TARGET_ATTACHMENT;
-	}
-	else
-	{
-		beamInfo.m_flWidth = 1.0f;
-		beamInfo.m_flEndWidth = 1.0f;
-		beamInfo.m_nStartAttachment = RPG_GUIDE_ATTACHMENT_3RD;
-		beamInfo.m_nEndAttachment = RPG_GUIDE_TARGET_ATTACHMENT_3RD;
-	}
-
-	beamInfo.m_flFadeLength = 0.0f;
-	beamInfo.m_flAmplitude = 0;
-	beamInfo.m_flBrightness = 255.0;
-	beamInfo.m_flSpeed = 1.0f;
-	beamInfo.m_nStartFrame = 0.0;
-	beamInfo.m_flFrameRate = 30.0;
-	beamInfo.m_flRed = 255.0;
-	beamInfo.m_flGreen = 0.0;
-	beamInfo.m_flBlue = 0.0;
-	beamInfo.m_nSegments = 4;
-	beamInfo.m_bRenderable = true;
-	beamInfo.m_nFlags = (FBEAM_FOREVER | FBEAM_SHADEOUT);
-
-	m_pBeam = beams->CreateBeamEntPoint(beamInfo);
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Draw effects for our weapon
-//-----------------------------------------------------------------------------
-void CWeaponRPG::DrawEffects(void)
-{
-	// Must be guiding and not hidden
-	if (!m_bGuiding || m_bHideGuiding)
-	{
-		if (m_pBeam != NULL)
-		{
-			m_pBeam->brightness = 0;
-		}
-
-		return;
-	}
-
-	// Setup our sprite
 	if (m_hSpriteMaterial == NULL)
-	{
 		m_hSpriteMaterial.Init(RPG_LASER_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS);
-	}
 
-	// Setup our beam
-	if (m_hBeamMaterial == NULL)
-	{
-		m_hBeamMaterial.Init(RPG_BEAM_SPRITE, TEXTURE_GROUP_CLIENT_EFFECTS);
-	}
-
-	color32 color = { 255, 255, 255, 255 };
-	Vector	vecAttachment, vecDir;
-	QAngle	angles;
-
-	float scale = 8.0f + random->RandomFloat(-2.0f, 2.0f);
-
-	int	attachmentID = (ShouldDrawUsingViewModel()) ? RPG_GUIDE_ATTACHMENT : RPG_GUIDE_ATTACHMENT_3RD;
-
-	GetWeaponAttachment(attachmentID, vecAttachment, &vecDir);
-
-	// Draw the sprite
+	const color32 color = { 255, 255, 255, 255 };
+	const float flScale = 8.0f + random->RandomFloat(-2.0f, 2.0f);
 	CMatRenderContextPtr pRenderContext(materials);
 	pRenderContext->Bind(m_hSpriteMaterial, this);
-	DrawSprite(vecAttachment, scale, scale, color);
-
-	// Get the beam's run
-	trace_t tr;
-	UTIL_TraceLine(vecAttachment, vecAttachment + (vecDir * RPG_LASER_BEAM_LENGTH), MASK_SHOT, GetOwner(), COLLISION_GROUP_NONE, &tr);
-
-	InitBeam();
-
-	if (m_pBeam != NULL)
-	{
-		m_pBeam->fadeLength = RPG_LASER_BEAM_LENGTH * tr.fraction;
-		m_pBeam->brightness = random->RandomInt(128, 200);
-	}
+	DrawSprite(vecOrigin, flScale, flScale, color);
 }
 
-//-----------------------------------------------------------------------------
-// Purpose: Called on third-person weapon drawing
-//-----------------------------------------------------------------------------
-int	CWeaponRPG::DrawModel(int flags)
-{
-	// Only render these on the transparent pass
-	if (flags & STUDIO_TRANSPARENCY)
-	{
-		DrawEffects();
-		return 1;
-	}
-
-	// Draw the model as normal
-	return BaseClass::DrawModel(flags);
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Called after first-person viewmodel is drawn
-//-----------------------------------------------------------------------------
 void CWeaponRPG::ViewModelDrawn(C_BaseViewModel *pBaseViewModel)
 {
-	// Draw our laser effects
-	DrawEffects();
+	CBaseCombatCharacter *pOwner = GetOwner();
+	if (m_bGuiding && !m_bHideGuiding && !IsDormant() &&
+		pOwner && pOwner->IsAlive() && pOwner->GetActiveWeapon() == this &&
+		pBaseViewModel && pBaseViewModel->GetOwningWeapon() == this &&
+		pBaseViewModel->ViewModelIndex() == m_nViewModelIndex)
+	{
+		DrawLaserGlint(*pBaseViewModel);
+	}
 
 	BaseClass::ViewModelDrawn(pBaseViewModel);
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Used to determine sorting of model when drawn
-//-----------------------------------------------------------------------------
-bool CWeaponRPG::IsTranslucent(void)
-{
-	// Must be guiding and not hidden
-	if (m_bGuiding && !m_bHideGuiding)
-		return true;
-
-	return false;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Turns off effects when leaving the PVS
-//-----------------------------------------------------------------------------
-void CWeaponRPG::NotifyShouldTransmit(ShouldTransmitState_t state)
-{
-	BaseClass::NotifyShouldTransmit(state);
-
-	if (state == SHOULDTRANSMIT_END)
-	{
-		if (m_pBeam != NULL)
-		{
-			m_pBeam->brightness = 0.0f;
-		}
-	}
 }
 
 #endif	//CLIENT_DLL

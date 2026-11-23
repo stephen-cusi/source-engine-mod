@@ -6363,19 +6363,22 @@ static int CBaseEntity_SetUseType (lua_State *L) {
 #endif
 
 static int CBaseEntity_PhysicsInitBox (lua_State *L) {
-  /* HL2SB fix (2026-09-20, two rounds):
-  ** 1) the old check treated arg 1 as a Vector (FUNCTION-style), but this is
-  **    a METHOD -- arg 1 is the entity -- so every call died with
-  **    "calling 'PhysicsInitBox' on bad self (Vector expected, got
-  **    CBaseAnimating)" and the Nuke Pack's sent_nuke never armed;
-  ** 2) the body only nudged VPhysicsInitNormal (model collision) and left
-  **    GetPhysicsObject() nil whenever the model had no physics mesh, which
-  **    then died on phys:IsValid().  Per the wiki, PhysicsInitBox CREATES a
-  **    solid box vphysics object -- do that for real via PhysModelCreateOBB,
-  **    the same path the engine's own boxes take. */
-  CBaseEntity *pEntity = luaL_checkentity(L, 1);
-  Vector mins = luaL_checkvector(L, 2);
-  Vector maxs = luaL_checkvector(L, 3);
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  CBaseAnimating *pAnimating = pEntity->GetBaseAnimating();
+  if ( pEntity->IsWorld() || pEntity->IsPlayer() || ( pAnimating && pAnimating->IsRagdoll() ) )
+  {
+    lua_pushboolean( L, false );
+    return 1;
+  }
+  if ( pEntity->VPhysicsGetObject() && PhysIsInCallback() )
+  {
+    Warning( "Cannot destroy physics in a physics callback!\n" );
+    lua_pushboolean( L, false );
+    return 1;
+  }
+
+  Vector mins = luaL_checkvector( L, 2 );
+  Vector maxs = luaL_checkvector( L, 3 );
   for ( int i = 0; i < 3; ++i )
   {
     if ( mins[i] > maxs[i] )
@@ -6391,18 +6394,39 @@ static int CBaseEntity_PhysicsInitBox (lua_State *L) {
     maxs.Init( 1.0f, 1.0f, 1.0f );
   }
 
-  pEntity->SetCollisionBounds( mins, maxs );
-
-  IPhysicsObject *pObject = PhysModelCreateOBB( pEntity, mins, maxs, pEntity->GetAbsOrigin(), vec3_angle, false );
-  if ( pObject != NULL )
+  CPhysCollide *pCollide = PhysCreateBbox( mins, maxs );
+  if ( !pCollide )
   {
-    const Vector size = maxs - mins;
-    pObject->SetMass( size.x * size.y * size.z * 0.01f );
-    pEntity->VPhysicsSetObject( pObject );
-    pObject->Wake();
+    lua_pushboolean( L, false );
+    return 1;
   }
 
-  lua_pushphysicsobject( L, pObject );
+  solid_t solid;
+  solid.params = g_PhysDefaultObjectParams;
+  const Vector size = maxs - mins;
+  solid.params.volume = size.x * size.y * size.z;
+  Q_strncpy( solid.surfaceprop, luaL_optstring( L, 4, "default" ), sizeof( solid.surfaceprop ) );
+  Vector massCenter;
+  if ( !lua_isnoneornil( L, 5 ) )
+  {
+    massCenter = luaL_checkvector( L, 5 );
+    solid.params.massCenterOverride = &massCenter;
+  }
+
+  pEntity->SetMoveType( MOVETYPE_VPHYSICS );
+  pEntity->SetSolid( SOLID_BBOX );
+  IPhysicsObject *pObject = PhysModelCreateCustom( pEntity, pCollide, pEntity->GetAbsOrigin(),
+    pEntity->GetAbsAngles(), STRING( pEntity->GetModelName() ), false, &solid );
+  if ( pObject != NULL )
+  {
+    // Keep the previous body if creating the replacement fails.
+    pEntity->VPhysicsDestroyObject();
+    pEntity->VPhysicsSetObject( pObject );
+    pEntity->SetCollisionBounds( mins, maxs );
+    pObject->SetMass( solid.params.volume * 0.01f );
+  }
+
+  lua_pushboolean( L, pObject != NULL );
   return 1;
 }
 

@@ -366,6 +366,8 @@ public:
 
 	void SetProgressBias( float bias );
 	void UpdateProgressBar( float progress );
+	void SetLuaDownloadStatus( bool active, bool repaint = true );
+	void CompleteLuaDownloadStatus();
 
 	virtual void ConfirmQuit( void );
 
@@ -375,6 +377,8 @@ private:
 	void DrawMouseFocus( void );
 	void CreateVProfPanels( vgui::Panel *pParent );
 	void DestroyVProfPanels( );
+	void UpdateLoadingProgress( float progress, const char *status );
+	void DrawLoadingProgress( float progress, const char *status );
 
 	virtual void Simulate();
 
@@ -419,6 +423,11 @@ private:
 	// progress bar
 	bool m_bShowProgressDialog;
 	LevelLoadingProgress_e m_eLastProgressPoint;
+	float m_flLoadingProgress;
+	char m_szLoadingStatus[1024];
+	bool m_bLuaDownloadStatus;
+	bool m_bShowProgressTextBeforeLuaDownload;
+	double m_flLuaDownloadCompleteUntil;
 
 	// progress bar debugging
 	int m_nLastProgressPointRepeatCount;
@@ -531,6 +540,11 @@ CEngineVGui::CEngineVGui()
 #endif
 
 	m_bShowProgressDialog = false;
+	m_flLoadingProgress = 0.0f;
+	m_szLoadingStatus[0] = '\0';
+	m_bLuaDownloadStatus = false;
+	m_bShowProgressTextBeforeLuaDownload = false;
+	m_flLuaDownloadCompleteUntil = 0.0;
 	m_bSaveProgress = false;
 	m_bNoShaderAPI = false;
 	m_bNotAllowedToHideGameUI = false;
@@ -1280,7 +1294,10 @@ void CEngineVGui::OnLevelLoadingStarted()
 	}
 
 	// we've starting loading a level/connecting to a server
+	SetLuaDownloadStatus( false );
 	staticGameUIFuncs->OnLevelLoadingStarted( m_bShowProgressDialog );
+	m_flLoadingProgress = 0.0f;
+	m_szLoadingStatus[0] = '\0';
 
 	// reset progress bar timers
 	m_flLoadingStartTime = Plat_FloatTime();
@@ -1316,6 +1333,7 @@ void CEngineVGui::OnLevelLoadingFinished()
 	if (!staticGameUIFuncs)
 		return;
 
+	SetLuaDownloadStatus( false );
 	staticGameUIFuncs->OnLevelLoadingFinished( gfExtendedError, gszDisconnectReason, gszExtendedDisconnectReason );
 	m_eLastProgressPoint = PROGRESS_NONE;
 
@@ -1394,6 +1412,7 @@ void CEngineVGui::ShowErrorMessage()
 	if (!staticGameUIFuncs || !gfExtendedError)
 		return;
 
+	SetLuaDownloadStatus( false );
 	staticGameUIFuncs->OnLevelLoadingFinished( gfExtendedError, gszDisconnectReason, gszExtendedDisconnectReason );
 	m_eLastProgressPoint = PROGRESS_NONE;
 
@@ -1462,12 +1481,7 @@ void CEngineVGui::UpdateProgressBar(LevelLoadingProgress_e progress)
 	// isolated from the normal progress descriptions
 	flPerc = flPerc * ( 1.0f - m_ProgressBias ) + m_ProgressBias;
 
-	if ( staticGameUIFuncs->UpdateProgressBar( flPerc, desc.pszDesc ) )
-	{
-		// re-render vgui on screen
-		extern void V_RenderVGuiOnly();
-		V_RenderVGuiOnly();
-	}
+	UpdateLoadingProgress( flPerc, desc.pszDesc );
 
 	m_eLastProgressPoint = progress;
 }
@@ -1483,12 +1497,7 @@ void CEngineVGui::UpdateCustomProgressBar( float progress, const wchar_t *desc )
 	char ansi[1024];
 	g_pVGuiLocalize->ConvertUnicodeToANSI( desc, ansi, sizeof( ansi ) );
 
-	if ( staticGameUIFuncs->UpdateProgressBar( progress, ansi ) )
-	{
-		// re-render vgui on screen
-		extern void V_RenderVGuiOnly();
-		V_RenderVGuiOnly();
-	}
+	UpdateLoadingProgress( progress, ansi );
 }
 
 void CEngineVGui::StartCustomProgress()
@@ -1497,7 +1506,10 @@ void CEngineVGui::StartCustomProgress()
 		return;
 
 	// we've starting loading a level/connecting to a server
+	SetLuaDownloadStatus( false );
 	staticGameUIFuncs->OnLevelLoadingStarted(true);
+	m_flLoadingProgress = 0.0f;
+	m_szLoadingStatus[0] = '\0';
 	m_bSaveProgress = staticGameUIFuncs->SetShowProgressText( true );
 }
 
@@ -1506,6 +1518,7 @@ void CEngineVGui::FinishCustomProgress()
 	if (!staticGameUIFuncs)
 		return;
 
+	SetLuaDownloadStatus( false );
 	staticGameUIFuncs->SetShowProgressText( m_bSaveProgress );
 	staticGameUIFuncs->OnLevelLoadingFinished( false, "", "" );
 }
@@ -1520,7 +1533,69 @@ void CEngineVGui::UpdateProgressBar( float progress )
 	if ( !staticGameUIFuncs )
 		return;
 
-	if ( staticGameUIFuncs->UpdateProgressBar( progress, "" ) )
+	UpdateLoadingProgress( progress, "" );
+}
+
+static const char *GetLuaDownloadStatusText( bool complete )
+{
+	if ( !complete )
+		return "#GameUI_VerifyingAndDownloading";
+
+	const char *token = "#GameUI_ServerLuaDownloadComplete";
+	return g_pVGuiLocalize && g_pVGuiLocalize->Find( token ) ? token : "Server Lua files downloaded";
+}
+
+void CEngineVGui::SetLuaDownloadStatus( bool active, bool repaint )
+{
+	if ( !staticGameUIFuncs || !ThreadInMainThread() || m_bLuaDownloadStatus == active )
+		return;
+
+	m_bLuaDownloadStatus = active;
+	m_flLuaDownloadCompleteUntil = 0.0;
+	if ( active )
+		m_bShowProgressTextBeforeLuaDownload = staticGameUIFuncs->SetShowProgressText( true );
+	else
+		staticGameUIFuncs->SetShowProgressText( m_bShowProgressTextBeforeLuaDownload );
+
+	const char *status = active ? GetLuaDownloadStatusText( false ) : m_szLoadingStatus;
+	if ( repaint )
+		DrawLoadingProgress( m_flLoadingProgress, status );
+	else
+		staticGameUIFuncs->UpdateProgressBar( m_flLoadingProgress, status );
+}
+
+void CEngineVGui::CompleteLuaDownloadStatus()
+{
+	if ( !staticGameUIFuncs || !ThreadInMainThread() || !m_bLuaDownloadStatus )
+		return;
+
+	// Keep the result readable while the normal sign-on progress continues.
+	m_flLuaDownloadCompleteUntil = Plat_FloatTime() + 0.8;
+	DrawLoadingProgress( m_flLoadingProgress, GetLuaDownloadStatusText( true ) );
+}
+
+void EngineVGui_SetLuaDownloadStatus( bool active )
+{
+	g_EngineVGuiImp.SetLuaDownloadStatus( active );
+}
+
+void EngineVGui_CompleteLuaDownloadStatus()
+{
+	g_EngineVGuiImp.CompleteLuaDownloadStatus();
+}
+
+void CEngineVGui::UpdateLoadingProgress( float progress, const char *status )
+{
+	m_flLoadingProgress = progress;
+	if ( status )
+		Q_strncpy( m_szLoadingStatus, status, sizeof( m_szLoadingStatus ) );
+
+	DrawLoadingProgress( progress, m_bLuaDownloadStatus ? GetLuaDownloadStatusText( m_flLuaDownloadCompleteUntil != 0.0 ) : status );
+}
+
+void CEngineVGui::DrawLoadingProgress( float progress, const char *status )
+{
+	if ( staticGameUIFuncs->UpdateProgressBar( progress, status ) )
 	{
 		// re-render vgui on screen
 		extern void V_RenderVGuiOnly();
@@ -1622,6 +1697,9 @@ void CEngineVGui::Simulate()
 
 	if ( staticPanel )
 	{
+		if ( m_flLuaDownloadCompleteUntil && Plat_FloatTime() >= m_flLuaDownloadCompleteUntil )
+			SetLuaDownloadStatus( false, false );
+
 		VPROF_BUDGET( "CEngineVGui::Simulate", VPROF_BUDGETGROUP_OTHER_VGUI );
 
 		// update vgui animations

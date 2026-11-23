@@ -228,6 +228,14 @@ EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CFileSystem_Stdio, IBaseFileSystem, BASEFILES
 
 //-----------------------------------------------------------------------------
 
+// This is a client preference sent with userinfo, not a server setting.
+// The dedicated server also exposes the variable for its local Lua state.
+#if defined( DEDICATED ) || defined( SWDS )
+static ConVar gmod_language( "gmod_language", "en", FCVAR_ARCHIVE, "Changes the game language." );
+#else
+static ConVar gmod_language( "gmod_language", "en", FCVAR_ARCHIVE | FCVAR_USERINFO, "Changes the game language." );
+#endif
+
 #ifndef _RETAIL
 bool UseOptimalBufferAllocation()
 {

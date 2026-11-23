@@ -43,20 +43,24 @@
 #include "tier0/memdbgon.h"
 
 // ---------------------------------------------------------------------------
-// The wrapper.  CSmartPtr keeps the effect object alive while a script holds
-// it; GetObject() == NULL (or the effect released back to the manager) is the
-// GMod "not valid" state.
+// The particle manager owns the effect's lifetime. Its reference list clears
+// Lua handles when the effect is destroyed.
 // ---------------------------------------------------------------------------
 struct LuaNewParticleUD
 {
-	CSmartPtr<CNewParticleEffect> m_pEffect;
+	explicit LuaNewParticleUD( CNewParticleEffect *pEffect ) : m_pEffect( pEffect ) {}
+
+	HPARTICLEFFECT m_pEffect;
 };
 
 static int LuaNewParticle_gc( lua_State *Lstate )
 {
 	LuaNewParticleUD *pUD = (LuaNewParticleUD *)luaL_testudata( Lstate, 1, "CNewParticleEffect" );
 	if ( pUD && lua_rawlen( Lstate, 1 ) == sizeof( LuaNewParticleUD ) )
-		pUD->m_pEffect = nullptr;
+	{
+		// Detach without ending the C++ lifetime if Lua calls __gc explicitly.
+		pUD->m_pEffect.Set( nullptr );
+	}
 	return 0;
 }
 
@@ -67,8 +71,7 @@ void HL2SB_PushNewParticleEffect( lua_State *L, CNewParticleEffect *pEffect )
 		lua_pushnil( L );
 		return;
 	}
-	LuaNewParticleUD *pUD = (LuaNewParticleUD *)lua_newuserdata( L, sizeof( LuaNewParticleUD ) );
-	new ( &pUD->m_pEffect ) CSmartPtr<CNewParticleEffect>( pEffect );
+	new ( lua_newuserdata( L, sizeof( LuaNewParticleUD ) ) ) LuaNewParticleUD( pEffect );
 	luaL_getmetatable( L, "CNewParticleEffect" );
 	lua_setmetatable( L, -2 );
 }
@@ -81,12 +84,17 @@ static LuaNewParticleUD *LuaNewParticle_checkudata( lua_State *Lstate, int iArg 
 	return pUD;
 }
 
-// GMod: IsValid is "false once the particle system is scheduled for removal".
-static CNewParticleEffect *LuaNewParticle_checkalive( lua_State *Lstate, int iArg )
+static CNewParticleEffect *LuaNewParticle_getalive( lua_State *Lstate, int iArg )
 {
 	LuaNewParticleUD *pUD = LuaNewParticle_checkudata( Lstate, iArg );
-	CNewParticleEffect *pEffect = pUD->m_pEffect.GetObject();
-	if ( pEffect == NULL || pEffect->GetRemoveFlag() )
+	CNewParticleEffect *pEffect = pUD->m_pEffect();
+	return ( pEffect && !pEffect->GetRemoveFlag() ) ? pEffect : NULL;
+}
+
+static CNewParticleEffect *LuaNewParticle_checkalive( lua_State *Lstate, int iArg )
+{
+	CNewParticleEffect *pEffect = LuaNewParticle_getalive( Lstate, iArg );
+	if ( pEffect == NULL )
 		luaL_error( Lstate, "Tried to use a NULL CNewParticleEffect!" );
 	return pEffect;
 }
@@ -161,7 +169,7 @@ LUA_REGISTRATION_INIT( CNewParticleEffectReg );
 LUA_BINDING_BEGIN( CNewParticleEffectReg, IsValid, "method", "Returns whether the particle effect is valid and not scheduled for removal.", "client" )
 {
 	LuaNewParticleUD *pUD = LuaNewParticle_checkudata( L, 1 );
-	CNewParticleEffect *pEffect = pUD->m_pEffect.GetObject();
+	CNewParticleEffect *pEffect = pUD->m_pEffect();
 	lua_pushboolean( L, ( pEffect != NULL && pEffect->IsValid() && !pEffect->GetRemoveFlag() ) ? 1 : 0 );
 	return 1;
 }
@@ -304,8 +312,9 @@ LUA_BINDING_END()
 // StartEmission( infiniteOnly )
 LUA_BINDING_BEGIN( CNewParticleEffectReg, StartEmission, "method", "Restarts emission of a particle effect stopped with StopEmission.", "client" )
 {
-	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->StartEmission( luaL_optboolean( L, 2, 0 ) ? true : false );
+	CNewParticleEffect *pEffect = LuaNewParticle_getalive( L, 1 );
+	if ( pEffect )
+		pEffect->StartEmission( luaL_optboolean( L, 2, 0 ) ? true : false );
 	return 0;
 }
 LUA_BINDING_END()
@@ -313,14 +322,14 @@ LUA_BINDING_END()
 // StopEmission( infiniteOnly, removeAllParticles, wakeOnStop )
 LUA_BINDING_BEGIN( CNewParticleEffectReg, StopEmission, "method", "Stops emission of the particle effect; existing particles play out unless removeAllParticles is set.", "client" )
 {
-	LuaNewParticleUD *pUD = LuaNewParticle_checkudata( L, 1 );
-	CNewParticleEffect *pEffect = pUD->m_pEffect.GetObject();
-	if ( pEffect == NULL )
-		luaL_error( L, "Tried to use a NULL CNewParticleEffect!" );
-	// Argument order per the wiki: ( infiniteOnly, removeAllParticles, wakeOnStop ).
-	pEffect->StopEmission( luaL_optboolean( L, 2, 0 ) ? true : false,
-						   luaL_optboolean( L, 3, 0 ) ? true : false,
-						   luaL_optboolean( L, 4, 0 ) ? true : false );
+	CNewParticleEffect *pEffect = LuaNewParticle_getalive( L, 1 );
+	if ( pEffect && pEffect->IsValid() )
+	{
+		const bool bInfiniteOnly = lua_isboolean( L, 2 ) && lua_toboolean( L, 2 );
+		const bool bRemoveAllParticles = lua_isboolean( L, 3 ) && lua_toboolean( L, 3 );
+		const bool bWakeOnStop = lua_isboolean( L, 4 ) && lua_toboolean( L, 4 );
+		pEffect->StopEmission( bInfiniteOnly, bRemoveAllParticles, bWakeOnStop );
+	}
 	return 0;
 }
 LUA_BINDING_END()
@@ -329,7 +338,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, StopEmissionAndDestroyImmediately, "method", "Stops the particle effect and destroys it immediately.", "client" )
 {
 	LuaNewParticleUD *pUD = LuaNewParticle_checkudata( L, 1 );
-	CNewParticleEffect *pEffect = pUD->m_pEffect.GetObject();
+	CNewParticleEffect *pEffect = pUD->m_pEffect();
 	if ( pEffect == NULL )
 		luaL_error( L, "Tried to use a NULL CNewParticleEffect!" );
 	bool bInfiniteOnly = luaL_optboolean( L, 2, 0 ) ? true : false;
@@ -350,7 +359,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( CNewParticleEffectReg, IsFinished, "method", "Returns whether the particle effect has finished and is scheduled for removal.", "client" )
 {
 	LuaNewParticleUD *pUD = LuaNewParticle_checkudata( L, 1 );
-	CNewParticleEffect *pEffect = pUD->m_pEffect.GetObject();
+	CNewParticleEffect *pEffect = pUD->m_pEffect();
 	lua_pushboolean( L, ( pEffect == NULL || !pEffect->IsValid() || pEffect->GetRemoveFlag() ) ? 1 : 0 );
 	return 1;
 }
@@ -359,8 +368,9 @@ LUA_BINDING_END()
 // SetShouldDraw( shouldDraw )
 LUA_BINDING_BEGIN( CNewParticleEffectReg, SetShouldDraw, "method", "Sets whether the particle effect is drawn.", "client" )
 {
-	CNewParticleEffect *pEffect = LuaNewParticle_checkalive( L, 1 );
-	pEffect->SetShouldDraw( luaL_checkboolean( L, 2 ) ? true : false );
+	CNewParticleEffect *pEffect = LuaNewParticle_getalive( L, 1 );
+	if ( pEffect )
+		pEffect->SetShouldDraw( luaL_checkboolean( L, 2 ) ? true : false );
 	return 0;
 }
 LUA_BINDING_END()

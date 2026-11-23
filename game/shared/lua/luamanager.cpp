@@ -33,6 +33,9 @@ extern "C" __declspec( dllimport ) unsigned short __stdcall
 #include "steam/isteamfriends.h"
 #ifdef CLIENT_DLL
 #include "steam/steam_api.h"
+#include "networkstringtable_clientdll.h"
+#include "inetchannelinfo.h"
+#include "../../../engine/lua_filesync_hash.h"
 #endif
 #include "networkstringtabledefs.h"
 #ifndef CLIENT_DLL
@@ -112,6 +115,8 @@ ConVar hl2sb_dev_msgs( "hl2sb_dev_msgs", "0", FCVAR_ARCHIVE,
 #include "tier0/memdbgon.h"
 
 ConVar gamemode( "gamemode", "sandbox", FCVAR_ARCHIVE | FCVAR_REPLICATED );
+static ConVar sv_allowcslua( "sv_allowcslua", "0", FCVAR_REPLICATED | FCVAR_ARCHIVE | FCVAR_NOTIFY,
+	"Allow remote clients to load their own clientside addon Lua." );
 static char contentSearchPath[MAX_PATH];
 static char baseContentSearchPath[MAX_PATH];  // HL2SB: gamemodes/base/content
 
@@ -335,6 +340,7 @@ static void LuaMakeRelative (char *pszPath, int nSize) {
   }
 }
 
+static const int HL2SB_LUA_FILE_SKIPPED = -1;
 static int HL2SB_LoadLuaFile( lua_State *L, const char *filename, bool execute );
 
 static int HL2SB_IncludeFile (lua_State *L, bool execute) {
@@ -1141,13 +1147,6 @@ static ConVar lua_showerrors_sv( "lua_showerrors_sv", "1", FCVAR_ARCHIVE,
 	"Show Serverside Lua errors in the console (GMod-parity name)" );
 #endif
 
-// HL2SB: GMod registers gmod_language on BOTH realms (its client.dll and
-// server.dll both carry the name) -- the language helpers read it, and
-// clients report their language through it.  Archived so the choice
-// persists; replicated so a server-side language check agrees with the
-// client's.
-static ConVar gmod_language( "gmod_language", "en", FCVAR_ARCHIVE | FCVAR_REPLICATED,
-	"The clients language." );
 #ifdef CLIENT_DLL
 // HL2SB: GMod's multicore experiment toggle is client-side there too.
 // No behaviour is wired behind it in this fork yet; registered so addons
@@ -2521,6 +2520,68 @@ void luasrc_AutoRefreshTick( void )
 	}
 }
 
+#ifdef CLIENT_DLL
+static bool HL2SB_ClientLuaRequiresServerApproval( lua_State *state )
+{
+	// Coroutines share their realm's registry. Keep menu Lua separate from
+	// the per-map client state even if the menu calls through a coroutine.
+	if ( !::L || lua_topointer( state, LUA_REGISTRYINDEX ) != lua_topointer( ::L, LUA_REGISTRYINDEX ) ||
+		 !engine || engine->IsPlayingDemo() || sv_allowcslua.GetBool() )
+		return false;
+
+	const INetChannelInfo *channel = engine->GetNetChannelInfo();
+	// Independent local dedicated servers use IP sockets just like remote
+	// servers. Only the in-process single-player/listen host is exempt.
+	if ( !channel || channel->IsLoopback() )
+		return false;
+
+	ConVarRef cheats( "sv_cheats" );
+	return !cheats.IsValid() || !cheats.GetBool();
+}
+
+static bool HL2SB_LuaSourceNeedsManifest( const char *source )
+{
+	char path[MAX_PATH];
+	Q_strncpy( path, source, sizeof( path ) );
+	Q_FixSlashes( path, '/' );
+	return !Q_strnicmp( path, "addons/", 7 ) || Q_stristr( path, "/addons/" ) ||
+		Q_stristr( path, ".gma/" ) || !Q_strnicmp( path, "cache/hl2sb_lua/", 16 ) ||
+		Q_stristr( path, "/cache/hl2sb_lua/" );
+}
+
+static bool HL2SB_LuaMatchesServerManifest( const char *filename, char *contents, int size )
+{
+	if ( !networkstringtable || size <= 0 )
+		return false;
+
+	char path[MAX_PATH];
+	Q_strncpy( path, filename, sizeof( path ) );
+	Q_FixSlashes( path, '/' );
+	const char *name = path;
+	if ( !Q_strnicmp( path, "lua/", 4 ) )
+		name += 4;
+	else if ( const char *luaRoot = Q_stristr( path, "/lua/" ) )
+		name = luaRoot + 5;
+
+	INetworkStringTable *table = networkstringtable->FindTable( "client_lua_files" );
+	if ( !table )
+		return false;
+	const int index = table->FindStringIndex( name );
+	if ( index <= 0 || index >= table->GetNumStrings() || Q_strcmp( name, table->GetString( index ) ) )
+		return false;
+
+	int expectedLength = 0;
+	const void *expected = table->GetStringUserData( index, &expectedLength );
+	unsigned char digest[32];
+	if ( !expected || expectedLength != sizeof( digest ) )
+		return false;
+	// AddCSLuaFile and the engine transfer hash the original bytes plus NUL.
+	contents[size] = '\0';
+	LuaFileHash( contents, size + 1, digest );
+	return memcmp( digest, expected, sizeof( digest ) ) == 0;
+}
+#endif
+
 static int HL2SB_LoadLuaFile (lua_State *L, const char *filename, bool execute) {
 
 	// HL2SB: an ABSOLUTE path cannot be opened with pathID "MOD" (see
@@ -2548,7 +2609,11 @@ static int HL2SB_LoadLuaFile (lua_State *L, const char *filename, bool execute) 
 		return 0;
 	}
 
-	LuaAutoRefreshTrack( filename );
+#ifdef CLIENT_DLL
+	const bool restricted = HL2SB_ClientLuaRequiresServerApproval( L );
+	const bool needsManifest = restricted &&
+		( HL2SB_LuaSourceNeedsManifest( fullPath ) || HL2SB_LuaSourceNeedsManifest( filename ) );
+#endif
 
 	// GLua syntax compat: stock GMod scripts (and many workshop SWEPs) use
 	// C-style `//` line comments and the `!=` operator, which standard Lua 5.1
@@ -2558,6 +2623,13 @@ static int HL2SB_LoadLuaFile (lua_State *L, const char *filename, bool execute) 
 	// file is not visible through the engine filesystem.
 	if ( !filesystem || !filesystem->FileExists( filename, "MOD" ) )
 	{
+#ifdef CLIENT_DLL
+		// Don't fall back to the process filesystem while a remote server
+		// restricts client Lua. Normal game files come from the MOD mounts.
+		if ( restricted )
+			return HL2SB_LUA_FILE_SKIPPED;
+#endif
+		LuaAutoRefreshTrack( filename );
 		int iFallback = luaL_loadfile(L, filename);
 		if ( iFallback == 0 && execute )
 			iFallback = lua_pcall( L, 0, LUA_MULTRET, 0 );
@@ -2592,6 +2664,17 @@ static int HL2SB_LoadLuaFile (lua_State *L, const char *filename, bool execute) 
 		lua_pushfstring( L, "out of memory reading %s", filename );
 		return 2;
 	}
+
+#ifdef CLIENT_DLL
+	if ( needsManifest && ( nRead != nSize || !HL2SB_LuaMatchesServerManifest( filename, pBuf, nRead ) ) )
+	{
+		free( pBuf );
+		if ( hl2sb_dev_msgs.GetBool() )
+			luasrc_LuaInfoMsgF( "[Lua] %s: not approved by the remote server - skipped\n", filename );
+		return HL2SB_LUA_FILE_SKIPPED;
+	}
+#endif
+	LuaAutoRefreshTrack( filename );
 
 	// Normalise CRLF (Source files may be checked out either way).
 	int nClean = 0;
@@ -2781,7 +2864,7 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 		if ( hl2sb_dev_msgs.GetBool() )
 		luasrc_LuaInfoMsgF( "[Lua]   %s  (prerequisite)\n", relative );
 		if ( ( moduleFolder ? HL2SB_LoadBootstrapModule( L, loadname, s_pHL2SBFirst[k] )
-		                    : luasrc_dofile( L, loadname ) ) != 0 )
+		                    : luasrc_dofile( L, loadname ) ) > 0 )
 			++nFailed;
 		lua_settop( L, nTop );
 
@@ -2821,11 +2904,12 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 				// HL2SB: load diagnostics - "which Lua files actually ran".
 				if ( hl2sb_dev_msgs.GetBool() )
 				luasrc_LuaInfoMsgF( "[Lua]   %s\n", relative );
-				if ( ( moduleFolder ? HL2SB_LoadBootstrapModule( L, loadname, fn )
-				                    : luasrc_dofile( L, loadname ) ) != 0 )
+				const int result = moduleFolder ? HL2SB_LoadBootstrapModule( L, loadname, fn ) : luasrc_dofile( L, loadname );
+				if ( result > 0 )
 					++nFailed;
 				lua_settop( L, nTop );
-				++nLoaded;
+				if ( result != HL2SB_LUA_FILE_SKIPPED )
+					++nLoaded;
 			}
 		}
 
@@ -2971,7 +3055,7 @@ LUA_API void luasrc_dofolder_sorted (lua_State *L, const char *path, bool bRecur
 
 		if ( hl2sb_dev_msgs.GetBool() )
 		Msg( "[Lua]   %s\n", files[i].Get() );
-		if ( luasrc_dofile( L, loadname ) != 0 )
+		if ( luasrc_dofile( L, loadname ) > 0 )
 			++nFailed;
 		// HL2SB: a chunk that returns at top level would otherwise leave one
 		// more value on the stack per file (AGENTS.md 5.4.2).
@@ -3531,10 +3615,6 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 	if ( hl2sb_dev_msgs.GetBool() )
 	luasrc_LuaInfoMsgF( "[Lua] entity '%s' <- %s\n", className, fullpath );
 
-	// HL2SB: this is the one place that knows which addon (or the tree's own
-	// lua/) a scripted class came from -- see luasrc_NoteClassScript.
-	luasrc_NoteClassScript( className, filename, fullpath );
-
 	lua_newtable( L );
 	char entDir[ MAX_PATH ];
 	Q_snprintf( entDir, sizeof( entDir ), "entities/%s", className );
@@ -3546,16 +3626,19 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 	lua_setfield( L, -2, "__factory" );
 	lua_setglobal( L, "ENT" );
 
-	if ( luasrc_dofile( L, fullpath ) != 0 )
+	const int result = luasrc_dofile( L, fullpath );
+	if ( result != 0 )
 	{
 		// HL2SB: a failed entity script used to fail SILENTLY here -- no factory,
 		// no registration, and the addon only saw "method is nil" at spawn time.
-		luasrc_LuaErrorMsgF( "[HL2SB] entity '%s': script FAILED, no Lua class or factory registered (%s)\n",
-			className, fullpath );
+		if ( result != HL2SB_LUA_FILE_SKIPPED )
+			luasrc_LuaErrorMsgF( "[HL2SB] entity '%s': script FAILED, no Lua class or factory registered (%s)\n",
+				className, fullpath );
 		lua_pushnil( L );
 		lua_setglobal( L, "ENT" );
 		return;
 	}
+	luasrc_NoteClassScript( className, filename, fullpath );
 
 	// The Team Sandbox `entity` module is what the engine's own
 	// CBaseScripted::LoadScriptedEntity() reads back -- without this registration
@@ -3943,10 +4026,6 @@ static void luasrc_LoadOneWeapon (const char *filename, const char *className)
 	if ( hl2sb_dev_msgs.GetBool() )
 	Msg( "[Lua] weapon '%s' <- %s\n", className, fullpath );
 
-	// HL2SB: this is the one place that knows which addon (or the tree's own
-	// lua/) a scripted class came from -- see luasrc_NoteClassScript.
-	luasrc_NoteClassScript( className, filename, fullpath );
-
 	// Keep the class definition independent of its base. The original weapons
 	// registry resolves Base after all class files have been registered.
 	lua_newtable( L );
@@ -3972,6 +4051,7 @@ static void luasrc_LoadOneWeapon (const char *filename, const char *className)
 	lua_setglobal( L, "SWEP" );
 	if ( luasrc_dofile( L, fullpath ) == 0 )
 	{
+		luasrc_NoteClassScript( className, filename, fullpath );
 		lua_getglobal( L, "SWEP" );
 		const int definition = lua_gettop( L );
 		lua_getglobal( L, "weapons" );
@@ -4160,7 +4240,8 @@ void luasrc_LoadEffects (const char *path)
 					lua_setfield( L, -2, "__folder" );
 					lua_setglobal( L, "EFFECT" );
 
-					if ( luasrc_dofile( L, fullpath ) == 0 )
+					const int result = luasrc_dofile( L, fullpath );
+					if ( result == 0 )
 					{
 						lua_getglobal( L, "effects" );
 						if ( lua_istable( L, -1 ) )
@@ -4183,7 +4264,7 @@ void luasrc_LoadEffects (const char *path)
 							lua_pop( L, 1 );
 						}
 					}
-					else
+					else if ( result != HL2SB_LUA_FILE_SKIPPED )
 					{
 						lua_pop( L, 1 );   // the error object luasrc_dofile left
 					}
@@ -4682,12 +4763,6 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 // change to exercise auto-refresh); all three have the same semantics, so the
 // bodies are funnelled here instead of being pasted per command name.
 // ---------------------------------------------------------------------------
-// Flags match GMod's registration (ARCHIVE | NOTIFY | REPLICATED over the
-// replicated default "1"); the game side's flag-integrity check expects the
-// full set.
-static ConVar sv_allowcslua( "sv_allowcslua", "1", FCVAR_REPLICATED | FCVAR_ARCHIVE | FCVAR_NOTIFY,
-	"Allow clients to run client-side Lua (lua_openscript_cl / lua_run_cl)" );
-
 static void HL2SB_LuaDoFile_Impl( const CCommand &args, bool bClient, const char *cmdname )
 {
 	if ( !g_bLuaInitialized )
@@ -4703,16 +4778,13 @@ static void HL2SB_LuaDoFile_Impl( const CCommand &args, bool bClient, const char
 	// Server realm only -- the client has no such helper.
 	if ( !UTIL_IsCommandIssuedByServerAdmin() )
 		return;
-#endif
-
-	// GMod: with sv_allowcslua 0 the client-side script commands are refused.
-	// The cvar is replicated, so checking it locally is the same decision the
-	// server would make.
-	if ( bClient && !sv_allowcslua.GetBool() )
+#else
+	if ( bClient && HL2SB_ClientLuaRequiresServerApproval( L ) )
 	{
 		Msg( "%s: refused, sv_allowcslua is 0\n", cmdname );
 		return;
 	}
+#endif
 
 	char fullpath[ 512 ] = { 0 };
 	char filename[ 256 ] = { 0 };
@@ -4777,9 +4849,7 @@ static void HL2SB_LuaDoFile_Impl( const CCommand &args, bool bClient, const char
 			return;
 		}
 
-		// Same gate as lua_openscript_cl (2026-09-20): the cvar is replicated,
-		// so checking it locally is the same decision the server would make.
-		if ( !sv_allowcslua.GetBool() )
+		if ( HL2SB_ClientLuaRequiresServerApproval( L ) )
 		{
 			Msg( "lua_run_cl: refused, sv_allowcslua is 0\n" );
 			return;
@@ -4861,7 +4931,7 @@ static void HL2SB_LuaDoFile_Impl( const CCommand &args, bool bClient, const char
 // lua_run(_cl), lua_dofile(_cl) (+GMod-name lua_openscript(_cl) above),
 // lua_reloadents, include, AddCSLuaFile (no-op stub).  What this block adds:
 //
-//   sv_allowcslua   (above HL2SB_LuaDoFile_Impl) - replicated, default 1
+//   sv_allowcslua   (above) - replicated, default 0
 //   lua_openscript(_cl), lua_refresh_file        - GMod command names
 //   lua_dumpfonts(_menu)      - dump the per-state font registry
 //   lua_dumptimers(_cl/_sv/_menu) - dump timer.* state (needs timer.Dump,
