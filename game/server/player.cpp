@@ -2484,8 +2484,6 @@ void CBasePlayer::LuaKillSilent()
     SetSuitUpdate(NULL, false, 0);
     SetFOV(this, 0);
     m_flDeathTime = gpGlobals->curtime;
-    CTakeDamageInfo info(this, this, 0.0f, DMG_GENERIC);
-    DeathSound(info);
     m_lifeState = LIFE_DEAD;
     RemoveEffects(EF_NODRAW);
     FlashlightTurnOff();

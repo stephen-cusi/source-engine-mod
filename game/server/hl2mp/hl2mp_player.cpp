@@ -1796,8 +1796,11 @@ void CHL2MP_Player::DetonateTripmines( void )
 		}
 	}
 
-	// Play sound for pressing the detonator
+	// The GMod cleanup path silently detonates owned charges. The weapon plays
+	// its own button sound when the player presses the detonator.
+#if !defined( LUA_SDK )
 	EmitSound( "Weapon_SLAM.SatchelDetonate" );
+#endif
 }
 
 #if defined(LUA_SDK)
@@ -1931,18 +1934,25 @@ int CHL2MP_Player::OnTakeDamage( const CTakeDamageInfo &inputInfo )
 
 void CHL2MP_Player::DeathSound( const CTakeDamageInfo &info )
 {
-#if defined ( LUA_SDK )
-	CTakeDamageInfo lInfo = info;
+	CBaseAnimating *pRagdoll = m_hRagdoll ? m_hRagdoll->GetBaseAnimating() : NULL;
+	if ( pRagdoll && pRagdoll->IsDissolving() )
+		return;
 
-	BEGIN_LUA_CALL_HOOK( "PlayerDeathSound" );
-		lua_pushhl2mpplayer( L, this );
-		lua_pushdamageinfo( L, lInfo );
-	END_LUA_CALL_HOOK( 2, 1 );
+#if defined( LUA_SDK )
+	if ( L )
+	{
+		BEGIN_LUA_CALL_HOOK( "PlayerDeathSound" );
+			lua_pushplayer( L, this );
+		END_LUA_CALL_HOOK( 1, 1 );
 
-	RETURN_LUA_NONE();
-#endif
-	if ( m_hRagdoll && m_hRagdoll->GetBaseAnimating()->IsDissolving() )
-		 return;
+		const bool bMuteDefaultSound = lua_toboolean( L, -1 ) != 0;
+		lua_pop( L, 1 );
+		if ( bMuteDefaultSound )
+			return;
+	}
+
+	CBasePlayer::DeathSound( info );
+#else
 
 	char szStepSound[128];
 
@@ -1969,6 +1979,7 @@ void CHL2MP_Player::DeathSound( const CTakeDamageInfo &info )
 	ep.m_pOrigin = &vecOrigin;
 
 	EmitSound( filter, entindex(), ep );
+#endif
 }
 
 CBaseEntity* CHL2MP_Player::EntSelectSpawnPoint( void )

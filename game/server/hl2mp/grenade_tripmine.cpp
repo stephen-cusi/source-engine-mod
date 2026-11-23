@@ -254,8 +254,6 @@ void CTripmineGrenade::Event_Killed( const CTakeDamageInfo &info )
 
 	SetThink( &CTripmineGrenade::DelayDeathThink );
 	SetNextThink( gpGlobals->curtime + 0.25 );
-
-	EmitSound( "TripmineGrenade.StopSound" );
 }
 
 
