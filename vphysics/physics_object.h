@@ -241,7 +241,8 @@ private:
 
 	// these 5 should pack into a short
 	// pack new bools here
-	bool			m_shadowTempGravityDisable : 5;
+	bool			m_shadowTempGravityDisable : 4;
+	bool			m_holdsPolysoupReference : 1;
 	bool			m_hasTouchedDynamic : 1;
 	bool			m_asleepSinceCreation : 1;
 	bool			m_forceSilentDelete : 1;

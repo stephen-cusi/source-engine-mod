@@ -149,6 +149,12 @@ CPhysicsCollision g_PhysicsCollision;
 IPhysicsCollision *physcollision = &g_PhysicsCollision;
 EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CPhysicsCollision, IPhysicsCollision, VPHYSICS_COLLISION_INTERFACE_VERSION, g_PhysicsCollision );
 
+static void *GetPhysicsCollisionWithPolysoupReferences()
+{
+	return physcollision;
+}
+EXPOSE_INTERFACE_FN( GetPhysicsCollisionWithPolysoupReferences, HL2SBPhysicsPolysoupRefs, VPHYSICS_COLLISION_POLYSOUP_REFS_VERSION );
+
 
 //-----------------------------------------------------------------------------
 // Abstract compact_surface vs. compact_mopp
@@ -1413,7 +1419,6 @@ void CPhysicsCollision::PolysoupDestroy( CPhysPolysoup *pSoup )
 
 void CPhysicsCollision::PolysoupAddTriangle( CPhysPolysoup *pSoup, const Vector &a, const Vector &b, const Vector &c, int materialIndex7bits )
 {
-	pSoup->m_isValid = true;
 	ConvertPositionToIVP( a, pSoup->m_triangle[0] );
 	ConvertPositionToIVP( b, pSoup->m_triangle[1] );
 	ConvertPositionToIVP( c, pSoup->m_triangle[2] );
@@ -1426,6 +1431,7 @@ void CPhysicsCollision::PolysoupAddTriangle( CPhysPolysoup *pSoup, const Vector 
 		Warning("(%.2f, %.2f, %.2f)\n", c.x, c.y, c.z );
 		return;
 	}
+	pSoup->m_isValid = true;
 	IVP_Compact_Triangle *pTriangle = pLedge->get_first_triangle();
 	pTriangle->set_material_index( materialIndex7bits );
 #if ENABLE_IVP_MOPP
@@ -1485,6 +1491,7 @@ CPhysCollide *CPhysicsCollision::ConvertPolysoupToCollide( CPhysPolysoup *pSoup,
 		}
 	}
 
+	pCollide->EnablePolysoupReferences();
 	return pCollide;
 }
 
@@ -1584,12 +1591,12 @@ bool CPhysicsCollision::IsBoxIntersectingCone( const Vector &boxAbsMins, const V
 	return m_traceapi.IsBoxIntersectingCone( boxAbsMins, boxAbsMaxs, cone );
 }
 
-// Free a collide that was created with ConvertConvexToCollide()
+// Release the caller's collision model. Polysoup bodies may still use it.
 void CPhysicsCollision::DestroyCollide( CPhysCollide *pCollide )
 {
-	if ( !IsBBoxCache( pCollide ) )
+	if ( pCollide && !IsBBoxCache( pCollide ) )
 	{
-		delete pCollide;
+		pCollide->ReleaseOwner();
 	}
 }
 

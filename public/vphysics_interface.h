@@ -176,6 +176,10 @@ struct truncatedcone_t
 
 #define VPHYSICS_COLLISION_INTERFACE_VERSION	"VPhysicsCollision007"
 
+// Optional alias for IPhysicsCollision. Bodies retain shapes created by
+// ConvertPolysoupToCollide after the caller gives up its reference.
+#define VPHYSICS_COLLISION_POLYSOUP_REFS_VERSION "HL2SBPhysicsPolysoupRefs001"
+
 abstract_class IPhysicsCollision
 {
 public:

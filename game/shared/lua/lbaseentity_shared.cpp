@@ -9,8 +9,10 @@
 #include "cbase.h"
 #ifdef CLIENT_DLL
 #include "c_recipientfilter.h"
+#include "client_factorylist.h"
 #define CRecipientFilter C_RecipientFilter
 #else
+#include "init_factory.h"
 #include "recipientfilter.h"
 #endif
 #include "takedamageinfo.h"
@@ -6430,6 +6432,115 @@ static int CBaseEntity_PhysicsInitBox (lua_State *L) {
   return 1;
 }
 
+// GMod builds a hollow triangle soup and leaves the entity's solid and move
+// types to the caller. Accept either vectors or MeshVertex tables.
+static bool HL2SB_InitPhysicsFromMesh( lua_State *L, CBaseEntity *entity )
+{
+  CBaseAnimating *animating = entity->GetBaseAnimating();
+  if ( !physenv || !physcollision || !physprops || entity->IsWorld() ||
+       entity->IsPlayer() || ( animating && animating->IsRagdoll() ) )
+    return false;
+
+  if ( entity->VPhysicsGetObject() && PhysIsInCallback() )
+  {
+    Warning( "Cannot destroy physics in a physics callback!\n" );
+    return false;
+  }
+
+  factorylist_t factories;
+  FactoryList_Retrieve( factories );
+  if ( !factories.physicsFactory ||
+       factories.physicsFactory( VPHYSICS_COLLISION_POLYSOUP_REFS_VERSION, NULL ) != physcollision )
+    return false;
+
+  luaL_checktype( L, 2, LUA_TTABLE );
+  const char *surface = luaL_optstring( L, 3, "default" );
+  solid_t solid;
+  solid.params = g_PhysDefaultObjectParams;
+  Q_strncpy( solid.surfaceprop, surface, sizeof( solid.surfaceprop ) );
+  Vector massCenter;
+  if ( !lua_isnoneornil( L, 4 ) )
+  {
+    massCenter = luaL_checkvector( L, 4 );
+    if ( !massCenter.IsValid() )
+      return false;
+    solid.params.massCenterOverride = &massCenter;
+  }
+
+  if ( !lua_checkstack( L, 3 ) )
+    return false;
+  lua_pushliteral( L, "pos" );
+  const int posKey = lua_gettop( L );
+  CPhysPolysoup *soup = physcollision->PolysoupCreate();
+  const int triangleMaterial = clamp( physprops->GetSurfaceIndex( "metal" ), 0, 127 );
+  Vector triangle[3];
+  Vector mins = vec3_origin;
+  Vector maxs = vec3_origin;
+  int vertex = 0;
+  bool hasTriangle = false;
+  bool finite = true;
+  const size_t count = MIN( lua_rawlen( L, 2 ), static_cast<size_t>( INT_MAX ) );
+  for ( size_t index = 0; index < count; ++index )
+  {
+    lua_rawgeti( L, 2, static_cast<int>( index + 1 ) );
+    if ( lua_istable( L, -1 ) )
+    {
+      lua_pushvalue( L, posKey );
+      lua_rawget( L, -2 );
+      lua_remove( L, -2 );
+    }
+    const Vector *value = static_cast<const Vector *>( luaL_testudata( L, -1, "Vector" ) );
+    if ( value )
+    {
+      triangle[vertex] = *value;
+      finite = value->IsValid();
+    }
+    lua_pop( L, 1 );
+    if ( !value || !finite )
+      break;
+
+    VectorMin( mins, triangle[vertex], mins );
+    VectorMax( maxs, triangle[vertex], maxs );
+    if ( ++vertex == 3 )
+    {
+      physcollision->PolysoupAddTriangle( soup, triangle[0], triangle[1], triangle[2], triangleMaterial );
+      hasTriangle = true;
+      vertex = 0;
+    }
+  }
+  lua_pop( L, 1 );
+
+  // Match the reference's pre-conversion validation and console diagnostic.
+  if ( !hasTriangle || !finite || ( maxs - mins ).LengthSqr() < 0.1f )
+  {
+    Warning( "CreatePolysoupObjectFromTableOfVerts: Invalid vertices\n" );
+    physcollision->PolysoupDestroy( soup );
+    return false;
+  }
+  CPhysCollide *collide = physcollision->ConvertPolysoupToCollide( soup, false );
+  physcollision->PolysoupDestroy( soup );
+  if ( !collide )
+    return false;
+
+  physcollision->CollideGetAABB( &mins, &maxs, collide, vec3_origin, vec3_angle );
+  IPhysicsObject *object = PhysModelCreateCustom( entity, collide, entity->GetAbsOrigin(),
+    entity->GetAbsAngles(), STRING( entity->GetModelName() ), false, &solid );
+  physcollision->DestroyCollide( collide );
+  if ( !object )
+    return false;
+
+  entity->VPhysicsDestroyObject();
+  entity->VPhysicsSetObject( object );
+  entity->SetCollisionBounds( mins, maxs );
+  return true;
+}
+
+static int CBaseEntity_PhysicsFromMesh( lua_State *L )
+{
+  lua_pushboolean( L, HL2SB_InitPhysicsFromMesh( L, luaL_checkentity( L, 1 ) ) );
+  return 1;
+}
+
 //-----------------------------------------------------------------------------
 // HL2SB GMod compat: Entity:IsPointInside( point ).
 //
@@ -7442,6 +7553,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
 #endif
   {"SetDSP", CBaseEntity_SetDSP},
   {"PhysicsInitBox", CBaseEntity_PhysicsInitBox},
+  {"PhysicsFromMesh", CBaseEntity_PhysicsFromMesh},
   {"IsPointInside", CBaseEntity_IsPointInside},
   {"SetGroundChangeTime", CBaseEntity_SetGroundChangeTime},
   {"SetGroundEntity", CBaseEntity_SetGroundEntity},

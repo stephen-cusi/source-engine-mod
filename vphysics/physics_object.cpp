@@ -99,6 +99,7 @@ CPhysicsObject::CPhysicsObject( void )
 void CPhysicsObject::Init( const CPhysCollide *pCollisionModel, IVP_Real_Object *pObject, int materialIndex, float volume, float drag, float angDrag )
 {
 	m_pCollide = pCollisionModel;
+	m_holdsPolysoupReference = m_pCollide && m_pCollide->AddPolysoupReference();
 	m_materialIndex = materialIndex;
 	m_pObject = pObject;
 	pObject->client_data = (void *)this;
@@ -170,6 +171,8 @@ CPhysicsObject::~CPhysicsObject( void )
 		}
 		delete pSurman;
 	}
+	if ( m_holdsPolysoupReference )
+		m_pCollide->ReleasePolysoupReference();
 }
 
 void CPhysicsObject::Wake( void )
@@ -1555,11 +1558,11 @@ CPhysicsObject *CreatePhysicsObject( CPhysicsEnvironment *pEnvironment, const CP
 		objectTemplate.mass_center_override = &massCenterMatrix;
 	}
 
-	CPhysicsObject *pObject = new CPhysicsObject();
 	short collideType;
 	IVP_SurfaceManager *pSurman = CreateSurfaceManager( pCollisionModel, collideType );
 	if ( !pSurman )
 		return NULL;
+	CPhysicsObject *pObject = new CPhysicsObject();
 	pObject->m_collideType = collideType;
 	pObject->m_asleepSinceCreation = true;
 

@@ -11,6 +11,7 @@
 #pragma once
 #endif
 
+#include "tier0/threadtools.h"
 
 class Vector;
 class QAngle;
@@ -138,6 +139,31 @@ public:
 	virtual void ComputeOrthographicAreas( float epsilon ) {}
 	virtual void SetOrthographicAreas( const Vector &areas ) {}
 	virtual const collidemap_t *GetCollideMap() const { return NULL; }
+
+	// Only polysoups opt in. Other shapes keep their existing ownership rules.
+	void EnablePolysoupReferences() { m_polysoupRefs = 1; }
+	bool AddPolysoupReference() const
+	{
+		if ( m_polysoupRefs == 0 )
+			return false;
+		++m_polysoupRefs;
+		return true;
+	}
+	void ReleasePolysoupReference() const
+	{
+		if ( --m_polysoupRefs == 0 )
+			delete this;
+	}
+	void ReleaseOwner()
+	{
+		if ( m_polysoupRefs == 0 )
+			delete this;
+		else
+			ReleasePolysoupReference();
+	}
+
+private:
+	mutable CInterlockedInt m_polysoupRefs;
 };
 
 class ITraceObject
