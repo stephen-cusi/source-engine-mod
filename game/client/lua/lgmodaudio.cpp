@@ -1,6 +1,6 @@
 //=============================================================================
 //
-// HL2SB: GMod-compatible sound.PlayFile / IGModAudioChannel runtime (CLIENT).
+// HL2SB: sound.PlayFile, sound.PlayURL and IGModAudioChannel runtime (CLIENT).
 //
 // Design (reference-behavior notes):
 //
@@ -28,7 +28,8 @@
 //        while playing (PlayURL example comment).
 //
 //  * Documented differences (nothing is silently faked):
-//      - Online streams (sound.PlayURL) are not implemented.
+//      - PlayURL accepts finite HTTP(S) audio responses. Open-ended radio
+//        streams need an incremental decoder and are not supported here.
 //      - GetTagsHTTP/Meta/MP4/WMA return nil (offline only). GetTagsOGG /
 //        GetTagsVendor are a planned phase 2. GetTagsID3 reads ID3v1 only
 //        (same as the reference contract).
@@ -58,8 +59,16 @@
 #include "engine/iluaaudiodecoder.h"
 #include "view.h"
 #include "lgmodaudio.h"
+#include "utlstring.h"
 #include <atomic>
 #include <cmath>
+
+#if defined( _WIN32 )
+#include "winlite.h"
+#include <WinInet.h>
+#else
+#include <curl/curl.h>
+#endif
 
 // lua_State *L (the game client realm state) comes from luamanager.h.
 
@@ -75,9 +84,15 @@ enum
 	BASS_ERROR_MEM      = 1,
 	BASS_ERROR_FILEOPEN = 2,
 	BASS_ERROR_FORMAT   = 6,
+	BASS_ERROR_SSL      = 10,
+	BASS_ERROR_ILLPARAM = 20,
+	BASS_ERROR_NONET    = 32,
 	BASS_ERROR_UNKNOWN  = -1,
 	BASS_ERROR_NOTAVAIL = 37,
+	BASS_ERROR_TIMEOUT  = 40,
 	BASS_ERROR_FILEFORM = 41,
+	BASS_ERROR_PROTOCOL = 48,
+	BASS_ERROR_DENIED   = 49,
 };
 
 struct HL2SBBassErrorName_t
@@ -91,8 +106,14 @@ static const HL2SBBassErrorName_t g_BassErrorNames[] =
 	{ BASS_ERROR_MEM,      "BASS_ERROR_MEM" },
 	{ BASS_ERROR_FILEOPEN, "BASS_ERROR_FILEOPEN" },
 	{ BASS_ERROR_FORMAT,   "BASS_ERROR_FORMAT" },
+	{ BASS_ERROR_SSL,      "BASS_ERROR_SSL" },
+	{ BASS_ERROR_ILLPARAM, "BASS_ERROR_ILLPARAM" },
+	{ BASS_ERROR_NONET,    "BASS_ERROR_NONET" },
 	{ BASS_ERROR_NOTAVAIL, "BASS_ERROR_NOTAVAIL" },
+	{ BASS_ERROR_TIMEOUT,  "BASS_ERROR_TIMEOUT" },
 	{ BASS_ERROR_FILEFORM, "BASS_ERROR_FILEFORM" },
+	{ BASS_ERROR_PROTOCOL, "BASS_ERROR_PROTOCOL" },
+	{ BASS_ERROR_DENIED,   "BASS_ERROR_DENIED" },
 	{ BASS_ERROR_UNKNOWN,  "BASS_ERROR_UNKNOWN" },
 };
 
@@ -141,6 +162,31 @@ enum HL2SBChannelState_e
 	CHANSTATE_PAUSED  = 2,
 };
 
+// Network input is published to the decode worker only after the transfer
+// finishes. Neither the Lua frame pump nor the mixer waits on network I/O.
+struct AudioUrlData_t
+{
+	AudioUrlData_t() : bytes( NULL ), size( 0 ), capacity( 0 ), cursor( 0 ), error( 0 ), generation( 0 ) {}
+	~AudioUrlData_t() { Clear(); }
+
+	void Clear()
+	{
+		free( bytes );
+		bytes = NULL;
+		size = capacity = cursor = 0;
+	}
+
+	bool Append( const void *buffer, size_t count );
+	bool IsCancelled() const;
+
+	unsigned char *bytes;
+	size_t size;
+	size_t capacity;
+	size_t cursor;
+	int error;
+	unsigned int generation;
+};
+
 //=============================================================================
 // CLuaAudioChannel
 //
@@ -165,9 +211,11 @@ public:
 	void AddRef( void ) { ThreadInterlockedIncrement( &m_nRefCount ); }
 	void ReleaseRef( void );
 
-	// identity, set once by PlayFile on the main thread before the worker
+	// identity, set once on the main thread before the worker
 	// ever sees the channel
-	void InitLoad( const char *pPath, bool b3D, bool bMono, bool bNoPlay, bool bNoBlock );
+	void InitLoad( const char *pPath, bool b3D, bool bMono, bool bNoPlay, bool bNoBlock, bool bOnline, int urlError );
+	bool NeedsUrlDownload() const { return IsOnline() && !m_bUrlComplete; }
+	void DownloadUrl();
 	void SetCallbackRef( int nRef ) { m_nCallbackRef = nRef; }
 	void CancelPendingLoad( lua_State *pLua );
 	void CloseDecoder( void );
@@ -212,9 +260,9 @@ public:
 	bool  Get3DEnabled( void ) const { return m_b3D && m_b3DEnabled; }
 	bool  IsBlockStreamed( void ) const { return !m_bNoBlock; }
 	bool  IsLooping( void ) const { return m_bLooping; }
-	bool  IsOnline( void ) const { return false; }
+	bool  IsOnline( void ) const { return m_bOnline; }
 	bool  IsValid( void ) const { return !m_bPendingRemoval; }
-	const char *GetFileName( void ) const { return m_szPath; }
+	const char *GetFileName( void ) const { return IsOnline() ? m_sUrl.Get() : m_szPath; }
 	int   GetLoadError( void ) const { return m_nLoadError; }
 	bool  IsLoaded( void ) { return GetStateRaw() != CHANSTATE_LOADING; }
 	void  GetLevel( float &flLeft, float &flRight ) const;
@@ -245,6 +293,8 @@ private:
 	FileHandle_t m_hFile;
 	void *m_Decoder;
 	bool m_bDecoderOpen;
+	AudioUrlData_t m_UrlData;
+	std::atomic<bool> m_bUrlComplete;
 	CThreadFastMutex m_DecoderMutex;	// decoder touched by worker AND main-thread restarts
 	uint64 m_nDecodedFrames;			// frames decoded so far (worker view)
 	uint64 m_nTotalFrames;				// stream length if known (0 = unknown)
@@ -295,6 +345,8 @@ private:
 
 	// --- identity ----------------------------------------------------------
 	char m_szPath[ MAX_PATH ];
+	CUtlString m_sUrl;
+	bool m_bOnline;
 	char m_szTags[ 512 ];				// ID3v1 fields: "key\0value\0..." , empty key ends
 	bool m_bHasID3Tag;
 	int m_nID3Genre;
@@ -315,7 +367,7 @@ private:
 struct QueuedCallback_t
 {
 	CLuaAudioChannel *pChannel;	// NULL = failure result
-	int nCallbackRef;			// lua registry ref of the PlayFile callback
+	int nCallbackRef;			// Lua registry reference for the load callback
 	int nErrorID;				// 0 = none
 	char szErrorName[ 32 ];
 };
@@ -334,7 +386,13 @@ static bool g_bAudioConnected = false;
 static bool g_bMixRegistered = false;
 
 static std::atomic<bool> g_bWorkerKill( false );
+static std::atomic<bool> g_bUrlWorkerKill( false );
+static std::atomic<unsigned int> g_nUrlGeneration( 0 );
 static ThreadHandle_t g_hWorker = NULL;
+static ThreadHandle_t g_hUrlWorker = NULL;
+#if !defined( _WIN32 )
+static bool g_bCurlInitialized = false;
+#endif
 
 // 3D listener, refreshed by the pump on the main thread, read by the mix
 // thread. Guarded by its own mutex, held only for the copies.
@@ -347,9 +405,10 @@ static QAngle g_angListener( vec3_angle );
 //=============================================================================
 
 CLuaAudioChannel::CLuaAudioChannel()
-  : m_bDecoderOpen( false ),
-	m_hFile( FILESYSTEM_INVALID_HANDLE ),
+	: m_hFile( FILESYSTEM_INVALID_HANDLE ),
 	m_Decoder( NULL ),
+	m_bDecoderOpen( false ),
+	m_bUrlComplete( false ),
 	m_nDecodedFrames( 0 ),
 	m_nTotalFrames( 0 ),
 	m_pRing( NULL ),
@@ -380,6 +439,7 @@ CLuaAudioChannel::CLuaAudioChannel()
 	m_nFFTHead( 0 ),
 	m_nFFTCount( 0 ),
 	m_bFFTTrack( false ),
+	m_bOnline( false ),
 	m_bHasID3Tag( false ),
 	m_nID3Genre( 0 ),
 	m_nLoadError( 0 ),
@@ -409,6 +469,10 @@ void CLuaAudioChannel::CloseDecoder( void )
 		g_pAudioDecoder->Close( m_Decoder );
 	m_Decoder = NULL;
 	m_bDecoderOpen = false;
+	// During a level transition a request may still own its input buffer.
+	// It holds a channel reference and will release the buffer on completion.
+	if ( !IsOnline() || m_bUrlComplete )
+		m_UrlData.Clear();
 	if ( m_hFile != FILESYSTEM_INVALID_HANDLE )
 	{
 		g_pFullFileSystem->Close( m_hFile );
@@ -422,9 +486,18 @@ void CLuaAudioChannel::ReleaseRef( void )
 		delete this;
 }
 
-void CLuaAudioChannel::InitLoad( const char *pPath, bool b3D, bool bMono, bool bNoPlay, bool bNoBlock )
+void CLuaAudioChannel::InitLoad( const char *pPath, bool b3D, bool bMono, bool bNoPlay, bool bNoBlock, bool bOnline, int urlError )
 {
-	Q_strncpy( m_szPath, pPath, sizeof( m_szPath ) );
+	m_bOnline = bOnline;
+	if ( bOnline )
+	{
+		m_sUrl = pPath;
+		m_UrlData.error = urlError;
+		m_UrlData.generation = g_nUrlGeneration;
+		m_bUrlComplete = urlError != 0;
+	}
+	else
+		Q_strncpy( m_szPath, pPath, sizeof( m_szPath ) );
 	m_b3D = b3D;
 	m_bMono = bMono || b3D;
 	m_bNoPlay = bNoPlay;
@@ -471,13 +544,245 @@ static bool AudioFileSeek( void *pUser, int64_t nOffset, bool relative )
 	return true;
 }
 
+static const size_t URL_MAX_BYTES = 32 * 1024 * 1024;
+static const unsigned int URL_TIMEOUT_SECONDS = 20;
+
+bool AudioUrlData_t::IsCancelled() const
+{
+	return g_bUrlWorkerKill || generation != g_nUrlGeneration;
+}
+
+bool AudioUrlData_t::Append( const void *buffer, size_t count )
+{
+	if ( count > URL_MAX_BYTES - size )
+	{
+		error = BASS_ERROR_MEM;
+		return false;
+	}
+	if ( size + count > capacity )
+	{
+		size_t next = capacity ? capacity * 2 : 16384;
+		if ( next < size + count ) next = size + count;
+		if ( next > URL_MAX_BYTES ) next = URL_MAX_BYTES;
+		unsigned char *storage = static_cast<unsigned char *>( realloc( bytes, next ) );
+		if ( !storage )
+		{
+			error = BASS_ERROR_MEM;
+			return false;
+		}
+		bytes = storage;
+		capacity = next;
+	}
+	if ( count )
+		memcpy( bytes + size, buffer, count );
+	size += count;
+	return true;
+}
+
+static size_t AudioUrlRead( void *user, void *buffer, size_t count )
+{
+	AudioUrlData_t &data = *static_cast<AudioUrlData_t *>( user );
+	if ( count > data.size - data.cursor ) count = data.size - data.cursor;
+	if ( count )
+		memcpy( buffer, data.bytes + data.cursor, count );
+	data.cursor += count;
+	return count;
+}
+
+static bool AudioUrlSeek( void *user, int64_t offset, bool relative )
+{
+	AudioUrlData_t &data = *static_cast<AudioUrlData_t *>( user );
+	const int64_t origin = relative ? data.cursor : 0;
+	if ( offset < -origin || offset > static_cast<int64_t>( data.size ) - origin )
+		return false;
+	data.cursor = static_cast<size_t>( origin + offset );
+	return true;
+}
+
+static bool IsHttpAudioUrl( const char *url )
+{
+	return !Q_strnicmp( url, "http://", 7 ) || !Q_strnicmp( url, "https://", 8 );
+}
+
+#if defined( _WIN32 )
+static int WindowsUrlError( DWORD error )
+{
+	switch ( error )
+	{
+	case ERROR_INTERNET_TIMEOUT: return BASS_ERROR_TIMEOUT;
+	case ERROR_INTERNET_INVALID_URL: return BASS_ERROR_ILLPARAM;
+	case ERROR_INTERNET_UNRECOGNIZED_SCHEME: return BASS_ERROR_PROTOCOL;
+	case ERROR_INTERNET_NAME_NOT_RESOLVED:
+	case ERROR_INTERNET_CANNOT_CONNECT: return BASS_ERROR_NONET;
+	case ERROR_INTERNET_SEC_CERT_DATE_INVALID:
+	case ERROR_INTERNET_SEC_CERT_CN_INVALID:
+	case ERROR_INTERNET_INVALID_CA: return BASS_ERROR_SSL;
+	default: return BASS_ERROR_FILEOPEN;
+	}
+}
+
+static int DownloadAudioUrl( const char *url, AudioUrlData_t &data )
+{
+	HINTERNET session = InternetOpenA( "HL2SB", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0 );
+	if ( !session ) return WindowsUrlError( GetLastError() );
+
+	DWORD timeout = 5000;
+	DWORD retries = 1;
+	InternetSetOptionA( session, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout, sizeof( timeout ) );
+	InternetSetOptionA( session, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof( timeout ) );
+	InternetSetOptionA( session, INTERNET_OPTION_CONNECT_RETRIES, &retries, sizeof( retries ) );
+	const double deadline = Plat_FloatTime() + URL_TIMEOUT_SECONDS;
+	const DWORD flags = INTERNET_FLAG_NO_AUTO_REDIRECT | INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI |
+		INTERNET_FLAG_NO_AUTH | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_RELOAD;
+	char nextUrl[ 4096 ];
+	Q_strncpy( nextUrl, url, sizeof( nextUrl ) );
+	int result = BASS_ERROR_FILEOPEN;
+	for ( int redirects = 0; redirects <= 5 && !data.IsCancelled(); ++redirects )
+	{
+		if ( Plat_FloatTime() >= deadline ) { result = BASS_ERROR_TIMEOUT; break; }
+		HINTERNET request = InternetOpenUrlA( session, nextUrl, NULL, 0, flags, 0 );
+		if ( !request ) { result = WindowsUrlError( GetLastError() ); break; }
+
+		DWORD status = 0;
+		DWORD statusSize = sizeof( status );
+		HttpQueryInfoA( request, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &status, &statusSize, NULL );
+		if ( status >= 300 && status < 400 )
+		{
+			char location[ 4096 ], combined[ 4096 ];
+			DWORD length = sizeof( location ), combinedLength = sizeof( combined );
+			const bool resolve = HttpQueryInfoA( request, HTTP_QUERY_LOCATION, location, &length, NULL ) &&
+				InternetCombineUrlA( nextUrl, location, combined, &combinedLength, 0 ) && IsHttpAudioUrl( combined );
+			InternetCloseHandle( request );
+			if ( !resolve ) break;
+			Q_strncpy( nextUrl, combined, sizeof( nextUrl ) );
+			continue;
+		}
+		if ( status == 401 || status == 403 ) result = BASS_ERROR_DENIED;
+		if ( status >= 200 && status < 300 )
+		{
+			char buffer[ 16384 ];
+			while ( !data.IsCancelled() )
+			{
+				if ( Plat_FloatTime() >= deadline ) { result = BASS_ERROR_TIMEOUT; break; }
+				DWORD count = 0;
+				if ( !InternetReadFile( request, buffer, sizeof( buffer ), &count ) )
+				{
+					result = WindowsUrlError( GetLastError() );
+					break;
+				}
+				if ( !count ) { result = data.size ? 0 : BASS_ERROR_FILEFORM; break; }
+				if ( !data.Append( buffer, count ) ) { result = data.error; break; }
+			}
+		}
+		InternetCloseHandle( request );
+		break;
+	}
+	InternetCloseHandle( session );
+	return result;
+}
+#else
+static size_t AudioCurlWrite( char *buffer, size_t size, size_t count, void *user )
+{
+	AudioUrlData_t &data = *static_cast<AudioUrlData_t *>( user );
+	return !data.IsCancelled() && data.Append( buffer, size * count ) ? size * count : 0;
+}
+
+static int AudioCurlProgress( void *user, curl_off_t, curl_off_t, curl_off_t, curl_off_t )
+{
+	return static_cast<AudioUrlData_t *>( user )->IsCancelled() ? 1 : 0;
+}
+
+static int DownloadAudioUrl( const char *url, AudioUrlData_t &data )
+{
+	CURL *request = curl_easy_init();
+	if ( !request ) return BASS_ERROR_NONET;
+	curl_easy_setopt( request, CURLOPT_URL, url );
+	curl_easy_setopt( request, CURLOPT_USERAGENT, "HL2SB" );
+	curl_easy_setopt( request, CURLOPT_NOSIGNAL, 1L );
+	curl_easy_setopt( request, CURLOPT_CONNECTTIMEOUT, 5L );
+	curl_easy_setopt( request, CURLOPT_TIMEOUT, static_cast<long>( URL_TIMEOUT_SECONDS ) );
+	curl_easy_setopt( request, CURLOPT_FOLLOWLOCATION, 1L );
+	curl_easy_setopt( request, CURLOPT_MAXREDIRS, 5L );
+#if LIBCURL_VERSION_NUM >= 0x075500
+	curl_easy_setopt( request, CURLOPT_PROTOCOLS_STR, "http,https" );
+	curl_easy_setopt( request, CURLOPT_REDIR_PROTOCOLS_STR, "http,https" );
+#else
+	curl_easy_setopt( request, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS );
+	curl_easy_setopt( request, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS );
+#endif
+	curl_easy_setopt( request, CURLOPT_NOPROGRESS, 0L );
+	curl_easy_setopt( request, CURLOPT_XFERINFOFUNCTION, AudioCurlProgress );
+	curl_easy_setopt( request, CURLOPT_XFERINFODATA, &data );
+	curl_easy_setopt( request, CURLOPT_WRITEFUNCTION, AudioCurlWrite );
+	curl_easy_setopt( request, CURLOPT_WRITEDATA, &data );
+	const CURLcode error = curl_easy_perform( request );
+	long status = 0;
+	curl_easy_getinfo( request, CURLINFO_RESPONSE_CODE, &status );
+	curl_easy_cleanup( request );
+	if ( data.error ) return data.error;
+	if ( status == 401 || status == 403 ) return BASS_ERROR_DENIED;
+	switch ( error )
+	{
+	case CURLE_OK: return status >= 200 && status < 300 ? ( data.size ? 0 : BASS_ERROR_FILEFORM ) : BASS_ERROR_FILEOPEN;
+	case CURLE_OPERATION_TIMEDOUT: return BASS_ERROR_TIMEOUT;
+	case CURLE_COULDNT_RESOLVE_HOST:
+	case CURLE_COULDNT_RESOLVE_PROXY:
+	case CURLE_COULDNT_CONNECT: return BASS_ERROR_NONET;
+	case CURLE_UNSUPPORTED_PROTOCOL: return BASS_ERROR_PROTOCOL;
+	case CURLE_SSL_CONNECT_ERROR:
+	case CURLE_PEER_FAILED_VERIFICATION: return BASS_ERROR_SSL;
+	case CURLE_URL_MALFORMAT: return BASS_ERROR_ILLPARAM;
+	default: return BASS_ERROR_FILEOPEN;
+	}
+}
+#endif
+
+void CLuaAudioChannel::DownloadUrl()
+{
+	if ( !m_UrlData.IsCancelled() )
+		m_UrlData.error = DownloadAudioUrl( m_sUrl.Get(), m_UrlData );
+	if ( m_UrlData.error )
+		m_UrlData.Clear();
+	m_bUrlComplete = true;
+}
+
 static uint32 AudioReadLE32( const unsigned char *p )
 {
 	return ( uint32 )p[0] | ( ( uint32 )p[1] << 8 ) | ( ( uint32 )p[2] << 16 ) | ( ( uint32 )p[3] << 24 );
 }
 
+static bool IsVorbisHeader( const unsigned char *header, size_t size )
+{
+	return size >= 58 && memcmp( header, "OggS", 4 ) == 0 && header[4] == 0 &&
+		( header[5] & 2 ) && header[26] == 1 && header[27] == 30 &&
+		header[28] == 1 && memcmp( header + 29, "vorbis", 6 ) == 0;
+}
+
 // A seekable, single-stream Vorbis file exposes its final PCM position in its
-// last Ogg page. Preserve the decoder's underlying file position while reading.
+// last Ogg page. The header and tail may come from either VFS or a URL buffer.
+static uint64 AudioVorbisLengthFromPages( const unsigned char *header, const unsigned char *tail, unsigned int tailSize )
+{
+	const uint32 serial = AudioReadLE32( header + 14 );
+	const uint32 sampleRate = AudioReadLE32( header + 40 );
+	if ( sampleRate == 0 )
+		return 0;
+	for ( int i = static_cast<int>( tailSize ) - 27; i >= 0; --i )
+	{
+		if ( memcmp( tail + i, "OggS", 4 ) != 0 || tail[i + 4] != 0 ||
+			 !( tail[i + 5] & 4 ) || AudioReadLE32( tail + i + 14 ) != serial )
+			continue;
+		unsigned int segments = tail[i + 26];
+		if ( i + 27 + segments > tailSize ) continue;
+		unsigned int pageSize = 27 + segments;
+		for ( unsigned int j = 0; j < segments; ++j ) pageSize += tail[i + 27 + j];
+		if ( i + pageSize != tailSize ) continue;
+		const uint64 granule = AudioReadLE32( tail + i + 6 ) |
+			( static_cast<uint64>( AudioReadLE32( tail + i + 10 ) ) << 32 );
+		return granule <= INT64_MAX / AUDIO_RATE ? ( granule * AUDIO_RATE + sampleRate / 2 ) / sampleRate : 0;
+	}
+	return 0;
+}
+
 static uint64 AudioVorbisLengthFrames( FileHandle_t file )
 {
 	const unsigned int size = g_pFullFileSystem->Size( file );
@@ -488,41 +793,20 @@ static uint64 AudioVorbisLengthFrames( FileHandle_t file )
 	unsigned char first[58];
 	g_pFullFileSystem->Seek( file, 0, FILESYSTEM_SEEK_HEAD );
 	int count = g_pFullFileSystem->Read( first, sizeof( first ), file );
-	if ( count != sizeof( first ) || memcmp( first, "OggS", 4 ) != 0 || first[4] != 0 ||
-		 !( first[5] & 2 ) || first[26] != 1 || first[27] != 30 ||
-		 first[28] != 1 || memcmp( first + 29, "vorbis", 6 ) != 0 )
+	if ( count != sizeof( first ) || !IsVorbisHeader( first, sizeof( first ) ) )
 	{
 		g_pFullFileSystem->Seek( file, ( int )previous, FILESYSTEM_SEEK_HEAD );
 		return 0;
 	}
 
-	const uint32 serial = AudioReadLE32( first + 14 );
-	const uint32 sampleRate = AudioReadLE32( first + 40 );
 	const unsigned int tailSize = size < 65536 ? size : 65536;
 	unsigned char *tail = ( unsigned char * )malloc( tailSize );
 	uint64 frames = 0;
-	if ( tail && sampleRate != 0 )
+	if ( tail )
 	{
 		g_pFullFileSystem->Seek( file, ( int )( size - tailSize ), FILESYSTEM_SEEK_HEAD );
 		if ( g_pFullFileSystem->Read( tail, tailSize, file ) == ( int )tailSize )
-		{
-			for ( int i = ( int )tailSize - 27; i >= 0; --i )
-			{
-				if ( memcmp( tail + i, "OggS", 4 ) != 0 || tail[i + 4] != 0 ||
-					 !( tail[i + 5] & 4 ) || AudioReadLE32( tail + i + 14 ) != serial )
-					continue;
-				unsigned int segments = tail[i + 26];
-				if ( ( unsigned int )i + 27 + segments > tailSize ) continue;
-				unsigned int pageSize = 27 + segments;
-				for ( unsigned int j = 0; j < segments; ++j ) pageSize += tail[i + 27 + j];
-				if ( ( unsigned int )i + pageSize != tailSize ) continue;
-				uint64 granule = ( uint64 )AudioReadLE32( tail + i + 6 ) |
-					( ( uint64 )AudioReadLE32( tail + i + 10 ) << 32 );
-				if ( granule <= INT64_MAX / AUDIO_RATE )
-					frames = ( granule * AUDIO_RATE + sampleRate / 2 ) / sampleRate;
-				break;
-			}
-		}
+			frames = AudioVorbisLengthFromPages( first, tail, tailSize );
 	}
 	free( tail );
 	g_pFullFileSystem->Seek( file, ( int )previous, FILESYSTEM_SEEK_HEAD );
@@ -537,28 +821,38 @@ bool CLuaAudioChannel::OpenDecoder( void )
 {
 	m_nChannels = m_bMono ? 1 : 2;
 
-	if ( m_szPath[0] == ' ' || m_szPath[0] == '/' || strstr( m_szPath, ".." ) ||
-		 strstr( m_szPath, "./" ) || strstr( m_szPath, ":" ) )
-	{
-		m_nLoadError = BASS_ERROR_FILEOPEN;
-		return false;
-	}
-
-	m_hFile = g_pFullFileSystem->Open( m_szPath, "rb", "GAME" );
-	if ( m_hFile == FILESYSTEM_INVALID_HANDLE )
-	{
-		m_nLoadError = BASS_ERROR_FILEOPEN;
-		return false;
-	}
-
 	HL2SBAudioDecodeResult result;
-	m_Decoder = g_pAudioDecoder->Open( ( void * )m_hFile, AudioFileRead, AudioFileSeek,
-		( unsigned int )m_nChannels, AUDIO_RATE, &result );
+	if ( IsOnline() )
+	{
+		if ( m_UrlData.error )
+		{
+			m_nLoadError = m_UrlData.error;
+			return false;
+		}
+		m_Decoder = g_pAudioDecoder->Open( &m_UrlData, AudioUrlRead, AudioUrlSeek,
+			static_cast<unsigned int>( m_nChannels ), AUDIO_RATE, &result );
+	}
+	else
+	{
+		if ( m_szPath[0] == ' ' || m_szPath[0] == '/' || strstr( m_szPath, ".." ) ||
+			 strstr( m_szPath, "./" ) || strstr( m_szPath, ":" ) )
+		{
+			m_nLoadError = BASS_ERROR_FILEOPEN;
+			return false;
+		}
+		m_hFile = g_pFullFileSystem->Open( m_szPath, "rb", "GAME" );
+		if ( m_hFile == FILESYSTEM_INVALID_HANDLE )
+		{
+			m_nLoadError = BASS_ERROR_FILEOPEN;
+			return false;
+		}
+		m_Decoder = g_pAudioDecoder->Open( ( void * )m_hFile, AudioFileRead, AudioFileSeek,
+			static_cast<unsigned int>( m_nChannels ), AUDIO_RATE, &result );
+	}
 	if ( !m_Decoder )
 	{
 		m_nLoadError = ( result == HL2SB_AUDIO_DECODE_MEMORY ) ? BASS_ERROR_MEM : BASS_ERROR_FILEFORM;
-		g_pFullFileSystem->Close( m_hFile );
-		m_hFile = FILESYSTEM_INVALID_HANDLE;
+		CloseDecoder();
 		return false;
 	}
 
@@ -567,8 +861,13 @@ bool CLuaAudioChannel::OpenDecoder( void )
 	uint64_t nLength = 0;
 	if ( g_pAudioDecoder->Length( m_Decoder, &nLength ) && nLength > 0 )
 		m_nTotalFrames = nLength;
-	else
+	else if ( !IsOnline() )
 		m_nTotalFrames = AudioVorbisLengthFrames( m_hFile );
+	else if ( IsVorbisHeader( m_UrlData.bytes, m_UrlData.size ) )
+	{
+		const unsigned int tailSize = m_UrlData.size < 65536 ? static_cast<unsigned int>( m_UrlData.size ) : 65536;
+		m_nTotalFrames = AudioVorbisLengthFromPages( m_UrlData.bytes, m_UrlData.bytes + m_UrlData.size - tailSize, tailSize );
+	}
 
 	if ( m_bNoBlock )
 	{
@@ -601,13 +900,15 @@ bool CLuaAudioChannel::OpenDecoder( void )
 
 	// The reference backend reads ID3v1 tags for mp3 files; do it now while
 	// the file cursor is still at the head (we rewind afterwards).
-	LoadID3Tag();
+	if ( !IsOnline() )
+		LoadID3Tag();
 	return true;
 }
 
 bool CLuaAudioChannel::NeedsLoadWork( void )
 {
-	return !m_bDecoderOpen && m_nLoadError == 0 && !m_bLoadQueued && GetStateRaw() == CHANSTATE_LOADING;
+	return ( !IsOnline() || m_bUrlComplete ) && !m_bDecoderOpen && m_nLoadError == 0 &&
+		!m_bLoadQueued && GetStateRaw() == CHANSTATE_LOADING;
 }
 
 bool CLuaAudioChannel::NeedsDecodeWork( void )
@@ -1402,6 +1703,73 @@ static uintp AudioWorkerThread( void * )
 	return 0;
 }
 
+static uintp AudioUrlWorkerThread( void * )
+{
+	while ( !g_bUrlWorkerKill )
+	{
+		CLuaAudioChannel *channel = NULL;
+		{
+			AUTO_LOCK( g_ChannelListMutex );
+			for ( int i = 0; i < g_Channels.Count(); ++i )
+			{
+				if ( g_Channels[ i ]->NeedsUrlDownload() )
+				{
+					channel = g_Channels[ i ];
+					channel->AddRef();
+					break;
+				}
+			}
+		}
+		if ( channel )
+		{
+			channel->DownloadUrl();
+			channel->ReleaseRef();
+		}
+		else
+			ThreadSleep( 25 );
+	}
+	return 0;
+}
+
+static bool StartAudioUrlWorker()
+{
+	if ( g_hUrlWorker )
+		return true;
+#if !defined( _WIN32 )
+	if ( !g_bCurlInitialized )
+		return false;
+#endif
+	g_bUrlWorkerKill = false;
+	g_hUrlWorker = CreateSimpleThread( AudioUrlWorkerThread, NULL );
+	return g_hUrlWorker != NULL;
+}
+
+static void StopAudioDecoder()
+{
+	g_bWorkerKill = true;
+	if ( g_hWorker )
+	{
+		ThreadJoin( g_hWorker );
+		ReleaseThreadHandle( g_hWorker );
+		g_hWorker = NULL;
+	}
+}
+
+static void StopAudioUrlWorker()
+{
+	g_bUrlWorkerKill = true;
+	if ( g_hUrlWorker )
+	{
+		ThreadJoin( g_hUrlWorker );
+		ReleaseThreadHandle( g_hUrlWorker );
+		g_hUrlWorker = NULL;
+	}
+#if !defined( _WIN32 )
+	if ( g_bCurlInitialized ) curl_global_cleanup();
+	g_bCurlInitialized = false;
+#endif
+}
+
 //=============================================================================
 // Engine mix callback (engine mix thread)
 //=============================================================================
@@ -1488,9 +1856,10 @@ static void DispatchQueuedCallback( const QueuedCallback_t &entry )
 // sound.PlayFile entry (called from the Sounds library binding)
 //=============================================================================
 
-int HL2SB_AudioPlayFile( lua_State *L )
+static int QueueAudioLoad( lua_State *L, bool online )
 {
-	const char *pszPath = luaL_checkstring( L, 1 );
+	size_t pathLength = 0;
+	const char *pszPath = luaL_checklstring( L, 1, &pathLength );
 	const char *pszFlags = luaL_checkstring( L, 2 );
 	luaL_checktype( L, 3, LUA_TFUNCTION );
 
@@ -1520,15 +1889,24 @@ int HL2SB_AudioPlayFile( lua_State *L )
 		}
 	}
 
-	// Normalize separators, remove trailing spaces and truncate at "//".
+	int urlError = 0;
 	char szPath[ MAX_PATH ];
-	Q_strncpy( szPath, pszPath, sizeof( szPath ) );
-	for ( int i = 0; szPath[ i ]; ++i )
+	if ( online )
 	{
-		if ( szPath[ i ] == '\\' )
-			szPath[ i ] = '/';
+		if ( pathLength == 0 || pathLength >= 4096 || strpbrk( pszPath, "\r\n" ) || strlen( pszPath ) != pathLength )
+			urlError = BASS_ERROR_ILLPARAM;
+		else if ( !IsHttpAudioUrl( pszPath ) )
+			urlError = strstr( pszPath, "://" ) ? BASS_ERROR_PROTOCOL : BASS_ERROR_ILLPARAM;
 	}
+	else
 	{
+		// Normalize local file separators, then strip comments and trailing spaces.
+		Q_strncpy( szPath, pszPath, sizeof( szPath ) );
+		for ( int i = 0; szPath[ i ]; ++i )
+		{
+			if ( szPath[ i ] == '\\' )
+				szPath[ i ] = '/';
+		}
 		char *pCut = Q_stristr( szPath, "//" );
 		if ( pCut )
 			*pCut = 0;
@@ -1549,8 +1927,11 @@ int HL2SB_AudioPlayFile( lua_State *L )
 		return 0;
 	}
 
+	if ( online && !urlError && !StartAudioUrlWorker() )
+		urlError = BASS_ERROR_NOTAVAIL;
+	const char *pSource = online ? ( urlError ? "" : pszPath ) : szPath;
 	CLuaAudioChannel *pChan = new CLuaAudioChannel();
-	pChan->InitLoad( szPath, b3D, bMono, bNoPlay, bNoBlock );
+	pChan->InitLoad( pSource, b3D, bMono, bNoPlay, bNoBlock, online, urlError );
 
 	// registry ref of the callback (main thread)
 	lua_pushvalue( L, 3 );
@@ -1571,6 +1952,16 @@ int HL2SB_AudioPlayFile( lua_State *L )
 
 	// the worker polls the list every 10ms; no explicit wake needed
 	return 0;
+}
+
+int HL2SB_AudioPlayFile( lua_State *L )
+{
+	return QueueAudioLoad( L, false );
+}
+
+int HL2SB_AudioPlayURL( lua_State *L )
+{
+	return QueueAudioLoad( L, true );
 }
 
 //=============================================================================
@@ -1605,10 +1996,15 @@ void HL2SB_AudioConnect( CreateInterfaceFn engineFactory )
 		g_pAudioDecoder = NULL;
 		return;
 	}
+#if !defined( _WIN32 )
+	// Run global initialization on client startup, before a map can start downloads.
+	g_bCurlInitialized = curl_global_init( CURL_GLOBAL_DEFAULT ) == CURLE_OK;
+#endif
 	g_bWorkerKill = false;
 	g_hWorker = CreateSimpleThread( AudioWorkerThread, NULL );
 	if ( !g_hWorker )
 	{
+		StopAudioUrlWorker();
 		g_pStreamMix->UnregisterCallback( LuaStreamMixCallback, NULL );
 		g_bMixRegistered = false;
 		g_pStreamMix = NULL;
@@ -1707,19 +2103,15 @@ void HL2SB_AudioLevelShutdown( void )
 	if ( !g_bAudioConnected )
 		return;
 
-	g_bWorkerKill = true;
-	if ( g_hWorker )
-	{
-		ThreadJoin( g_hWorker );
-		ReleaseThreadHandle( g_hWorker );
-		g_hWorker = NULL;
-	}
+	++g_nUrlGeneration;
+	StopAudioDecoder();
 	AudioDrainQueue();
 	AudioStopAllChannels();
 	g_bWorkerKill = false;
 	g_hWorker = CreateSimpleThread( AudioWorkerThread, NULL );
 	if ( !g_hWorker )
 	{
+		StopAudioUrlWorker();
 		g_pStreamMix->UnregisterCallback( LuaStreamMixCallback, NULL );
 		g_bMixRegistered = false;
 		g_pStreamMix = NULL;
@@ -1737,13 +2129,8 @@ void HL2SB_AudioShutdown( void )
 	g_bAudioConnected = false;
 
 	// 1) stop the worker first: after the join, no worker references exist
-	g_bWorkerKill = true;
-	if ( g_hWorker )
-	{
-		ThreadJoin( g_hWorker );
-		ReleaseThreadHandle( g_hWorker );
-		g_hWorker = NULL;
-	}
+	StopAudioDecoder();
+	StopAudioUrlWorker();
 
 	// 2) unregister the engine mix callback WITHOUT holding the channel list
 	//    lock (the engine waits for an in-flight callback, which takes the
@@ -2041,10 +2428,9 @@ LUA_BINDING_BEGIN( AudioChannel, IsBlockStreamed, "class", "False for noblock ch
 }
 LUA_BINDING_END()
 
-LUA_BINDING_BEGIN( AudioChannel, IsOnline, "class", "False: online streams are not implemented in this backend." )
+LUA_BINDING_BEGIN( AudioChannel, IsOnline, "class", "Returns whether the channel was loaded from a URL." )
 {
-	AudioChannel_Check( L, 1 );
-	lua_pushboolean( L, 0 );
+	lua_pushboolean( L, AudioChannel_Check( L, 1 )->IsOnline() ? 1 : 0 );
 	return 1;
 }
 LUA_BINDING_END()

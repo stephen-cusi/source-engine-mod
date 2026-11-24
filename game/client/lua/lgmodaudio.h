@@ -1,6 +1,6 @@
 //=============================================================================
 //
-// HL2SB: GMod-compatible sound.PlayFile / IGModAudioChannel runtime.
+// HL2SB: sound.PlayFile, sound.PlayURL and IGModAudioChannel runtime.
 //
 // Client-only. Decoded PCM is mixed into the engine paint buffer through the
 // HL2SBLuaStreamMix001 engine interface (single output device, no secondary
@@ -12,7 +12,7 @@
 //   CHLClient::HudUpdate     -> HL2SB_AudioFramePump
 //   CHLClient::LevelShutdown -> HL2SB_AudioLevelShutdown
 //   CHLClient::Shutdown      -> HL2SB_AudioShutdown
-//   public/lsounds.cpp       -> HL2SB_AudioPlayFile (Sounds library, CLIENT)
+//   public/lsounds.cpp       -> HL2SB_AudioPlayFile / HL2SB_AudioPlayURL
 //   lsrcinit.cpp client pass -> luaopen_AudioChannel (IGModAudioChannel metatable)
 //
 //=============================================================================
@@ -43,9 +43,10 @@ void HL2SB_AudioLevelShutdown( void );
 // releases every channel. No channel lock may be held when this runs.
 void HL2SB_AudioShutdown( void );
 
-// sound.PlayFile binding body, called from the Sounds library registration
+// Audio load bindings, called from the Sounds library registration
 // in public/lsounds.cpp (CLIENT only).
 int HL2SB_AudioPlayFile( struct lua_State *L );
+int HL2SB_AudioPlayURL( struct lua_State *L );
 
 // Registers the IGModAudioChannel metatable (GMod's 41 channel methods).
 // Export linkage comes from the LUALIB_API definition in lgmodaudio.cpp.

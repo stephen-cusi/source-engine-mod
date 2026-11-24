@@ -328,6 +328,11 @@ LUA_BINDING_BEGIN( Sounds, PlayFile, "library", "GMod contract: streams a game f
     return HL2SB_AudioPlayFile( L );
 }
 LUA_BINDING_END()
+LUA_BINDING_BEGIN( Sounds, PlayURL, "library", "Loads HTTP(S) audio into an IGModAudioChannel (CLIENT only)." )
+{
+    return HL2SB_AudioPlayURL( L );
+}
+LUA_BINDING_END()
 #endif
 
 /*

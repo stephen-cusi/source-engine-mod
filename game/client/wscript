@@ -81,6 +81,13 @@ def build(bld):
 	source = [ 'in_touch.cpp' ]
 	if bld.env.DEST_OS == 'win32':
 		libs += ['USER32']
+	if bld.env.GAMES == 'hl2sb':
+		if bld.env.DEST_OS == 'win32':
+			libs += ['WININET']
+		else:
+			libs += ['CURL']
+			if bld.env.DEST_OS == 'android':
+				libs += ['SSL', 'CRYPTO']
 
 	source += game["sources"] + ['../../public/tier0/memoverride.cpp']
 	includes += game["includes"]
