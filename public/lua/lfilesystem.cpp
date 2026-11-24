@@ -904,7 +904,9 @@ static const HL2SBGModPathID_t s_GModPathIDs[] =
 	{ "lcl",		"GAME",	"lua/" },
 	{ "lsv",		"GAME",	"lua/" },
 	{ "LuaMenu",	"GAME",	"lua/" },
-	{ "DATA",		"MOD",	"data/" },
+	// GMod's DATA is only the writable game data folder. MOD also includes
+	// addon mounts here, which exposes their data and makes misses expensive.
+	{ "DATA",		"DEFAULT_WRITE_PATH",	"data/" },
 	{ "WRITE",		"MOD",	"data/" },
 	// GMod's addon-only view.  .gma addons are mounted straight out of
 	// hl2sb/addons/, so that folder is the equivalent; WORKSHOP folds in here
@@ -1530,6 +1532,12 @@ static int HL2SB_ResolveFindPathID( const char *pRequest, char *pPrefix, int nPr
 	if ( pEntry )
 	{
 		V_strncpy( pPrefix, pEntry->pPrefix, nPrefixSize );
+
+		if ( !V_stricmp( pEntry->pPathID, "DEFAULT_WRITE_PATH" ) )
+		{
+			s_pFindPathID[0] = pEntry->pPathID;
+			return 1;
+		}
 
 		// GAME and MOD are searched as a pair: gameinfo.txt mounts the mod tree
 		// as "game+mod" but garrysmod.vpk as "mod" only, so neither one alone is
