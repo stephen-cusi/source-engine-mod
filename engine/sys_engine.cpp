@@ -289,6 +289,9 @@ bool CEngine::FilterTime( float dt )
 //-----------------------------------------------------------------------------
 void CEngine::Frame( void )
 {
+	const bool bFrameProfile = Host_IsFrameProfileActive();
+	double flFocusWait = 0.0;
+	double flIOWait = 0.0;
 	// yield the CPU for a little while when paused, minimized, or not the focus
 	// FIXME:  Move this to main windows message pump?
 	if ( IsPC() && !game->IsActiveApp() && !sv.IsDedicated() && engine_no_focus_sleep.GetInt() > 0 )
@@ -297,7 +300,12 @@ void CEngine::Frame( void )
 #if defined( RAD_TELEMETRY_ENABLED )
 		if( !g_Telemetry.Level )
 #endif
+		{
+			const double flStart = bFrameProfile ? Sys_FloatTime() : 0.0;
 			g_pInputSystem->SleepUntilInput( engine_no_focus_sleep.GetInt() );
+			if ( bFrameProfile )
+				flFocusWait = Sys_FloatTime() - flStart;
+		}
 	}
 
 	if ( m_flPreviousTime == 0 )
@@ -318,6 +326,7 @@ void CEngine::Frame( void )
 
 	// Loop until it is time for our frame. Don't return early because pumping messages
 	// and processing console input is expensive (0.1 ms for each call to ProcessConsoleInput).
+	const double flLimiterStart = bFrameProfile ? Sys_FloatTime() : 0.0;
 	for (;;)
 	{
 		// Get current time
@@ -383,12 +392,18 @@ void CEngine::Frame( void )
 			reportLevel = pSyncReportConVar->GetInt();
 			pSyncReportConVar->SetValue( 0 );
 		}
+		const double flStart = bFrameProfile ? Sys_FloatTime() : 0.0;
 		g_pFileSystem->AsyncFinishAll();
+		if ( bFrameProfile )
+			flIOWait = Sys_FloatTime() - flStart;
 		if ( bReportingSyncOpens )
 		{
 			pSyncReportConVar->SetValue( reportLevel );
 		}
 	}
+
+	if ( bFrameProfile )
+		Host_RecordFrameProfileWait( m_flCurrentTime - flLimiterStart, flFocusWait, flIOWait );
 
 #ifdef VPROF_ENABLED
 	PreUpdateProfile( m_flFrameTime );

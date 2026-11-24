@@ -161,7 +161,7 @@ void CL_Move( float accumulated_extra_samples, bool bFinalTick );
 void CL_ExtraMouseUpdate( float remainder );
 
 void CL_ClearState (void);
-void CL_ReadPackets ( bool framefinished );        // Read packets from server and other sources (ping requests, etc.)
+void CL_ReadPackets ( bool framefinished, bool bSimulationTick );        // Read packets from server and other sources (ping requests, etc.)
 
 //
 // cl_main.cpp

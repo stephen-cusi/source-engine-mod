@@ -814,6 +814,11 @@ bool CServerGameDLL::DLLInit( CreateInterfaceFn appSystemFactory,
 	gamestatsuploader->InitConnection();
 #endif
 
+#ifdef LUA_SDK
+	extern void HL2SB_LuaFrameProfileConnect( CreateInterfaceFn );
+	HL2SB_LuaFrameProfileConnect( appSystemFactory );
+#endif
+
 	return true;
 }
 
@@ -824,6 +829,10 @@ void CServerGameDLL::PostInit()
 
 void CServerGameDLL::DLLShutdown( void )
 {
+#ifdef LUA_SDK
+	extern void HL2SB_LuaFrameProfileConnect( CreateInterfaceFn );
+	HL2SB_LuaFrameProfileConnect( NULL );
+#endif
 
 	// Due to dependencies, these are not autogamesystems
 	ModelSoundsCacheShutdown();

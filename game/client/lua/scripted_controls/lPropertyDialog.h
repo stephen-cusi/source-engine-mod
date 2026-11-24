@@ -61,7 +61,8 @@ public:
     lua_checkstack( m_lua_State, 32 ); \
     if ( lua_isrefvalid( m_lua_State, m_nTableReference ) ) { \
     lua_getref(m_lua_State, m_nTableReference); \
-    lua_getfield(m_lua_State, -1, functionName); \
+    const char *const pszLuaProfileName = functionName; \
+    lua_getfield(m_lua_State, -1, pszLuaProfileName); \
     lua_remove(m_lua_State, -2); \
     if (lua_isfunction(m_lua_State, -1)) { \
       int args = 0; \

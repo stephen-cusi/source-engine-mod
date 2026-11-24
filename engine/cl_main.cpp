@@ -507,7 +507,7 @@ Updates the local time and reads/handles messages on client net connection.
 =================
 */
 
-void CL_ReadPackets ( bool bFinalTick )
+void CL_ReadPackets ( bool bFinalTick, bool bSimulationTick )
 {
 	VPROF_BUDGET( "CL_ReadPackets", VPROF_BUDGETGROUP_OTHER_NETWORKING );
 	tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s", __FUNCTION__ );
@@ -518,7 +518,8 @@ void CL_ReadPackets ( bool bFinalTick )
 	// update client times/tick
 
 	cl.oldtickcount = cl.GetServerTickCount();
-	if ( !cl.IsPaused() )
+	const bool bAdvanceClientClock = !cl.IsPaused();
+	if ( bAdvanceClientClock )
 	{
 		cl.SetClientTickCount( cl.GetClientTickCount() + 1 );
 		
@@ -531,6 +532,10 @@ void CL_ReadPackets ( bool bFinalTick )
 	}
 	// 0 or tick_rate if simulating
 	g_ClientGlobalVariables.frametime = cl.GetFrameTime();
+
+	// Incoming snapshots temporarily replace the client globals with server time.
+	if ( bSimulationTick && bAdvanceClientClock && cl.IsActive() && !demoplayer->IsSkipping() )
+		ClientDLL_FrameStageNotify( FRAME_HL2SB_CLIENT_TICK );
 
 	// read packets, if any in queue
 	if ( demoplayer->IsPlayingBack() && cl.m_NetChannel )

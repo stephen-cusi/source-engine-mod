@@ -5,6 +5,9 @@
 //===========================================================================//
 
 #include "tier0/fasttimer.h"
+#include <algorithm>
+#include <atomic>
+#include <cstdlib>
 
 #ifdef _WIN32
 #include "tier0/memdbgon.h" // needed because in release builds crtdbg.h is handled specially if USE_MEM_DEBUG is defined
@@ -13,6 +16,7 @@
 #endif
 
 #include "tier1/fmtstr.h"
+#include "tier1/utldict.h"
 #include "vstdlib/jobthread.h"
 
 #ifdef USE_SDL
@@ -49,6 +53,7 @@
 
 #include "icvar.h"
 #include "engine/igametimescale.h"
+#include "engine/ihl2sbframeprofile.h"
 
 #include "sys.h"
 #include "client.h"
@@ -196,9 +201,334 @@ enum
 	FRAME_SEGMENT_SOUND,
 	FRAME_SEGMENT_CLDLL,
 	FRAME_SEGMENT_CMD_EXECUTE,
+	FRAME_SEGMENT_PREDICTION,
+	FRAME_SEGMENT_SERVER_JOIN,
 
 	NUM_FRAME_SEGMENTS,
 };
+
+// The old host speeds timers already account for the major phases. Capture
+// their deltas once per host frame, after any server job has finished.
+class CHL2SBFrameProfile final : public IHL2SBFrameProfileDetailed
+{
+public:
+	bool IsActive() const override { return m_nCaptureMode.load( std::memory_order_relaxed ) != 0; }
+	bool IsDetailActive() const override { return m_nCaptureMode.load( std::memory_order_relaxed ) == 2; }
+
+	void RecordLuaCall( bool bServer, double flProtectedSeconds, double flVMSeconds, int nCalls, int nErrors ) override
+	{
+		AUTO_LOCK( m_LuaMutex );
+		if ( !IsActive() )
+			return;
+		LuaTotals &totals = m_Lua[bServer ? 1 : 0];
+		totals.flProtected += flProtectedSeconds;
+		totals.flVM += flVMSeconds;
+		totals.nCalls += nCalls;
+		totals.nErrors += nErrors;
+		if ( !bServer && m_bInHostRender )
+		{
+			m_RenderLua.flProtected += flProtectedSeconds;
+			m_RenderLua.flVM += flVMSeconds;
+			m_RenderLua.nCalls += nCalls;
+			m_RenderLua.nErrors += nErrors;
+		}
+	}
+
+	void SetInHostRender( bool bInRender )
+	{
+		AUTO_LOCK( m_LuaMutex );
+		m_bInHostRender = bInRender;
+	}
+
+	void RecordLuaNamedCall( bool bServer, const char *pszName, const char *pszSource,
+		int nLine, double flInclusiveSeconds, int nCalls ) override
+	{
+		if ( !pszName || !*pszName )
+			return;
+
+		AUTO_LOCK( m_LuaMutex );
+		if ( !IsDetailActive() )
+			return;
+
+		char szLabel[192];
+		if ( pszSource && *pszSource && nLine > 0 )
+			Q_snprintf( szLabel, sizeof( szLabel ), "%.80s @ %.90s:%d", pszName, pszSource, nLine );
+		else if ( pszSource && *pszSource )
+			Q_snprintf( szLabel, sizeof( szLabel ), "%.80s @ %.90s", pszName, pszSource );
+		else
+			Q_strncpy( szLabel, pszName, sizeof( szLabel ) );
+
+		for ( char *p = szLabel; *p; ++p )
+		{
+			const unsigned char ch = static_cast<unsigned char>( *p );
+			if ( ch < 32 || ch == 127 )
+				*p = ' ';
+		}
+
+		const int nRealm = bServer ? 1 : 0;
+		NamedLuaTable &table = m_NamedLua[nRealm];
+		int nIndex = table.Find( szLabel );
+		if ( nIndex == table.InvalidIndex() && table.Count() < MAX_NAMED_ENTRIES )
+			nIndex = table.Insert( szLabel, NamedLuaTotals{} );
+		NamedLuaTotals &totals = nIndex != table.InvalidIndex() ? table[nIndex] : m_NamedLuaOverflow[nRealm];
+		totals.flSeconds += flInclusiveSeconds;
+		totals.nCalls += nCalls;
+	}
+
+	void Request( double flSeconds, bool bDetail )
+	{
+		if ( IsActive() || m_flPendingSeconds > 0.0 )
+		{
+			ConMsg( "[Frame profile] A capture is already scheduled or running. Use hl2sb_frameprofile stop to finish it.\n" );
+			return;
+		}
+		m_flPendingSeconds = flSeconds;
+		m_bPendingDetail = bDetail;
+		ConMsg( "[Frame profile] Capturing up to %.1f seconds from the next complete frame%s. Close the console for gameplay measurements.\n",
+			flSeconds, bDetail ? " with named Lua timings" : "" );
+	}
+
+	void RequestStop()
+	{
+		if ( IsActive() )
+			m_bStopRequested = true;
+		else if ( m_flPendingSeconds > 0.0 )
+		{
+			m_flPendingSeconds = 0.0;
+			ConMsg( "[Frame profile] Scheduled capture canceled.\n" );
+		}
+		else
+			ConMsg( "[Frame profile] No active capture.\n" );
+	}
+
+	void RecordMainThreadWait( double flLimiterSeconds, double flFocusSeconds, double flIOSeconds )
+	{
+		m_flLimiter += flLimiterSeconds;
+		m_flFocus += flFocusSeconds;
+		m_flIO += flIOSeconds;
+	}
+
+	void EndFrame( const double *pPhaseSeconds )
+	{
+		if ( m_flPendingSeconds > 0.0 )
+		{
+			const double flNow = Sys_FloatTime();
+			m_flStart = m_flPrevious = flNow;
+			m_flDeadline = flNow + m_flPendingSeconds;
+			m_flPendingSeconds = 0.0;
+			m_bStopRequested = false;
+			m_nFrames = m_nThreadedFrames = 0;
+			m_flLimiter = m_flFocus = m_flIO = m_flWallSum = 0.0;
+			std::fill_n( m_flPhaseTotals, NUM_FRAME_SEGMENTS, 0.0 );
+			{
+				AUTO_LOCK( m_LuaMutex );
+				m_Lua[0] = {};
+				m_Lua[1] = {};
+				m_RenderLua = {};
+				m_bInHostRender = false;
+				for ( int i = 0; i < 2; ++i )
+				{
+					m_NamedLua[i].RemoveAll();
+					m_NamedLuaOverflow[i] = {};
+				}
+				m_nCaptureMode.store( m_bPendingDetail ? 2 : 1, std::memory_order_relaxed );
+			}
+			return;
+		}
+
+		if ( !IsActive() )
+			return;
+
+		const double flNow = Sys_FloatTime();
+		const double flInterval = flNow - m_flPrevious;
+		m_flPrevious = flNow;
+		if ( flInterval > 0.0 )
+		{
+			m_FrameMS[m_nFrames++] = static_cast<float>( flInterval * 1000.0 );
+			m_flWallSum += flInterval;
+			m_nThreadedFrames += IsEngineThreaded() ? 1 : 0;
+			for ( int i = 0; i < NUM_FRAME_SEGMENTS; ++i )
+				m_flPhaseTotals[i] += pPhaseSeconds[i];
+		}
+
+		if ( m_bStopRequested || flNow >= m_flDeadline || m_nFrames == MAX_FRAMES )
+			Report( flNow );
+	}
+
+private:
+	static const int MAX_FRAMES = 32768;
+	static const int MAX_NAMED_ENTRIES = 384;
+	static const int MAX_REPORTED_NAMES = 8;
+
+	struct NamedLuaTotals
+	{
+		double flSeconds;
+		int nCalls;
+	};
+	using NamedLuaTable = CUtlDict<NamedLuaTotals>;
+
+	struct LuaTotals
+	{
+		double flProtected;
+		double flVM;
+		int nCalls;
+		int nErrors;
+	};
+
+	void ReportNamedLua( int nRealm, const char *pszRealm, double flFactor )
+	{
+		const NamedLuaTable &table = m_NamedLua[nRealm];
+		int indices[MAX_NAMED_ENTRIES];
+		int nEntries = 0;
+		FOR_EACH_DICT( table, nIndex )
+			indices[nEntries++] = nIndex;
+
+		std::sort( indices, indices + nEntries, [&table]( int a, int b )
+		{
+			const double flA = table[a].flSeconds;
+			const double flB = table[b].flSeconds;
+			if ( flA != flB )
+				return flA > flB;
+			return Q_strcmp( table.GetElementName( a ), table.GetElementName( b ) ) < 0;
+		} );
+
+		const int nTop = nEntries < MAX_REPORTED_NAMES ? nEntries : MAX_REPORTED_NAMES;
+		ConMsg( "[Frame profile] %s main-thread Lua top %d/%d by inclusive time\n", pszRealm, nTop, nEntries );
+		for ( int i = 0; i < nTop; ++i )
+		{
+			const int nIndex = indices[i];
+			const NamedLuaTotals &totals = table[nIndex];
+			ConMsg( "[Frame profile]   %.3f ms/frame | %d calls | %s\n",
+				totals.flSeconds * flFactor, totals.nCalls, table.GetElementName( nIndex ) );
+		}
+		const NamedLuaTotals &overflow = m_NamedLuaOverflow[nRealm];
+		if ( overflow.nCalls > 0 )
+			ConMsg( "[Frame profile]   %.3f ms/frame | %d calls | additional names beyond the capture limit\n",
+				overflow.flSeconds * flFactor, overflow.nCalls );
+	}
+
+	void Report( double flNow )
+	{
+		const bool bDetail = IsDetailActive();
+		LuaTotals lua[2];
+		LuaTotals renderLua;
+		{
+			AUTO_LOCK( m_LuaMutex );
+			m_nCaptureMode.store( 0, std::memory_order_relaxed );
+			lua[0] = m_Lua[0];
+			lua[1] = m_Lua[1];
+			renderLua = m_RenderLua;
+		}
+
+		if ( m_nFrames == 0 )
+		{
+			ConMsg( "[Frame profile] No complete frames were sampled.\n" );
+			return;
+		}
+
+		std::sort( m_FrameMS, m_FrameMS + m_nFrames );
+		const int nP95 = ( 95 * m_nFrames + 99 ) / 100 - 1;
+		const double flFactor = 1000.0 / m_nFrames;
+		ConMsg( "[Frame profile] %d frames in %.2fs%s | wall avg=%.3fms p95=%.3fms max=%.3fms (%.1f FPS)\n",
+			m_nFrames, flNow - m_flStart, m_nFrames == MAX_FRAMES ? " (sample limit)" : "",
+			m_flWallSum * flFactor, m_FrameMS[nP95], m_FrameMS[m_nFrames - 1], m_nFrames / m_flWallSum );
+		ConMsg( "[Frame profile] Mean ms/frame | input=%.3f cmd=%.3f client tick=%.3f prediction=%.3f client update=%.3f server tick=%.3f render host=%.3f sound=%.3f\n",
+			m_flPhaseTotals[FRAME_SEGMENT_INPUT] * flFactor, m_flPhaseTotals[FRAME_SEGMENT_CMD_EXECUTE] * flFactor,
+			m_flPhaseTotals[FRAME_SEGMENT_CLIENT] * flFactor, m_flPhaseTotals[FRAME_SEGMENT_PREDICTION] * flFactor,
+			m_flPhaseTotals[FRAME_SEGMENT_CLDLL] * flFactor, m_flPhaseTotals[FRAME_SEGMENT_SERVER] * flFactor,
+			m_flPhaseTotals[FRAME_SEGMENT_RENDER] * flFactor, m_flPhaseTotals[FRAME_SEGMENT_SOUND] * flFactor );
+		ConMsg( "[Frame profile] Mean ms/frame | FPS limiter=%.3f focus sleep=%.3f serialized I/O=%.3f server join/work=%.3f | threaded host=%d/%d\n",
+			m_flLimiter * flFactor, m_flFocus * flFactor, m_flIO * flFactor,
+			m_flPhaseTotals[FRAME_SEGMENT_SERVER_JOIN] * flFactor, m_nThreadedFrames, m_nFrames );
+		ConMsg( "[Frame profile] Main-thread Lua protected/VM mean ms/frame (calls, errors) | client=%.3f/%.3f (%d, %d) server=%.3f/%.3f (%d, %d)\n",
+			lua[0].flProtected * flFactor, lua[0].flVM * flFactor, lua[0].nCalls, lua[0].nErrors,
+			lua[1].flProtected * flFactor, lua[1].flVM * flFactor, lua[1].nCalls, lua[1].nErrors );
+#ifndef SWDS
+		if ( materials && !sv.IsDedicated() )
+		{
+			const MaterialThreadMode_t mode = materials->GetThreadMode();
+			const char *pMode = mode == MATERIAL_SINGLE_THREADED ? "immediate" :
+				( mode == MATERIAL_QUEUED_THREADED ? "queued worker" : "queued single-thread" );
+			ConMsg( "[Frame profile] Render mode at end = %s. Render host tracks the CPU render entry point including submission and any present waits.\n", pMode );
+		}
+#endif
+		ConMsg( "[Frame profile] Read each phase separately. Phases can nest or overlap, and Lua VM time includes C bindings and sits inside protected time.\n" );
+		if ( bDetail )
+		{
+			ConMsg( "[Frame profile] Client Lua within host render protected/VM = %.3f/%.3f ms/frame (%d calls, %d errors)\n",
+				renderLua.flProtected * flFactor, renderLua.flVM * flFactor, renderLua.nCalls, renderLua.nErrors );
+			ReportNamedLua( 0, "Client", flFactor );
+			ReportNamedLua( 1, "Server", flFactor );
+			ConMsg( "[Frame profile] Named callbacks use inclusive timing. Parent callbacks can include nested callbacks in the rankings.\n" );
+		}
+	}
+
+	std::atomic<int> m_nCaptureMode{ 0 };
+	CThreadFastMutex m_LuaMutex;
+	LuaTotals m_Lua[2]{};
+	LuaTotals m_RenderLua{};
+	bool m_bInHostRender = false;
+	NamedLuaTable m_NamedLua[2]{ { k_eDictCompareTypeCaseSensitive }, { k_eDictCompareTypeCaseSensitive } };
+	NamedLuaTotals m_NamedLuaOverflow[2]{};
+	double m_flPendingSeconds = 0.0;
+	bool m_bPendingDetail = false;
+	bool m_bStopRequested = false;
+	double m_flStart = 0.0;
+	double m_flPrevious = 0.0;
+	double m_flDeadline = 0.0;
+	double m_flWallSum = 0.0;
+	double m_flLimiter = 0.0;
+	double m_flFocus = 0.0;
+	double m_flIO = 0.0;
+	double m_flPhaseTotals[NUM_FRAME_SEGMENTS]{};
+	int m_nFrames = 0;
+	int m_nThreadedFrames = 0;
+	float m_FrameMS[MAX_FRAMES]{};
+};
+
+static CHL2SBFrameProfile g_HL2SBFrameProfile;
+EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CHL2SBFrameProfile, IHL2SBFrameProfile, HL2SB_FRAME_PROFILE_INTERFACE_VERSION, g_HL2SBFrameProfile );
+EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CHL2SBFrameProfile, IHL2SBFrameProfileDetailed, HL2SB_FRAME_PROFILE_DETAILED_INTERFACE_VERSION, g_HL2SBFrameProfile );
+
+bool Host_IsFrameProfileActive()
+{
+	return g_HL2SBFrameProfile.IsActive();
+}
+
+void Host_RecordFrameProfileWait( double flLimiterSeconds, double flFocusSeconds, double flIOSeconds )
+{
+	if ( g_HL2SBFrameProfile.IsDetailActive() )
+		g_HL2SBFrameProfile.SetInHostRender( false );
+	g_HL2SBFrameProfile.RecordMainThreadWait( flLimiterSeconds, flFocusSeconds, flIOSeconds );
+}
+
+CON_COMMAND_F( hl2sb_frameprofile, "Capture frame times and engine/Lua phases for 1-30 seconds. Usage: hl2sb_frameprofile [seconds] [detail] or hl2sb_frameprofile stop", FCVAR_DONTRECORD )
+{
+	if ( args.ArgC() == 2 && !Q_stricmp( args[1], "stop" ) )
+	{
+		g_HL2SBFrameProfile.RequestStop();
+		return;
+	}
+
+	const bool bDetail = args.ArgC() > 1 && !Q_stricmp( args[args.ArgC() - 1], "detail" );
+	const int nDurationArgs = args.ArgC() - 1 - ( bDetail ? 1 : 0 );
+	double flSeconds = 8.0;
+	if ( nDurationArgs == 1 )
+	{
+		char *pEnd;
+		flSeconds = std::strtod( args[1], &pEnd );
+		if ( *pEnd != '\0' )
+			flSeconds = 0.0;
+	}
+
+	if ( nDurationArgs > 1 || !( flSeconds >= 1.0 && flSeconds <= 30.0 ) )
+	{
+		ConMsg( "Usage: hl2sb_frameprofile [1-30 seconds] [detail] or hl2sb_frameprofile stop\n" );
+		return;
+	}
+
+	g_HL2SBFrameProfile.Request( flSeconds, bDetail );
+}
 
 class CFrameTimer
 {
@@ -2314,6 +2644,7 @@ void CFrameTimer::MarkFrame()
 	float fs_cldll = (deltas[FRAME_SEGMENT_CLDLL])*1000.0;
 	float fs_exec = (deltas[FRAME_SEGMENT_CMD_EXECUTE])*1000.0;
 
+	g_HL2SBFrameProfile.EndFrame( deltas );
 	ResetDeltas();
 
 	frameTime = host_frametime;
@@ -2703,7 +3034,19 @@ void _Host_RunFrame_Server_Async( int numticks )
 }
 
 
-void _Host_RunFrame_Client( bool framefinished )
+#ifndef SWDS
+static void Host_RunNormalPrediction()
+{
+	const bool bProfile = Host_IsFrameProfileActive();
+	if ( bProfile )
+		g_HostTimes.StartFrameSegment( FRAME_SEGMENT_PREDICTION );
+	CL_RunPrediction( PREDICTION_NORMAL );
+	if ( bProfile )
+		g_HostTimes.EndFrameSegment( FRAME_SEGMENT_PREDICTION );
+}
+#endif
+
+void _Host_RunFrame_Client( bool framefinished, bool bSimulationTick )
 {
 #ifndef SWDS
 	VPROF( "_Host_RunFrame_Client" );
@@ -2712,7 +3055,7 @@ void _Host_RunFrame_Client( bool framefinished )
 	g_HostTimes.StartFrameSegment( FRAME_SEGMENT_CLIENT );
 
 	// Get any current state update from server, etc.
-	CL_ReadPackets( framefinished );
+	CL_ReadPackets( framefinished, bSimulationTick );
 
 #if defined( VOICE_OVER_IP )
 	// Send any enqueued voice data to the server
@@ -2789,6 +3132,9 @@ void _Host_RunFrame_Render()
 	}
 
 	// update video if not running in background
+	const bool bProfileDetail = g_HL2SBFrameProfile.IsDetailActive();
+	if ( bProfileDetail )
+		g_HL2SBFrameProfile.SetInHostRender( true );
 	g_HostTimes.StartFrameSegment( FRAME_SEGMENT_RENDER );
 
 	CL_LatchInterpolationAmount();
@@ -2805,6 +3151,8 @@ void _Host_RunFrame_Render()
 	}
 
 	g_HostTimes.EndFrameSegment( FRAME_SEGMENT_RENDER );
+	if ( bProfileDetail )
+		g_HL2SBFrameProfile.SetInHostRender( false );
 
 	saverestore->OnFrameRendered();
 
@@ -3269,7 +3617,7 @@ void _Host_RunFrame (float time)
 #ifndef SWDS
 				if ( !sv.IsDedicated() )
 				{
-					_Host_RunFrame_Client( bFinalTick );
+					_Host_RunFrame_Client( bFinalTick, true );
 				}
 
 				toolframework->Think( bFinalTick );
@@ -3311,7 +3659,7 @@ void _Host_RunFrame (float time)
 			// as quickly as we can.
 			if ( numticks == 0 && ( demoplayer->IsPlayingTimeDemo() || demoplayer->IsSkipping() ) )
 			{
-				_Host_RunFrame_Client( true );
+				_Host_RunFrame_Client( true, false );
 			}
 
 			if ( !sv.IsDedicated() )
@@ -3336,7 +3684,7 @@ void _Host_RunFrame (float time)
 				//-------------------
 				// If we haven't predicted/simulated the player (multiplayer with prediction enabled and
 				//  not a listen server with zero frame lag, then go ahead and predict now
-				CL_RunPrediction( PREDICTION_NORMAL );
+				Host_RunNormalPrediction();
 
 				CL_ApplyAddAngle();
 
@@ -3413,7 +3761,7 @@ void _Host_RunFrame (float time)
 				//-------------------
 				if ( !sv.IsDedicated() )
 				{
-					_Host_RunFrame_Client( bFinalTick );
+					_Host_RunFrame_Client( bFinalTick, true );
 				}
 				toolframework->Think( bFinalTick );
 			}
@@ -3422,7 +3770,7 @@ void _Host_RunFrame (float time)
 			// as quickly as we can.
 			if ( clientticks == 0 && ( demoplayer->IsPlayingTimeDemo() || demoplayer->IsSkipping() ) )
 			{
-				_Host_RunFrame_Client( true );
+				_Host_RunFrame_Client( true, false );
 			}
 
 			// This causes cl.gettime() to return the true clock being used for rendering (tickcount * rate + remainder)
@@ -3435,7 +3783,7 @@ void _Host_RunFrame (float time)
 			//-------------------
 			// If we haven't predicted/simulated the player (multiplayer with prediction enabled and
 			//  not a listen server with zero frame lag, then go ahead and predict now
-			CL_RunPrediction( PREDICTION_NORMAL );
+			Host_RunNormalPrediction();
 
 			CL_ApplyAddAngle();
 
@@ -3551,6 +3899,9 @@ void _Host_RunFrame (float time)
 		{
 			{
 				VPROF_BUDGET( "WaitForAsyncServer", "AsyncServer" );
+				const bool bProfile = Host_IsFrameProfileActive();
+				if ( bProfile )
+					g_HostTimes.StartFrameSegment( FRAME_SEGMENT_SERVER_JOIN );
 				if ( Host_IsSinglePlayerGame() )
 				{
 					// This should change to a YieldWait if the server starts wanting to parallel process. If
@@ -3563,6 +3914,8 @@ void _Host_RunFrame (float time)
 				{
 					pGameJob->WaitForFinishAndRelease();
 				}
+				if ( bProfile )
+					g_HostTimes.EndFrameSegment( FRAME_SEGMENT_SERVER_JOIN );
 			}
 			SV_FrameExecuteThreadDeferred();
 		}

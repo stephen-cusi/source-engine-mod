@@ -149,7 +149,10 @@ enum ClientFrameStage_t
 	// We're about to start rendering the scene
 	FRAME_RENDER_START,
 	// We've finished rendering the scene.
-	FRAME_RENDER_END
+	FRAME_RENDER_END,
+
+	// HL2SB extension. The client simulation clock has advanced one tick.
+	FRAME_HL2SB_CLIENT_TICK
 };
 
 // Used by RenderView

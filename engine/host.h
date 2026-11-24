@@ -107,6 +107,8 @@ void Host_FreeToLowMark( bool server );
 void Host_FreeStateAndWorld( bool server );
 void Host_Disconnect( bool bShowMainMenu, const char *pszReason = "" );
 void Host_RunFrame( float time );
+bool Host_IsFrameProfileActive();
+void Host_RecordFrameProfileWait( double flLimiterSeconds, double flFocusSeconds, double flIOSeconds );
 void Host_DumpMemoryStats( void );
 void Host_UpdateMapList( void );
 float Host_GetSoundDuration( const char *pSample );

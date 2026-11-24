@@ -1104,6 +1104,8 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 		HL2SB_BrushSurfaceConnect( appSystemFactory );
 		extern void HL2SB_RenderBrushOverrideConnect( CreateInterfaceFn );
 		HL2SB_RenderBrushOverrideConnect( appSystemFactory );
+		extern void HL2SB_LuaFrameProfileConnect( CreateInterfaceFn );
+		HL2SB_LuaFrameProfileConnect( appSystemFactory );
 	}
 #endif
 	if ( (random = (IUniformRandomStream *)appSystemFactory(VENGINE_CLIENT_RANDOM_INTERFACE_VERSION, NULL)) == NULL )
@@ -1379,6 +1381,11 @@ void CHLClient::PostInit()
 //-----------------------------------------------------------------------------
 void CHLClient::Shutdown( void )
 {
+#ifdef LUA_SDK
+	extern void HL2SB_LuaFrameProfileConnect( CreateInterfaceFn );
+	HL2SB_LuaFrameProfileConnect( NULL );
+#endif
+
 	// HL2SB: sound.PlayFile runtime. Runs before the Lua state closes so the
 	// pending callback registry refs are still valid, and before the engine
 	// tears down the audio device. Must not hold the channel list lock here
@@ -2723,6 +2730,18 @@ void OnRenderEnd()
 
 void CHLClient::FrameStageNotify( ClientFrameStage_t curStage )
 {
+	if ( curStage == FRAME_HL2SB_CLIENT_TICK )
+	{
+#if defined( LUA_SDK )
+		if ( L != NULL )
+		{
+			BEGIN_LUA_CALL_HOOK( "Tick" );
+			END_LUA_CALL_HOOK( 0, 0 );
+		}
+#endif
+		return;
+	}
+
 	g_CurFrameStage = curStage;
 
 	switch( curStage )

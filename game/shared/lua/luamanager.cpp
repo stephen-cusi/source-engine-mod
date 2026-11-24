@@ -76,6 +76,8 @@ static bool luasrc_PathInDisabledAddon (const char *fullpath);
 #include "luacachefile.h"
 #include "tier1/lconvar.h"
 #include "tier0/icommandline.h"
+#include "tier0/threadtools.h"
+#include "engine/ihl2sbframeprofile.h"
 #include "licvar.h"
 #include "lgameevents.h"
 #include "activitylist.h"
@@ -3103,7 +3105,66 @@ static int luasrc_traceback (lua_State *L) {
   return 1;
 }
 
-LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
+static void HL2SB_PushTracebackHandler( lua_State *state )
+{
+  // GMod reuses a registry-held handler for protected engine calls. A fresh
+  // lua_pushcfunction allocates a C closure and checks the GC on every call.
+  static char registryKey;
+  lua_pushlightuserdata( state, &registryKey );
+  lua_rawget( state, LUA_REGISTRYINDEX );
+  if ( lua_tocfunction( state, -1 ) == luasrc_traceback )
+    return;
+
+  lua_pop( state, 1 );
+  lua_pushcfunction( state, luasrc_traceback );
+  // The registry belongs to the realm and is shared by its coroutines.
+  if ( lua_checkstack( state, 2 ) )
+  {
+    lua_pushlightuserdata( state, &registryKey );
+    lua_pushvalue( state, -2 );
+    lua_rawset( state, LUA_REGISTRYINDEX );
+  }
+}
+
+static IHL2SBFrameProfile *s_pLuaFrameProfile;
+static IHL2SBFrameProfileDetailed *s_pLuaFrameProfileDetailed;
+static int s_nLuaFrameProfileDepth;
+static int s_nLuaFrameProfileCalls;
+static int s_nLuaFrameProfileErrors;
+
+#ifdef CLIENT_DLL
+static const bool s_bLuaProfileServer = false;
+#else
+static const bool s_bLuaProfileServer = true;
+#endif
+
+void HL2SB_LuaFrameProfileConnect( CreateInterfaceFn factory )
+{
+  s_pLuaFrameProfileDetailed = factory ? static_cast<IHL2SBFrameProfileDetailed *>(
+    factory( HL2SB_FRAME_PROFILE_DETAILED_INTERFACE_VERSION, NULL ) ) : NULL;
+  s_pLuaFrameProfile = s_pLuaFrameProfileDetailed;
+  if ( !s_pLuaFrameProfile && factory )
+    s_pLuaFrameProfile = static_cast<IHL2SBFrameProfile *>(
+      factory( HL2SB_FRAME_PROFILE_INTERFACE_VERSION, NULL ) );
+}
+
+static int HL2SB_ProtectedLuaCall (lua_State *L, int nargs, int nresults, int errfunc,
+                                   double *pInclusiveSeconds = NULL) {
+  IHL2SBFrameProfile *pFrameProfile = s_pLuaFrameProfile;
+  const bool bProfile = pFrameProfile && pFrameProfile->IsActive() && ThreadInMainThread();
+  const bool bOuterProfile = bProfile && s_nLuaFrameProfileDepth == 0;
+  const bool bTimeProtected = bOuterProfile || pInclusiveSeconds;
+  const double flBridgeStart = bTimeProtected ? Plat_FloatTime() : 0.0;
+  if ( bProfile )
+  {
+    ++s_nLuaFrameProfileDepth;
+    if ( bOuterProfile )
+    {
+      s_nLuaFrameProfileCalls = 0;
+      s_nLuaFrameProfileErrors = 0;
+    }
+    ++s_nLuaFrameProfileCalls;
+  }
 #ifdef CLIENT_DLL
   extern int HL2SB_LuaCameraScopeDepth();
   extern void HL2SB_UnwindLuaCameraScopes( lua_State *L, int depth );
@@ -3115,13 +3176,15 @@ LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
     /* Place the handler below the function and its arguments so lua_pcall sees
     ** it, then remove it again so the caller's stack shape is unchanged.
     */
-    lua_pushcfunction(L, luasrc_traceback);
+    HL2SB_PushTracebackHandler( L );
     lua_insert(L, -(nargs + 2));
     errfunc = lua_gettop(L) - nargs - 1;
     bInjectedHandler = true;
   }
 
+  const double flVMStart = bOuterProfile ? Plat_FloatTime() : 0.0;
   int iError = lua_pcall(L, nargs, nresults, errfunc);
+  const double flVMSeconds = bOuterProfile ? Plat_FloatTime() - flVMStart : 0.0;
 
   if (bInjectedHandler)
     lua_remove(L, errfunc);
@@ -3145,7 +3208,72 @@ LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
     if (nresults != 0)
       lua_pushnil(L);
   }
+  const double flBridgeSeconds = bTimeProtected ? Plat_FloatTime() - flBridgeStart : 0.0;
+  if ( pInclusiveSeconds )
+    *pInclusiveSeconds = flBridgeSeconds;
+  if ( bProfile )
+  {
+    s_nLuaFrameProfileErrors += ( iError != 0 );
+    --s_nLuaFrameProfileDepth;
+    if ( bOuterProfile )
+    {
+      // Time an outer call once and include reentrant calls in the counts.
+      // The VM time includes Lua-invoked C functions and nested calls.
+      pFrameProfile->RecordLuaCall( s_bLuaProfileServer, flBridgeSeconds,
+                                    flVMSeconds, s_nLuaFrameProfileCalls, s_nLuaFrameProfileErrors );
+    }
+  }
   return iError;
+}
+
+static int HL2SB_DetailedLuaCall( IHL2SBFrameProfileDetailed &profile, lua_State *state,
+                                  int nargs, int nresults, int errfunc,
+                                  const char *kind, const char *name )
+{
+  char label[96];
+  char source[MAX_PATH] = {};
+  int line = 0;
+  if ( kind && name )
+    V_snprintf( label, sizeof( label ), "%s:%s", kind, name );
+  else
+    V_strncpy( label, "Lua callback", sizeof( label ) );
+
+  // For GM hooks just label the known event. The immediate callee is the
+  // dispatcher; its file would obscure the fact that this is an aggregate.
+  if ( ( !kind || V_strcmp( kind, "GM" ) != 0 ) &&
+       lua_isfunction( state, -( nargs + 1 ) ) && lua_checkstack( state, 1 ) )
+  {
+    lua_Debug info;
+    lua_pushvalue( state, -( nargs + 1 ) );
+    if ( lua_getinfo( state, ">S", &info ) && info.source && info.source[0] == '@' )
+    {
+      V_strncpy( source, info.source + 1, sizeof( source ) );
+      line = info.linedefined;
+    }
+  }
+
+  double elapsed = 0.0;
+  const int result = HL2SB_ProtectedLuaCall( state, nargs, nresults, errfunc, &elapsed );
+  profile.RecordLuaNamedCall( s_bLuaProfileServer, label, source[0] ? source : NULL,
+    line, elapsed, 1 );
+  return result;
+}
+
+LUA_API int luasrc_pcall_named( lua_State *L, int nargs, int nresults, int errfunc,
+                                const char *kind, const char *name )
+{
+  IHL2SBFrameProfileDetailed *profile = s_pLuaFrameProfileDetailed;
+  if ( profile && profile->IsDetailActive() && ThreadInMainThread() )
+    return HL2SB_DetailedLuaCall( *profile, L, nargs, nresults, errfunc, kind, name );
+  return HL2SB_ProtectedLuaCall( L, nargs, nresults, errfunc );
+}
+
+LUA_API int luasrc_pcall( lua_State *L, int nargs, int nresults, int errfunc )
+{
+  IHL2SBFrameProfileDetailed *profile = s_pLuaFrameProfileDetailed;
+  if ( profile && profile->IsDetailActive() && ThreadInMainThread() )
+    return HL2SB_DetailedLuaCall( *profile, L, nargs, nresults, errfunc, NULL, NULL );
+  return HL2SB_ProtectedLuaCall( L, nargs, nresults, errfunc );
 }
 
 LUA_API void luasrc_print(lua_State *L, int narg) {

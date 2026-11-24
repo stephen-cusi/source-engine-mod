@@ -216,13 +216,14 @@
     if (lua_isfunction(L, -1)) { \
       lua_remove(L, -2); \
       int args = 0; \
-      lua_pushstring(L, functionName); \
+      const char *const pszLuaProfileName = functionName; \
+      lua_pushstring(L, pszLuaProfileName); \
       lua_getglobal(L, "_GAMEMODE"); \
       args = 2;
 
 #define LUA_CALL_HOOK_FOR_STATE_END(L, nArgs, nresults) \
       args += nArgs; \
-      luasrc_pcall(L, args, nresults, 0); \
+      luasrc_pcall_named(L, args, nresults, 0, "GM", pszLuaProfileName); \
     } \
     else { lua_pop(L, 2); if ((nresults) > 0) lua_pushnil(L); } \
   } \
@@ -243,13 +244,14 @@
 	if (lua_isfunction(L, -1)) { \
 	  lua_remove(L, -2); \
 	  int args = 0; \
-	  lua_pushstring(L, functionName); \
+	  const char *const pszLuaProfileName = functionName; \
+	  lua_pushstring(L, pszLuaProfileName); \
 	  lua_getglobal(L, "_GAMEMODE"); \
 	  args = 2;
 
 #define END_LUA_CALL_HOOK(nArgs, nresults) \
 	  args += nArgs; \
-	  luasrc_pcall(L, args, nresults, 0); \
+	  luasrc_pcall_named(L, args, nresults, 0, "GM", pszLuaProfileName); \
 	} \
 	else { lua_pop(L, 2); if ((nresults) > 0) lua_pushnil(L); } \
   } \
@@ -275,7 +277,8 @@
   lua_checkstack( L, 32 ); /* same headroom guard as BEGIN_LUA_CALL_HOOK (2026-10-01) */ \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
-    luasrc_PushScriptField(L, -1, functionName); \
+    const char *const pszLuaProfileName = functionName; \
+    luasrc_PushScriptField(L, -1, pszLuaProfileName); \
     lua_remove(L, -2); \
     if (lua_isfunction(L, -1)) { \
       int args = 0; \
@@ -284,7 +287,7 @@
 
 #define END_LUA_CALL_WEAPON_METHOD(nArgs, nresults) \
 	  args += nArgs; \
-	  luasrc_pcall(L, args, nresults, 0); \
+	  luasrc_pcall_named(L, args, nresults, 0, "Weapon", pszLuaProfileName); \
     } \
     else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); } \
   } \
@@ -294,7 +297,8 @@
   lua_checkstack( L, 32 ); /* same headroom guard as BEGIN_LUA_CALL_HOOK (2026-10-01) */ \
   if (pWeapon->IsScripted() && lua_isrefvalid(L, pWeapon->m_nTableReference)) { \
     lua_getref(L, pWeapon->m_nTableReference); \
-    luasrc_PushScriptField(L, -1, functionName); \
+    const char *const pszLuaProfileName = functionName; \
+    luasrc_PushScriptField(L, -1, pszLuaProfileName); \
     lua_remove(L, -2); \
     if (lua_isfunction(L, -1)) { \
       int args = 0; \
@@ -303,7 +307,7 @@
 
 #define END_LUA_CALL_WEAPON_HOOK(nArgs, nresults) \
       args += nArgs; \
-      luasrc_pcall(L, args, nresults, 0); \
+      luasrc_pcall_named(L, args, nresults, 0, "Weapon", pszLuaProfileName); \
     } \
     else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); } \
   } \
@@ -322,7 +326,8 @@
   lua_checkstack( L, 32 ); /* same headroom guard as BEGIN_LUA_CALL_HOOK (2026-10-01) */ \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
-    luasrc_PushScriptField(L, -1, functionName); \
+    const char *const pszLuaProfileName = functionName; \
+    luasrc_PushScriptField(L, -1, pszLuaProfileName); \
     lua_remove(L, -2); \
     if (lua_isfunction(L, -1)) { \
       int args = 0; \
@@ -331,7 +336,7 @@
 
 #define END_LUA_CALL_ENTITY_METHOD(nArgs, nresults) \
 	args += nArgs; \
-	luasrc_pcall(L, args, nresults, 0); \
+	luasrc_pcall_named(L, args, nresults, 0, "Entity", pszLuaProfileName); \
   } \
   else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); } \
   } \
@@ -341,7 +346,8 @@
   lua_checkstack( L, 32 ); /* same headroom guard as BEGIN_LUA_CALL_HOOK (2026-10-01) */ \
   lua_getref(L, m_nTableReference); \
   if (lua_istable(L, -1)) { \
-    luasrc_PushScriptField(L, -1, functionName); \
+    const char *const pszLuaProfileName = functionName; \
+    luasrc_PushScriptField(L, -1, pszLuaProfileName); \
     lua_remove(L, -2); \
     if (lua_isfunction(L, -1)) { \
       int args = 0; \
@@ -350,7 +356,7 @@
 
 #define END_LUA_CALL_TRIGGER_METHOD(nArgs, nresults) \
 	args += nArgs; \
-	luasrc_pcall(L, args, nresults, 0); \
+	luasrc_pcall_named(L, args, nresults, 0, "Trigger", pszLuaProfileName); \
   } \
   else { lua_pop(L, 1); if ((nresults) > 0) lua_pushnil(L); } \
   } \
@@ -382,7 +388,8 @@
     lua_checkstack( m_lua_State, 32 ); \
     if ( lua_isrefvalid(m_lua_State, m_nTableReference) ) { \
     lua_getref(m_lua_State, m_nTableReference); \
-    lua_getfield(m_lua_State, -1, functionName); \
+    const char *const pszLuaProfileName = functionName; \
+    lua_getfield(m_lua_State, -1, pszLuaProfileName); \
     lua_remove(m_lua_State, -2); \
     if (lua_isfunction(m_lua_State, -1)) { \
       int args = 0; \
@@ -391,7 +398,7 @@
 
 #define END_LUA_CALL_PANEL_METHOD(nArgs, nresults) \
 	  args += nArgs; \
-	  luasrc_pcall(m_lua_State, args, nresults, 0); \
+	  luasrc_pcall_named(m_lua_State, args, nresults, 0, "Panel", pszLuaProfileName); \
     } \
     else { lua_pop(m_lua_State, 1); if ((nresults) > 0) lua_pushnil(m_lua_State); } \
     } \
@@ -810,6 +817,8 @@ LUA_API void  (luasrc_dofolder_sorted) (lua_State *L, const char *path, bool bRe
 LUA_API int   (luasrc_dofile_includes) (lua_State *L, const char *pszName);
 
 LUA_API int   (luasrc_pcall) (lua_State *L, int nargs, int nresults, int errfunc);
+LUA_API int luasrc_pcall_named( lua_State *L, int nargs, int nresults, int errfunc,
+                               const char *kind, const char *name );
 LUA_API void  (luasrc_print) (lua_State *L, int narg);
 LUA_API void  (luasrc_dumpstack) (lua_State *L);
 
