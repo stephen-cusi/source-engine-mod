@@ -49,6 +49,7 @@
 #include <tier0/vprof.h>
 #include <cdll_int.h>
 #include <eiface.h>
+#include "engine/iserverpasswordcheck.h"
 #include <client_class.h>
 #include "tier0/icommandline.h"
 #include "sv_steamauth.h"
@@ -473,12 +474,27 @@ IClient *CBaseServer::ConnectClient ( netadr_t &adr, int protocol, int challenge
 		}
 #endif
 
-		if ( !CheckPassword( adr, password, name ) )
+		char rejectReason[512] = "#GameUI_ServerRejectBadPassword";
+		ServerPasswordDecision passwordDecision = ServerPasswordDecision::UseDefault;
+		if ( !adr.IsLocalhost() && !adr.IsLoopback() && serverGameDLL && g_ServerFactory &&
+			authProtocol > 0 && authProtocol <= PROTOCOL_LASTVALID )
 		{
-			// failed
+			IServerPasswordCheck *passwordCheck = static_cast<IServerPasswordCheck *>(
+				g_ServerFactory( HL2SB_SERVER_PASSWORD_CHECK_VERSION, NULL ) );
+			if ( passwordCheck )
+			{
+				const char *serverPassword = GetPassword();
+				const CUtlNetAdrRender address( adr );
+				// This handshake has no verified SteamID at the password gate.
+				passwordDecision = passwordCheck->CheckPassword( 0, address.String(),
+					serverPassword ? serverPassword : "", password, name, rejectReason, sizeof( rejectReason ) );
+			}
+		}
+		if ( passwordDecision == ServerPasswordDecision::Reject ||
+			( passwordDecision != ServerPasswordDecision::Accept && !CheckPassword( adr, password, name ) ) )
+		{
 			ConMsg ( "%s:  password failed.\n", adr.ToString() );
-			// Special rejection handler.
-			RejectConnection( adr, clientChallenge, "#GameUI_ServerRejectBadPassword" );
+			RejectConnection( adr, clientChallenge, rejectReason );
 			return NULL;
 		}
 	}

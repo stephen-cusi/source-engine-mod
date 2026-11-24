@@ -8,6 +8,7 @@
 
 #include "cbase.h"
 #ifdef LUA_SDK
+#include "engine/iserverpasswordcheck.h"
 #include "lua/hl2sb_playerbuttons.h"
 #include "lua/hl2sb_transmit_parent.h"
 #endif
@@ -582,6 +583,47 @@ CServerGameDLL g_ServerGameDLL;
 // INTERFACEVERSION_SERVERGAMEDLL_VERSION_8 is compatible with the latest since we're only adding things to the end, so expose that as well.
 //EXPOSE_SINGLE_INTERFACE_GLOBALVAR(CServerGameDLL, IServerGameDLL008, INTERFACEVERSION_SERVERGAMEDLL_VERSION_8, g_ServerGameDLL );
 EXPOSE_SINGLE_INTERFACE_GLOBALVAR(CServerGameDLL, IServerGameDLL, INTERFACEVERSION_SERVERGAMEDLL, g_ServerGameDLL);
+
+#ifdef LUA_SDK
+class CServerPasswordCheck : public IServerPasswordCheck
+{
+public:
+	ServerPasswordDecision CheckPassword( uint64 steamID, const char *address,
+		const char *serverPassword, const char *clientPassword, const char *name,
+		char *rejectReason, int rejectReasonSize ) override
+	{
+		if ( !g_bLuaInitialized || !L || !lua_checkstack( L, 32 ) )
+			return ServerPasswordDecision::UseDefault;
+
+		const int top = lua_gettop( L );
+		ServerPasswordDecision decision = ServerPasswordDecision::UseDefault;
+		BEGIN_LUA_CALL_HOOK( "CheckPassword" );
+			char steamID64[32];
+			Q_snprintf( steamID64, sizeof( steamID64 ), "%llu", static_cast<unsigned long long>( steamID ) );
+			lua_pushstring( L, steamID64 );
+			lua_pushstring( L, address );
+			lua_pushstring( L, serverPassword );
+			lua_pushstring( L, clientPassword );
+			lua_pushstring( L, name );
+		END_LUA_CALL_HOOK( 5, 2 );
+
+		if ( lua_gettop( L ) == top + 2 && lua_type( L, top + 1 ) == LUA_TBOOLEAN )
+		{
+			decision = lua_toboolean( L, top + 1 ) ? ServerPasswordDecision::Accept : ServerPasswordDecision::Reject;
+			if ( decision == ServerPasswordDecision::Reject && lua_type( L, top + 2 ) == LUA_TSTRING )
+			{
+				const char *reason = lua_tostring( L, top + 2 );
+				if ( reason[0] )
+					Q_strncpy( rejectReason, reason, rejectReasonSize );
+			}
+		}
+		lua_settop( L, top );
+		return decision;
+	}
+};
+
+EXPOSE_SINGLE_INTERFACE( CServerPasswordCheck, IServerPasswordCheck, HL2SB_SERVER_PASSWORD_CHECK_VERSION );
+#endif
 
 // When bumping the version to this interface, check that our assumption is still valid and expose the older version in the same way
 COMPILE_TIME_ASSERT( INTERFACEVERSION_SERVERGAMEDLL_INT == 10 );
