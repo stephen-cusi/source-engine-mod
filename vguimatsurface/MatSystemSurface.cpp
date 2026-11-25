@@ -85,6 +85,40 @@ struct SurfaceModelDrawingState
 };
 static CUtlVector< SurfaceModelDrawingState > g_SurfaceModelDrawingStack;
 
+#if defined( WIN32 ) && !defined( _X360 )
+struct MemoryFontResource
+{
+	CUtlSymbol fileName;
+	HANDLE handle;
+};
+static CUtlVector< MemoryFontResource > g_MemoryFontResources;
+
+static bool AddMemoryFontResource( const char *fontFileName )
+{
+	CUtlSymbol name( fontFileName );
+	for ( int i = 0; i < g_MemoryFontResources.Count(); ++i )
+	{
+		if ( g_MemoryFontResources[i].fileName == name )
+			return true;
+	}
+
+	CUtlBuffer fontData;
+	if ( !g_pFullFileSystem->ReadFile( fontFileName, NULL, fontData ) || fontData.TellPut() <= 0 )
+		return false;
+
+	DWORD fontCount = 0;
+	HANDLE handle = ::AddFontMemResourceEx( fontData.Base(), fontData.TellPut(), NULL, &fontCount );
+	if ( !handle )
+		return false;
+
+	MemoryFontResource resource;
+	resource.fileName = name;
+	resource.handle = handle;
+	g_MemoryFontResources.AddToTail( resource );
+	return true;
+}
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -460,6 +494,10 @@ void CMatSystemSurface::Shutdown( void )
 	m_PaintStateStack.Purge();
 
 #if defined( WIN32 ) && !defined( _X360 )
+	for ( int i = 0; i < g_MemoryFontResources.Count(); ++i )
+		::RemoveFontMemResourceEx( g_MemoryFontResources[i].handle );
+	g_MemoryFontResources.RemoveAll();
+
  	// release any custom font files
 	// use newer function if possible
 	HMODULE gdiModule = ::LoadLibrary( "gdi32.dll" );
@@ -1886,12 +1924,21 @@ bool CMatSystemSurface::AddCustomFontFile( const char *fontName, const char *fon
 	}
 	MAT_FUNC;
 
+#if defined(LINUX) || defined(OSX) || defined(PLATFORM_BSD)
+	int fontDataSize;
+	return CMatSystemSurface::FontDataHelper( fontName, fontDataSize, fontFileName ) != NULL;
+#endif
+
 	char fullPath[MAX_PATH];
 	bool bFound = false;
 	// windows needs an absolute path for ttf
 	bFound = g_pFullFileSystem->GetLocalPath( fontFileName, fullPath, sizeof( fullPath ) );
 	if ( !bFound )
 	{
+#if defined( WIN32 ) && !defined( _X360 )
+		if ( AddMemoryFontResource( fontFileName ) )
+			return true;
+#endif
 		Warning( "Couldn't find custom font file '%s'\n", fontFileName );
 		return false;
 	}
@@ -1940,6 +1987,8 @@ bool CMatSystemSurface::AddCustomFontFile( const char *fontName, const char *fon
 
 	// add to windows
 	bool success = successfullyAdded || (::AddFontResource(fullPath) > 0);
+	if ( !success )
+		success = AddMemoryFontResource( fontFileName );
 	if ( !success )
 	{
 		Msg( "Failed to load custom font file '%s'\n", fullPath );
