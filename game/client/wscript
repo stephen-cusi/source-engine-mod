@@ -34,12 +34,9 @@ def configure(conf):
 
 def build(bld):
 	game = vpc_parser.parse_vpcs( bld.env, games[bld.env.GAMES], '../..' )
-	# Optional recording support: point to an FFmpeg development prefix with
-	# include/, lib/ and (on Windows) bin/. It must enable libvpx, libtheora
-	# and libvorbis. Tested with BtbN LGPL N-129267-g9ec5cf1aac-20261124.
-	ffmpeg_root = os.environ.get('HL2SB_FFMPEG_ROOT', '') if bld.env.GAMES == 'hl2sb' else ''
-	ffmpeg_libs = []
-	ffmpeg_libpaths = []
+	# Optional holi recording module: FFmpeg and its codecs are linked into holi,
+	# leaving the client loadable when the optional module is absent.
+	ffmpeg_root = os.environ.get('HL2SB_HOLI_FFMPEG_ROOT', '') if bld.env.GAMES == 'hl2sb' else ''
 
 	includes = [
 		'.',
@@ -98,23 +95,6 @@ def build(bld):
 	source += game["sources"] + ['../../public/tier0/memoverride.cpp']
 	includes += game["includes"]
 	defines = game["defines"]
-	if ffmpeg_root:
-		includes.append(os.path.join(ffmpeg_root, 'include'))
-		ffmpeg_libpaths.append(os.path.join(ffmpeg_root, 'lib'))
-		ffmpeg_libs = ['avformat', 'avcodec', 'avutil', 'swscale', 'swresample']
-		defines.append('HL2SB_VIDEO_FFMPEG')
-		if bld.env.DEST_OS == 'win32':
-			ffmpeg_bin = os.path.join(ffmpeg_root, 'bin')
-			ffmpeg_runtime = [os.path.join(ffmpeg_bin, name) for name in os.listdir(ffmpeg_bin)
-				if name.lower().endswith('.dll') and name.lower().startswith(
-					('avcodec-', 'avformat-', 'avutil-', 'swscale-', 'swresample-'))]
-			if len(ffmpeg_runtime) != 5:
-				bld.fatal('HL2SB_FFMPEG_ROOT must contain exactly one DLL for each FFmpeg dependency')
-			bld.install_files(bld.env.LIBDIR, ffmpeg_runtime)
-			license_file = os.path.join(ffmpeg_root, 'LICENSE.txt')
-			if not os.path.isfile(license_file):
-				bld.fatal('HL2SB_FFMPEG_ROOT must include the FFmpeg license')
-			bld.install_as(os.path.join(bld.env.LIBDIR, 'ffmpeg-LICENSE.txt'), license_file)
 
 	defines.remove('PROTECTED_THINGS_ENABLE')
 
@@ -133,8 +113,6 @@ def build(bld):
 		includes = includes,
 		defines  = defines,
 		use      = libs,
-		lib      = ffmpeg_libs,
-		libpath  = ffmpeg_libpaths,
 		install_path = install_path,
 		subsystem = bld.env.MSVC_SUBSYSTEM,
 		idx      = bld.get_taskgen_count()
@@ -146,6 +124,31 @@ def build(bld):
 			module_env.cxxshlib_PATTERN = '%s.so'
 		elif bld.env.DEST_OS == 'darwin':
 			module_env.cxxshlib_PATTERN = '%s.dylib'
+		if ffmpeg_root:
+			ffmpeg_libs = ['avformat', 'avcodec', 'avutil', 'swscale', 'swresample']
+			system_libs = []
+			if bld.env.DEST_OS == 'win32':
+				# The prebuilt codec SDK uses the dynamic MSVC runtime. Match it
+				# throughout this module instead of mixing /MT with /MD objects.
+				for key in ('CFLAGS', 'CXXFLAGS'):
+					module_env[key] = [flag for flag in module_env[key] if flag not in ('/MT', '/MTd', '/MDd')]
+					module_env.append_unique(key, ['/MD'])
+				system_libs = ['user32', 'bcrypt', 'ws2_32', 'ole32', 'strmiids', 'secur32', 'mfuuid']
+			shared_test = os.environ.get('HL2SB_HOLI_SHARED_TEST') == '1'
+			if not shared_test:
+				ffmpeg_libs += ['vpx', 'theoraenc', 'theoradec', 'vorbisenc', 'vorbis', 'ogg']
+			bld.shlib(
+				source = ['lua/holi_video_module.cpp', 'lua/hl2sb_video_backend.cpp'],
+				target = 'holi', name = 'holi', features = 'c cxx', env = module_env,
+				includes = ['../../public', os.path.join(ffmpeg_root, 'include')],
+				defines = ['HL2SB_VIDEO_FFMPEG'],
+				lib = (ffmpeg_libs if shared_test else []) + system_libs,
+				libpath = [os.path.join(ffmpeg_root, 'lib')],
+				stlib = [] if shared_test else ffmpeg_libs,
+				stlibpath = [os.path.join(ffmpeg_root, 'lib')],
+				install_path = bld.env.LIBDIR, subsystem = bld.env.MSVC_SUBSYSTEM,
+				idx = bld.get_taskgen_count()
+			)
 		bld.shlib(
 			source = ['../../audio/audio_decoder_module.cpp', '../../vendor/miniaudio/audio_decoders.c'],
 			target = 'miniaudio',

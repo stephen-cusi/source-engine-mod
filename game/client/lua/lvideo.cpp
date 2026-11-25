@@ -4,13 +4,15 @@
 #include "luasrclib.h"
 #include "materialsystem/imaterialsystem.h"
 #include "engine/ifinalmixaudiocapture.h"
-#include "hl2sb_video_backend.h"
+#include "video/iholivideo.h"
 #include "tier1/utlvector.h"
 
 #include "tier0/memdbgon.h"
 
 static const char *kVideoWriterType = "HL2SB.IVideoWriter";
 static IFinalMixAudioCapture *s_FinalMixCapture = NULL;
+static CSysModule *s_HoliModule = NULL;
+static HL2SBHoliVideoAPI *s_HoliVideo = NULL;
 
 struct LuaVideoWriter
 {
@@ -22,6 +24,11 @@ struct LuaVideoWriter
     bool lockFps;
     float previousFpsLimit;
     float recordingFpsLimit;
+    double framesPerSecond;
+    double elapsedVideoTime;
+    double pendingVideoTime;
+    double submittedVideoFrames;
+    CUtlVector<unsigned char> *pixels;
 };
 
 static LuaVideoWriter *s_SoundWriter = NULL;
@@ -44,7 +51,7 @@ static void LuaVideoDrainAudio(LuaVideoWriter *writer)
         const int frames = s_FinalMixCapture->Read(samples, ARRAYSIZE(samples) / 2);
         if (frames <= 0)
             break;
-        if (!HL2SBVideoBackend_AppendAudio(writer->backend, samples, frames))
+        if (!s_HoliVideo->AppendAudio(writer->backend, samples, frames))
         {
             writer->failed = true;
             break;
@@ -74,10 +81,12 @@ static bool LuaVideoFinish(LuaVideoWriter *writer)
         s_LockFpsWriter = NULL;
         writer->lockFps = false;
     }
-    const bool success = HL2SBVideoBackend_Finish(writer->backend);
+    const bool success = s_HoliVideo->Finish(writer->backend);
     writer->failed = writer->failed || !success;
-    HL2SBVideoBackend_Destroy(writer->backend);
+    s_HoliVideo->Destroy(writer->backend);
     writer->backend = NULL;
+    delete writer->pixels;
+    writer->pixels = NULL;
     return !writer->failed;
 }
 
@@ -86,6 +95,10 @@ void HL2SB_VideoDisconnect()
     for (int i = 0; i < s_VideoWriters.Count(); ++i)
         LuaVideoFinish(s_VideoWriters[i]);
     s_FinalMixCapture = NULL;
+    s_HoliVideo = NULL;
+    if (s_HoliModule)
+        Sys_UnloadModule(s_HoliModule);
+    s_HoliModule = NULL;
 }
 
 static LuaVideoWriter *CheckVideoWriter(lua_State *L)
@@ -138,10 +151,10 @@ static int LuaVideoWriterSetRecordSound(lua_State *L)
     {
         if (!s_FinalMixCapture || s_SoundWriter)
             return luaL_error(L, "audio recording is unavailable");
-        if (!HL2SBVideoBackend_SyncAudio(writer->backend))
+        if (!s_HoliVideo->SyncAudio(writer->backend))
         {
             writer->failed = true;
-            return luaL_error(L, "video audio synchronization failed: %s", HL2SBVideoBackend_Error(writer->backend));
+            return luaL_error(L, "video audio synchronization failed: %s", s_HoliVideo->Error(writer->backend));
         }
         if (!s_FinalMixCapture->Start())
             return luaL_error(L, "audio recording is unavailable");
@@ -168,14 +181,22 @@ static int LuaVideoWriterAddFrame(lua_State *L)
     if (!(frameTime > 0.0 && frameTime <= 10.0))
         return luaL_error(L, "invalid video frame time");
 
+    LuaVideoDrainAudio(writer);
+    if (writer->failed)
+        return luaL_error(L, "video audio encoding failed: %s", s_HoliVideo->Error(writer->backend));
+    writer->elapsedVideoTime += frameTime;
+    writer->pendingVideoTime += frameTime;
+    const double dueFrames = floor(writer->elapsedVideoTime * writer->framesPerSecond + 1e-6);
+    if (dueFrames <= writer->submittedVideoFrames)
+        return 0;
+
     CMatRenderContextPtr context(materials);
     int targetWidth = 0, targetHeight = 0;
     context->GetRenderTargetDimensions(targetWidth, targetHeight);
     if (targetWidth <= 0 || targetHeight <= 0 ||
         (!downsample && (writer->width > targetWidth || writer->height > targetHeight)))
         return luaL_error(L, "video frame exceeds the current render target");
-    CUtlVector<unsigned char> pixels;
-    pixels.SetCount(writer->width * writer->height * 4);
+    CUtlVector<unsigned char> &pixels = *writer->pixels;
     Q_memset(pixels.Base(), 0, pixels.Count());
     if (downsample)
     {
@@ -186,12 +207,13 @@ static int LuaVideoWriterAddFrame(lua_State *L)
     else
         context->ReadPixels(0, 0, writer->width, writer->height, pixels.Base(), IMAGE_FORMAT_BGRA8888);
 
-    LuaVideoDrainAudio(writer);
-    if (writer->failed || !HL2SBVideoBackend_AppendVideoFrame(writer->backend, pixels.Base(), writer->width * 4, frameTime))
+    if (!s_HoliVideo->AppendVideoFrame(writer->backend, pixels.Base(), writer->width * 4, writer->pendingVideoTime))
     {
         writer->failed = true;
-        return luaL_error(L, "video frame encoding failed: %s", HL2SBVideoBackend_Error(writer->backend));
+        return luaL_error(L, "video frame encoding failed: %s", s_HoliVideo->Error(writer->backend));
     }
+    writer->submittedVideoFrames = dueFrames;
+    writer->pendingVideoTime = 0.0;
     return 0;
 }
 
@@ -254,8 +276,27 @@ static int LuaVideoRecord(lua_State *L)
         engine->GetGameDirectory(), fileName, webm ? "webm" : "ogg");
     if (length < 0 || length >= sizeof(path))
         return luaL_error(L, "video path is too long");
+    if (!s_HoliVideo)
+    {
+        s_HoliModule = Sys_LoadModule("holi");
+        CreateInterfaceFn factory = s_HoliModule ? Sys_GetFactory(s_HoliModule) : NULL;
+        s_HoliVideo = factory ? static_cast<HL2SBHoliVideoAPI *>(
+            factory(HL2SB_HOLI_VIDEO_INTERFACE, NULL)) : NULL;
+        if (!s_HoliVideo || !s_HoliVideo->Create || !s_HoliVideo->AppendVideoFrame ||
+            !s_HoliVideo->AppendAudio || !s_HoliVideo->SyncAudio || !s_HoliVideo->Finish ||
+            !s_HoliVideo->Error || !s_HoliVideo->Destroy)
+        {
+            s_HoliVideo = NULL;
+            if (s_HoliModule)
+                Sys_UnloadModule(s_HoliModule);
+            s_HoliModule = NULL;
+            lua_pushboolean(L, 0);
+            lua_pushliteral(L, "video encoder module is unavailable");
+            return 2;
+        }
+    }
     const char *error = NULL;
-    HL2SBVideoBackend *backend = HL2SBVideoBackend_Create(path, width, height, fps, bitrate * 1000,
+    HL2SBVideoBackend *backend = s_HoliVideo->Create(path, width, height, fps, bitrate * 1000,
         s_FinalMixCapture ? s_FinalMixCapture->SampleRate() : 44100, true, &error);
     if (!backend)
     {
@@ -272,6 +313,12 @@ static int LuaVideoRecord(lua_State *L)
     writer->lockFps = lockfps;
     writer->previousFpsLimit = 0;
     writer->recordingFpsLimit = static_cast<float>(fps);
+    writer->framesPerSecond = fps;
+    writer->elapsedVideoTime = 0.0;
+    writer->pendingVideoTime = 0.0;
+    writer->submittedVideoFrames = 0.0;
+    writer->pixels = new CUtlVector<unsigned char>;
+    writer->pixels->SetCount(width * height * 4);
     if (lockfps)
     {
         ConVarRef fpsLimit("fps_max");
