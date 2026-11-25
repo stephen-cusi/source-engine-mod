@@ -3563,6 +3563,70 @@ struct LuaMeshVertex
     float texcoord[8][4];
 };
 
+struct LuaStaticMesh
+{
+    IMesh *mesh;
+    VertexFormat_t format;
+    int vertexCount;
+    bool destroyed;
+};
+
+static const char *kLuaStaticMeshType = "HL2SB.IMesh";
+static LuaStaticMesh *s_LuaStaticMesh = NULL;
+static lua_State *s_LuaStaticMeshState = NULL;
+static int s_LuaStaticMeshRef = LUA_NOREF;
+
+static void LuaStaticMeshDestroy(LuaStaticMesh *object)
+{
+    if (object->mesh && materials)
+    {
+        CMatRenderContextPtr context(materials);
+        context->DestroyStaticMesh(object->mesh);
+    }
+    object->mesh = NULL;
+    object->destroyed = true;
+}
+
+static int LuaStaticMeshGC(lua_State *state)
+{
+    LuaStaticMeshDestroy(static_cast<LuaStaticMesh *>(luaL_checkudata(state, 1, kLuaStaticMeshType)));
+    return 0;
+}
+
+static int LuaStaticMeshIsValid(lua_State *state)
+{
+    LuaStaticMesh *object = static_cast<LuaStaticMesh *>(luaL_checkudata(state, 1, kLuaStaticMeshType));
+    lua_pushboolean(state, !object->destroyed);
+    return 1;
+}
+
+static int LuaStaticMeshDraw(lua_State *state)
+{
+    LuaStaticMesh *object = static_cast<LuaStaticMesh *>(luaL_checkudata(state, 1, kLuaStaticMeshType));
+    if (object->destroyed)
+        return luaL_error(state, "attempt to draw a destroyed mesh");
+    if (object->mesh)
+        object->mesh->Draw();
+    return 0;
+}
+
+static int LuaCreateStaticMesh(lua_State *state)
+{
+    IMaterial *material = lua_isnoneornil(state, 1) ? NULL : luaL_checkmaterial(state, 1);
+    const int boneWeights = luaL_optint(state, 2, 0);
+    if (boneWeights != 0)
+        return luaL_error(state, "skinned meshes are not supported");
+    LuaStaticMesh *object = static_cast<LuaStaticMesh *>(lua_newuserdata(state, sizeof(LuaStaticMesh)));
+    object->mesh = NULL;
+    object->format = material ? material->GetVertexFormat() :
+        (VERTEX_POSITION | VERTEX_NORMAL | VERTEX_COLOR | VERTEX_TEXCOORD_SIZE(0, 2));
+    object->vertexCount = 0;
+    object->destroyed = false;
+    luaL_getmetatable(state, kLuaStaticMeshType);
+    lua_setmetatable(state, -2);
+    return 1;
+}
+
 static CUtlVector<LuaMeshVertex> s_LuaMeshVertices;
 static bool s_LuaMeshBuilding = false;
 static int s_LuaMeshLimit = 0;
@@ -3576,11 +3640,16 @@ void HL2SB_AbortLuaMesh()
     s_LuaMeshLimit = 0;
     s_LuaMeshWritten = 0;
     s_LuaMeshVertices.RemoveAll();
+    s_LuaStaticMesh = NULL;
+    if (s_LuaStaticMeshState && s_LuaStaticMeshRef != LUA_NOREF)
+        luaL_unref(s_LuaStaticMeshState, LUA_REGISTRYINDEX, s_LuaStaticMeshRef);
+    s_LuaStaticMeshState = NULL;
+    s_LuaStaticMeshRef = LUA_NOREF;
 }
 
-static int LuaMeshVertexCount(int primitive, int count)
+static int LuaMeshVertexCount(int primitive, int count, int limit)
 {
-    if (count < 1 || count > 32768) return 0;
+    if (count < 1 || count > limit) return 0;
     int vertices = 0;
     switch (primitive)
     {
@@ -3598,7 +3667,7 @@ static int LuaMeshVertexCount(int primitive, int count)
     if (primitive == MATERIAL_QUADS) indices = count * 6;
     else if (primitive == MATERIAL_POLYGON) indices = (count - 2) * 3;
     else if (primitive == MATERIAL_LINE_STRIP || primitive == MATERIAL_LINE_LOOP) indices = count * 2;
-    return vertices <= 32768 && indices <= 32768 ? vertices : 0;
+    return vertices <= limit && indices <= limit ? vertices : 0;
 }
 
 static int mesh_Begin(lua_State *state)
@@ -3608,14 +3677,21 @@ static int mesh_Begin(lua_State *state)
         HL2SB_AbortLuaMesh();
         return luaL_error(state, "mesh.Begin called before mesh.End");
     }
-    const lua_Number primitiveValue = luaL_checknumber(state, 1);
-    const lua_Number countValue = luaL_checknumber(state, 2);
-    if (!(primitiveValue >= 0 && primitiveValue < 8 && countValue >= 1 && countValue < 32769))
+    LuaStaticMesh *object = static_cast<LuaStaticMesh *>(luaL_testudata(state, 1, kLuaStaticMeshType));
+    const int first = object ? 2 : 1;
+    if (object && object->destroyed)
+        return luaL_error(state, "attempt to build a destroyed mesh");
+    const lua_Number primitiveValue = luaL_checknumber(state, first);
+    const lua_Number countValue = luaL_checknumber(state, first + 1);
+    const int limit = object ? 65535 : 32768;
+    if (!(primitiveValue >= 0 && primitiveValue < 8 && countValue >= 1 && countValue <= limit))
         return luaL_error(state, "Invalid mesh primitive or vertex count");
     const int primitive = (int)primitiveValue;
     const int count = (int)countValue;
-    const int vertices = LuaMeshVertexCount(primitive, count);
+    const int vertices = LuaMeshVertexCount(primitive, count, limit);
     if (!vertices) return luaL_error(state, "Invalid mesh primitive or vertex count");
+    if (object && object->mesh && object->vertexCount != vertices)
+        return luaL_error(state, "rebuilt mesh must have the same vertex count");
     s_LuaMeshVertices.SetCount(vertices);
     Q_memset(s_LuaMeshVertices.Base(), 0, sizeof(LuaMeshVertex) * vertices);
     for (int i = 0; i < vertices; ++i)
@@ -3625,6 +3701,13 @@ static int mesh_Begin(lua_State *state)
     s_LuaMeshLimit = vertices;
     s_LuaMeshBuilding = true;
     s_LuaMeshWritten = 0;
+    if (object)
+    {
+        lua_pushvalue(state, 1);
+        s_LuaStaticMeshRef = luaL_ref(state, LUA_REGISTRYINDEX);
+        s_LuaStaticMeshState = state;
+        s_LuaStaticMesh = object;
+    }
     return 0;
 }
 
@@ -3721,7 +3804,14 @@ static int mesh_End(lua_State *state)
     if (vertices == 0) { HL2SB_AbortLuaMesh(); return 0; }
     // All argument checks are complete before acquiring native resources.
     CMatRenderContextPtr context(materials);
-    IMesh *mesh = context->GetDynamicMesh(false, NULL, NULL, g_pHL2SBLastBoundMaterial);
+    LuaStaticMesh *object = s_LuaStaticMesh;
+    if (object && object->destroyed)
+    {
+        HL2SB_AbortLuaMesh();
+        return luaL_error(state, "attempt to build a destroyed mesh");
+    }
+    IMesh *mesh = object ? context->CreateStaticMesh(object->format, TEXTURE_GROUP_OTHER) :
+        context->GetDynamicMesh(false, NULL, NULL, g_pHL2SBLastBoundMaterial);
     if (mesh)
     {
         CMeshBuilder builder;
@@ -3747,9 +3837,19 @@ static int mesh_End(lua_State *state)
             builder.AdvanceVertex();
         }
         builder.End();
-        mesh->Draw();
+        if (object)
+        {
+            if (object->mesh)
+                context->DestroyStaticMesh(object->mesh);
+            object->mesh = mesh;
+            object->vertexCount = s_LuaMeshLimit;
+        }
+        else
+            mesh->Draw();
     }
     HL2SB_AbortLuaMesh();
+    if (object && !mesh)
+        return luaL_error(state, "could not create static mesh");
     return 0;
 }
 
@@ -3808,6 +3908,17 @@ LUALIB_API int luaopen_render( lua_State *L )
     luaL_register( L, "cam", cam_funcs );
     lua_pop( L, 1 );
     HL2SB_AbortLuaMesh();
+    if (luaL_newmetatable(L, kLuaStaticMeshType))
+    {
+        lua_pushvalue(L, -1); lua_setfield(L, -2, "__index");
+        lua_pushcfunction(L, LuaStaticMeshGC); lua_setfield(L, -2, "__gc");
+        lua_pushcfunction(L, LuaStaticMeshGC); lua_setfield(L, -2, "Destroy");
+        lua_pushcfunction(L, LuaStaticMeshDraw); lua_setfield(L, -2, "Draw");
+        lua_pushcfunction(L, LuaStaticMeshIsValid); lua_setfield(L, -2, "IsValid");
+    }
+    lua_pop(L, 1);
+    lua_pushcfunction(L, LuaCreateStaticMesh);
+    lua_setglobal(L, "Mesh");
     luaL_register(L, "mesh", mesh_funcs);
     lua_pop(L, 1);
     const char *primitiveNames[] = {"MATERIAL_POINTS", "MATERIAL_LINES", "MATERIAL_TRIANGLES",

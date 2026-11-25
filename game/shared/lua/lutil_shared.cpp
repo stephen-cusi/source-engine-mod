@@ -40,6 +40,10 @@
 #include "hl2sb_framestats_cat.h"	// HL2SB frame profiler: per-category buckets
 
 #ifdef CLIENT_DLL
+#include "datacache/imdlcache.h"
+#include "istudiorender.h"
+#include "mathlib/lvmatrix.h"
+#include "materialsystem/imaterial.h"
 #include "c_te_effect_dispatch.h"
 #include "c_pixel_visibility.h"
 #include "physpropclientside.h"
@@ -995,6 +999,117 @@ static int luasrc_util_PrecacheModel (lua_State *L) {
 #endif
   return 0;
 }
+
+#ifdef CLIENT_DLL
+// GetTriangles returns the same model-space vertex data used by the renderer.
+static int luasrc_util_GetModelMeshes( lua_State *L ) {
+  const char *name = luaL_checkstring( L, 1 );
+  int lod = luaL_optint( L, 2, 0 );
+  int body = 0;
+  const char *bodygroups = NULL;
+  if ( lua_type( L, 3 ) == LUA_TSTRING ) bodygroups = lua_tostring( L, 3 );
+  else body = luaL_optint( L, 3, 0 );
+  int skin = luaL_optint( L, 4, 0 );
+  if ( !name[0] || name[0] == '*' || !mdlcache || !g_pStudioRender || !engine->LoadModel( name, true ) ) {
+    lua_pushnil( L );
+    return 1;
+  }
+  MDLHandle_t handle = mdlcache->FindMDL( name );
+  if ( handle == MDLHANDLE_INVALID ) { lua_pushnil( L ); return 1; }
+  studiohdr_t *hdr = mdlcache->GetStudioHdr( handle );
+  studiohwdata_t *hardware = mdlcache->GetHardwareData( handle );
+  if ( !hdr || mdlcache->IsErrorModel( handle ) || !hardware || hdr->numbones < 0 || hdr->numbones > MAXSTUDIOBONES || hdr->numskinref <= 0 || hdr->numskinfamilies <= 0 ) {
+    mdlcache->Release( handle ); lua_pushnil( L ); return 1;
+  }
+  if ( bodygroups ) {
+    for ( int i = 0; i < hdr->numbodyparts && bodygroups[i]; ++i ) {
+      const char c = bodygroups[i];
+      int n = 0;
+      if ( c >= '0' && c <= '9' ) n = c - '0';
+      else if ( c >= 'a' && c <= 'z' ) n = c - 'a' + 10;
+      else if ( c >= 'A' && c <= 'Z' ) n = c - 'A' + 10;
+      const mstudiobodyparts_t *part = hdr->pBodypart( i );
+      if ( part->nummodels > 0 ) body += ( n % part->nummodels ) * part->base;
+    }
+  }
+  // The studio renderer divides by each bodypart's base and dereferences its
+  // selected model and vertex data. Validate them before entering it.
+  body = MAX( 0, body );
+  const vertexFileHeader_t *vertices = mdlcache->GetVertexData( handle );
+  if ( !vertices || !vertices->GetVertexData() ) {
+    mdlcache->Release( handle ); lua_pushnil( L ); return 1;
+  }
+  const bool hasTangents = vertices->GetTangentData() != NULL;
+  for ( int i = 0; i < hdr->numbodyparts; ++i ) {
+    const mstudiobodyparts_t *part = hdr->pBodypart( i );
+    if ( part->base <= 0 || part->nummodels <= 0 ) {
+      mdlcache->Release( handle ); lua_pushnil( L ); return 1;
+    }
+  }
+  DrawModelInfo_t info = {};
+  info.m_pStudioHdr = hdr;
+  info.m_pHardwareData = hardware;
+  info.m_Body = body;
+  info.m_Skin = MAX( 0, skin );
+  info.m_Lod = MAX( 0, lod );
+  matrix3x4_t bones[MAXSTUDIOBONES];
+  for ( int i = 0; i < MAXSTUDIOBONES; ++i ) SetIdentityMatrix( bones[i] );
+  GetTriangles_Output_t output;
+  g_pStudioRender->GetTriangles( info, bones, output );
+  lua_createtable( L, output.m_MaterialBatches.Count(), 0 );
+  for ( int m = 0; m < output.m_MaterialBatches.Count(); ++m ) {
+    const GetTriangles_MaterialBatch_t &batch = output.m_MaterialBatches[m];
+    lua_createtable( L, 0, 3 );
+    lua_pushstring( L, batch.m_pMaterial ? batch.m_pMaterial->GetName() : "" ); lua_setfield( L, -2, "material" );
+    lua_createtable( L, batch.m_Verts.Count(), 0 );
+    for ( int v = 0; v < batch.m_Verts.Count(); ++v ) {
+      const GetTriangles_Vertex_t &vertex = batch.m_Verts[v];
+      lua_createtable( L, 0, 7 );
+      lua_pushvector( L, vertex.m_Position ); lua_setfield( L, -2, "pos" );
+      lua_pushvector( L, vertex.m_Normal ); lua_setfield( L, -2, "normal" );
+      lua_pushnumber( L, vertex.m_TexCoord.x ); lua_setfield( L, -2, "u" );
+      lua_pushnumber( L, vertex.m_TexCoord.y ); lua_setfield( L, -2, "v" );
+      Vector4D tangent( 0, 0, 0, 0 );
+      if ( hasTangents ) tangent = vertex.m_TangentS;
+      lua_pushvector( L, Vector( tangent.x, tangent.y, tangent.z ) ); lua_setfield( L, -2, "tangent" );
+      lua_createtable( L, 4, 0 );
+      for ( int j = 0; j < 4; ++j ) {
+        lua_pushnumber( L, tangent[j] ); lua_rawseti( L, -2, j + 1 );
+      }
+      lua_setfield( L, -2, "userdata" );
+      lua_createtable( L, vertex.m_NumBones, 0 );
+      for ( int b = 0; b < vertex.m_NumBones && b < 4; ++b ) {
+        lua_createtable( L, 0, 2 );
+        lua_pushinteger( L, vertex.m_BoneIndex[b] ); lua_setfield( L, -2, "bone" );
+        lua_pushnumber( L, vertex.m_BoneWeight[b] ); lua_setfield( L, -2, "weight" );
+        lua_rawseti( L, -2, b + 1 );
+      }
+      lua_setfield( L, -2, "weights" );
+      lua_rawseti( L, -2, v + 1 );
+    }
+    lua_pushvalue( L, -1 ); lua_setfield( L, -3, "verticies" );
+    lua_createtable( L, batch.m_TriListIndices.Count(), 0 );
+    for ( int i = 0; i < batch.m_TriListIndices.Count(); ++i ) {
+      const int index = batch.m_TriListIndices[i];
+      if ( index < 0 || index >= batch.m_Verts.Count() ) continue;
+      lua_rawgeti( L, -2, index + 1 ); lua_rawseti( L, -2, i + 1 );
+    }
+    lua_setfield( L, -3, "triangles" );
+    lua_pop( L, 1 );
+    lua_rawseti( L, -2, m + 1 );
+  }
+  lua_createtable( L, hdr->numbones, 0 );
+  for ( int i = 0; i < hdr->numbones; ++i ) {
+    mstudiobone_t *bone = hdr->pBone( i );
+    lua_createtable( L, 0, 2 );
+    lua_pushinteger( L, bone->parent ); lua_setfield( L, -2, "parent" );
+    lua_pushvmatrix( L, VMatrix( bone->poseToBone ) ); lua_setfield( L, -2, "matrix" );
+    lua_rawseti( L, -2, i );
+  }
+  mdlcache->Release( handle );
+  return 2;
+}
+#endif
 
 /*
 ** HL2SB GMod compat: util.GetModelInfo( modelname ) -> table | nil.
@@ -3109,6 +3224,7 @@ static const luaL_Reg util_funcs[] = {
   // HL2SB GMod effect compat (lua/effects/*.lua, sprite trails, radius damage)
   {"Effect",  luasrc_UTIL_Effect},
 #ifdef CLIENT_DLL
+  {"GetModelMeshes", luasrc_util_GetModelMeshes},
   {"GetPixelVisibleHandle", luasrc_UTIL_GetPixelVisibleHandle},
   {"PixelVisible", luasrc_UTIL_PixelVisible},
 #endif
