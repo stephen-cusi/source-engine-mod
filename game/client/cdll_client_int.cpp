@@ -1099,6 +1099,10 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 	// callback with the engine and starts the decode worker thread.
 	HL2SB_AudioConnect( appSystemFactory );
 #ifdef LUA_SDK
+	extern void HL2SB_VideoConnect( CreateInterfaceFn );
+	HL2SB_VideoConnect( appSystemFactory );
+#endif
+#ifdef LUA_SDK
 	{
 		extern void HL2SB_BrushSurfaceConnect( CreateInterfaceFn );
 		HL2SB_BrushSurfaceConnect( appSystemFactory );
@@ -1391,6 +1395,10 @@ void CHLClient::Shutdown( void )
 	// tears down the audio device. Must not hold the channel list lock here
 	// (the engine mix callback unregister waits for an in-flight callback).
 	HL2SB_AudioShutdown();
+#ifdef LUA_SDK
+	extern void HL2SB_VideoDisconnect();
+	HL2SB_VideoDisconnect();
+#endif
 
     if (g_pAchievementsAndStatsInterface)
     {

@@ -14,6 +14,8 @@
 #include "video/ivideoservices.h"
 #include "engine/IEngineSound.h"
 #include "engine/iluastreammix.h"
+#include "engine/ifinalmixaudiocapture.h"
+#include <atomic>
 // HL2SB (2026-10-04): ThreadInterlockedExchangePointer for the S_FreeChannel
 // mixer ownership claim, and the fast mutex that guards the deferred-delete
 // list.
@@ -131,6 +133,88 @@ private:
 
 static CLuaStreamMix s_LuaStreamMix;
 EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CLuaStreamMix, ILuaStreamMix, HL2SB_LUA_STREAM_MIX_INTERFACE_VERSION, s_LuaStreamMix );
+
+// The encoder drains this queue on its own thread. Never block the audio mixer
+// on encoding or on a consumer which is shutting down.
+class CFinalMixAudioCapture : public IFinalMixAudioCapture
+{
+public:
+	CFinalMixAudioCapture() : m_active( false ), m_dropped( 0 ), m_read( 0 ), m_write( 0 ), m_count( 0 ) {}
+	bool Start() override
+	{
+		AUTO_LOCK( m_mutex );
+		if ( m_active.load() ) return false;
+		m_read = m_write = m_count = 0;
+		m_dropped.store( 0 );
+		m_active.store( true );
+		return true;
+	}
+	void Stop() override
+	{
+		m_active.store( false );
+		AUTO_LOCK( m_mutex );
+		// Synchronize with the mixer while retaining queued samples for draining.
+	}
+	int Read( short *samples, int maxFrames ) override
+	{
+		if ( !samples || maxFrames <= 0 ) return 0;
+		AUTO_LOCK( m_mutex );
+		int frames = MIN( maxFrames, m_count );
+		for ( int i = 0; i < frames; ++i )
+		{
+			samples[i * 2] = m_samples[m_read * 2];
+			samples[i * 2 + 1] = m_samples[m_read * 2 + 1];
+			m_read = ( m_read + 1 ) % kCapacity;
+		}
+		m_count -= frames;
+		return frames;
+	}
+	int SampleRate() override { return SOUND_DMA_SPEED; }
+	unsigned int DroppedFrames() override { return m_dropped.load(); }
+
+	void Capture( const paintbuffer_t &paint, int frames )
+	{
+		if ( !m_active.load() || !paint.pbuf || frames <= 0 ) return;
+		if ( !m_mutex.TryLock() )
+		{
+			m_dropped.fetch_add( frames );
+			return;
+		}
+		if ( !m_active.load() ) { m_mutex.Unlock(); return; }
+		const float volume = S_GetMasterVolume();
+		for ( int i = 0; i < frames; ++i )
+		{
+			if ( m_count == kCapacity ) { m_dropped.fetch_add( frames - i ); break; }
+			float left = (float)paint.pbuf[i].left;
+			float right = (float)paint.pbuf[i].right;
+			if ( paint.fsurround && paint.pbufrear )
+			{
+				left += paint.pbufrear[i].left * 0.70710678f;
+				right += paint.pbufrear[i].right * 0.70710678f;
+			}
+			if ( paint.fsurround_center && paint.pbufcenter )
+			{
+				left += paint.pbufcenter[i].left * 0.70710678f;
+				right += paint.pbufcenter[i].left * 0.70710678f;
+			}
+			m_samples[m_write * 2] = (short)clamp( left * volume, -32768.0f, 32767.0f );
+			m_samples[m_write * 2 + 1] = (short)clamp( right * volume, -32768.0f, 32767.0f );
+			m_write = ( m_write + 1 ) % kCapacity;
+			++m_count;
+		}
+		m_mutex.Unlock();
+	}
+private:
+	enum { kCapacity = 65536 };
+	CThreadFastMutex m_mutex;
+	std::atomic<bool> m_active;
+	std::atomic<unsigned int> m_dropped;
+	int m_read, m_write, m_count;
+	short m_samples[kCapacity * 2];
+};
+
+static CFinalMixAudioCapture s_FinalMixAudioCapture;
+EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CFinalMixAudioCapture, IFinalMixAudioCapture, HL2SB_FINAL_MIX_CAPTURE_VERSION, s_FinalMixAudioCapture );
 
 // temp paintbuffer - not included in main list of paintbuffers
 // NOTE: this paintbuffer is also used as a copy buffer by interpolating pitch
@@ -2814,6 +2898,7 @@ void MIX_PaintChannels( int endtime, bool bIsUnderwater )
 
 		// transfer SOUND_BUFFER_PAINT paintbuffer out to DMA buffer
 		MIX_SetCurrentPaintbuffer( SOUND_BUFFER_PAINT );
+		s_FinalMixAudioCapture.Capture( *MIX_GetCurrentPaintbufferPtr(), count );
 
 		g_AudioDevice->TransferSamples( end );
 

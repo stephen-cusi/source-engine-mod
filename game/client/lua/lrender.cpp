@@ -3871,6 +3871,8 @@ LUALIB_API int luaopen_render( lua_State *L )
     LUA_REGISTRATION_COMMIT_LIBRARY( Renders );
 
 #ifdef CLIENT_DLL
+    extern void HL2SB_LuaOpenVideo( lua_State * );
+    HL2SB_LuaOpenVideo( L );
     lua_pushcfunction( L, HL2SB_LuaSetDOFMode );
     lua_setglobal( L, "DOFModeHack" );
     lua_getfield(L, -1, "GetViewEntity");

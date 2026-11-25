@@ -2452,7 +2452,14 @@ void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatT
 
 		VGui_PostRender();
 
+#if defined( LUA_SDK )
+		// The main view paints the regular UI and calls this after the game
+		// panels. In-world VR HUDs instead need it inside this render target.
+		if ( g_ClientVirtualReality.ShouldRenderHUDInWorld() )
+			g_pClientMode->PostRenderVGui();
+#else
 		g_pClientMode->PostRenderVGui();
+#endif
 		pRenderContext = materials->GetRenderContext();
 		if (pTexture)
 		{
