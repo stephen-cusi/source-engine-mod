@@ -161,13 +161,16 @@ bool CParticleSystemQuery::MovePointInsideControllingObject(
 #ifdef GAME_DLL
 	return true;
 #else
-	if (! pObject )
-		return true;										// accept the input point unmodified
+	// The control point stores an entity handle. Its owner may have been removed.
+	const EHANDLE *pHandle = static_cast<const EHANDLE *>( pObject );
+	CBaseEntity *pEntity = pHandle ? pHandle->Get() : NULL;
+	if ( !pEntity )
+		return true;	// accept the input point unmodified
 
 	Ray_t ray;
 	trace_t tr;
 	ray.Init( *pPnt, *pPnt );
-	enginetrace->ClipRayToEntity( ray, MASK_ALL, (CBaseEntity *) pObject, &tr );
+	enginetrace->ClipRayToEntity( ray, MASK_ALL, pEntity, &tr );
 	
 	return ( tr.startsolid );
 #endif
