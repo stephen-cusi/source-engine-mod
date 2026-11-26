@@ -1471,6 +1471,14 @@ void CInput::CreateMove ( int sequence_number, float input_sample_frametime, boo
 
 #ifdef LUA_SDK
 	HL2SB_CapturePlayerButtons(cmd, active);
+	// Single-player commands are normally acknowledged without running local
+	// prediction. Keep the local player's Lua button state current in that case.
+	if ( active && gpGlobals->maxClients == 1 && !engine->IsPlayingDemo() )
+	{
+		C_BasePlayer *pPlayer = C_BasePlayer::GetLocalPlayer();
+		if ( pPlayer != NULL )
+			pPlayer->UpdateButtonState( cmd->buttons );
+	}
 #endif
 	pVerified->m_cmd = *cmd;
 	pVerified->m_crc = cmd->GetChecksum();
