@@ -918,43 +918,33 @@ void CStudioRenderContext::R_StudioBuildMorph( studiohdr_t *pStudioHdr,
 void CStudioRenderContext::R_StudioBuildMeshStrips( studiomeshgroup_t* pMeshGroup,
 											OptimizedModel::StripGroupHeader_t *pStripGroup )
 {
-	// FIXME: This is bogus
-	// Compute the amount of memory we need to store the strip data
-	int i;
-	int stripDataSize = 0;
-
-	size_t stripHdrSize = (pStripGroup->flags & OptimizedModel::STRIPGROUP_IS_MDL49)
-		? sizeof(OptimizedModel::StripHeader_v49_t) : sizeof(OptimizedModel::StripHeader_t);
-
-	for( i = 0; i < pStripGroup->numStrips; ++i )
+	// The disk stride can include MDL49 topology fields, but all runtime
+	// consumers index m_pStripData as an array of StripHeader_t.
+	const int stripHeaderBytes = sizeof( OptimizedModel::StripHeader_t );
+	int boneStateChangeOffset = pStripGroup->numStrips * stripHeaderBytes;
+	int stripDataSize = boneStateChangeOffset;
+	for ( int i = 0; i < pStripGroup->numStrips; ++i )
 	{
-		stripDataSize += stripHdrSize;
-		stripDataSize += pStripGroup->pStrip(i)->numBoneStateChanges *
-			sizeof(OptimizedModel::BoneStateChangeHeader_t);
+		stripDataSize += pStripGroup->pStrip( i )->numBoneStateChanges *
+			sizeof( OptimizedModel::BoneStateChangeHeader_t );
 	}
 
-	pMeshGroup->m_pStripData = (OptimizedModel::StripHeader_t*)malloc(stripDataSize);
-
-	// Copy over the strip info
-	int boneStateChangeOffset = pStripGroup->numStrips * stripHdrSize;
-	for( i = 0; i < pStripGroup->numStrips; ++i )
+	pMeshGroup->m_pStripData = (OptimizedModel::StripHeader_t *)malloc( stripDataSize );
+	for ( int i = 0; i < pStripGroup->numStrips; ++i )
 	{
-		memcpy( &pMeshGroup->m_pStripData[i], pStripGroup->pStrip(i), stripHdrSize);
+		const OptimizedModel::StripHeader_t *pSourceStrip = pStripGroup->pStrip( i );
+		OptimizedModel::StripHeader_t &strip = pMeshGroup->m_pStripData[i];
+		memcpy( &strip, pSourceStrip, stripHeaderBytes );
 
-		// Fixup the bone state change offset, since we have it right after the strip data
-		pMeshGroup->m_pStripData[i].boneStateChangeOffset = boneStateChangeOffset -
-			i * stripHdrSize;
+		strip.boneStateChangeOffset = boneStateChangeOffset - i * stripHeaderBytes;
 
-		// copy over bone state changes
-		int boneWeightSize = pMeshGroup->m_pStripData[i].numBoneStateChanges * 
-			sizeof(OptimizedModel::BoneStateChangeHeader_t);
-
-		if (boneWeightSize != 0)
+		const int boneStateChangeBytes = strip.numBoneStateChanges *
+			sizeof( OptimizedModel::BoneStateChangeHeader_t );
+		if ( boneStateChangeBytes != 0 )
 		{
-			unsigned char* pBoneStateChange = (unsigned char*)pMeshGroup->m_pStripData + boneStateChangeOffset;
-			memcpy( pBoneStateChange, pStripGroup->pStrip(i)->pBoneStateChange(0), boneWeightSize);
-
-			boneStateChangeOffset += boneWeightSize;
+			unsigned char *pBoneStateChange = (unsigned char *)pMeshGroup->m_pStripData + boneStateChangeOffset;
+			memcpy( pBoneStateChange, pSourceStrip->pBoneStateChange( 0 ), boneStateChangeBytes );
+			boneStateChangeOffset += boneStateChangeBytes;
 		}
 	}
 	pMeshGroup->m_NumStrips = pStripGroup->numStrips;
