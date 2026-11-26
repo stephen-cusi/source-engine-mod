@@ -92,6 +92,88 @@ IDirect3DDevice *g_pD3DDevice = NULL;
 // so they do not try to specify D3DPOOL_MANAGED, which is unsupported in D3D9Ex
 bool g_ShaderDeviceUsingD3D9Ex = false;
 static ConVar mat_supports_d3d9ex( "mat_supports_d3d9ex", "0", FCVAR_HIDDEN );
+#if !defined(RECORDING) && !defined(DX_TO_GL_ABSTRACTION)
+static HMODULE s_hDXVKD3D9 = NULL;
+
+// Resolve the backend beside shaderapidx9.dll, independently of the process
+// working directory and of the system d3d9.dll loaded by the normal renderer.
+static IDirect3D9 *CreateDXVKD3D9( bool forceDisableD3D9Ex, bool &d3d9ExAvailable )
+{
+	HMODULE shaderModule = NULL;
+	if ( !GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		reinterpret_cast<LPCWSTR>( &g_ShaderDeviceMgrDx8 ), &shaderModule ) )
+	{
+		Warning( "-vulkan: could not locate the shader API module.\n" );
+		return NULL;
+	}
+
+	wchar_t path[MAX_PATH];
+	DWORD length = GetModuleFileNameW( shaderModule, path, ARRAYSIZE( path ) );
+	if ( !length || length >= ARRAYSIZE( path ) )
+	{
+		Warning( "-vulkan: could not determine the shader API directory.\n" );
+		return NULL;
+	}
+	wchar_t *fileName = wcsrchr( path, L'\\' );
+	if ( !fileName )
+	{
+		Warning( "-vulkan: could not determine the shader API directory.\n" );
+		return NULL;
+	}
+	++fileName;
+	const wchar_t backendName[] = L"dxvk_d3d9.dll";
+	if ( ARRAYSIZE( path ) - ( fileName - path ) < ARRAYSIZE( backendName ) )
+	{
+		Warning( "-vulkan: the DXVK backend path is too long.\n" );
+		return NULL;
+	}
+	wcscpy_s( fileName, ARRAYSIZE( path ) - ( fileName - path ), backendName );
+
+	s_hDXVKD3D9 = LoadLibraryExW( path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH );
+	if ( !s_hDXVKD3D9 )
+	{
+		Warning( "-vulkan: could not load dxvk_d3d9.dll from the shader API directory (Windows error %lu).\n", GetLastError() );
+		return NULL;
+	}
+
+	IDirect3D9 *d3d = NULL;
+	typedef HRESULT ( WINAPI *CreateD3D9ExFunc_t )( UINT, IUnknown** );
+	CreateD3D9ExFunc_t createD3D9Ex = reinterpret_cast<CreateD3D9ExFunc_t>( GetProcAddress( s_hDXVKD3D9, "Direct3DCreate9Ex" ) );
+	if ( createD3D9Ex )
+	{
+		IUnknown *d3d9Ex = NULL;
+		if ( createD3D9Ex( D3D_SDK_VERSION, &d3d9Ex ) == S_OK && d3d9Ex )
+		{
+			d3d9ExAvailable = true;
+			if ( forceDisableD3D9Ex )
+			{
+				d3d9Ex->Release();
+			}
+			else
+			{
+				g_ShaderDeviceUsingD3D9Ex = true;
+				d3d = static_cast<IDirect3D9 *>( d3d9Ex );
+			}
+		}
+	}
+	if ( !d3d )
+	{
+		typedef IDirect3D9 *( WINAPI *CreateD3D9Func_t )( UINT );
+		CreateD3D9Func_t createD3D9 = reinterpret_cast<CreateD3D9Func_t>( GetProcAddress( s_hDXVKD3D9, "Direct3DCreate9" ) );
+		d3d = createD3D9 ? createD3D9( D3D_SDK_VERSION ) : NULL;
+	}
+	if ( !d3d )
+	{
+		Warning( "-vulkan: DXVK failed to create a Direct3D 9 interface.\n" );
+		FreeLibrary( s_hDXVKD3D9 );
+		s_hDXVKD3D9 = NULL;
+		return NULL;
+	}
+
+	Msg( "Using DXVK Direct3D 9 backend (-vulkan).\n" );
+	return d3d;
+}
+#endif
 #endif
 
 // hook into mat_forcedynamic from the engine.
@@ -149,12 +231,23 @@ bool CShaderDeviceMgrDx8::Connect( CreateInterfaceFn factory )
 
 #if defined(IS_WINDOWS_PC) && defined(SHADERAPIDX9) && !defined(RECORDING) && !defined( DX_TO_GL_ABSTRACTION )
 	m_pD3D = NULL;
-
-	// Attempt to create a D3D9Ex device (Windows Vista and later) if possible
 	bool bD3D9ExForceDisable = ( CommandLine()->FindParm( "-nod3d9ex" ) != 0 ) ||
 								( CommandLine()->ParmValue( "-dxlevel", 95 ) < 90 );
-
 	bool bD3D9ExAvailable = false;
+	if ( CommandLine()->FindParm( "-vulkan" ) )
+	{
+		g_ShaderDeviceUsingD3D9Ex = false;
+		m_pD3D = CreateDXVKD3D9( bD3D9ExForceDisable, bD3D9ExAvailable );
+		mat_supports_d3d9ex.SetValue( bD3D9ExAvailable ? 1 : 0 );
+		if ( !m_pD3D )
+		{
+			BaseClass::Disconnect();
+			return false;
+		}
+		return true;
+	}
+
+	// Attempt to create a D3D9Ex device (Windows Vista and later) if possible
 	if ( HMODULE hMod = ::LoadLibraryA( "d3d9.dll" ) )
 	{
 		typedef HRESULT ( WINAPI *CreateD3D9ExFunc_t )( UINT, IUnknown** );
@@ -250,6 +343,14 @@ void CShaderDeviceMgrDx8::Disconnect()
 		m_pD3D->Release();
 		m_pD3D = 0;
 	}
+
+#if defined(IS_WINDOWS_PC) && defined(SHADERAPIDX9) && !defined(RECORDING) && !defined(DX_TO_GL_ABSTRACTION)
+	if ( s_hDXVKD3D9 )
+	{
+		FreeLibrary( s_hDXVKD3D9 );
+		s_hDXVKD3D9 = NULL;
+	}
+#endif
 
 #if defined ( DX_TO_GL_ABSTRACTION )
 	ToGLDisconnectLibraries();

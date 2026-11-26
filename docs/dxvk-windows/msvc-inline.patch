@@ -1,0 +1,13 @@
+--- a/src/dxvk/dxvk_context.cpp
++++ b/src/dxvk/dxvk_context.cpp
+@@ -4463,4 +4463,9 @@
+   template<VkPipelineBindPoint BindPoint>
+-  __attribute__((always_inline)) void DxvkContext::updateShaderDescriptorSetBinding(
++#if defined(_MSC_VER)
++  __forceinline
++#else
++  __attribute__((always_inline))
++#endif
++  void DxvkContext::updateShaderDescriptorSetBinding(
+           VkDescriptorSet         set,
+     const DxvkPipelineLayout*     layout) {
