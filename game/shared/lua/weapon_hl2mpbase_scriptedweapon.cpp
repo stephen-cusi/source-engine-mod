@@ -1887,18 +1887,18 @@ bool CHL2MPScriptedWeapon::Deploy( void )
 
 	// GMod prepares the model and default draw before the script chooses its
 	// own sequence, playback rate and attack times.
-#ifdef CLIENT_DLL
 	const bool bNativeDeploy = BaseClass::Deploy();
-	if ( !bNativeDeploy && bLocalOwner && pOwner->IsAlive() && pOwner->GetActiveWeapon() == this )
+	if ( !bNativeDeploy && pOwner && pOwner->IsAlive() && pOwner->GetActiveWeapon() == this
+#ifdef CLIENT_DLL
+		&& bLocalOwner
+#endif
+	)
 	{
-		// DefaultDeploy can reject the client's first snapshot before ammo is
-		// synchronized. Lua still deploys, so give it the selected viewmodel.
+		// DefaultDeploy can reject the weapon before its script prepares ammo.
+		// The selected SWEP still gets its Lua Deploy callback with its viewmodel.
 		SetViewModel();
 		SetWeaponVisible( true );
 	}
-#else
-	BaseClass::Deploy();
-#endif
 	if ( pOwner != NULL )
 	{
 		CBaseViewModel *pViewModel = pOwner->GetViewModel( m_nViewModelIndex, false );
