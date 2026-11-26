@@ -763,6 +763,7 @@ void InitMaterialSystemConfig( bool bInEditMode )
 		return;
 
 	MaterialSystem_Config_t config = *g_pMaterialSystemConfig;
+	bool bVulkanDXLevelOverride = false;
 
 #if !defined(SWDS)
 	// see if they've changed video card, or have no settings present
@@ -799,6 +800,25 @@ void InitMaterialSystemConfig( bool bInEditMode )
 	{
 		// the stored configuration looks like it will be valid, load it in
 		ReadMaterialSystemConfigFromRegistry( config );
+#if defined( _WIN32 ) && !defined( DX_TO_GL_ABSTRACTION )
+		// This build only ships DX9 shaders.  A saved DX8 level can leave the
+		// startup screen with no compatible fallback shader when using DXVK.
+		if ( CommandLine()->FindParm( "-vulkan" ) && !CommandLine()->FindParm( "+mat_dxlevel" ) )
+		{
+			const int nSavedDXLevel = ReadVideoConfigInt( "DXLevel_V1", -1 );
+			if ( nSavedDXLevel > 0 && nSavedDXLevel < 90 && driverInfo.m_nMaxDXSupportLevel >= 90 )
+			{
+				const int nDXLevel = driverInfo.m_nDXSupportLevel >= 90 ?
+					MIN( driverInfo.m_nDXSupportLevel, driverInfo.m_nMaxDXSupportLevel ) : 90;
+				config.dxSupportLevel = nDXLevel;
+				ConVarRef matDXLevel( "mat_dxlevel" );
+				if ( matDXLevel.IsValid() )
+					matDXLevel.SetValue( nDXLevel );
+				bVulkanDXLevelOverride = true;
+				Msg( "-vulkan: using DX level %d instead of saved DX level %d for this session.\n", nDXLevel, nSavedDXLevel );
+			}
+		}
+#endif
 	}
 #endif
 
@@ -820,7 +840,8 @@ void InitMaterialSystemConfig( bool bInEditMode )
 	// write out the current vendor has been seen & registered
 	WriteVideoConfigInt( "VendorID", driverInfo.m_VendorID );
 	WriteVideoConfigInt( "DeviceID", driverInfo.m_DeviceID );
-	WriteVideoConfigInt( "DXLevel_V1", g_pMaterialSystemConfig->dxSupportLevel );
+	if ( !bVulkanDXLevelOverride )
+		WriteVideoConfigInt( "DXLevel_V1", g_pMaterialSystemConfig->dxSupportLevel );
 #endif
 }
 
