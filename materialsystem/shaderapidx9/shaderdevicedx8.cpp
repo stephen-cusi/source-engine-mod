@@ -99,6 +99,12 @@ static HMODULE s_hDXVKD3D9 = NULL;
 // working directory and of the system d3d9.dll loaded by the normal renderer.
 static IDirect3D9 *CreateDXVKD3D9( bool forceDisableD3D9Ex, bool &d3d9ExAvailable )
 {
+	if ( !GetEnvironmentVariableW( L"DXVK_HUD", NULL, 0 ) && GetLastError() == ERROR_ENVVAR_NOT_FOUND )
+	{
+		if ( !SetEnvironmentVariableW( L"DXVK_HUD", L"devinfo,fps,frametimes,version,compiler" ) )
+			Warning( "-vulkan: could not enable the default DXVK HUD (Windows error %lu).\n", GetLastError() );
+	}
+
 	HMODULE shaderModule = NULL;
 	if ( !GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 		reinterpret_cast<LPCWSTR>( &g_ShaderDeviceMgrDx8 ), &shaderModule ) )
