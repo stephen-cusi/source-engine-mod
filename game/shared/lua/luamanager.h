@@ -866,8 +866,9 @@ LUA_API void  (luasrc_LuaInfoMsg) (const char *pszText);
 // HL2SB: the single writer for Lua console output (print / Msg / MsgN /
 // Warning / ErrorNoHalt).  Colours by severity and, for complete lines, writes
 // hl2sb_lua.log through the same collector the engine's own diagnostics use.
-// cSeverity: 'E' error (red), 'W' warning (orange), anything else info (blue).
-LUA_API void  luasrc_LuaConsoleMsg (const char *pszText, char cSeverity, bool bNewline);
+// cSeverity: 'I' uses the Lua realm color, 'E' uses the Lua error sink,
+// and 'W' uses the warning color.
+LUA_API void  luasrc_LuaConsoleMsg (lua_State *state, const char *pszText, char cSeverity, bool bNewline);
 
 LUA_API void  (luasrc_LuaErrorMsgF) (const char *pszFormat, ...);
 LUA_API void  (luasrc_LuaWarnMsgF) (const char *pszFormat, ...);

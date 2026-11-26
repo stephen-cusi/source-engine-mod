@@ -178,9 +178,8 @@ static int luasrc_print (lua_State *L) {
     lua_pop(L, 1);  /* pop result */
   }
 
-  // Same writer the engine uses for its own Lua diagnostics: ice blue, and in
-  // the log with an [I] marker when hl2sb_lua_log_colors is on.
-  luasrc_LuaConsoleMsg( szLine, 'I', true );
+  // Use the current Lua realm color and log the line when enabled.
+  luasrc_LuaConsoleMsg( L, szLine, 'I', true );
   return 0;
 }
 
@@ -1355,25 +1354,28 @@ LUA_API void luasrc_LuaInfoMsg (const char *pszText)
 }
 
 //-----------------------------------------------------------------------------
-// HL2SB: THE writer for everything Lua prints, so console colour and the
-// hl2sb_lua.log are decided in ONE place:
-//
-//     print / Msg / MsgN            -> info   (ice blue)
-//     Warning / dbg.Warning         -> warn   (orange)
-//     ErrorNoHalt / Lua errors      -> error  (red)
-//
-// Msg is a building block -- GMod code writes half a line and finishes it with
-// MsgN -- so the trailing newline stays the caller's decision, and only
-// complete lines go into the log (a half line would be split at the wrong
-// place in the file).
+// print, Msg and MsgN use the GMod realm's console color. Msg can continue a
+// line without logging a separate entry; only the newline call logs it.
 //-----------------------------------------------------------------------------
-LUA_API void luasrc_LuaConsoleMsg (const char *pszText, char cSeverity, bool bNewline)
+static Color LuaConsoleRealmColor( lua_State *state )
+{
+#ifdef CLIENT_DLL
+	// The menu VM has its own registry, shared with its coroutines.
+	if ( LGameUI && lua_topointer( state, LUA_REGISTRYINDEX ) == lua_topointer( LGameUI, LUA_REGISTRYINDEX ) )
+		return Color( 120, 220, 100, 255 );
+	return Color( 255, 241, 122, 255 );
+#else
+	return Color( 156, 241, 255, 255 );
+#endif
+}
+
+LUA_API void luasrc_LuaConsoleMsg (lua_State *state, const char *pszText, char cSeverity, bool bNewline)
 {
 	if ( pszText == NULL )
 		return;
 
 	if ( cSeverity == 'I' )
-		Msg( "%s%s", pszText, bNewline ? "\n" : "" );
+		ConColorMsg( 0, LuaConsoleRealmColor( state ), "%s%s", pszText, bNewline ? "\n" : "" );
 	else if ( cSeverity == 'E' )
 		HL2SB_LuaConsoleError( pszText, bNewline );
 	else

@@ -1686,13 +1686,13 @@ static void LuaPushMessageArgs( lua_State *L, const char *fallback ) {
 
 static int lua_Msg (lua_State *L) {
   LuaPushMessageArgs( L, "Msg tostring ERROR" );
-  luasrc_LuaConsoleMsg( lua_tostring( L, -1 ), 'I', false );
+  luasrc_LuaConsoleMsg( L, lua_tostring( L, -1 ), 'I', false );
   return 0;
 }
 
 static int lua_MsgN (lua_State *L) {
   LuaPushMessageArgs( L, "MsgN tostring ERROR" );
-  luasrc_LuaConsoleMsg( lua_tostring( L, -1 ), 'I', true );
+  luasrc_LuaConsoleMsg( L, lua_tostring( L, -1 ), 'I', true );
   return 0;
 }
 
@@ -1782,7 +1782,7 @@ static int lua_MsgC (lua_State *L) {
 static int lua_Warning (lua_State *L) {
   char szText[2048];
   LuaConcatArgs( L, szText, sizeof( szText ) );
-  luasrc_LuaConsoleMsg( szText, 'W', true );
+  luasrc_LuaConsoleMsg( L, szText, 'W', true );
   return 0;
 }
 
@@ -1813,7 +1813,7 @@ static int lua_ErrorNoHalt (lua_State *L) {
   LuaPushMessageArgs( L, "ErrorNoHalt tostring ERROR" );
   Q_strncpy( szText, lua_tostring( L, -1 ), sizeof( szText ) );
   lua_pop( L, 1 );
-  luasrc_LuaConsoleMsg( szText, 'E', true );
+  luasrc_LuaConsoleMsg( L, szText, 'E', true );
 
   // HL2SB (2026-09-21): ErrorNoHalt is how GMod addons report soft failures;
   // those belong in the error viewer as much as hard errors do.  Collect with
@@ -1833,7 +1833,7 @@ static int lua_ErrorNoHaltWithStack (lua_State *L) {
   luaL_traceback( L, L, NULL, 1 );
   const char *pszTrace = lua_tostring( L, -1 );
   if ( pszTrace != NULL )
-    luasrc_LuaConsoleMsg( pszTrace, 'E', true );
+    luasrc_LuaConsoleMsg( L, pszTrace, 'E', true );
   lua_pop( L, 1 );
 
   return 0;
