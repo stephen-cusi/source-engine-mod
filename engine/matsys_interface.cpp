@@ -763,7 +763,7 @@ void InitMaterialSystemConfig( bool bInEditMode )
 		return;
 
 	MaterialSystem_Config_t config = *g_pMaterialSystemConfig;
-	bool bVulkanDXLevelOverride = false;
+	bool bUnsupportedSavedDXLevel = false;
 
 #if !defined(SWDS)
 	// see if they've changed video card, or have no settings present
@@ -801,9 +801,10 @@ void InitMaterialSystemConfig( bool bInEditMode )
 		// the stored configuration looks like it will be valid, load it in
 		ReadMaterialSystemConfigFromRegistry( config );
 #if defined( _WIN32 ) && !defined( DX_TO_GL_ABSTRACTION )
-		// This build only ships DX9 shaders.  A saved DX8 level can leave the
-		// startup screen with no compatible fallback shader when using DXVK.
-		if ( CommandLine()->FindParm( "-vulkan" ) && !CommandLine()->FindParm( "+mat_dxlevel" ) )
+		// If DX8 shaders are absent, a saved DX8 level leaves the startup
+		// screen without a compatible fallback shader.
+		if ( !CommandLine()->FindParm( "+mat_dxlevel" ) &&
+			!g_pFullFileSystem->FileExists( "stdshader_dx8.dll", "EXECUTABLE_PATH" ) )
 		{
 			const int nSavedDXLevel = ReadVideoConfigInt( "DXLevel_V1", -1 );
 			if ( nSavedDXLevel > 0 && nSavedDXLevel < 90 && driverInfo.m_nMaxDXSupportLevel >= 90 )
@@ -814,8 +815,8 @@ void InitMaterialSystemConfig( bool bInEditMode )
 				ConVarRef matDXLevel( "mat_dxlevel" );
 				if ( matDXLevel.IsValid() )
 					matDXLevel.SetValue( nDXLevel );
-				bVulkanDXLevelOverride = true;
-				Msg( "-vulkan: using DX level %d instead of saved DX level %d for this session.\n", nDXLevel, nSavedDXLevel );
+				bUnsupportedSavedDXLevel = true;
+				Msg( "Using DX level %d instead of saved DX level %d for this session.\n", nDXLevel, nSavedDXLevel );
 			}
 		}
 #endif
@@ -840,7 +841,7 @@ void InitMaterialSystemConfig( bool bInEditMode )
 	// write out the current vendor has been seen & registered
 	WriteVideoConfigInt( "VendorID", driverInfo.m_VendorID );
 	WriteVideoConfigInt( "DeviceID", driverInfo.m_DeviceID );
-	if ( !bVulkanDXLevelOverride )
+	if ( !bUnsupportedSavedDXLevel )
 		WriteVideoConfigInt( "DXLevel_V1", g_pMaterialSystemConfig->dxSupportLevel );
 #endif
 }

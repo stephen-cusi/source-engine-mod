@@ -725,7 +725,10 @@ bool CShaderDeviceMgrBase::GetRecommendedConfigurationInfo( int nAdapter, int nD
 
 	KeyValues *pCfg = ReadDXSupportKeyValues();
 	if ( !pCfg )
+	{
+		pConfiguration->SetInt( "ConVar.mat_dxlevel", nDXLevel );
 		return true;
+	}
 
 	// Look for a dxlevel specific line
 	KeyValues *pDxLevelKeyValues = FindDXLevelSpecificConfig( pCfg, nDXLevel );
