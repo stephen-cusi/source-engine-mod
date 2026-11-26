@@ -1,0 +1,26 @@
+--- a/src/dxvk/dxvk_cmdlist.cpp
++++ b/src/dxvk/dxvk_cmdlist.cpp
+@@ -94,8 +94,10 @@
+         info.wakeSync[info.wakeCount++] = m_sdmaSemaphore;
+         VkResult status = submitToQueue(transfer.queueHandle, VK_NULL_HANDLE, info);
+ 
+-        if (status != VK_SUCCESS)
++        if (status != VK_SUCCESS) {
++          Logger::err(str::format("DxvkCommandList: Transfer queue submission failed: ", status));
+           return status;
++        }
+ 
+         info = DxvkQueueSubmission();
+         info.waitSync[info.waitCount] = m_sdmaSemaphore;
+@@ -118,7 +120,10 @@
+     if (wakeSemaphore)
+       info.wakeSync[info.wakeCount++] = wakeSemaphore;
+     
+-    return submitToQueue(graphics.queueHandle, m_fence, info);
++    VkResult status = submitToQueue(graphics.queueHandle, m_fence, info);
++    if (status != VK_SUCCESS)
++      Logger::err(str::format("DxvkCommandList: Graphics queue submission failed: ", status));
++    return status;
+   }
+   
+   

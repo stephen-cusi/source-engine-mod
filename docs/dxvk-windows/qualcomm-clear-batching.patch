@@ -1,0 +1,42 @@
+--- a/src/d3d9/d3d9_device.h
++++ b/src/d3d9/d3d9_device.h
+@@ -1239,6 +1239,9 @@
+     DxvkCsThread                    m_csThread;
+     DxvkCsChunkRef                  m_csChunk;
+     bool                            m_csIsBusy = false;
++#if defined(_WIN32) && !defined(DXVK_NATIVE)
++    uint32_t                        m_qualcommClearCount = 0;
++#endif
+ 
+     std::atomic<int64_t>            m_availableMemory = { 0 };
+     std::atomic<int32_t>            m_samplerCount    = { 0 };
+--- a/src/d3d9/d3d9_device.cpp
++++ b/src/d3d9/d3d9_device.cpp
+@@ -1491,6 +1491,17 @@
+             cClearValue);
+         });
+       }
++#if defined(_WIN32) && !defined(DXVK_NATIVE)
++      // Bound clear work on the verified Adreno X1-85 Windows driver.
++      const auto& props = m_dxvkDevice->properties();
++      if (props.core.properties.vendorID == 0x5143
++       && props.core.properties.deviceID == 0x36334330
++       && props.core.properties.driverVersion == 0x8037d000
++       && props.khrDeviceDriverProperties.driverID == VK_DRIVER_ID_QUALCOMM_PROPRIETARY
++       && ++m_qualcommClearCount >= 128) {
++        Flush();
++      }
++#endif
+     };
+ 
+     auto ClearViewRect = [&](
+@@ -5043,6 +5054,9 @@
+   void D3D9DeviceEx::Flush() {
+     D3D9DeviceLock lock = LockDevice();
+ 
++#if defined(_WIN32) && !defined(DXVK_NATIVE)
++    m_qualcommClearCount = 0;
++#endif
+     m_initializer->Flush();
+     m_converter->Flush();
+ 
