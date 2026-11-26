@@ -6,6 +6,7 @@
 //===========================================================================//
 #include "cbase.h"
 #include "c_baseanimating.h"
+#include "baseviewmodel_shared.h"
 #include "model_types.h"
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialsystem.h"
@@ -4218,26 +4219,33 @@ void C_BaseAnimating::FireEvent( const Vector& origin, const QAngle& angles, int
 	case AE_MUZZLEFLASH:
 		{
 #if defined ( HL2SB )
-			// The local player's *world* weapon (and the world player model it
-			// hangs off) carry the same AE_MUZZLEFLASH in their fire
-			// animations.  In first person that spawned a second flame on the
-			// world model - hip height, below the viewmodel's own flash - so
-			// skip it here.  The viewmodel still dispatches its own flash, and
-			// third person still needs the world model's.
-			if ( !IsViewModel() && !::input->CAM_IsThirdPerson() )
+			C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+			if ( pLocal )
 			{
-				C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-				bool bIsLocalEntity = ( pLocal && pLocal == this );
-
-				if ( !bIsLocalEntity )
+				if ( IsViewModel() )
 				{
+					C_BaseViewModel *pViewModel = static_cast< C_BaseViewModel * >( this );
+					if ( pViewModel->GetOwner() == pLocal && C_BasePlayer::ShouldDrawLocalPlayer() )
+					{
+						// Use the predicted animation event with the actual world
+						// muzzle. The world effect needs no viewmodel FOV correction.
+						C_BaseCombatWeapon *pWeapon = pLocal->GetActiveWeapon();
+						if ( pWeapon )
+							pWeapon->DispatchMuzzleEffect( options, false );
+						break;
+					}
+				}
+				else
+				{
+					// The local world weapon still runs animation events in first
+					// person when it is visible through a mirror. Keep the viewmodel
+					// event as the single source for the local weapon in either view.
 					C_BaseCombatWeapon *pWeapon = dynamic_cast< C_BaseCombatWeapon *>( this );
 					if ( pWeapon && pWeapon->GetOwner() == pLocal )
-						bIsLocalEntity = true;
+						break;
+					if ( this == pLocal && !C_BasePlayer::ShouldDrawLocalPlayer() )
+						break;
 				}
-
-				if ( bIsLocalEntity )
-					break;
 			}
 #endif
 			// Send out the effect for a player
