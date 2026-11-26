@@ -1168,6 +1168,10 @@ void CGlobalEntityList::OnRemoveEntity( IHandleEntity *pEnt, CBaseHandle handle 
 		m_iNumEdicts--;
 
 	m_iNumEnts--;
+#if defined( LUA_SDK )
+	extern void HL2SB_ReleaseCachedPlayerHandle( lua_State *L, const CBaseHandle &handle );
+	HL2SB_ReleaseCachedPlayerHandle( L, handle );
+#endif
 }
 
 void CGlobalEntityList::NotifyCreateEntity( CBaseEntity *pEnt )

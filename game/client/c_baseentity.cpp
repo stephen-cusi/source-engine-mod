@@ -2276,6 +2276,17 @@ void C_BaseEntity::NotifyShouldTransmit( ShouldTransmitState_t state )
 	Assert( CollisionProp()->GetPartitionHandle() != PARTITION_INVALID_HANDLE );
 	if ( entindex() < 0 )
 		return;
+
+#if defined( LUA_SDK )
+	if ( L )
+	{
+		// Let scripts observe the transition before the entity changes dormancy.
+		BEGIN_LUA_CALL_HOOK( "NotifyShouldTransmit" );
+			lua_pushentity( L, this );
+			lua_pushboolean( L, state == SHOULDTRANSMIT_START );
+		END_LUA_CALL_HOOK( 2, 0 );
+	}
+#endif
 	
 	switch( state )
 	{

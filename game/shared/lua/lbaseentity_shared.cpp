@@ -109,6 +109,79 @@ LUA_API lua_CBaseEntity *lua_toentity (lua_State *L, int idx) {
 // Keyed by serial so a recycled edict slot gets a fresh entry.
 static int s_iEntityCacheKey = 0;
 
+// Share the entity cache with the typed player push paths.
+void HL2SB_PushCachedEntityHandle( lua_State *L, const CBaseHandle &handle, bool isPlayer )
+{
+  const char *metatable = isPlayer ? LUA_BASEPLAYERLIBNAME : LUA_BASEENTITYLIBNAME;
+  if (!handle.IsValid()) {
+    CopyConstruct((CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle)), handle);
+    luaL_getmetatable(L, metatable);
+    lua_setmetatable(L, -2);
+    return;
+  }
+
+  const int key = handle.ToInt();
+  lua_pushlightuserdata(L, &s_iEntityCacheKey);
+  lua_rawget(L, LUA_REGISTRYINDEX);
+  if (lua_isnil(L, -1)) {
+    lua_pop(L, 1);
+    lua_newtable(L);
+    lua_pushlightuserdata(L, &s_iEntityCacheKey);
+    lua_rawget(L, LUA_REGISTRYINDEX);
+    if (lua_isnil(L, -1)) {
+      lua_pop(L, 1);
+      lua_pushlightuserdata(L, &s_iEntityCacheKey);
+      lua_pushvalue(L, -2);
+      lua_rawset(L, LUA_REGISTRYINDEX);
+    } else {
+      lua_remove(L, -2);
+    }
+  }
+
+  lua_rawgeti(L, -1, key);
+  if (lua_isnil(L, -1)) {
+    lua_pop(L, 1);
+    CopyConstruct((CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle)), handle);
+    luaL_getmetatable(L, metatable);
+    lua_setmetatable(L, -2);
+
+    // A finalizer may have pushed this handle during the userdata allocation.
+    lua_rawgeti(L, -2, key);
+    if (lua_isnil(L, -1)) {
+      lua_pop(L, 1);
+      if (handle.Get()) {
+        lua_pushvalue(L, -1);
+        lua_rawseti(L, -3, key);
+      }
+      lua_remove(L, -2);
+      return;
+    }
+    lua_remove(L, -2);
+  }
+  if (isPlayer && luaL_testudata(L, -1, LUA_BASEENTITYLIBNAME)) {
+    // A generic push made before Player was registered can already own this
+    // handle. Give it the typed metatable without changing its identity.
+    luaL_getmetatable(L, metatable);
+    lua_setmetatable(L, -2);
+  }
+  lua_remove(L, -2);
+}
+
+void HL2SB_ReleaseCachedPlayerHandle( lua_State *L, const CBaseHandle &handle )
+{
+  const int index = handle.GetEntryIndex();
+  if (!L || !gpGlobals || index <= 0 || index > gpGlobals->maxClients || !lua_checkstack(L, 2))
+    return;
+
+  lua_pushlightuserdata(L, &s_iEntityCacheKey);
+  lua_rawget(L, LUA_REGISTRYINDEX);
+  if (lua_istable(L, -1)) {
+    lua_pushnil(L);
+    lua_rawseti(L, -2, handle.ToInt());
+  }
+  lua_pop(L, 1);
+}
+
 /* HL2SB GMod compat: the NPC / NextBot entity-level dispatch, same contract
 ** as the Vehicle pair declared in lbaseentity_shared.h.  Defined in
 ** lnpc_shared.cpp; declared here as LOCAL prototypes so this header-heavy
@@ -153,42 +226,9 @@ LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
     return;
   }
 
-  if (pEntity != NULL) {
-    CBaseHandle hEntity;
-    hEntity.Set(pEntity);
-    const int iKey = hEntity.ToInt();
-
-    lua_pushlightuserdata(L, &s_iEntityCacheKey);
-    lua_rawget(L, LUA_REGISTRYINDEX);          // [cache]
-    if (lua_isnil(L, -1)) {
-      lua_pop(L, 1);
-      lua_newtable(L);                         // [cache]
-      lua_pushlightuserdata(L, &s_iEntityCacheKey);
-      lua_pushvalue(L, -2);
-      lua_rawset(L, LUA_REGISTRYINDEX);        // registry[key] = cache
-    }
-
-    lua_rawgeti(L, -1, iKey);                  // [cache, cached]
-    if (lua_isuserdata(L, -1)) {
-      lua_remove(L, -2);                       // [cached] -- same object as last time
-      return;
-    }
-    lua_pop(L, 1);                             // [cache]
-
-    CBaseHandle *hNew = (CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle)); // [cache, new]
-    hNew->Set(pEntity);
-    luaL_getmetatable(L, "CBaseEntity");
-    lua_setmetatable(L, -2);                   // [cache, new]
-    lua_pushvalue(L, -1);                      // [cache, new, new]
-    lua_rawseti(L, -3, iKey);                  // [cache, new] -- cache[iKey] = new
-    lua_remove(L, -2);                         // [new]
-    return;
-  }
-
-  CBaseHandle *hEntity = (CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle));
-  hEntity->Set(pEntity);
-  luaL_getmetatable(L, "CBaseEntity");
-  lua_setmetatable(L, -2);
+  CBaseHandle handle;
+  handle.Set(pEntity);
+  HL2SB_PushCachedEntityHandle(L, handle, false);
 }
 
 

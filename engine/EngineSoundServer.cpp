@@ -17,6 +17,7 @@
 #include "vengineserver_impl.h"
 #include "enginesingleuserfilter.h"
 #include "snd_audio_source.h"
+#include "snd_io.h"
 #include "soundchars.h"
 #include "tier0/vprof.h"
 
@@ -389,11 +390,15 @@ void CEngineSoundServer::StopSound( int iEntIndex, int iChannel, const char *pSa
 
 float SV_GetSoundDuration( const char *pSample )
 {
-#ifdef SWDS
-	return 0; // TODO: make this return a real value (i.e implement an OS independent version of the sound code)
-#else
-	return AudioSource_GetSoundDuration( PSkipSoundChars( pSample ) );
+	if ( !pSample )
+		return 0.0f;
+
+	pSample = PSkipSoundChars( pSample );
+#ifndef SWDS
+	if ( !sv.IsDedicated() )
+		return AudioSource_GetSoundDuration( pSample );
 #endif
+	return Audio_IsMP3( pSample ) ? GetMP3Duration_Helper( pSample ) : Audio_GetWaveDuration( pSample );
 }
 
 //-----------------------------------------------------------------------------

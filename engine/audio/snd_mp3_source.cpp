@@ -553,20 +553,6 @@ int	CAudioSourceStreamMP3::GetOutputData( void **pData, int samplePosition, int 
 	return 0;
 }
 
-bool Audio_IsMP3( const char *pName )
-{
-	int len = strlen(pName);
-	if ( len > 4 )
-	{
-		if ( !Q_strnicmp( &pName[len - 4], ".mp3", 4 ) )
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
-
 CAudioSource *Audio_CreateStreamedMP3( CSfxTable *pSfx )
 {
 	CAudioSourceStreamMP3 *pMP3 = NULL; 	

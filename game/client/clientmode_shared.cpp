@@ -807,10 +807,6 @@ void ClientModeShared::AdjustEngineViewport( int& x, int& y, int& width, int& he
 //-----------------------------------------------------------------------------
 void ClientModeShared::PreRender( CViewSetup *pSetup )
 {
-	// HL2SB: GM:PreRender is deliberately NOT dispatched yet - its GMod
-	// contract (return true cancels the whole frame render) needs a check in
-	// the frame owner, not in this void method.  Deferred to the render-cancel
-	// round.
 }
 
 //-----------------------------------------------------------------------------
@@ -819,9 +815,7 @@ void ClientModeShared::PreRender( CViewSetup *pSetup )
 void ClientModeShared::PostRender()
 {
 #if defined( LUA_SDK )
-	// HL2SB (2026-10-08): GM:PostRender() - GMod raises it once the frame has
-	// rendered (their PreRender/PostRender pair brackets the frame; the cancel
-	// half is the one still unwired here).
+	// GM:PostRender() runs after the frame has rendered.
 	{
 		extern bool g_bRenderingReflection;
 		if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )

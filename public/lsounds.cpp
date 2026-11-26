@@ -315,6 +315,15 @@ static int luasrc_GlobalEmitSound( lua_State *L )
     return 0;
 }
 
+static int luasrc_GlobalSoundDuration( lua_State *L )
+{
+    const char *name = luaL_checkstring( L, 1 );
+    if ( !Q_stristr( name, ".wav" ) && !Q_stristr( name, ".mp3" ) )
+        name = soundemitterbase->GetWavFileForSound( name, GENDER_NONE );
+
+    lua_pushnumber( L, name ? enginesound->GetSoundDuration( name ) : 0.0f );
+    return 1;
+}
 
 #ifdef CLIENT_DLL
 // HL2SB: GMod's sound.PlayFile (CLIENT only per the reference contract).  The
@@ -344,6 +353,9 @@ LUALIB_API int luaopen_Sounds( lua_State *L )
 
     lua_pushcfunction( L, luasrc_GlobalEmitSound );
     lua_setglobal( L, "EmitSound" );
+
+    lua_pushcfunction( L, luasrc_GlobalSoundDuration );
+    lua_setglobal( L, "SoundDuration" );
 
     return 1;
 }

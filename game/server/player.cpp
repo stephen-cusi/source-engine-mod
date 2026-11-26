@@ -1802,6 +1802,20 @@ int CBasePlayer::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 		ApplyAbsVelocityImpulse( force );
 	}
 
+	const EHANDLE hAttacker = attacker;
+#if defined( LUA_SDK )
+	if ( L )
+	{
+		// The Lua hook reports raw health and base damage before the game event.
+		BEGIN_LUA_CALL_HOOK( "PlayerHurt" );
+			lua_pushplayer( L, this );
+			lua_pushentity( L, attacker );
+			lua_pushinteger( L, GetHealth() );
+			lua_pushnumber( L, info.GetBaseDamage() );
+		END_LUA_CALL_HOOK( 4, 0 );
+	}
+#endif
+
 	// fire global game event
 
 	IGameEvent * event = gameeventmanager->CreateEvent( "player_hurt" );
@@ -1811,9 +1825,8 @@ int CBasePlayer::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 		event->SetInt("health", MAX(0, m_iHealth) );
 		event->SetInt("priority", 5 );	// HLTV event priority, not transmitted
 
-		if ( attacker->IsPlayer() )
+		if ( CBasePlayer *player = ToBasePlayer( hAttacker.Get() ) )
 		{
-			CBasePlayer *player = ToBasePlayer( attacker );
 			event->SetInt("attacker", player->GetUserID() ); // hurt by other player
 		}
 		else
@@ -1825,7 +1838,8 @@ int CBasePlayer::OnTakeDamage_Alive( const CTakeDamageInfo &info )
 	}
 	
 	// Insert a combat sound so that nearby NPCs hear battle
-	if ( attacker->IsNPC() )
+	attacker = hAttacker.Get();
+	if ( attacker && attacker->IsNPC() )
 	{
 		CSoundEnt::InsertSound( SOUND_COMBAT, GetAbsOrigin(), 512, 0.5, this );//<<TODO>>//magic number
 	}

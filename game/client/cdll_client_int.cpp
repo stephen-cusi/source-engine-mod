@@ -1778,6 +1778,23 @@ void CHLClient::View_Render( vrect_t *rect )
 	if ( rect->width == 0 || rect->height == 0 )
 		return;
 
+#if defined( LUA_SDK )
+	{
+		CRefPtr<IMatRenderContext> renderContext( materials->GetRenderContext() );
+		renderContext->Flush( false );
+	}
+
+	if ( L )
+	{
+		BEGIN_LUA_CALL_HOOK( "PreRender" );
+		END_LUA_CALL_HOOK( 0, 1 );
+		const bool skipRender = lua_isboolean( L, -1 ) && lua_toboolean( L, -1 );
+		lua_pop( L, 1 );
+		if ( skipRender && !enginevgui->IsGameUIVisible() )
+			return;
+	}
+#endif
+
 	view->Render( rect );
 	UpdatePerfStats();
 }

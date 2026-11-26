@@ -56,31 +56,10 @@ void ChunkError( unsigned int id )
 #endif
 }
 
-//-----------------------------------------------------------------------------
-// Purpose: Determine a true sample count for an ADPCM blob
-//-----------------------------------------------------------------------------
-int ADPCMSampleCount( ADPCMWAVEFORMAT *pFormat, int length )
+static int ADPCMSampleCount( const ADPCMWAVEFORMAT *pFormat, int length )
 {
-	// determine a true sample count
-	int nChannels = LittleWord( pFormat->wfx.nChannels );
-	int wSamplesPerBlock = LittleWord( pFormat->wSamplesPerBlock );
-
-	int blockSize = (( wSamplesPerBlock - 2) * nChannels ) / 2;
-	blockSize += 7 * nChannels;
-
-	int blockCount = length / blockSize;
-	int blockRem = length % blockSize;
-	
-	// total samples in complete blocks
-	int sampleCount = blockCount * wSamplesPerBlock;
-
-	// add remaining in a short block
-	if ( blockRem )
-	{
-		sampleCount += wSamplesPerBlock - (((blockSize - blockRem) * 2) / nChannels );
-	}
-
-	return sampleCount;
+	return Audio_ADPCMSampleCount( LittleWord( pFormat->wfx.nChannels ),
+		LittleWord( pFormat->wSamplesPerBlock ), length );
 }
 
 //-----------------------------------------------------------------------------
@@ -1943,112 +1922,6 @@ CAudioSource *Audio_CreateMemoryWave( CSfxTable *pSfx )
 	return CreateWave( pSfx, false );
 }
 
-float GetMP3Duration_Helper( char const *filename );
-static float Audio_GetMP3Duration( char const *pName )
-{
-	// Deduce from file
-	return GetMP3Duration_Helper( pName );
-}
-
-
-void MaybeReportMissingWav( char const *wav )
-{
-	static CUtlSymbolTable wavErrors;
-
-	CUtlSymbol sym;
-	sym = wavErrors.Find( wav );
-	if ( UTL_INVAL_SYMBOL == sym )
-	{
-		// See if file exists
-		if ( g_pFullFileSystem->FileExists( wav ) )
-		{
-			DevWarning( "Bad Audio file '%s'\n", wav );
-		}
-		else
-		{
-			DevWarning( "Missing wav file '%s'\n", wav );
-		}
-		wavErrors.AddString( wav );
-	}
-}
-
-static float Audio_GetWaveDuration( char const *pName )
-{
-	if ( IsX360() )
-	{
-		// should have precached
-		return 0;
-	}
-
-	char formatBuffer[1024];
-	WAVEFORMATEX *pfmt = (WAVEFORMATEX *)formatBuffer;
-
-	InFileRIFF riff( pName, *g_pSndIO );
-
-	if ( riff.RIFFName() != RIFF_WAVE )
-	{
-		MaybeReportMissingWav( pName );
-		return 0.0f;
-	}
-
-	// set up the iterator for the whole file (root RIFF is a chunk)
-	IterateRIFF walk( riff, riff.RIFFSize() );
-
-	int format = 0;
-	int formatSize = 0;
-	int sampleCount = 0;
-
-	// This chunk must be first as it contains the wave's format
-	// break out when we've parsed it
-	while ( walk.ChunkAvailable() && ( format == 0 || sampleCount == 0 ) )
-	{
-		switch( walk.ChunkName() )
-		{
-		case WAVE_FMT:
-			if ( walk.ChunkSize() <= sizeof( formatBuffer ) )
-			{
-				walk.ChunkRead( formatBuffer );
-				formatSize = walk.ChunkSize();
-				format = LittleWord( pfmt->wFormatTag );
-			}
-			break;
-		case WAVE_DATA:
-			if ( format != 0 )
-			{
-				int dataSize = walk.ChunkSize();
-				if ( format == WAVE_FORMAT_ADPCM )
-				{
-					// Dummy size for now
-					sampleCount = dataSize;
-				}
-				else
-				{
-					sampleCount = dataSize / ( LittleWord( pfmt->wBitsPerSample ) >> 3 );
-				}
-			}
-			break;
-		default:
-			ChunkError( walk.ChunkName() );
-			break;
-		}
-		walk.ChunkNext();
-	}
-
-	// Not really a WAVE file or no format chunk, bail
-	if ( !format || !sampleCount )
-		return 0.0f;
-
-	float sampleRate = LittleDWord( pfmt->nSamplesPerSec );
-
-	if ( format == WAVE_FORMAT_ADPCM )
-	{
-		// Determine actual duration
-		sampleCount = ADPCMSampleCount( (ADPCMWAVEFORMAT *)formatBuffer, sampleCount );
-	}
-
-	return (float)sampleCount / sampleRate;
-}
-
 //-----------------------------------------------------------------------------
 // Purpose: Fast method for determining duration of .wav/.mp3, exposed to server as well
 // Input  : *pName - 
@@ -2059,7 +1932,7 @@ float AudioSource_GetSoundDuration( char const *pName )
 #if defined( MP3_SUPPORT )
 	if ( Audio_IsMP3( pName ) )
 	{
-		return Audio_GetMP3Duration( pName );
+		return GetMP3Duration_Helper( pName );
 	}
 #endif
 

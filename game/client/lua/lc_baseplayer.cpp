@@ -153,7 +153,7 @@ static int CBasePlayer_GetAll (lua_State *L) {
   for ( int iClient = 1; iClient <= gpGlobals->maxClients; ++iClient )
   {
     CBasePlayer *pPlayer = UTIL_PlayerByIndex( iClient );
-    if ( !pPlayer )
+    if ( !pPlayer || pPlayer->IsMarkedForDeletion() )
       continue;
 
     lua_pushinteger( L, ++i );

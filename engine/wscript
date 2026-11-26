@@ -193,6 +193,9 @@ def build(bld):
 		'servermsghandler.cpp',
 		'../common/SourceAppInfo.cpp',
 		'snd_io.cpp',
+		'audio/MPAFile.cpp',
+		'audio/MPAHeader.cpp',
+		'audio/VBRHeader.cpp',
 		'EngineSoundServer.cpp',
 		'audio/voice_wavefile.cpp',
 		'audio/vox.cpp',
@@ -294,8 +297,6 @@ def build(bld):
 #			'audio/audio_pch.cpp',
 			'EngineSoundClient.cpp',
 			'engsoundservice.cpp',
-			'audio/MPAFile.cpp', #[!$X360]
-			'audio/MPAHeader.cpp', #[!$X360]
 			'audio/circularbuffer.cpp',
 			'audio/snd_dev_common.cpp',
 			'audio/snd_dma.cpp',
@@ -311,7 +312,6 @@ def build(bld):
 			'audio/voice_gain.cpp',	
 			'audio/snd_mp3_source.cpp',
 			'audio/snd_wave_mixer_mp3.cpp',
-			'audio/VBRHeader.cpp', #[!$X360]
 			'audio/voice.cpp', #[!$X360]
 			'audio/voice_sound_engine_interface.cpp', #[!$X360]
 			'../public/vgui_controls/vgui_controls.cpp',

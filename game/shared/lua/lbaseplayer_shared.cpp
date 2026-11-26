@@ -133,14 +133,10 @@ static void HL2SB_EnsureMoveDataMeta( lua_State *L );
 
 
 LUA_API void lua_pushplayer (lua_State *L, CBasePlayer *pPlayer) {
-  // Lua userdata allocation may run finalizers. Store the entity handle
-  // before it can reenter the engine and invalidate the player pointer.
+  extern void HL2SB_PushCachedEntityHandle( lua_State *L, const CBaseHandle &handle, bool isPlayer );
   CBaseHandle playerHandle;
   playerHandle.Set(pPlayer);
-  CBaseHandle *phPlayer = (CBaseHandle *)lua_newuserdata(L, sizeof(CBaseHandle));
-  CopyConstruct(phPlayer, playerHandle);
-  luaL_getmetatable(L, "CBasePlayer");
-  lua_setmetatable(L, -2);
+  HL2SB_PushCachedEntityHandle(L, playerHandle, true);
 }
 
 
@@ -820,6 +816,13 @@ static int CBasePlayer_GetHealth (lua_State *L) {
   lua_pushinteger(L, luaL_checkplayer(L, 1)->GetHealth());
   return 1;
 }
+
+#ifndef CLIENT_DLL
+static int CBasePlayer_LastHitGroup (lua_State *L) {
+  lua_pushinteger(L, luaL_checkplayer(L, 1)->LastHitGroup());
+  return 1;
+}
+#endif
 
 // HL2SB (2026-10-02) GMod compat: Player:Armor() / GetArmor() / SetArmor() /
 // GetMaxArmor() / SetMaxArmor() -- the shipped tarkov_hud addon reads these
@@ -3557,6 +3560,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"KeyReleased", CBasePlayer_KeyReleased},
   {"KeyDownLast", CBasePlayer_KeyDownLast},
 #ifndef CLIENT_DLL
+  {"LastHitGroup", CBasePlayer_LastHitGroup},
   {"StripWeapon", CBasePlayer_StripWeapon},
 #endif
   {"LeaveVehicle", CBasePlayer_LeaveVehicle},

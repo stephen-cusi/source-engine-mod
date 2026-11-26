@@ -24,21 +24,19 @@
 //-----------------------------------------------------------------------------
 // Purpose: HL2SB - player.GetAll()
 //
-// Returns a Lua array of every player entity currently on the server, so
-// GMod-style scripts (and the undo system) can iterate players without a
-// player.Iterator binding.  Built on gEntList.FirstEnt/NextEnt.
+// Returns the connected players in client-slot order.
 //-----------------------------------------------------------------------------
 static int CBasePlayer_GetAll (lua_State *L) {
-  lua_newtable( L );
+  lua_createtable( L, gpGlobals->maxClients, 0 );
   int i = 0;
-  for ( CBaseEntity *pEntity = gEntList.FirstEnt(); pEntity != NULL; pEntity = gEntList.NextEnt( pEntity ) )
+  for ( int index = 1; index <= gpGlobals->maxClients; ++index )
   {
-    if ( !pEntity->IsPlayer() )
+    CBasePlayer *pPlayer = UTIL_PlayerByIndex( index );
+    if ( !pPlayer || pPlayer->IsMarkedForDeletion() || !pPlayer->IsConnected() )
       continue;
 
-    lua_pushinteger( L, ++i );
-    lua_pushplayer( L, static_cast< CBasePlayer * >( pEntity ) );
-    lua_rawset( L, -3 );
+    lua_pushplayer( L, pPlayer );
+    lua_rawseti( L, -2, ++i );
   }
   return 1;
 }

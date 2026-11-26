@@ -431,6 +431,10 @@ void CClientEntityList::OnRemoveEntity( IHandleEntity *pEnt, CBaseHandle handle 
 		m_BaseEntities.Remove( pCache->m_BaseEntitiesIndex );
 
 	pCache->m_BaseEntitiesIndex = m_BaseEntities.InvalidIndex();
+#if defined( LUA_SDK )
+	extern void HL2SB_ReleaseCachedPlayerHandle( lua_State *L, const CBaseHandle &handle );
+	HL2SB_ReleaseCachedPlayerHandle( L, handle );
+#endif
 }
 
 

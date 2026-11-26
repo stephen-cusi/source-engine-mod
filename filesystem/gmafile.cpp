@@ -753,7 +753,7 @@ void CGmaPackFile::GetFileAndDirLists( const char *pRawWildCard, CUtlStringList 
 				V_strncpy( szCandidateBaseName, szCandidateName + nLenWildcardPath, sizeof( szCandidateBaseName ) );
 			}
 
-			char *pExt = strchr( szCandidateBaseName, '.' );
+			char *pExt = strrchr( szCandidateBaseName, '.' );
 			if ( pExt )
 			{
 				*pExt = '\0';

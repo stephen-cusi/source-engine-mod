@@ -248,6 +248,46 @@ LUA_BINDING_END( "table", "A table of entities found.", "integer", "The number o
 
 #ifdef GAME_DLL
 
+LUA_BINDING_BEGIN( Entities, FindInPVS, "library", "Finds the entities in the PVS of a Vector or Entity.", "server" )
+{
+    const Vector *pViewPoint = static_cast<const Vector *>( luaL_testudata( L, 1, "Vector" ) );
+    Vector viewOrigin;
+    if ( pViewPoint )
+    {
+        viewOrigin = *pViewPoint;
+    }
+    else
+    {
+        CBaseEntity *pViewEntity = luaL_checkentity( L, 1 );
+        CBasePlayer *pPlayer = ToBasePlayer( pViewEntity );
+        if ( pPlayer && pPlayer->GetViewEntity() )
+            pViewEntity = pPlayer->GetViewEntity();
+        viewOrigin = pViewEntity->EyePosition();
+    }
+
+    unsigned char pvs[MAX_MAP_CLUSTERS / 8];
+    engine->GetPVSForCluster( engine->GetClusterForOrigin( viewOrigin ), sizeof( pvs ), pvs );
+
+    lua_newtable( L );
+    int index = 0;
+    for ( CBaseEntity *pEntity = gEntList.NextEnt( NULL ); pEntity; pEntity = gEntList.NextEnt( pEntity ) )
+    {
+        if ( !pEntity->edict() )
+            continue;
+
+        Vector mins, maxs;
+        pEntity->GetRootMoveParent()->CollisionProp()->WorldSpaceSurroundingBounds( &mins, &maxs );
+        if ( !engine->CheckBoxInPVS( mins, maxs, pvs, sizeof( pvs ) ) )
+            continue;
+
+        CBaseEntity::PushLuaInstanceSafe( L, pEntity );
+        lua_rawseti( L, -2, ++index );
+    }
+
+    return 1;
+}
+LUA_BINDING_END( "table", "A sequential table of entities found." )
+
 LUA_BINDING_BEGIN( Entities, GetInPvs, "library", "Goes through the entities and find the ones that are in the PVS of the provided vector.", "server" )
 {
     Vector vecViewOrigin = LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "viewOrigin" );

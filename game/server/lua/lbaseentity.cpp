@@ -70,6 +70,28 @@ static int CBaseEntity_DecrementTransmitStateOwnedCounter (lua_State *L) {
   return 0;
 }
 
+static int CBaseEntity_TestPVS (lua_State *L) {
+  CBaseEntity *pViewEntity = luaL_checkentity( L, 1 );
+  CBasePlayer *pPlayer = ToBasePlayer( pViewEntity );
+  if ( pPlayer && pPlayer->GetViewEntity() )
+    pViewEntity = pPlayer->GetViewEntity();
+
+  unsigned char pvs[MAX_MAP_CLUSTERS / 8];
+  engine->GetPVSForCluster( engine->GetClusterForOrigin( pViewEntity->EyePosition() ), sizeof( pvs ), pvs );
+
+  const Vector *pTestPoint = static_cast<const Vector *>( luaL_testudata( L, 2, "Vector" ) );
+  if ( pTestPoint ) {
+    lua_pushboolean( L, engine->CheckOriginInPVS( *pTestPoint, pvs, sizeof( pvs ) ) );
+  } else {
+    CBaseEntity *pTarget = luaL_checkentity( L, 2 );
+    Vector mins, maxs;
+    pTarget->GetRootMoveParent()->CollisionProp()->WorldSpaceSurroundingBounds( &mins, &maxs );
+    lua_pushboolean( L, engine->CheckBoxInPVS( mins, maxs, pvs, sizeof( pvs ) ) );
+  }
+
+  return 1;
+}
+
 static int CBaseEntity_DetectInSkybox (lua_State *L) {
   lua_pushboolean(L, luaL_checkentity(L, 1)->DetectInSkybox());
   return 1;
@@ -957,6 +979,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"UpdateTransmitState", CBaseEntity_UpdateTransmitState},
   {"IncrementTransmitStateOwnedCounter", CBaseEntity_IncrementTransmitStateOwnedCounter},
   {"DecrementTransmitStateOwnedCounter", CBaseEntity_DecrementTransmitStateOwnedCounter},
+  {"TestPVS", CBaseEntity_TestPVS},
   {"DetectInSkybox", CBaseEntity_DetectInSkybox},
   {"GetEntitySkybox", CBaseEntity_GetEntitySkybox},
   {"PostConstructor", CBaseEntity_PostConstructor},
