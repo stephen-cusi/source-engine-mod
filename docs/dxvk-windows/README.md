@@ -25,4 +25,4 @@ The clear batching patch applies only to native Windows Vulkan on vendor `0x5143
 
 The isolated Viewfinder VHS workload reproduced a graphics queue submission failure without batching. With batching, the unchanged addon loaded, its camera effect was visible, and the isolated map ran for 60 seconds without that failure. The queue diagnostics patch records whether a failed command submission was on the transfer or graphics queue. It does not fix the older DXVK submission error-handling deadlock or establish the underlying Vulkan driver failure.
 
-This record covers the Windows x64 build. Runtime graphics and driver behavior still require testing in the game.
+The user also confirmed that the deployed Windows x64 build loaded without hanging and displayed the other Viewfinder camera presets correctly on the tested Adreno device. Other Windows GPU and driver combinations and Android remain unverified for this workload.
