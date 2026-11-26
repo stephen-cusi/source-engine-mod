@@ -479,7 +479,7 @@ bool CFontTextureCache::AllocatePageForChar(int charWide, int charTall, int &pag
 			newPage.wide, 
 			newPage.tall, 
 			IMAGE_FORMAT_RGBA8888, 
-			TEXTUREFLAGS_POINTSAMPLE | TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT | 
+			TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT |
 			TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD | TEXTUREFLAGS_PROCEDURAL | TEXTUREFLAGS_SINGLECOPY );
 
 		CreateFontMaterials( newPage, pTexture );
