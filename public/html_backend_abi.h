@@ -99,6 +99,8 @@ typedef struct HtmlBackendVTable {
     void (*asset_reply)(HtmlView *view, uint64_t id, int32_t status,
                         const char *mime, const uint8_t *data, size_t length);
     int (*poll)(HtmlView *view, HtmlEvent *event);
+    /* For button events (types 1 and 2), dx carries the click count (0 means 1).
+       For wheel events (type 3), dx and dy are the scroll deltas. */
     void (*mouse)(HtmlView *view, int32_t type, int32_t x, int32_t y,
                   int32_t button, uint32_t modifiers, int32_t dx, int32_t dy);
     void (*key)(HtmlView *view, int32_t type, int32_t native_key,

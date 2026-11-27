@@ -2496,33 +2496,22 @@ static bool HL2SB_InitializeCEF()
   }
   return s_htmlCefRuntime != NULL;
 }
-#endif
 
 static bool HL2SB_UseCEF()
 {
-#if defined(_WIN32)
   return hl2sb_html_cef.GetBool();
-#else
-  return false;
-#endif
 }
-
-static bool HL2SB_UseServo()
-{
-#if defined(_WIN32) || defined(__ANDROID__)
-  return false;
-#else
-  return hl2sb_html_servo.GetBool();
 #endif
-}
 
 static bool HL2SB_SuppressSteamHTML(lua_State *state)
 {
 #if defined(__ANDROID__)
   (void)state;
   return true;
+#elif defined(_WIN32)
+  return state == LGameUI || HL2SB_UseCEF();
 #else
-  return state == LGameUI || HL2SB_UseServo() || HL2SB_UseCEF();
+  return state == LGameUI || hl2sb_html_servo.GetBool();
 #endif
 }
 
@@ -2798,6 +2787,7 @@ public:
   HLSBServoView *m_servo;
 #if defined(_WIN32)
   HtmlView *m_cef;
+  bool m_cefDoubleClick[3];
   std::vector<std::pair<std::string, std::string> > m_cefCallbacks;
 #endif
   int m_servoTexture;
@@ -2814,7 +2804,7 @@ public:
     : HTML(parent, name, true, false, HL2SB_SuppressSteamHTML(state)), m_lua_State(state), m_loading(true),
       m_servo(NULL),
 #if defined(_WIN32)
-      m_cef(NULL),
+      m_cef(NULL), m_cefDoubleClick(),
 #endif
       m_servoTexture(0), m_servoSequence(0), m_servoMouseX(0), m_servoMouseY(0),
       m_servoIME(this), m_servoComposing(false), m_servoHighSurrogate(0)
@@ -2838,22 +2828,18 @@ public:
       InitializeSteamBackend();
     }
 #elif !defined(__ANDROID__)
-    if (state == LGameUI || HL2SB_UseServo()) {
+    if (state == LGameUI || hl2sb_html_servo.GetBool()) {
       if (!s_htmlServoRuntime) {
         char path[MAX_PATH];
-        const char *library = "bin/libservo_capi.so";
-        const bool resolveViaFilesystem = true;
-        if (!resolveViaFilesystem || filesystem->RelativePathToFullPath(library, "MOD", path, sizeof(path))) {
+        if (filesystem->RelativePathToFullPath("bin/libservo_capi.so", "MOD", path, sizeof(path))) {
           // Webstorage persistence: Servo partitions its per-origin SQLite
           // stores under this directory, so the GMod menu's localStorage
           // survives a restart.
           filesystem->CreateDirHierarchy("servo_config", "MOD");
           char configDir[MAX_PATH];
-          const char *libraryArg = resolveViaFilesystem ? path : library;
-          if (filesystem->RelativePathToFullPath("servo_config", "MOD", configDir, sizeof(configDir)))
-            s_htmlServoRuntime = HLSBServoCreateRuntime(libraryArg, configDir);
-          else
-            s_htmlServoRuntime = HLSBServoCreateRuntime(libraryArg, NULL);
+          const char *config = filesystem->RelativePathToFullPath("servo_config", "MOD", configDir, sizeof(configDir))
+            ? configDir : NULL;
+          s_htmlServoRuntime = HLSBServoCreateRuntime(path, config);
         }
       }
       if (s_htmlServoRuntime) m_servo = HLSBServoCreateView(s_htmlServoRuntime, 1, 1);
@@ -3320,16 +3306,23 @@ public:
     HLSBServoMouseMove(m_servo, (float)x, (float)y);
   }
 
+#if defined(_WIN32)
+  void CefMousePressed(MouseCode code, bool doubleClick)
+  {
+    const int button = HL2SB_HTMLMouseButton(code);
+    if (button >= 0 && button < ARRAYSIZE(m_cefDoubleClick)) {
+      m_cefDoubleClick[button] = doubleClick;
+      s_htmlCefAPI->mouse(m_cef, 1, m_servoMouseX, m_servoMouseY, button,
+                          HL2SB_HTMLModifiers(), doubleClick ? 2 : 1, 0);
+    }
+    RequestFocus();
+  }
+#endif
+
   virtual void OnMousePressed(MouseCode code)
   {
 #if defined(_WIN32)
-    if (m_cef) {
-      const int button = HL2SB_HTMLMouseButton(code);
-      if (button >= 0 && button <= 2)
-        s_htmlCefAPI->mouse(m_cef, 1, m_servoMouseX, m_servoMouseY, button, HL2SB_HTMLModifiers(), 0, 0);
-      RequestFocus();
-      return;
-    }
+    if (m_cef) { CefMousePressed(code, false); return; }
 #endif
     if (!m_servo) { BaseClass::OnMousePressed(code); return; }
     int button = HL2SB_HTMLMouseButton(code);
@@ -3340,7 +3333,7 @@ public:
   virtual void OnMouseDoublePressed(MouseCode code)
   {
 #if defined(_WIN32)
-    if (m_cef) { OnMousePressed(code); return; }
+    if (m_cef) { CefMousePressed(code, true); return; }
 #endif
     if (!m_servo) { BaseClass::OnMouseDoublePressed(code); return; }
     OnMousePressed(code);
@@ -3351,8 +3344,12 @@ public:
 #if defined(_WIN32)
     if (m_cef) {
       const int button = HL2SB_HTMLMouseButton(code);
-      if (button >= 0 && button <= 2)
-        s_htmlCefAPI->mouse(m_cef, 2, m_servoMouseX, m_servoMouseY, button, HL2SB_HTMLModifiers(), 0, 0);
+      if (button >= 0 && button < ARRAYSIZE(m_cefDoubleClick)) {
+        const int clickCount = m_cefDoubleClick[button] ? 2 : 1;
+        m_cefDoubleClick[button] = false;
+        s_htmlCefAPI->mouse(m_cef, 2, m_servoMouseX, m_servoMouseY, button,
+                            HL2SB_HTMLModifiers(), clickCount, 0);
+      }
       return;
     }
 #endif

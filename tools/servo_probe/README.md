@@ -13,13 +13,11 @@ cmake --build build/servo_probe --config Release
 ```
 
 The probe and Servo library must have the same platform and architecture.
-On Windows, Servo's ANGLE runtime libraries must also be discoverable by the
-loader. Their availability depends on how `servo-capi` was built.
 
 Run with a red test page and verify all pixels:
 
 ```
-servo_probe path/to/servo_capi.dll
+build/servo_probe/servo_probe path/to/libservo_capi.so
 ```
 
 An optional second argument loads a different URL, and an optional third

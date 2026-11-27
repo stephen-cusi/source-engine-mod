@@ -504,7 +504,7 @@ static void Mouse(HtmlView *v, int32_t type, int32_t x, int32_t y, int32_t butto
   else if (type == 1 || type == 2) {
     auto b = button == 1 ? MBT_MIDDLE : button == 2 ? MBT_RIGHT : MBT_LEFT;
     if (type == 1) host->SetFocus(true);
-    host->SendMouseClickEvent(event, b, type == 2, 1);
+    host->SendMouseClickEvent(event, b, type == 2, dx == 2 ? 2 : 1);
   } else if (type == 3) host->SendMouseWheelEvent(event, dx, dy);
 }
 static void Key(HtmlView *v, int32_t type, int32_t native, int32_t key,
