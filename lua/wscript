@@ -402,6 +402,13 @@ def build(bld):
 	lua_env = bld.env.derive()
 	if is_win:
 		lua_env.CFLAGS = [flag for flag in lua_env.CFLAGS if flag.lower() != '/fp:fast'] + ['/fp:precise']
+	else:
+		# Fast math breaks LuaJIT's NaN checks and the numeric constants used
+		# to build tables from multiple return values.
+		lua_env.CFLAGS = [
+			'-O3' if flag == '-Ofast' else flag for flag in lua_env.CFLAGS
+			if flag not in ('-ffast-math', '-funsafe-math-optimizations', '-ffinite-math-only')
+		]
 
 	shlib_tg = bld.shlib(
 		source   = source,
