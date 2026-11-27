@@ -11,8 +11,8 @@
 #pragma once
 #endif
 
-// Scans addons/*.gma (pathID "MOD") and mounts every archive READ-ONLY and IN
-// PLACE, GMod style: the filesystem treats each .gma as a search path of its
+// Mounts local and linked Workshop archives READ-ONLY and IN PLACE. The
+// filesystem treats each .gma as a search path of its
 // own (CGmaPackFile in filesystem_stdio.dll) and reads files on demand straight
 // out of the archive - nothing is extracted to disk.
 //

@@ -55,6 +55,7 @@ extern "C" __declspec( dllimport ) unsigned short __stdcall
 // a local declaration here keeps this a .cpp-only change (AGENTS.md §2: editing
 // a .h triggers a full tree rebuild).
 bool HL2SB_IsAddonDisabled( const char *pszAddonName );
+bool HL2SB_IsDisabledWorkshopAddonPath( const char *path );
 
 // HL2SB (sbrust): GMod 式第三方二进制模块加载（lua/bin/gm{sv,cl}_*_*.dll，
 // gmod13_open/gmod13_close 入口）。实现在 lua_shared.dll（lua/luajit/src/hl2sb/hl2sb_binmod.c）。
@@ -3548,6 +3549,9 @@ static bool luasrc_PathInDisabledAddon (const char *fullpath)
 {
   if ( fullpath == NULL || fullpath[0] == '\0' )
     return false;
+
+  if ( HL2SB_IsDisabledWorkshopAddonPath( fullpath ) )
+    return true;
 
   const char *p = fullpath;
   while ( ( p = Q_stristr( p, "addons" ) ) != NULL )
