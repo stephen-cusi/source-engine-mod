@@ -427,7 +427,8 @@ static int surface_DrawGetTextureId (lua_State *L) {
 }
 
 static int surface_DrawGetTextureSize (lua_State *L) {
-  int wide, tall;
+  int wide = 0;
+  int tall = 0;
   surface()->DrawGetTextureSize(luaL_checkint(L, 1), wide, tall);
   lua_pushinteger(L, wide);
   lua_pushinteger(L, tall);
@@ -563,6 +564,38 @@ static int surface_DrawSetColor (lua_State *L) {
 
 static int surface_DrawSetTextColor (lua_State *L) {
   surface()->DrawSetTextColor(SurfaceCheckChannel(L, 1), SurfaceCheckChannel(L, 2), SurfaceCheckChannel(L, 3), SurfaceCheckChannel(L, 4));
+  return 0;
+}
+
+static Color SurfaceReadColor( lua_State *L )
+{
+  if ( !lua_istable( L, 1 ) ) {
+    const int red = SurfaceCheckChannel( L, 1 );
+    const int green = SurfaceCheckChannel( L, 2 );
+    const int blue = SurfaceCheckChannel( L, 3 );
+    const int alpha = lua_type( L, 4 ) == LUA_TNUMBER ? SurfaceCheckChannel( L, 4 ) : 255;
+    return Color( red, green, blue, alpha );
+  }
+
+  const char *const keys[] = { "r", "g", "b", "a" };
+  int channels[4];
+  for ( int i = 0; i < 4; ++i ) {
+    lua_getfield( L, 1, keys[i] );
+    channels[i] = static_cast<unsigned char>( luaL_optinteger( L, -1, 255 ) );
+    lua_pop( L, 1 );
+  }
+  return Color( channels[0], channels[1], channels[2], channels[3] );
+}
+
+static int surface_SetDrawColor( lua_State *L )
+{
+  surface()->DrawSetColor( SurfaceReadColor( L ) );
+  return 0;
+}
+
+static int surface_SetTextColor( lua_State *L )
+{
+  surface()->DrawSetTextColor( SurfaceReadColor( L ) );
   return 0;
 }
 
@@ -917,10 +950,23 @@ static int surface_DrawSetTexturePNG (lua_State *L) {
   return 1;
 }
 
-static int surface_DrawTexturedRect (lua_State *L) {
+// Old content can still forward from its Lua shim with already-computed corners.
+static int surface_DrawTexturedRectCorners (lua_State *L) {
   HL2SB_FrameStats_AddSurfaceDraw();
   HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
   surface()->DrawTexturedRect(SurfaceCheckPixel(L, 1), SurfaceCheckPixel(L, 2), SurfaceCheckPixel(L, 3), SurfaceCheckPixel(L, 4));
+  return 0;
+}
+
+static int surface_DrawTexturedRect( lua_State *L )
+{
+  const int x = SurfaceCheckPixel( L, 1 );
+  const int y = SurfaceCheckPixel( L, 2 );
+  const int width = SurfaceCheckPixel( L, 3 );
+  const int height = SurfaceCheckPixel( L, 4 );
+  HL2SB_FrameStats_AddSurfaceDraw();
+  HL2SB_FrameStatsCatScope fcScope( HL2SB_FCAT_SURF_TEXRECT );
+  surface()->DrawTexturedRect( x, y, SurfaceEndPixel( x, width ), SurfaceEndPixel( y, height ) );
   return 0;
 }
 
@@ -1441,6 +1487,7 @@ static const luaL_Reg surfacelib[] = {
   {"DrawSetTextureFile",   surface_DrawSetTextureFile},
   {"DrawSetTexturePNG",    surface_DrawSetTexturePNG},
   {"DrawTexturedRect",   surface_DrawTexturedRect},
+  {"__hl2sb_cornerRect", surface_DrawTexturedRectCorners},
   {"DrawTexturedSubRect",   surface_DrawTexturedSubRect},
   // HL2SB: GMod spellings.  Both are pure translations onto the stock bindings
   // (DrawTexturedSubRect / DrawTexturedPolygon), added so GMod's own draw.lua
@@ -1465,6 +1512,7 @@ static const luaL_Reg surfacelib[] = {
   {"GetResolutionKey",   surface_GetResolutionKey},
   {"GetScreenSize",   surface_GetScreenSize},
   {"GetTextSize",   surface_GetTextSize},
+  {"GetTextureSize",   surface_DrawGetTextureSize},
   {"GetTitle",   surface_GetTitle},
   {"GetTopmostPopup",   surface_GetTopmostPopup},
   {"GetWorkspaceBounds",   surface_GetWorkspaceBounds},
@@ -1494,7 +1542,10 @@ static const luaL_Reg surfacelib[] = {
   {"SetFont",   surface_SetFont},
   {"SetEmbeddedPanel",   surface_SetEmbeddedPanel},
   {"SetFontGlyphSet",   surface_SetFontGlyphSet},
+  {"SetDrawColor",   surface_SetDrawColor},
   {"SetMaterial",   surface_SetMaterial},
+  {"SetTextColor",   surface_SetTextColor},
+  {"SetTextPos",   surface_DrawSetTextPos},
   {"SetTranslateExtendedKeys",   surface_SetTranslateExtendedKeys},
   {"SetWorkspaceInsets",   surface_SetWorkspaceInsets},
   {"SupportsFeature",   surface_SupportsFeature},

@@ -946,18 +946,10 @@ void luasrc_init_gameui (void) {
       luasrc_LuaWarnMsgF("HL2SB: main menu module failed to load: %s\n", menuFiles[i]);
   }
 
-  if (luasrc_dofile(LGameUI, LUA_ROOT "/hl2sb/compat/menu_timer.lua") != 0)
-    luasrc_LuaWarnMsgF("HL2SB: menu timer initialization failed\n");
   extern void HL2SB_MenuInstallTimer( lua_State *state );
   HL2SB_MenuInstallTimer( LGameUI );
   if (luasrc_dofile(LGameUI, LUA_PATH_MODULES "/cookie.lua") != 0)
     luasrc_LuaWarnMsgF("HL2SB: menu cookie initialization failed\n");
-
-  // Surface aliases such as SetDrawColor and DrawRect are shared by GMod's
-  // menu Lua and client Lua. The menu realm has no CLIENT flag, so load the
-  // compatibility layer explicitly after its raw surface library exists.
-  if (luasrc_dofile(LGameUI, LUA_PATH_EXTENSIONS "/gmod_surface.lua") != 0)
-    luasrc_LuaWarnMsgF("HL2SB: menu realm: surface compatibility failed to load\n");
 
   // ---------------------------------------------------------------------------
   // HL2SB: the GMod-style derma stack in the menu realm, so main-menu dialogs
@@ -1062,6 +1054,9 @@ void luasrc_shutdown_gameui (void) {
   // HL2SB (sbrust): GMod 的 gmod13_close 生命周期 -- 状态销毁前逐个通知
   // 已加载的二进制模块（见 lua/src/hl2sb_binmod.c）。
   HL2SB_RunBinaryModuleCloses( LGameUI );
+  // Shutdown hooks can still schedule timers after the menu frame pump stops.
+  extern void HL2SB_MenuShutdownTimers( lua_State *state );
+  HL2SB_MenuShutdownTimers( LGameUI );
   lua_close(LGameUI);
 
   // HL2SB (2026-10-01): 置空全局指针，与 luasrc_shutdown() 对 L 的处理同款。
@@ -2815,6 +2810,10 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 	int nFailed = 0;
 	const int nTop = lua_gettop( L );
 	const bool moduleFolder = Q_stristr( path, "/includes/modules" ) != NULL;
+#ifdef CLIENT_DLL
+	const bool sourceMenu = L == LGameUI && !Q_stricmp( path, LUA_PATH_GAMEUI )
+		&& CommandLine()->HasParm( "-mainmenusource" );
+#endif
     if ( moduleFolder && HL2SB_LoadBootstrapModule( L, LUA_ROOT "/includes/util.lua", "util.lua" ) != 0 )
         ++nFailed;
 
@@ -2878,6 +2877,14 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 
 	while ( fn )
 	{
+#ifdef CLIENT_DLL
+		// Keep the menu realm active without starting its HTML front end.
+		if ( sourceMenu && !Q_stricmp( fn, "zz_gmod_original_menu.lua" ) )
+		{
+			fn = g_pFullFileSystem->FindNext( fh );
+			continue;
+		}
+#endif
 		if ( fn[0] != '.' )
 		{
 			// HL2SB: already loaded in the prerequisite pass above.

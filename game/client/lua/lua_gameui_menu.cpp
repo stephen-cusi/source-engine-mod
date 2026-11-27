@@ -61,6 +61,7 @@
 #include "utlbuffer.h"
 #include "steam/steam_api.h"
 #include "vgui/ISystem.h"
+#include "tier0/icommandline.h"
 #include <map>
 #include <atomic>
 #include <mutex>
@@ -95,6 +96,17 @@ struct HL2SBMenuTimer
 };
 
 static std::vector<HL2SBMenuTimer> s_MenuSimpleTimers;
+
+struct MenuNamedTimer
+{
+	double fireTime;
+	float delay;
+	int repetitions;
+	int functionRef;
+	bool removed;
+};
+
+static std::map<std::string, MenuNamedTimer> s_MenuNamedTimers;
 static CDllDemandLoader s_MenuGameUI( "GameUI" );
 static bool s_MenuOverrideActive = false;
 
@@ -266,7 +278,11 @@ static int HL2SB_SetMenuOverride( lua_State *state )
 {
 	vgui::Panel *panel = luaL_checkpanel( state, 1 );
 	IGameUI *gameUI = HL2SB_GetMenuGameUI();
-	if ( !panel || !gameUI ) { lua_pushboolean( state, false ); return 1; }
+	if ( !panel || !gameUI || CommandLine()->HasParm( "-mainmenusource" ) )
+	{
+		lua_pushboolean( state, false );
+		return 1;
+	}
 	gameUI->SetMainMenuOverride( panel->GetVPanel() );
 	s_MenuOverrideActive = true;
 	lua_pushboolean( state, true );
@@ -684,15 +700,85 @@ static int HL2SB_MenuTimerSimple( lua_State *state )
 	return 0;
 }
 
+static int MenuTimerCreate( lua_State *state )
+{
+	const char *name = luaL_checkstring( state, 1 );
+	const float delay = static_cast<float>( luaL_checknumber( state, 2 ) );
+	const int repetitions = luaL_checkint( state, 3 );
+	luaL_checktype( state, 4, LUA_TFUNCTION );
+	lua_pushvalue( state, 4 );
+	const int ref = luaL_ref( state, LUA_REGISTRYINDEX );
+
+	const MenuNamedTimer timer = { static_cast<double>( gpGlobals->realtime ) + delay, delay,
+		repetitions > 0 ? repetitions : -1, ref, false };
+	auto current = s_MenuNamedTimers.find( name );
+	if ( current != s_MenuNamedTimers.end() )
+	{
+		luaL_unref( state, LUA_REGISTRYINDEX, current->second.functionRef );
+		current->second = timer;
+	}
+	else
+		s_MenuNamedTimers.emplace( name, timer );
+	return 0;
+}
+
+static int MenuTimerExists( lua_State *state )
+{
+	const auto timer = s_MenuNamedTimers.find( luaL_checkstring( state, 1 ) );
+	lua_pushboolean( state, timer != s_MenuNamedTimers.end() && !timer->second.removed );
+	return 1;
+}
+
+static int MenuTimerRemove( lua_State *state )
+{
+	const auto timer = s_MenuNamedTimers.find( luaL_checkstring( state, 1 ) );
+	if ( timer != s_MenuNamedTimers.end() )
+		timer->second.removed = true;
+	return 0;
+}
+
 void HL2SB_MenuInstallTimer( lua_State *state )
 {
-	lua_getglobal( state, "timer" );
-	if ( lua_istable( state, -1 ) )
+	static const luaL_Reg functions[] =
 	{
-		lua_pushcfunction( state, HL2SB_MenuTimerSimple );
-		lua_setfield( state, -2, "Simple" );
-	}
+		{ "Create", MenuTimerCreate },
+		{ "Exists", MenuTimerExists },
+		{ "Remove", MenuTimerRemove },
+		{ "Simple", HL2SB_MenuTimerSimple },
+		{ NULL, NULL }
+	};
+	luaL_register( state, "timer", functions );
 	lua_pop( state, 1 );
+}
+
+static void MenuRunNamedTimers( lua_State *state, double now )
+{
+	// The reference walks names in order. Create updates a node in place and
+	// Remove only marks it, so Lua callbacks cannot invalidate the iterator.
+	for ( auto it = s_MenuNamedTimers.begin(); it != s_MenuNamedTimers.end(); )
+	{
+		MenuNamedTimer &timer = it->second;
+		if ( !timer.removed && timer.fireTime <= now )
+		{
+			timer.fireTime += timer.delay;
+			if ( timer.repetitions > 0 )
+				--timer.repetitions;
+			lua_rawgeti( state, LUA_REGISTRYINDEX, timer.functionRef );
+			const bool failed = luasrc_pcall( state, 0, 0, 0 ) != 0;
+			if ( LGameUI != state )
+				return;
+			if ( failed )
+				timer.removed = true;
+		}
+
+		if ( timer.removed || timer.repetitions == 0 )
+		{
+			luaL_unref( state, LUA_REGISTRYINDEX, timer.functionRef );
+			it = s_MenuNamedTimers.erase( it );
+		}
+		else
+			++it;
+	}
 }
 
 static void HL2SB_MenuCallHook( const char *name )
@@ -727,7 +813,6 @@ public:
 		m_bInTick = true;
 		HL2SB_PumpManifest( LGameUI );
 		HL2SB_MenuPumpWorkshop( LGameUI );
-		HL2SB_MenuCallHook( "Think" );
 		size_t remaining = s_MenuSimpleTimers.size();
 		size_t index = 0;
 		const double now = gpGlobals->realtime;
@@ -741,6 +826,9 @@ public:
 			if ( lua_isfunction( LGameUI, -1 ) ) luasrc_pcall( LGameUI, 0, 0, 0 );
 			else lua_pop( LGameUI, 1 );
 		}
+		if ( LGameUI )
+			MenuRunNamedTimers( LGameUI, now );
+		HL2SB_MenuCallHook( "Think" );
 		m_bInTick = false;
 	}
 private:
@@ -752,6 +840,17 @@ void HL2SB_MenuRuntimeStart()
 	if ( !LGameUI || s_pMenuTick ) return;
 	s_pMenuTick = new CHL2SBMenuTick();
 	HL2SB_MenuCallHook( "MenuStart" );
+}
+
+void HL2SB_MenuShutdownTimers( lua_State *state )
+{
+	for ( const auto &timer : s_MenuSimpleTimers )
+		luaL_unref( state, LUA_REGISTRYINDEX, timer.functionRef );
+	s_MenuSimpleTimers.clear();
+
+	for ( const auto &entry : s_MenuNamedTimers )
+		luaL_unref( state, LUA_REGISTRYINDEX, entry.second.functionRef );
+	s_MenuNamedTimers.clear();
 }
 
 void HL2SB_MenuRuntimeStop()
@@ -770,10 +869,6 @@ void HL2SB_MenuRuntimeStop()
 		delete s_pMenuTick;
 		s_pMenuTick = NULL;
 	}
-	if ( LGameUI )
-		for ( size_t i = 0; i < s_MenuSimpleTimers.size(); ++i )
-			luaL_unref( LGameUI, LUA_REGISTRYINDEX, s_MenuSimpleTimers[i].functionRef );
-	s_MenuSimpleTimers.clear();
 	s_MenuTemporaryPermissions.clear();
 	s_MenuPermanentPermissions.clear();
 	s_MenuPermissionsLoaded = false;
