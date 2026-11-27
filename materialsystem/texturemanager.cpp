@@ -2052,8 +2052,9 @@ ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const 
 	Q_snprintf( szVTFFile, sizeof( szVTFFile ), "materials/%s.vtf", szCleanName );
 
 	char szImageName[MAX_PATH];
+	HL2SBImageSource imageSource;
 	if ( !g_pFullFileSystem->FileExists( szVTFFile, "GAME" ) &&
-		 HL2SB_ResolveImageTexture( pTextureName, szImageName, sizeof( szImageName ) ) )
+		 HL2SB_ResolveImageTexture( pTextureName, szImageName, sizeof( szImageName ), &imageSource ) )
 	{
 		// HL2SB (2026-10-02): the whole [re-check -> read -> decode -> create ->
 		// insert] sequence sits under one lock.  The re-check alone (issue #41,
@@ -2083,7 +2084,7 @@ ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const 
 		int nImageWidth = 0, nImageHeight = 0;
 		char szImageDigits[ HL2SB_IMAGE_PARAMS_DIGITS + 1 ];
 		HL2SB_SplitImageTextureName( pTextureName, szImageDigits, sizeof( szImageDigits ), NULL, 0 );
-		ITextureRegenerator *pImageRegenerator = HL2SB_CreateImageTextureRegenerator( szImageName, szImageDigits, &nImageWidth, &nImageHeight );
+		ITextureRegenerator *pImageRegenerator = HL2SB_CreateImageTextureRegenerator( szImageName, imageSource, &nImageWidth, &nImageHeight );
 		if ( pImageRegenerator )
 		{
 			// The regenerator supplies every mip level, so the texture is created

@@ -88,31 +88,45 @@ ConVar hl2sb_image_debug(
 // "materials/<name>" is how texture files are addressed through the search
 // paths (CTexture::GetFilename does the same thing with a .vtf suffix).
 //-----------------------------------------------------------------------------
-static bool HL2SB_ImageFileExists( const char *pLogicalName )
+static bool HL2SB_FindImageSource( const char *pLogicalName, bool bSpawnIcons, HL2SBImageSource &source )
 {
-	char szPath[MAX_PATH];
-
 	// GMod's CImage::LoadImageFromFile probes "spawnicons" paths MOD-first
 	// (their client writes generated spawn icons into garrysmod/materials);
 	// everything else is GAME first.
 	const char *pPathIDs[2] = { "GAME", "MOD" };
-	const bool bSpawnIcons = !Q_strnicmp( pLogicalName, "spawnicons", 10 );
 	const int nFirst = bSpawnIcons ? 1 : 0;
 
 	for ( int i = 0; i < 2; ++i )
 	{
 		const char *pPathID = pPathIDs[ ( nFirst + i ) % 2 ];
 
-		Q_snprintf( szPath, sizeof( szPath ), "materials/%s", pLogicalName );
-		if ( g_pFullFileSystem->FileExists( szPath, pPathID ) )
+		Q_snprintf( source.path, sizeof( source.path ), "materials/%s", pLogicalName );
+		if ( g_pFullFileSystem->FileExists( source.path, pPathID ) )
+		{
+			source.pathID = pPathID;
 			return true;
+		}
 
-		Q_strncpy( szPath, pLogicalName, sizeof( szPath ) );
-		if ( g_pFullFileSystem->FileExists( szPath, pPathID ) )
+		Q_strncpy( source.path, pLogicalName, sizeof( source.path ) );
+		if ( g_pFullFileSystem->FileExists( source.path, pPathID ) )
+		{
+			source.pathID = pPathID;
 			return true;
+		}
 	}
 
 	return false;
+}
+
+static bool HL2SB_ResolveImageSource( const char *pLogicalName, HL2SBImageSource *pSource )
+{
+	HL2SBImageSource source;
+	const bool bSpawnIconPrefix = !Q_strnicmp( pLogicalName, "spawnicons", 10 );
+	// The extension resolver searches both path IDs. When the result will
+	// be read immediately, apply the decoder's narrower MOD-first rule.
+	const bool bSpawnIcons = bSpawnIconPrefix &&
+		( !pSource || !Q_strnicmp( pLogicalName, "spawnicons/", 11 ) );
+	return HL2SB_FindImageSource( pLogicalName, bSpawnIcons, pSource ? *pSource : source );
 }
 
 //-----------------------------------------------------------------------------
@@ -182,7 +196,8 @@ unsigned int HL2SB_ImageTextureFlags( const char *pDigits )
 	return nFlags;
 }
 
-bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName, int nOutLogicalNameSize )
+bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName, int nOutLogicalNameSize,
+	HL2SBImageSource *pSource )
 {
 	if ( !pTextureName || !pTextureName[0] || !pOutLogicalName )
 		return false;
@@ -203,7 +218,7 @@ bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName,
 
 	if ( HL2SB_IsImageFileName( pName ) )
 	{
-		if ( !HL2SB_ImageFileExists( pName ) )
+		if ( !HL2SB_ResolveImageSource( pName, pSource ) )
 			return false;
 
 		Q_strncpy( pOutLogicalName, pName, nOutLogicalNameSize );
@@ -215,7 +230,7 @@ bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName,
 	{
 		char szCandidate[MAX_PATH];
 		Q_snprintf( szCandidate, sizeof( szCandidate ), "%s%s", pName, s_pImageExtensions[i] );
-		if ( HL2SB_ImageFileExists( szCandidate ) )
+		if ( HL2SB_ResolveImageSource( szCandidate, pSource ) )
 		{
 			Q_strncpy( pOutLogicalName, szCandidate, nOutLogicalNameSize );
 			return true;
@@ -469,41 +484,11 @@ CThreadFastMutex &HL2SB_ImageDecodeMutex()
 	return g_HL2SBImageDecodeMutex;
 }
 
-static bool HL2SB_LocateImageSource( const char *pLogicalName, char *pOutPath, int nOutPathLen,
-	const char **ppOutPathID )
-{
-	const bool spawnicon = !Q_strnicmp( pLogicalName, "spawnicons/", 11 );
-	const char *pPathIDs[] = { spawnicon ? "MOD" : "GAME", spawnicon ? "GAME" : "MOD", NULL };
-	for ( int i = 0; pPathIDs[i]; ++i )
-	{
-		Q_snprintf( pOutPath, nOutPathLen, "materials/%s", pLogicalName );
-		if ( g_pFullFileSystem->FileExists( pOutPath, pPathIDs[i] ) )
-		{
-			*ppOutPathID = pPathIDs[i];
-			return true;
-		}
-
-		Q_strncpy( pOutPath, pLogicalName, nOutPathLen );
-		if ( g_pFullFileSystem->FileExists( pOutPath, pPathIDs[i] ) )
-		{
-			*ppOutPathID = pPathIDs[i];
-			return true;
-		}
-	}
-	return false;
-}
-
-ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalName, const char *pDigits,
+ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalName, const HL2SBImageSource &source,
 	int *pOutWidth, int *pOutHeight )
 {
 	if ( !pLogicalName || !pLogicalName[0] )
 		return NULL;
-	( void )pDigits;	// decoded flags live on the texture; kept for CImage symmetry
-
-	// Resolve through the game search paths; decoded pixels stay in memory.
-	char szSourcePath[MAX_PATH];
-	const char *pSourcePathID = NULL;
-	bool bLocated = HL2SB_LocateImageSource( pLogicalName, szSourcePath, sizeof( szSourcePath ), &pSourcePathID );
 
 	const bool bDbg = hl2sb_image_debug.GetBool();
 
@@ -511,29 +496,26 @@ ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalNa
 	int nWidth = 0, nHeight = 0;
 	const char *pSource = "none";
 
-	if ( bLocated )
+	CUtlBuffer bufFile;
+	if ( g_pFullFileSystem->ReadFile( source.path, source.pathID, bufFile ) && bufFile.TellPut() > 0 )
 	{
-		CUtlBuffer bufFile;
-		if ( g_pFullFileSystem->ReadFile( szSourcePath, pSourcePathID, bufFile ) && bufFile.TellPut() > 0 )
+		int nChannels = 0;
+		unsigned char *pRGBA = stbi_load_from_memory( (const stbi_uc *)bufFile.Base(),
+			bufFile.TellPut(), &nWidth, &nHeight, &nChannels, 4 );
+		if ( pRGBA && nWidth > 0 && nHeight > 0 && (int64)nWidth * nHeight * 4 <= 0x7fffffff )
 		{
-			int nChannels = 0;
-			unsigned char *pRGBA = stbi_load_from_memory( (const stbi_uc *)bufFile.Base(),
-				bufFile.TellPut(), &nWidth, &nHeight, &nChannels, 4 );
-			if ( pRGBA && nWidth > 0 && nHeight > 0 && (int64)nWidth * nHeight * 4 <= 0x7fffffff )
-			{
-				bits.SetSize( nWidth * nHeight * 4 );
-				Q_memcpy( bits.Base(), pRGBA, (size_t)nWidth * nHeight * 4 );
-				pSource = "decode";
-			}
-			if ( pRGBA ) stbi_image_free( pRGBA );
+			bits.SetSize( nWidth * nHeight * 4 );
+			Q_memcpy( bits.Base(), pRGBA, (size_t)nWidth * nHeight * 4 );
+			pSource = "decode";
 		}
+		if ( pRGBA ) stbi_image_free( pRGBA );
 	}
 
 	if ( bits.Count() <= 0 || nWidth <= 0 || nHeight <= 0 )
 	{
 		if ( bDbg )
-			Msg( "[HL2SB imgdb] tid=%u FAILED locate/decode '%s' (located=%d)\n",
-				( unsigned )ThreadGetCurrentId(), pLogicalName, bLocated ? 1 : 0 );
+			Msg( "[HL2SB imgdb] tid=%u FAILED read/decode '%s' from %s:%s\n",
+				( unsigned )ThreadGetCurrentId(), pLogicalName, source.pathID, source.path );
 		return NULL;
 	}
 

@@ -30,8 +30,16 @@
 #pragma once
 #endif
 
+#include "tier0/platform.h"
+
 class ITextureRegenerator;
 class CThreadFastMutex;
+
+struct HL2SBImageSource
+{
+	char path[MAX_PATH];
+	const char *pathID;
+};
 
 // Length of the pngParameters digit string carried in "!"/-prefixed names.
 #define HL2SB_IMAGE_PARAMS_DIGITS 7
@@ -52,8 +60,10 @@ bool HL2SB_SplitImageTextureName( const char *pTextureName,
 // actually exists ( "<dir>/<name>.png" relative to materials/ ), accepting the
 // name with or without its extension, with or without a leading "materials/",
 // and with or without the "!<digits>" parameter prefix.  Returns false when no
-// image file exists for the name.
-bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName, int nOutLogicalNameSize );
+// image file exists for the name. When requested, also return the
+// filesystem path and path ID to use when reading the image.
+bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName, int nOutLogicalNameSize,
+	HL2SBImageSource *pSource = NULL );
 
 // GMod pngParameters digits -> procedural texture flags.  Default mirrors
 // CResources::CreateMaterialFromTextureFile:
@@ -63,18 +73,15 @@ bool HL2SB_ResolveImageTexture( const char *pTextureName, char *pOutLogicalName,
 //   digits[5] != '0' clears POINTSAMPLE|NOLOD ("smooth")
 unsigned int HL2SB_ImageTextureFlags( const char *pDigits );
 
-// Decodes the logical texture name into a new regenerator.  The caller owns
+// Decodes the resolved source into a new regenerator.  The caller owns
 // the returned regenerator (hand it to ITextureInternal::CreateProceduralTexture).
-// pDigits is the parameter string (may be NULL / empty); it only selects
-// behaviour that survives in the regenerator (currently none - flags live on
-// the texture - but keep the signature symmetric with GMod's CImage).
 //
 // NOTE: the caller must already hold HL2SB_ImageDecodeMutex(): the decode
 // itself used to lock it internally, but the dictionary check that decides
 // whether to decode at all has to sit under the SAME lock (two resolver
 // threads both passing the check before either inserts decoded every addon
 // PNG exactly twice), and CThreadFastMutex is not recursive.
-ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalName, const char *pDigits,
+ITextureRegenerator *HL2SB_CreateImageTextureRegenerator( const char *pLogicalName, const HL2SBImageSource &source,
 	int *pOutWidth, int *pOutHeight );
 
 // Serialises [dictionary re-check -> file read -> decode -> texture creation ->
@@ -90,6 +97,7 @@ CThreadFastMutex &HL2SB_ImageDecodeMutex();
 // ...") so a user test session can prove which build it ran.
 // 7: Decode source images into resident textures without a second disk cache.
 //    Generated spawnicons use the mod's materials/spawnicons directory.
-#define HL2SB_IMAGECACHE_BUILD_REV 7
+// 8: Reuse the selected search path when reading a resolved image.
+#define HL2SB_IMAGECACHE_BUILD_REV 8
 
 #endif // HL2SB_PNGTEXTURE_H

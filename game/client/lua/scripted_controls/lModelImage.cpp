@@ -73,7 +73,8 @@ enum IconResult
     ICON_GENERATED
 };
 
-void PreloadCachedIcon(const std::string &path);
+void RetryFailedIcon(const std::string &path);
+void LoadExplicitIcon(const std::string &path);
 
 class IconPixels : public ITextureRegenerator
 {
@@ -138,7 +139,7 @@ public:
         m_Width = IconSize(GetWide());
         m_Height = IconSize(GetTall());
         m_Path = m_Model.empty() ? std::string() : IconPath(m_Model, m_Skin, m_Body, m_Width, m_Height);
-        if (!m_Path.empty()) PreloadCachedIcon(m_Path);
+        if (!m_Path.empty()) RetryFailedIcon(m_Path);
     }
 
     void SetSpawnIcon(const char *path)
@@ -149,7 +150,8 @@ public:
         for (size_t i = 0; i < m_Path.size(); ++i)
             if (m_Path[i] == '\\') m_Path[i] = '/';
         m_Custom = false;
-        if (!m_Path.empty()) PreloadCachedIcon(m_Path);
+        m_Force = false;
+        if (!m_Path.empty()) LoadExplicitIcon(m_Path);
     }
 
     void Rebuild(lua_State *state, int options)
@@ -189,7 +191,9 @@ public:
     {
         for (vgui::Panel *p = this; p; p = p->GetParent())
             if (!p->IsVisible() || p->IsMarkedForDeletion()) return false;
-        return true;
+        int left, top, right, bottom;
+        GetClipRect(left, top, right, bottom);
+        return left < right && top < bottom;
     }
 
     std::string m_Model, m_Body, m_Path;
@@ -205,11 +209,12 @@ public:
 
 struct IconJob
 {
-    IconJob() : failures(0) {}
+    IconJob() : failures(0), waitingForGeneration(false) {}
     vgui::DHANDLE<LModelImage> panel;
     std::string path;
     int width, height;
     int failures;
+    bool waitingForGeneration;
 };
 
 std::map<std::string, IconImage> s_Images;
@@ -232,11 +237,18 @@ bool LoadImage(const std::string &path, IconImage &image)
     return true;
 }
 
-void PreloadCachedIcon(const std::string &path)
+void RetryFailedIcon(const std::string &path)
+{
+    // Model assignment must not open files. Paint queues visible misses.
+    const auto image = s_Images.find(path);
+    if (image != s_Images.end()) image->second.failed = false;
+}
+
+void LoadExplicitIcon(const std::string &path)
 {
     IconImage &image = s_Images[path];
-    if (!image.material && !image.queued)
-        LoadImage(path, image);
+    if (!image.material)
+        image.failed = !LoadImage(path, image);
 }
 
 void LModelImage::Paint()
@@ -415,8 +427,10 @@ int CreateImage(lua_State *state)
 
 void HL2SB_ProcessModelImages()
 {
-    // Existing files load without creating model entities or rendering a snapshot.
-    const double deadline = Plat_FloatTime() + 0.003;
+    // Drain visible disk-backed thumbnails faster while keeping model generation on its own budget.
+    const double start = Plat_FloatTime();
+    const double imageDeadline = start + 0.008;
+    const double generationDeadline = start + 0.003;
     size_t remaining = s_Jobs.size();
     while (remaining-- > 0 && !s_Jobs.empty())
     {
@@ -427,18 +441,35 @@ void HL2SB_ProcessModelImages()
         LModelImage *panel = job.panel.Get();
         if (!panel || panel->m_lua_State != L || panel->m_Path != job.path) continue;
         if (!panel->VisibleInTree()) { panel->ReleasePreview(); continue; }
-        if (!panel->m_Force && LoadImage(job.path, image))
+        if (!panel->m_Force && (image.material ||
+            (!job.waitingForGeneration && LoadImage(job.path, image))))
         {
             panel->ReleasePreview();
-            if (Plat_FloatTime() >= deadline) break;
+            if (Plat_FloatTime() >= imageDeadline) break;
             continue;
         }
+        if (panel->m_Model.empty())
+        {
+            // A custom image has no model to render when the file is missing.
+            image.failed = true;
+            panel->m_Force = false;
+            if (Plat_FloatTime() >= imageDeadline) break;
+            continue;
+        }
+        if (Plat_FloatTime() >= generationDeadline)
+        {
+            job.waitingForGeneration = true;
+            image.queued = true;
+            s_Jobs.push_front(job);
+            break;
+        }
+        job.waitingForGeneration = false;
         IconResult result = panel->Generate(job.path, job.width, job.height);
         if (result == ICON_PENDING || (result == ICON_FAILED && ++job.failures < 3))
         {
             image.queued = true;
             s_Jobs.push_back(job);
-            if (Plat_FloatTime() >= deadline) break;
+            if (Plat_FloatTime() >= generationDeadline) break;
             continue;
         }
         panel->m_Force = false;
