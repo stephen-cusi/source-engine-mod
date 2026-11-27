@@ -51,6 +51,7 @@ public:
 
 	// returns the number of fonts in this amalgam
 	int GetCount();
+	font_t *GetFont( int i ) const { return m_Fonts[i].font; }
 
 	// returns true if this font is underlined
 	bool GetUnderlined();

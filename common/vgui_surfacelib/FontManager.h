@@ -43,6 +43,7 @@ public:
 
 	// clears the current font list, frees any resources
 	void ClearAllFonts();
+	void ReleaseUnusedFonts();
 
 	HFont CreateFont();
 	bool SetFontGlyphSet(HFont font, const char *windowsFontName, int tall, int weight, int blur, int scanlines, int flags);

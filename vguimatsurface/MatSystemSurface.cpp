@@ -2704,9 +2704,10 @@ void CMatSystemSurface::ResetFontCaches()
 	g_FontTextureCache.Clear();
 	m_iBoundTexture = -1;
 
-	// reload fonts
-	FontManager().ClearAllFonts();
+	// Schemes rebind their fonts on resize. Keep the glyph sets attached to
+	// runtime-created HFonts, which have no scheme entry to reload.
 	scheme()->ReloadFonts();
+	FontManager().ReleaseUnusedFonts();
 	
 	// Run a frame of the GUI to notify all subwindows of the message size change
 	ivgui()->RunFrame();

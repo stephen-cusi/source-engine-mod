@@ -9,6 +9,7 @@
 #include "vgui_surfacelib/FontManager.h"
 #include <vgui/ISurface.h>
 #include <tier0/dbg.h>
+#include "tier1/utlrbtree.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
@@ -95,6 +96,28 @@ void CFontManager::ClearAllFonts()
 	for (int i = 0; i < m_FontAmalgams.Count(); i++)
 	{
 		m_FontAmalgams[i].RemoveAll();
+	}
+}
+
+// Scheme reload can replace font faces while runtime-created HFonts stay live.
+void CFontManager::ReleaseUnusedFonts()
+{
+	CUtlRBTree< uintp, int > referenced( 0, m_Win32Fonts.Count(), DefLessFunc( uintp ) );
+	for ( int i = 0; i < m_FontAmalgams.Count(); ++i )
+	{
+		CFontAmalgam &amalgam = m_FontAmalgams[i];
+		for ( int j = 0; j < amalgam.GetCount(); ++j )
+			referenced.InsertIfNotFound( reinterpret_cast<uintp>( amalgam.GetFont( j ) ) );
+	}
+
+	for ( int i = m_Win32Fonts.Count() - 1; i >= 0; --i )
+	{
+		font_t *font = m_Win32Fonts[i];
+		if ( referenced.Find( reinterpret_cast<uintp>( font ) ) == referenced.InvalidIndex() )
+		{
+			delete font;
+			m_Win32Fonts.Remove( i );
+		}
 	}
 }
 
