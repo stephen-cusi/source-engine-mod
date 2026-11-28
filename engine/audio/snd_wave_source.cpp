@@ -2248,10 +2248,21 @@ public:
 
 	struct SearchPathCache : CUtlCachedFileData< CAudioSourceCachedInfo >
 	{
-		SearchPathCache( const char *pszRepositoryFilename, const char *pszSearchPath, UtlCachedFileDataType_t eOutOfDateMethod )
+		// HL2SB: bVolatile marks a cache that never reads or writes a repository
+		// file.  It is the fallback for sounds resolved inside an archive that
+		// sits outside every directory search path (a Workshop .gma mounted in
+		// place), where there is no writable home for a sound.cache and the
+		// archive's own folder must stay untouched.
+		SearchPathCache( const char *pszRepositoryFilename, const char *pszSearchPath, UtlCachedFileDataType_t eOutOfDateMethod, bool bVolatile = false )
 		: CUtlCachedFileData( pszRepositoryFilename, AUDIOSOURCE_CACHE_VERSION, AsyncLookaheadMetaChecksum, eOutOfDateMethod )
+		, m_bVolatile( bVolatile )
 		{
 			V_strcpy_safe( m_szSearchPath, pszSearchPath );
+
+			if ( m_bVolatile )
+			{
+				return;
+			}
 
 			// Delete any existing cache if it's out of date
 			IsUpToDate();
@@ -2261,6 +2272,14 @@ public:
 		}
 
 		char m_szSearchPath[ MAX_PATH ];
+		bool m_bVolatile;
+
+		// CUtlCachedFileData writes its repository out on Save() and on a dirty
+		// Shutdown().  Neither is virtual, so hide both here; the volatile cache
+		// lives and dies in memory.
+		void Save() { if ( !m_bVolatile ) CUtlCachedFileData< CAudioSourceCachedInfo >::Save(); }
+		void Shutdown() { if ( !m_bVolatile ) CUtlCachedFileData< CAudioSourceCachedInfo >::Shutdown(); }
+		void Reload() { if ( !m_bVolatile ) CUtlCachedFileData< CAudioSourceCachedInfo >::Reload(); }
 
 		virtual ~SearchPathCache()
 		{
@@ -2273,6 +2292,7 @@ public:
 	{
 		m_nServerCount = -1;
 		m_bSndCacheDebug = false;
+		m_pArchiveCache = NULL;
 	}
 
 	bool Init( unsigned int memSize );
@@ -2297,12 +2317,18 @@ private:
 	SearchPathCache *FindCacheForSearchPath( const char *pszSearchPath );
 	SearchPathCache *CreateCacheForSearchPath( const char *pszSearchPath );
 
+	// HL2SB: fallback cache for archive content outside every directory search
+	// path, keyed by the cleaned relative sound name.  Created on first use.
+	SearchPathCache *GetArchiveCache();
+
 	static void GetSoundFilename( char *szResult, int nResultSize, const char *pszInputFilename );
 
 	void RemoveCache( char const *cachename );
 
 	// List of all loaded caches
 	CUtlVector<SearchPathCache*>	m_vecCaches;
+
+	SearchPathCache			*m_pArchiveCache;
 
 	int						m_nServerCount;
 	bool					m_bSndCacheDebug;
@@ -2433,6 +2459,8 @@ void CAudioSourceCache::Shutdown()
 
 	CheckSaveDirtyCaches();
 	m_vecCaches.PurgeAndDeleteElements();
+	delete m_pArchiveCache;
+	m_pArchiveCache = NULL;
 
 	wavedatacache->Shutdown();
 }
@@ -2548,11 +2576,33 @@ CAudioSourceCache::SearchPathCache *CAudioSourceCache::LookUpCacheEntry( const c
 			return pCache;
 		}
 	}
-	Warning( "Cannot figure out which search path %s came from.  Absolute path is %s\n", szRelFilename, szAbsFilename );
 
-	SearchPathCache *pCache = NULL;
+	// HL2SB: no cached directory contains this file.  Only directory search
+	// paths get a cache (the enumeration skips pack files), so this is a sound
+	// resolved inside an archive that is mounted from somewhere else, such as a
+	// Workshop addon under content/workshop/.  Refusing it here is what turned
+	// every such sound into "Failed to load sound ... file probably missing from
+	// disk/repository" even though the archive holds it.  Reference behavior: a
+	// sound's header is cached under its relative name, wherever it is hosted.
+	DevMsg( 2, "Sound %s resolves outside every cached search path (%s); using the in-memory cache\n", szRelFilename, szAbsFilename );
+	return GetArchiveCache();
+}
 
-	return pCache;
+//-----------------------------------------------------------------------------
+// HL2SB: the fallback cache for LookUpCacheEntry above.  It is never added to
+// m_vecCaches on purpose: its (empty) search path would prefix-match anything.
+//-----------------------------------------------------------------------------
+CAudioSourceCache::SearchPathCache *CAudioSourceCache::GetArchiveCache()
+{
+	if ( !m_pArchiveCache )
+	{
+		// The repository name only satisfies the CUtlCachedFileData contract; a
+		// volatile cache never opens it.  File size is the out-of-date test, as
+		// it is for VPK content: an archive mounted in place has no per-entry
+		// timestamp worth comparing against.
+		m_pArchiveCache = new SearchPathCache( "hl2sb/sound/archive.cache", "", UTL_CACHED_FILE_USE_FILESIZE, true );
+	}
+	return m_pArchiveCache;
 }
 
 
@@ -2624,6 +2674,10 @@ void CAudioSourceCache::ForceRecheckDiskInfo()
 	FOR_EACH_VEC( m_vecCaches, idx )
 	{
 		m_vecCaches[ idx ]->ForceRecheckDiskInfo();
+	}
+	if ( m_pArchiveCache )
+	{
+		m_pArchiveCache->ForceRecheckDiskInfo();
 	}
 }
 
