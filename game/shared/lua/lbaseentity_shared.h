@@ -154,5 +154,6 @@ LUALIB_API lua_CBaseEntity *(luaL_checkentity) (lua_State *L, int narg);
 LUALIB_API lua_CBaseEntity *(luaL_optentity) (lua_State *L, int narg,
                                                             lua_CBaseEntity *def);
 
+QAngle HL2SB_GetLuaEyeAngles( CBaseEntity *pEntity );
 
 #endif // LBASEENTITY_SHARED_H

@@ -494,8 +494,7 @@ static int CBasePlayer_ExitLadder (lua_State *L) {
 }
 
 static int CBasePlayer_EyeAngles (lua_State *L) {
-  QAngle v = luaL_checkplayer(L, 1)->EyeAngles();
-  lua_pushangle(L, v);
+  lua_pushangle(L, HL2SB_GetLuaEyeAngles(luaL_checkplayer(L, 1)));
   return 1;
 }
 

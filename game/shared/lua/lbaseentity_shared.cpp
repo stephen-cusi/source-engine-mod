@@ -963,9 +963,22 @@ static int CBaseEntity_EntityToWorldSpace (lua_State *L) {
   return 0;
 }
 
+QAngle HL2SB_GetLuaEyeAngles( CBaseEntity *pEntity )
+{
+#ifdef CLIENT_DLL
+  // The local Lua getter reads the same camera state that SetEyeAngles writes.
+  if ( pEntity == C_BasePlayer::GetLocalPlayer() )
+  {
+    QAngle angles;
+    engine->GetViewAngles( angles );
+    return angles;
+  }
+#endif
+  return pEntity->EyeAngles();
+}
+
 static int CBaseEntity_EyeAngles (lua_State *L) {
-  QAngle v = luaL_checkentity(L, 1)->EyeAngles();
-  lua_pushangle(L, v);
+  lua_pushangle(L, HL2SB_GetLuaEyeAngles(luaL_checkentity(L, 1)));
   return 1;
 }
 
