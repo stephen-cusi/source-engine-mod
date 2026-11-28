@@ -11,6 +11,8 @@
 #include "vgui/IVGui.h"
 #include "vgui_rootpanel_hl2.h"
 #include "clientmode_shared.h"
+#include "interface.h"
+#include "hl2sb_vgui_paint_callback.h"
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -143,15 +145,33 @@ C_ScriptedBaseGameUIPanel::~C_ScriptedBaseGameUIPanel( void )
 void C_ScriptedBaseGameUIPanel::PostChildPaint()
 {
 	BaseClass::PostChildPaint();
-	if ( !engine->IsInGame() )
-	{
-		extern void HL2SB_PanelPaintDrawOnTop();
-		HL2SB_PanelPaintDrawOnTop();
-	}
+
+	// HL2SB: the draw-on-top pass used to run from here while no level was
+	// loaded.  That is inside the root panel tree, i.e. BEFORE the surface's
+	// popup pass, so every popup window (a DFrame is one) was painted back over
+	// the menus it had just opened -- a DComboBox dropdown never appeared in the
+	// main menu.  The engine now calls CHL2SBVguiPaintCallback below once the
+	// popups are done; a level's frames run the pass from CViewRender instead.
 
 	// Draw all panel effects
 	RenderPanelEffects();
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: finishes the UI-only frame for the engine (IHL2SBVguiPaintCallback)
+//-----------------------------------------------------------------------------
+extern void HL2SB_PanelPaintDrawOnTop();
+
+class CHL2SBVguiPaintCallback : public IHL2SBVguiPaintCallback
+{
+public:
+	virtual void PostUIPaint()
+	{
+		HL2SB_PanelPaintDrawOnTop();
+	}
+};
+static CHL2SBVguiPaintCallback g_HL2SBVguiPaintCallback;
+EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CHL2SBVguiPaintCallback, IHL2SBVguiPaintCallback, HL2SB_VGUI_PAINT_CALLBACK_VERSION, g_HL2SBVguiPaintCallback );
 
 //-----------------------------------------------------------------------------
 // Purpose: For each panel effect, check if it wants to draw and draw it on

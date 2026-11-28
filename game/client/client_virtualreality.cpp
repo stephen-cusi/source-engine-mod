@@ -376,6 +376,15 @@ void CClientVirtualReality::DrawMainMenu()
 	// paint the main menu and cursor
 	render->VGui_Paint( (PaintMode_t) ( PAINT_UIPANELS | PAINT_CURSOR ) );
 
+#if defined( LUA_SDK )
+	{
+		// HL2SB: the stereo main menu is painted here rather than through the
+		// engine's UI-only frame, so run the draw-on-top pass that follows it.
+		extern void HL2SB_PanelPaintDrawOnTop();
+		HL2SB_PanelPaintDrawOnTop();
+	}
+#endif
+
 	pRenderContext->OverrideAlphaWriteEnable( false, true );
 	pRenderContext->PopRenderTargetAndViewport();
 	pRenderContext->Flush();

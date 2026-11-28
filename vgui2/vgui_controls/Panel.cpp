@@ -1197,7 +1197,14 @@ void HL2SB_PanelPaintDrawOnTop()
 	for (int i = 0; i < panels.Count(); ++i)
 	{
 		Panel *panel = panels[i].Get();
-		if (!panel || !panel->IsVisible() || HL2SB_PanelDrawOnTopIndex(panel) < 0) continue;
+		if (!panel || HL2SB_PanelDrawOnTopIndex(panel) < 0) continue;
+		// A registered panel follows its owners the way every other panel does:
+		// when a parent up the chain is hidden, so is this one.  Without the
+		// ancestor check a derma menu (DMenu registers itself here) outlived the
+		// window that opened it -- a menu opened in the main menu stayed painted
+		// over the game once the menu UI was hidden, and a client menu stayed
+		// painted over the main menu after a disconnect.
+		if (!ipanel()->IsFullyVisible(panel->GetVPanel())) continue;
 		// Popup children are not painted by their parent's surface traversal.
 		// Paint each registered panel at its own position in the overlay list.
 		s_DrawOnTopRoot = panel;

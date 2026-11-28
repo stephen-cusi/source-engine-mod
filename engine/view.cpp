@@ -42,6 +42,7 @@
 #include "materialsystem/itexture.h"
 #include "render.h"
 #include "iclientvirtualreality.h"
+#include "hl2sb_vgui_paint_callback.h"
 
 #if defined( REPLAY_ENABLED )
 #include "replay/iclientreplay.h"
@@ -146,6 +147,19 @@ void V_RenderVGuiOnly_NoSwap()
 
 
 		EngineVGui()->Paint( (PaintMode_t)(PAINT_UIPANELS | PAINT_CURSOR ));
+
+		// HL2SB: the UI frame is only complete once the surface has painted the
+		// root panel tree AND the popup pass that follows it.  The game DLL
+		// keeps a list of panels that go above everything (derma menus register
+		// there); painting them any earlier means the popup pass draws their
+		// owning window back over them.  Looked up per call like the skybox
+		// callback, so a reloaded game DLL is never called through a stale
+		// pointer.
+		CreateInterfaceFn clientFactory = ClientDLL_GetFactory();
+		IHL2SBVguiPaintCallback *paintCallback = clientFactory
+			? static_cast<IHL2SBVguiPaintCallback *>( clientFactory( HL2SB_VGUI_PAINT_CALLBACK_VERSION, NULL ) ) : NULL;
+		if ( paintCallback )
+			paintCallback->PostUIPaint();
 	}
 }
 
