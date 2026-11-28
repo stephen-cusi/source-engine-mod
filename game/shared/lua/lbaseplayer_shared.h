@@ -34,6 +34,17 @@ LUALIB_API lua_CBasePlayer *(luaL_checkplayer) (lua_State *L, int narg);
 LUALIB_API lua_CBasePlayer *(luaL_optplayer) (lua_State *L, int narg,
                                                             lua_CBasePlayer *def);
 
+#ifdef LUA_SDK
+#ifdef CLIENT_DLL
+class C_RecipientFilter;
+typedef C_RecipientFilter LuaFootstepFilter;
+#else
+class CRecipientFilter;
+typedef CRecipientFilter LuaFootstepFilter;
+#endif
+bool HL2SB_LuaPlayerFootstep( CBasePlayer *pPlayer, const Vector &origin, int foot,
+	const char *pSoundName, float volume, LuaFootstepFilter &filter );
+#endif
 
 /*
 ** HL2SB GMod compat (2026-09-22 physgun audit): the per-player frozen-object

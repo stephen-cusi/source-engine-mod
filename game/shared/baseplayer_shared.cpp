@@ -846,6 +846,43 @@ void CBasePlayer::UpdateStepSound( surfacedata_t *psurface, const Vector &vecOri
 //			fvol - 
 //			force - force sound to play
 //-----------------------------------------------------------------------------
+#ifdef LUA_SDK
+bool HL2SB_LuaPlayerFootstep( CBasePlayer *pPlayer, const Vector &origin, int foot,
+	const char *pSoundName, float volume, LuaFootstepFilter &filter )
+{
+	if ( !L )
+		return false;
+
+	BEGIN_LUA_CALL_HOOK( "PlayerFootstep" );
+		lua_pushplayer( L, pPlayer );
+		lua_pushvector( L, origin );
+		lua_pushinteger( L, foot );
+		lua_pushstring( L, pSoundName );
+		lua_pushnumber( L, volume );
+#ifdef CLIENT_DLL
+	END_LUA_CALL_HOOK( 5, 1 );
+#else
+		lua_pushrecipientfilter( L, filter );
+	END_LUA_CALL_HOOK( 6, 1 );
+#endif
+	const bool mute = lua_toboolean( L, -1 ) != 0;
+	lua_pop( L, 1 );
+
+	if ( hl2sb_anim_debug.GetBool() )
+	{
+#ifdef CLIENT_DLL
+		const char *realm = "cl";
+#else
+		const char *realm = "sv";
+#endif
+		Msg( "[HL2SB footstep/%s] %s side=%d sound=%s vol=%.2f%s\n",
+			realm, pPlayer->GetDebugName(), foot, pSoundName, volume, mute ? " muted" : "" );
+	}
+
+	return mute;
+}
+#endif
+
 void CBasePlayer::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, float fvol, bool force )
 {
 	if ( gpGlobals->maxClients > 1 && !sv_footsteps.GetFloat() )
@@ -906,48 +943,8 @@ void CBasePlayer::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, flo
 #endif
 
 #ifdef LUA_SDK
-	// HL2SB GMod compat (2026-10-05): GM:PlayerFootstep( ply, pos, foot, sound,
-	// volume, filter ) -- return true mutes the default step sound.  Dispatched
-	// after the sound is resolved so "sound" is the name that is about to play,
-	// and before the emit so a Lua replacement is the only thing heard.  "foot"
-	// is the raw step-side toggle the engine plays stepleft/stepright from.
-	// The filter is the live recipient list for this step; reference behavior
-	// passes no filter on the client realm.  Predicted hook: runs during
-	// prediction for the local player exactly once (first-time-predicted only).
-	{
-		bool bMuteFootstep = false;
-		BEGIN_LUA_CALL_HOOK( "PlayerFootstep" );
-			lua_pushplayer( L, this );
-			lua_pushvector( L, vecOrigin );
-			lua_pushinteger( L, nSide );
-			lua_pushstring( L, params.soundname );
-			lua_pushnumber( L, fvol );
-#ifndef CLIENT_DLL
-			lua_pushrecipientfilter( L, filter );
-			END_LUA_CALL_HOOK( 6, 1 );
-#else
-			END_LUA_CALL_HOOK( 5, 1 );
-#endif
-		if ( lua_toboolean( L, -1 ) )
-			bMuteFootstep = true;
-		lua_pop( L, 1 );
-
-		if ( hl2sb_anim_debug.GetBool() )
-		{
-#ifdef CLIENT_DLL
-			Msg( "[HL2SB footstep/cl] %s side=%d sound=%s vol=%.2f%s\n",
-				GetDebugName(), nSide, params.soundname, fvol,
-				bMuteFootstep ? " muted" : "" );
-#else
-			Msg( "[HL2SB footstep/sv] %s side=%d sound=%s vol=%.2f%s\n",
-				GetDebugName(), nSide, params.soundname, fvol,
-				bMuteFootstep ? " muted" : "" );
-#endif
-		}
-
-		if ( bMuteFootstep )
-			return;
-	}
+	if ( HL2SB_LuaPlayerFootstep( this, vecOrigin, nSide, params.soundname, fvol, filter ) )
+		return;
 #endif
 
 	EmitSound_t ep;

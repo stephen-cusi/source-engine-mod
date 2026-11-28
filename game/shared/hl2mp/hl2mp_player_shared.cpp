@@ -191,6 +191,12 @@ void CHL2MP_Player::PlayStepSound( Vector &vecOrigin, surfacedata_t *psurface, f
 		filter.RemoveRecipientsByPVS( vecOrigin );
 #endif
 
+#ifdef LUA_SDK
+	const int foot = m_Local.m_nStepside ? 0 : 1;
+	if ( HL2SB_LuaPlayerFootstep( this, vecOrigin, foot, params.soundname, fvol, filter ) )
+		return;
+#endif
+
 	EmitSound_t ep;
 	ep.m_nChannel = CHAN_BODY;
 	ep.m_pSoundName = params.soundname;
