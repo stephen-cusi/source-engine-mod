@@ -747,6 +747,9 @@ static int luasrc_UTIL_TraceLine (lua_State *L) {
     CLuaTraceFilter luaFilter;
     const bool useLuaFilter = luasrc_TraceArgsFromTable( L, &vecStart, &vecEnd, &vecMins, &vecMaxs, &nMask, &pFilter, &nCollisionGroup, luaFilter );
 
+    // GMod line traces test studio hitboxes even when the supplied mask omits them.
+    nMask |= CONTENTS_HITBOX;
+
     if ( useLuaFilter )
       UTIL_TraceLine( vecStart, vecEnd, nMask, &luaFilter, &trace );
     else
