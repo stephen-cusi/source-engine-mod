@@ -1813,16 +1813,14 @@ static int CBasePlayer_ResetHull (lua_State *L) {
   return 0;
 }
 
+#ifndef CLIENT_DLL
 static int CBasePlayer_SetEyeAngles (lua_State *L) {
   CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
   const QAngle angles = luaL_checkangle(L, 2);
-#ifdef CLIENT_DLL
-  pPlayer->SetLocalAngles(angles);
-#else
   pPlayer->SnapEyeAngles(angles);
-#endif
   return 0;
 }
+#endif
 
 static int CBasePlayer_GetViewOffset (lua_State *L) {
   Vector offset;
@@ -3660,7 +3658,10 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"SetCurrentViewOffset", CBasePlayer_SetCurrentViewOffset},
   {"GetCurrentViewOffset", CBasePlayer_GetCurrentViewOffset},
   {"GetViewOffset", CBasePlayer_GetViewOffset},
+#ifndef CLIENT_DLL
+  // Keep the client binding that applies view angles through the engine.
   {"SetEyeAngles", CBasePlayer_SetEyeAngles},
+#endif
   {"GetRenderAngles", CBasePlayer_GetRenderAngles},
   {"SetRenderAngles", CBasePlayer_SetRenderAngles},
 #ifdef CLIENT_DLL
