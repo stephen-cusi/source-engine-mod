@@ -129,6 +129,9 @@ void HL2SB_LuaPanelTrack( vgui::Panel *pPanel, lua_State *pState )
 	int iRecord = s_LuaPanels.AddToTail();
 	s_LuaPanels[iRecord].pPanel = pPanel;
 	s_LuaPanels[iRecord].pState = pState;
+	// The menu's crosshair command creates the owner before any child controls.
+	extern void HL2SB_MenuTrackTransientPanel( vgui::Panel *panel, lua_State *state );
+	HL2SB_MenuTrackTransientPanel( pPanel, pState );
 }
 
 void HL2SB_LuaPanelUntrack( vgui::Panel *pPanel )

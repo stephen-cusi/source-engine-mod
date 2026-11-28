@@ -42,6 +42,7 @@
 //=============================================================================//
 
 #include "cbase.h"
+#include "hl2sb_menu_lifecycle.h"
 #ifdef LUA_SDK
 #include "luamanager.h"
 #include "luasrclib.h"
@@ -109,6 +110,36 @@ struct MenuNamedTimer
 static std::map<std::string, MenuNamedTimer> s_MenuNamedTimers;
 static CDllDemandLoader s_MenuGameUI( "GameUI" );
 static bool s_MenuOverrideActive = false;
+static bool s_OpeningCrosshairSetup = false;
+static vgui::DHANDLE<vgui::Panel> s_CrosshairSetupFrame;
+
+void HL2SB_MenuTrackTransientPanel( vgui::Panel *panel, lua_State *state )
+{
+	if ( state == LGameUI && s_OpeningCrosshairSetup && !s_CrosshairSetupFrame.Get() )
+		s_CrosshairSetupFrame = panel;
+}
+
+static void HL2SB_CloseCrosshairSetup()
+{
+	vgui::Panel *panel = s_CrosshairSetupFrame.Get();
+	s_CrosshairSetupFrame = NULL;
+	if ( !panel )
+		return;
+
+	// Hide synchronously: a loading or disconnect frame can paint before
+	// VGUI processes the deferred deletion of this frame and its popup children.
+	panel->SetVisible( false );
+	panel->MarkForDeletion();
+}
+
+class CHL2SBMenuLifecycle : public IHL2SBMenuLifecycle
+{
+public:
+	void CloseTransientDialogs() override { HL2SB_CloseCrosshairSetup(); }
+};
+static CHL2SBMenuLifecycle s_MenuLifecycle;
+EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CHL2SBMenuLifecycle, IHL2SBMenuLifecycle,
+	HL2SB_MENU_LIFECYCLE_VERSION, s_MenuLifecycle );
 
 static std::map<std::string, unsigned int> s_MenuPermanentPermissions;
 static std::map<std::string, unsigned int> s_MenuTemporaryPermissions;
@@ -855,6 +886,7 @@ void HL2SB_MenuShutdownTimers( lua_State *state )
 
 void HL2SB_MenuRuntimeStop()
 {
+	HL2SB_CloseCrosshairSetup();
 	HL2SB_MenuStopWorkshop( LGameUI );
 	if ( s_ManifestThread.joinable() ) s_ManifestThread.join();
 	if ( LGameUI ) for ( size_t i = 0; i < s_ManifestCallbacks.size(); ++i )
@@ -1154,7 +1186,13 @@ static void HL2SB_MenuDispatchCommand( const char *pszCommand )
 
 CON_COMMAND( crosshair_setup, "Open the crosshair editor (menu realm)" )
 {
+	if ( !LGameUI || engine->IsDrawingLoadingImage() || s_OpeningCrosshairSetup )
+		return;
+
+	HL2SB_CloseCrosshairSetup();
+	s_OpeningCrosshairSetup = true;
 	HL2SB_MenuDispatchCommand( "crosshair_setup" );
+	s_OpeningCrosshairSetup = false;
 }
 
 #endif // LUA_SDK

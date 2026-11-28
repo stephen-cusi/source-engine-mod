@@ -23,6 +23,7 @@
 #include "console.h"
 #include "gl_matsysiface.h"
 #include "cdll_engine_int.h"
+#include "hl2sb_menu_lifecycle.h"
 #include "demo.h"
 #include "sys_dll.h"
 #include "sound.h"
@@ -1086,6 +1087,15 @@ void CEngineVGui::ActivateGameUI()
 //-----------------------------------------------------------------------------
 // Purpose: Hides an Game UI related features (not client UI stuff tho!)
 //-----------------------------------------------------------------------------
+void VGui_CloseMenuTransientDialogs()
+{
+	CreateInterfaceFn clientFactory = ClientDLL_GetFactory();
+	IHL2SBMenuLifecycle *lifecycle = clientFactory
+		? static_cast<IHL2SBMenuLifecycle *>( clientFactory( HL2SB_MENU_LIFECYCLE_VERSION, NULL ) ) : NULL;
+	if ( lifecycle )
+		lifecycle->CloseTransientDialogs();
+}
+
 bool CEngineVGui::HideGameUI()
 {
 	if ( m_bNotAllowedToHideGameUI )
@@ -1095,6 +1105,7 @@ bool CEngineVGui::HideGameUI()
 	bool bInNonBgLevel = levelName && levelName[0] && !engineClient->IsLevelMainMenuBackground();
 	if ( bInNonBgLevel )
 	{
+		VGui_CloseMenuTransientDialogs();
 		staticGameUIPanel->SetVisible(false);
 		staticGameUIPanel->SetPaintBackgroundEnabled(false);
 	
@@ -1294,6 +1305,7 @@ void CEngineVGui::OnLevelLoadingStarted()
 	}
 
 	// we've starting loading a level/connecting to a server
+	VGui_CloseMenuTransientDialogs();
 	SetLuaDownloadStatus( false );
 	staticGameUIFuncs->OnLevelLoadingStarted( m_bShowProgressDialog );
 	m_flLoadingProgress = 0.0f;

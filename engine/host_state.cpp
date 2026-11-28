@@ -224,6 +224,10 @@ void HostState_Shutdown()
 	}
 #endif
 
+#if !defined( SWDS )
+	extern void VGui_CloseMenuTransientDialogs();
+	VGui_CloseMenuTransientDialogs();
+#endif
 	g_HostState.SetNextState( HS_SHUTDOWN );
 }
 
@@ -232,6 +236,10 @@ void HostState_Shutdown()
 //-----------------------------------------------------------------------------
 void HostState_Restart()
 {
+#if !defined( SWDS )
+	extern void VGui_CloseMenuTransientDialogs();
+	VGui_CloseMenuTransientDialogs();
+#endif
 	g_HostState.SetNextState( HS_RESTART );
 }
 
