@@ -237,6 +237,9 @@ void SharedVehicleViewSmoothing(CBasePlayer *pPlayer,
 		pData->bRunningEnterExit = true;
 		pData->flEnterExitStartTime = gpGlobals->curtime;
 		pData->flEnterExitDuration = pData->pVehicle->SequenceDuration( pData->pVehicle->GetSequence() );
+		// GMod uses a one-second blend when the entry or exit has no sequence duration.
+		if ( pData->flEnterExitDuration == 0.0f )
+			pData->flEnterExitDuration = 1.0f;
 
 #ifdef CLIENT_DLL
 		pData->vecOriginSaved = PrevMainViewOrigin();
@@ -284,20 +287,12 @@ void SharedVehicleViewSmoothing(CBasePlayer *pPlayer,
 			// Enter animation has finished, align view with the eye attachment point
 			// so they can start mouselooking around.
 #ifdef CLIENT_DLL
-			if ( pPlayer->IsLocalPlayer() )
+			if ( pPlayer->IsLocalPlayer() && !bExitAnimOn )
 			{
-#endif
-				if ( !bExitAnimOn )
-				{
-					Vector localEyeOrigin;
-					QAngle localEyeAngles;
-
-					pData->pVehicle->GetAttachmentLocal( eyeAttachmentIndex, localEyeOrigin, localEyeAngles );
-#ifdef CLIENT_DLL
+				Vector localEyeOrigin;
+				QAngle localEyeAngles;
+				if ( pData->pVehicle->GetAttachmentLocal( eyeAttachmentIndex, localEyeOrigin, localEyeAngles ) )
 					engine->SetViewAngles( localEyeAngles );
-#endif
-				}
-#ifdef CLIENT_DLL
 			}
 #endif
 		}

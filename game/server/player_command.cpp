@@ -491,6 +491,9 @@ void CPlayerMove::RunCommand ( CBasePlayer *player, CUserCmd *ucmd, IMoveHelper 
 	// Setup input.
 	SetupMove( player, ucmd, moveHelper, g_pMoveData );
 
+	// PlayerUse in PreThink can change vehicles during this command.
+	pVehicle = player->GetVehicle();
+
 	// Let the game do the movement.
 	if ( !pVehicle )
 	{
